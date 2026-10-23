@@ -81,6 +81,13 @@ type Review struct {
 	Agents []configfile.Reviewer `yaml:"agents,omitempty"`
 }
 
+// ownAgents are r's agents but one under the default pass's name, which
+// Merge drops with a note, whatever it writes, rather than the file being
+// refused for it.
+func (r Review) ownAgents() []configfile.Reviewer {
+	return slices.DeleteFunc(slices.Clone(r.Agents), func(a configfile.Reviewer) bool { return a.Name == review.DefaultReviewer })
+}
+
 // Confidence is how the repository's reviews are judged: the model that
 // scores a reviewed pull request and the one that takes its call when it
 // fails, each a "<provider>/<model>" of a provider its account may use,
@@ -183,7 +190,7 @@ func Parse(data []byte) (File, error) {
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
-	if err := configfile.CheckAgents(f.Review.Agents); err != nil {
+	if err := configfile.CheckAgents(f.Review.ownAgents()); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {
@@ -233,7 +240,7 @@ func (f File) Referenced() []string {
 			add(*t)
 		}
 	}
-	specialists, _ := configfile.SplitAgents(f.Review.Agents)
+	specialists, _ := configfile.SplitAgents(f.Review.ownAgents())
 	for _, p := range configfile.ReviewerFiles(specialists) {
 		add(p)
 	}

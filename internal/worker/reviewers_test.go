@@ -223,3 +223,28 @@ func TestMayRun(t *testing.T) {
 		t.Error("mayRun changed the review's agents")
 	}
 }
+
+// TestMayRunStaleRequest: a request queued for an agent that is no longer
+// on runs every agent that applies, and holds slots for them all, as
+// chooseReviewers falls back to.
+func TestMayRunStaleRequest(t *testing.T) {
+	off := false
+	eff := Effective{
+		Reviewers: map[string]configfile.Reviewer{
+			"retired":  {Enabled: &off, Model: "p/old"},
+			"security": {Model: "p/big"},
+		},
+		Models: configfile.Models{Review: "p/small"},
+		Held:   map[string]bool{"security": true},
+	}
+	for _, asked := range []string{"retired", "removed"} {
+		args := jobs.ReviewArgs{Reviewer: asked}
+		if got := reviewerModelKeys(mayRun(eff, args)); !slices.Equal(got, []string{"p/big"}) {
+			t.Errorf("slots for a stale request of %s = %q, want security's", asked, got)
+		}
+		got := chooseReviewers(eff, map[string]any{}, priorReview{}, asked, 1000)
+		if len(got.specs) != 2 || got.note == "" {
+			t.Errorf("agents for a stale request of %s = %+v, want every one with a note", asked, got)
+		}
+	}
+}

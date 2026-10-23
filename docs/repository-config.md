@@ -345,7 +345,11 @@ A specialist takes:
   rules (under ids of their own) and skill scopes (of skills it does not
   scope) from this file; anything else written for it is dropped with a
   note. The file's agents without categories replace the admin's, whole,
-  as its `review.model` does.
+  as its `review.model` does, even when every one of them is off; they
+  are dropped whole when one names a model of a provider the account may
+  not use, or when, with the admin's specialists, they pass the
+  [limit](#limits) on agents. An agent named `default` is dropped with a
+  note, and the rest of the file applies.
 - **Shared tools.** A specialist runs the repository's
   [tools](#repository-tools) and commands, as the default pass does: there
   is no per-agent tool list.

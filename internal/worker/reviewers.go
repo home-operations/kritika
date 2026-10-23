@@ -54,19 +54,15 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 	var out reviewers
 	names := slices.Sorted(maps.Keys(settings.Reviewers))
 	runDefault := true
-	if only != "" {
-		r, named := settings.Reviewers[only]
-		switch {
-		case only == review.DefaultReviewer || slices.ContainsFunc(settings.Models.Routes, func(o configfile.ModelRoute) bool {
-			return o.Name == only
-		}):
-			names = nil
-		case named && r.On():
-			names, runDefault = []string{only}, false
-		default:
-			out.note = fmt.Sprintf("No agent named %s is on, so every agent that applies ran", only)
-			only = ""
-		}
+	switch _, specialist := settings.Reviewers[only]; {
+	case only == "":
+	case !runsAlone(settings.Settings, only):
+		out.note = fmt.Sprintf("No agent named %s is on, so every agent that applies ran", only)
+		only = ""
+	case specialist:
+		names, runDefault = []string{only}, false
+	default:
+		names = nil
 	}
 	full := func(name string) bool { return prior.id != "" && !slices.Contains(prior.reviewers, name) }
 	if runDefault {
@@ -199,17 +195,32 @@ func asked(args jobs.ReviewArgs) string { return cmp.Or(args.Reviewer, args.Requ
 
 // mayRun is eff's settings with their specialists cut to those a review
 // asked for as args may run, whose models it holds slots on: the one asked
-// for alone, when one is, none when the default pass or an agent that
-// replaces it is, and otherwise each that is on and whose when conditions
-// judgeReviewers found to hold.
+// for alone, when one that runs alone is, none when the default pass or an
+// agent that replaces it is, and otherwise each that is on and whose when
+// conditions judgeReviewers found to hold.
 func mayRun(eff Effective, args jobs.ReviewArgs) configfile.Settings {
 	s := eff.Settings
+	asked := args.Reviewer
+	if !runsAlone(s, asked) {
+		// Asked for an agent that is no longer on, the review runs every
+		// one that applies, as chooseReviewers falls back to.
+		asked = ""
+	}
 	s.Reviewers = maps.Clone(s.Reviewers)
 	maps.DeleteFunc(s.Reviewers, func(name string, r configfile.Reviewer) bool {
-		if args.Reviewer != "" {
-			return name != args.Reviewer
+		if asked != "" {
+			return name != asked
 		}
 		return !r.On() || !eff.Held[name]
 	})
 	return s
+}
+
+// runsAlone reports whether name is an agent a review asked for runs
+// alone, settings being the repository's as they are now: the default
+// pass, an agent on that replaces it, or a specialist that is on.
+func runsAlone(settings configfile.Settings, name string) bool {
+	r, specialist := settings.Reviewers[name]
+	return name == review.DefaultReviewer || specialist && r.On() ||
+		slices.ContainsFunc(settings.Models.Routes, func(o configfile.ModelRoute) bool { return o.Name == name })
 }

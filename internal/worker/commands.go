@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -309,10 +308,7 @@ func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested strin
 // requested, kept apart so the request is one of every agent, which a
 // review of every agent in flight stands in for.
 func splitRequested(name string, settings configfile.Settings) (reviewer, requested string) {
-	r, specialist := settings.Reviewers[name]
-	switch {
-	case name == review.DefaultReviewer, specialist && r.On(),
-		slices.ContainsFunc(settings.Models.Routes, func(o configfile.ModelRoute) bool { return o.Name == name }):
+	if runsAlone(settings, name) {
 		return name, ""
 	}
 	return "", name

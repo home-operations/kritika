@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // Merged is the admin's settings with the merge-base FileName applied.
@@ -139,18 +140,20 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	return m, nil
 }
 
-// agents adds the file's agents to the admin's. A specialist of its own is
-// added as written, its models among op.Providers, while there is room
-// for it under configfile.MaxReviewers; to the admin's of its name it adds
-// only rules, under an id neither that agent's nor the admin's rules
-// have, and skill scopes, of a skill that agent does not scope, the rest
-// it writes of it dropped with a note: a pull request must not be able to
-// turn off, narrow or retune a specialist the admin set. Its agents that
-// replace the default pass replace the admin's, as its review.model does,
-// whole or not at all: one of a model of a provider not among op.Providers
-// drops them all, since without it another model would review than the
-// file says. An agent under a name an admin's agent of the other kind has
-// is dropped.
+// agents adds the file's agents to the admin's. Its agents that replace
+// the default pass are settled first: written, even all off, they replace
+// the admin's, as its review.model does, whole or not at all, one of a
+// model of a provider not among op.Providers, or more of them than leave
+// the admin's specialists room under configfile.MaxReviewers, dropping
+// them all, since without one another model would review than the file
+// says. Then a specialist of its own is added as written, its models among
+// op.Providers, while there is room for it beside the agents the review
+// ends with; to the admin's of its name it adds only rules, under an id
+// neither that agent's nor the admin's rules have, and skill scopes, of a
+// skill that agent does not scope, the rest it writes of it dropped with a
+// note: a pull request must not be able to turn off, narrow or retune a
+// specialist the admin set. An agent under a name an admin's agent of the
+// other kind has, or the default pass's, is dropped with a note.
 func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 	if len(file) == 0 {
 		return
@@ -159,18 +162,45 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 	if m.Reviewers == nil {
 		m.Reviewers = map[string]configfile.Reviewer{}
 	}
+	keep := make([]bool, len(file))
 	var routes []configfile.ModelRoute
+	declared := false
 	for i, r := range file {
 		key := fmt.Sprintf("review.agents[%d] (%s)", i, r.Name)
-		admin, specialist := op.Reviewers[r.Name]
+		_, specialist := op.Reviewers[r.Name]
 		replacing := slices.ContainsFunc(op.Models.Routes, func(o configfile.ModelRoute) bool { return o.Name == r.Name })
 		switch {
+		case r.Name == review.DefaultReviewer:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: the default pass is review.model's", FileName, key))
 		case r.Specialist() && replacing, !r.Specialist() && specialist:
 			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: an admin's agent of the other kind has that name", FileName, key))
-		case !r.Specialist():
+		case r.Specialist():
+			keep[i] = true
+		default:
+			declared = true
 			if r.On() {
 				routes = append(routes, r.Route())
 			}
+		}
+	}
+	if declared {
+		why := routesDropped(routes, op.Providers)
+		if n := len(m.Reviewers) + len(routes); why == "" && n > configfile.MaxReviewers {
+			why = fmt.Sprintf("with the admin's specialists, %d agents are over the %d a review runs", n, configfile.MaxReviewers)
+		}
+		if why == "" {
+			m.Models.Routes = routes
+		} else {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: review.agents that replace the default pass were dropped: %s", FileName, why))
+		}
+	}
+	for i, r := range file {
+		if !keep[i] {
+			continue
+		}
+		key := fmt.Sprintf("review.agents[%d] (%s)", i, r.Name)
+		admin, specialist := op.Reviewers[r.Name]
+		switch {
 		case specialist:
 			m.Reviewers[r.Name] = m.addTo(key, admin, r, op.Review.Rules)
 		case len(m.Reviewers)+len(m.Models.Routes) >= configfile.MaxReviewers:
@@ -189,14 +219,6 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 			m.Reviewers[r.Name] = r
 		}
 	}
-	if routes == nil {
-		return
-	}
-	if why := routesDropped(routes, op.Providers); why != "" {
-		m.Dropped = append(m.Dropped, fmt.Sprintf("%s: review.agents that replace the default pass were dropped: %s", FileName, why))
-		return
-	}
-	m.Models.Routes = routes
 }
 
 // addTo is the admin's reviewer with the file's rules and skill scopes

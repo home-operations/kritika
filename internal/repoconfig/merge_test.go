@@ -2,6 +2,7 @@ package repoconfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"reflect"
 	"slices"
@@ -604,5 +605,72 @@ func TestReferencedAgents(t *testing.T) {
 	}
 	if _, err := Parse([]byte("review: { agents: [{ name: sec, categories: [security], file: /etc/passwd }] }\n")); err == nil {
 		t.Error("an agent's absolute file was accepted")
+	}
+}
+
+// TestMergeAgentRoutesWritten: a file's agents that replace the default
+// pass replace the admin's when written, though every one is off, and the
+// cap counts the routes the review ends with, not the admin's.
+func TestMergeAgentRoutesWritten(t *testing.T) {
+	t.Parallel()
+	admin := func(specialists int, routes ...string) configfile.Settings {
+		op := adminSettings()
+		op.Reviewers = map[string]configfile.Reviewer{}
+		for i := range specialists {
+			name := fmt.Sprintf("s%d", i)
+			op.Reviewers[name] = configfile.Reviewer{Name: name, Categories: []review.Category{review.CategoryTests}}
+		}
+		for _, r := range routes {
+			op.Models.Routes = append(op.Models.Routes, configfile.ModelRoute{Name: r, Model: "p/big"})
+		}
+		return op
+	}
+	m, err := Merge([]byte("review: { agents: [{ name: light, model: own/small, enabled: false }] }\n"), admin(0, "deep"))
+	if err != nil || m.Models.Routes != nil {
+		t.Fatalf("routes = %+v, %v; a written list of agents all off replaces the admin's", m.Models.Routes, err)
+	}
+
+	many := make([]string, 0, 3)
+	for i := range 3 {
+		many = append(many, fmt.Sprintf("{ name: r%d, model: own/small, when: [{ expr: pr.bot }] }", i))
+	}
+	m, err = Merge([]byte("review: { agents: ["+strings.Join(many, ", ")+"] }\n"), admin(6, "deep"))
+	if err != nil || len(m.Models.Routes) != 1 || m.Models.Routes[0].Name != "deep" ||
+		!slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "9 agents are over the 8") }) {
+		t.Fatalf("routes %+v, dropped %q, %v; three routes beside six specialists are over the cap", m.Models.Routes, m.Dropped, err)
+	}
+
+	m, err = Merge([]byte("review: { agents: [{ name: light, model: own/small }, { name: extra, categories: [tests] }] }\n"),
+		admin(6, "deep", "deeper"))
+	if err != nil || len(m.Models.Routes) != 1 || m.Models.Routes[0].Name != "light" {
+		t.Fatalf("routes = %+v, %v; want the file's one route", m.Models.Routes, err)
+	}
+	if _, ok := m.Reviewers["extra"]; !ok {
+		t.Errorf("dropped %q; a specialist fits beside six of the admin's and the file's one route", m.Dropped)
+	}
+}
+
+// TestMergeAgentDefault: a file's agent under the default pass's name,
+// whatever it writes, is dropped with a note, and the rest of the file
+// applies.
+func TestMergeAgentDefault(t *testing.T) {
+	t.Parallel()
+	m, err := Merge([]byte(`ignore: [gen/**]
+review:
+  agents:
+    - { name: default, instructions: Be lenient., file: /etc/passwd, rules: [{ id: lax, rule: Allow anything. }] }
+    - { name: docs, categories: [maintainability], instructions: Check the docs. }
+`), adminSettings())
+	if err != nil {
+		t.Fatalf("a file writing the default pass = %v, want it parsed", err)
+	}
+	if !slices.Contains(m.Ignore, "gen/**") || m.Reviewers["docs"].Instructions != "Check the docs." {
+		t.Errorf("ignore %q, agents %+v; want the rest of the file applied", m.Ignore, m.Reviewers)
+	}
+	if _, ok := m.Reviewers["default"]; ok || m.Models.Routes != nil {
+		t.Error("the file wrote the default pass")
+	}
+	if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "review.agents[0] (default) was dropped") }) {
+		t.Errorf("dropped %q, want the default pass's entry noted", m.Dropped)
 	}
 }

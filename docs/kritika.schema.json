@@ -60,6 +60,26 @@
             "additionalProperties": false,
             "required": ["name"],
             "not": { "required": ["instructions", "file"] },
+            "if": {
+              "not": {
+                "required": ["categories"],
+                "properties": { "categories": { "minItems": 1 } }
+              }
+            },
+            "then": {
+              "description": "An agent without categories replaces the default pass: it needs a model and takes only name, enabled, model, fallback, effort and when.",
+              "required": ["model"],
+              "not": {
+                "anyOf": [
+                  { "required": ["instructions"] },
+                  { "required": ["file"] },
+                  { "required": ["paths"] },
+                  { "required": ["rules"] },
+                  { "required": ["skills"] },
+                  { "required": ["agent"] }
+                ]
+              }
+            },
             "properties": {
               "name": {
                 "type": "string",
