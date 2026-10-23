@@ -152,12 +152,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	case err != nil:
 		logger.Warn("filter failed to evaluate; the review is skipped", "filter", skipDetail, "error", err)
 	}
-	var split [][]string
+	var shares []partShare
 	if skip == "" {
-		split = splitReview(p, res, scope)
+		shares, scope, scopeReason = reviewShares(p, res, scope, scopeReason, deltaPaths)
 	}
-	reportPartCount(ctx, st, p, len(split), logger)
-	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, split, logger)
+	reportPartCount(ctx, st, p, len(shares), logger)
+	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, shares != nil, logger)
 	if err != nil {
 		return err
 	}
@@ -190,15 +190,15 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 			tools.oci = newFetchOCITool(p)
 		}
 		notes = append(notes, commandNotes...)
-		if split == nil {
+		if shares == nil {
 			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
 			notes = append(notes, prompt.notes()...)
 		} else if parts, chunks, ruleIDs, err = partPrompts(
-			ctx, p, secrets, headTree, baseTree, res, files, found, split, scope, &tools, logger,
+			ctx, p, secrets, headTree, baseTree, res, files, found, shares, &tools, logger,
 		); err != nil {
 			return err
 		} else {
-			notes = append(notes, splitNotes(parts)...)
+			notes = append(notes, splitNotes(parts, shares)...)
 		}
 	}
 	if chunks == nil {
@@ -260,14 +260,34 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
 }
 
+// reviewShares is how a review that is not skipped runs, as
+// planReviewers plans it: its shares, nil to run it whole; and its scope,
+// full for the default reviewer alone when the last review did not run it,
+// with the reason.
+func reviewShares(
+	p Spec, res *gitfetch.Result, scope review.Scope, reason string, deltaPaths []string,
+) ([]partShare, review.Scope, string) {
+	plan := planReviewers(p, res, scope, deltaPaths)
+	if plan.shares != nil {
+		return plan.shares, scope, reason
+	}
+	if plan.full && scope == review.ScopeIncremental {
+		scope, reason = review.ScopeFull, "the last review did not run the default reviewer"
+	}
+	if split := splitReview(p, res, scope); split != nil {
+		return splitShares(split, scope), scope, reason
+	}
+	return nil, scope, reason
+}
+
 // wholeContext is the context stages over the whole diff, or none for a
-// skipped review, which has no prompt, or a split one, whose parts build
+// skipped review, which has no prompt, or one in parts, whose parts build
 // theirs from their own diffs.
 func wholeContext(
-	ctx context.Context, head, base *object.Tree, res *gitfetch.Result, ignore []string, skip string, split [][]string,
+	ctx context.Context, head, base *object.Tree, res *gitfetch.Result, ignore []string, skip string, inParts bool,
 	logger *slog.Logger,
 ) ([]contextpack.Chunk, error) {
-	if skip != "" || split != nil {
+	if skip != "" || inParts {
 		return []contextpack.Chunk{}, nil
 	}
 	chunks, stats, err := stages(ctx, head, base, res, ignore)
@@ -288,6 +308,11 @@ func wholePrompt(
 	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, res *gitfetch.Result, in promptInputs,
 	scope review.Scope, chunks []contextpack.Chunk, tools *agentTools, logger *slog.Logger,
 ) (agentPrompt, []contextpack.Chunk) {
+	promptSpec := *p.Prompt
+	promptSpec.Prior = slices.DeleteFunc(slices.Clone(promptSpec.Prior), func(f review.Finding) bool {
+		return !f.RaisedBy(review.DefaultReviewer)
+	})
+	p.Prompt = &promptSpec
 	var similar []contextpack.Chunk
 	similar, tools.search = similarContext(ctx, p, secrets, res, logger)
 	chunks = append(chunks, similar...)

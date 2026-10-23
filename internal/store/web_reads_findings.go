@@ -64,7 +64,8 @@ type PullRef struct {
 
 // FindingFilter narrows ListAccountFindings. Zero fields match everything;
 // Category matches a finding of that kind; Rule matches a finding that
-// cites that rule id; Query matches a title,
+// cites that rule id; Reviewer matches a finding that reviewer raised,
+// review.DefaultReviewer one that names no other; Query matches a title,
 // explanation, path or pull request title substring, or a pull request
 // number.
 type FindingFilter struct {
@@ -73,6 +74,7 @@ type FindingFilter struct {
 	Category     review.Category
 	Status       FindingStatus
 	Rule         string
+	Reviewer     string
 	Query        string
 }
 
@@ -93,7 +95,7 @@ func findingIssuesOf(scope string) string {
 	return `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.category, f.title, f.explanation, f.suggested_fix, f.replacement,
 			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down, f.rules,
-			v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
+			f.agents, v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
 			row_number() OVER newest AS nth, min(v.created_at) OVER issue AS first_at
 		FROM findings f JOIN reviews v ON v.id = f.review_id
 		WHERE v.status = 'completed'` + scope + `
@@ -110,7 +112,7 @@ func findingIssuesOf(scope string) string {
 var accountFindings = `WITH ` + findingIssues + `
 	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.category, l.title, l.explanation, l.suggested_fix, l.replacement,
 		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down, l.rules,
-		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.dismissed, l.dismiss_reason, l.first_at, l.seen_at
+		l.agents, l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.dismissed, l.dismiss_reason, l.first_at, l.seen_at
 	FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id JOIN repositories r ON r.id = p.repository_id`
 
 // ListAccountFindings returns a page of the account's findings, most
@@ -136,12 +138,13 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 				OR p.title ILIKE @like OR p.number = @number)
 			AND (@first OR (l.seen_at, l.id) < (@after_time, @after_id::uuid))
 			AND (@rule = '' OR @rule = ANY (l.rules))
+			AND (@agent = '' OR @agent = ANY (l.agents) OR (@agent = @default AND cardinality(l.agents) = 0))
 			AND (@category = '' OR l.category = @category)
 		ORDER BY l.seen_at DESC, l.id DESC LIMIT @limit`, pgx.StrictNamedArgs{
 		"repository_id": uuidParam(f.RepositoryID), "severity": string(f.Severity), "status": string(f.Status),
 		"query": f.Query, "like": like, "number": number,
 		"first": p.After.First(), "after_time": p.After.T, "after_id": p.afterID(), "limit": p.Limit + 1,
-		"rule": f.Rule, "category": string(f.Category),
+		"rule": f.Rule, "category": string(f.Category), "agent": f.Reviewer, "default": review.DefaultReviewer,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list account findings: %w", err)
@@ -152,7 +155,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 		var addressed, dismissed bool
 		err := row.Scan(&a.ID, &a.Path, &a.Line, &a.EndLine, &sev, &cat, &a.Title, &a.Explanation, &a.SuggestedFix, &a.Replacement,
 			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown, &a.Rules,
-			&a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
+			&a.Reviewers, &a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
 			&addressed, &dismissed, &a.DismissReason, &a.FirstSeenAt, &a.LastSeenAt)
 		a.Severity, a.Category, a.Status = review.Severity(sev), review.Category(cat), findingStatus(dismissed, addressed)
 		return a, err

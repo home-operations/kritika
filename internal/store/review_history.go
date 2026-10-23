@@ -1,10 +1,12 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +25,9 @@ type CompletedReview struct {
 	Changed, Checked                         []string
 	Findings                                 []CompletedFinding
 	Confidence                               *review.Confidence
+	// Reviewers are the reviewers whose agent submitted for it: the
+	// default one alone for a review that had no other.
+	Reviewers []string
 }
 
 type CompletedFinding struct {
@@ -55,8 +60,11 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return CompletedReview{}, fmt.Errorf("store: load last completed review's paths: %w", err)
 	}
+	if p.Reviewers, err = reviewersRun(ctx, tx, p.ID); err != nil {
+		return CompletedReview{}, err
+	}
 	rows, err := tx.Query(ctx, `SELECT path, line, severity, category, title, explanation, suggested_fix, posted_inline,
-		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules, fingerprint, coalesce(carried_from, '')
+		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules, fingerprint, coalesce(carried_from, ''), agents
 		FROM findings WHERE review_id = $1 ORDER BY path, line`, p.ID)
 	if err != nil {
 		return CompletedReview{}, fmt.Errorf("store: load findings: %w", err)
@@ -65,14 +73,48 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 		var f CompletedFinding
 		var sev, cat string
 		err := row.Scan(&f.Path, &f.Line, &sev, &cat, &f.Title, &f.Explanation, &f.SuggestedFix, &f.PostedInline,
-			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.CommentID, &f.Rules, &f.Fingerprint, &f.CarriedFrom)
+			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.CommentID, &f.Rules, &f.Fingerprint, &f.CarriedFrom, &f.Agents)
 		f.Severity, f.Category = review.Severity(sev), review.Category(cat)
+		if len(f.Agents) == 0 {
+			f.Agents = nil
+		}
 		return f, err
 	})
 	if err != nil {
 		return CompletedReview{}, fmt.Errorf("store: load findings: %w", err)
 	}
 	return p, nil
+}
+
+// reviewersRun are the reviewers whose agent submitted for review
+// reviewID, in the order its parts list them: the default one alone for a
+// review whose agent was not split by reviewer, or for one with no agent
+// run to read.
+func reviewersRun(ctx context.Context, tx pgx.Tx, reviewID string) ([]string, error) {
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT a.parts FROM agent_runs a JOIN runner_runs rr ON rr.id = a.runner_run_id
+		WHERE rr.review_id = $1 ORDER BY a.created_at DESC LIMIT 1`, reviewID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []string{review.DefaultReviewer}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: read the reviewers of the last completed review: %w", err)
+	}
+	var parts []AgentPart
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil, fmt.Errorf("store: decode the parts of the last completed review: %w", err)
+	}
+	var out []string
+	for _, part := range parts {
+		name := cmp.Or(part.Reviewer, review.DefaultReviewer)
+		if part.Stop == "submitted" && !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 {
+		out = []string{review.DefaultReviewer}
+	}
+	return out, nil
 }
 
 func LastForgePatchID(ctx context.Context, tx pgx.Tx, prID string) (string, error) {

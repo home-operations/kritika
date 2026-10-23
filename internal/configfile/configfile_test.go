@@ -335,9 +335,9 @@ func TestUnpricedModels(t *testing.T) {
     apiKey: { env: TEST_WEBHOOK_SECRET }
     pricing: { ~sonnet-latest: { input: 2 }, claude-x: { input: 3 } }
 review:
-  model:
-    - { model: or/~acme/large-latest, when: [{ expr: pr.bot }] }
-    - { model: a/~opus-latest }
+  model: a/~opus-latest
+  agents:
+    - { name: bots, model: or/~acme/large-latest, when: [{ expr: pr.bot }] }
   fallback: priced/claude-x
 confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
 ` + minimal
@@ -346,7 +346,7 @@ confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
 		t.Fatal(err)
 	}
 	// Priced by its alias and by its id, the confidence model and the
-	// review fallback are not listed, nor is a route's openrouter model,
+	// review fallback are not listed, nor is an agent's openrouter model,
 	// whose API reports its cost.
 	want := []UnpricedModel{
 		{Setting: "review.model", Ref: "a/~opus-latest"},

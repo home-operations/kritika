@@ -295,3 +295,11 @@ func NothingToReviewBody(headSHA, baseRef string) string {
 	return fmt.Sprintf("Nothing to review: `%s` is already in `%s`, and no earlier review recorded where it branched off.\n",
 		ShortSHA(headSHA), baseRef)
 }
+
+// ReviewBusyBody answers a review request whose reviewers are not those of
+// the review of headSHA already queued or running, which cannot stand in
+// for it.
+func ReviewBusyBody(headSHA string) string {
+	return fmt.Sprintf("A review of `%s` by other agents is already queued or running. Ask again once it has finished.\n",
+		ShortSHA(headSHA))
+}

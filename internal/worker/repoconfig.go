@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,9 @@ type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritika.yaml.
 	Found bool
+	// Held are the specialists whose when conditions judgeReviewers found
+	// to hold for the pull request, by name.
+	Held map[string]bool
 }
 
 // readRepoConfig reads .kritika.yaml at ref through the forge: nil when the
@@ -89,11 +93,7 @@ func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDi
 	}
 	var d *configfile.Diff
 	if eff.Models.NeedsDiff() {
-		if diff, err := forgeDiff(); err != nil {
-			logger.Warn("forge diff not read; model routes on paths or lines do not hold", "error", err)
-		} else {
-			d = &configfile.Diff{Lines: contextpack.ChangedLines(diff, eff.Ignore), Changed: changedPaths(diff)}
-		}
+		d = pullDiff(logger, eff, forgeDiff)
 	}
 	picked, err := eff.Models.Pick(vars, d)
 	if err != nil {
@@ -103,6 +103,58 @@ func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDi
 		logger.Info("model route picked", "route", picked.Route, "model", picked.Review)
 	}
 	eff.Models = picked
+}
+
+// pickModels picks the review's model and judges its specialists: the
+// agent asked picks it when asked names one that replaces the default pass,
+// and otherwise the first of those that holds does (pickRoute); then the
+// specialists are judged (judgeReviewers).
+func pickModels(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error), asked string) {
+	if i := slices.IndexFunc(eff.Models.Routes, func(r configfile.ModelRoute) bool { return r.Name == asked }); i >= 0 {
+		eff.Models.Routes = []configfile.ModelRoute{eff.Models.Routes[i]}
+		eff.Models.Routes[0].When = nil
+	}
+	pickRoute(logger, eff, vars, forgeDiff)
+	judgeReviewers(logger, eff, vars, forgeDiff)
+}
+
+// pullDiff is the pull request's diff as a condition judges it, nil when
+// the forge will not give it: conditions on paths or lines then do not
+// hold.
+func pullDiff(logger *slog.Logger, eff *Effective, forgeDiff func() (string, error)) *configfile.Diff {
+	diff, err := forgeDiff()
+	if err != nil {
+		logger.Warn("forge diff not read; conditions on paths or lines do not hold", "error", err)
+		return nil
+	}
+	return &configfile.Diff{Lines: contextpack.ChangedLines(diff, eff.Ignore), Changed: changedPaths(diff)}
+}
+
+// judgeReviewers judges, over the whole pull request, whether the when
+// conditions of each of eff's specialists that is on hold, reading the
+// forge's diff when a condition needs it, and gives each its models: its
+// own, or the default pass's as the agents picked them.
+func judgeReviewers(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
+	var d *configfile.Diff
+	if slices.ContainsFunc(slices.Collect(maps.Values(eff.Reviewers)), configfile.Reviewer.NeedsDiff) {
+		d = pullDiff(logger, eff, forgeDiff)
+	}
+	reviewers := maps.Clone(eff.Reviewers)
+	eff.Held = map[string]bool{}
+	for name, r := range reviewers {
+		if !r.On() {
+			continue
+		}
+		held, err := r.Holds(vars, d)
+		if err != nil {
+			logger.Warn("agent condition failed to evaluate", "agent", name, "error", err)
+		}
+		eff.Held[name] = held
+		models := r.Models(eff.Models)
+		r.Model, r.Fallback, r.Effort = models.Review, models.Fallback, &models.Effort
+		reviewers[name] = r
+	}
+	eff.Reviewers = reviewers
 }
 
 // changedPaths are the paths a unified diff changes, each named as the
@@ -117,10 +169,15 @@ func changedPaths(diff string) []string {
 }
 
 // repoFiles are the paths the runner reads from the merge base: the files
-// the settings name, and .kritika.yaml itself, which the review's context
-// pack keeps a copy of.
+// the settings and their reviewers name, and .kritika.yaml itself, which
+// the review's context pack keeps a copy of.
 func (e *Effective) repoFiles() []string {
 	paths := e.Review.Referenced()
+	for _, p := range configfile.ReviewerFiles(e.Reviewers) {
+		if !slices.Contains(paths, p) {
+			paths = append(paths, p)
+		}
+	}
 	if e.Found && !slices.Contains(paths, repoconfig.FileName) {
 		paths = append(paths, repoconfig.FileName)
 	}

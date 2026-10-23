@@ -538,6 +538,9 @@ export interface Finding {
   reactionsDown: number;
   // rules are the ids of the review rules it enforces.
   rules: string[];
+  // agents are the names of the agents that raised it; empty when the
+  // default pass alone did, and "default" may appear alongside others.
+  agents: string[];
   // status is what became of it on its pull request; dismissReason is the
   // reason a dismissed one was dismissed with.
   status: FindingStatus;
@@ -714,6 +717,12 @@ export interface AgentRun {
 // AgentPart is one part of a split review: its files, why its agent stopped, with the error it ended on, and its steps.
 export interface AgentPart {
   reusedFrom?: string;
+  // agent is the named agent the part was for; absent for the default pass alone.
+  agent?: string;
+  // full is whether that agent reviewed the whole change, though the review was incremental.
+  full?: boolean;
+  // costUsd is the part's model-call cost; absent when it is 0 or unknown.
+  costUsd?: number;
   paths: string[];
   stop: string;
   error: string;

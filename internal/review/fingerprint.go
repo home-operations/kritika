@@ -60,8 +60,10 @@ func indexPrior(prior []Finding) *priorIndex {
 // inherit is the fingerprint f carries on from a prior finding no earlier
 // finding of the review claimed: the one on its path whose id it names,
 // else the one with its path and title, which may itself carry an earlier
-// finding's. The one it carries on is claimed. "" when its own path and
-// title identify it.
+// finding's. The one it carries on is claimed, and returned even when its
+// own path and title make it, so a finding of another reviewer it is
+// merged into under another title keeps its thread (see MergeReviewers);
+// "" when it carries on none.
 func (x *priorIndex) inherit(f Finding) string {
 	own := titleFingerprint(f)
 	candidates := x.byTitle[own]
@@ -74,10 +76,7 @@ func (x *priorIndex) inherit(f Finding) string {
 			continue
 		}
 		x.claimed[fp] = true
-		if fp != own {
-			return fp
-		}
-		return ""
+		return fp
 	}
 	return ""
 }

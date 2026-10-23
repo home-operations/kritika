@@ -390,9 +390,6 @@ func (f *File) validateOverrides(r *Overrides) error {
 			return err
 		}
 	}
-	if err := r.Review.Model.check(); err != nil {
-		return err
-	}
 	for _, e := range []struct {
 		key    string
 		effort *model.Effort
@@ -442,7 +439,7 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if err := validateAgent(r.Agent); err != nil {
 		return err
 	}
-	return validateReview(r)
+	return cmp.Or(f.validateAgents(r.Review.Agents), validateReview(r))
 }
 
 // validateAgent checks the agent bounds the file writes beyond its steps

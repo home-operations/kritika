@@ -6,16 +6,18 @@ import (
 	"testing"
 )
 
-// routesProviders declares the providers the routes' models name.
+// routesProviders declares the providers the agents' models name.
 const routesProviders = `providers:
   a: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }
   o: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
 `
 
-// routes is a review.model list of two routes and the default.
+// routes is review.agents with two agents that replace the default pass
+// and a specialist between them, which routes nothing.
 const routes = `review:
   effort: medium
-  model:
+  model: a/sonnet
+  agents:
     - name: deep
       model: a/opus
       effort: high
@@ -23,25 +25,29 @@ const routes = `review:
       when:
         - { name: migrations, paths: ["db/migrations/**"] }
         - { name: large, expr: pr.lines > 800 }
-    - model: o/small
+    - name: security
+      model: a/opus
+      categories: [security]
+    - name: bots
+      model: o/small
       when: [{ expr: pr.bot }]
-    - model: a/sonnet
 `
 
-func TestReviewModelRoutes(t *testing.T) {
+func TestAgentRoutes(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, routesProviders+routes+minimal)
 	a, _ := f.Account(ForgeGitHub, "acme")
-	m := f.Settings(a).Models
+	s := f.Settings(a)
+	m := s.Models
 	if m.Review != "a/sonnet" || m.Effort != "medium" || m.Fallback != "" || len(m.Routes) != 2 {
-		t.Fatalf("models = %+v; the last entry is the default", m)
+		t.Fatalf("models = %+v; the agents without categories are its routes", m)
 	}
-	if got := f.FileLayer().Review.Value; got != "a/sonnet, routes deep, o/small" {
-		t.Fatalf("FileLayer review = %q", got)
+	if _, ok := s.Reviewers["security"]; !ok || len(s.Reviewers) != 1 {
+		t.Fatalf("specialists = %+v, want security alone", s.Reviewers)
 	}
-	if !slices.ContainsFunc(f.UnpricedModels(), func(u UnpricedModel) bool { return u.Setting == "review.model[0].fallback" && u.Ref == "o/big" }) {
-		t.Fatalf("UnpricedModels = %+v, want the routes' models listed", f.UnpricedModels())
+	if !slices.ContainsFunc(f.UnpricedModels(), func(u UnpricedModel) bool { return u.Setting == "review.agents[0].fallback" && u.Ref == "o/big" }) {
+		t.Fatalf("UnpricedModels = %+v, want the agents' models listed", f.UnpricedModels())
 	}
 	bot := with(SamplePR(), "bot", true)
 	for _, tt := range []struct {
@@ -54,11 +60,11 @@ func TestReviewModelRoutes(t *testing.T) {
 		{"a migration among other files", SamplePR(), &Diff{Lines: 12, Changed: []string{"README.md", "db/migrations/0042.sql"}},
 			"a/opus", "high", "o/big", "deep (migrations)"},
 		{"a large change", SamplePR(), &Diff{Lines: 900, Changed: []string{"main.go"}}, "a/opus", "high", "o/big", "deep (large)"},
-		{"the first route that holds wins", bot, &Diff{Lines: 900, Changed: []string{"main.go"}}, "a/opus", "high", "o/big", "deep (large)"},
-		{"a route that sets no effort or fallback keeps the default's", bot, &Diff{Lines: 3, Changed: []string{"go.mod"}},
-			"o/small", "medium", "", "pr.bot"},
+		{"the first agent that holds wins", bot, &Diff{Lines: 900, Changed: []string{"main.go"}}, "a/opus", "high", "o/big", "deep (large)"},
+		{"an agent that sets no effort or fallback keeps the default's", bot, &Diff{Lines: 3, Changed: []string{"go.mod"}},
+			"o/small", "medium", "", "bots (pr.bot)"},
 		{"without the diff, paths and lines do not hold", SamplePR(), nil, "a/sonnet", "medium", "", ""},
-		{"no route holds", SamplePR(), &Diff{Lines: 3, Changed: []string{"main.go"}}, "a/sonnet", "medium", "", ""},
+		{"no agent holds", SamplePR(), &Diff{Lines: 3, Changed: []string{"main.go"}}, "a/sonnet", "medium", "", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := m.Pick(tt.vars, tt.diff)
@@ -70,6 +76,25 @@ func TestReviewModelRoutes(t *testing.T) {
 					got.Review, got.Effort, got.Fallback, got.Route, tt.review, tt.effort, tt.fallback, tt.route)
 			}
 		})
+	}
+}
+
+// TestAgentAlways: an agent without categories or conditions always
+// replaces the default pass, which is how an admin takes it over; one
+// that is off replaces nothing.
+func TestAgentAlways(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	f := mustLoad(t, routesProviders+`review:
+  model: a/sonnet
+  agents:
+    - { name: off, model: o/small, enabled: false }
+    - { name: always, model: a/opus }
+`+minimal)
+	a, _ := f.Account(ForgeGitHub, "acme")
+	got, err := f.Settings(a).Models.Pick(SamplePR(), nil)
+	if err != nil || got.Review != "a/opus" || got.Route != "always" {
+		t.Fatalf("Pick = %s by %q, %v; want the agent without conditions", got.Review, got.Route, err)
 	}
 }
 
@@ -94,29 +119,31 @@ func TestPickConditions(t *testing.T) {
 	}
 }
 
-func TestReviewModelRejects(t *testing.T) {
+func TestAgentRejects(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	model := func(entries string) string { return routesProviders + "review:\n  model:\n" + entries + minimal }
+	agents := func(entries string) string {
+		return routesProviders + "review:\n  model: a/sonnet\n  agents:\n" + entries + minimal
+	}
 	for _, tt := range []struct {
 		name, doc, want string
 	}{
-		{"an empty list", routesProviders + "review: { model: [] }\n" + minimal, "a list must end with the default model"},
-		{"a last entry with conditions", model("    - { model: a/opus, when: [{ expr: pr.bot }] }\n"), "[0]: the last entry is the default model"},
-		{"a last entry with an effort", model("    - { model: a/opus, effort: high }\n"), "[0]: the last entry is the default model"},
-		{"a route without conditions", model("    - { model: a/opus }\n    - { model: a/sonnet }\n"), "[0]: when is required"},
-		{"an entry without a model", model("    - { when: [{ expr: pr.bot }] }\n    - { model: a/sonnet }\n"), "[0]: model is required"},
-		{"an unknown key", model("    - { model: a/opus, when: [{ expr: pr.bot }], wen: x }\n    - { model: a/sonnet }\n"), "field wen not found"},
-		{"a condition with neither expr nor paths", model("    - { model: a/opus, when: [{ name: x }] }\n    - { model: a/sonnet }\n"),
-			"review.model[0].when[0]: expr or paths is required"},
-		{"a condition that fails the smoke test", model("    - { model: a/opus, when: [{ expr: 'pr.labels[5].name == \"x\"' }] }\n    - { model: a/sonnet }\n"),
-			"review.model[0].when[0]: smoke test"},
-		{"a route's model of no provider", model("    - { model: nope/x, when: [{ expr: pr.bot }] }\n    - { model: a/sonnet }\n"),
-			`review.model[0].model references provider "nope"`},
-		{"a route's fallback of no provider", model("    - { model: a/opus, fallback: nope/x, when: [{ expr: pr.bot }] }\n    - { model: a/sonnet }\n"),
-			`review.model[0].fallback references provider "nope"`},
-		{"a route's effort that is no level", model("    - { model: a/opus, effort: loud, when: [{ expr: pr.bot }] }\n    - { model: a/sonnet }\n"),
-			"review.model[0].effort must be"},
+		{"a review.model list", routesProviders + "review: { model: [{ model: a/opus }] }\n" + minimal,
+			"review.model takes one model; pick another for some pull requests with an agent of review.agents"},
+		{"an agent without a name", agents("    - { model: a/opus }\n"), "review.agents[0] (): name must be"},
+		{"the default pass's name", agents("    - { name: default, model: a/opus }\n"), `"default" is the default pass`},
+		{"a name twice", agents("    - { name: a, model: a/opus }\n    - { name: a, model: a/opus }\n"), "review.agents[1] (a): name is given twice"},
+		{"a replacing agent without a model", agents("    - { name: deep, when: [{ expr: pr.bot }] }\n"), "needs a model"},
+		{"a replacing agent with a specialist's key", agents("    - { name: deep, model: a/opus, instructions: Be thorough. }\n"),
+			"takes only name, enabled, model, fallback, effort and when"},
+		{"an unknown key", agents("    - { name: deep, model: a/opus, wen: x }\n"), "field wen not found"},
+		{"a condition with neither expr nor paths", agents("    - { name: deep, model: a/opus, when: [{ name: x }] }\n"),
+			"review.agents[0] (deep).when[0]: expr or paths is required"},
+		{"a condition that fails the smoke test", agents("    - { name: deep, model: a/opus, when: [{ expr: 'pr.labels[5].name == \"x\"' }] }\n"),
+			"review.agents[0] (deep).when[0]: smoke test"},
+		{"a model of no provider", agents("    - { name: deep, model: nope/x }\n"), `review.agents[0].model references provider "nope"`},
+		{"a fallback of no provider", agents("    - { name: deep, model: a/opus, fallback: nope/x }\n"), `review.agents[0].fallback references provider "nope"`},
+		{"an effort that is no level", agents("    - { name: deep, model: a/opus, effort: loud }\n"), "review.agents[0] (deep).effort must be"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := load(t, tt.doc)

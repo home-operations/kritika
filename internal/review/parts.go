@@ -88,6 +88,28 @@ type PartInput struct {
 	Index, Count int
 	// Paths are the files the part reviews.
 	Paths []string
+	// Reviewer is the reviewer the part is for in a review with several,
+	// whose own parts Index and Count count; "" in a review with one.
+	Reviewer string
+}
+
+// reviewerLead tells a part of a review with several reviewers what it
+// reviews, given the reviewer's name and what its share says of the parts.
+const reviewerLead = "\nThis pull request is reviewed by several reviewers, each an agent of its own, and you review it as the %s " +
+	"reviewer%s: the files marked (this part) above, whose diff below is all of the diff it shows. Report findings only on " +
+	"them, and on the files of any earlier finding below that you are asked to verify; read any other file you need to judge " +
+	"yours, but leave its findings to the reviewer of it.\n"
+
+// lead is what the prompt tells the part of what it reviews.
+func (p *PartInput) lead() string {
+	if p.Reviewer == "" {
+		return fmt.Sprintf(partLead, p.Count, p.Index)
+	}
+	share := ""
+	if p.Count > 1 {
+		share = fmt.Sprintf(", in %d parts, this one part %d", p.Count, p.Index)
+	}
+	return fmt.Sprintf(reviewerLead, p.Reviewer, share)
 }
 
 // partLead tells a part of a split review what it reviews, given the

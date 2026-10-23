@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -48,6 +49,9 @@ func stopError(r store.AgentRunRow) error {
 // admission is what a review holds before its runner starts.
 type admission struct {
 	lease *store.Lease
+	// reviewerLeases are its slots on the models of its other reviewers
+	// that are not the review model, by model.
+	reviewerLeases map[string]*store.Lease
 	// maxTokens is the agent's token budget for this review, or for each
 	// part of a split one.
 	maxTokens int64
@@ -89,17 +93,84 @@ func (w *Review) agentAdmit(
 	if l == nil {
 		return admission{}, "", "", errNoSlot
 	}
+	a := admission{lease: l}
+	if a.reviewerLeases, err = w.reviewerLeases(ctx, logger, account, settings, jobID); err != nil {
+		w.releaseLease(ctx, logger, l, string(ref))
+		return admission{}, "", "", err
+	}
 	// The caps are read under the lease, so concurrent reviews cannot all
 	// pass a cap of one.
 	budget, left, capped, err := w.agentCaps(ctx, account, settings)
 	if err != nil || capped != "" {
-		w.releaseLease(ctx, logger, l, string(ref))
+		w.release(ctx, logger, a, ref)
 		if err != nil {
 			return admission{}, "", "", err
 		}
 		return admission{}, store.ReviewCapped, capped, nil
 	}
-	return admission{lease: l, maxTokens: budget, monthLeft: left}, "", "", nil
+	a.maxTokens, a.monthLeft = budget, left
+	return a, "", "", nil
+}
+
+// release lets go of every slot a holds, ref being the review model.
+func (w *Review) release(ctx context.Context, logger *slog.Logger, a admission, ref configfile.ModelRef) {
+	if a.lease != nil {
+		w.releaseLease(ctx, logger, a.lease, string(ref))
+	}
+	for model, l := range a.reviewerLeases {
+		w.releaseLease(ctx, logger, l, model)
+	}
+}
+
+// noSlot is errNoSlot for the model whose every slot is held.
+type noSlot struct{ model string }
+
+func (e noSlot) Error() string        { return errNoSlot.Error() + ": " + e.model }
+func (e noSlot) Is(target error) bool { return target == errNoSlot }
+
+// reviewerLeases takes a slot on each model, other than the review model,
+// that one of settings' reviewers that is on reviews with, settings being
+// cut to those the review may run (see mayRun): which of them have files
+// to read is known only once the runner has the diff, so a review holds
+// one for each that may. A model with no free slot lets go of those taken
+// and is a noSlot.
+func (w *Review) reviewerLeases(
+	ctx context.Context, logger *slog.Logger, account *configfile.Account, settings configfile.Settings, jobID int64,
+) (map[string]*store.Lease, error) {
+	var out map[string]*store.Lease
+	for _, model := range reviewerModelKeys(settings) {
+		l, err := w.Store.TakeLease(ctx, account.ID(), model, settings.Limits.Concurrency, jobID)
+		if err == nil && l == nil {
+			err = noSlot{model: model}
+		}
+		if err != nil {
+			for m, held := range out {
+				w.releaseLease(ctx, logger, held, m)
+			}
+			return nil, err
+		}
+		if out == nil {
+			out = map[string]*store.Lease{}
+		}
+		out[model] = l
+	}
+	return out, nil
+}
+
+// reviewerModelKeys are the models, other than the review model, the
+// repository's reviewers that are on review with, sorted.
+func reviewerModelKeys(settings configfile.Settings) []string {
+	var out []string
+	for name, r := range settings.Reviewers {
+		if name == review.DefaultReviewer || !r.On() {
+			continue
+		}
+		if m := string(r.Models(settings.Models).Review); m != string(settings.Models.Review) && !slices.Contains(out, m) {
+			out = append(out, m)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // agentCaps is the token budget a review may spend and what the month's
@@ -146,15 +217,15 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 
 // agentPrompt reads what the runner needs to write the prompt and to tell
 // a review the worker will skip: the pull request as the repository filter
-// sees it, the issues its description says it closes, and, for a bot
+// sees it, pull, read once for the whole job, the issues its description says it closes, and, for a bot
 // author, the patch id of its last prepared review, which afterRun skips as
 // unchanged. The notes say which issues could not be read.
 func (w *Review) agentPrompt(
-	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
-	client forge.Client, logger *slog.Logger,
+	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, pull repoconfig.PullRequest, eff Effective,
+	prior priorReview, client forge.Client, logger *slog.Logger,
 ) (*runner.Prompt, []string, error) {
 	p := &runner.Prompt{
-		Repository: pr.repository, Context: eff.Review.Context,
+		Repository: pr.repository, Context: eff.Review.Context, PullRequest: pull,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Diagram: eff.Review.Diagram,
 		MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings), Dismissed: dismissedFindings(prior.dismissed),
 		PriorChecked: prior.checked,
@@ -163,10 +234,6 @@ func (w *Review) agentPrompt(
 		p.PriorDiagram = prior.diagram
 	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		var err error
-		if p.PullRequest, err = store.ReadFilterPullRequest(ctx, tx, pr.id); err != nil {
-			return err
-		}
 		// The rules' when conditions are judged here, before the runner cuts the
 		// body, so a rule applies as it will when the worker reads the run.
 		judged := p.PullRequest
@@ -314,27 +381,30 @@ func pinModels(
 	return models
 }
 
-// agentSpec gives spec its agent: the prompt, the gateway and a run
-// token for it, granting models, which lets it carry on cont when that is
-// set, and the agent's bounds, for a review sized for size's parts. The
+// agentSpec gives spec its agent: the prompt, with the reviewers it runs,
+// the gateway and a run token for it, granting models and each other
+// reviewer's grants, which lets it carry on cont when that is set, and the
+// agent's bounds, for a review sized for size's parts. The
 // token is minted last, so an error leaves none behind; the caller
 // revokes it once the run ends. It returns the runner Job's deadline,
 // which the agent's timeout may lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, models configfile.Models,
 	prior priorReview, cont *runner.Continuation, admitted admission, size sizing, spec *runner.Spec, secrets *runner.Secrets,
-	deadline time.Duration, client forge.Client, logger *slog.Logger,
+	deadline time.Duration, client forge.Client, logger *slog.Logger, pull repoconfig.PullRequest, chosen reviewers,
+	grants map[string]store.ReviewerGrant,
 ) (time.Duration, []string, error) {
 	settings := eff.Settings
-	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior, client, logger)
+	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, pull, eff, prior, client, logger)
 	if err != nil {
 		return deadline, nil, err
 	}
+	prompt.Reviewers = chosen.specs
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort),
-		Budget: admitted.budget(size.parts),
+		Budget: admitted.budget(size.parts), Reviewers: grants,
 	}
 	if cont != nil {
 		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session

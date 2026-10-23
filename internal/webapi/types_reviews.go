@@ -64,6 +64,9 @@ type Finding struct {
 	ReactionsDown int `json:"reactionsDown"`
 	// Rules are the ids of the review rules it enforces.
 	Rules []string `json:"rules"`
+	// Reviewers are the reviewers that raised it, empty for the default
+	// reviewer alone.
+	Agents []string `json:"agents"`
 	// Status is what became of it on its pull request: whether a later
 	// review no longer reported it, or a maintainer dismissed it, with
 	// DismissReason the reason they gave.
@@ -132,13 +135,19 @@ type AgentRun struct {
 }
 
 // AgentPart is one part of a split review: its files, why its agent
-// stopped, with the error it ended on, and its steps.
+// stopped, with the error it ended on, its steps, and what its model calls
+// cost, 0 once they are swept. Reviewer is the reviewer it was for in a
+// review with several, and Full says it reviewed the whole change of a
+// review that built on the last one.
 type AgentPart struct {
 	ReusedFrom string   `json:"reusedFrom,omitzero"`
+	Agent      string   `json:"agent,omitzero"`
+	Full       bool     `json:"full,omitzero"`
 	Paths      []string `json:"paths"`
 	Stop       string   `json:"stop"`
 	Error      string   `json:"error"`
 	Steps      int      `json:"steps"`
+	CostUSD    float64  `json:"costUsd,omitzero"`
 }
 
 // UsageRow is one usage row charged to a review.

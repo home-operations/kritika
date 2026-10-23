@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1008,7 +1009,7 @@ func checkFollowUpGrant(ctx context.Context, t *testing.T, s *Store, alpha strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.LookupGatewayToken(ctx, followUp); err != nil || got != fg {
+	if got, err := s.LookupGatewayToken(ctx, followUp); err != nil || !reflect.DeepEqual(got, fg) {
 		t.Fatalf("follow-up grant = %+v, %v; want %+v", got, err, fg)
 	}
 	if err := s.RevokeGatewayTokens(ctx, fg.RunID); err != nil {
@@ -1059,7 +1060,7 @@ func TestGatewayTokens(t *testing.T) {
 		t.Fatalf("the token itself is stored: %d, %v", stored, err)
 	}
 	got, err := s.LookupGatewayToken(ctx, token)
-	if err != nil || got != g {
+	if err != nil || !reflect.DeepEqual(got, g) {
 		t.Fatalf("grant = %+v, %v; want %+v", got, err, g)
 	}
 	for range 2 {

@@ -106,6 +106,14 @@ type ReviewArgs struct {
 	// deduped against a prior run of the same head, including another of
 	// its kind.
 	Request string `json:"request,omitempty" river:"unique"`
+	// Reviewer, on a re-run someone asked for, names the one reviewer it
+	// runs, whatever its paths and conditions; "" runs every reviewer that
+	// applies.
+	Reviewer string `json:"reviewer,omitempty"`
+	// Requested is the word a re-run's request wrote after review that
+	// names no reviewer, which the review states it ran every reviewer in
+	// place of; it leaves the request one of every reviewer.
+	Requested string `json:"requested,omitempty"`
 }
 
 // Kind implements river.JobArgs.

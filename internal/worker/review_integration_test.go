@@ -3164,6 +3164,24 @@ func checkEnqueueRerun(
 	if _, err := rerun(); !errors.Is(err, jobs.ErrRerunQueued) {
 		t.Fatalf("a second EnqueueRerun while the first is queued = %v, want ErrRerunQueued", err)
 	}
+	// A re-run of one reviewer is not the one in flight, which runs them
+	// all: it is refused rather than taken to stand in for it.
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := jobs.EnqueueReviewerRerun(ctx, tx, insertOnly, accountID, repoID, 1, "security", "")
+		return err
+	})
+	if !errors.Is(err, jobs.ErrRerunOther) || !errors.Is(err, jobs.ErrRerunQueued) {
+		t.Fatalf("a security re-run while a full one is queued = %v, want ErrRerunOther", err)
+	}
+	// A word that names no reviewer asks for every one, which the queued
+	// review stands in for.
+	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := jobs.EnqueueReviewerRerun(ctx, tx, insertOnly, accountID, repoID, 1, "", "please")
+		return err
+	})
+	if !errors.Is(err, jobs.ErrRerunQueued) || errors.Is(err, jobs.ErrRerunOther) {
+		t.Fatalf("a re-run naming no reviewer while a full one is queued = %v, want ErrRerunQueued alone", err)
+	}
 
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) && countReviewsByStatus(ctx, t, appStore, accountID, rerunHead, "completed") < 2 {

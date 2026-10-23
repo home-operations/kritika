@@ -166,7 +166,7 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 		fmt.Fprintf(&b, "- %s%s%s\n", p, marks[p], in.Part.mark(p))
 	}
 	if in.Part != nil {
-		fmt.Fprintf(&b, partLead, in.Part.Count, in.Part.Index)
+		b.WriteString(in.Part.lead())
 	}
 	writeBumps(&b, "Versions the change moves", in.Bumps)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
@@ -536,7 +536,19 @@ func priorLine(f Finding) string {
 }
 
 func findingText(f Finding) string {
-	return fmt.Sprintf("%s:%d [%s] %s: %s", f.Path, f.Line, f.Severity, oneLine(f.Title), oneLine(f.Explanation))
+	text := fmt.Sprintf("%s:%d [%s] %s: %s", f.Path, f.Line, f.Severity, oneLine(f.Title), oneLine(f.Explanation))
+	if by := f.AgentNames(); by != "" {
+		text += " (raised by the " + by + " agent" + plural(len(f.Agents)) + ")"
+	}
+	return text
+}
+
+// plural is the s a count of n of a noun takes.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // ShortSHA is the first seven characters of a commit SHA, as logs and

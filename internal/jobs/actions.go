@@ -27,6 +27,12 @@ var ErrNotCancelable = errors.New("jobs: review is not in a cancelable state")
 // a second run would pay the model twice and publish its findings twice.
 var ErrRerunQueued = errors.New("jobs: a review of this head is already queued or running")
 
+// ErrRerunOther is ErrRerunQueued for a re-run whose reviewer, or every
+// reviewer when it names none, is not the one the review in flight runs:
+// that review does not stand in for it, and starting it would cancel that
+// review, so it is refused for the one asking to try again.
+var ErrRerunOther = fmt.Errorf("%w for other reviewers", ErrRerunQueued)
+
 // ErrRepositoryNotFound is returned by EnqueueReindex when repositoryID does
 // not exist in accountID.
 var ErrRepositoryNotFound = errors.New("jobs: repository not found")
@@ -49,7 +55,16 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual)
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, "", "")
+}
+
+// EnqueueReviewerRerun is EnqueueRerun for a re-run of reviewer alone, the
+// one whose name someone wrote after "@<bot> review", or of every reviewer
+// with requested, a word written there that names none.
+func EnqueueReviewerRerun(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, reviewer, requested string,
+) (int64, error) {
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, reviewer, requested)
 }
 
 // EnqueueLabelChange queues a review of number's current head for trigger,
@@ -60,11 +75,12 @@ func EnqueueRerun(
 func EnqueueLabelChange(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger)
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger, "", "")
 }
 
 func enqueueFresh(
-	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
+	trigger, reviewer, requested string,
 ) (int64, error) {
 	var headSHA string
 	err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests
@@ -82,26 +98,34 @@ func enqueueFresh(
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}
-	var busy bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS (
+	// same is whether a live job of the head runs the reviewers this one
+	// would, which then stands in for it; a review row with no live job
+	// is taken to.
+	var busy, same bool
+	err = tx.QueryRow(ctx, `WITH live AS (
+			SELECT coalesce(args->>'reviewer', '') AS reviewer FROM river_job
+			WHERE kind IN ($5, 'review_prepare', 'review_publish') AND state IN (`+LiveStatesSQL()+`)
+				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+				AND args->>'head_sha' = $4)
+		SELECT EXISTS (
 			SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
 			WHERE p.account_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
 				AND r.status IN ('running', 'prepared'))
-		OR EXISTS (
-			SELECT 1 FROM river_job
-			WHERE kind IN ($5, 'review_prepare', 'review_publish') AND state IN (`+LiveStatesSQL()+`)
-				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
-				AND args->>'head_sha' = $4)`,
-		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
+			OR EXISTS (SELECT 1 FROM live),
+			NOT EXISTS (SELECT 1 FROM live) OR EXISTS (SELECT 1 FROM live WHERE reviewer = $6)`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind(), reviewer).Scan(&busy, &same)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: look up running reviews: %w", err)
 	}
-	if busy {
+	switch {
+	case busy && same:
 		return 0, ErrRerunQueued
+	case busy:
+		return 0, ErrRerunOther
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		AccountID: accountID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,
-		Trigger: trigger, Request: uuid.NewString(),
+		Trigger: trigger, Request: uuid.NewString(), Reviewer: reviewer, Requested: requested,
 	}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)

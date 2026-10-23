@@ -75,6 +75,17 @@ type Review struct {
 	Fixes    *bool                  `yaml:"fixes,omitempty"`
 	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
 	Diagram  *bool                  `yaml:"diagram,omitempty"`
+	// Agents add agents of the repository's own, its own that replace the
+	// default pass replacing the admin's; under the name of an admin's
+	// specialist, they may only add rules and skill scopes to it.
+	Agents []configfile.Reviewer `yaml:"agents,omitempty"`
+}
+
+// ownAgents are r's agents but one under the default pass's name, which
+// Merge drops with a note, whatever it writes, rather than the file being
+// refused for it.
+func (r Review) ownAgents() []configfile.Reviewer {
+	return slices.DeleteFunc(slices.Clone(r.Agents), func(a configfile.Reviewer) bool { return a.Name == review.DefaultReviewer })
 }
 
 // Confidence is how the repository's reviews are judged: the model that
@@ -179,6 +190,9 @@ func Parse(data []byte) (File, error) {
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
+	if err := configfile.CheckAgents(f.Review.ownAgents()); err != nil {
+		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
 			return File{}, err
@@ -187,9 +201,6 @@ func Parse(data []byte) (File, error) {
 
 	if err := f.Trigger.Compile(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: trigger.%w", err)
-	}
-	if err := f.Review.Model.Compile(); err != nil {
-		return File{}, fmt.Errorf("repoconfig: review.model%w", err)
 	}
 
 	return f, nil
@@ -208,7 +219,8 @@ func validateRefPath(p string) error {
 
 // Referenced lists the in-repo paths the file names whose contents a
 // review reads: its rules' files first, then the summary and finding
-// templates, deduplicated in the order first seen. Context files are
+// templates, then its reviewers' files, deduplicated in the order first
+// seen. Context files are
 // pointers the agent follows with its tools.
 func (f File) Referenced() []string {
 	seen := make(map[string]bool, len(f.Rules)+2)
@@ -227,6 +239,10 @@ func (f File) Referenced() []string {
 		if t != nil {
 			add(*t)
 		}
+	}
+	specialists, _ := configfile.SplitAgents(f.Review.ownAgents())
+	for _, p := range configfile.ReviewerFiles(specialists) {
+		add(p)
 	}
 	return out
 }

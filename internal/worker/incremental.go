@@ -32,6 +32,8 @@ type priorReview struct {
 	// confidence is its confidence score and risk, nil when it was not
 	// scored.
 	confidence *review.Confidence
+	// reviewers are the reviewers whose agent submitted for it.
+	reviewers []string
 }
 
 type priorFinding struct {
@@ -49,7 +51,7 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 		return priorReview{}, err
 	}
 	p := priorReview{id: row.ID, headSHA: row.HeadSHA, trigger: row.Trigger, mergeBase: row.MergeBase,
-		changed: row.Changed, diagram: row.Diagram, checked: row.Checked, confidence: row.Confidence}
+		changed: row.Changed, diagram: row.Diagram, checked: row.Checked, confidence: row.Confidence, reviewers: row.Reviewers}
 	p.findings = slices.Grow(p.findings, len(row.Findings))
 	for _, f := range row.Findings {
 		p.findings = append(p.findings, priorFinding{Finding: f.Finding, postedInline: f.PostedInline, commentID: f.CommentID})

@@ -63,7 +63,7 @@ func TestPartSpec(t *testing.T) {
 	s.Prompt.Prior = []review.Finding{{Path: "a/x.go", Title: "mine"}, {Path: "b/y.go", Title: "theirs"}}
 	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "b/y.go"}, {Path: "a/x.go"}}
 	s.Prompt.PriorDiagram = "flowchart LR\n  a --> b"
-	got := partSpec(s, []string{"a/x.go"})
+	got := partSpec(s, []string{"a/x.go"}, "")
 	if len(got.Prompt.Prior) != 1 || got.Prompt.Prior[0].Title != "mine" || len(got.Prompt.Dismissed) != 1 ||
 		got.Prompt.Dismissed[0].Path != "a/x.go" || got.Prompt.PriorDiagram != "" {
 		t.Fatalf("part spec prompt = %+v", got.Prompt)
@@ -130,8 +130,8 @@ func TestPartPrompts(t *testing.T) {
 	res := &gitfetch.Result{Diff: diff, Changed: []string{"a/x.go", "b/y.go"}}
 	split := [][]string{{"a/x.go"}, {"b/y.go"}}
 	var tools agentTools
-	parts, chunks, rules, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil, split,
-		review.ScopeFull, &tools, slog.New(slog.DiscardHandler))
+	parts, chunks, rules, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
+		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,8 +158,8 @@ func TestPartPrompts(t *testing.T) {
 		}
 	}
 	s.Prompt.Rules = nil
-	if _, _, rules, err = partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil, split,
-		review.ScopeFull, &tools, slog.New(slog.DiscardHandler)); err != nil {
+	if _, _, rules, err = partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
+		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	if rules == nil || len(rules) != 0 {
@@ -189,7 +189,7 @@ func TestPartPromptsContext(t *testing.T) {
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
 	parts, chunks, _, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		[][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull, &tools, slog.New(slog.DiscardHandler))
+		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestPartPromptsContext(t *testing.T) {
 	if strings.Contains(parts[1].prompt.user, "### similar: lib/z.go") {
 		t.Fatalf("part 2's prompt holds the similar code its budget left out:\n%.2000s", parts[1].prompt.user)
 	}
-	if notes := splitNotes(parts); !slices.Contains(notes, "1 context chunk(s) left out of the prompt to fit its budget") {
+	if notes := splitNotes(parts, splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull)); !slices.Contains(notes, "1 context chunk(s) left out of the prompt to fit its budget") {
 		t.Fatalf("notes = %q", notes)
 	}
 }

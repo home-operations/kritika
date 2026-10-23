@@ -23,7 +23,7 @@ Everything else is optional:
 | Try another model when a call fails | [`review.fallback`](#fallback) |
 | Retry temporary failures | Provider [`retries`](#retries) |
 | Adjust reasoning effort | [`review.effort`](#effort) |
-| Use a stronger model for some pull requests | [Model routes](#model-routes) |
+| Use a stronger model for some pull requests | [Agents that replace the default pass](#agents-that-replace-the-default-pass) |
 | Score reviews or approve pull requests | [`confidence.model`](confidence.md) |
 | Search for similar code | [`embedding.model`](#the-embedder) |
 | Use a different model for one repository | [Repository settings](repository-config.md#models) |
@@ -468,56 +468,61 @@ Both are set in the configuration file. In Helm, use
 repository page shows each repository's effective levels beside its
 models.
 
-## Model routes
+## Agents that replace the default pass
 
-`review.model` may be a list of routes instead of one model, which pick
-another model for some pull requests. The list ends with the default, an
-entry with `model` alone. The first route one of whose conditions holds
-picks the review's model, and a pull request no route picks gets the
-default:
+`review.model` is the default pass's model. An agent of `review.agents`
+without `categories` replaces it for the pull requests its conditions hold
+for: the first such agent that holds picks the review's model, and a pull
+request none picks gets the default:
 
 ```yaml
 review:
-  model:
-    - name: deep
+  model: anthropic/claude-sonnet-5-5     # the default pass
+  fallback: anthropic/claude-haiku-5-5
+  effort: medium
+  agents:
+    - name: deep                         # every category: replaces the default pass
       model: anthropic/claude-opus-5-5
       effort: high
       when:
         - { name: migrations, paths: ["db/migrations/**"] }
         - { name: large, expr: pr.lines > 800 }
-    - model: anthropic/claude-sonnet-5-5
-  fallback: anthropic/claude-sonnet-5-5
-  effort: medium
 ```
 
-- A route's `when` takes the conditions `trigger.include` does
+An agent with `categories` reviews beside the default pass instead; see
+[agents](repository-config.md#agents).
+
+- An agent's `when` takes the conditions `trigger.include` does
   ([trigger conditions](configuration.md#which-pull-requests-are-reviewed)):
   an `expr`, `paths` or both, when both must hold, with an optional
   `name`. One condition holding is enough, and `paths` holds when one
-  changed file matches, whatever else the pull request changes.
+  changed file matches, whatever else the pull request changes. An agent
+  without `when` always replaces the default pass, which is how an admin
+  takes it over for every pull request.
 - The conditions are judged as the review starts, over the whole pull
   request against its base rather than its last push, so a pull request
-  keeps its route while it still changes what picked it, and its reviews'
+  keeps its agent while it still changes what picked it, and its reviews'
   conversation and findings stay on one model.
 - A condition with `paths` or `pr.lines` reads the pull request's diff
   from the forge before any model is called. A diff the forge will not
   give whole leaves those conditions not holding; the others are judged
   as ever.
-- A route may set its own `effort` and `fallback`; otherwise
-  `review.effort` and `review.fallback` apply. The default takes `model`
-  alone: `review.effort` and `review.fallback` are its own.
-- The summary's footer names the route and the condition that picked the
-  model, as `via deep (migrations)`.
-- A repository's `.kritika.yaml` that writes `review.model` replaces the
-  instance's, routes and all. Every model its list names must be of a
-  provider the account may use, or the whole list is dropped
-  ([repository models](repository-config.md#models)).
-- A route's model waits for its own [`concurrency`](configuration.md#accounts)
+- Such an agent takes only `name`, `model`, `fallback`, `effort`, `when`
+  and `enabled`. Its `effort` and `fallback` replace `review.effort` and
+  `review.fallback` where it sets them.
+- The summary's footer names the agent and the condition that picked the
+  model, as `via deep (migrations)`, and `@<bot> review deep` runs the
+  default pass on that agent's model whatever its conditions.
+- A repository's `.kritika.yaml` that writes `review.model`, or agents of
+  this kind, replaces the instance's agents of this kind, whole. Every
+  model they name must be of a provider the account may use, or they are
+  all dropped ([repository models](repository-config.md#models)).
+- An agent's model waits for its own [`concurrency`](configuration.md#accounts)
   slots, as a repository's own model does. Follow-ups run on the default.
 
-Since `paths` holds when any changed file matches, routes suit picking a
-stronger model for what a change touches. A pull request a route misses
-gets the default, as it would without routes; a route for pull requests
+Since `paths` holds when any changed file matches, these agents suit
+picking a stronger model for what a change touches. A pull request none
+picks gets the default, as it would without them; one for pull requests
 that change only some paths, such as documentation alone, cannot be
 written.
 

@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // gatewayTokenPrefix marks a run token, so a leaked one is recognisable.
@@ -36,6 +39,29 @@ type GatewayGrant struct {
 	// carry on, "" for none, and Session the conversation its steps are
 	// sent as, "" for its own.
 	Continues, Session string
+	// Reviewers are the models of the reviewers other than the default
+	// one the run may run, by name; a step for one names it, and a step
+	// that names none is the default reviewer's, on Model.
+	Reviewers map[string]ReviewerGrant
+}
+
+// ReviewerGrant is what one reviewer's steps may call: its provider/model
+// references and its effort, as GatewayGrant's own.
+type ReviewerGrant struct {
+	Model    string `json:"model"`
+	Fallback string `json:"fallback,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+}
+
+// For is what a step for reviewer may call: the grant's own models for
+// the default reviewer, named or not, and a granted reviewer's for
+// another; false for a reviewer the grant does not name.
+func (g GatewayGrant) For(reviewer string) (ReviewerGrant, bool) {
+	if reviewer == "" || reviewer == review.DefaultReviewer {
+		return ReviewerGrant{Model: g.Model, Fallback: g.Fallback, Effort: g.Effort}, true
+	}
+	r, ok := g.Reviewers[reviewer]
+	return r, ok
 }
 
 // MintGatewayToken stores a new run token for g, valid until expires, and
@@ -44,12 +70,20 @@ func (s *Store) MintGatewayToken(ctx context.Context, g GatewayGrant, expires ti
 	raw := make([]byte, 32)
 	_, _ = rand.Read(raw) // never fails
 	token := gatewayTokenPrefix + hex.EncodeToString(raw)
-	_, err := s.app.Exec(ctx, `INSERT INTO gateway_tokens
+	grants := g.Reviewers
+	if grants == nil {
+		grants = map[string]ReviewerGrant{}
+	}
+	reviewers, err := json.Marshal(grants)
+	if err != nil {
+		return "", fmt.Errorf("store: encode gateway token reviewers: %w", err)
+	}
+	_, err = s.app.Exec(ctx, `INSERT INTO gateway_tokens
 		(token_hash, runner_run_id, account_id, review_id, repository_id, model, fallback, effort, budget_tokens, expires_at, followup_comment_id,
-		 continues, session)
-		VALUES ($1, $2, $3, nullif($4, '')::uuid, $5, $6, $7, $8, $9, $10, nullif($11::bigint, 0), nullif($12, '')::uuid, $13)`,
+		 continues, session, agents)
+		VALUES ($1, $2, $3, nullif($4, '')::uuid, $5, $6, $7, $8, $9, $10, nullif($11::bigint, 0), nullif($12, '')::uuid, $13, $14::jsonb)`,
 		tokenHash(token), g.RunID, g.AccountID, g.ReviewID, g.RepositoryID, g.Model, g.Fallback, g.Effort, g.Budget, expires, g.FollowupCommentID,
-		g.Continues, g.Session)
+		g.Continues, g.Session, reviewers)
 	if err != nil {
 		return "", fmt.Errorf("store: mint gateway token: %w", err)
 	}
@@ -63,16 +97,23 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 		return GatewayGrant{}, ErrGatewayToken
 	}
 	var g GatewayGrant
+	var reviewers []byte
 	err := s.app.QueryRow(ctx, `SELECT runner_run_id, account_id, coalesce(review_id::text, ''), repository_id, model, fallback, effort,
-		budget_tokens, spent_tokens, coalesce(followup_comment_id, 0), coalesce(continues::text, ''), session
+		budget_tokens, spent_tokens, coalesce(followup_comment_id, 0), coalesce(continues::text, ''), session, agents
 		FROM gateway_tokens WHERE token_hash = $1 AND expires_at > now()`, tokenHash(token)).
 		Scan(&g.RunID, &g.AccountID, &g.ReviewID, &g.RepositoryID, &g.Model, &g.Fallback, &g.Effort, &g.Budget, &g.Spent, &g.FollowupCommentID,
-			&g.Continues, &g.Session)
+			&g.Continues, &g.Session, &reviewers)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return GatewayGrant{}, ErrGatewayToken
 	}
 	if err != nil {
 		return GatewayGrant{}, fmt.Errorf("store: look up gateway token: %w", err)
+	}
+	if err := json.Unmarshal(reviewers, &g.Reviewers); err != nil {
+		return GatewayGrant{}, fmt.Errorf("store: decode gateway token reviewers: %w", err)
+	}
+	if len(g.Reviewers) == 0 {
+		g.Reviewers = nil
 	}
 	return g, nil
 }

@@ -590,8 +590,9 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a model route on a changed path picks the review's model", func(t *testing.T) { checkAgentRouted(t, h) })
 }
 
-// checkAgentRouted: a review.model route on a path the pull request
-// changes runs every step of the review on its model, which the summary's
+// checkAgentRouted: an agent without categories on a path the pull
+// request changes replaces the default pass, running every step of the
+// review on its model, which the summary's
 // footer names with the route, and still does after a push that changes
 // other files, the route being judged over the whole pull request. The
 // default model's one slot is held throughout, which a review routed to
@@ -600,14 +601,15 @@ func checkAgentRouted(t *testing.T, h *agenticHarness) {
 	holder := int64(-1)
 	holdModelSlot(t, h, "gateway/agent-model", &holder)
 	t.Cleanup(func() { holdModelSlot(t, h, "gateway/agent-model", nil) })
-	m := &configfile.ReviewModel{Default: "gateway/agent-model", Routes: []configfile.ModelRoute{{
+	agents := []configfile.Reviewer{{
 		Name: "deep", Model: "gateway/agent-deep", When: []configfile.Filter{{Name: "schema", Paths: []string{"*.sql"}}},
-	}}}
-	if err := m.Compile(); err != nil {
+	}}
+	if err := configfile.CheckAgents(agents); err != nil {
 		t.Fatal(err)
 	}
 	routed := *h.file
-	routed.Defaults.Review.Model = m
+	routed.Defaults.Review.Model = &configfile.ReviewModel{Default: "gateway/agent-model"}
+	routed.Defaults.Review.Agents = agents
 	h.review.Current.Set(&routed)
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	for _, push := range []struct{ path, content string }{

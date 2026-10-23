@@ -162,6 +162,7 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 		p.invalidAnswer = true
 		return nil, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
 	}
+	p.parse.Reviewers = ranReviewers(run.Parts)
 	res, dropped, err := review.Parse(string(run.Result), review.Anchors(diff), p.parse)
 	if err != nil {
 		p.invalidAnswer = true
@@ -184,7 +185,13 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	// and never posted inline, so there is nothing to spare the reader.
 	if p.scope == review.ScopeIncremental {
 		held := review.HoldBack(reviewFindings(p.prior.findings), slices.Concat(res.Findings, unanchored), delta, deltaPaths)
-		if res.Findings, p.heldBack = splitHeld(res.Findings, held); len(p.heldBack) > 0 {
+		// A reviewer the last review did not run reviewed the whole change,
+		// so its findings are not held to what changed since.
+		full := fullReviewers(run.Parts)
+		incremental := func(f review.Finding) bool {
+			return held(f) && !slices.ContainsFunc(full, f.RaisedBy)
+		}
+		if res.Findings, p.heldBack = splitHeld(res.Findings, incremental); len(p.heldBack) > 0 {
 			p.logger.Info("findings held back", "count", len(p.heldBack))
 		}
 	}
@@ -256,6 +263,11 @@ func unfinishedParts(parts []store.AgentPart) []string {
 		if n := len(files); n > maxNamedFiles {
 			files = append(slices.Clone(files[:maxNamedFiles]), fmt.Sprintf("%d more", n-maxNamedFiles))
 		}
+		if part.Reviewer != "" {
+			notes = append(notes, fmt.Sprintf("Part %d of %d, the %s agent's, ended before it submitted, so it did not review: %s",
+				i+1, len(parts), part.Reviewer, strings.Join(files, ", ")))
+			continue
+		}
 		notes = append(notes, fmt.Sprintf("Part %d of %d ended before it submitted, so its files went unreviewed: %s",
 			i+1, len(parts), strings.Join(files, ", ")))
 	}
@@ -266,8 +278,8 @@ func unfinishedParts(parts []store.AgentPart) []string {
 const maxNamedFiles = 5
 
 // skipDescription is how the commit status states a skip: a repository's
-// own reason or a bot's unchanged patch, and for a filtered one the name of
-// the condition that decided, "" for none.
+// own reason or a bot's unchanged patch, and for a filtered one the name
+// of the condition that decided, "" for none.
 func skipDescription(reason, filter string) string {
 	if reason == runner.SkipUnchangedPatch {
 		return "patch unchanged since the last review"
@@ -438,6 +450,7 @@ func (p *publishPhase) writeBack(
 		Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
 		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
+		Agents:      p.parse.Reviewers,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}

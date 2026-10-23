@@ -31,6 +31,13 @@
   const segs = $derived(d.runnerRun ? segments(d.runnerRun, clock.now) : []);
   const totalMs = $derived(segs.reduce((a, s) => a + s.ms, 0));
   const split = $derived((d.agentRun?.parts.length ?? 0) > 1);
+  // agentCosts sums each agent's parts' cost, the default agent's being the parts with none named.
+  const agentCosts = $derived.by(() => {
+    const m = new Map<string, number>();
+    for (const p of d.agentRun?.parts ?? []) m.set(p.agent ?? 'default', (m.get(p.agent ?? 'default') ?? 0) + (p.costUsd ?? 0));
+    return m;
+  });
+  const named = $derived((d.agentRun?.parts ?? []).some((p) => p.agent));
   // A split review's steps are named by part and by step within the part.
   const steps = $derived.by(() => {
     const seen = new Map<number, number>();
@@ -101,19 +108,20 @@
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />
     {/if}
-    {#if split}
+    {#if split || named}
       <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data" aria-label="Parts">
           <thead>
-            <tr><th scope="col" class="num">Part</th><th scope="col">Files</th><th scope="col" class="num">Steps</th><th scope="col">Ended</th><th scope="col">Error</th></tr>
+            <tr><th scope="col" class="num">Part</th><th scope="col">Files</th><th scope="col" class="num">Steps</th><th scope="col" class="num">Cost</th><th scope="col">Ended</th><th scope="col">Error</th></tr>
           </thead>
           <tbody>
             {#each a.parts as p, i (i)}
               {@const files = `${p.paths.length} ${p.paths.length === 1 ? 'file' : 'files'} in`}
               <tr>
-                <td class="num">{i + 1}</td>
-                <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span></td>
+                <td class="num">{p.agent ? `${p.agent} · part ${i + 1}` : i + 1}</td>
+                <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span>{#if p.full}<span class="small muted text-ui-sm"> · whole change</span>{/if}</td>
                 <td class="num">{p.steps}</td>
+                <td class="num">{p.costUsd !== undefined ? costTotal(p.costUsd) : ''}</td>
                 <td title={p.reusedFrom ? `Reused from run ${p.reusedFrom}` : undefined}>{p.reusedFrom ? 'Reused' : p.stop}</td>
                 <td class="error-cell text-danger text-ui-sm max-w-80 [word-break:break-word]">{p.error}</td>
               </tr>
@@ -121,6 +129,9 @@
           </tbody>
         </table>
       </div>
+      {#if named}
+        <p class="small muted text-ui-sm mx-4 my-2">Cost by agent: {[...agentCosts].map(([name, c]) => `${name} ${costTotal(c)}`).join(' · ')}</p>
+      {/if}
     {/if}
     <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
       <dt>Model</dt><dd class="mono">{a.model}</dd>

@@ -100,13 +100,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	pr, client, owner, repo, mergeBase, eff := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.eff
 	settings := eff.Settings
-	admitted, done, err := w.admit(ctx, b.early, job, file, account, settings)
+	admitted, done, err := w.admit(ctx, b.early, job, file, account, mayRun(eff, args))
 	if done {
 		return err
 	}
-	if admitted.lease != nil {
-		defer w.releaseLease(ctx, logger, admitted.lease, string(settings.Models.Review))
-	}
+	defer w.release(ctx, logger, admitted, settings.Models.Review)
 
 	// The status says the review is under way until its outcome replaces
 	// it, so a head is never silent while its runner works. It is set under
@@ -178,7 +176,15 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	granted := pinModels(ctx, logger, w.Steppers, file, account, settings.Models)
 	spec.CheckpointScope = fmt.Sprintf("%s/%s/%s", file.Hash(), granted.Effort, granted.Fallback)
 	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, granted.Review, provider.Type)
-	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
+	pull, vars, err := w.readPull(ctx, args.AccountID, pr.id, args.Trigger)
+	if err != nil {
+		return w.agentSpecFailed(ctx, ended, runID, err)
+	}
+	chosen := chooseReviewers(eff, vars, prior, asked(args), admitted.maxTokens)
+	b.notes = append(b.notes, chosen.notes()...)
+	// Each reviewer may be split as the review alone could be; the run is sized for all of them.
+	perReviewer := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
+	parts := perReviewer * chosen.count()
 	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID,
 		model: string(settings.Models.Review), limit: settings.Limits.Concurrency, maxParts: parts, jobID: job.ID}
 	defer slots.close(ctx)
@@ -188,7 +194,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	extra := len(slots.leases)
 	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", settings.Limits.Concurrency)
 	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, granted, prior, cont, admitted,
-		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger)
+		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger,
+		pull, chosen, w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs))
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
@@ -240,6 +247,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		parse: review.ParseOptions{
 			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: prep.ruleIDs,
 			Repository: pr.repository, Diagram: prep.eff.Review.Diagram, Prior: reviewFindings(prior.findings),
+			Categories: reviewerCategories(prep.eff.Reviewers),
 		},
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,
@@ -547,7 +555,7 @@ func (w *Review) begin(
 	forgeDiff := sync.OnceValues(func() (string, error) {
 		return client.PullRequestDiff(ctx, owner, repo, pr.number, e.mergeBase, pr.headSHA)
 	})
-	pickRoute(e.logger, &eff, vars, forgeDiff)
+	pickModels(e.logger, &eff, vars, forgeDiff, args.Reviewer)
 	if routed || eff.Models.Review != settings.Models.Review {
 		if held, err := w.slotsHeld(ctx, e, job, account.ID(), eff.Settings); held {
 			return begun{}, true, err
@@ -593,6 +601,9 @@ func (w *Review) admit(
 	settings configfile.Settings,
 ) (admission, bool, error) {
 	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, account, settings, job.ID)
+	if ns, ok := errors.AsType[noSlot](err); ok {
+		return admission{}, true, w.snooze(ctx, e, job, ns.model)
+	}
 	if errors.Is(err, errNoSlot) {
 		return admission{}, true, w.snooze(ctx, e, job, string(settings.Models.Review))
 	}

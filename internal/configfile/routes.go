@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -14,91 +13,34 @@ import (
 )
 
 // ReviewModel is review.model as a scope writes it: the "<provider>/<model>"
-// every pull request is reviewed on, or a list whose last entry is that
-// model and whose others are routes, the first one of whose conditions
-// holds for a pull request picking its model instead.
+// the default pass reviews on. The agents of review.agents that review
+// every category pick another for a pull request (see Models.Routes).
 type ReviewModel struct {
 	Default ModelRef
-	Routes  []ModelRoute
 }
 
-// ModelRoute is an entry of review.model's list but the last: the model a
-// pull request one of When holds for is reviewed on, with the effort and
-// fallback that replace review.effort and review.fallback for it where it
-// sets them. When takes trigger conditions, judged over the whole pull
-// request before its review starts.
+// ModelRoute is an agent that replaces the default pass, as the review's
+// model routes it: the model a pull request one of When holds for is
+// reviewed on, none holding always, with the effort and fallback that
+// replace review.effort and review.fallback for it where it sets them.
+// When takes trigger conditions, judged over the whole pull request
+// before its review starts.
 type ModelRoute struct {
-	Name     string        `yaml:"name,omitempty" json:"name,omitempty"`
-	Model    ModelRef      `yaml:"model" json:"model"`
-	Effort   *model.Effort `yaml:"effort,omitempty" json:"effort,omitempty"`
-	Fallback *ModelRef     `yaml:"fallback,omitempty" json:"fallback,omitempty"`
-	When     []Filter      `yaml:"when,omitempty" json:"when"`
+	Name     string        `json:"name,omitempty"`
+	Model    ModelRef      `json:"model"`
+	Effort   *model.Effort `json:"effort,omitempty"`
+	Fallback *ModelRef     `json:"fallback,omitempty"`
+	When     []Filter      `json:"when"`
 }
 
-// UnmarshalYAML takes a model, or a list of routes that ends with the
-// default model, an entry with model alone.
+// UnmarshalYAML takes a model. A list, the routes review.model once took,
+// is refused for the agents that replaced them.
 func (m *ReviewModel) UnmarshalYAML(n *yaml.Node) error {
-	if n.Kind != yaml.SequenceNode {
-		return n.Decode(&m.Default)
+	if n.Kind == yaml.SequenceNode {
+		return errors.New("review.model takes one model; pick another for some pull requests with an agent of review.agents " +
+			"that has no categories, which replaces the default pass when its conditions hold")
 	}
-	var entries []ModelRoute
-	// Node.Decode drops the strictness Parse asked for, so Load asks again.
-	if err := n.Load(&entries, yaml.WithKnownFields()); err != nil {
-		return err
-	}
-	if len(entries) == 0 {
-		return errors.New("a list must end with the default model, an entry with model alone")
-	}
-	for i, r := range entries {
-		if r.Model == "" {
-			return fmt.Errorf("[%d]: model is required", i)
-		}
-	}
-	last := len(entries) - 1
-	if d := entries[last]; d.Name != "" || d.Effort != nil || d.Fallback != nil || len(d.When) > 0 {
-		return fmt.Errorf("[%d]: the last entry is the default model and takes model alone; "+
-			"review.effort and review.fallback are its effort and fallback", last)
-	}
-	m.Default, m.Routes = entries[last].Model, entries[:last]
-	for i, r := range m.Routes {
-		if len(r.When) == 0 {
-			return fmt.Errorf("[%d]: when is required; only the last entry, the default model, has none", i)
-		}
-	}
-	return nil
-}
-
-// Compile compiles the routes' conditions in place. The errors name the
-// entry and the condition, as "[0].when[1]: ...".
-func (m *ReviewModel) Compile() error {
-	if m == nil {
-		return nil
-	}
-	for i := range m.Routes {
-		for j := range m.Routes[i].When {
-			if err := m.Routes[i].When[j].Compile(); err != nil {
-				return fmt.Errorf("[%d].when[%d]: %w", i, j, err)
-			}
-		}
-	}
-	return nil
-}
-
-// check compiles m's conditions in place and checks its routes' efforts,
-// named in errors as validateOverrides names its keys.
-func (m *ReviewModel) check() error {
-	if m == nil {
-		return nil
-	}
-	if err := m.Compile(); err != nil {
-		return fmt.Errorf("configfile: %s%w", keyModel, err)
-	}
-	for i, r := range m.Routes {
-		if r.Effort != nil && *r.Effort != "" && !r.Effort.Valid() {
-			return fmt.Errorf("configfile: %s[%d].effort must be %s, got %q", keyModel, i, model.EffortLevels, *r.Effort)
-		}
-	}
-	return nil
+	return n.Decode(&m.Default)
 }
 
 // namedRef is a model setting by the key it is written under.
@@ -107,33 +49,17 @@ type namedRef struct {
 	ref *ModelRef
 }
 
-// refs are the models m names with the keys they are written under: the
-// default, then each route's model and fallback; nil m names none.
+// refs are the models m names with the keys they are written under; nil m
+// names none.
 func (m *ReviewModel) refs() []namedRef {
 	if m == nil {
 		return nil
 	}
-	out := []namedRef{{keyModel, &m.Default}}
-	for i := range m.Routes {
-		r := &m.Routes[i]
-		out = append(out, namedRef{fmt.Sprintf("%s[%d].model", keyModel, i), &r.Model},
-			namedRef{fmt.Sprintf("%s[%d].fallback", keyModel, i), r.Fallback})
-	}
-	return out
+	return []namedRef{{keyModel, &m.Default}}
 }
 
-// String is the value as the Configuration page states it: the model, or
-// the default model and each route by its name, or its model without one.
-func (m ReviewModel) String() string {
-	if len(m.Routes) == 0 {
-		return string(m.Default)
-	}
-	routes := make([]string, len(m.Routes))
-	for i, r := range m.Routes {
-		routes[i] = cmp.Or(r.Name, string(r.Model))
-	}
-	return fmt.Sprintf("%s, routes %s", m.Default, strings.Join(routes, ", "))
-}
+// String is the value as the Configuration page states it.
+func (m ReviewModel) String() string { return string(m.Default) }
 
 // NeedsDiff reports whether one of the routes' conditions, compiled, cannot
 // be judged before the pull request's diff is read.
@@ -154,44 +80,69 @@ func (m Models) Pick(vars map[string]any, d *Diff) (Models, error) {
 	}
 	var errs []error
 	for _, r := range m.Routes {
-		for _, c := range r.When {
-			// Settings read back from JSON carry no compiled program, and a
-			// condition without one would hold on its globs alone.
-			if c.prg == nil && strings.TrimSpace(c.Expr) != "" {
-				if err := c.Compile(); err != nil {
-					errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
-					continue
-				}
-			}
-			if d == nil && c.needsDiff() {
-				continue
-			}
-			ok, err := c.holds(vars, d)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
-				continue
-			}
-			if !ok {
-				continue
-			}
-			m.Review, m.Route = r.Model, routeLabel(r, c)
-			if r.Effort != nil {
-				m.Effort = *r.Effort
-			}
-			if r.Fallback != nil {
-				m.Fallback = *r.Fallback
-			}
-			return m, errors.Join(errs...)
+		c, ok, err := firstHolding(r.When, vars, d)
+		if err != nil {
+			errs = append(errs, err)
 		}
+		if len(r.When) == 0 {
+			// An agent with no conditions always replaces the default pass.
+			ok = true
+		}
+		if !ok {
+			continue
+		}
+		m.Review, m.Route = r.Model, routeLabel(r, c)
+		if r.Effort != nil {
+			m.Effort = *r.Effort
+		}
+		if r.Fallback != nil {
+			m.Fallback = *r.Fallback
+		}
+		return m, errors.Join(errs...)
 	}
 	return m, errors.Join(errs...)
 }
 
-// routeLabel names route r and the condition c that picked it, as
-// "deep (migrations)", or the condition alone for a route with no name.
-func routeLabel(r ModelRoute, c Filter) string {
-	if r.Name == "" {
-		return c.Label()
+// firstHolding is the first of conds that holds for a pull request with
+// the filter variables vars and the diff d, as Pick judges them: without
+// d, one that needs it does not hold, and one that fails to evaluate does
+// not hold either, its error returned for the log.
+func firstHolding(conds []Filter, vars map[string]any, d *Diff) (Filter, bool, error) {
+	var errs []error
+	for _, c := range conds {
+		// Settings read back from JSON carry no compiled program, and a
+		// condition without one would hold on its globs alone.
+		if c.prg == nil && strings.TrimSpace(c.Expr) != "" {
+			if err := c.Compile(); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
+				continue
+			}
+		}
+		if d == nil && c.needsDiff() {
+			continue
+		}
+		ok, err := c.holds(vars, d)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
+			continue
+		}
+		if ok {
+			return c, true, errors.Join(errs...)
+		}
 	}
-	return r.Name + " (" + c.Label() + ")"
+	return Filter{}, false, errors.Join(errs...)
+}
+
+// routeLabel names route r and the condition c that picked it, as
+// "deep (migrations)", the condition alone for a route with no name, or
+// the name alone for one with no conditions.
+func routeLabel(r ModelRoute, c Filter) string {
+	switch label := c.Label(); {
+	case r.Name == "":
+		return label
+	case label == "":
+		return r.Name
+	default:
+		return r.Name + " (" + label + ")"
+	}
 }

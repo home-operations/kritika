@@ -3,6 +3,8 @@ package repoconfig
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // Merged is the admin's settings with the merge-base FileName applied.
@@ -35,7 +38,8 @@ type Merged struct {
 // admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
 // their effort, the confidence threshold, how the review comments,
 // whether it approves and whether its summary draws a diagram, and adds
-// approval and confidence conditions that must hold beside the admin's. A model must be one of a provider
+// approval and confidence conditions that must hold beside the admin's, and
+// adds reviewers of its own (see reviewers). A model must be one of a provider
 // op.Providers names, and an effort one of model.Efforts or empty, which
 // leaves it to the provider. A value it may not take is dropped, and
 // Dropped says so. A file that does not parse is ignored as a whole: op stands, and the
@@ -119,6 +123,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	}
 	m.Skills = configfile.WithSkills(m.Skills, f.Skills)
 	m.choose(&f, op.Providers)
+	m.agents(f.Review.Agents, op)
 	for _, e := range []struct {
 		field string
 		want  *model.Effort
@@ -135,18 +140,128 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	return m, nil
 }
 
-// choose applies the models f chooses: a model of one of providers. A
-// review.model list is applied whole or dropped whole, since one without
-// a route would pick another model than the file says.
-func (m *Merged) choose(f *File, providers []string) {
-	if rm := f.Review.Model; rm.Default != "" {
-		switch why := routesDropped(rm, providers); {
-		case why == "":
-			m.Models.Review, m.Models.Routes = rm.Default, rm.Routes
-		case len(rm.Routes) == 0:
-			m.drop("review.model", strconv.Quote(string(rm.Default)), "a model of "+list(providers))
+// agents adds the file's agents to the admin's. Its agents that replace
+// the default pass are settled first: written, even all off, they replace
+// the admin's, as its review.model does, whole or not at all, one of a
+// model of a provider not among op.Providers, or more of them than leave
+// the admin's specialists room under configfile.MaxReviewers, dropping
+// them all, since without one another model would review than the file
+// says. Then a specialist of its own is added as written, its models among
+// op.Providers, while there is room for it beside the agents the review
+// ends with; to the admin's of its name it adds only rules, under an id
+// neither that agent's nor the admin's rules have, and skill scopes, of a
+// skill that agent does not scope, the rest it writes of it dropped with a
+// note: a pull request must not be able to turn off, narrow or retune a
+// specialist the admin set. An agent under a name an admin's agent of the
+// other kind has, or the default pass's, is dropped with a note.
+func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
+	if len(file) == 0 {
+		return
+	}
+	m.Reviewers = maps.Clone(m.Reviewers)
+	if m.Reviewers == nil {
+		m.Reviewers = map[string]configfile.Reviewer{}
+	}
+	keep := make([]bool, len(file))
+	var routes []configfile.ModelRoute
+	declared := false
+	for i, r := range file {
+		key := fmt.Sprintf("review.agents[%d] (%s)", i, r.Name)
+		_, specialist := op.Reviewers[r.Name]
+		replacing := slices.ContainsFunc(op.Models.Routes, func(o configfile.ModelRoute) bool { return o.Name == r.Name })
+		switch {
+		case r.Name == review.DefaultReviewer:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: the default pass is review.model's", FileName, key))
+		case r.Specialist() && replacing, !r.Specialist() && specialist:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: an admin's agent of the other kind has that name", FileName, key))
+		case r.Specialist():
+			keep[i] = true
 		default:
-			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: review.model was dropped: %s", FileName, why))
+			declared = true
+			if r.On() {
+				routes = append(routes, r.Route())
+			}
+		}
+	}
+	if declared {
+		why := routesDropped(routes, op.Providers)
+		if n := len(m.Reviewers) + len(routes); why == "" && n > configfile.MaxReviewers {
+			why = fmt.Sprintf("with the admin's specialists, %d agents are over the %d a review runs", n, configfile.MaxReviewers)
+		}
+		if why == "" {
+			m.Models.Routes = routes
+		} else {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: review.agents that replace the default pass were dropped: %s", FileName, why))
+		}
+	}
+	for i, r := range file {
+		if !keep[i] {
+			continue
+		}
+		key := fmt.Sprintf("review.agents[%d] (%s)", i, r.Name)
+		admin, specialist := op.Reviewers[r.Name]
+		switch {
+		case specialist:
+			m.Reviewers[r.Name] = m.addTo(key, admin, r, op.Review.Rules)
+		case len(m.Reviewers)+len(m.Models.Routes) >= configfile.MaxReviewers:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: %d agents are the most a review runs",
+				FileName, key, configfile.MaxReviewers))
+		default:
+			for _, c := range []struct {
+				field string
+				ref   *configfile.ModelRef
+			}{{key + ".model", &r.Model}, {key + ".fallback", &r.Fallback}} {
+				if f := *c.ref; f != "" && (f.Model() == "" || !slices.Contains(op.Providers, f.Provider())) {
+					m.drop(c.field, strconv.Quote(string(f)), "a model of "+list(op.Providers))
+					*c.ref = ""
+				}
+			}
+			m.Reviewers[r.Name] = r
+		}
+	}
+}
+
+// addTo is the admin's reviewer with the file's rules and skill scopes
+// for it added (see reviewers), key naming it in the notes.
+func (m *Merged) addTo(key string, admin, r configfile.Reviewer, adminRules []configfile.Rule) configfile.Reviewer {
+	rules, scopes := r.Rules, r.Skills.Scope
+	// Its name and categories say which agent it adds to.
+	r.Name, r.Categories, r.Rules, r.Skills.Scope = "", nil, nil, nil
+	if !reflect.ValueOf(r).IsZero() {
+		m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped but for its rules and skills: it is an admin's agent", FileName, key))
+	}
+	admin.Rules = slices.Clone(admin.Rules)
+	for _, rule := range rules {
+		taken := func(o configfile.Rule) bool { return o.ID == rule.ID }
+		if slices.ContainsFunc(admin.Rules, taken) || slices.ContainsFunc(adminRules, taken) {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s.rules %s was dropped: an admin's rule has that id", FileName, key, rule.ID))
+			continue
+		}
+		admin.Rules = append(admin.Rules, rule)
+	}
+	for _, skill := range slices.Sorted(maps.Keys(scopes)) {
+		if _, set := admin.Skills.Scope[skill]; set {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s.skills.scope.%s was dropped: the admin scopes that skill", FileName, key, skill))
+			continue
+		}
+		admin.Skills.Scope = maps.Clone(admin.Skills.Scope)
+		if admin.Skills.Scope == nil {
+			admin.Skills.Scope = map[string]configfile.SkillScope{}
+		}
+		admin.Skills.Scope[skill] = scopes[skill]
+	}
+	return admin
+}
+
+// choose applies the models f chooses: a model of one of providers. Its
+// review.model replaces the admin's default pass, and the agents the admin
+// has replace it with, as the file's own may (see agents).
+func (m *Merged) choose(f *File, providers []string) {
+	if ref := f.Review.Model.Default; ref != "" {
+		if ref.Model() != "" && slices.Contains(providers, ref.Provider()) {
+			m.Models.Review, m.Models.Routes = ref, nil
+		} else {
+			m.drop("review.model", strconv.Quote(string(ref)), "a model of "+list(providers))
 		}
 	}
 	for _, c := range []struct {
@@ -169,25 +284,19 @@ func (m *Merged) choose(f *File, providers []string) {
 	}
 }
 
-// routesDropped says why the file's review.model may not apply, "" when
-// it may: a model, a route's or its fallback, of a provider not among
-// providers, or a route's effort that is no level.
-func routesDropped(rm configfile.ReviewModel, providers []string) string {
+// routesDropped says why the file's agents that replace the default pass
+// may not apply, "" when they may: a model or a fallback of a provider not
+// among providers.
+func routesDropped(routes []configfile.ModelRoute, providers []string) string {
 	allowed := func(ref configfile.ModelRef) bool {
 		return ref.Model() != "" && slices.Contains(providers, ref.Provider())
 	}
-	if !allowed(rm.Default) {
-		return fmt.Sprintf("%q is not a model of %s", rm.Default, list(providers))
-	}
-	for i, r := range rm.Routes {
+	for _, r := range routes {
 		if !allowed(r.Model) {
-			return fmt.Sprintf("[%d].model %q is not a model of %s", i, r.Model, list(providers))
+			return fmt.Sprintf("%s's model %q is not a model of %s", r.Name, r.Model, list(providers))
 		}
 		if r.Fallback != nil && *r.Fallback != "" && !allowed(*r.Fallback) {
-			return fmt.Sprintf("[%d].fallback %q is not a model of %s", i, *r.Fallback, list(providers))
-		}
-		if r.Effort != nil && *r.Effort != "" && !r.Effort.Valid() {
-			return fmt.Sprintf("[%d].effort %q is not one of %s", i, *r.Effort, model.EffortLevels)
+			return fmt.Sprintf("%s's fallback %q is not a model of %s", r.Name, *r.Fallback, list(providers))
 		}
 	}
 	return ""

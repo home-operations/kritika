@@ -74,7 +74,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		systemPrompt, build, validate, schema, description = review.ReplySystemPrompt, review.BuildReply, review.CheckReply,
 			review.ReplySchema, submitIfNeededDescription
 	}
-	system := systemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil)
+	system := review.WithReviewer(systemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil), followUpRole(p, files))
 	pr := p.Prompt.PullRequest
 	user := build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body, BaseRef: pr.BaseRef,

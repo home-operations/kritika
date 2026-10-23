@@ -21,6 +21,9 @@ type reviewRecord struct {
 	review store.ReviewRow
 	run    *store.RunnerRunRow
 	agent  *store.AgentRunRow
+	// partCosts are what each part of the agent's split run cost, by
+	// part.
+	partCosts map[int]float64
 }
 
 // loadReview reads the review {id} and, when withRun, its newest runner
@@ -48,6 +51,11 @@ func loadReview(ctx context.Context, tx pgx.Tx, r *http.Request, withRun bool) (
 		rec.agent = &a
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return rec, err
+	}
+	if rec.agent != nil && len(rec.agent.Parts) > 0 {
+		if rec.partCosts, err = store.PartCosts(ctx, tx, run.ID); err != nil {
+			return rec, err
+		}
 	}
 	return rec, nil
 }
@@ -100,7 +108,7 @@ func finding(f store.FindingRow) Finding {
 		Explanation:  f.Explanation,
 		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
 		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
-		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: f.Rules,
+		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: f.Rules, Agents: f.Reviewers,
 		Status: f.Status, DismissReason: f.DismissReason,
 	}
 }
@@ -140,6 +148,9 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 	}
 	if a := rec.agent; a != nil {
 		d.AgentRun = agentRun(a)
+		for i := range d.AgentRun.Parts {
+			d.AgentRun.Parts[i].CostUSD = rec.partCosts[i+1]
+		}
 	}
 	return d
 }
@@ -160,7 +171,9 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 		}
 	}
 	for i, p := range a.Parts {
-		out.Parts[i] = AgentPart{Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom}
+		out.Parts[i] = AgentPart{
+			Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom, Agent: p.Reviewer, Full: p.Full,
+		}
 	}
 	return out
 }

@@ -102,8 +102,8 @@ type UnpricedModel struct {
 	Ref     ModelRef
 }
 
-// UnpricedModels lists the review, fallback and confidence models of the
-// file's own settings whose provider's API reports no cost, as anthropic's
+// UnpricedModels lists the review, fallback, agents' and confidence models
+// of the file's own settings whose provider's API reports no cost, as anthropic's
 // and openai's do not, and whose pricing has no price under the model as
 // written: its id, or the floating alias that prices whatever model it
 // selects. A repository's .kritika.yaml is read only when it is reviewed,
@@ -111,8 +111,14 @@ type UnpricedModel struct {
 func (f *File) UnpricedModels() []UnpricedModel {
 	var out []UnpricedModel
 	r := &f.Defaults.Overrides
-	for _, m := range append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
-		namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback}) {
+	refs := append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
+		namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback})
+	for i := range r.Review.Agents {
+		a := &r.Review.Agents[i]
+		refs = append(refs, namedRef{fmt.Sprintf("review.agents[%d].model", i), &a.Model},
+			namedRef{fmt.Sprintf("review.agents[%d].fallback", i), &a.Fallback})
+	}
+	for _, m := range refs {
 		if m.ref == nil || *m.ref == "" {
 			continue
 		}

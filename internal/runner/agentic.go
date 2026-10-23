@@ -32,12 +32,12 @@ const submitDescription = "Submit the review and end it. The input is the whole 
 // input is the review contract, strict when a suggested fix is required,
 // with a summary diagram when diagram is set. The bench sends it too, so
 // it measures what a review sends.
-func SubmitTool(strict, diagram bool) model.ToolDef {
-	schema := review.Schema(diagram)
-	if strict {
-		schema = review.SchemaStrict(diagram)
-	}
-	return model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema}
+func SubmitTool(strict, diagram bool) model.ToolDef { return submitTool(strict, diagram, nil) }
+
+// submitTool is SubmitTool for a reviewer that may report only
+// categories, every category when none.
+func submitTool(strict, diagram bool, categories []review.Category) model.ToolDef {
+	return model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: review.SchemaFor(strict, diagram, categories)}
 }
 
 // packView is the context pack as the review prompt reads it.
@@ -78,6 +78,9 @@ type promptInputs struct {
 	skills, loaded []repoconfig.Skill
 	references     []review.Reference
 	notes          []string
+	// role is the reviewer other than the default one the prompt is for,
+	// nil for the default reviewer.
+	role *review.Reviewer
 }
 
 // ruleIDs is the ids of the rules the prompt was given.
@@ -160,15 +163,18 @@ func (a agentPrompt) notes() []string {
 	return notes
 }
 
-// newAgentPrompt composes the prompt from the inputs and the pack, whose
-// context includes the similar code the gateway found. commands are what
+// newAgentPrompt composes the prompt from the inputs, with the role of the
+// reviewer they are for, and the pack, whose context includes the similar
+// code the gateway found. commands are what
 // the run tool offers, fetch says fetch_repo is offered, and search
 // search_code.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
 	bumps := review.Bumps(pack.Diff)
-	system := review.SystemPrompt(
+	// The role is part of the system prompt before the user message is
+	// budgeted from what it leaves.
+	system := review.WithReviewer(review.SystemPrompt(
 		in.rules, repoconfig.PromptSkills(in.skills, in.loaded), commands, fetch, search, p.Prompt.Diagram, len(bumps) > 0,
-	)
+	), in.role)
 	var incremental *review.IncrementalInput
 	var earlier *review.EarlierInput
 	switch {
@@ -189,9 +195,14 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 	})
 	// Build writes the context in order until the budget is spent, so the
 	// chunks it left out are the last.
+	var categories []review.Category
+	if in.role != nil {
+		categories = in.role.Categories
+	}
 	return agentPrompt{
-		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,
-		fallback: review.Lenient(review.Check), omitted: omitted, contextOmitted: contextOmitted,
+		system: system, user: user, submit: submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories),
+		validate: review.CheckCategories(review.Check, categories), fallback: review.Lenient(review.CheckCategories(review.Check, categories)),
+		omitted: omitted, contextOmitted: contextOmitted,
 		context: pack.Context[:len(pack.Context)-contextOmitted], references: in.references, referencesOmitted: referencesOmitted,
 	}
 }
@@ -375,7 +386,7 @@ func runAgentic(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
 	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
 ) error {
-	stepper, err := gatewayStepper(p, secrets, 0)
+	stepper, err := gatewayStepper(p, secrets, 0, followUpReviewer(p))
 	if err != nil {
 		return err
 	}
@@ -430,11 +441,16 @@ func runAgentic(
 }
 
 // gatewayStepper is the run's client of the gateway, naming part, the part
-// of a split review its steps are for, or none when part is 0.
-func gatewayStepper(p Spec, secrets Secrets, part int) (model.Stepper, error) {
+// of a split review its steps are for, or none when part is 0, and
+// reviewer, the reviewer other than the default one they are for, or none
+// when it is "" or the default one.
+func gatewayStepper(p Spec, secrets Secrets, part int, reviewer string) (model.Stepper, error) {
+	if reviewer == review.DefaultReviewer {
+		reviewer = ""
+	}
 	s, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,
-		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout, Part: part,
+		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout, Part: part, Reviewer: reviewer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("runner: %w", err)

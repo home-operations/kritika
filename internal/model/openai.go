@@ -70,6 +70,10 @@ type OpenAIConfig struct {
 	// Part names, in PartHeader on every request, the part of a split
 	// review the runner's client of the gateway steps for; zero sends none.
 	Part int
+	// Reviewer names, in ReviewerHeader on every request, the reviewer
+	// other than the default one the runner's client of the gateway steps
+	// for; "" sends none.
+	Reviewer string
 }
 
 // OpenCodeSessionHeader carries StepRequest.Session to OpenCode.
@@ -78,6 +82,10 @@ const OpenCodeSessionHeader = "x-opencode-session"
 // PartHeader carries, from a runner to the gateway, the part of a split
 // review a step is for.
 const PartHeader = "X-Kritika-Part"
+
+// ReviewerHeader carries, from a runner to the gateway, the reviewer other
+// than the default one a step is for, whose models the gateway calls.
+const ReviewerHeader = "X-Kritika-Reviewer"
 
 // OpenAI is a Stepper over the chat completions API of OpenAI or any server
 // compatible with it.
@@ -140,6 +148,9 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	}
 	if cfg.Part > 0 {
 		opts = append(opts, option.WithHeader(PartHeader, strconv.Itoa(cfg.Part)))
+	}
+	if cfg.Reviewer != "" {
+		opts = append(opts, option.WithHeader(ReviewerHeader, cfg.Reviewer))
 	}
 	static, session := splitHeaders(cfg.Headers)
 	for k, v := range static {
