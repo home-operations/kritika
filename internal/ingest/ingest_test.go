@@ -452,6 +452,17 @@ func (f *fakeUninstaller) Uninstall(ctx context.Context, in *configfile.Connecti
 	return f.err
 }
 
+// fakeEvents records pod Events as "Type Reason: note".
+type fakeEvents struct{ got []string }
+
+func (f *fakeEvents) PodEvent(_ context.Context, warning bool, reason, _, note string) {
+	kind := "Normal"
+	if warning {
+		kind = "Warning"
+	}
+	f.got = append(f.got, kind+" "+reason+": "+note)
+}
+
 // installationBody is an installation event of action on account, made
 // now, with the installation's id when it is not 0.
 func installationBody(action, account string, id int64) string {
@@ -560,6 +571,8 @@ func TestHandlerUninstallsFromUndeclaredAccounts(t *testing.T) {
 			if !tt.noUninstaller {
 				h.Uninstaller = u
 			}
+			events := &fakeEvents{}
+			h.Events = events
 			if code := sendHook(t, h, tt.event, tt.body); code != http.StatusAccepted {
 				t.Fatalf("status = %d, want 202", code)
 			}
@@ -571,6 +584,18 @@ func TestHandlerUninstallsFromUndeclaredAccounts(t *testing.T) {
 			}
 			if got := webhookOutcomes(t, reg); got[tt.outcome] != 1 || len(got) != 1 {
 				t.Fatalf("outcomes = %v, want one %s", got, tt.outcome)
+			}
+			// Only a removal is recorded, naming the account and where to list it.
+			if tt.outcome != "uninstalled" {
+				if len(events.got) != 0 {
+					t.Fatalf("events = %q, want none", events.got)
+				}
+				return
+			}
+			if len(events.got) != 1 || !strings.HasPrefix(events.got[0], "Warning AppUninstalled: ") ||
+				!strings.Contains(events.got[0], "uninstalled from stranger (installation 7)") ||
+				!strings.Contains(events.got[0], "apps.bot-ross.accounts") {
+				t.Fatalf("events = %q", events.got)
 			}
 		})
 	}

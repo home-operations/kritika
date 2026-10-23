@@ -250,12 +250,12 @@ func serve(
 	forges := &worker.ForgeCache{Build: apps.Build}
 	svc := ingest.NewService(st, inserter)
 	svc.UninstallApp = apps.UninstallApp
+	kube, _ := exec.(*executor.Kube)
+	var events *executor.Events
+	if kube != nil {
+		events = kube.Events
+	}
 	if st.LeaderEligible() {
-		kube, _ := exec.(*executor.Kube)
-		var events *executor.Events
-		if kube != nil {
-			events = kube.Events
-		}
 		g.Go(func() error {
 			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
 				m.Leading(true)
@@ -267,7 +267,7 @@ func serve(
 	} else {
 		logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 	}
-	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, forges, m, public, logger); err != nil {
+	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, events, forges, m, public, logger); err != nil {
 		return err
 	}
 	return startWorker(ctx, g, st, cfg, current, exec, forges, m, logger)
@@ -294,14 +294,15 @@ func loadConfig(cfg *config.Config) (*configfile.File, error) {
 // starting page.
 func startPublic(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current,
-	inserter *river.Client[pgx.Tx], svc *ingest.Service, forges *worker.ForgeCache, m *metrics.Metrics, public *server.Switch,
-	logger *slog.Logger,
+	inserter *river.Client[pgx.Tx], svc *ingest.Service, events *executor.Events, forges *worker.ForgeCache, m *metrics.Metrics,
+	public *server.Switch, logger *slog.Logger,
 ) error {
 	hooks := ingest.NewHandler(current, svc, logger.With("listener", "hooks"))
 	hooks.Metrics = m
 	hooks.Deliveries = svc
 	hooks.Authors = forges
 	hooks.Uninstaller = svc
+	hooks.Events = events
 
 	webLogger := logger.With("listener", "web")
 	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})

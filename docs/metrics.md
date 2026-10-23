@@ -231,7 +231,8 @@ until a representative production baseline is available.
 
 kritika records Events that `kubectl describe` and `kubectl events` show and
 an event collector gathers: on a runner Job, why kritika ended its run, and
-on a kritika serve pod, what its leader did.
+on a kritika serve pod, what its leader did and any GitHub App installation
+it removed.
 
 | On                  | Reason          | Type    | When                                                                                                         |
 | ------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
@@ -248,6 +249,7 @@ on a kritika serve pod, what its leader did.
 | a kritika serve pod | `LeaderElected` | Normal  | the replica took the lead                                                                                    |
 | a kritika serve pod | `ConfigApplied` | Normal  | the leader applied the configuration, named by its hash                                                      |
 | a kritika serve pod | `ConfigRefused` | Warning | the store refused the configuration, and the last applied one stays live, as `kritika_config_error` says too |
+| a kritika serve pod | `AppUninstalled` | Warning | the replica uninstalled the GitHub App from an account no connection serves as it was installed there; the note names the account and the `apps` entry to list it under |
 
 A run that ended on its own, finished or failed, gets none: its Job's own
 Events, from the Job controller, tell. kritika deletes the Job of a run it

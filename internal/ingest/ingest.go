@@ -9,6 +9,7 @@ package ingest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -76,6 +77,12 @@ type Uninstaller interface {
 	Uninstall(ctx context.Context, in *configfile.Connection, account string, installation int64) error
 }
 
+// PodEvents records an Event on this replica's pod. The implementation is
+// executor.Events, which records none outside Kubernetes.
+type PodEvents interface {
+	PodEvent(ctx context.Context, warning bool, reason, action, note string)
+}
+
 // dispatchTimeout bounds one dispatch, which does not end with its request.
 const dispatchTimeout = 30 * time.Second
 
@@ -111,6 +118,9 @@ type Handler struct {
 	// Uninstaller may be nil, which leaves a GitHub App installed on an
 	// account no connection serves for an admin to remove.
 	Uninstaller Uninstaller
+	// Events may be nil. An uninstall is recorded on it, so an admin who
+	// installed the App before listing the account can see why it went.
+	Events PodEvents
 
 	uninstalls *rate.Limiter
 }
@@ -284,6 +294,11 @@ func (h *Handler) uninstall(ctx context.Context, logger *slog.Logger, in *config
 		return "error"
 	}
 	logger.Warn("App uninstalled from an undeclared account")
+	if h.Events != nil {
+		h.Events.PodEvent(ctx, true, "AppUninstalled", "Uninstall", fmt.Sprintf(
+			"GitHub App uninstalled from %s (installation %d) as it was installed there: apps.%s.accounts does not list it; "+
+				"add it there and roll out before installing again", ev.Account, ev.Installation.ID, in.Name))
+	}
 	return "uninstalled"
 }
 

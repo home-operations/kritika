@@ -140,7 +140,8 @@ it. kritika uninstalls the App from an account no connection serves as soon
 as it is installed there, so an installation made before its account is
 listed, or one that reaches a replica still running the previous
 configuration, is removed and has to be made again. Each removal is in the
-audit log. Only an installation made in the last ten minutes is removed,
+audit log, and recorded as an `AppUninstalled` Event on the pod that made
+it, which `kubectl events` shows. Only an installation made in the last ten minutes is removed,
 at most five at once and one a minute after that per replica. An older one,
 such as one that was there before its account was dropped from `apps`,
 stays until an admin uninstalls it from the dashboard.
