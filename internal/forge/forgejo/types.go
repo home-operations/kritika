@@ -18,7 +18,6 @@ type label struct {
 // repository is what kritika reads of a repository. Forgejo says private
 // and internal rather than a visibility.
 type repository struct {
-	Name          string `json:"name"`
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
 	Archived      bool   `json:"archived"`
@@ -104,12 +103,11 @@ type commentBody struct {
 
 // pullReview is one review as listed under a pull request.
 type pullReview struct {
-	ID          int64     `json:"id"`
-	User        user      `json:"user"`
-	State       string    `json:"state"`
-	CommitID    string    `json:"commit_id"`
-	Dismissed   bool      `json:"dismissed"`
-	SubmittedAt time.Time `json:"submitted_at"`
+	ID        int64  `json:"id"`
+	User      user   `json:"user"`
+	State     string `json:"state"`
+	CommitID  string `json:"commit_id"`
+	Dismissed bool   `json:"dismissed"`
 }
 
 // pullReviewComment is one code comment under a review. position is the
@@ -125,7 +123,6 @@ type pullReviewComment struct {
 	Position         int       `json:"position"`
 	OriginalPosition int       `json:"original_position"`
 	ExtraLinesCount  int       `json:"extra_lines_count"`
-	CommitID         string    `json:"commit_id"`
 	User             user      `json:"user"`
 	Resolver         *user     `json:"resolver"`
 	CreatedAt        time.Time `json:"created_at"`

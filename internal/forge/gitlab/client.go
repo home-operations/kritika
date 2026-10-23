@@ -88,7 +88,6 @@ func NewClient(host, token, runnerToken string, httpClient *http.Client) (*Clien
 // The SDK's type drops the flags GitLab sets on a patch it left out of
 // the version, so the answer is read without it.
 type diffVersion struct {
-	ID             int64      `json:"id"`
 	HeadCommitSHA  string     `json:"head_commit_sha"`
 	BaseCommitSHA  string     `json:"base_commit_sha"`
 	StartCommitSHA string     `json:"start_commit_sha"`

@@ -657,10 +657,10 @@ func TestSchemas(t *testing.T) {
 		required []string
 		check    func(t *testing.T, n node)
 	}{
-		{"findings", Schema(false), []string{"summary", "findings"}, func(t *testing.T, n node) {
+		{"findings", SchemaFor(false, false, nil), []string{"summary", "findings"}, func(t *testing.T, n node) {
 			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation"})
 		}},
-		{"strict findings", SchemaStrict(false), []string{"summary", "findings"}, func(t *testing.T, n node) {
+		{"strict findings", SchemaFor(true, false, nil), []string{"summary", "findings"}, func(t *testing.T, n node) {
 			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation", "suggested_fix"})
 		}},
 		{"follow-up", FollowUpSchema(), []string{"reply"}, func(t *testing.T, n node) {
@@ -686,10 +686,10 @@ func TestSchemas(t *testing.T) {
 			raw  json.RawMessage
 			want bool
 		}{
-			"Schema":            {Schema(false), false},
-			"Schema diagram":    {Schema(true), true},
-			"SchemaStrict":      {SchemaStrict(false), false},
-			"SchemaStrict diag": {SchemaStrict(true), true},
+			"plain":          {SchemaFor(false, false, nil), false},
+			"plain diagram":  {SchemaFor(false, true, nil), true},
+			"strict":         {SchemaFor(true, false, nil), false},
+			"strict diagram": {SchemaFor(true, true, nil), true},
 		} {
 			var n node
 			if err := json.Unmarshal(tt.raw, &n); err != nil {
@@ -704,10 +704,10 @@ func TestSchemas(t *testing.T) {
 		}
 	})
 	t.Run("callers cannot alter the shared schema", func(t *testing.T) {
-		s := Schema(false)
+		s := SchemaFor(false, false, nil)
 		s[0] = 'x'
-		if Schema(false)[0] != '{' {
-			t.Fatal("Schema returned the shared slice")
+		if SchemaFor(false, false, nil)[0] != '{' {
+			t.Fatal("SchemaFor returned the shared slice")
 		}
 	})
 }
@@ -738,7 +738,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	}
 	keys := func(m map[string]any) []string { return slices.Sorted(maps.Keys(m)) }
 	props := func(n *node) []string { return slices.Sorted(maps.Keys(n.Properties)) }
-	for name, schema := range map[string]json.RawMessage{"Schema": Schema(true), "SchemaStrict": SchemaStrict(true)} {
+	for name, schema := range map[string]json.RawMessage{"plain": SchemaFor(false, true, nil), "strict": SchemaFor(true, true, nil)} {
 		var n node
 		if err := json.Unmarshal(schema, &n); err != nil {
 			t.Fatal(err)

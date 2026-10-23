@@ -239,7 +239,7 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 // instance, and a listing may leave out what the bot cannot see, so a
 // short page alone does not say the listing is over. stop ends the walk
 // early, after the page it was called on.
-func list[T any](ctx context.Context, c *Client, path string, query url.Values, stop func(T) bool) ([]T, error) {
+func (c *Client) list[T any](ctx context.Context, path string, query url.Values, stop func(T) bool) ([]T, error) {
 	var out []T
 	largest := 0
 	for page := 1; ; page++ {
@@ -538,7 +538,7 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 // time server-side, so the walk stops at the first one older than since.
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]forge.OpenPullRequest, error) {
 	q := url.Values{"state": {"open"}, "sort": {"recentupdate"}}
-	prs, err := list(ctx, c, repoPath(owner, repo)+"/pulls", q, func(pr pullRequest) bool { return pr.UpdatedAt.Before(since) })
+	prs, err := c.list(ctx, repoPath(owner, repo)+"/pulls", q, func(pr pullRequest) bool { return pr.UpdatedAt.Before(since) })
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: list open pull requests of %s/%s: %w", owner, repo, err)
 	}
@@ -575,7 +575,7 @@ type Repository struct {
 // too, and asks the token for the repository scope alone, where the
 // organizations route would ask for the organization scope as well.
 func (c *Client) Repositories(ctx context.Context, account string) ([]Repository, error) {
-	repos, err := list[repository](ctx, c, "/users/"+url.PathEscape(account)+"/repos", nil, nil)
+	repos, err := c.list[repository](ctx, "/users/"+url.PathEscape(account)+"/repos", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: list repositories of %s: %w", account, err)
 	}

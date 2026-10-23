@@ -69,8 +69,10 @@ func (opts ParseOptions) allows(f Finding) bool {
 	})
 }
 
-// SchemaFor is Schema, or SchemaStrict when strict, for a reviewer that
-// may report only categories, every category when it names none.
+// SchemaFor is the JSON Schema of the answer the model must produce:
+// suggested_fix required on every finding when strict, summary.diagram
+// when diagram is set, and findings of categories alone, every category
+// when it names none.
 func SchemaFor(strict, diagram bool, categories []Category) json.RawMessage {
 	if len(categories) == 0 {
 		return slices.Clone(contracts[contract{strict, diagram}])

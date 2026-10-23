@@ -136,8 +136,9 @@ type Models struct {
 	// Effort is how hard the review model, and the fallback that takes its
 	// step, reasons; empty leaves it to the provider.
 	Effort model.Effort `json:"effort"`
-	// Routes are review.model's routes, which Pick judges for a pull
-	// request; Review, Fallback and Effort are what one none picks gets.
+	// Routes are the agents of review.agents that replace the default
+	// pass, which Pick judges for a pull request; Review, Fallback and
+	// Effort are what one none picks gets.
 	Routes []ModelRoute `json:"routes,omitempty"`
 	// Route names the route Pick took for the pull request under review,
 	// "" for none.

@@ -12,8 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +23,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
@@ -113,14 +112,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}}
 
 	t.Setenv("KRITIKA_TEST_TOKEN", "tok")
-	path := filepath.Join(t.TempDir(), "kritika.yaml")
-	if err := os.WriteFile(path, []byte(manageConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	file, err := configfile.Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
+	file := configfiletest.Load(t, manageConfig)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}

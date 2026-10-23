@@ -142,7 +142,7 @@ func (c *Client) approvals(ctx context.Context, owner, repo string, number int) 
 
 // listReviews pages through the pull request's reviews, oldest first.
 func (c *Client) listReviews(ctx context.Context, owner, repo string, number int) ([]pullReview, error) {
-	reviews, err := list[pullReview](ctx, c, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(owner, repo), number), nil, nil)
+	reviews, err := c.list[pullReview](ctx, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(owner, repo), number), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: list reviews on #%d: %w", number, err)
 	}

@@ -459,7 +459,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 		t.Fatalf("grep output = %q", out)
 	}
 	submit := st.reqs[0].Tools[len(st.reqs[0].Tools)-1]
-	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaStrict(true)) {
+	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaFor(true, true, nil)) {
 		t.Fatalf("submit tool = %+v", submit)
 	}
 	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != agent.DefaultLimits.MaxOutputTokensPerStep {

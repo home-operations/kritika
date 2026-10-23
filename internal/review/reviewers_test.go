@@ -124,7 +124,7 @@ func TestSchemaFor(t *testing.T) {
 	if !slices.Contains(items.Required, keySuggestedFix) {
 		t.Error("a strict schema does not require a suggested fix")
 	}
-	if got := SchemaFor(false, true, nil); string(got) != string(Schema(true)) {
+	if got := SchemaFor(false, true, nil); string(got) != string(contracts[contract{false, true}]) {
 		t.Error("no categories is not the plain schema")
 	}
 }

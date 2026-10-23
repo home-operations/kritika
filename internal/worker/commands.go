@@ -223,8 +223,9 @@ const reviewRequested = "review requested"
 
 // requestReview queues a review of the pull request's head, as the
 // dashboard's re-run does, for someone with write access who asked with
-// "@<bot> review", or of one reviewer's alone with "@<bot> review <name>": it is how a pull request from a fork, which is not
-// reviewed on its own, gets one, and a merged or closed one a look back. A
+// "@<bot> review", or of one reviewer's alone with "@<bot> review <name>":
+// it is how a pull request the trigger filter keeps out, such as a fork's,
+// gets one, and a merged or closed one a look back. A
 // review of the head already queued or running stands in for it. The
 // request is answered with the bot's marks rather than a reply: its eyes
 // now, and its job then waits to end them as the review ends (awaitReview).
