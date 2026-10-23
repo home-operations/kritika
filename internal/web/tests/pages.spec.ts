@@ -1161,6 +1161,24 @@ test.describe('review', () => {
     await expect(page.locator('section[aria-labelledby="tl-agent"] .panel-head')).toContainText('submitted, cut short at its step limit');
   });
 
+  test('a reused part still says at which limit it was cut short', async ({ page }) => {
+    const a = g.reviewDetail.agentRun!;
+    const agentRun = {
+      ...a,
+      steps: 1,
+      timeline: [{ ...a.timeline[0]!, index: 0, part: 2 }],
+      parts: [
+        { paths: ['server/a.go'], stop: 'submitted', forcedBy: 'time', reusedFrom: 'run-0', error: '', steps: 0 },
+        { paths: ['web/b.ts'], stop: 'submitted', error: '', steps: 1 },
+      ],
+    };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    const rows = page.getByRole('table', { name: 'Parts' }).locator('tbody tr');
+    await expect(rows.nth(0).locator('td').nth(4)).toHaveText('Reused, cut short at its time limit');
+    await expect(rows.nth(1).locator('td').nth(4)).toHaveText('submitted');
+  });
+
   test('a part names its agent, marks a whole-change review and shows its cost, with each agent\'s total', async ({ page }) => {
     const a = g.reviewDetail.agentRun!;
     const agentRun = {

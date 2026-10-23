@@ -128,7 +128,7 @@
                 <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span>{#if p.full}<span class="small muted text-ui-sm"> · whole change</span>{/if}</td>
                 <td class="num">{p.steps}</td>
                 <td class="num">{p.costUsd !== undefined ? costTotal(p.costUsd) : ''}</td>
-                <td title={p.reusedFrom ? `Reused from run ${p.reusedFrom}` : undefined}>{p.reusedFrom ? 'Reused' : `${p.stop}${cutShort(p.forcedBy)}`}</td>
+                <td title={p.reusedFrom ? `Reused from run ${p.reusedFrom}` : undefined}>{p.reusedFrom ? 'Reused' : p.stop}{cutShort(p.forcedBy)}</td>
                 <td class="error-cell text-danger text-ui-sm max-w-80 [word-break:break-word]">{p.error}</td>
               </tr>
             {/each}
