@@ -109,16 +109,24 @@ func (f File) Path() string {
 	if f.OldPath != "" {
 		return f.OldPath
 	}
+	first, _, _ := strings.Cut(f.Header, "\n")
+	_, after, isDiff := strings.Cut(first, "diff --git ")
+	// git quotes a name whole, its prefix with it, and go-git writes every
+	// name bare, so a rename's name is git's quoting only where the diff
+	// line quotes the head-side name too.
+	quoted := strings.Contains(after, ` "b/`)
 	for l := range strings.Lines(f.Header) {
 		l = strings.TrimSuffix(l, "\n")
 		for _, prefix := range []string{"rename to ", "copy to "} {
 			if name, ok := strings.CutPrefix(l, prefix); ok {
-				return unquoteName(name)
+				if quoted {
+					return unquoteName(name)
+				}
+				return name
 			}
 		}
 	}
-	first, _, _ := strings.Cut(f.Header, "\n")
-	if _, after, ok := strings.Cut(first, "diff --git "); ok {
+	if isDiff {
 		// Without a rename or copy, both names are the file's, and a name git
 		// quotes is quoted whole, so the first says it.
 		if q, err := strconv.QuotedPrefix(after); err == nil && strings.HasPrefix(q, `"`) {

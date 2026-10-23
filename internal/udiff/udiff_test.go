@@ -133,6 +133,9 @@ rename to "\303\266.txt"
 	if got := bare[0].Path(); got != `foo "b/bar"` {
 		t.Errorf("bare rename = %q", got)
 	}
+	if got := Parse("diff --git a/old b/\"q.txt\"\nrename from old\nrename to \"q.txt\"\n")[0].Path(); got != `"q.txt"` {
+		t.Errorf("bare rename to a quoted name = %q", got)
+	}
 	binary := Parse("diff --git \"a/\\303\\251.png\" \"b/\\303\\251.png\"\nindex 1..2 100644\nBinary files \"a/\\303\\251.png\" and \"b/\\303\\251.png\" differ\n")
 	if got := binary[0].Path(); got != "é.png" {
 		t.Errorf("binary = %q", got)
