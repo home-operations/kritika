@@ -4,7 +4,7 @@
   import { href, replace } from '../router.svelte';
   import { Paged } from '../resource.svelte';
   import { indexTone } from '../format';
-  import { repoRoute, accountApi, reindexPath, turnedOnPath } from '../links';
+  import { repoRoute, accountApi, reindexPath, turnedOnPath, forgeName } from '../links';
   import { getJSON, sendJSON } from '../api.svelte';
   import { describe, sendEach, toastTally } from '../manage';
   import { isAdmin } from '../session.svelte';
@@ -46,6 +46,7 @@
   }
 
   const base = $derived(`${accountApi(slug)}/repos`);
+  const forge = $derived(forgeName(slug));
   const paged = new Paged<Repository>(
     (cursor) => `${base}?limit=100${kind ? `&type=${kind}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     (r) => r.id,
@@ -114,14 +115,14 @@
     toastTally(tally, `Reindex queued for ${plural(tally.done)}`);
   }
 
-  // resync lists the repositories the account's App reaches again, which
+  // resync lists the repositories the account's App or bot reaches again, which
   // records any newly archived, unarchived or added since.
   async function resync(): Promise<void> {
     busy = true;
     try {
       const d = await getJSON<AccountDetail>(accountApi(slug));
       const r = await sendJSON<RegisterResult>('POST', `/api/v1/admin/connections/${encodeURIComponent(d.connection.name)}/repositories`);
-      toast(r?.added ? `Resynced from GitHub: ${plural(r.added)} added` : 'Resynced from GitHub');
+      toast(r?.added ? `Resynced from ${forge}: ${plural(r.added)} added` : `Resynced from ${forge}`);
       void paged.load();
     } catch (err) {
       toast(`Resync failed: ${describe(err)}`, 'danger');
@@ -143,7 +144,7 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
+    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn" disabled={busy} onclick={resync}>Resync from {forge}</button>{/if}{/snippet}</PageHeader>
     <div class="toolbar flex flex-wrap items-center gap-2">
       <label class="search-box [flex:1_1_240px] min-w-0 flex">
         <span class="sr-only">Filter repositories</span>
@@ -173,7 +174,7 @@
     {:else if kind === 'public'}
       <p class="small muted text-ui-sm">Anyone on the internet can read the reviews, summaries and inline comments kritika posts on a public repository.</p>
     {:else if kind === 'archived'}
-      <p class="small muted text-ui-sm">Archived repositories are inactive. Unarchive on GitHub, resync, then turn it on if it is off.</p>
+      <p class="small muted text-ui-sm">Archived repositories are inactive. Unarchive on {forge}, resync, then turn it on if it is off.</p>
     {:else}
       <p class="small muted text-ui-sm">Newly discovered repositories start off. Turn on the repositories you want reviewed and indexed.</p>
     {/if}
@@ -228,7 +229,7 @@
                   <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
                   <td>
                     {#if manage}
-                      <span class="toggle inline-flex items-center gap-1.5 [vertical-align:middle]" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
+                      <span class="toggle inline-flex items-center gap-1.5 [vertical-align:middle]" title={repo.archived ? `Archived on ${forge}: unarchive it there first` : undefined}>
                         <Switch.Root
                           class="switch relative flex-none w-7.5 h-4.5 p-0 border-0 rounded-[999px] [background:color-mix(in_srgb,_var(--muted)_70%,_var(--panel))] cursor-pointer [transition:background_0.15s]"
                           aria-label={`Review and index ${repo.fullName}`}
