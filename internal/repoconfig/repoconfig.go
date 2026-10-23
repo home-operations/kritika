@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 
@@ -182,7 +183,11 @@ func Parse(data []byte) (File, error) {
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
-	if err := configfile.CheckReviewers(f.Review.Reviewers); err != nil {
+	// The default reviewer's entry is the admin's: Merge drops it with a
+	// note, whatever it writes, rather than the file being refused.
+	others := maps.Clone(f.Review.Reviewers)
+	delete(others, review.DefaultReviewer)
+	if err := configfile.CheckReviewers(others); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {

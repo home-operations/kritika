@@ -285,14 +285,15 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 
 // namedReviewer is the reviewer "@<bot> review <name>" asks to run alone:
 // the default one, or one the repository's settings, its .kritika.yaml
-// applied, name; "" when nothing follows review, for a review of every
-// reviewer that applies. requested is a word that names no reviewer,
-// which the review states it ran every reviewer in place of.
+// applied, name, while it is on; "" when nothing follows review, for a
+// review of every reviewer that applies. requested is a word that names no
+// reviewer that is on, which the review states it ran every reviewer in
+// place of.
 func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested string, err error) {
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
 	name := requestedReviewer(f.comment.Body, slug)
-	if name == "" || name == review.DefaultReviewer {
-		return name, "", nil
+	if name == "" {
+		return "", "", nil
 	}
 	if _, err := f.repoConfig(ctx); err != nil {
 		return "", "", err
@@ -302,10 +303,17 @@ func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested strin
 }
 
 // splitRequested is name as a review request carries it: the reviewer to
-// run alone when reviewers name it, else the word requested, kept apart so
-// the review in flight stands in for one of every reviewer.
+// run alone when it is one that is on, the default one included, else the
+// word requested, kept apart so the request is one of every reviewer,
+// which a review of every reviewer in flight stands in for.
 func splitRequested(name string, reviewers map[string]configfile.Reviewer) (reviewer, requested string) {
-	if _, ok := reviewers[name]; ok || name == review.DefaultReviewer {
+	if name == review.DefaultReviewer {
+		if configfile.DefaultOn(reviewers) {
+			return name, ""
+		}
+		return "", name
+	}
+	if r, ok := reviewers[name]; ok && r.On() {
 		return name, ""
 	}
 	return "", name

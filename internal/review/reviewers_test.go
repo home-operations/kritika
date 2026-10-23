@@ -213,6 +213,14 @@ func TestRenderReviewers(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, summary)
 		}
 	}
+	// A specialist that ran alone, finding nothing, is still named.
+	lone := RenderData{Number: 1, HeadSHA: "abcdef1234", Reviewers: []string{"security"}}
+	summary, _ = RenderSummary(context.Background(), Templates{}, lone)
+	for _, want := range []string{"1 reviewer</summary>", "**Reviewers:** `security`"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("a lone specialist's summary lacks %q:\n%s", want, summary)
+		}
+	}
 	f.Reviewers, data.Reviewers = nil, []string{DefaultReviewer}
 	data.Result.Findings = []Finding{f}
 	summary, _ = RenderSummary(context.Background(), Templates{}, data)

@@ -79,11 +79,11 @@
 {{ end -}}
 {{ end -}}
 {{ end -}}
-{{ if or .Sources .Skills.Names .Commands.Names (gt (len .Reviewers) 1) }}
+{{ if or .Sources .Skills.Names .Commands.Names .NamedReviewers }}
 <details>
-<summary>Review context{{ if gt (len .Reviewers) 1 }} · {{ len .Reviewers }} reviewers{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
+<summary>Review context{{ if .NamedReviewers }} · {{ len .Reviewers }} {{ plural "reviewer" "reviewers" (len .Reviewers) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
 
-{{ if gt (len .Reviewers) 1 -}}
+{{ if .NamedReviewers -}}
 - **Reviewers:** `{{ join "` `" .Reviewers }}`
 {{ end -}}
 {{ if .Sources -}}

@@ -258,6 +258,10 @@ func categoryNames() string {
 func ReviewerFiles(reviewers map[string]Reviewer) []string {
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(reviewers)) {
+		if name == review.DefaultReviewer {
+			// It names no file the review reads: its only key is enabled.
+			continue
+		}
 		r := reviewers[name]
 		for _, p := range append([]string{r.File}, ruleFiles(r.Rules)...) {
 			if p != "" && !slices.Contains(out, p) {

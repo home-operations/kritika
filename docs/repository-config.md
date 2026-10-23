@@ -427,6 +427,7 @@ The summary template's dot is the review:
 | `.Incremental`, `.PriorHeadSHA`, `.PriorHeadURL`                             | whether the review covered only what changed since the last one, and that review's head                                  |
 | `.Prior`                                                                     | the last review's findings this review listed as resolved, with `.Resolved`, then those dismissed, with `.Dismissed` and `.DismissReason` |
 | `.Sources`                                                                   | links to what the review's commands fetched                                                                              |
+| `.Reviewers`, `.NamedReviewers`                                             | the [reviewers](#reviewers) the review ran, in order, and whether one other than the default ran, alone or beside it   |
 | `.Skills`, `.Commands`                                                       | the repository's skills and the run tool's commands the review was offered, each with `.Names`, every one offered, and `.Used`, the ones it read or ran; `.Named` is `.Used` sorted and cut to the first 10, `.More` how many that leaves out |
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
 | `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` (the scorer's own), `.Explanation` (the reason, then how a floor held the risk when one did), `.Rated` and `.Held` (the scorer's rating and the path that held it, "" when none did) and `.Model` |
@@ -442,6 +443,7 @@ beside it:
 | `.Severity`, `.Category`     | how much it matters, and what kind of problem it is; `.Severity.Label` is its badge text, P0 to P2, and `.Severity.Badge .WebURL` the badge image, or the label in bold without a dashboard |
 | `.WebURL`                    | the dashboard's origin, "" when the admin's `comments.dashboard` is off |
 | `.Title`, `.Explanation`     | what it is                                                       |
+| `.Reviewers`, `.ReviewedBy`  | the [reviewers](#reviewers) that raised it, none for the default one alone, and their names joined for a comment, "" for the default one alone |
 | `.SuggestedFix`              | the fix, in prose                                                |
 | `.Replacement`               | the lines that replace the finding's, for a one-click suggestion |
 | `.AgentPrompt`               | a prompt a coding agent can apply the fix from                   |

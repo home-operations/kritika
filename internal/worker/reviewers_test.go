@@ -169,11 +169,20 @@ func TestSkipDescriptionNoReviewer(t *testing.T) {
 // queues a review of every reviewer that keeps the word, so the review
 // states why the one asked for did not run.
 func TestRequestedNoReviewer(t *testing.T) {
-	configured := map[string]configfile.Reviewer{"security": {}}
-	for _, tt := range []struct{ name, reviewer, requested string }{
-		{"security", "security", ""}, {"default", "default", ""}, {"please", "", "please"},
+	off := false
+	configured := map[string]configfile.Reviewer{"security": {}, "retired": {Enabled: &off}}
+	defaultOff := map[string]configfile.Reviewer{"default": {Enabled: &off}}
+	for _, tt := range []struct {
+		name                string
+		reviewers           map[string]configfile.Reviewer
+		reviewer, requested string
+	}{
+		{"security", configured, "security", ""}, {"default", configured, "default", ""}, {"please", configured, "", "please"},
+		// A reviewer that is off is a word that names none: the request is
+		// one of every reviewer, as its review runs.
+		{"retired", configured, "", "retired"}, {"default", defaultOff, "", "default"},
 	} {
-		if r, q := splitRequested(tt.name, configured); r != tt.reviewer || q != tt.requested {
+		if r, q := splitRequested(tt.name, tt.reviewers); r != tt.reviewer || q != tt.requested {
 			t.Errorf("splitRequested(%q) = %q, %q; want %q, %q", tt.name, r, q, tt.reviewer, tt.requested)
 		}
 	}

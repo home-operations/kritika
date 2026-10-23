@@ -84,7 +84,8 @@ type RenderData struct {
 	// gives them.
 	Sources []string
 	// Reviewers are the reviewers the review ran, in the order it ran
-	// them; the default template lists them when there is more than one.
+	// them; the default template lists them unless the default reviewer
+	// ran alone (see NamedReviewers).
 	Reviewers []string
 	// Skills are the repository's skills the review was offered and the
 	// ones it read; Commands the run tool's commands it was offered and
@@ -101,6 +102,13 @@ type RenderData struct {
 	// the review; both "" when the dashboard has no public URL. The
 	// default template then leaves the re-run badge out.
 	WebURL, PullURL string
+}
+
+// NamedReviewers reports whether the review ran a reviewer other than the
+// default one, alone or beside it, which the default template names: a
+// review by the default reviewer alone reads as it always has.
+func (d RenderData) NamedReviewers() bool {
+	return slices.ContainsFunc(d.Reviewers, func(r string) bool { return r != DefaultReviewer })
 }
 
 // Offered is one kind of help a review was offered, the repository's
