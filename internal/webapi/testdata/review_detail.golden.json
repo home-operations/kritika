@@ -137,6 +137,7 @@
         "full": true,
         "paths": ["a.go"],
         "stop": "submitted",
+        "forcedBy": "time",
         "error": "",
         "steps": 2,
         "costUsd": 0.04

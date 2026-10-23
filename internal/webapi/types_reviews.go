@@ -110,7 +110,11 @@ type TimelineStep struct {
 // repository skills the agent could read, SkillsOpened the ones it did;
 // CommandsOffered and CommandsRun the same for the run tool's commands.
 type AgentRun struct {
-	StopReason      string          `json:"stopReason"`
+	StopReason string `json:"stopReason"`
+	// ForcedBy is the limit that made the loop tell the agent to submit:
+	// steps, tokens or time; absent when it never did, and for a split
+	// review, whose parts each say.
+	ForcedBy        string          `json:"forcedBy,omitzero"`
 	Steps           int             `json:"steps"`
 	ToolCalls       map[string]int  `json:"toolCalls"`
 	Timeline        []TimelineStep  `json:"timeline"`
@@ -145,6 +149,7 @@ type AgentPart struct {
 	Full       bool     `json:"full,omitzero"`
 	Paths      []string `json:"paths"`
 	Stop       string   `json:"stop"`
+	ForcedBy   string   `json:"forcedBy,omitzero"`
 	Error      string   `json:"error"`
 	Steps      int      `json:"steps"`
 	CostUSD    float64  `json:"costUsd,omitzero"`

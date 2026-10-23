@@ -116,15 +116,16 @@ func restorePart(row store.PartCheckpoint, parts []reviewPart) (partCheckpoint, 
 	return part, nil
 }
 
-// savePart stores only a submitted answer and provenance. Usage stays on the
-// source run; reusing an answer performs no model steps or commands.
+// savePart stores only a submitted answer, the limit that forced it, and
+// provenance. Usage stays on the source run; reusing an answer performs no
+// model steps or commands.
 func savePart(ctx context.Context, st *store.Store, p Spec, secrets Secrets, hash string, part int, res agent.Result,
 	tools agentTools,
 ) error {
 	meta := agentRecord{}
 	meta.useTools(tools)
 	checkpoint := partCheckpoint{
-		Result:  agent.Result{Stop: res.Stop, Submitted: res.Submitted, Model: res.Model},
+		Result:  agent.Result{Stop: res.Stop, Submitted: res.Submitted, Model: res.Model, ForcedBy: res.ForcedBy},
 		Sources: toolSources(tools), SkillsOpened: meta.skillsOpened, CommandsRun: meta.commandsRun, CommandErrors: meta.commandErrors,
 	}
 	payload, err := json.Marshal(checkpoint)

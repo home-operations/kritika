@@ -1140,7 +1140,7 @@ test.describe('review', () => {
         { ...step, index: 2, part: 2 },
       ],
       parts: [
-        { paths: ['server/a.ts', 'server/b.ts', 'web/c.ts'], stop: 'submitted', error: '', steps: 2 },
+        { paths: ['server/a.ts', 'server/b.ts', 'web/c.ts'], stop: 'submitted', forcedBy: 'time', error: '', steps: 2 },
         { paths: ['docs/d.md'], stop: 'no_submit', error: 'answered in prose', steps: 1 },
       ],
     };
@@ -1148,10 +1148,17 @@ test.describe('review', () => {
     await page.goto(`/${T}/reviews/rev-1/timeline`);
     await expect(page.locator('section[aria-labelledby="tl-agent"] .panel-head')).toContainText('3 steps in 2 parts');
     const rows = page.getByRole('table', { name: 'Parts' }).locator('tbody tr');
-    await expect(rows.nth(0).locator('td')).toHaveText(['1', '3 files in server/, web/', '2', '', 'submitted', '']);
+    await expect(rows.nth(0).locator('td')).toHaveText(['1', '3 files in server/, web/', '2', '', 'submitted, cut short at its time limit', '']);
     await expect(rows.nth(1).locator('td')).toHaveText(['2', '1 file in docs/', '1', '', 'no_submit', 'answered in prose']);
     const labels = page.getByRole('img', { name: /^Tokens per agent step/ }).locator('.chart-tick').filter({ hasText: /^\d+\.\d+$/ });
     await expect(labels).toHaveText(['1.0', '1.1', '2.0']);
+  });
+
+  test('a run cut short says at which limit', async ({ page }) => {
+    const agentRun = { ...g.reviewDetail.agentRun!, stopReason: 'submitted', forcedBy: 'steps' };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    await expect(page.locator('section[aria-labelledby="tl-agent"] .panel-head')).toContainText('submitted, cut short at its step limit');
   });
 
   test('a part names its agent, marks a whole-change review and shows its cost, with each agent\'s total', async ({ page }) => {

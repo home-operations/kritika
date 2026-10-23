@@ -56,7 +56,7 @@ func TestPartCheckpointPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := agent.Result{Stop: agent.StopSubmitted, Submitted: submission("a.go", "repository-secret"), Model: "model",
-		Steps: 4, Usage: model.Usage{Input: 100, Output: 20}, CostUSD: 0.5}
+		Steps: 4, Usage: model.Usage{Input: 100, Output: 20}, CostUSD: 0.5, ForcedBy: agent.ForcedByTime}
 	if err := savePart(ctx, runner, s, Secrets{GitToken: "repository-secret"}, hash, 1, result, agentTools{}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,8 @@ func TestPartCheckpointPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := saved[0]
-	if got.SourceRun != s.RunID || got.Result.Stop != agent.StopSubmitted || strings.Contains(string(got.Result.Submitted), "repository-secret") {
+	if got.SourceRun != s.RunID || got.Result.Stop != agent.StopSubmitted || strings.Contains(string(got.Result.Submitted), "repository-secret") ||
+		got.Result.ForcedBy != agent.ForcedByTime {
 		t.Fatalf("restored result = %+v", got)
 	}
 	if got.Result.CostUSD != 0 || got.Result.Steps != 0 || got.Result.Usage.Prompt() != 0 {

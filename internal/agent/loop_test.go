@@ -228,6 +228,9 @@ func checkForcedRejectedSubmitRetried(t *testing.T, result Result, _ []StepEvent
 	if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "verdict is required") || !toldToSubmit(last) {
 		t.Fatalf("retry request = %+v, want the rejection and the submit instruction", last.Messages)
 	}
+	if result.ForcedBy != "" {
+		t.Fatalf("ForcedBy = %q for a run of one step", result.ForcedBy)
+	}
 }
 
 // holdFallback is a Fallback that holds a refused input with a "fallback"
@@ -882,17 +885,16 @@ func TestRunWaitsOutATransientStepFailure(t *testing.T) {
 	})
 }
 
-// slowStepper answers as its script says, each answer taking took, after
-// failing transiently once first when fails is set.
+// slowStepper answers as its script says, each answer taking took, but
+// fails transiently on its call failOn, from 1, 0 for none.
 type slowStepper struct {
 	scriptedStepper
-	took  time.Duration
-	fails bool
+	took      time.Duration
+	failOn, n int
 }
 
 func (s *slowStepper) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
-	if s.fails {
-		s.fails = false
+	if s.n++; s.n == s.failOn {
 		return model.StepResponse{}, fmt.Errorf("model: review: %w", io.ErrUnexpectedEOF)
 	}
 	time.Sleep(s.took)
@@ -915,7 +917,7 @@ func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
 	tests := []struct {
 		name          string
 		timeout, took time.Duration
-		fails         bool
+		failOn        int
 		// tools is how many tool steps come before the submission, and
 		// told the first step told to submit, -1 for none.
 		tools, told int
@@ -929,7 +931,11 @@ func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
 		{name: "a run with no deadline is never told", took: time.Hour, tools: 3, told: -1},
 		// The first answer comes after a 3m wait, which would have the Run
 		// keep 6m of the 5m left had it counted.
-		{name: "a wait between attempts is not an answer's time", timeout: 8 * time.Minute, fails: true, tools: 1, told: -1},
+		{name: "a wait between attempts is not an answer's time", timeout: 8 * time.Minute, failOn: 1, tools: 1, told: -1},
+		// The second step fails, and its 3m wait leaves 30s of the 3m30s, a
+		// quarter of which is kept: it goes again told to submit.
+		{name: "a wait into the time kept sends the step again told to submit", timeout: 3*time.Minute + 30*time.Second, failOn: 2,
+			tools: 1, told: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -940,7 +946,7 @@ func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
 					ctx, cancel = context.WithTimeout(ctx, tt.timeout)
 					defer cancel()
 				}
-				s := &slowStepper{steps: toolSteps(tt.tools), took: tt.took, fails: tt.fails}
+				s := &slowStepper{steps: toolSteps(tt.tools), took: tt.took, failOn: tt.failOn}
 				run := Run{Stepper: s, Model: "m", User: "review", Tools: []Tool{&fakeTool{name: "noop", output: "ok"}}, Submit: testSubmitDef}
 				res := run.Do(ctx)
 				if res.Stop != StopSubmitted {

@@ -157,7 +157,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 
 func agentRun(a *store.AgentRunRow) *AgentRun {
 	out := &AgentRun{
-		StopReason: a.StopReason, Steps: a.Steps, ToolCalls: a.ToolCalls, Timeline: make([]TimelineStep, len(a.Timeline)),
+		StopReason: a.StopReason, ForcedBy: a.ForcedBy, Steps: a.Steps, ToolCalls: a.ToolCalls, Timeline: make([]TimelineStep, len(a.Timeline)),
 		Sources: a.Sources, SkillsOffered: a.SkillsOffered, SkillsOpened: a.SkillsOpened,
 		CommandsOffered: a.CommandsOffered, CommandsRun: a.CommandsRun, Usage: usageOf(a.Usage),
 		CostUSD: a.CostUSD, UnpricedSteps: a.UnpricedSteps, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt,
@@ -172,7 +172,8 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 	}
 	for i, p := range a.Parts {
 		out.Parts[i] = AgentPart{
-			Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom, Agent: p.Reviewer, Full: p.Full,
+			Paths: p.Paths, Stop: p.Stop, ForcedBy: p.ForcedBy, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom,
+			Agent: p.Reviewer, Full: p.Full,
 		}
 	}
 	return out

@@ -689,6 +689,10 @@ export interface TimelineStep {
 
 export interface AgentRun {
   stopReason: string;
+  // forcedBy is the limit that made the loop tell the agent to submit: steps,
+  // tokens or time; absent when it never did, and for a split review, whose
+  // parts each say.
+  forcedBy?: string;
   steps: number;
   toolCalls: Record<string, number>;
   timeline: TimelineStep[];
@@ -725,6 +729,7 @@ export interface AgentPart {
   costUsd?: number;
   paths: string[];
   stop: string;
+  forcedBy?: string;
   error: string;
   steps: number;
 }
