@@ -17,7 +17,9 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
-func TestWriteAgentCommandCounts(t *testing.T) {
+// TestWriteAgentRun saves the run tool's command counts, and the limit
+// that made the loop tell the agent to submit, as the runner writes them.
+func TestWriteAgentRun(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_KEY", "test")
@@ -39,7 +41,11 @@ func TestWriteAgentCommandCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(runner.Close)
-	for _, counts := range []map[string]int{{"rg": 3, "jq": 1}, {}} {
+	for _, tt := range []struct {
+		counts map[string]int
+		forced agent.ForcedBy
+	}{{map[string]int{"rg": 3, "jq": 1}, agent.ForcedByTime}, {map[string]int{}, ""}} {
+		counts := tt.counts
 		var id string
 		if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, a.ID()).Scan(&id)
@@ -50,7 +56,7 @@ func TestWriteAgentCommandCounts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rec, err := newAgentRecord(agent.Result{Stop: agent.StopError}, nil, nil, Secrets{})
+		rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, ForcedBy: tt.forced}, nil, nil, Secrets{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +75,11 @@ func TestWriteAgentCommandCounts(t *testing.T) {
 			if got == nil || !maps.Equal(got, counts) || phase != "failed" {
 				t.Errorf("saved counts=%v phase=%s, want %v failed", got, phase, counts)
 			}
-			return nil
+			run, err := store.FindAgentRun(ctx, tx, id)
+			if err == nil && run.ForcedBy != string(tt.forced) {
+				t.Errorf("saved forced_by = %q, want %q", run.ForcedBy, tt.forced)
+			}
+			return err
 		}); err != nil {
 			t.Fatal(err)
 		}

@@ -249,11 +249,11 @@ func TestPromptInputsNotes(t *testing.T) {
 	big := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1," + strconv.Itoa(lines) + " @@\n" + strings.Repeat("+x\n", lines)
 	long := packView{Diff: agentDiff + big, Changed: []string{"main.go", "big.go"}}
 	prompt := newAgentPrompt(s, in, long, nil, false, false)
-	if notes := prompt.notes(); len(notes) != 1 || notes[0] != "1 diff file(s) left out of the prompt to fit its budget: big.go" {
+	if notes := prompt.notes(); len(notes) != 1 || notes[0] != "1 diff file(s) left out of the prompt to fit its budget, for the agent to read with read_diff: big.go" {
 		t.Fatalf("prompt notes = %q", notes)
 	}
 	many := agentPrompt{omitted: []string{"a", "b", "c", "d", "e", "f", "g"}, contextOmitted: 2}
-	want := []string{"7 diff file(s) left out of the prompt to fit its budget: a, b, c, d, e, and 2 more", "2 context chunk(s) left out of the prompt to fit its budget"}
+	want := []string{"7 diff file(s) left out of the prompt to fit its budget, for the agent to read with read_diff: a, b, c, d, e, and 2 more", "2 context chunk(s) left out of the prompt to fit its budget"}
 	if notes := many.notes(); !slices.Equal(notes, want) {
 		t.Fatalf("notes = %q, want %q", notes, want)
 	}

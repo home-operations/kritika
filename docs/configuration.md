@@ -573,13 +573,18 @@ a new title.
 | `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |
 | `fetches`        | 8                    | repositories `fetch_repo` may fetch, and images `fetch_oci` may inspect, for a review, a split one's parts between them |
 
-- **Submitting:** the last step is told to submit, as is any step once the
-  review has spent nine tenths of its `tokens`. A step told to submit that
-  does not, because the submission was rejected, it answered in prose or
-  it called another tool, which is refused, is told again, up to twice, so
-  the steps spent reading are not lost to one slip at the end. `steps: 1`
-  is the cheapest review: one step, which must submit the findings, over
-  the same prompt.
+- **Submitting:** the last step is told to submit what the review has
+  found, as is any step once the review has spent nine tenths of its
+  `tokens`, or once its `timeout` is close: the time left is no more than
+  twice its slowest step's answer, and at least two minutes, or a quarter
+  of the time the loop was given when that is less, which for a part of a
+  split review can be under its `timeout`. A step told to submit that does not,
+  because the submission was rejected, it answered in prose or it called
+  another tool, which is refused, is told again, up to twice, so the steps
+  spent reading are not lost to one slip at the end. A review submitted
+  so says in its summary that it may not cover all it meant to check.
+  `steps: 1` is the cheapest review: one step, which must submit the
+  findings, over the same prompt, and is not taken as cut short.
 - **Output per step:** a step may produce 16384 tokens, and a model
   reasoning at a high [`review.effort`](models.md#effort) can spend them
   all before it calls a tool. Such a step is told to go on rather than to

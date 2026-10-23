@@ -188,7 +188,8 @@ var goldens = map[string]any{
 			CarriedReviewID: new("rev-0"),
 			Parts: []AgentPart{
 				{Paths: []string{"a.go"}, Stop: "submitted", Error: "", Steps: 3, Agent: "default", CostUSD: 0.06},
-				{Paths: []string{"a.go"}, Stop: "submitted", Error: "", Steps: 2, Agent: "security", Full: true, CostUSD: 0.04},
+				{Paths: []string{"a.go"}, Stop: "submitted", ForcedBy: "time", Error: "", Steps: 2, Agent: "security", Full: true,
+					CostUSD: 0.04},
 			},
 		},
 		Usage: []UsageRow{{Role: "review", Model: "acme/large", Upstream: "acme", InputTokens: 100, OutputTokens: 20, CostUSD: 0.1, CreatedAt: t1}},

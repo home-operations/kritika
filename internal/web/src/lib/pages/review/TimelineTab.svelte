@@ -16,6 +16,12 @@
     cls: string;
   }
 
+  const limits: Record<string, string> = { steps: 'step limit', tokens: 'token budget', time: 'time limit' };
+  // cutShort says at which limit the loop told an agent to submit, "" when it never did.
+  function cutShort(by?: string): string {
+    return by ? `, cut short at its ${limits[by] ?? by}` : '';
+  }
+
   function segments(r: RunnerRun, now: number): Segment[] {
     const out: Segment[] = [];
     const add = (name: string, cls: string, from: string | null, to: string | null) => {
@@ -103,7 +109,7 @@
   <section class="panel" aria-labelledby="tl-agent">
     <header class="panel-head">
       <h2 id="tl-agent">Agent steps</h2>
-      <span class="small muted text-ui-sm">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {costTotal(a.costUsd, a.unpricedSteps)} API spend</span>
+      <span class="small muted text-ui-sm">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason}{cutShort(a.forcedBy)} · {costTotal(a.costUsd, a.unpricedSteps)} API spend</span>
     </header>
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />
@@ -122,7 +128,7 @@
                 <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span>{#if p.full}<span class="small muted text-ui-sm"> · whole change</span>{/if}</td>
                 <td class="num">{p.steps}</td>
                 <td class="num">{p.costUsd !== undefined ? costTotal(p.costUsd) : ''}</td>
-                <td title={p.reusedFrom ? `Reused from run ${p.reusedFrom}` : undefined}>{p.reusedFrom ? 'Reused' : p.stop}</td>
+                <td title={p.reusedFrom ? `Reused from run ${p.reusedFrom}` : undefined}>{p.reusedFrom ? 'Reused' : p.stop}{cutShort(p.forcedBy)}</td>
                 <td class="error-cell text-danger text-ui-sm max-w-80 [word-break:break-word]">{p.error}</td>
               </tr>
             {/each}

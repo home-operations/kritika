@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
@@ -127,6 +129,9 @@ func checkGrepReadSubmit(t *testing.T, result Result, _ []StepEvent, _ *scripted
 	if result.Model != "acme/small" {
 		t.Fatalf("Model = %q, want the model that answered the last step", result.Model)
 	}
+	if result.ForcedBy != "" {
+		t.Fatalf("ForcedBy = %q for a model that submitted on its own", result.ForcedBy)
+	}
 	want := map[string]int{"grep": 1, "read_file": 1, "submit_review": 1}
 	if len(result.ToolCalls) != len(want) {
 		t.Fatalf("ToolCalls = %v, want %v", result.ToolCalls, want)
@@ -222,6 +227,9 @@ func checkForcedRejectedSubmitRetried(t *testing.T, result Result, _ []StepEvent
 	results := last.Messages[len(last.Messages)-1].ToolResults
 	if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "verdict is required") || !toldToSubmit(last) {
 		t.Fatalf("retry request = %+v, want the rejection and the submit instruction", last.Messages)
+	}
+	if result.ForcedBy != "" {
+		t.Fatalf("ForcedBy = %q for a run of one step", result.ForcedBy)
 	}
 }
 
@@ -412,9 +420,12 @@ func setupBudgetTellsToSubmit(t *testing.T) (model.Stepper, context.Context, *sc
 	return st, nil, st
 }
 
-func checkBudgetTellsToSubmit(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+func checkBudgetTellsToSubmit(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
 	if len(scripted.calls) != 2 {
 		t.Fatalf("expected 2 calls, got %d", len(scripted.calls))
+	}
+	if result.ForcedBy != ForcedByTokens {
+		t.Fatalf("ForcedBy = %q, want the token budget", result.ForcedBy)
 	}
 	// The step is told to submit in its last user message, with the tool
 	// choice left to the model, never forced.
@@ -650,6 +661,9 @@ func checkMaxStepsReachedWithoutSubmit(t *testing.T, result Result, _ []StepEven
 	if !strings.Contains(result.Err, "3 step(s)") {
 		t.Fatalf("Err = %q, want the forced steps counted", result.Err)
 	}
+	if result.ForcedBy != ForcedBySteps {
+		t.Fatalf("ForcedBy = %q, want the step cap", result.ForcedBy)
+	}
 }
 
 func setupContextCanceledBeforeFirstStep(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
@@ -860,15 +874,101 @@ func TestRunWaitsOutATransientStepFailure(t *testing.T) {
 		})
 	}
 
+	// The first wait ends where the time the run keeps to submit in starts,
+	// and the step goes again told to submit; the ctx cuts that one's wait.
 	t.Run("a wait the ctx cut ends the run canceled", func(t *testing.T) {
 		stepRetryWaits = []time.Duration{time.Hour}
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
 		s := &outageStepper{outage: 5}
-		if res := (Run{Stepper: s, Model: "m", User: "review", Submit: testSubmitDef}).Do(ctx); res.Stop != StopCanceled || s.calls != 1 {
-			t.Fatalf("stop = %s after %d calls, want canceled after one", res.Stop, s.calls)
+		if res := (Run{Stepper: s, Model: "m", User: "review", Submit: testSubmitDef}).Do(ctx); res.Stop != StopCanceled || s.calls != 2 {
+			t.Fatalf("stop = %s after %d calls, want canceled after two", res.Stop, s.calls)
 		}
 	})
+}
+
+// slowStepper answers as its script says, each answer taking took, but
+// fails transiently on its call failOn, from 1, 0 for none.
+type slowStepper struct {
+	scriptedStepper
+	took      time.Duration
+	failOn, n int
+}
+
+func (s *slowStepper) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+	if s.n++; s.n == s.failOn {
+		return model.StepResponse{}, fmt.Errorf("model: review: %w", io.ErrUnexpectedEOF)
+	}
+	time.Sleep(s.took)
+	return s.scriptedStepper.Step(ctx, req)
+}
+
+// toolSteps is n steps that each call noop, then one that submits.
+func toolSteps(n int) []model.StepResponse {
+	steps := make([]model.StepResponse, 0, n+1)
+	for i := range n {
+		steps = append(steps, model.StepResponse{ToolCalls: []model.ToolCall{toolCall(strconv.Itoa(i), "noop", `{}`)}})
+	}
+	return append(steps, model.StepResponse{ToolCalls: []model.ToolCall{toolCall("submit", "submit_review", validSubmitInput)}})
+}
+
+func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
+	old := stepRetryWaits
+	t.Cleanup(func() { stepRetryWaits = old })
+	stepRetryWaits = []time.Duration{3 * time.Minute}
+	tests := []struct {
+		name          string
+		timeout, took time.Duration
+		failOn        int
+		// tools is how many tool steps come before the submission, and
+		// told the first step told to submit, -1 for none.
+		tools, told int
+	}{
+		// Each answer takes 90s, so the Run keeps 3m: the step that starts
+		// at 7m30s, 2m30s before the deadline, is told.
+		{name: "the slowest answer sets the time kept", timeout: 10 * time.Minute, took: 90 * time.Second, tools: 5, told: 5},
+		// Four minutes in all keep a quarter, 1m, over two 10s answers: the
+		// step that starts at 3m, with 1m left, is told.
+		{name: "a short run keeps a quarter of its time", timeout: 4 * time.Minute, took: 10 * time.Second, tools: 18, told: 18},
+		{name: "a run with no deadline is never told", took: time.Hour, tools: 3, told: -1},
+		// The first answer comes after a 3m wait, which would have the Run
+		// keep 6m of the 5m left had it counted.
+		{name: "a wait between attempts is not an answer's time", timeout: 8 * time.Minute, failOn: 1, tools: 1, told: -1},
+		// The second step fails, and its 3m wait would run into the quarter
+		// of the 3m30s kept: it ends where that starts, and the step goes
+		// again told to submit.
+		{name: "a wait into the time kept sends the step again told to submit", timeout: 3*time.Minute + 30*time.Second, failOn: 2,
+			tools: 1, told: 1},
+		// A 3m wait would outlast the 2m30s itself.
+		{name: "a wait past the deadline ends where the time kept starts", timeout: 2*time.Minute + 30*time.Second, failOn: 2,
+			tools: 1, told: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
+				if tt.timeout > 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+					defer cancel()
+				}
+				s := &slowStepper{steps: toolSteps(tt.tools), took: tt.took, failOn: tt.failOn}
+				run := Run{Stepper: s, Model: "m", User: "review", Tools: []Tool{&fakeTool{name: "noop", output: "ok"}}, Submit: testSubmitDef}
+				res := run.Do(ctx)
+				if res.Stop != StopSubmitted {
+					t.Fatalf("stop = %s (%s), want submitted", res.Stop, res.Err)
+				}
+				for i, call := range s.calls {
+					if told := toldToSubmit(call); told != (tt.told >= 0 && i >= tt.told) {
+						t.Fatalf("step %d told to submit = %v, want the first told to be step %d", i, told, tt.told)
+					}
+				}
+				if want := map[bool]ForcedBy{true: ForcedByTime}[tt.told >= 0]; res.ForcedBy != want {
+					t.Fatalf("ForcedBy = %q, want %q", res.ForcedBy, want)
+				}
+			})
+		})
+	}
 }
 
 func TestRun(t *testing.T) {
