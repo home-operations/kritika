@@ -244,7 +244,7 @@ Connections open on demand, so an idle replica holds few:
 | the application pool    | replica    | 16              | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`      |
 | the owner pool          | replica    | 4               | ten minutes, for a migration that builds an index                                        | `kritika-owner`    |
 | the `LISTEN` connection | replica    | 1               | one minute, as the application pool's                                                    | `kritika-listen`   |
-| review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute | `kritika-publication` |
+| review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader; another `KRITIKA_REVIEW_WORKERS` while thread jobs wait on `followup` ([queue upgrades](#queue-upgrades-and-rollbacks)) | one minute | `kritika-publication` |
 | a runner's pool         | runner Job | uses one or two | one minute, as the application pool's                                                    | `kritika-app`      |
 
 Each active review publication holds a separate application-role connection

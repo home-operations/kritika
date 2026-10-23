@@ -91,7 +91,7 @@ egress:
 | Key           | What                                                                                                                                                            |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `allow`       | the destinations a runner may reach: a host, exact or `*.`-prefixed for every host under a domain, `"*"` for every host, or an IP address or CIDR               |
-| `deny`        | destinations refused however `allow` matches them, in the same forms; one that cuts off a host a connection's forge needs is rejected |
+| `deny`        | destinations refused however `allow` matches them, in the same forms; a host pattern that cuts off a host a connection's forge needs is rejected at startup, while an address or CIDR is checked against what a host resolves to on each request, so one can still cut a forge off |
 | `credentials` | a token the gateway adds to a plain `http://` request to that host, so the runner never holds it; the host must be allowed                                      |
 
 A credential's token is a secret reference like any other in the file,

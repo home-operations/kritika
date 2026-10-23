@@ -80,8 +80,9 @@ Set `review.approve: true` to enable approvals.
 An unscored review does not approve when a confidence model is configured.
 Nor does a split review whose parts did not all get reviewed, or a review
 whose head the pull request moved on from while it ran.
-A later review that no longer qualifies withdraws kritika's approval, as does
-a reviewer requesting changes. Reviews of merged or closed pull requests
+A later review that no longer qualifies withdraws kritika's approval,
+including one that finds a reviewer has requested changes; a change request
+alone withdraws nothing until that review. Reviews of merged or closed pull requests
 neither approve nor withdraw an approval.
 
 The summary says **Approved** or **Not approved**. **Not approved** gives a

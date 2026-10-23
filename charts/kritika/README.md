@@ -225,7 +225,7 @@ Kubernetes: `>=1.34.0-0`
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
-| config | object | `{}` | Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys the chart derives from its deployment values (`addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor`, `runner`, and the `gatewayCache*` keys when `gatewayCache.enabled` is set) fail the render. |
+| config | object | `{}` | Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys the chart derives from its deployment values (`addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor`, `runner`, and, when `gatewayCache.enabled` is set, `gatewayCacheDir`, `gatewayCacheStorage`, `gatewayCacheMaxEntrySize`, and `gatewayCacheMaxSize` for filesystem storage or the `gatewayCacheS3*` keys for S3) fail the render. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritika_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |

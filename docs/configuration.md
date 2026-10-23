@@ -30,8 +30,11 @@ and `0` are preserved.
 For an external ConfigMap, set `existingConfigMap` instead of `config`. It must
 contain `config.yaml` with `webUrl` and application settings. Omit chart-owned
 keys: `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
-`databaseRunnerRole`, `executor` and `runner`, and the `gatewayCache*` keys
-when the chart's `gatewayCache.enabled` is set.
+`databaseRunnerRole`, `executor` and `runner`, and, when the chart's
+`gatewayCache.enabled` is set, the gateway cache keys it sets:
+`gatewayCacheDir`, `gatewayCacheStorage`, `gatewayCacheMaxEntrySize`, and
+`gatewayCacheMaxSize` for filesystem storage or the `gatewayCacheS3*` keys
+for S3.
 
 Outside Helm, `KRITIKA_CONFIG_FILE` names the file and is required by `serve`
 and `chatgpt login`. Operational settings can also come from environment
