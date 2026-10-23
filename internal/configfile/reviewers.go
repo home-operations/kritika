@@ -171,8 +171,9 @@ func (a ReviewerAgent) check() error {
 	if a.Tokens != nil && *a.Tokens <= 0 {
 		return errors.New(".agent.tokens must be positive")
 	}
-	if a.Timeout != nil && (*a.Timeout <= 0 || *a.Timeout > jobtimeout.MaxAgentTimeout) {
-		return fmt.Errorf(".agent.timeout must be positive and at most %s", jobtimeout.MaxAgentTimeout)
+	// The job document carries whole seconds.
+	if a.Timeout != nil && (*a.Timeout < time.Second || *a.Timeout > jobtimeout.MaxAgentTimeout) {
+		return fmt.Errorf(".agent.timeout must be at least 1s and at most %s", jobtimeout.MaxAgentTimeout)
 	}
 	return nil
 }

@@ -52,7 +52,7 @@ func loadReview(ctx context.Context, tx pgx.Tx, r *http.Request, withRun bool) (
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return rec, err
 	}
-	if rec.agent != nil && len(rec.agent.Parts) > 1 {
+	if rec.agent != nil && len(rec.agent.Parts) > 0 {
 		if rec.partCosts, err = store.PartCosts(ctx, tx, run.ID); err != nil {
 			return rec, err
 		}

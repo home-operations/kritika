@@ -35,8 +35,11 @@ func TestPlanReviewers(t *testing.T) {
 		want      []share
 		full      bool
 		none      bool
+		// defaultOff marks the default reviewer off, as the worker does.
+		defaultOff bool
 	}{
 		{name: "no reviewers is the review as it always was"},
+		{name: "no reviewers with the default one off is none", defaultOff: true, none: true},
 		{name: "the default reviewer alone too", reviewers: []Reviewer{def}},
 		{name: "the default reviewer the last review did not run reviews the whole change", reviewers: []Reviewer{{Name: def.Name, Full: true}},
 			scope: review.ScopeIncremental, full: true},
@@ -50,6 +53,16 @@ func TestPlanReviewers(t *testing.T) {
 		},
 		{name: "none that applies", reviewers: []Reviewer{{Name: "docs", Paths: []string{"**/*.md"}}}, none: true},
 		{
+			name:      "on a re-review, a file reverted since the last one is still the reviewer's",
+			reviewers: []Reviewer{def, {Name: "web", Paths: []string{"web/**"}}, {Name: "gone", Paths: []string{"old/**"}}},
+			scope:     review.ScopeIncremental,
+			want: []share{
+				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go", "old/x.go"}, review.ScopeIncremental},
+				{"web", []string{"web/page.go"}, review.ScopeIncremental},
+				{"gone", []string{"old/x.go"}, review.ScopeIncremental},
+			},
+		},
+		{
 			name: "a reviewer alone that applies runs in shares", reviewers: []Reviewer{security}, scope: review.ScopeFull,
 			want: []share{{"security", []string{"auth/login.go"}, review.ScopeFull}},
 		},
@@ -61,15 +74,15 @@ func TestPlanReviewers(t *testing.T) {
 			name:      "on a re-review, a reviewer the last review did not run reviews its files whole",
 			reviewers: []Reviewer{def, {Name: "security", Paths: security.Paths, Full: true}}, scope: review.ScopeIncremental,
 			want: []share{
-				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go"}, review.ScopeIncremental},
+				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go", "old/x.go"}, review.ScopeIncremental},
 				{"security", []string{"auth/login.go"}, review.ScopeFull},
 			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
-			s.Prompt.Reviewers = tt.reviewers
-			deltaPaths := []string{"web/page.go"}
+			s.Prompt.Reviewers, s.Prompt.DefaultOff = tt.reviewers, tt.defaultOff
+			deltaPaths := []string{"web/page.go", "old/x.go"}
 			plan := planReviewers(s, res, tt.scope, deltaPaths)
 			if plan.full != tt.full || plan.none != tt.none {
 				t.Fatalf("plan = %+v, want full %v none %v", plan, tt.full, tt.none)

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
@@ -17,10 +19,20 @@ import (
 )
 
 // reviewers is the reviewers a review runs, as its job document carries
-// them, and the note its summary states when only named no reviewer.
+// them, whether the default reviewer is off, and the note its summary
+// states when only named no reviewer that is on.
 type reviewers struct {
-	specs []runner.Reviewer
-	note  string
+	specs      []runner.Reviewer
+	defaultOff bool
+	note       string
+}
+
+// notes are what the summary states of the reviewers: the note, if any.
+func (r reviewers) notes() []string {
+	if r.note == "" {
+		return nil
+	}
+	return []string{r.note}
 }
 
 // count is how many reviewers the review runs, which its parts, grant
@@ -32,10 +44,11 @@ func (r reviewers) count() int { return max(1, len(r.specs)) }
 // unless it is off, then each other one that is on and one of whose when
 // conditions holds, by name. only, when it names a reviewer, is the one a
 // review someone asked for runs alone, whatever its paths and conditions;
-// one that names none runs them all, with a note. A reviewer the last
+// one that names none that is on runs them all, with a note. A reviewer the last
 // review, prior, did not run is marked to review the whole change. specs
 // is nil when the default reviewer runs alone and the last review ran it,
-// as a review always has.
+// as a review always has, or, with defaultOff, when no reviewer is left to
+// run, which the runner skips.
 func chooseReviewers(settings Effective, vars map[string]any, prior priorReview, only string, maxTokens int64) reviewers {
 	var out reviewers
 	names := slices.Sorted(maps.Keys(settings.Reviewers))
@@ -43,15 +56,16 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 	if only != "" {
 		r, named := settings.Reviewers[only]
 		switch {
-		case only == review.DefaultReviewer:
-			names, runDefault = nil, true
-		case named && r.On():
+		case only == review.DefaultReviewer && runDefault:
+			names = nil
+		case only != review.DefaultReviewer && named && r.On():
 			names, runDefault = []string{only}, false
 		default:
-			out.note = fmt.Sprintf("No reviewer is named %s, so every reviewer that applies ran", only)
+			out.note = fmt.Sprintf("No reviewer named %s is on, so every reviewer that applies ran", only)
 			only = ""
 		}
 	}
+	out.defaultOff = !runDefault
 	full := func(name string) bool { return prior.id != "" && !slices.Contains(prior.reviewers, name) }
 	if runDefault {
 		out.specs = append(out.specs, runner.Reviewer{Name: review.DefaultReviewer, Full: full(review.DefaultReviewer)})
@@ -167,4 +181,22 @@ func reviewerCategories(reviewers map[string]configfile.Reviewer) map[string][]r
 		out[name] = r.Categories
 	}
 	return out
+}
+
+// readPull reads the pull request prID once for a review started by
+// trigger, so the reviewers it runs and its prompt judge the same row, and
+// returns it with its filter variables.
+func (w *Review) readPull(ctx context.Context, accountID, prID, trigger string) (repoconfig.PullRequest, map[string]any, error) {
+	var pull repoconfig.PullRequest
+	if err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		var err error
+		pull, err = store.ReadFilterPullRequest(ctx, tx, prID)
+		return err
+	}); err != nil {
+		return repoconfig.PullRequest{}, nil, err
+	}
+	judged := pull
+	judged.Event = trigger
+	vars, err := judged.Vars()
+	return pull, vars, err
 }

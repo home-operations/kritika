@@ -769,6 +769,14 @@ test.describe('findings', () => {
     await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams.get('reviewer')).toBe('security');
     await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue('reviewer:security');
 
+    // A reviewer filter whose page names no reviewer keeps its token, so an edit keeps the filter.
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/findings$`), g.pageOf([g.accountFinding])], ...g.defaultApi()]);
+    await page.goto(`/${T}/findings?reviewer=default`);
+    const box = page.getByRole('combobox', { name: 'Search findings' });
+    await expect(box).toHaveValue('reviewer:default');
+    await box.fill('reviewer:default deref');
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?reviewer=default&q=deref$`));
+
     const review = { ...g.reviewDetail, findings: [{ ...g.reviewDetail.findings[0]!, reviewers: ['security', 'default'] }] };
     await g.mockApi(page, [[/\/reviews\/rev-1$/, review], ...g.defaultApi()]);
     await page.goto(`/${T}/reviews/rev-1`);

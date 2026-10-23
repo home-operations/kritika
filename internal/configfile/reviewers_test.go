@@ -48,7 +48,8 @@ func TestReviewersInvalid(t *testing.T) {
 		{"a rule that is none", `{ sec: { rules: [{ id: a }] } }`, "set one of rule or file"},
 		{"a model of no provider", `{ sec: { model: q/x } }`, "reviewers.sec.model references provider \"q\""},
 		{"an effort that is none", `{ sec: { effort: huge } }`, "effort must be"},
-		{"a timeout too long", `{ sec: { agent: { timeout: 100h } } }`, "agent.timeout must be positive"},
+		{"a timeout too long", `{ sec: { agent: { timeout: 100h } } }`, "agent.timeout must be at least 1s"},
+		{"a timeout under a second", `{ sec: { agent: { timeout: 500ms } } }`, "agent.timeout must be at least 1s"},
 		{"steps that are none", `{ sec: { agent: { steps: 0 } } }`, "agent.steps must be positive"},
 		{"too many", `{ a: {}, b: {}, c: {}, d: {}, e: {}, f: {}, g: {}, h: {}, i: {} }`, "9 reviewers besides the default one"},
 	} {

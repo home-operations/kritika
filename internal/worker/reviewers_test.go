@@ -9,7 +9,6 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
-	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
@@ -52,10 +51,16 @@ func TestChooseReviewers(t *testing.T) {
 		{name: "one asked for runs alone", eff: eff, only: "security", want: []string{"security"}},
 		{name: "the default one asked for runs alone", eff: eff, only: "default", want: nil},
 		{name: "a name no reviewer has runs every one, with a note", eff: eff, only: "please", want: []string{"default", "security"},
-			note: "No reviewer is named please"},
+			note: "No reviewer named please is on"},
 		{name: "none is the default reviewer alone", eff: Effective{}, want: nil},
-		{name: "the default one off", eff: Effective{Merged: repoconfig.Merged{Settings: configfile.Settings{
-			Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "docs": {}}}}}, want: []string{"docs"}},
+		{name: "with the default one off and no other that holds, none runs", eff: Effective{Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "retired": {Enabled: &off}}},
+			want: nil},
+		{name: "the default one asked for while it is off runs every one, with a note", eff: Effective{Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "docs": {}}},
+			only: "default", want: []string{"docs"}, note: "No reviewer named default is on"},
+		{name: "a reviewer asked for while it is off runs every one, with a note", eff: eff, only: "retired",
+			want: []string{"default", "security"}, note: "No reviewer named retired is on"},
+		{name: "the default one off", eff: Effective{
+			Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "docs": {}}}, want: []string{"docs"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := chooseReviewers(tt.eff, vars, tt.prior, tt.only, 1000)
@@ -63,6 +68,13 @@ func TestChooseReviewers(t *testing.T) {
 				t.Fatalf("reviewers = %q, note %q; want %q, note %q", names(got), got.note, tt.want, tt.note)
 			}
 		})
+	}
+	offOnly := Effective{Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}}}
+	if got := chooseReviewers(offOnly, vars, priorReview{}, "", 1000); got.specs != nil || !got.defaultOff {
+		t.Errorf("the default reviewer off and no other = %+v, want no specs and the default marked off for the runner to skip", got)
+	}
+	if got := chooseReviewers(eff, vars, priorReview{}, "", 1000); got.defaultOff {
+		t.Error("the default reviewer is marked off though it is on")
 	}
 	got := chooseReviewers(eff, vars, priorReview{}, "security", 1000)
 	sec := got.specs[0]
@@ -98,12 +110,14 @@ func TestRanReviewers(t *testing.T) {
 
 func TestRequestedReviewer(t *testing.T) {
 	for body, want := range map[string]string{
-		"@kritika review":                  "",
-		"@kritika review security":         "security",
-		"@Kritika Review Security please":  "security",
-		"@kritika review\nsecurity":        "",
-		"@kritika review gha-security now": "gha-security",
-		"@kritika review?":                 "",
+		"@kritika review":                                "",
+		"@kritika review security":                       "security",
+		"@Kritika Review Security please":                "security",
+		"@kritika review\nsecurity":                      "",
+		"@kritika review gha-security now":               "gha-security",
+		"@kritika review?":                               "",
+		"@kritika review\n@kritika review security":      "",
+		"@kritika review docs\n@kritika review security": "docs",
 	} {
 		if got := requestedReviewer(body, "kritika"); got != want {
 			t.Errorf("requestedReviewer(%q) = %q, want %q", body, got, want)

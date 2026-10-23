@@ -40,15 +40,22 @@ func requestsReview(body, slug string) bool {
 }
 
 // requestedReviewer is the word that follows "@<slug> review" on its line
-// in body, lowercased, which names the reviewer to run when it is one; ""
-// when nothing follows.
+// in body, lowercased, which names the reviewer to run when it is one: the
+// first such word, or "" when a request in body has none, which asks for
+// every reviewer.
 func requestedReviewer(body, slug string) string {
+	named := ""
 	for _, m := range reviewPattern.FindAllStringSubmatch(body, -1) {
-		if strings.EqualFold(m[2], slug) {
-			return strings.ToLower(m[3])
+		switch {
+		case !strings.EqualFold(m[2], slug):
+		case m[3] == "":
+			// A review of every reviewer covers any one named beside it.
+			return ""
+		case named == "":
+			named = strings.ToLower(m[3])
 		}
 	}
-	return ""
+	return named
 }
 
 // requestsDismiss reports whether body asks slug to dismiss the finding it
@@ -132,18 +139,23 @@ func (f *followUp) dismissedFinding(ctx context.Context) (string, error) {
 // findingReviewer is the reviewer other than the default one that raised
 // the finding of rec, the pull request's last review, whose thread the
 // comment is in: "" when it is in none, or the default reviewer raised
-// it.
-func (f *followUp) findingReviewer(ctx context.Context, rec reviewRecord) (string, error) {
-	fingerprint, err := f.dismissedFinding(ctx)
-	if err != nil || fingerprint == "" {
-		return "", err
-	}
-	for _, finding := range rec.findings {
-		if review.Fingerprint(finding) == fingerprint {
-			return finding.Specialist(), nil
+// it. A reply has its thread's finding already; a mention's is looked up,
+// and one that cannot be is answered by the default reviewer.
+func (f *followUp) findingReviewer(ctx context.Context, rec reviewRecord) string {
+	fingerprint := f.fingerprint
+	if fingerprint == "" {
+		var err error
+		if fingerprint, err = f.dismissedFinding(ctx); err != nil {
+			f.logger.Warn("finding's thread not read; the default reviewer answers", "error", err)
+			return ""
 		}
 	}
-	return "", nil
+	for _, finding := range rec.findings {
+		if fingerprint != "" && review.Fingerprint(finding) == fingerprint {
+			return finding.Specialist()
+		}
+	}
+	return ""
 }
 
 // answer posts body as the reply and records the mention answered, for
@@ -243,6 +255,9 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	already := false
 	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		_, err := jobs.EnqueueReviewerRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number, reviewer)
+		if errors.Is(err, jobs.ErrRerunOther) {
+			return err
+		}
 		if errors.Is(err, jobs.ErrRerunQueued) {
 			already, err = true, nil
 		}
@@ -253,6 +268,11 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	})
 	if errors.Is(err, jobs.ErrNoHead) {
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, "the pull request has no head to review", 0, "")
+	}
+	if errors.Is(err, jobs.ErrRerunOther) {
+		// The review in flight does not stand in for this one, and starting
+		// this one would cancel it.
+		return f.answer(ctx, review.ReviewBusyBody(f.pr.headSHA), "another review of the head is in flight")
 	}
 	if err != nil {
 		return store.FollowupFailed, fmt.Errorf("worker: queue the requested review: %w", err)

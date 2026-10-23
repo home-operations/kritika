@@ -20,6 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
@@ -372,17 +373,16 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		Repository: f.pr.repository, Context: f.eff.Review.Context, Rules: repoconfig.RulesFor(f.eff.Review.Rules, rec.vars),
 		Prior: rec.findings,
 	}
-	models := f.settings.Models
-	name, err := f.findingReviewer(ctx, rec)
-	if err != nil {
-		return nil, err
-	}
-	if r, ok := f.eff.Reviewers[name]; ok && name != "" {
+	var answering *store.ReviewerGrant
+	name := f.findingReviewer(ctx, rec)
+	if r, ok := f.eff.Reviewers[name]; ok && name != "" && r.On() {
 		// The finding's reviewer answers for it, by its own instructions,
-		// rules and models.
+		// rules and models, while it is on.
 		prompt.Rules = repoconfig.RulesFor(r.Rules, rec.vars)
 		prompt.Reviewers = []runner.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
-		models = reviewerModels(r, models)
+		models := reviewerModels(r, f.settings.Models)
+		ref = models.Review
+		answering = &store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort)}
 	}
 	var agent *store.AgentRunRow
 	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
@@ -399,25 +399,38 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 			return err
 		}
 		prompt.Trim()
-		agent, err = f.runAgent(ctx, runID, gitToken, prompt, thread, rec, models)
+		agent, err = f.runAgent(ctx, runID, gitToken, prompt, thread, rec, answering)
 		return err
 	})
 	return agent, err
 }
 
-// runAgent runs the follow-up's runner as run runID, granted models, and
-// reads the agent's run back.
+// runAgent runs the follow-up's runner as run runID and reads the agent's
+// run back. answering, when set, is the models of the reviewer the prompt
+// names, which its steps are granted by its name, pinned as the review
+// model is.
 func (f *followUp) runAgent(
 	ctx context.Context, runID, gitToken string, prompt *runner.Prompt, thread []review.Message, rec reviewRecord,
-	models configfile.Models,
+	answering *store.ReviewerGrant,
 ) (*store.AgentRunRow, error) {
-	limits, ref := f.settings.Agent, models.Review
+	limits, ref := f.settings.Agent, f.settings.Models.Review
 	deadline := agentDeadline(f.file.RunnerDeadline(), limits.Timeout)
-	models = pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, models)
-	token, err := f.w.Store.MintGatewayToken(ctx, store.GatewayGrant{
+	models := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, f.settings.Models)
+	grant := store.GatewayGrant{
 		RunID: runID, AccountID: f.account.ID(), ReviewID: rec.id, RepositoryID: f.pr.repositoryID, FollowupCommentID: f.comment.ID,
 		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort), Budget: limits.MaxTokens,
-	}, time.Now().Add(deadline+f.w.GatewayTokenTTL))
+	}
+	if answering != nil {
+		pinned := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, configfile.Models{
+			Review: configfile.ModelRef(answering.Model), Fallback: configfile.ModelRef(answering.Fallback),
+			Effort: model.Effort(answering.Effort),
+		})
+		ref = pinned.Review
+		grant.Reviewers = map[string]store.ReviewerGrant{prompt.Reviewers[0].Name: {
+			Model: string(pinned.Review), Fallback: string(pinned.Fallback), Effort: string(pinned.Effort),
+		}}
+	}
+	token, err := f.w.Store.MintGatewayToken(ctx, grant, time.Now().Add(deadline+f.w.GatewayTokenTTL))
 	if err != nil {
 		dctx, cancel := detach(ctx)
 		defer cancel()

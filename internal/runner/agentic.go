@@ -375,7 +375,7 @@ func runAgentic(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
 	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
 ) error {
-	stepper, err := gatewayStepper(p, secrets, 0, "")
+	stepper, err := gatewayStepper(p, secrets, 0, followUpReviewer(p))
 	if err != nil {
 		return err
 	}

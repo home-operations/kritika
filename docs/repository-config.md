@@ -294,7 +294,7 @@ reviewers:
 | `when`         | conditions as a rule's: it runs only on a pull request one of them holds for                                                               |
 | `rules`        | its checks, in place of the repository's, which are the default reviewer's                                                                 |
 | `skills.scope` | skill scopes laid over the repository's for this reviewer, so a skill can be given whole to it alone                                       |
-| `agent`        | `steps`, `tokens` and `timeout` for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them    |
+| `agent`        | `steps`, `tokens` and `timeout` (at least `1s`) for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them |
 | `enabled`      | `false` turns it off                                                                                                                       |
 
 - **One review.** The reviewers' answers are merged into one summary
@@ -317,10 +317,13 @@ reviewers:
   findings is held back. A reviewer none of whose files changed since the
   last review does not run on a re-review.
 - **Follow-ups.** A reply or mention in a finding's thread is answered by
-  the reviewer that raised it, with its instructions, rules and model.
+  the reviewer that raised it, with its instructions, rules and model,
+  while that reviewer is on; the default reviewer answers otherwise.
 - **On demand.** `@<bot> review <name>` runs that reviewer alone, whatever
   its `paths` and `when`, and carries the other reviewers' findings on
-  unchecked; `@<bot> review default` runs the default one alone.
+  unchecked; `@<bot> review default` runs the default one alone. A
+  reviewer that is off, the default one included, is not run on demand
+  either: every reviewer that applies runs instead, with a note.
 - **The admin's reviewers.** A reviewer the admin defines can only gain
   rules (under ids of their own) and skill scopes (of skills it does not
   scope) from this file; anything else written for it, and
@@ -331,6 +334,10 @@ reviewers:
 - **Shared tools.** A reviewer runs the repository's
   [tools](#repository-tools) and commands, as the default one does: there
   is no per-reviewer tool list.
+- **Model slots.** A review holds a slot of the account's
+  [`limits.concurrency`](configuration.md#accounts) on each model its
+  reviewers that are on use, as it does on `review.model`, and waits for
+  one as it waits for the review model's.
 
 Each reviewer spends tokens of its own: with two reviewers, a review costs
 about twice as much. The dashboard's review timeline shows each part's

@@ -170,6 +170,9 @@ type Prompt struct {
 	// always has. A follow-up carries the reviewer of the finding it
 	// answers about, when that is not the default one.
 	Reviewers []Reviewer `json:"reviewers,omitempty"`
+	// DefaultOff says the default reviewer is off, so a review whose
+	// Reviewers are none has no reviewer to run and is skipped.
+	DefaultOff bool `json:"defaultOff,omitempty"`
 }
 
 // Reviewer is one reviewer a review runs, as its job document carries it

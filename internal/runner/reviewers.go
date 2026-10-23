@@ -121,7 +121,7 @@ type reviewerPlan struct {
 func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths []string) reviewerPlan {
 	reviewers := p.Prompt.Reviewers
 	if reviewers == nil {
-		return reviewerPlan{}
+		return reviewerPlan{none: p.Prompt.DefaultOff}
 	}
 	changed := notIgnored(res.Changed, p.Ignore)
 	type applied struct {
@@ -130,15 +130,21 @@ func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths 
 		scope    review.Scope
 	}
 	var apply []applied
+	// What changed since the last review counts the files the change
+	// touched there, which a revert has since dropped from changed.
+	since := slices.Concat(changed, slices.DeleteFunc(slices.Clone(deltaPaths), func(d string) bool { return slices.Contains(changed, d) }))
 	for i := range reviewers {
 		r := &reviewers[i]
-		files := changed
-		if len(r.Paths) > 0 {
-			files = slices.DeleteFunc(slices.Clone(changed), func(c string) bool { return !chunk.Matches(r.Paths, c) })
-		}
 		rscope := scope
 		if r.Full {
 			rscope = review.ScopeFull
+		}
+		files := changed
+		if rscope == review.ScopeIncremental {
+			files = since
+		}
+		if len(r.Paths) > 0 {
+			files = slices.DeleteFunc(slices.Clone(files), func(c string) bool { return !chunk.Matches(r.Paths, c) })
 		}
 		switch {
 		case len(files) == 0:

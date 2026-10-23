@@ -62,9 +62,15 @@
     { key: 'category', hint: 'what kind of problem', values: CATEGORIES },
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
-    // A finding no named reviewer raised is the default reviewer's, so the default reviewer is offered only with a named one on the page.
-    ...(paged.items.some((f) => f.reviewers.length)
-      ? [{ key: 'reviewer', hint: 'a reviewer name', values: [...new Set(paged.items.flatMap((f) => (f.reviewers.length ? f.reviewers : ['default'])))].sort(), open: true }]
+    // A finding no named reviewer raised is the default reviewer's, so the default reviewer is offered only with a named one on the page;
+    // a reviewer filter in force keeps its token whatever the page holds, so editing the box does not drop it.
+    ...(filter?.reviewer || paged.items.some((f) => f.reviewers.length)
+      ? [{
+          key: 'reviewer',
+          hint: 'a reviewer name',
+          values: [...new Set([...paged.items.flatMap((f) => (f.reviewers.length ? f.reviewers : ['default'])), ...(filter?.reviewer ? [filter.reviewer] : [])])].sort(),
+          open: true,
+        }]
       : []),
   ]);
   const boxText = (f: FindingFilter | undefined) =>

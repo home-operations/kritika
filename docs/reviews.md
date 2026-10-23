@@ -12,7 +12,7 @@ repository, and webhooks must be working.
 | --- | --- |
 | `@<bot> <question>` | Reads the code and answers in the thread. |
 | `@<bot> review` | Requests a full review of the current commit. |
-| `@<bot> review <name>` | Runs the [reviewer](repository-config.md#reviewers) of that name alone on the current commit. A word that names no reviewer requests a full review. |
+| `@<bot> review <name>` | Runs the [reviewer](repository-config.md#reviewers) of that name alone on the current commit. A word that names no reviewer that is on runs every reviewer, and a comment that also asks for a plain review gets that. While a review of the commit by other reviewers is queued or running, kritika says so and runs nothing: ask again once it has finished. |
 | `@<bot> pause` | Stops automatic reviews for this pull request. |
 | `@<bot> resume` | Resumes automatic reviews. |
 | `@<bot> dismiss <reason>` | Dismisses a finding when posted in its thread. |
