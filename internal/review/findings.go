@@ -469,15 +469,6 @@ func contractKeys() (top, summary, finding []string) {
 		slices.Sorted(maps.Keys(s.Properties[keyFindings].Items.Properties))
 }
 
-// Schema is the JSON Schema of the answer the model must produce, with
-// summary.diagram when diagram is set.
-func Schema(diagram bool) json.RawMessage { return slices.Clone(contracts[contract{false, diagram}]) }
-
-// SchemaStrict is Schema with suggested_fix required on every finding.
-func SchemaStrict(diagram bool) json.RawMessage {
-	return slices.Clone(contracts[contract{true, diagram}])
-}
-
 // Check says why raw is not a review in the contract's shape: a field of
 // the wrong type, a key the contract does not define, or no summary take.
 // It is what the agent loop answers a submit_review call with, so the

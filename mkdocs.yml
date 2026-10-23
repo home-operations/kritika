@@ -1,11 +1,11 @@
 # MkDocs configuration for the kritika documentation site.
 #
 # The site source is the docs/ tree. Page order and grouping live in `nav:`
-# below; any docs/*.md not in `nav:` builds but is unlinked (--strict warns).
+# below; any docs/*.md not in `nav:` is warned about, which --strict fails.
 #
-# `mise run docs` (scripts/build-docs.sh) builds this site with --strict and
-# publishes it to https://kritika.home-operations.com/ (served at the root, so
-# site_url ends "/"). The domain is pinned by the CNAME file build-docs.sh
+# `mise run docs` (scripts/build-docs.sh) builds this site with --strict into
+# site/; the Pages workflow publishes it to https://kritika.home-operations.com/
+# (served at the root, so site_url ends "/"). The domain is pinned by the CNAME file build-docs.sh
 # writes into the artifact; the repo's Settings -> Pages custom-domain field
 # must match.
 #
@@ -13,7 +13,7 @@
 # run via uv (see .mise/config.toml). Material bundles mermaid.js and the
 # admonition styling, so there are no committed preprocessor assets.
 site_name: kritika
-site_description: Repository-aware AI pull request review for GitHub.
+site_description: Repository-aware AI pull request review for GitHub, Forgejo, GitLab and Gitea.
 site_author: kritika contributors
 site_url: https://kritika.home-operations.com/
 

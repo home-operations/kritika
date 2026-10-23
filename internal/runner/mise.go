@@ -547,8 +547,8 @@ func declaredCommands(name string, info miseToolInfo, registry []registryEntry) 
 			return bins
 		}
 	}
-	if i := strings.LastIndex(info.Backend, "/"); i >= 0 {
-		return []string{info.Backend[i+1:]}
+	if _, name, ok := strings.CutLast(info.Backend, "/"); ok {
+		return []string{name}
 	}
 	return nil
 }

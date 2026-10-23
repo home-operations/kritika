@@ -282,8 +282,7 @@ func TestPreparationContextShutdownBudget(t *testing.T) {
 		if ctx.Err() != nil {
 			t.Fatal("shutdown did not allow the answer checkpoint")
 		}
-		time.Sleep(10 * time.Second)
-		synctest.Wait()
+		synctest.Sleep(10 * time.Second)
 		if !errors.Is(context.Cause(ctx), cause) {
 			t.Fatalf("preparation outlived shutdown budget: %v", context.Cause(ctx))
 		}

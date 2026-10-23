@@ -121,7 +121,8 @@ providers:
 
 Providers of type `anthropic`, `openai` and `chatgpt` accept
 `<provider>/~<family>-latest` in `review.model`, `review.fallback`,
-`confidence.model` and `confidence.fallback`. For these provider types,
+`confidence.model`, `confidence.fallback`, and the `model` and `fallback`
+of a `review.agents` entry. For these provider types,
 the `~` makes the alias a kritika lookup. Model IDs without it, including
 a provider's own `*-latest` aliases, are sent unchanged.
 

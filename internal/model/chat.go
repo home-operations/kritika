@@ -55,7 +55,6 @@ type chatGPTCarry struct {
 
 type chatToolCall struct {
 	ID       string `json:"id"`
-	Type     string `json:"type"`
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -63,7 +62,6 @@ type chatToolCall struct {
 }
 
 type chatTool struct {
-	Type     string `json:"type"`
 	Function struct {
 		Name        string          `json:"name"`
 		Description string          `json:"description"`

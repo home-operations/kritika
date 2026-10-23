@@ -5,7 +5,8 @@ updates one summary comment and adds findings beside the relevant lines.
 
 ## Commands
 
-Mention the bot using your GitHub App's slug. You need write access to the
+Mention the bot by its login: your GitHub App's slug, or the username of
+the bot or service account on another forge. You need write access to the
 repository, and webhooks must be working.
 
 | Comment | What it does |
@@ -47,7 +48,8 @@ Reactions and automatic thread resolution need the relevant
 
 Findings also have a category: correctness, security, performance, reliability,
 maintainability or tests. With [agents](repository-config.md#agents) beside the default
-pass, a finding also names the agent that raised it. The summary includes findings outside the visible
+pass, a finding a specialist raised also names the agents that raised it;
+one the default pass alone raised names none. The summary includes findings outside the visible
 diff, which cannot get an inline comment.
 
 A later review can mark a finding fixed. To dismiss one you disagree with,
@@ -75,7 +77,8 @@ checking against the head. It posts nothing for an acknowledgement, a
 message meant for someone else, or a point the thread already settled; the
 dashboard records why. When the thread convinces it the finding was wrong,
 its reply says so, the finding is dismissed as `@<bot> dismiss` would, and
-the thread is resolved.
+the thread is resolved. This works on GitHub alone, for the reason
+[Git forges](forges.md#what-works-where) gives.
 
 Such replies count against the five follow-ups per pull request per hour,
 whether or not one is posted, and once kritika has replied three times in
@@ -120,12 +123,20 @@ A version number alone never sets a severity. The
 
 With [confidence scoring](confidence.md) on, the comment's heading is the
 score, and the change's [risk](confidence.md#risk) leads the scorer's reason
-below it. The approval decision, when enabled, comes next, then the findings
-and suggested fixes, then the summary of the change. The comment also
-includes:
+below it. The approval decision, when enabled, comes next, then the findings,
+whose suggested fixes are in their inline comments, then the summary of the
+change. The comment also includes:
 
 - earlier findings that were fixed, dismissed or not rechecked;
-- expandable review context, including sources, skills and commands used.
+- findings an incremental re-review held back, folded away;
+- what the change does well, left out when a bot opened the pull request;
+- expandable review context, including the agents that ran, sources, skills
+  and commands used;
+- a footer with the number of reviews, the last reviewed commit, the model
+  and its effort, the agent that picked the model when one replaced the
+  default pass, and the reviews' cost when `review.cost` is on;
+- View and Re-run badges linking to the dashboard, when it has a public URL
+  and `comments.dashboard` is on.
 
 The summary says what the change does and how, and, where the evidence the
 review read shows it, what merging sets off: what takes effect and when,
@@ -138,17 +149,18 @@ and [comment templates](repository-config.md#comment-templates) change presentat
 
 **Findings alone do not fail the check.** To block merges based on a score,
 enable [confidence gating](confidence.md#the-commit-status) and make the check
-required in GitHub.
+required on the forge.
 
 | State | Meaning |
 | --- | --- |
 | Pending | Review running. |
 | Success | Review posted and passed any configured score gate. |
 | Failure | Confidence score below the configured threshold. |
-| Error | Review failed, was incomplete, or a gated review could not be scored. |
+| Error | Review failed, was incomplete, was canceled, or a gated review could not be scored. |
 
-Skipped reviews normally pass. If a skipped review carries an earlier score,
-that score still determines whether it passes the gate.
+Skipped reviews normally pass, as do reviews an account's limits capped. If a
+skipped review carries an earlier score, that score still determines whether
+it passes the gate.
 
 ## When a review runs
 

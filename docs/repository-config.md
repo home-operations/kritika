@@ -31,7 +31,7 @@ admin's policy; detailed examples follow.
 | Key                                                          | What it sets                                                       | Against the admin's value                       |
 | ------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
 | `enabled`                                                    | `false` stops reviews, follow-ups and indexing                     | can only turn the repository off                |
-| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on, or routes that pick one per pull request | replaces                         |
+| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                        |
 | [`review.effort`](#models)                                   | how hard they reason                                               | replaces                                        |
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some | replaces; its `when` holds beside the admin's   |
@@ -51,7 +51,7 @@ A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
 review's summary says which field was dropped and what it may be, and the
 rest of the file still applies. `agent`,
-`trigger.limit`, `review.incremental`, `review.cost`, `comments.dashboard`,
+`trigger.limit`, `review.incremental`, `review.cost`, `review.replies`, `comments.dashboard`,
 `confidence.instructions`, `confidence.floors` and `limits` are the admin's alone; a file
 naming one of them, or any other unknown key, does not parse.
 
@@ -308,7 +308,7 @@ A specialist takes:
 | `when`         | conditions as a trigger's, `{name, expr}` or `{name, paths}` with `pr.lines` usable: it runs only on a pull request one of them holds for |
 | `rules`        | its checks, in place of the repository's, which are the default pass's                                                                     |
 | `skills.scope` | skill scopes laid over the repository's for this agent, so a skill can be given whole to it alone                                          |
-| `agent`        | `steps`, `tokens` and `timeout` (at least `1s`) for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them |
+| `agent`        | `steps`, `tokens` and `timeout` (at least `1s` and at most `2h35m`) for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them |
 | `enabled`      | `false` turns it off                                                                                                                       |
 
 - **One review.** The agents' answers are merged into one summary
@@ -348,7 +348,9 @@ A specialist takes:
   as its `review.model` does, even when every one of them is off; they
   are dropped whole when one names a model of a provider the account may
   not use, or when, with the admin's specialists, they pass the
-  [limit](#limits) on agents. An agent named `default` is dropped with a
+  [limit](#limits) on agents. An agent named `default`, or under the name
+  of an admin's agent of the other kind, a specialist where the admin's
+  replaces the default pass or the other way round, is dropped with a
   note, and the rest of the file applies.
 - **Shared tools.** A specialist runs the repository's
   [tools](#repository-tools) and commands, as the default pass does: there
@@ -601,7 +603,7 @@ rule's `when` conditions, is a [CEL](https://cel.dev) expression over
 | `createdAt`                                | when it was opened                                                                                                         |
 | `labels`                                   | its labels, each with a `name` and a `color`                                                                               |
 | `event`                                    | what started the review (below)                                                                                            |
-| `lines`                                    | the lines its diff adds and removes, paths the `ignore` globs match left out; trigger conditions only, not a rule's `when` |
+| `lines`                                    | the lines its diff adds and removes, paths the `ignore` globs match left out; trigger conditions and a `review.agents` entry's `when` only, not a rule's |
 
 | `event`                                  | What started the review                           |
 | ---------------------------------------- | ------------------------------------------------- |

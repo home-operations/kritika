@@ -112,11 +112,11 @@
               },
               "fallback": {
                 "$ref": "#/$defs/model",
-                "description": "The model that takes a step the agent's model fails; review.fallback's when unset."
+                "description": "The model that takes a step the agent's model fails; when unset, review.fallback's for an agent without categories, and for a specialist the default pass's, as the agents picked it."
               },
               "effort": {
                 "$ref": "#/$defs/effort",
-                "description": "How hard the agent's models reason; review.effort's when unset."
+                "description": "How hard the agent's models reason; when unset, review.effort's for an agent without categories, and for a specialist the default pass's, as the agents picked it."
               },
               "paths": {
                 "type": "array",
@@ -147,7 +147,7 @@
                 "properties": {
                   "steps": { "type": "integer", "minimum": 1 },
                   "tokens": { "type": "integer", "minimum": 1 },
-                  "timeout": { "type": "string", "description": "A Go duration, such as 10m." }
+                  "timeout": { "type": "string", "description": "A Go duration, such as 10m, at least 1s and at most 2h35m." }
                 }
               }
             }
@@ -240,12 +240,12 @@
           "description": "false posts the summary alone."
         },
         "summary": {
-          "$ref": "#/$defs/path",
-          "description": "A repository file, read from the merge base, that replaces the summary comment's template."
+          "anyOf": [{ "const": "" }, { "$ref": "#/$defs/path" }],
+          "description": "A repository file, read from the merge base, that replaces the summary comment's template; \"\" restores the built-in one where the admin set a template."
         },
         "finding": {
-          "$ref": "#/$defs/path",
-          "description": "A repository file, read from the merge base, that replaces an inline finding's template."
+          "anyOf": [{ "const": "" }, { "$ref": "#/$defs/path" }],
+          "description": "A repository file, read from the merge base, that replaces an inline finding's template; \"\" restores the built-in one where the admin set a template."
         }
       }
     },
@@ -420,11 +420,11 @@
       "type": "object",
       "additionalProperties": false,
       "anyOf": [{ "required": ["expr"] }, { "required": ["paths"] }],
-      "description": "One condition on a pull request, in trigger.include, trigger.exclude or a review.model route's when: expr, paths, or both, when both must hold. One with paths, or whose expr reads pr.lines, is judged once the pull request's diff is fetched.",
+      "description": "One condition on a pull request, in trigger.include, trigger.exclude or a review.agents entry's when: expr, paths, or both, when both must hold. One with paths, or whose expr reads pr.lines, is judged once the pull request's diff is fetched.",
       "properties": {
         "name": {
           "type": "string",
-          "description": "What the condition is called where a skip or a route names it. In a trigger list it is unique in the list, and may not be one an admin's condition has."
+          "description": "What the condition is called where a skip or an agent names it. In a trigger list it is unique in the list, and may not be one an admin's condition has."
         },
         "expr": {
           "type": "string",

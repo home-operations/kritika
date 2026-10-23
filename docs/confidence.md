@@ -4,7 +4,7 @@ These features are optional and off by default:
 
 - **Confidence scoring** asks a second model how ready a pull request is to merge.
 - **Gating** fails the commit status when the score is too low.
-- **Automatic approval** posts a GitHub approval when the review meets your policy.
+- **Automatic approval** posts an approval on the forge when the review meets your policy.
 
 Scoring can run without gating or approvals. Approvals can also work without
 a score. This example enables all three: it requires at least 4 out of 5 and
@@ -46,7 +46,9 @@ tokens and never less than that budget, since there are no tool outputs to
 leave room for; a diff cut to it names the files not shown,
 and the scorer is told to rate those by their paths and say so. If retries and
 `confidence.fallback` fail, the review remains unscored. The scorer gets two
-minutes, including time waiting for a model slot.
+minutes, including time waiting for a model slot. Once the account's
+`tokensPerMonth` is spent, the scorer is not called and the review remains
+unscored.
 
 ## The commit status
 
@@ -62,7 +64,7 @@ gate does not hold it. A `when` block in place of `gate: true` gates only
 the pull requests one of its conditions holds for; another shows its score
 and passes.
 
-To block merging, also make **Kritika / Review** a required check in GitHub.
+To block merging, also make **Kritika / Review** a required check on the forge.
 Risk does not affect this check. A high-risk change can pass its score gate
 without receiving an automatic approval.
 
@@ -76,11 +78,15 @@ Set `review.approve: true` to enable approvals.
 | Confidence model set | The score meets `confidence.threshold` and risk is at most `confidence.risk`. |
 
 An unscored review does not approve when a confidence model is configured.
-A later review that no longer qualifies withdraws kritika's approval, as does
-a reviewer requesting changes. Reviews of merged or closed pull requests
+Nor does a split review whose parts did not all get reviewed, or a review
+whose head the pull request moved on from while it ran.
+A later review that no longer qualifies withdraws kritika's approval,
+including one that finds a reviewer has requested changes; a change request
+alone withdraws nothing until that review. Reviews of merged or closed pull requests
 neither approve nor withdraw an approval.
 
-The summary says **Approved** or **Not approved**, with a reason. A repository's
+The summary says **Approved** or **Not approved**. **Not approved** gives a
+reason, and so does **Approved** when no confidence score decided it. A repository's
 `.kritika.yaml` can turn approvals on or off, and add conditions of its own.
 
 ### Only some pull requests
@@ -126,17 +132,13 @@ calls on the rest, move the condition to `confidence.when` and write
 - `pr.bot` is who opened the pull request, not who pushed to it: a commit
   someone else pushes onto a bot's branch is approved as the bot's would
   be, when the review allows it.
-- A scope that writes `review.approve` or `confidence.gate` replaces the
-  broader one's, conditions and all, and one that writes
-  `confidence.when`, even empty, replaces the broader one's; an empty
-  `confidence.when` scores every pull request.
 - A repository's `confidence.gate` replaces the admin's, conditions and
   all, as it may already turn the gate off.
 - A repository's `.kritika.yaml` adds conditions that must hold beside the
   admin's, and its `approve: true` keeps the admin's conditions. A pull
   request only the file's `confidence.when` leaves unscored is not approved
-  where the admin asks for a score: the file may narrow scoring, never lift
-  the admin's risk policy by it.
+  where a confidence model is set, even one the file sets itself: the file
+  may narrow scoring, never lift the risk policy by it.
 - A pull request closed by the time its approval's conditions are judged is
   neither approved nor its approval withdrawn.
 
@@ -195,7 +197,8 @@ instructions, and a rating a floor held trigger a fresh rating.
 | `confidence.fallback`     | none                    | the model that takes the scorer's call when the confidence model fails ([fallback](models.md#fallback)) | replaces                                   |
 | `confidence.effort`       | the provider's          | how hard the scorer, and the fallback that takes its call, reasons ([effort](models.md#effort)) | replaces                                   |
 | `confidence.threshold`    | 5                       | the score approvals need, and a gated commit status                                        | replaces, either way                       |
-| `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check          | replaces, either way                       |
+| `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check; a `when` block gates only the pull requests one of its conditions holds for ([only some pull requests](#only-some-pull-requests)) | replaces, either way                       |
+| `confidence.when`         | none: every pull request is scored | conditions, one of which a pull request must hold for to be scored ([only some pull requests](#only-some-pull-requests)) | adds conditions that must hold as well     |
 | `confidence.risk`         | `low`                   | the highest [risk](#risk) a change may be rated and still be approved                      | may only lower it; a higher one is dropped |
 | `confidence.instructions` |                         | the admin's guidance to the scorer on [rating risk](#risk) in your code                    | the admin's alone                          |
 | `confidence.floors`       | none                    | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](#risk)) | the admin's alone                          |

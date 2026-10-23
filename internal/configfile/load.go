@@ -53,19 +53,6 @@ type accountDoc struct {
 	Providers map[string]Provider `yaml:"providers,omitempty"`
 }
 
-// Load reads, decodes, resolves and validates the configuration file at
-// name. An empty name loads defaults and operational environment settings.
-func Load(name string) (*File, error) {
-	var raw []byte
-	if name != "" {
-		var err error
-		if raw, err = os.ReadFile(name); err != nil {
-			return nil, fmt.Errorf("configfile: %w", err)
-		}
-	}
-	return Parse(raw)
-}
-
 // configHash identifies the file and the names of referenced secrets.
 // Secret values stay out of the stored hash to prevent offline guessing.
 func configHash(raw []byte, secretEnv []string) string {
@@ -77,7 +64,9 @@ func configHash(raw []byte, secretEnv []string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Parse is Load for bytes already in hand; nil or blank bytes are no file.
+// Parse reads defaults and operational environment settings, then decodes,
+// resolves and validates raw as the configuration file; nil or blank bytes
+// are no file.
 func Parse(raw []byte) (*File, error) {
 	settings, doc, err := config.LoadSettings(raw)
 	if err != nil {

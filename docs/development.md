@@ -12,6 +12,9 @@ mise run smoke              # kritika serve in a kind cluster with CloudNativePG
 mise run ui-mock            # the dashboard at http://localhost:5544/ on mocked data; mise watch ui-mock -r rebuilds on change
 ```
 
+`mise watch` runs under watchexec, which `mise install` does not install;
+`mise use -g watchexec` does.
+
 `mise run smoke` is what CI's Serve Smoke job runs: it builds the image,
 creates a kind cluster, installs CloudNativePG and a one-instance Postgres
 with VectorChord as an image volume extension and the three roles, installs
@@ -27,6 +30,9 @@ declares in its `/etc/mise/config.toml`; a repository's `.kritika.yaml`
 with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
+
+`mise run ui-lint` lints the dashboard with oxlint, and `mise run
+ui-typecheck` type-checks it with svelte-check on TypeScript 7.
 
 The dashboard installs its dependencies with pnpm, which mise pins. Its
 install, locally, in CI and in the image build, fails on a dependency with

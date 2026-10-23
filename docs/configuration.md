@@ -30,7 +30,11 @@ and `0` are preserved.
 For an external ConfigMap, set `existingConfigMap` instead of `config`. It must
 contain `config.yaml` with `webUrl` and application settings. Omit chart-owned
 keys: `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
-`databaseRunnerRole`, `executor` and `runner`.
+`databaseRunnerRole`, `executor` and `runner`, and, when the chart's
+`gatewayCache.enabled` is set, the gateway cache keys it sets:
+`gatewayCacheDir`, `gatewayCacheStorage`, `gatewayCacheMaxEntrySize`, and
+`gatewayCacheMaxSize` for filesystem storage or the `gatewayCacheS3*` keys
+for S3.
 
 Outside Helm, `KRITIKA_CONFIG_FILE` names the file and is required by `serve`
 and `chatgpt login`. Operational settings can also come from environment
@@ -339,7 +343,7 @@ few keys beside them:
 
 | Group        | Keys                                                                                | What they set                              |
 | ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
-| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `replies` | what a review runs on and what it says |
+| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `replies`, `agents` | what a review runs on and what it says |
 | `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when` | how a review is judged              |
 | `trigger`    | `include`, `exclude`, `limit`                                                       | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`, `dashboard`                                         | what is posted                             |
@@ -711,10 +715,9 @@ it as not served.
 `egress` is what runner pods may reach through kritika's gateway beyond
 the connections' forges, `github.com` and `api.github.com` for an app and
 the instance's host for a Forgejo, GitLab or Gitea connection: `allow` and `deny`
-list hosts, IP addresses and CIDRs, `credentials` names hosts the
-gateway adds a token to, and `cache` names hosts whose downloads the
-gateway keeps for every install, in `gatewayCacheDir`, beyond what a
-repository's lock pins, which it keeps once `gatewayCacheDir` is set.
+list hosts, IP addresses and CIDRs, and `credentials` names hosts the
+gateway adds a token to. Once `gatewayCacheDir` is set, the gateway keeps
+the downloads a repository's lock pins there.
 [Security](security.md#the-egress-gateway) describes them with the
 gateway, and the cache with [runner tools](security.md#the-gateways-download-cache).
 
@@ -782,9 +785,11 @@ before switching between releases that use different queue names.
 Other file settings are `webUrl` (required public URL), `addr`, `metricsAddr`,
 `gatewayAddr`, `gatewayUrl`, `executor`, `databaseAppRole` and
 `databaseRunnerRole`. The chart derives all except `webUrl` from deployment
-values. The `runner` section also accepts `image`, `serviceAccount`,
-`databaseSecret`, `databaseSecretKey` and `ttl`; the chart derives these from
-its runner and database values. Database Secret names are references, not DSNs.
+values. The `runner` section also accepts `serviceAccount`, `databaseSecret`
+and `databaseSecretKey`; the chart derives these from its runner and
+database values. The runner image is
+`runner.podTemplate.spec.containers[0].image`, and how long a finished Job
+is kept is `runner.jobTemplate.spec.ttlSecondsAfterFinished`. Database Secret names are references, not DSNs.
 
 ## Migrating Helm values
 

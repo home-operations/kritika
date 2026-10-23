@@ -30,7 +30,7 @@ run, and hands it a Secret of its own:
 
 | Credential                        | What it can do                                                                                                               |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| a forge token for the run         | on GitHub, a token minted to read the repository under review and public repositories, which the git fetch and `gh` use; on Forgejo, a token signed for the run as the read-only integration when one is declared, and on GitLab and Gitea the connection's `runnerToken` when one is declared, which the git fetch alone uses; `fetch_repo` uses neither |
+| a forge token for the run         | on GitHub, a token minted to read the repository under review and public repositories, which the git fetch and `gh` use; on Forgejo, a token signed for the run as the `runnerAudience` integration, or without one as the `audience` integration, which can write; on GitLab and Gitea, the connection's `runnerToken`, or without one its `token`, which can write; off GitHub the git fetch alone uses it; `fetch_repo` uses none of them |
 | a gateway token                   | reach the egress proxy and, for a review or follow-up, the run's model through the gateway, until `config.gatewayTokenTtl` past the Job's deadline; revoked when the run ends |
 | the runner role's database URI    | connect as the restricted runner role                                                                                          |
 
@@ -51,8 +51,11 @@ root and no capabilities, as a service account with no permissions.
   own tree, so a pull request cannot rewrite them to steer its own review.
 - `.kritika.yaml` can narrow the admin's settings and add rules, but
   [some keys](configuration.md#what-only-the-admin-sets) are the admin's
-  alone: the agent's bounds and commands, `confidence.instructions`, so a
-  pull request cannot talk its own risk down, and `review.cost`.
+  alone: the agent's bounds, `confidence.instructions` and
+  `confidence.floors`, so a pull request cannot talk its own risk down,
+  `review.cost` and `review.replies`. A repository adds commands only
+  through its [`tools`](repository-config.md#repository-tools), read from
+  the merge base.
 - A trigger condition in `.kritika.yaml` under a name the admin's lists
   use, or a rule under an admin's rule id, is dropped.
 - A skill grants no tool or command, whatever its frontmatter says.
@@ -72,8 +75,10 @@ request by that token alone, so nothing else that reaches the port can
 relay through it or use a credential it adds. With
 `networkPolicy.enabled`, a runner's git fetch and every command it runs go
 through the gateway, which allows a destination by name and by the address
-it resolves to. `github.com` and `api.github.com` are allowed once an app
-is declared; the configuration file's `egress` sets the rest:
+it resolves to. Each connection's forge is allowed once it is declared:
+`github.com` and `api.github.com` for a GitHub App, and the instance's host
+for a Forgejo, GitLab or Gitea connection. The configuration file's
+`egress` sets the rest:
 
 ```yaml
 egress:
@@ -86,7 +91,7 @@ egress:
 | Key           | What                                                                                                                                                            |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `allow`       | the destinations a runner may reach: a host, exact or `*.`-prefixed for every host under a domain, `"*"` for every host, or an IP address or CIDR               |
-| `deny`        | destinations refused however `allow` matches them, in the same forms; one that cuts off `github.com` or `api.github.com` is rejected while an app is configured |
+| `deny`        | destinations refused however `allow` matches them, in the same forms; a host pattern that cuts off a host a connection's forge needs is rejected at startup, while an address or CIDR is checked against what a host resolves to on each request, so one can still cut a forge off |
 | `credentials` | a token the gateway adds to a plain `http://` request to that host, so the runner never holds it; the host must be allowed                                      |
 
 A credential's token is a secret reference like any other in the file,
@@ -172,15 +177,18 @@ it, so it has no switch:
   key only kritika serve holds, refuses a step once the run's token budget
   or the account's `tokensPerMonth` is spent, and records the step's
   usage. Provider endpoints are therefore not in a runner's allowlist.
-- The runner also asks it once for the review's similar code: the gateway
-  embeds the diff with the instance's embedder and answers from the
-  repository's index, charging the embedding to the run.
+- The runner also asks it for the review's similar code, once for each part
+  of a split review, and the agent's `search_code` asks it at most 10 times
+  more: the gateway embeds the diff or the query with the instance's
+  embedder and answers from the repository's index, charging the embedding
+  to the run.
 
 ## Runner tools
 
 The model runs allowlisted programs over a checkout of the head commit:
 to read a dependency bump's release notes and upstream pull requests with
-`gh`, fetch anything else with `curl`, search with `rg` and `fd`, or read
+`gh`, offered on GitHub alone as
+[Git forges](forges.md#what-works-where) lists, fetch anything else with `curl`, search with `rg` and `fd`, or read
 JSON and YAML with `jq` and `yq`; a container image it reads with
 [`fetch_oci`](#images-and-artifacts), which needs no tool. Runner Jobs run
 on the release's `-tools` image, pinned by digest like the chart's image:
@@ -271,7 +279,8 @@ how the runner fetches, logs or connects. The rendered config lives
 outside the checkout in the run's read-only `HOME`, trusted only for the
 runner's own mise calls. Installs stay within the existing install
 timeout and gateway restrictions; one that resolves a version or
-verifies a download reaches the GitHub API with the run's token, and an
+verifies a download reaches the GitHub API, with the run's token on GitHub
+and without one on another forge, and an
 aqua package's verification reaches sigstore, so those hosts need
 `egress.allow` too.
 
@@ -403,8 +412,8 @@ repository and a ref, never git arguments.
 - **Anonymous HTTPS:** an `https://` clone URL, fetched without a
   credential through the gateway, so a private repository, the one under
   review included, is not fetched; the tool's description says so.
-  `github.com` is already allowed; any other host must be in
-  `egress.allow`, as for `curl`.
+  A connection's forge, `github.com` for a GitHub App, is already allowed;
+  any other host must be in `egress.allow`, as for `curl`.
 - **Only what is asked for:** depth one, without tags, and with paths only
   the files under them, from a server that can filter; one that cannot
   sends the whole tree, within the limit below.
@@ -718,7 +727,8 @@ and the environment, and move what it held:
 - **`[settings]`:** no longer apply.
 
 The image's `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`,
-`rg` and `yq`, and every review offers those and the repository's tools.
+`rg` and `yq`, and every review offers those and the repository's tools,
+`gh` on GitHub alone ([Git forges](forges.md#what-works-where)).
 A container image needs no tool: `fetch_oci` reads its registry. If
 building on top of the `-tools` image, its preinstalled tools live in
 mise's system install directory, not `/usr/local/bin`.
