@@ -552,11 +552,11 @@ func TestRenderInline(t *testing.T) {
 		}
 	}
 	rich := f
-	rich.SuggestedFix, rich.Replacement, rich.AgentPrompt = "", "m := map[string]int{}\nm[k] = v", "In main.go replace lines 11-12 so `m` is made before `m[k] = v`; use ``x``."
+	rich.SuggestedFix, rich.Replacement, rich.AgentPrompt = "", "m := map[string]int{}\nm[k] = v", "In main.go replace lines 11-12 so `m` is made before `m[k] = v`; use ``x``:\n    m := map[string]int{}"
 	body, _ = RenderInline(t.Context(), Templates{}, rich)
 	if !strings.Contains(body, "```suggestion\nm := map[string]int{}\nm[k] = v\n```") ||
 		!strings.Contains(body, "<details>\n<summary>Prompt for a coding agent</summary>\n\n```\nIn main.go replace") ||
-		!strings.HasSuffix(body, "use ``x``.\n```\n\n</details>\n") {
+		!strings.HasSuffix(body, "use ``x``:\n    m := map[string]int{}\n```\n\n</details>\n") {
 		t.Fatalf("rich inline:\n%s", body)
 	}
 

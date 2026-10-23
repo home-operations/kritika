@@ -122,8 +122,9 @@ type Finding struct {
 	// Parse folds it into Replacement, Line kept as the diff shows it, so
 	// the model never reproduces an existing line; it is empty after Parse.
 	InsertAfter string `json:"insert_after,omitempty"`
-	// AgentPrompt is one paragraph telling a coding agent how to apply the
-	// fix.
+	// AgentPrompt is plain text telling a coding agent how to apply the fix,
+	// with any lines to write on lines of their own, as the file indents
+	// them; it renders in a code fence, so its line breaks survive.
 	AgentPrompt string `json:"agent_prompt,omitempty"`
 	// Rules are the ids of the review rules the finding enforces; Parse
 	// keeps only those the review was given.
@@ -335,8 +336,8 @@ const (
 	describeInsertAfter = "Lines the fix adds right after line, which itself stays as it is: raw code, no fences, " +
 		"no commentary, indented as the file is, exactly as they should be committed. Omit it when the fix changes " +
 		"existing lines; replacement covers that."
-	describeAgentPrompt = "One plain-text paragraph telling a coding agent how to apply the fix: the file, " +
-		"the lines, the symbols and the exact change."
+	describeAgentPrompt = "Plain text telling a coding agent how to apply the fix: the file, the lines, the symbols " +
+		"and the exact change. Lines it should write go on lines of their own, indented as the file is, with no fences."
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
 	describePrior = "Id of the last review's finding this one reports again, as its listing opens each line with, " +
