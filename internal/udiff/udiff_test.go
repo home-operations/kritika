@@ -128,6 +128,15 @@ rename to "\303\266.txt"
 	if got := files[0].String() + files[1].String(); got != diff {
 		t.Errorf("String = %q, want the diff as it was", got)
 	}
+	// go-git writes names bare, so a quote in one is the name's.
+	bare := Parse("diff --git a/old b/foo \"b/bar\"\nsimilarity index 100%\nrename from old\nrename to foo \"b/bar\"\n")
+	if got := bare[0].Path(); got != `foo "b/bar"` {
+		t.Errorf("bare rename = %q", got)
+	}
+	binary := Parse("diff --git \"a/\\303\\251.png\" \"b/\\303\\251.png\"\nindex 1..2 100644\nBinary files \"a/\\303\\251.png\" and \"b/\\303\\251.png\" differ\n")
+	if got := binary[0].Path(); got != "é.png" {
+		t.Errorf("binary = %q", got)
+	}
 }
 
 func TestParseKeepsALastLineWithoutNewline(t *testing.T) {
