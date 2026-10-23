@@ -144,18 +144,18 @@ const MaxReviewers = 8
 // valid, or whose effort is not an effort, and compiles their when
 // conditions and model routes in place. Its models are its caller's to
 // check: what they may name depends on the scope. The error starts with
-// the key, as reviewers.name.
+// the key, as review.reviewers.name.
 func CheckReviewers(reviewers map[string]Reviewer) error {
 	n := len(reviewers)
 	if _, ok := reviewers[review.DefaultReviewer]; ok {
 		n--
 	}
 	if n > MaxReviewers {
-		return fmt.Errorf("reviewers: %d reviewers besides the default one are over the %d allowed", n, MaxReviewers)
+		return fmt.Errorf("review.reviewers: %d reviewers besides the default one are over the %d allowed", n, MaxReviewers)
 	}
 	for _, name := range slices.Sorted(maps.Keys(reviewers)) {
 		if err := checkReviewer(name, reviewers[name]); err != nil {
-			return fmt.Errorf("reviewers.%s%w", name, err)
+			return fmt.Errorf("review.reviewers.%s%w", name, err)
 		}
 	}
 	return nil
@@ -291,7 +291,7 @@ func (f *File) validateReviewers(reviewers map[string]Reviewer) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(reviewers)) {
 		r := reviewers[name]
-		refs := append(r.Model.refsAt("reviewers."+name+".model"), namedRef{"reviewers." + name + ".fallback", &r.Fallback})
+		refs := append(r.Model.refsAt("review.reviewers."+name+".model"), namedRef{"review.reviewers." + name + ".fallback", &r.Fallback})
 		for _, m := range refs {
 			if m.ref == nil || *m.ref == "" {
 				continue

@@ -45,7 +45,7 @@ admin's policy; detailed examples follow.
 | [`context`](#context)                                        | files that explain the code                                        | added after                                     |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
 | [`tools`](#repository-tools)                                 | the tools the reviews may run, over the image's                    | added; one under an image tool's name replaces it |
-| [`reviewers`](#reviewers)                                    | reviewers that run beside the default one, each an agent of its own | added; one under an admin's name takes only rules and skills |
+| [`review.reviewers`](#reviewers)                             | reviewers that run beside the default one, each an agent of its own | added; one under an admin's name takes only rules and skills |
 
 A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
@@ -264,30 +264,32 @@ Rules, context and skills compared:
 ### Reviewers
 
 Every review has a `default` reviewer: kritika's own instructions, on
-`review.model`, with the repository's `rules` and `skills`. `reviewers`
-adds others, each an agent of its own over the change, or over the part of
-it their `paths` cover, run in parallel with the default one:
+`review.model`, with the repository's `rules` and `skills`.
+`review.reviewers` adds others, each an agent of its own over the change,
+or over the part of it their `paths` cover, run in parallel with the
+default one:
 
 ```yaml
-reviewers:
-  security:
-    instructions: |
-      Review as an application security engineer. Trace every input that
-      reaches a query, a shell, a path or a redirect, and name the exploit.
-    categories: [security]
-    model:
-      - name: deep
-        model: anthropic/claude-opus-5-5
-        effort: high
-        when: [{ name: large, expr: pr.lines > 800 }]
-      - model: anthropic/claude-sonnet-5-5
-    paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"]
-    when:
-      - { name: auth, paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"] }
-      - { name: deps, expr: 'pr.headRef.startsWith("renovate/")' }
-    rules:
-      - id: pin-actions
-        rule: Third-party actions are pinned to a commit digest.
+review:
+  reviewers:
+    security:
+      instructions: |
+        Review as an application security engineer. Trace every input that
+        reaches a query, a shell, a path or a redirect, and name the exploit.
+      categories: [security]
+      model:
+        - name: deep
+          model: anthropic/claude-opus-5-5
+          effort: high
+          when: [{ name: large, expr: pr.lines > 800 }]
+        - model: anthropic/claude-sonnet-5-5
+      paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"]
+      when:
+        - { name: auth, paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"] }
+        - { name: deps, expr: 'pr.headRef.startsWith("renovate/")' }
+      rules:
+        - id: pin-actions
+          rule: Third-party actions are pinned to a commit digest.
 ```
 
 | Key            | What                                                                                                                                       |
@@ -337,8 +339,9 @@ reviewers:
 - **The admin's reviewers.** A reviewer the admin defines can only gain
   rules (under ids of their own) and skill scopes (of skills it does not
   scope) from this file; anything else written for it, and
-  `reviewers.default`, is dropped with a note. An admin may turn the
-  default reviewer off with `reviewers: { default: { enabled: false } }`;
+  `review.reviewers.default`, is dropped with a note. An admin may turn
+  the default reviewer off with
+  `review: { reviewers: { default: { enabled: false } } }`;
   a pull request none of whose reviewers then applies is skipped as
   `no reviewer applies to the change`.
 - **Shared tools.** A reviewer runs the repository's

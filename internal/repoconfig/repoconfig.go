@@ -75,6 +75,9 @@ type Review struct {
 	Fixes    *bool                  `yaml:"fixes,omitempty"`
 	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
 	Diagram  *bool                  `yaml:"diagram,omitempty"`
+	// Reviewers add reviewers of the repository's own; under an admin's
+	// reviewer's name, they may only add rules and skill scopes to it.
+	Reviewers map[string]configfile.Reviewer `yaml:"reviewers,omitempty"`
 }
 
 // Confidence is how the repository's reviews are judged: the model that
@@ -122,9 +125,6 @@ type File struct {
 	// Tools are the tools the repository's reviews may run, over the
 	// image's.
 	Tools Tools `yaml:"tools,omitempty"`
-	// Reviewers add reviewers of the repository's own; under an admin's
-	// reviewer's name, they may only add rules and skill scopes to it.
-	Reviewers map[string]configfile.Reviewer `yaml:"reviewers,omitempty"`
 }
 
 // Parse decodes data as .kritika.yaml. A second document, unknown fields, invalid glob patterns
@@ -182,7 +182,7 @@ func Parse(data []byte) (File, error) {
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
-	if err := configfile.CheckReviewers(f.Reviewers); err != nil {
+	if err := configfile.CheckReviewers(f.Review.Reviewers); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {
@@ -235,7 +235,7 @@ func (f File) Referenced() []string {
 			add(*t)
 		}
 	}
-	for _, p := range configfile.ReviewerFiles(f.Reviewers) {
+	for _, p := range configfile.ReviewerFiles(f.Review.Reviewers) {
 		add(p)
 	}
 	return out

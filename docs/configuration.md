@@ -427,7 +427,7 @@ except:
 | `trigger.include`, `trigger.exclude` | judged beside the admin's lists; a name an admin's has is dropped |
 | `skills.paths`                       | replaces                                                          |
 | `skills.scope`                       | adds up by skill name, the file's winning                         |
-| `reviewers`                          | added; to an admin's reviewer only rules and skill scopes, and `default` is the admin's alone |
+| `review.reviewers`                   | added; to an admin's reviewer only rules and skill scopes, and `default` is the admin's alone |
 | `review.fixes`                       | can only turn it on                                               |
 | `confidence.risk`                    | can only lower it                                                 |
 | `review.approve`'s `when`            | judged beside the admin's; `approve: true` keeps the admin's      |

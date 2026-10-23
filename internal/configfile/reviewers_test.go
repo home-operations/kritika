@@ -16,9 +16,10 @@ const reviewersProvider = "providers:\n  p:\n    type: openai\n    apiKey: { env
 func TestReviewersResolve(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, reviewersProvider+`reviewers:
-  security: { instructions: Look for exploits., categories: [security], model: p/big, paths: ['**/auth/**'] }
-  default: { enabled: false }
+	f := mustLoad(t, reviewersProvider+`review:
+  reviewers:
+    security: { instructions: Look for exploits., categories: [security], model: p/big, paths: ['**/auth/**'] }
+    default: { enabled: false }
 `+minimal)
 	s := f.Settings(&f.Accounts[0])
 	if got := s.Reviewers["security"]; got.Model.Default != "p/big" || got.Categories[0] != review.CategorySecurity || !got.On() {
@@ -62,7 +63,7 @@ func TestReviewersInvalid(t *testing.T) {
 		{"too many", `{ a: {}, b: {}, c: {}, d: {}, e: {}, f: {}, g: {}, h: {}, i: {} }`, "9 reviewers besides the default one"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := load(t, reviewersProvider+"reviewers: "+tt.reviewers+"\n"+minimal)
+			_, err := load(t, reviewersProvider+"review: { reviewers: "+tt.reviewers+" }\n"+minimal)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want it to say %q", err, tt.want)
 			}

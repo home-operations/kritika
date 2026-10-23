@@ -100,7 +100,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	pr, client, owner, repo, mergeBase, eff := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.eff
 	settings := eff.Settings
-	admitted, done, err := w.admit(ctx, b.early, job, file, account, settings)
+	admitted, done, err := w.admit(ctx, b.early, job, file, account, mayRun(eff, args))
 	if done {
 		return err
 	}

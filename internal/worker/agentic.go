@@ -129,8 +129,9 @@ func (e noSlot) Error() string        { return errNoSlot.Error() + ": " + e.mode
 func (e noSlot) Is(target error) bool { return target == errNoSlot }
 
 // reviewerLeases takes a slot on each model, other than the review model,
-// that one of the repository's reviewers that is on reviews with: which of
-// them apply is known only once the runner has the diff, so a review holds
+// that one of settings' reviewers that is on reviews with, settings being
+// cut to those the review may run (see mayRun): which of them have files
+// to read is known only once the runner has the diff, so a review holds
 // one for each that may. A model with no free slot lets go of those taken
 // and is a noSlot.
 func (w *Review) reviewerLeases(

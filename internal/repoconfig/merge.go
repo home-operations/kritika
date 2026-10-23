@@ -122,7 +122,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		m.drop("confidence.risk", strconv.Quote(string(risk)), string(op.Confidence.Risk)+" or lower")
 	}
 	m.Skills = configfile.WithSkills(m.Skills, f.Skills)
-	m.reviewers(f.Reviewers, op)
+	m.reviewers(f.Review.Reviewers, op)
 	m.choose(&f, op.Providers)
 	for _, e := range []struct {
 		field string
@@ -158,7 +158,7 @@ func (m *Merged) reviewers(file map[string]configfile.Reviewer, op configfile.Se
 	}
 	for _, name := range slices.Sorted(maps.Keys(file)) {
 		r := file[name]
-		key := "reviewers." + name
+		key := "review.reviewers." + name
 		admin, ok := op.Reviewers[name]
 		switch {
 		case name == review.DefaultReviewer:

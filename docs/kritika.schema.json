@@ -60,6 +60,82 @@
         "diagram": {
           "type": "boolean",
           "description": "true has the summary draw the flow the change adds or alters as a Mermaid diagram; replaces the admin's."
+        },
+        "reviewers": {
+          "type": "object",
+          "description": "Reviewers of the repository's own, run beside the default one and the admin's, each an agent of its own over the change, by name. Under the name of an admin's reviewer, only rules and skills may be added to it; the default reviewer is the admin's to turn off.",
+          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+          "maxProperties": 8,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "not": { "required": ["instructions", "file"] },
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "false turns the reviewer off."
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 8000,
+                "description": "What the reviewer reviews for, added after kritika's own instructions."
+              },
+              "file": {
+                "$ref": "#/$defs/path",
+                "description": "A repository file, read from the merge base, whose content is the reviewer's instructions."
+              },
+              "categories": {
+                "type": "array",
+                "description": "The only finding categories the reviewer may report; every one when unset.",
+                "uniqueItems": true,
+                "items": { "enum": ["correctness", "security", "performance", "reliability", "maintainability", "tests"] }
+              },
+              "model": {
+                "$ref": "#/properties/review/properties/model",
+                "description": "The reviewer's model, or a list of routes that ends with it, as review.model takes them; unset, the model review.model picks for the pull request. A list with a model of a provider the account may not use is dropped whole."
+              },
+              "fallback": {
+                "$ref": "#/$defs/model",
+                "description": "The model that takes a step the reviewer's model fails; review.fallback's when unset."
+              },
+              "effort": {
+                "$ref": "#/$defs/effort",
+                "description": "How hard the reviewer's models reason; review.effort's when unset."
+              },
+              "paths": {
+                "type": "array",
+                "description": "The changed files the reviewer reads, every one when unset; a pull request that changes none of them is not reviewed by it.",
+                "items": { "$ref": "#/$defs/glob" }
+              },
+              "when": {
+                "type": "array",
+                "description": "Conditions as a model route's, judged over the whole pull request: the reviewer runs only when one of them holds.",
+                "items": { "$ref": "#/$defs/condition" }
+              },
+              "rules": {
+                "$ref": "#/properties/rules",
+                "description": "Checks the reviewer makes, in place of the repository's, which are the default reviewer's."
+              },
+              "skills": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Skill scopes laid over the repository's for this reviewer.",
+                "properties": {
+                  "scope": { "$ref": "#/properties/skills/properties/scope" }
+                }
+              },
+              "agent": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Bounds of the reviewer's agent, each part of it in a split review; they may lower the repository's and never raise them.",
+                "properties": {
+                  "steps": { "type": "integer", "minimum": 1 },
+                  "tokens": { "type": "integer", "minimum": 1 },
+                  "timeout": { "type": "string", "description": "A Go duration, such as 10m." }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -243,82 +319,6 @@
                 "type": "boolean",
                 "description": "Whether a review the skill applies to is given its instructions in the system prompt, rather than its name to read with load_skill. Unset, a scope with paths or when gives them, and one with neither offers the skill by name."
               }
-            }
-          }
-        }
-      }
-    },
-    "reviewers": {
-      "type": "object",
-      "description": "Reviewers of the repository's own, run beside the default one and the admin's, each an agent of its own over the change, by name. Under the name of an admin's reviewer, only rules and skills may be added to it; the default reviewer is the admin's to turn off.",
-      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
-      "maxProperties": 8,
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "not": { "required": ["instructions", "file"] },
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "false turns the reviewer off."
-          },
-          "instructions": {
-            "type": "string",
-            "maxLength": 8000,
-            "description": "What the reviewer reviews for, added after kritika's own instructions."
-          },
-          "file": {
-            "$ref": "#/$defs/path",
-            "description": "A repository file, read from the merge base, whose content is the reviewer's instructions."
-          },
-          "categories": {
-            "type": "array",
-            "description": "The only finding categories the reviewer may report; every one when unset.",
-            "uniqueItems": true,
-            "items": { "enum": ["correctness", "security", "performance", "reliability", "maintainability", "tests"] }
-          },
-          "model": {
-            "$ref": "#/properties/review/properties/model",
-            "description": "The reviewer's model, or a list of routes that ends with it, as review.model takes them; unset, the model review.model picks for the pull request. A list with a model of a provider the account may not use is dropped whole."
-          },
-          "fallback": {
-            "$ref": "#/$defs/model",
-            "description": "The model that takes a step the reviewer's model fails; review.fallback's when unset."
-          },
-          "effort": {
-            "$ref": "#/$defs/effort",
-            "description": "How hard the reviewer's models reason; review.effort's when unset."
-          },
-          "paths": {
-            "type": "array",
-            "description": "The changed files the reviewer reads, every one when unset; a pull request that changes none of them is not reviewed by it.",
-            "items": { "$ref": "#/$defs/glob" }
-          },
-          "when": {
-            "type": "array",
-            "description": "Conditions as a model route's, judged over the whole pull request: the reviewer runs only when one of them holds.",
-            "items": { "$ref": "#/$defs/condition" }
-          },
-          "rules": {
-            "$ref": "#/properties/rules",
-            "description": "Checks the reviewer makes, in place of the repository's, which are the default reviewer's."
-          },
-          "skills": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Skill scopes laid over the repository's for this reviewer.",
-            "properties": {
-              "scope": { "$ref": "#/properties/skills/properties/scope" }
-            }
-          },
-          "agent": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Bounds of the reviewer's agent, each part of it in a split review; they may lower the repository's and never raise them.",
-            "properties": {
-              "steps": { "type": "integer", "minimum": 1 },
-              "tokens": { "type": "integer", "minimum": 1 },
-              "timeout": { "type": "string", "description": "A Go duration, such as 10m." }
             }
           }
         }

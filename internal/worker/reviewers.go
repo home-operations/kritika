@@ -201,3 +201,22 @@ func (w *Review) readPull(ctx context.Context, accountID, prID, trigger string) 
 // wrote that names none, which chooseReviewers states it ran every
 // reviewer in place of; "" for a review of every reviewer.
 func asked(args jobs.ReviewArgs) string { return cmp.Or(args.Reviewer, args.Requested) }
+
+// mayRun is eff's settings with their reviewers other than the default
+// one cut to those a review asked for as args may run, whose models it
+// holds slots on: the one asked for alone, when one is, and otherwise
+// each that is on and whose when conditions judgeReviewers found to hold.
+func mayRun(eff Effective, args jobs.ReviewArgs) configfile.Settings {
+	s := eff.Settings
+	s.Reviewers = maps.Clone(s.Reviewers)
+	maps.DeleteFunc(s.Reviewers, func(name string, r configfile.Reviewer) bool {
+		switch {
+		case name == review.DefaultReviewer:
+			return false
+		case args.Reviewer != "":
+			return name != args.Reviewer
+		}
+		return !r.On() || !eff.Held[name]
+	})
+	return s
+}

@@ -518,18 +518,19 @@ func TestMergeReviewers(t *testing.T) {
 			Skills: configfile.SkillsSpec{Scope: map[string]configfile.SkillScope{"gha": {Paths: []string{".github/**"}}}},
 		},
 	}
-	m, err := Merge([]byte(`reviewers:
-  default: { enabled: false }
-  security:
-    enabled: false
-    paths: ['**']
-    rules: [{ id: pin-actions, rule: Pin actions. }, { id: no-secrets, rule: Weaker. }, { id: wrap-errors, rule: Weaker. }]
-    skills: { scope: { gha: { load: false }, sql: { paths: ['**/*.sql'] } } }
-  perf: { instructions: Mind allocations., model: own/fast, fallback: nope/x }
-  deps:
-    model:
-      - { model: own/fast, when: [{ name: bumps, expr: 'pr.headRef.startsWith("renovate/")' }] }
-      - model: nope/x
+	m, err := Merge([]byte(`review:
+  reviewers:
+    default: { enabled: false }
+    security:
+      enabled: false
+      paths: ['**']
+      rules: [{ id: pin-actions, rule: Pin actions. }, { id: no-secrets, rule: Weaker. }, { id: wrap-errors, rule: Weaker. }]
+      skills: { scope: { gha: { load: false }, sql: { paths: ['**/*.sql'] } } }
+    perf: { instructions: Mind allocations., model: own/fast, fallback: nope/x }
+    deps:
+      model:
+        - { model: own/fast, when: [{ name: bumps, expr: 'pr.headRef.startsWith("renovate/")' }] }
+        - model: nope/x
 `), op)
 	if err != nil {
 		t.Fatal(err)
@@ -579,7 +580,7 @@ func TestMergeReviewersCap(t *testing.T) {
 	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g"} {
 		op.Reviewers[n] = configfile.Reviewer{}
 	}
-	m, err := Merge([]byte("reviewers: { x: {}, y: {} }\n"), op)
+	m, err := Merge([]byte("review: { reviewers: { x: {}, y: {} } }\n"), op)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,14 +596,14 @@ func TestMergeReviewersCap(t *testing.T) {
 // with the rest, and one outside the repository is refused.
 func TestReferencedReviewers(t *testing.T) {
 	t.Parallel()
-	f, err := Parse([]byte("reviewers: { sec: { file: docs/sec.md, rules: [{ id: r, file: docs/r.md }] } }\n"))
+	f, err := Parse([]byte("review: { reviewers: { sec: { file: docs/sec.md, rules: [{ id: r, file: docs/r.md }] } } }\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := f.Referenced(); !slices.Equal(got, []string{"docs/sec.md", "docs/r.md"}) {
 		t.Errorf("referenced = %q", got)
 	}
-	if _, err := Parse([]byte("reviewers: { sec: { file: /etc/passwd } }\n")); err == nil {
+	if _, err := Parse([]byte("review: { reviewers: { sec: { file: /etc/passwd } } }\n")); err == nil {
 		t.Error("a reviewer's absolute file was accepted")
 	}
 }

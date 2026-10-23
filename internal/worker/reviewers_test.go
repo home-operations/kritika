@@ -184,3 +184,40 @@ func TestRequestedNoReviewer(t *testing.T) {
 		t.Errorf("reviewers = %+v, want every one with the note", got)
 	}
 }
+
+// TestMayRun: a review holds slots on the models of the reviewers it may
+// run alone: those whose conditions held, or the one asked for.
+func TestMayRun(t *testing.T) {
+	off := false
+	ref := func(m configfile.ModelRef) *configfile.ReviewModel { return &configfile.ReviewModel{Default: m} }
+	eff := Effective{
+		Reviewers: map[string]configfile.Reviewer{
+			"default":  {Enabled: &off},
+			"security": {Model: ref("p/big")},
+			"docs":     {Model: ref("p/doc")},
+			"retired":  {Enabled: &off, Model: ref("p/old")},
+		},
+		Models: configfile.Models{Review: "p/small"},
+		Held:   map[string]bool{"security": true, "docs": false, "retired": true},
+	}
+	for _, tt := range []struct {
+		args jobs.ReviewArgs
+		want []string
+	}{
+		{jobs.ReviewArgs{}, []string{"p/big"}},
+		{jobs.ReviewArgs{Reviewer: "docs"}, []string{"p/doc"}},
+		{jobs.ReviewArgs{Reviewer: "default"}, nil},
+		{jobs.ReviewArgs{Requested: "please"}, []string{"p/big"}},
+	} {
+		s := mayRun(eff, tt.args)
+		if got := reviewerModelKeys(s); !slices.Equal(got, tt.want) {
+			t.Errorf("slots for %+v = %q, want %q", tt.args, got, tt.want)
+		}
+		if _, ok := s.Reviewers["default"]; !ok {
+			t.Errorf("%+v dropped the default reviewer's entry, which says it is off", tt.args)
+		}
+	}
+	if len(eff.Reviewers) != 4 {
+		t.Error("mayRun changed the review's reviewers")
+	}
+}

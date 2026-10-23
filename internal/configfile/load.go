@@ -442,7 +442,7 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if err := validateAgent(r.Agent); err != nil {
 		return err
 	}
-	return cmp.Or(f.validateReviewers(r.Reviewers), validateReview(r))
+	return cmp.Or(f.validateReviewers(r.Review.Reviewers), validateReview(r))
 }
 
 // validateAgent checks the agent bounds the file writes beyond its steps
