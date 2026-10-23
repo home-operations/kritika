@@ -97,18 +97,6 @@ func (e *Events) PodEvent(ctx context.Context, warning bool, reason, action, not
 	e.record(ctx, e.pod, warning, reason, action, note)
 }
 
-// PodEventAsync records an Event on this replica's pod as PodEvent does,
-// but returns at once: a webhook's answer must not wait on the Kubernetes
-// API. Wait does not wait for it, since webhooks are still answered while
-// the queues drain and joining that count then could panic; one still
-// being written as the process exits is lost, as any Event may be.
-func (e *Events) PodEventAsync(ctx context.Context, warning bool, reason, action, note string) {
-	if e == nil || e.pod.Name == "" {
-		return
-	}
-	go e.record(ctx, e.pod, warning, reason, action, note)
-}
-
 // record writes one Event. It often says why a run ended, which is when
 // its ctx has: the write does not end with ctx.
 func (e *Events) record(ctx context.Context, regarding corev1.ObjectReference, warning bool, reason, action, note string) {

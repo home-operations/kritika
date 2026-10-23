@@ -47,9 +47,9 @@ Contents write access also permits pushing code, although kritika does not push.
 If you change permissions later, each installation must approve them.
 
 Allow installation only on your account unless you intend to serve several.
-GitHub lets anyone install a public App: kritika reviews only the accounts
-listed in `apps`, and [uninstalls the App](#install-the-app) from any other
-as it is installed there.
+Anyone can install a public App: kritika reviews only the accounts listed in
+`apps` and ignores any other installation, which an admin can uninstall from
+the dashboard's Connections section.
 
 ## Deploy
 
@@ -134,17 +134,6 @@ ConfigMaps need a restart or a controller such as Reloader.
 
 Install the GitHub App on each account listed under `config.apps.github.accounts`.
 Choose all repositories or selected repositories.
-
-List an account, and let that rollout finish, before installing the App on
-it. kritika uninstalls the App from an account no connection serves as soon
-as it is installed there, so an installation made before its account is
-listed, or one that reaches a replica still running the previous
-configuration, is removed and has to be made again. Each removal is in the
-audit log, and recorded as an `AppUninstalled` Event on the pod that made
-it, which `kubectl events` shows. Only an installation made in the last ten minutes is removed,
-at most five at once and one a minute after that per replica. An older one,
-such as one that was there before its account was dropped from `apps`,
-stays until an admin uninstalls it from the dashboard.
 
 Installing the App grants access. Newly discovered repositories still need to
 be enabled in the dashboard.

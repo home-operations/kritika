@@ -22,9 +22,6 @@ import (
 type Service struct {
 	store *store.Store
 	queue *river.Client[pgx.Tx]
-	// UninstallApp removes an installation of connection in's GitHub App,
-	// for Uninstall; nil uninstalls nothing.
-	UninstallApp func(ctx context.Context, in *configfile.Connection, installation int64) error
 }
 
 // NewService builds the dispatcher over the application pool and an
@@ -49,9 +46,6 @@ const (
 
 // jobReview is Outcome.Job for a review.
 const jobReview = "review"
-
-// actionCreated is the action of a new comment, and of a new installation.
-const actionCreated = "created"
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
 // lists, and ActionBaseline for one that predates kritika's knowing its
@@ -92,25 +86,6 @@ func (s *Service) RecordDelivery(ctx context.Context, connectionID string) error
 		return fmt.Errorf("ingest: record delivery: %w", err)
 	}
 	return nil
-}
-
-// Uninstall implements Uninstaller. The audit row commits only once the
-// forge has removed the installation, so a removal it refused leaves none.
-// No user made it, which the detail says, as a deleted user's row has no
-// actor either.
-func (s *Service) Uninstall(ctx context.Context, in *configfile.Connection, account string, installation int64) error {
-	if s.UninstallApp == nil {
-		return errors.New("ingest: no App to uninstall with")
-	}
-	return s.store.WithAccount(ctx, "", func(tx pgx.Tx) error {
-		if err := store.InsertAudit(ctx, tx, store.AuditEntry{
-			Action: store.AuditAppUninstall, Target: in.Name + "/" + account,
-			Detail: fmt.Appendf(nil, `{"installation":%d,"automatic":true}`, installation),
-		}); err != nil {
-			return err
-		}
-		return s.UninstallApp(ctx, in, installation)
-	})
 }
 
 // RecordUnsigned implements DeliveryRecorder.
@@ -315,7 +290,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Repository == nil || c == nil {
 		return Outcome{Status: Ignored, Reason: reasonNoRepository}, nil
 	}
-	if ev.Action != actionCreated {
+	if ev.Action != "created" {
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
 	// The cheap gate: a bot never triggers a follow-up, and a comment with
@@ -445,7 +420,7 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 	if inst == nil {
 		return Outcome{Status: Ignored, Reason: "no installation"}, nil
 	}
-	enable := ev.Action == actionCreated || ev.Action == "added" || ev.Action == "unsuspend"
+	enable := ev.Action == "created" || ev.Action == "added" || ev.Action == "unsuspend"
 	disable := ev.Action == "removed" || ev.Action == "deleted" || ev.Action == "suspend"
 	if !enable && !disable {
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil

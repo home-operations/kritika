@@ -66,16 +66,6 @@ func (a *Forges) app(in *configfile.Connection) (*github.App, error) {
 	return app, nil
 }
 
-// UninstallApp removes installation of connection in's GitHub App: the
-// ingest service's UninstallApp.
-func (a *Forges) UninstallApp(ctx context.Context, in *configfile.Connection, installation int64) error {
-	app, err := a.app(in)
-	if err != nil {
-		return err
-	}
-	return app.Uninstall(ctx, installation)
-}
-
 // bot is connection in's Forgejo or Gitea client. The integration, or bot
 // user, is the connection's, so one client serves every account it lists.
 func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {

@@ -265,7 +265,7 @@ func forgesServing(conns []Connection) map[string][]Forge {
 // paths; accounts listed; credentials that resolved; every account served
 // by one connection alone; and every GitHub App declared once. An App has
 // one webhook, so a second entry's accounts would be undeclared on the
-// first's hook path, and a new installation on them removed.
+// first's hook path, and offered for uninstalling as not served.
 func validateConnections(conns []Connection) error {
 	served := map[string]string{}
 	apps := map[string]string{}

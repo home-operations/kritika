@@ -14,8 +14,7 @@ A GitHub App, registered as the [setup guide](setup.md#register-the-github-app)
 describes and declared under `apps`. The App's webhook reaches kritika at
 `/hooks/<name>`; installation events keep the served repositories current,
 and kritika mints a short-lived, read-only installation token for each
-run. An installation on an account the App does not serve is removed as it
-is made: see [accounts a connection does not serve](#accounts-a-connection-does-not-serve).
+run.
 
 ```yaml
 apps:
@@ -357,10 +356,13 @@ a Gitea connection's `bots` adds any other account a bot runs as.
 
 Anyone can install a public GitHub App, and GitHub then sends kritika that
 installation's events, signed with the App's own secret. kritika ignores
-them, and uninstalls the App from the account as soon as it is installed
-there, as the [setup guide](setup.md#install-the-app) describes. An
-`apps` entry is the only one with its `clientId`: the App has one webhook,
-so a second entry's accounts would be strangers on the first's hook path.
+them and lists, polls and reviews nothing of that account's. The
+installation stays until someone removes it: the dashboard's Connections
+section lists it as not served, with an Uninstall action. A private App,
+which only the account owning it can install, avoids this; the
+[setup guide](setup.md#register-the-github-app) says when to choose one. An
+App is declared by one `apps` entry: it has one webhook, so a second
+entry's accounts would be strangers on the first's hook path.
 
 On Forgejo, GitLab and Gitea there is nothing to install. Anyone can add
 kritika's bot user or service account to their own repositories, but
