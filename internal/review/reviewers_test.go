@@ -220,3 +220,22 @@ func TestRenderReviewers(t *testing.T) {
 		t.Errorf("a review by the default reviewer alone mentions reviewers:\n%s", summary)
 	}
 }
+
+// TestParseReviewersKeepPriorThread: a finding that repeats a prior one's
+// title carries its thread into the finding of another reviewer it is
+// merged into, though the other's title wins.
+func TestParseReviewersKeepPriorThread(t *testing.T) {
+	prior := Finding{Path: "main.go", Line: 11, Severity: SeverityP2, Category: CategorySecurity, Title: "Unchecked input"}
+	raw := `{"summary": {"take": "T."}, "findings": [
+	  {"path": "main.go", "line": 11, "severity": "p2", "category": "security", "title": "Unchecked input", "explanation": "e"},
+	  {"path": "main.go", "line": 11, "severity": "p0", "category": "security", "title": "SQL injection", "explanation": "e",
+	   "reviewers": ["security"]}
+	]}`
+	res, _, err := Parse(raw, Anchors(sampleDiff), ParseOptions{Reviewers: []string{DefaultReviewer, "security"}, Prior: []Finding{prior}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Findings) != 1 || res.Findings[0].Title != "SQL injection" || Fingerprint(res.Findings[0]) != Fingerprint(prior) {
+		t.Fatalf("findings = %+v, want the p0 on the prior finding's thread", res.Findings)
+	}
+}

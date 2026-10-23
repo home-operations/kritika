@@ -110,6 +110,10 @@ type ReviewArgs struct {
 	// runs, whatever its paths and conditions; "" runs every reviewer that
 	// applies.
 	Reviewer string `json:"reviewer,omitempty"`
+	// Requested is the word a re-run's request wrote after review that
+	// names no reviewer, which the review states it ran every reviewer in
+	// place of; it leaves the request one of every reviewer.
+	Requested string `json:"requested,omitempty"`
 }
 
 // Kind implements river.JobArgs.

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -246,5 +247,30 @@ func TestFollowUpRole(t *testing.T) {
 	}
 	if followUpReviewer(reviewSpec()) != "" {
 		t.Error("a review's run names a follow-up reviewer")
+	}
+}
+
+// TestRoleWithinBudget: a reviewer's instructions are part of the system
+// prompt the user message is budgeted against, so long ones leave less of
+// the diff in it rather than passing the opening prompt's bound.
+func TestRoleWithinBudget(t *testing.T) {
+	s := reviewSpec()
+	s.Agent.MaxPromptTokens = 12_000
+	files, changed := make([]any, 0, 80), make([]string, 0, 40)
+	for i := range 40 {
+		name := fmt.Sprintf("f%02d.go", i)
+		files, changed = append(files, name, 2<<10), append(changed, name)
+	}
+	pack := packView{Diff: sizedDiff(files...), Changed: changed}
+	in := newPromptInputs(s, nil, nil, pack.Changed)
+	plain := newAgentPrompt(s, in, pack, nil, false, false)
+	in.role = &review.Reviewer{Name: "security", Instructions: strings.Repeat("Trace every input. ", 1000)}
+	roled := newAgentPrompt(s, in, pack, nil, false, false)
+	if !strings.Contains(roled.system, "Trace every input.") {
+		t.Fatal("the role is not in the system prompt")
+	}
+	if len(roled.user) >= len(plain.user) || len(roled.omitted) <= len(plain.omitted) {
+		t.Errorf("with the role, user %d leaving out %d files; without, %d leaving out %d: the role must displace the diff",
+			len(roled.user), len(roled.omitted), len(plain.user), len(plain.omitted))
 	}
 }

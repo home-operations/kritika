@@ -178,6 +178,44 @@ func MergeReviewers(findings []Finding) []Finding {
 	return out
 }
 
+// mergeReviewers is MergeReviewers over findings Parse kept, each
+// carrying the fingerprint of the prior finding it reports again, its own
+// title's included, so a merge under another title keeps that thread;
+// afterwards a finding carries one only where it differs from its title's,
+// as Parse leaves them.
+func mergeReviewers(findings []Finding) []Finding {
+	out := MergeReviewers(findings)
+	for i := range out {
+		if out[i].Fingerprint == titleFingerprint(out[i]) {
+			out[i].Fingerprint = ""
+		}
+	}
+	return out
+}
+
+// mergeDropped is dropped with its findings off the diff merged as
+// mergeReviewers merges the kept ones, which a review lists apart; the
+// others stay as they are, and every one's fingerprint is left as Parse
+// leaves them.
+func mergeDropped(dropped []Dropped) []Dropped {
+	var off []Finding
+	out := make([]Dropped, 0, len(dropped))
+	for _, d := range dropped {
+		if d.Reason == DropUnanchored {
+			off = append(off, d.Finding)
+			continue
+		}
+		if d.Finding.Fingerprint == titleFingerprint(d.Finding) {
+			d.Finding.Fingerprint = ""
+		}
+		out = append(out, d)
+	}
+	for _, f := range mergeReviewers(off) {
+		out = append(out, Dropped{Finding: f, Reason: DropUnanchored})
+	}
+	return out
+}
+
 // sameIssue reports whether a and b, raised by no reviewer in common, are
 // about the same thing.
 func sameIssue(a, b Finding) bool {

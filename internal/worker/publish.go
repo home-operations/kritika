@@ -172,7 +172,6 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 	unanchored, notes := splitDropped(dropped)
-	unanchored = review.MergeReviewers(unanchored)
 	partNotes := unfinishedParts(run.Parts)
 	p.unfinished = len(partNotes)
 	notes = append(notes, partNotes...)

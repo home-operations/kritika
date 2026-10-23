@@ -1178,6 +1178,23 @@ test.describe('review', () => {
     await expect(page.getByText(/^Cost by reviewer: /)).toHaveText('Cost by reviewer: security $0.12 · default $0.30');
   });
 
+  test('a run of one named reviewer in one part still names it, its whole-change review and its cost', async ({ page }) => {
+    const a = g.reviewDetail.agentRun!;
+    const agentRun = {
+      ...a,
+      steps: 1,
+      timeline: [{ ...a.timeline[0]!, index: 0, part: 1 }],
+      parts: [{ reviewer: 'security', paths: ['server/a.go'], stop: 'submitted', error: '', steps: 1, full: true, costUsd: 0.12 }],
+    };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    const row = page.getByRole('table', { name: 'Parts' }).locator('tbody tr').first();
+    await expect(row.locator('td').first()).toHaveText('security · part 1');
+    await expect(row.locator('td').nth(1)).toContainText('whole change');
+    await expect(row.locator('td').nth(3)).toHaveText('$0.12');
+    await expect(page.getByText(/^Cost by reviewer: /)).toHaveText('Cost by reviewer: security $0.12');
+  });
+
   test("a split review's conversation shows each part's turns together, then those after them", async ({ page }) => {
     const turn = g.transcript.turns[0]!;
     const transcript = {

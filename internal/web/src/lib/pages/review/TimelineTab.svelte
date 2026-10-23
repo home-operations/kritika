@@ -108,7 +108,7 @@
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />
     {/if}
-    {#if split}
+    {#if split || named}
       <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data" aria-label="Parts">
           <thead>

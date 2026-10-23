@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
@@ -195,3 +196,8 @@ func (w *Review) readPull(ctx context.Context, accountID, prID, trigger string) 
 	vars, err := judged.Vars()
 	return pull, vars, err
 }
+
+// asked is the reviewer a re-run someone asked for names, or the word they
+// wrote that names none, which chooseReviewers states it ran every
+// reviewer in place of; "" for a review of every reviewer.
+func asked(args jobs.ReviewArgs) string { return cmp.Or(args.Reviewer, args.Requested) }

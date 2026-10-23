@@ -668,7 +668,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 		kept = append(kept, f)
 	}
-	kept = MergeReviewers(kept)
+	kept, dropped = mergeReviewers(kept), mergeDropped(dropped)
 	slices.SortStableFunc(kept, func(a, b Finding) int {
 		return cmp.Or(
 			cmp.Compare(a.Severity.Rank(), b.Severity.Rank()),

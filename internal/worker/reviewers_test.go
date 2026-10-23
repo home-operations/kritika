@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
@@ -161,5 +162,25 @@ func TestRequestedReviewer(t *testing.T) {
 func TestSkipDescriptionNoReviewer(t *testing.T) {
 	if got := skipDescription(runner.SkipNoReviewer, ""); got != "no reviewer applies to the change" {
 		t.Errorf("description = %q", got)
+	}
+}
+
+// TestRequestedNoReviewer: "@<bot> review <word>" that names no reviewer
+// queues a review of every reviewer that keeps the word, so the review
+// states why the one asked for did not run.
+func TestRequestedNoReviewer(t *testing.T) {
+	configured := map[string]configfile.Reviewer{"security": {}}
+	for _, tt := range []struct{ name, reviewer, requested string }{
+		{"security", "security", ""}, {"default", "default", ""}, {"please", "", "please"},
+	} {
+		if r, q := splitRequested(tt.name, configured); r != tt.reviewer || q != tt.requested {
+			t.Errorf("splitRequested(%q) = %q, %q; want %q, %q", tt.name, r, q, tt.reviewer, tt.requested)
+		}
+	}
+	args := jobs.ReviewArgs{Requested: "please"}
+	eff := Effective{Reviewers: configured, Held: map[string]bool{"security": true}}
+	got := chooseReviewers(eff, map[string]any{}, priorReview{}, asked(args), 1000)
+	if len(got.specs) != 2 || !slices.Contains(got.notes(), "No reviewer named please is on, so every reviewer that applies ran") {
+		t.Errorf("reviewers = %+v, want every one with the note", got)
 	}
 }

@@ -180,7 +180,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
-	chosen := chooseReviewers(eff, vars, prior, args.Reviewer, admitted.maxTokens)
+	chosen := chooseReviewers(eff, vars, prior, asked(args), admitted.maxTokens)
 	b.notes = append(b.notes, chosen.notes()...)
 	// Each reviewer may be split as the review alone could be; the run is sized for all of them.
 	perReviewer := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)

@@ -78,6 +78,9 @@ type promptInputs struct {
 	skills, loaded []repoconfig.Skill
 	references     []review.Reference
 	notes          []string
+	// role is the reviewer other than the default one the prompt is for,
+	// nil for the default reviewer.
+	role *review.Reviewer
 }
 
 // ruleIDs is the ids of the rules the prompt was given.
@@ -160,15 +163,18 @@ func (a agentPrompt) notes() []string {
 	return notes
 }
 
-// newAgentPrompt composes the prompt from the inputs and the pack, whose
-// context includes the similar code the gateway found. commands are what
+// newAgentPrompt composes the prompt from the inputs, with the role of the
+// reviewer they are for, and the pack, whose context includes the similar
+// code the gateway found. commands are what
 // the run tool offers, fetch says fetch_repo is offered, and search
 // search_code.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
 	bumps := review.Bumps(pack.Diff)
-	system := review.SystemPrompt(
+	// The role is part of the system prompt before the user message is
+	// budgeted from what it leaves.
+	system := review.WithReviewer(review.SystemPrompt(
 		in.rules, repoconfig.PromptSkills(in.skills, in.loaded), commands, fetch, search, p.Prompt.Diagram, len(bumps) > 0,
-	)
+	), in.role)
 	var incremental *review.IncrementalInput
 	var earlier *review.EarlierInput
 	switch {
@@ -189,9 +195,14 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 	})
 	// Build writes the context in order until the budget is spent, so the
 	// chunks it left out are the last.
+	var categories []review.Category
+	if in.role != nil {
+		categories = in.role.Categories
+	}
 	return agentPrompt{
-		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,
-		fallback: review.Lenient(review.Check), omitted: omitted, contextOmitted: contextOmitted,
+		system: system, user: user, submit: submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories),
+		validate: review.CheckCategories(review.Check, categories), fallback: review.Lenient(review.CheckCategories(review.Check, categories)),
+		omitted: omitted, contextOmitted: contextOmitted,
 		context: pack.Context[:len(pack.Context)-contextOmitted], references: in.references, referencesOmitted: referencesOmitted,
 	}
 }

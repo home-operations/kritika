@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
@@ -247,14 +248,15 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 			return f.answer(ctx, review.NothingToReviewBody(f.pr.headSHA, f.pr.baseRef), nothingToReview(f.pr))
 		}
 	}
-	reviewer, err := f.namedReviewer(ctx)
+	reviewer, requested, err := f.namedReviewer(ctx)
 	if err != nil {
 		return store.FollowupFailed, err
 	}
 	queue := river.ClientFromContext[pgx.Tx](ctx)
 	already := false
 	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		_, err := jobs.EnqueueReviewerRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number, reviewer)
+		_, err := jobs.EnqueueReviewerRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number,
+			reviewer, requested)
 		if errors.Is(err, jobs.ErrRerunOther) {
 			return err
 		}
@@ -283,21 +285,30 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 
 // namedReviewer is the reviewer "@<bot> review <name>" asks to run alone:
 // the default one, or one the repository's settings, its .kritika.yaml
-// applied, name; "" when the word after review names none, or nothing
-// follows it, for a review of every reviewer that applies.
-func (f *followUp) namedReviewer(ctx context.Context) (string, error) {
+// applied, name; "" when nothing follows review, for a review of every
+// reviewer that applies. requested is a word that names no reviewer,
+// which the review states it ran every reviewer in place of.
+func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested string, err error) {
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
 	name := requestedReviewer(f.comment.Body, slug)
 	if name == "" || name == review.DefaultReviewer {
-		return name, nil
+		return name, "", nil
 	}
 	if _, err := f.repoConfig(ctx); err != nil {
-		return "", err
+		return "", "", err
 	}
-	if _, ok := f.eff.Reviewers[name]; !ok {
-		return "", nil
+	reviewer, requested = splitRequested(name, f.eff.Reviewers)
+	return reviewer, requested, nil
+}
+
+// splitRequested is name as a review request carries it: the reviewer to
+// run alone when reviewers name it, else the word requested, kept apart so
+// the review in flight stands in for one of every reviewer.
+func splitRequested(name string, reviewers map[string]configfile.Reviewer) (reviewer, requested string) {
+	if _, ok := reviewers[name]; ok || name == review.DefaultReviewer {
+		return name, ""
 	}
-	return name, nil
+	return "", name
 }
 
 // awaitInterval is how long the job of an answered review request sleeps

@@ -124,14 +124,13 @@ func partPrompts(
 		if sh.index == 1 {
 			checks = append(slices.Clone(sh.paths), unsplitPaths(p, sh.name(), append(siblings(shares, i), sh.paths))...)
 		}
-		prompt := newAgentPrompt(partSpec(sh.spec(p), checks, sh.name()), ins[i], pack, tools.commands(), tools.fetch != nil,
+		in := ins[i]
+		in.role = sh.role(files)
+		prompt := newAgentPrompt(partSpec(sh.spec(p), checks, sh.name()), in, pack, tools.commands(), tools.fetch != nil,
 			tools.search != nil)
-		role := sh.role(files)
-		prompt.system = review.WithReviewer(prompt.system, role)
 		var categories []review.Category
-		if role != nil {
-			categories = role.Categories
-			prompt.submit = submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories)
+		if in.role != nil {
+			categories = in.role.Categories
 		}
 		prompt.validate = review.CheckCategories(review.CheckPart(sh.paths, others(shares, i, res.Changed)), categories)
 		prompt.fallback = review.Lenient(prompt.validate)
