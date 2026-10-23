@@ -243,9 +243,9 @@ Connections open on demand, so an idle replica holds few:
 | ----------------------- | ---------- | --------------- | ---------------------------------------------------------------------------------------- | ------------------ |
 | the application pool    | replica    | 16              | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`      |
 | the owner pool          | replica    | 4               | ten minutes, for a migration that builds an index                                        | `kritika-owner`    |
-| the `LISTEN` connection | replica    | 1               |                                                                                          | `kritika-listen`   |
-| review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) | one minute | `kritika-publication` |
-| a runner's pool         | runner Job | uses one or two |                                                                                          |                    |
+| the `LISTEN` connection | replica    | 1               | one minute, as the application pool's                                                    | `kritika-listen`   |
+| review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute | `kritika-publication` |
+| a runner's pool         | runner Job | uses one or two | one minute, as the application pool's                                                    | `kritika-app`      |
 
 Each active review publication holds a separate application-role connection
 for its advisory lock, without an open transaction. This keeps slow forge
@@ -257,8 +257,11 @@ application pool's if jobs wait on the pool, which
 `kritika_db_pool_empty_acquires_total` counts and
 `kritika_db_pool_connections` shows against the ceiling
 ([metrics](metrics.md)), or raise `max_connections` under the Cluster's
-`postgresql.parameters` for more replicas. CNPG's `cnpg_backends_total`
-metric shows what each `application_name` holds.
+`postgresql.parameters` for more replicas. A `pool_ping_timeout` in a URI
+replaces that pool's five-second bound on a ping of an idle connection.
+CNPG's `cnpg_backends_total` metric shows what each `application_name`
+holds; runner Jobs connect as `kritika-app` too, so that name counts their
+connections with the replicas' application pools.
 
 The leader's hourly retention sweeps of transcripts, egress refusals,
 stored diffs and agent conversations work in batches, each its own

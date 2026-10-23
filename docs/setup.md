@@ -144,7 +144,8 @@ Open your public URL and sign in as `admin` with the password you supplied.
 2. Select your account and open **Repositories**.
 3. Enable a repository you want reviewed.
 
-You can add [GitHub or OIDC sign-in](configuration.md#auth) later.
+You can add [GitHub, Forgejo, Gitea, GitLab or OIDC sign-in](configuration.md#auth)
+later.
 [Embedding](models.md#the-embedder) is optional: it adds similar-code search
 but is not needed for the first review.
 

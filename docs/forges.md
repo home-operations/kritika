@@ -92,8 +92,8 @@ forgejo:
 
 `host` is the instance's hostname alone, reached over HTTPS; runner pods
 are allowed to reach it through the [egress gateway](security.md#the-egress-gateway)
-as they are GitHub for an App. A name is one connection's, under `apps`
-or `forgejo`, and an account is served by one connection on its forge.
+as they are GitHub for an App. A name is one connection's, under `apps`,
+`forgejo`, `gitlab` or `gitea`, and an account is served by one connection on its forge.
 
 `bots` lists the logins on the instance that are bots, such as a Renovate
 user. Forgejo marks no account as a bot and allows no `[bot]` in a login,
