@@ -472,7 +472,8 @@ type begun struct {
 // The admin's model's slots are checked before any forge call, so a job
 // snoozed through a busy spell costs the forge nothing each time it wakes;
 // a repository, or a model route, that chooses another model then waits
-// for that model's slots too. It reports whether it ended the job, with
+// for that model's slots too. Where the admin writes model routes, only
+// the model they pick is checked, once they are judged. It reports whether it ended the job, with
 // the error of that or of getting this far.
 func (w *Review) begin(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
@@ -505,8 +506,13 @@ func (w *Review) begin(
 		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, pr.closed)
 	}
 	settings := file.Settings(account, pr.repository)
-	if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
-		return begun{}, true, err
+	// With routes the review's model is known only once they are judged,
+	// and a busy default must not hold back one routed to a free model.
+	routed := len(settings.Models.Routes) > 0
+	if !routed {
+		if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
+			return begun{}, true, err
+		}
 	}
 	client, err := w.client(ctx, file, account, pr.repository)
 	if err != nil {
@@ -542,7 +548,7 @@ func (w *Review) begin(
 		return client.PullRequestDiff(ctx, owner, repo, pr.number, e.mergeBase, pr.headSHA)
 	})
 	pickRoute(e.logger, &eff, vars, forgeDiff)
-	if eff.Models.Review != settings.Models.Review {
+	if routed || eff.Models.Review != settings.Models.Review {
 		if held, err := w.slotsHeld(ctx, e, job, account.ID(), eff.Settings); held {
 			return begun{}, true, err
 		}

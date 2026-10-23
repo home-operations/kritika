@@ -99,6 +99,37 @@ func TestParseReadsHeaders(t *testing.T) {
 	}
 }
 
+// TestParseUnquotesNames: git writes a name with a non-ASCII byte as a C
+// string, in its headers and on the "diff --git" line a rename alone has,
+// and the names come back as they are, the diff as it was.
+func TestParseUnquotesNames(t *testing.T) {
+	const diff = `diff --git "a/db/\303\251.sql" "b/db/\303\251.sql"
+index 7898192..422c2b7 100644
+--- "a/db/\303\251.sql"
++++ "b/db/\303\251.sql"
+@@ -1 +1,2 @@
+ a
++b
+diff --git "a/\303\274.txt" "b/\303\266.txt"
+similarity index 100%
+rename from "\303\274.txt"
+rename to "\303\266.txt"
+`
+	files := Parse(diff)
+	if len(files) != 2 {
+		t.Fatalf("files = %d", len(files))
+	}
+	if f := files[0]; f.OldPath != "db/é.sql" || f.NewPath != "db/é.sql" || f.Path() != "db/é.sql" {
+		t.Errorf("edited = %q, %q", f.OldPath, f.NewPath)
+	}
+	if got := files[1].Path(); got != "ö.txt" {
+		t.Errorf("renamed = %q, want the head-side name", got)
+	}
+	if got := files[0].String() + files[1].String(); got != diff {
+		t.Errorf("String = %q, want the diff as it was", got)
+	}
+}
+
 func TestParseKeepsALastLineWithoutNewline(t *testing.T) {
 	diff := "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b"
 	files := Parse(diff)

@@ -499,8 +499,8 @@ review:
   conversation and findings stay on one model.
 - A condition with `paths` or `pr.lines` reads the pull request's diff
   from the forge before any model is called. A diff the forge will not
-  give whole leaves those conditions not holding, and the pull request
-  gets the default.
+  give whole leaves those conditions not holding; the others are judged
+  as ever.
 - A route may set its own `effort` and `fallback`; otherwise
   `review.effort` and `review.fallback` apply. The default takes `model`
   alone: `review.effort` and `review.fallback` are its own.

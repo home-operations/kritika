@@ -82,7 +82,7 @@ func (e *Effective) narrowTo(vars map[string]any) {
 // pickRoute has eff's model routes pick the review's model for the pull
 // request with the filter variables vars, reading the forge's diff when
 // one of their conditions needs it. A diff the forge will not give leaves
-// those conditions not holding, so the pull request gets the default.
+// those conditions not holding, and the others are judged without it.
 func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
 	if len(eff.Models.Routes) == 0 {
 		return

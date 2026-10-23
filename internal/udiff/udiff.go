@@ -111,6 +111,11 @@ func (f File) Path() string {
 	}
 	first, _, _ := strings.Cut(f.Header, "\n")
 	if _, after, ok := strings.Cut(first, "diff --git "); ok {
+		if _, name, ok := strings.CutLast(after, ` "b/`); ok {
+			if unquoted, err := strconv.Unquote(`"` + name); err == nil {
+				return unquoted
+			}
+		}
 		if _, name, ok := strings.CutLast(after, " b/"); ok {
 			return name
 		}
@@ -149,6 +154,14 @@ func sidePath(p, prefix string) string {
 	p = strings.TrimSuffix(p, "\t")
 	if p == "/dev/null" {
 		return ""
+	}
+	// Git writes a name with a byte it does not print as it is, a quote,
+	// a backslash, a control or a non-ASCII one, as a C string, whose
+	// escapes Go's own string literals share.
+	if strings.HasPrefix(p, `"`) {
+		if unquoted, err := strconv.Unquote(p); err == nil {
+			p = unquoted
+		}
 	}
 	return strings.TrimPrefix(p, prefix)
 }

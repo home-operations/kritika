@@ -594,8 +594,13 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 // checkAgentRouted: a review.model route on a path the pull request
 // changes runs every step of the review on its model, which the summary's
 // footer names with the route, and still does after a push that changes
-// other files, the route being judged over the whole pull request.
+// other files, the route being judged over the whole pull request. The
+// default model's one slot is held throughout, which a review routed to
+// another model does not wait for.
 func checkAgentRouted(t *testing.T, h *agenticHarness) {
+	holder := int64(-1)
+	holdModelSlot(t, h, "gateway/agent-model", &holder)
+	t.Cleanup(func() { holdModelSlot(t, h, "gateway/agent-model", nil) })
 	m := &configfile.ReviewModel{Default: "gateway/agent-model", Routes: []configfile.ModelRoute{{
 		Name: "deep", Model: "gateway/agent-deep", When: []configfile.Filter{{Name: "schema", Paths: []string{"*.sql"}}},
 	}}}
@@ -1306,18 +1311,7 @@ func checkParallelSteps(t *testing.T, h *agenticHarness, grant store.GatewayGran
 func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc snoozed() {}\n")
-	hold := func(jobID *int64) {
-		t.Helper()
-		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (account_id, model_key, slot, job_id, expires_at)
-				VALUES ($1, 'gateway/agent-model', 1, $2, CASE WHEN $2::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
-				ON CONFLICT (account_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
-				h.account.ID(), jobID)
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	hold := func(jobID *int64) { holdModelSlot(t, h, "gateway/agent-model", jobID) }
 	holder := int64(-1)
 	hold(&holder)
 	h.dispatch(t, next)
@@ -1338,6 +1332,21 @@ func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 	hold(nil)
 	if _, status, errText := h.waitReview(t, next); status != "completed" {
 		t.Fatalf("status = %s (%s), want completed once the slot was free", status, errText)
+	}
+}
+
+// holdModelSlot gives the account's one slot on ref to jobID, or lets it
+// go with nil.
+func holdModelSlot(t *testing.T, h *agenticHarness, ref string, jobID *int64) {
+	t.Helper()
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (account_id, model_key, slot, job_id, expires_at)
+			VALUES ($1, $2, 1, $3, CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
+			ON CONFLICT (account_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
+			h.account.ID(), ref, jobID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
