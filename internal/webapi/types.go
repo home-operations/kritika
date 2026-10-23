@@ -175,7 +175,6 @@ type Repository struct {
 	ID            string `json:"id"`
 	FullName      string `json:"fullName"`
 	Enabled       bool   `json:"enabled"`
-	ManagedBy     string `json:"managedBy"`
 	DefaultBranch string `json:"defaultBranch"`
 	Archived      bool   `json:"archived"`
 	Fork          bool   `json:"fork"`

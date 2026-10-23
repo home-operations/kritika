@@ -50,12 +50,11 @@ apps:
     clientId: Iv1.test
     privateKey: { env: TEST_SECRET }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  similar-usage/repo: {}
 `)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "similar-usage/repo")
 	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -181,12 +180,11 @@ apps:
     clientId: Iv1.test
     privateKey: { env: TEST_SECRET }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  similar-prompts/repo: {}
 `)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "similar-prompts/repo")
 	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, "passage: "); err != nil {
 		t.Fatal(err)
 	}

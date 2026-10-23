@@ -30,62 +30,53 @@ apps:
     clientId: Iv1.x
     privateKey: { env: TEST_PEM }
     webhookSecret: { env: TEST_SECRET }
-  globex-bot:
-    accounts: [globex]
-    clientId: Iv1.y
-    privateKey: { env: TEST_PEM }
-    webhookSecret: { env: TEST_SECRET }
-repositories:
-  acme/slow-agent: { agent: { timeout: 50m } }
-  acme/whole: { agent: { parts: 1 } }
 `
 
 func TestJobTimeouts(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
-	file := configfiletest.Load(t, timeoutConfigYAML)
-	current := configfile.NewCurrent(file)
-	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
-	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.ID(), name) }
-
-	review := &Review{Current: current}
-	index := &Index{Current: current}
-	followUp := &FollowUp{Current: current}
 	tests := []struct {
-		name         string
-		accountID    string
-		repositoryID string
-		review       time.Duration
-		index        time.Duration
-		followUp     time.Duration
+		name string
+		// root is written at the configuration's root.
+		root      string
+		accountID string
+		review    time.Duration
+		index     time.Duration
+		followUp  time.Duration
 	}{
 		// The agent's 20m plus 5m of fetch headroom outlasts the runner
 		// deadline, plus 15m to take the lease and 5m to publish; the index
 		// has 15m + 60m to embed.
-		{name: "a review that is never split", accountID: acme.ID(), repositoryID: acmeRepo("acme/whole"), review: 45 * time.Minute,
+		{name: "a review that is never split", root: "agent: { parts: 1 }\n", accountID: "acme", review: 45 * time.Minute,
 			index: 75 * time.Minute, followUp: 45 * time.Minute},
 		// Eight parts of 20m each pass the agent's cap, so a review may run
 		// to the job cap; a follow-up is never split.
-		{name: "the default agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: jobtimeout.MaxJobTimeout,
-			index: 75 * time.Minute, followUp: 45 * time.Minute},
-		{name: "a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
+		{name: "the default agent timeout", accountID: "acme", review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
+		{name: "a longer agent timeout", root: "agent: { timeout: 50m }\n", accountID: "acme",
 			review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
-		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 35 * time.Minute, index: 75 * time.Minute, followUp: 35 * time.Minute},
+		{name: "unknown account", accountID: "missing", review: 35 * time.Minute, index: 75 * time.Minute, followUp: 35 * time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.review <= time.Minute || tt.index <= time.Minute || tt.followUp <= time.Minute {
 				t.Fatal("a job timeout must outlast River's one-minute default")
 			}
-			got := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: tt.accountID, RepositoryID: tt.repositoryID}})
+			file := configfiletest.Load(t, tt.root+timeoutConfigYAML)
+			current := configfile.NewCurrent(file)
+			accountID := tt.accountID
+			if a, ok := file.Account(configfile.ForgeGitHub, tt.accountID); ok {
+				accountID = a.ID()
+			}
+			review, index, followUp := &Review{Current: current}, &Index{Current: current}, &FollowUp{Current: current}
+			got := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: accountID}})
 			if got != tt.review {
 				t.Errorf("review timeout = %s, want %s", got, tt.review)
 			}
-			got = index.Timeout(&river.Job[jobs.IndexArgs]{Args: jobs.IndexArgs{AccountID: tt.accountID, RepositoryID: tt.repositoryID}})
+			got = index.Timeout(&river.Job[jobs.IndexArgs]{Args: jobs.IndexArgs{AccountID: accountID}})
 			if got != tt.index {
 				t.Errorf("index timeout = %s, want %s", got, tt.index)
 			}
-			got = followUp.Timeout(&river.Job[jobs.FollowUpArgs]{Args: jobs.FollowUpArgs{AccountID: tt.accountID, RepositoryID: tt.repositoryID}})
+			got = followUp.Timeout(&river.Job[jobs.FollowUpArgs]{Args: jobs.FollowUpArgs{AccountID: accountID}})
 			if got != tt.followUp {
 				t.Errorf("follow-up timeout = %s, want %s", got, tt.followUp)
 			}
@@ -95,9 +86,11 @@ func TestJobTimeouts(t *testing.T) {
 	// A runner deadline at configfile's max: the index job lands exactly on
 	// MaxJobTimeout.
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline/time.Second)))
-	current = configfile.NewCurrent(configfiletest.Load(t, timeoutConfigYAML))
-	review, index = &Review{Current: current}, &Index{Current: current}
-	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/whole")}}),
+	file := configfiletest.Load(t, "agent: { parts: 1 }\n"+timeoutConfigYAML)
+	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
+	current := configfile.NewCurrent(file)
+	review, index := &Review{Current: current}, &Index{Current: current}
+	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID()}}),
 		jobtimeout.MaxRunnerDeadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom; got != want {
 		t.Errorf("review timeout at the max deadline = %s, want %s", got, want)
 	}

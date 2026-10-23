@@ -229,7 +229,6 @@ export interface Repository {
   id: string;
   fullName: string;
   enabled: boolean;
-  managedBy: 'file' | 'forge';
   defaultBranch: string;
   archived: boolean;
   fork: boolean;
@@ -317,7 +316,7 @@ export interface RepoSettings {
 }
 
 // defaults is a setting written at the configuration file's root, account
-// one written in an account's entry.
+// limits written in an account's entry.
 export type ConfigSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'repository';
 
 // One instance-wide setting, read-only in the admin console: a secret
@@ -610,9 +609,8 @@ export interface Analytics {
 }
 
 export type RuleKind = 'rule' | 'context';
-// entry is an account's entry for the repository; repository is the
-// repository's own .kritika.yaml.
-export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'entry' | 'repository';
+// repository is the repository's own .kritika.yaml.
+export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'repository';
 
 // Rule is one written rule or file reviews read, with where it is set, the
 // paths it applies to (every change when empty), and the repositories that

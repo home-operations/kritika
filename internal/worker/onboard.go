@@ -70,9 +70,9 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 	if room <= 0 {
 		return nil
 	}
-	refs, err := o.Store.OnboardCandidates(ctx, room, onboardRetryAfter, func(accountID, fullName string, t configfile.RepoTraits) bool {
+	refs, err := o.Store.OnboardCandidates(ctx, room, onboardRetryAfter, func(accountID string, t configfile.RepoTraits) bool {
 		a, ok := f.AccountByID(accountID)
-		return ok && f.Runs(a, fullName, t)
+		return ok && f.Runs(a, t)
 	})
 	if err != nil || len(refs) == 0 {
 		return err

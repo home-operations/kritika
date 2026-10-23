@@ -5,13 +5,16 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
@@ -23,14 +26,31 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
-	file, err := configfiletest.Parse(t, configYAML+`  onedr0p/a: {}
-  onedr0p/b: {}
-  onedr0p/c: {}
-`)
+	// An account of its own: the feeder offers only repositories of the
+	// accounts the configuration serves, so the repositories other suites
+	// turned on in the shared database stay out of the count.
+	file, err := configfiletest.Parse(t, strings.ReplaceAll(configYAML, "onedr0p", "onboard-window"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	// The repositories have no dashboard choice, so the configuration's
+	// enabled decides whether they run.
+	account, _ := file.Account(configfile.ForgeGitHub, "onboard-window")
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		for _, name := range []string{"onboard-window/a", "onboard-window/b", "onboard-window/c"} {
+			id, _, err := store.EnsureRepository(ctx, tx, account.ID(), store.ReachedRepository{FullName: name})
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = NULL, turned_at = NULL WHERE id = $1`, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	// The suites share one database: count from what is already there,

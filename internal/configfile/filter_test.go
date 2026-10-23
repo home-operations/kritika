@@ -201,68 +201,28 @@ func TestFiltersCompile(t *testing.T) {
 	}
 }
 
-// TestFilterScopes: each list adds up from the file's root through owner/*
-// to owner/name, a condition under a name the list already has taking that
-// one's place.
-func TestFilterScopes(t *testing.T) {
+// TestFilterLists: each list resolves from the file's root as written,
+// compiled, the other list left as it is.
+func TestFilterLists(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
-	tests := []struct {
-		name              string
-		root, owner, repo string
-		want              string
-		// sibling is what a repository without an entry gets.
-		sibling string
-	}{
-		{name: "only the root", root: "{ name: a, expr: pr.draft }", want: "pr.draft", sibling: "pr.draft"},
-		{name: "each scope adds", root: "{ expr: pr.draft }", owner: "{ expr: pr.fork }", repo: "{ name: a, expr: pr.open }",
-			want: "pr.draft, pr.fork, pr.open", sibling: "pr.draft, pr.fork"},
-		{name: "owner/* replaces the root's by name", root: "{ name: a, expr: pr.draft }, { expr: pr.fork }", owner: "{ name: a, expr: pr.open }",
-			want: "pr.open, pr.fork", sibling: "pr.open, pr.fork"},
-		{name: "owner/name replaces the root's by name", root: "{ name: a, expr: pr.draft }, { expr: pr.fork }", repo: "{ expr: pr.open }, { name: a, expr: 'false' }",
-			want: "false, pr.fork, pr.open", sibling: "pr.draft, pr.fork"},
-		{name: "owner/name replaces what owner/* added", root: "{ expr: pr.draft }", owner: "{ name: a, expr: pr.fork }", repo: "{ name: a, expr: pr.open }",
-			want: "pr.draft, pr.open", sibling: "pr.draft, pr.fork"},
-		{name: "owner/name replaces what owner/* replaced", root: "{ name: a, expr: pr.draft }", owner: "{ name: a, expr: pr.fork }", repo: "{ name: a, expr: pr.open }",
-			want: "pr.open", sibling: "pr.fork"},
-		{name: "another name is added", root: "{ name: a, expr: pr.draft }", repo: "{ name: b, expr: pr.open }",
-			want: "pr.draft, pr.open", sibling: "pr.draft"},
-	}
 	for _, list := range []string{"include", "exclude"} {
 		other := map[string]string{"include": "exclude", "exclude": "include"}[list]
-		for _, tt := range tests {
-			t.Run(list+"/"+tt.name, func(t *testing.T) {
-				trigger := func(conditions string) string { return "trigger: { " + list + ": [" + conditions + "] }" }
-				// The other list holds the name the cases replace, which
-				// must stay as it is: a name stands for a condition of
-				// one list.
-				f, err := loadBytes(t, []byte("trigger: { "+list+": ["+tt.root+"], "+other+": [{ name: a, expr: 'true' }] }\n"+
-					acme("  acme/*: { "+trigger(tt.owner)+" }\n  acme/x: { "+trigger(tt.repo)+" }\n  acme/y: {}\n")))
-				if err != nil {
-					t.Fatalf("Parse: %v", err)
-				}
-				s := f.Settings(&f.Accounts[0], "acme/x").Filters
-				got, kept := s.Include, s.Exclude
-				if list == "exclude" {
-					got, kept = kept, got
-				}
-				if filterExprs(got) != tt.want || filterExprs(kept) != "true" {
-					t.Fatalf("%s = %q, %s = %q; want %q and the other list untouched", list, filterExprs(got), other, filterExprs(kept), tt.want)
-				}
-				// The merged conditions are the compiled ones.
-				if _, _, err := s.Skips(SamplePR(), nil); err != nil {
-					t.Fatalf("Skips: %v", err)
-				}
-				// A repository's conditions stay its own.
-				sibling := f.Settings(&f.Accounts[0], "acme/y").Filters
-				if list == "exclude" {
-					sibling.Include = sibling.Exclude
-				}
-				if got := filterExprs(sibling.Include); got != tt.sibling {
-					t.Fatalf("acme/y's %s = %q, want %q", list, got, tt.sibling)
-				}
-			})
-		}
+		t.Run(list, func(t *testing.T) {
+			f := mustLoad(t, "trigger: { "+list+": [{ name: a, expr: pr.draft }, { expr: pr.fork }], "+other+": [{ name: a, expr: 'true' }] }\n"+minimal)
+			s := f.Settings(&f.Accounts[0]).Filters
+			got, kept := s.Include, s.Exclude
+			if list == "exclude" {
+				got, kept = kept, got
+			}
+			if filterExprs(got) != "pr.draft, pr.fork" || filterExprs(kept) != "true" {
+				t.Fatalf("%s = %q, %s = %q; want the root's and the other list untouched", list, filterExprs(got), other, filterExprs(kept))
+			}
+			// The resolved conditions are the compiled ones.
+			if _, _, err := s.Skips(SamplePR(), nil); err != nil {
+				t.Fatalf("Skips: %v", err)
+			}
+		})
 	}
 }

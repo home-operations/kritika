@@ -18,6 +18,7 @@ func TestUsageFollowupGrouping(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("usage-followup"))); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "usage-followup", "usage-followup/one")
 	account := accountID(t, s, "usage-followup")
 	review := insertReview(t, ctx, s, account)
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
@@ -62,6 +63,7 @@ func TestUsageReviewLimit(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("usage-limit"))); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "usage-limit", "usage-limit/one")
 	account := accountID(t, s, "usage-limit")
 	review := insertReview(t, ctx, s, account)
 	from, to := time.Date(2052, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2052, 1, 2, 0, 0, 0, 0, time.UTC)
@@ -134,6 +136,7 @@ func TestQueueAttention(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	other := accountID(t, s, "beta")
 	var repo string
@@ -199,6 +202,7 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	var repo string
 	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 LIMIT 1`, account).Scan(&repo); err != nil {

@@ -27,7 +27,7 @@ func giteaEnv(t *testing.T) {
 func TestParseGiteaConnection(t *testing.T) {
 	giteaEnv(t)
 	f := mustLoad(t, giteaMinimal("runnerToken: { env: TEST_GITEA_RUNNER_TOKEN }, ")+
-		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\nrepositories:\n  acme/*: { trigger: { limit: 2 } }\n")
+		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\n")
 	in, ok := f.Connection("acme-tea")
 	if !ok || in.Forge != ForgeGitea || in.Gitea.Host != "gitea.example.com" || !slices.Equal(in.Accounts, []string{"acme"}) {
 		t.Fatalf("connection = %+v", in)
@@ -39,8 +39,8 @@ func TestParseGiteaConnection(t *testing.T) {
 		t.Fatalf("ForgeHosts = %q", got)
 	}
 	a, ok := f.Account(ForgeGitea, "acme")
-	if !ok || a.Key() != "gitea/acme" || a.Limits.ReviewsPerDay == nil || *a.Limits.ReviewsPerDay != 3 || a.Trigger.Limit == nil {
-		t.Fatalf("the account's entries must be the Gitea account's: %+v", a)
+	if !ok || a.Key() != "gitea/acme" || a.Limits.ReviewsPerDay == nil || *a.Limits.ReviewsPerDay != 3 {
+		t.Fatalf("the account's entry must be the Gitea account's: %+v", a)
 	}
 	if f.ConnectionFor(a) != in {
 		t.Fatal("ConnectionFor must find the Gitea connection")
@@ -105,7 +105,6 @@ func TestParseGiteaRejects(t *testing.T) {
 		{"no webhook secret", strings.Replace(giteaMinimal(""), ", webhookSecret: { env: TEST_GITEA_WEBHOOK }", "", 1), "gitea.acme-tea.webhookSecret: reference must set env"},
 		{"an empty webhook secret", strings.Replace(giteaMinimal(""), "TEST_GITEA_WEBHOOK", "TEST_EMPTY", 1), "gitea.acme-tea.webhookSecret is required"},
 		{"a Forgejo field", giteaMinimal("audience: x, "), "field audience not found"},
-		{"a subgroup key", giteaMinimal("") + "repositories:\n  acme/sub/widgets: {}\n", "keyed owner/* or owner/name"},
 		{"the host denied", giteaMinimal("") + "egress:\n  deny: [gitea.example.com]\n", "gitea.example.com is denied, which a connection needs"},
 	}
 	for _, tt := range tests {

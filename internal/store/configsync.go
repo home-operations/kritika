@@ -27,12 +27,11 @@ func IsConfigContentError(err error) bool {
 	return strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == "23502" || pgErr.Code == "23514"
 }
 
-// ApplyConfig upserts the configuration's Apps, the accounts they serve
-// and the repositories it lists, disables the Apps and accounts it no
-// longer has, hands the repositories no longer listed back to the forge,
-// and records the applied hash. It runs as the owner in one transaction,
-// so a replica reading config_state never sees a half-applied
-// configuration. Only the leader calls it.
+// ApplyConfig upserts the configuration's Apps and the accounts they
+// serve, disables the Apps and accounts it no longer has, and records the
+// applied hash. It runs as the owner in one transaction, so a replica
+// reading config_state never sees a half-applied configuration. Only the
+// leader calls it.
 func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File) error {
 	if s.owner == nil {
 		return errors.New("store: applying configuration needs the owner DSN")
@@ -52,14 +51,8 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File) error {
 		}
 	}
 	for i := range f.Accounts {
-		a := &f.Accounts[i]
-		if err := upsertAccount(ctx, tx, a); err != nil {
+		if err := upsertAccount(ctx, tx, &f.Accounts[i]); err != nil {
 			return err
-		}
-		for j := range a.Repositories {
-			if err := upsertRepository(ctx, tx, a, &a.Repositories[j]); err != nil {
-				return err
-			}
 		}
 	}
 	if _, err := tx.Exec(ctx, `
@@ -74,12 +67,9 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File) error {
 	return nil
 }
 
-// disableUndeclared disables every App f no longer has, every account no
-// App serves and every listed repository of a disabled account. A
-// repository its served account no longer lists goes back to the forge,
-// enabled, as the settings of an unlisted repository have it. The upserts
-// that follow re-enable what f still declares. Forge-discovered
-// repositories are left alone.
+// disableUndeclared disables every App f no longer has and every account
+// no App serves. The upserts that follow re-enable what f still declares.
+// Repositories are the forge's to report and are left alone.
 func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error {
 	names := make([]string, 0, len(f.Connections))
 	for i := range f.Connections {
@@ -98,21 +88,6 @@ func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error
 		UPDATE accounts SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
 		WHERE enabled AND id <> ALL($1::uuid[])`, ids); err != nil {
 		return fmt.Errorf("store: disable unserved accounts: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE repositories r SET enabled = false, disabled_at = coalesce(r.disabled_at, now()), updated_at = now()
-		WHERE r.managed_by = 'file' AND r.enabled
-			AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = r.account_id AND NOT a.enabled)`); err != nil {
-		return fmt.Errorf("store: disable repositories of unserved accounts: %w", err)
-	}
-	for i := range f.Accounts {
-		a := &f.Accounts[i]
-		if _, err := tx.Exec(ctx, `
-			UPDATE repositories SET managed_by = 'forge', enabled = true, disabled_at = NULL, updated_at = now()
-			WHERE account_id = $1 AND managed_by = 'file' AND lower(name) <> ALL($2)`,
-			a.ID(), repoNames(a)); err != nil {
-			return fmt.Errorf("store: hand back unlisted repositories: %w", err)
-		}
 	}
 	return nil
 }
@@ -152,32 +127,4 @@ func upsertConnection(ctx context.Context, tx pgx.Tx, in *configfile.Connection)
 		return fmt.Errorf("store: upsert connection %s: %w", in.Name, err)
 	}
 	return nil
-}
-
-// upsertRepository records a repository the configuration lists, enabled
-// as listed: whether it runs is File.Runs's call. It also takes over a
-// forge-discovered row: listing a repository the poller or a webhook
-// already found makes it declared. A discovery default has no turned_at;
-// only an admin's timestamped choice overrides the configuration. A known
-// row keeps its spelling, which is GitHub's once it reported one.
-func upsertRepository(ctx context.Context, tx pgx.Tx, a *configfile.Account, r *configfile.Repository) error {
-	name := a.Name + "/" + r.Name
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, account_id, name, managed_by, enabled)
-		VALUES ($1, $2, $3, 'file', true)
-		ON CONFLICT (id) DO UPDATE SET managed_by = 'file', enabled = true, disabled_at = NULL,
-			turned_on = CASE WHEN repositories.turned_at IS NULL THEN NULL ELSE repositories.turned_on END, updated_at = now()`,
-		configfile.RepositoryID(a.ID(), name), a.ID(), name); err != nil {
-		return fmt.Errorf("store: upsert repository %s: %w", name, err)
-	}
-	return nil
-}
-
-// repoNames are the full names a lists, lowercased.
-func repoNames(a *configfile.Account) []string {
-	names := make([]string, 0, len(a.Repositories))
-	for _, r := range a.Repositories {
-		names = append(names, strings.ToLower(a.Name+"/"+r.Name))
-	}
-	return names
 }

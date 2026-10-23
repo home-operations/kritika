@@ -41,12 +41,11 @@ apps:
     clientId: Iv1.test
     privateKey: { env: TEST_SECRET }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  proxy-auth/repo: {}
 `)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "proxy-auth/repo")
 	account, _ := file.Account(configfile.ForgeGitHub, "proxy-auth")
 	var runID string
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -181,12 +180,11 @@ apps:
     clientId: Iv1.test
     privateKey: { env: TEST_SECRET }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  proxy-refused/repo: {}
 `)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "proxy-refused/repo")
 	account, _ := file.Account(configfile.ForgeGitHub, "proxy-refused")
 	var runID string
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {

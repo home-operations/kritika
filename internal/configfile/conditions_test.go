@@ -6,34 +6,32 @@ import (
 )
 
 // TestApproveForms: review.approve is true, false, or a block of when
-// conditions, which turns approval on; a narrower scope replaces it whole.
+// conditions, which turns approval on.
 func TestApproveForms(t *testing.T) {
 	authEnv(t)
-	f := mustLoad(t, "review:\n  approve:\n    when:\n      - { name: bumps, expr: pr.bot }\n"+
-		acme("  acme/*: { review: { approve: true } }\n  acme/x: { review: { approve: { when: [{ expr: 'pr.draft' }] } } }\n  acme/off: { review: { approve: false } }\n"))
-	a := &f.Accounts[0]
-	for repo, want := range map[string]struct {
+	for approve, want := range map[string]struct {
 		on   bool
 		when string
 	}{
-		"acme/y":   {true, ""},
-		"acme/x":   {true, "pr.draft"},
-		"acme/off": {false, ""},
+		"true":                             {true, ""},
+		"{ when: [{ expr: 'pr.draft' }] }": {true, "pr.draft"},
+		"false":                            {false, ""},
 	} {
-		r := f.Settings(a, repo).Review
+		f := mustLoad(t, "review:\n  approve: "+approve+"\n"+minimal)
+		r := f.Settings(&f.Accounts[0]).Review
 		if r.Approve != want.on || whenLabel(r.ApproveWhen) != want.when || len(r.ApproveWhenInRepo) != 0 {
-			t.Fatalf("%s: approve %v when %q, want %v and %q", repo, r.Approve, whenLabel(r.ApproveWhen), want.on, want.when)
+			t.Fatalf("approve %s: approve %v when %q, want %v and %q", approve, r.Approve, whenLabel(r.ApproveWhen), want.on, want.when)
 		}
 	}
 	root := mustLoad(t, "review:\n  approve:\n    when:\n      - { name: bumps, expr: pr.bot }\n"+minimal)
-	if r := root.Settings(&root.Accounts[0], "acme/y").Review; !r.Approve || whenLabel(r.ApproveWhen) != "bumps" {
+	if r := root.Settings(&root.Accounts[0]).Review; !r.Approve || whenLabel(r.ApproveWhen) != "bumps" {
 		t.Fatalf("root approve = %v when %q", r.Approve, whenLabel(r.ApproveWhen))
 	}
 	if got := root.FileLayer().Defaults; !strings.Contains(defaultValue(got, keyApprove), "when bumps") {
 		t.Fatalf("the Configuration page states %q", defaultValue(got, keyApprove))
 	}
 	bot := with(SamplePR(), "bot", true)
-	if r := root.Settings(&root.Accounts[0], "acme/y").Review; !r.ApprovesFor(bot) || r.ApprovesFor(SamplePR()) {
+	if r := root.Settings(&root.Accounts[0]).Review; !r.ApprovesFor(bot) || r.ApprovesFor(SamplePR()) {
 		t.Fatal("approval conditions must hold for a bot's pull request alone")
 	}
 }
@@ -69,21 +67,20 @@ func TestApproveRejects(t *testing.T) {
 }
 
 // TestConfidenceWhen: confidence.when scopes scoring as review.approve's
-// conditions do approval; a narrower scope's, even empty, replaces it.
+// conditions do approval; written empty, every pull request is scored.
 func TestConfidenceWhen(t *testing.T) {
 	authEnv(t)
-	f := mustLoad(t, "confidence:\n  when:\n    - { name: renovate, expr: 'pr.headRef.startsWith(\"renovate/\")' }\n"+
-		acme("  acme/all: { confidence: { when: [] } }\n"))
-	a := &f.Accounts[0]
-	c := f.Settings(a, "acme/y").Confidence
+	f := mustLoad(t, "confidence:\n  when:\n    - { name: renovate, expr: 'pr.headRef.startsWith(\"renovate/\")' }\n"+minimal)
+	c := f.Settings(&f.Accounts[0]).Confidence
 	if whenLabel(c.When) != "renovate" || !AnyHolds(c.When, with(SamplePR(), "headRef", "renovate/go")) || AnyHolds(c.When, SamplePR()) {
 		t.Fatalf("confidence when %q", whenLabel(c.When))
 	}
-	if all := f.Settings(a, "acme/all").Confidence; len(all.When) != 0 || !AnyHolds(all.When, SamplePR()) {
-		t.Fatalf("an empty when must score every pull request: %+v", all.When)
-	}
-	if src := f.Sources(a, "acme/all"); src[keyConfidenceWhen] != SourceAccount {
+	if src := f.Sources(&f.Accounts[0]); src[keyConfidenceWhen] != SourceDefaults {
 		t.Fatalf("source = %q", src[keyConfidenceWhen])
+	}
+	all := mustLoad(t, "confidence: { when: [] }\n"+minimal)
+	if c := all.Settings(&all.Accounts[0]).Confidence; len(c.When) != 0 || !AnyHolds(c.When, SamplePR()) {
+		t.Fatalf("an empty when must score every pull request: %+v", c.When)
 	}
 	if _, err := load(t, "confidence:\n  when: [{ expr: 'pr.lines > 1' }]\n"+minimal); err == nil || !strings.Contains(err.Error(), "configfile: confidence.when[0]") {
 		t.Fatalf("a diff condition = %v", err)
@@ -114,18 +111,16 @@ func TestRepositoryConditions(t *testing.T) {
 	}
 }
 
-// TestGateForms: confidence.gate takes the forms review.approve does, and a
-// narrower scope replaces it whole.
+// TestGateForms: confidence.gate takes the forms review.approve does.
 func TestGateForms(t *testing.T) {
 	authEnv(t)
-	f := mustLoad(t, "confidence:\n  gate:\n    when:\n      - { name: renovate, expr: 'pr.headRef.startsWith(\"renovate/\")' }\n"+
-		acme("  acme/x: { confidence: { gate: true } }\n"))
-	a := &f.Accounts[0]
-	if c := f.Settings(a, "acme/y").Confidence; !c.Gate || whenLabel(c.GateWhen) != "renovate" {
+	f := mustLoad(t, "confidence:\n  gate:\n    when:\n      - { name: renovate, expr: 'pr.headRef.startsWith(\"renovate/\")' }\n"+minimal)
+	if c := f.Settings(&f.Accounts[0]).Confidence; !c.Gate || whenLabel(c.GateWhen) != "renovate" {
 		t.Fatalf("gate %v when %q", c.Gate, whenLabel(c.GateWhen))
 	}
-	if c := f.Settings(a, "acme/x").Confidence; !c.Gate || len(c.GateWhen) != 0 {
-		t.Fatalf("gate: true must replace the root's conditions: %v %q", c.Gate, whenLabel(c.GateWhen))
+	plain := mustLoad(t, "confidence: { gate: true }\n"+minimal)
+	if c := plain.Settings(&plain.Accounts[0]).Confidence; !c.Gate || len(c.GateWhen) != 0 {
+		t.Fatalf("gate: true must gate every pull request: %v %q", c.Gate, whenLabel(c.GateWhen))
 	}
 	if got := defaultValue(f.FileLayer().Defaults, keyGate); got != "when renovate" {
 		t.Fatalf("the Configuration page states %q", got)

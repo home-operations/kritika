@@ -505,7 +505,7 @@ func (w *Review) begin(
 		logger.Info("review skipped before start", "reason", pr.closed)
 		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, pr.closed)
 	}
-	settings := file.Settings(account, pr.repository)
+	settings := file.Settings(account)
 	// With routes the review's model is known only once they are judged,
 	// and a busy default must not hold back one routed to a free model.
 	routed := len(settings.Models.Routes) > 0

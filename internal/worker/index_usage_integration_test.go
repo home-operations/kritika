@@ -34,6 +34,7 @@ func TestIndexBatchUsage(t *testing.T) {
 	if err := st.ApplyConfig(t.Context(), file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	if _, err := st.EnsureIndexSchema(t.Context(), "kritika_app", "fake-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestIndexBatchUsage(t *testing.T) {
 			defer cancel()
 			repo := configfile.RepositoryID(account.ID(), "usage/"+tt.name)
 			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name,managed_by) VALUES($1,$2,$3,'file')`, repo, account.ID(), "usage/"+tt.name)
+				_, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name) VALUES($1,$2,$3)`, repo, account.ID(), "usage/"+tt.name)
 				return err
 			}); err != nil {
 				t.Fatal(err)
@@ -121,7 +122,7 @@ func TestIndexBatchUsage(t *testing.T) {
 			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler)}
 			w := Index{Base: base, batch: 1}
 			_, _, err = w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
-				file.Embedding, "abc", run, runner, nil, file.Settings(account, ""))
+				file.Embedding, "abc", run, runner, nil, file.Settings(account))
 			if (err != nil) != tt.wantError {
 				t.Fatalf("embed error = %v, want error %v", err, tt.wantError)
 			}

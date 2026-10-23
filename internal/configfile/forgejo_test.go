@@ -27,7 +27,7 @@ func forgejoEnv(t *testing.T) {
 func TestParseForgejoConnection(t *testing.T) {
 	forgejoEnv(t)
 	f := mustLoad(t, forgejoMinimal("audience: aud-1, runnerAudience: { env: TEST_AUDIENCE }, ")+
-		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\nrepositories:\n  acme/*: { trigger: { limit: 2 } }\n")
+		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\n")
 	in, ok := f.Connection("acme-forge")
 	if !ok || in.Forge != ForgeForgejo || in.Forgejo.Host != "forge.example.com" || !slices.Equal(in.Accounts, []string{"acme"}) {
 		t.Fatalf("connection = %+v", in)
@@ -40,8 +40,8 @@ func TestParseForgejoConnection(t *testing.T) {
 		t.Fatalf("ForgeHosts = %q", got)
 	}
 	a, ok := f.Account(ForgeForgejo, "acme")
-	if !ok || a.Key() != "forgejo/acme" || a.Limits.ReviewsPerDay == nil || *a.Limits.ReviewsPerDay != 3 || a.Trigger.Limit == nil {
-		t.Fatalf("the account's entries must be the Forgejo account's: %+v", a)
+	if !ok || a.Key() != "forgejo/acme" || a.Limits.ReviewsPerDay == nil || *a.Limits.ReviewsPerDay != 3 {
+		t.Fatalf("the account's entry must be the Forgejo account's: %+v", a)
 	}
 	if _, ok := f.Account(ForgeGitHub, "acme"); ok {
 		t.Fatal("no GitHub account named acme is served")
@@ -116,10 +116,8 @@ func TestParseBothForges(t *testing.T) {
 			t.Errorf("Allows(%s) = false", h)
 		}
 	}
-	for _, entry := range []string{"accounts:\n  acme: {}\n", "repositories:\n  acme/*: {}\n", "repositories:\n  acme/widgets: {}\n"} {
-		if _, err := load(t, both+entry); err == nil || !strings.Contains(err.Error(), "served on") {
-			t.Fatalf("entry %q: err = %v, want the ambiguity named", entry, err)
-		}
+	if _, err := load(t, both+"accounts:\n  acme: {}\n"); err == nil || !strings.Contains(err.Error(), "served on") {
+		t.Fatalf("an entry for an account on both forges: err = %v, want the ambiguity named", err)
 	}
 }
 

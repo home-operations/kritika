@@ -203,7 +203,7 @@
       {#snippet children(d)}
         {@const rc = d.repoConfig}
         {@const enabled = d.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
-        {@const why = d.archived ? 'archived on GitHub' : d.turnedOn === false ? 'off in the dashboard' : d.turnedOn === true ? 'turned on in the dashboard' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
+        {@const why = d.archived ? 'archived on GitHub' : d.turnedOn === false ? 'off in the dashboard' : d.turnedOn === true ? 'turned on in the dashboard' : d.fork && !d.enabled ? 'a fork not turned on' : 'reported by the forge'}
         {@const rows = shown(d, settingRows)}
         {@const agent = shown(d, agentRows)}
         {#if rc?.ignored}<p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Repository configuration ignored: {rc.ignored}</p>{/if}

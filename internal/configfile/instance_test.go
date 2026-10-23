@@ -41,11 +41,11 @@ func TestFileInstanceDefaults(t *testing.T) {
 	if p, ok := f.Provider(a, "openrouter"); !ok || p.APIKeyValue().Value() != "sk-file" {
 		t.Fatalf("provider = %+v, %v; want the file's", p, ok)
 	}
-	s := f.Settings(a, "acme/x")
+	s := f.Settings(a)
 	if s.Models.Review != "openrouter/big" || s.Models.Fallback != "openrouter/small" {
 		t.Fatalf("models = %+v; want the file's", s.Models)
 	}
-	if src := f.Sources(a, "acme/x"); src["review.model"] != SourceDefaults || src["review.fallback"] != SourceDefaults {
+	if src := f.Sources(a); src["review.model"] != SourceDefaults || src["review.fallback"] != SourceDefaults {
 		t.Fatalf("sources = %v; want the models from the defaults", src)
 	}
 	if f.Embedding == nil || f.Embedding.Model != "e1" || f.Embedding.APIKeyValue().Value() != "sk-file" || f.Embedding.BaseURL != "https://openrouter.ai/api/v1" {
@@ -98,13 +98,13 @@ func TestFileReviewDefaults(t *testing.T) {
 		"review: {model: openrouter/big, fallback: openrouter/small, effort: low, approve: true, fixes: true, cost: true, incremental: 7, diagram: true, replies: true}", 1)
 	f := mustLoad(t, doc+"trigger: {limit: 3}\n")
 	a := &f.Accounts[0]
-	s := f.Settings(a, "acme/x")
+	s := f.Settings(a)
 	if s.MaxAutoReviews != 3 || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
 		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost || !s.Review.Replies {
 		t.Fatalf("settings = %+v", s)
 	}
 	for _, d := range f.FileLayer().Defaults {
-		if d.Source != SourceFile || f.Sources(a, "acme/x")[d.Key] != SourceDefaults {
+		if d.Source != SourceFile || f.Sources(a)[d.Key] != SourceDefaults {
 			t.Fatalf("source = %+v", d)
 		}
 	}
@@ -141,22 +141,21 @@ func TestRiskFloors(t *testing.T) {
 	}
 }
 
-// TestConfidenceSettings: the confidence model and threshold resolve scope
-// by scope like any setting, from the file, and are held
-// to a declared provider and the score's scale.
+// TestConfidenceSettings: the confidence model and threshold resolve like
+// any setting, from the file, and are held to a declared provider and the
+// score's scale.
 func TestConfidenceSettings(t *testing.T) {
 	setInstanceEnv(t)
 	f, err := Parse([]byte(fileWithDefaults))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if c := f.Settings(&f.Accounts[0], "acme/x").Confidence; !reflect.DeepEqual(c, Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
+	if c := f.Settings(&f.Accounts[0]).Confidence; !reflect.DeepEqual(c, Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
 		t.Fatalf("confidence = %+v; want no model, the provider's effort, the default threshold and the lowest risk", c)
 	}
 	for _, tt := range []struct{ name, doc, want string }{
 		{name: "a threshold off the scale", doc: "confidence: { threshold: 6 }\n", want: "configfile: confidence.threshold must be between 0 and 5, got 6"},
-		{name: "a negative threshold on an entry", doc: "repositories:\n  acme/x: { confidence: { threshold: -1 } }\n",
-			want: "repositories.acme/x.confidence.threshold must be between 0 and 5"},
+		{name: "a negative threshold", doc: "confidence: { threshold: -1 }\n", want: "configfile: confidence.threshold must be between 0 and 5"},
 		{name: "a model of no declared provider", doc: "confidence: { model: nowhere/judge }\n",
 			want: `configfile: confidence.model references provider "nowhere"`},
 		{name: "a fallback of no declared provider", doc: "confidence: { model: openrouter/judge, fallback: nowhere/judge }\n",
@@ -167,8 +166,8 @@ func TestConfidenceSettings(t *testing.T) {
 			want: `configfile: confidence.effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`},
 		{name: "a floor at no level", doc: "confidence: { floors: { none: ['**'] } }\n",
 			want: `configfile: confidence.floors keys must be low, medium, high or critical, got "none"`},
-		{name: "a floor glob that is none", doc: "repositories: { acme/x: { confidence: { floors: { high: ['['] } } } }\n",
-			want: `configfile: repositories.acme/x.confidence.floors.high[0] "[" is not a valid glob`},
+		{name: "a floor glob that is none", doc: "confidence: { floors: { high: ['['] } }\n",
+			want: `configfile: confidence.floors.high[0] "[" is not a valid glob`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := Parse([]byte(fileWithDefaults + tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -177,29 +176,16 @@ func TestConfidenceSettings(t *testing.T) {
 		})
 	}
 	doc := fileWithDefaults + `confidence: { model: openrouter/judge, fallback: openrouter/judge-small, threshold: 4, gate: true, effort: low, risk: medium, instructions: "Image bumps are low.", floors: { critical: ["db/migrations/**"] } }
-repositories:
-  acme/x: { confidence: { threshold: 3, gate: false, risk: high, fallback: "" } }
-  acme/y: { confidence: { model: "", effort: "", instructions: "", floors: {} } }
 `
 	if f, err = Parse([]byte(doc)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	a := &f.Accounts[0]
-	for repo, want := range map[string]Confidence{
-		"acme/z": {Model: "openrouter/judge", Fallback: "openrouter/judge-small", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium,
-			Instructions: "Image bumps are low.", Floors: RiskFloors{review.RiskCritical: {"db/migrations/**"}}},
-		// A fallback written empty drops the root's.
-		"acme/x": {Model: "openrouter/judge", Effort: model.EffortLow, Threshold: 3, Gate: false, Risk: review.RiskHigh, Instructions: "Image bumps are low.",
-			Floors: RiskFloors{review.RiskCritical: {"db/migrations/**"}}},
-		// An effort written empty leaves it to the provider, and floors
-		// written empty drop the root's.
-		"acme/y": {Fallback: "openrouter/judge-small", Threshold: 4, Gate: true, Risk: review.RiskMedium, Floors: RiskFloors{}},
-	} {
-		if got := f.Settings(a, repo).Confidence; !reflect.DeepEqual(got, want) {
-			t.Errorf("confidence of %s = %+v, want %+v", repo, got, want)
-		}
+	want := Confidence{Model: "openrouter/judge", Fallback: "openrouter/judge-small", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium,
+		Instructions: "Image bumps are low.", Floors: RiskFloors{review.RiskCritical: {"db/migrations/**"}}}
+	if got := f.Settings(&f.Accounts[0]).Confidence; !reflect.DeepEqual(got, want) {
+		t.Errorf("confidence = %+v, want %+v", got, want)
 	}
-	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceDefaults ||
+	if src := f.Sources(&f.Accounts[0]); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceDefaults ||
 		src["confidence.threshold"] != SourceDefaults || src["confidence.gate"] != SourceDefaults {
 		t.Fatalf("sources = %v", src)
 	}

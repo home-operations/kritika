@@ -19,6 +19,7 @@ func TestModelCallNUL(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	reviewID := insertReview(t, ctx, s, account)
 	t.Cleanup(func() { deleteModelCalls(t, s, `review_id = $1`, reviewID) })

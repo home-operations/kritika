@@ -22,6 +22,7 @@ func TestPausePullRequest(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("paused"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "paused", "paused/one")
 	account := accountID(t, s, "paused")
 	var repoID, pull string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
@@ -141,6 +142,7 @@ func TestReviewSkipReason(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("skips"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "skips", "skips/one")
 	account := accountID(t, s, "skips")
 	for _, reason := range []string{"filtered", "only_skipped_paths", "unchanged_patch", "too_large", ""} {
 		t.Run("reason "+reason, func(t *testing.T) {
@@ -171,6 +173,7 @@ func TestNewestReviewID(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("newest"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "newest", "newest/one")
 	account := accountID(t, s, "newest")
 	first := insertReview(t, ctx, s, account)
 	var ids [2]string
@@ -215,6 +218,7 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("counted"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "counted", "counted/one")
 	account := accountID(t, s, "counted")
 	for _, status := range []ReviewStatus{ReviewCompleted, ReviewCompleted, ReviewSkipped, ReviewSuperseded, ReviewFailed} {
 		id := insertReview(t, ctx, s, account)
@@ -229,7 +233,7 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 	var stats AccountStats
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		var err error
-		stats, err = ReadAccountStats(ctx, tx, func(string, configfile.RepoTraits) bool { return true })
+		stats, err = ReadAccountStats(ctx, tx, func(configfile.RepoTraits) bool { return true })
 		return err
 	}); err != nil {
 		t.Fatalf("ReadAccountStats: %v", err)
@@ -249,6 +253,7 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("costed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "costed", "costed/one")
 	account := accountID(t, s, "costed")
 	insert := func(u Usage) {
 		t.Helper()
@@ -348,6 +353,7 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("lastreview"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "lastreview", "lastreview/one")
 	account := accountID(t, s, "lastreview")
 	completed := insertReview(t, ctx, s, account)
 	var rows []PullRow
@@ -401,6 +407,7 @@ func TestReviewOwed(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("owed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "owed", "owed/one")
 	account := accountID(t, s, "owed")
 	// A job is a review job of the pull request of trigger in state,
 	// created minute minutes from now; a rev is a review of trigger,
@@ -507,6 +514,7 @@ func TestEarlierSeverityNamesAreRenamed(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("severitynames"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "severitynames", "severitynames/one")
 	account := accountID(t, s, "severitynames")
 	reviewID := insertReview(t, ctx, s, account)
 	var findings, dismissals []string

@@ -53,7 +53,7 @@ var goldenSummary = AccountSummary{
 }
 
 var goldenRepo = Repository{
-	ID: "repo-1", FullName: "alpha/one", Enabled: true, ManagedBy: "file", DefaultBranch: "main", Visibility: "private",
+	ID: "repo-1", FullName: "alpha/one", Enabled: true, DefaultBranch: "main", Visibility: "private",
 	Index:      IndexState{ActiveCommit: "def456", ActiveAt: &t0, LastRunStatus: store.IndexCompleted, LastRunAt: &t1},
 	LastReview: &ReviewRef{ID: "rev-1", Status: store.ReviewCompleted, CreatedAt: t0},
 }
@@ -139,7 +139,7 @@ var goldens = map[string]any{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
-			"trigger.exclude": configfile.SourceAccount, "review.model": configfile.SourceDefaults, "trigger.limit": configfile.SourceDefault,
+			"trigger.exclude": configfile.SourceDefaults, "review.model": configfile.SourceDefaults, "trigger.limit": configfile.SourceDefault,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,
@@ -257,7 +257,7 @@ var goldens = map[string]any{
 	"rule": Rule{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
 		When:   []configfile.When{},
-		Source: RuleFromEntry, Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
+		Source: RuleSource(configfile.SourceDefaults), Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
 	},
 	"job": goldenJob,
 	"instance_queue": InstanceQueue{

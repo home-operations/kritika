@@ -27,7 +27,7 @@ type retentionStore interface {
 	SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepSessions(ctx context.Context, now time.Time) (int64, error)
 	SweepStoppedIndexes(
-		ctx context.Context, grace time.Duration, runs func(accountID, fullName string, t configfile.RepoTraits) bool,
+		ctx context.Context, grace time.Duration, runs func(accountID string, t configfile.RepoTraits) bool,
 	) (int64, error)
 	SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepEgressRefusals(ctx context.Context, olderThan time.Duration) (int64, error)
@@ -73,9 +73,9 @@ func (r *Retention) Run(ctx context.Context) {
 		n, err = r.Store.SweepSessions(ctx, time.Now())
 		report("dashboard sessions", "rows", n, err)
 		f := r.Current.Get()
-		n, err = r.Store.SweepStoppedIndexes(ctx, f.DisabledIndexGrace(), func(accountID, fullName string, traits configfile.RepoTraits) bool {
+		n, err = r.Store.SweepStoppedIndexes(ctx, f.DisabledIndexGrace(), func(accountID string, traits configfile.RepoTraits) bool {
 			a, ok := f.AccountByID(accountID)
-			return ok && f.Runs(a, fullName, traits)
+			return ok && f.Runs(a, traits)
 		})
 		report("stopped repositories' indexes", "repositories", n, err)
 		n, err = r.Store.SweepConversations(ctx, conversationRetention)

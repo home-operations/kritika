@@ -24,6 +24,7 @@ func TestListAccountFindings(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("findings"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "findings", "findings/one")
 	account := accountID(t, s, "findings")
 	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
@@ -179,6 +180,7 @@ func TestDismissedFindings(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("dismissed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "dismissed", "dismissed/one")
 	account := accountID(t, s, "dismissed")
 	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	var pull, earliest string
@@ -284,6 +286,7 @@ func TestDeleteDismissal(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("undismissed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "undismissed", "undismissed/one")
 	account := accountID(t, s, "undismissed")
 	var ds []Dismissal
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
@@ -323,7 +326,5 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-repositories:
-  %[1]s/one: {}
 `, name)
 }

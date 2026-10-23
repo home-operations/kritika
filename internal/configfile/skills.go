@@ -10,10 +10,10 @@ import (
 // for in unless a scope names others: the ones agents read theirs from.
 var DefaultSkillPaths = []string{".agents/skills", ".claude/skills"}
 
-// SkillsSpec sets a repository's skills at one scope. Paths, the
-// directories whose folders each hold a skill, replace the broader scope's
-// when written, and written empty look nowhere. Scope adds to the broader
-// scope's, a skill named in both taking the narrower one's.
+// SkillsSpec sets a repository's skills. Paths, the directories whose
+// folders each hold a skill, replace the default ones when written, and
+// written empty look nowhere. Scope adds to what is set already, a skill
+// named in both taking the later one's.
 type SkillsSpec struct {
 	Paths *[]string             `yaml:"paths,omitempty"`
 	Scope map[string]SkillScope `yaml:"scope,omitempty"`
@@ -49,7 +49,7 @@ type Skills struct {
 	Scope map[string]SkillScope `json:"scope"`
 }
 
-// WithSkills is s with one scope's skills laid over it.
+// WithSkills is s with a repository's skills laid over it.
 func WithSkills(s Skills, o SkillsSpec) Skills { return s.overlay(o) }
 
 func (s Skills) overlay(o SkillsSpec) Skills {

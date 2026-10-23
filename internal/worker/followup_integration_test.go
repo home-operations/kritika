@@ -67,6 +67,7 @@ func newMentions(t *testing.T, number, answered int, comments ...string) *mentio
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	m := &mentions{t: t, st: st, account: account, args: jobs.FollowUpArgs{AccountID: account.ID(), RepositoryID: repoID, Number: number}}

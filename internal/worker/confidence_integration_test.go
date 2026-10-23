@@ -31,6 +31,7 @@ func TestCarriedConfidence(t *testing.T) {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	insertOnly, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
 	if err != nil {
 		t.Fatal(err)

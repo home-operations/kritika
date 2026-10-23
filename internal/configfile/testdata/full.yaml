@@ -24,21 +24,10 @@ review:
   fallback: local/claude-sonnet-5
 trigger:
   exclude: [{ name: drafts, expr: pr.draft }]
+ignore:
+  - "**/testdata/**"
 limits:
   concurrency: 3
-
-repositories:
-  home-operations/flate:
-    ignore:
-      - "**/testdata/**"
-  home-operations/kopiur:
-    trigger:
-      exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
-  home-operations/charts-mirror:
-    ignore: ["charts/**"]
-  onedr0p/*:
-    review:
-      model: local/claude-opus-5
 
 accounts:
   home-operations:

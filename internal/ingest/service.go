@@ -132,7 +132,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	settings := req.File.Settings(req.Account, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account)
 	runs, err := s.registerAndCheckRepository(ctx, req)
 	if err != nil {
 		return Outcome{}, err
@@ -299,7 +299,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	// The worker checks the mention against the connection's resolved bot
 	// identity, the thread against the bot's findings, and the author's
 	// access.
-	reply := c.Inline && c.InReplyTo != 0 && req.File.Settings(req.Account, ev.Repository.FullName).Review.Replies
+	reply := c.Inline && c.InReplyTo != 0 && req.File.Settings(req.Account).Review.Replies
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") && !reply {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
@@ -544,7 +544,7 @@ func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (
 	if err != nil {
 		return false, err
 	}
-	return req.File.Runs(req.Account, repo.FullName, t), nil
+	return req.File.Runs(req.Account, t), nil
 }
 
 func repoID(req Request, fullName string) string {

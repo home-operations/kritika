@@ -5,32 +5,6 @@ import (
 	"strings"
 )
 
-// Scope is where an admin writes a repository setting.
-type Scope string
-
-// Admin scopes, broadest first.
-const (
-	ScopeDefaults   Scope = "defaults"
-	ScopeAccount    Scope = "account"
-	ScopeRepository Scope = "repository"
-)
-
-// Policy names one repository setting and the scopes an admin writes it at.
-// Sources reports where each setting it lists comes from. What the
-// repository's own .kritika.yaml may do with a setting is repoconfig.Merge's
-// to say. Instance-wide settings are not in it.
-type Policy struct {
-	// Key is the setting as the configuration spells it; a dotted key is
-	// nested.
-	Key    string
-	Scopes []Scope
-}
-
-var (
-	everyScope    = []Scope{ScopeDefaults, ScopeAccount, ScopeRepository}
-	accountScopes = []Scope{ScopeDefaults, ScopeAccount}
-)
-
 // The keys validation names in its errors.
 const (
 	keySteps   = "agent.steps"
@@ -61,51 +35,55 @@ const (
 	keyLimit          = "trigger.limit"
 )
 
-// Policies is the table.
-var Policies = []Policy{
-	{Key: "enabled", Scopes: everyScope},
-	{Key: keyModel, Scopes: everyScope},
-	{Key: keyFallback, Scopes: everyScope},
-	{Key: keyEffort, Scopes: everyScope},
-	{Key: keyFixes, Scopes: everyScope},
-	{Key: keyApprove, Scopes: everyScope},
-	{Key: keyIncremental, Scopes: everyScope},
-	{Key: keyDiagram, Scopes: everyScope},
-	{Key: keyCost, Scopes: everyScope},
-	{Key: keyReplies, Scopes: everyScope},
-	{Key: keyScorer, Scopes: everyScope},
-	{Key: keyScorerFallback, Scopes: everyScope},
-	{Key: keyScorerEffort, Scopes: everyScope},
-	{Key: keyThreshold, Scopes: everyScope},
-	{Key: keyGate, Scopes: everyScope},
-	{Key: keyRisk, Scopes: everyScope},
-	{Key: "confidence.instructions", Scopes: everyScope},
-	{Key: keyFloors, Scopes: everyScope},
-	{Key: keyConfidenceWhen, Scopes: everyScope},
-	{Key: "trigger.include", Scopes: everyScope},
-	{Key: "trigger.exclude", Scopes: everyScope},
-	{Key: keyLimit, Scopes: everyScope},
-	{Key: "comments", Scopes: everyScope},
-	{Key: "comments.dashboard", Scopes: everyScope},
-	{Key: "rules", Scopes: everyScope},
-	{Key: "context", Scopes: everyScope},
-	{Key: "ignore", Scopes: everyScope},
-	{Key: "skills.paths", Scopes: everyScope},
-	{Key: "skills.scope", Scopes: everyScope},
-	{Key: keySteps, Scopes: everyScope},
-	{Key: keyOutput, Scopes: everyScope},
-	{Key: "agent.tokens", Scopes: everyScope},
-	{Key: "agent.prompt", Scopes: everyScope},
-	{Key: keyParts, Scopes: everyScope},
-	{Key: "agent.timeout", Scopes: everyScope},
-	{Key: "agent.commandTimeout", Scopes: everyScope},
-	{Key: keyFetches, Scopes: everyScope},
-	{Key: "limits", Scopes: accountScopes},
+// Policies are the repository settings an admin writes at the file's root,
+// as the configuration spells them; a dotted key is nested. Sources
+// reports where each comes from. What the repository's own .kritika.yaml
+// may do with a setting is repoconfig.Merge's to say. Instance-wide
+// settings are not in it.
+var Policies = []string{
+	"enabled",
+	keyModel,
+	keyFallback,
+	keyEffort,
+	keyFixes,
+	keyApprove,
+	keyIncremental,
+	keyDiagram,
+	keyCost,
+	keyReplies,
+	keyScorer,
+	keyScorerFallback,
+	keyScorerEffort,
+	keyThreshold,
+	keyGate,
+	keyRisk,
+	"confidence.instructions",
+	keyFloors,
+	keyConfidenceWhen,
+	"trigger.include",
+	"trigger.exclude",
+	keyLimit,
+	"comments",
+	"comments.dashboard",
+	"rules",
+	"context",
+	"ignore",
+	"skills.paths",
+	"skills.scope",
+	keySteps,
+	keyOutput,
+	"agent.tokens",
+	"agent.prompt",
+	keyParts,
+	"agent.timeout",
+	"agent.commandTimeout",
+	keyFetches,
+	"limits",
 }
 
-// SpecValue is the value spec, one scope's settings (a *Defaults, *Account or
-// *Repository), writes for key, found by the names the configuration
-// spells, and whether the scope has the key at all. A nested key under an
+// SpecValue is the value spec, the file's settings (a *Defaults or
+// *Overrides), writes for key, found by the names the configuration
+// spells, and whether the spec has the key at all. A nested key under an
 // unset block is that block's zero value.
 func SpecValue(spec any, key string) (any, bool) {
 	v := reflect.ValueOf(spec)

@@ -19,6 +19,7 @@ func TestPartSlotsPermissions(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	var runID string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
@@ -88,6 +89,7 @@ func TestExtraLeaseConcurrentLimit(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	const model = "test/concurrent-extras"
 	t.Cleanup(func() {
@@ -128,6 +130,7 @@ func TestExtraLeaseWaiterPriority(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	const model = "test/extra-priority"
 	t.Cleanup(func() {

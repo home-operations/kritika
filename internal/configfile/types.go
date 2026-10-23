@@ -157,10 +157,10 @@ type Limits struct {
 	TokensPerMonth int64 `json:"tokensPerMonth"`
 }
 
-// LimitsSpec sets limits at one scope. A limit written here replaces the
-// broader scope's, so an explicit 0 lifts a cap the defaults set; one left
-// out inherits it. Concurrency, when written, must be positive; unset
-// everywhere it is DefaultConcurrency.
+// LimitsSpec sets limits at the file's root or for one account. A limit an
+// account writes replaces the root's, so an explicit 0 lifts a cap the root
+// set; one left out inherits it. Concurrency, when written, must be
+// positive; unset everywhere it is DefaultConcurrency.
 type LimitsSpec struct {
 	Concurrency    *int   `yaml:"concurrency,omitempty"`
 	ReviewsPerDay  *int   `yaml:"reviewsPerDay,omitempty"`
@@ -171,42 +171,38 @@ type LimitsSpec struct {
 const DefaultConcurrency = 2
 
 // Defaults are the settings the file writes at its root: they apply to
-// every repository unless an entry overrides them, and Limits to every
-// account unless its entry sets its own.
+// every repository, and Limits to every account unless its entry sets its
+// own.
 type Defaults struct {
 	Overrides `yaml:",inline"`
 	Limits    LimitsSpec `yaml:"limits,omitempty"`
 }
 
-// Overrides are the repository settings every admin scope may set: the
-// file's own, an account and a repository entry. A field a narrower scope
-// writes replaces the broader scope's, even when it is empty or zero; a
-// field it leaves out inherits. Ignore globs are unioned instead, and rules
-// add up by id. The keys are the ones a .kritika.yaml takes too, at the
-// same level, with the admin's own beside them.
+// Overrides are the repository settings the admin writes at the file's
+// root. A field it writes replaces kritika's default, even when it is
+// empty or zero; a field it leaves out keeps it. Ignore globs are unioned
+// instead, and rules add up by id. The keys are the ones a .kritika.yaml
+// takes too, at the same level, with the admin's own beside them.
 type Overrides struct {
-	// Enabled is the default for existing or explicitly configured repositories
-	// without a dashboard choice. New forge discoveries wait for UI enablement.
-	// A repository entry may not set it.
+	// Enabled is the default for existing repositories without a dashboard
+	// choice. New forge discoveries wait for UI enablement.
 	Enabled    *bool          `yaml:"enabled,omitempty"`
 	Review     ReviewSpec     `yaml:"review,omitempty"`
 	Confidence ConfidenceSpec `yaml:"confidence,omitempty"`
 	Trigger    TriggerSpec    `yaml:"trigger,omitempty"`
 	Comments   CommentsSpec   `yaml:"comments,omitempty"`
 	Agent      Agent          `yaml:"agent,omitempty"`
-	// Rules add to the broader scope's, one with an id already listed
-	// replacing that rule where it stands.
-	Rules   []Rule        `yaml:"rules,omitempty"`
-	Context []ContextFile `yaml:"context,omitempty"`
-	Skills  SkillsSpec    `yaml:"skills,omitempty"`
+	Rules      []Rule         `yaml:"rules,omitempty"`
+	Context    []ContextFile  `yaml:"context,omitempty"`
+	Skills     SkillsSpec     `yaml:"skills,omitempty"`
 	// Ignore are globs of the paths kritika leaves out of a review's
 	// context and of the index; a pull request that changes nothing else
-	// is skipped. They add to the broader scope's.
+	// is skipped. They add to kritika's own.
 	Ignore []string `yaml:"ignore,omitempty"`
 }
 
-// ReviewSpec sets how a review is done at one scope: its models, a role
-// written here, even empty, replacing the broader scope's, how hard they
+// ReviewSpec sets how a review is done: its models, a role written here,
+// even empty, replacing kritika's default, how hard they
 // reason, whether a finding must carry a suggested fix, whether it
 // approves, how many files may change since the last review before a
 // re-review covers the whole pull request again, whether the summary
@@ -226,14 +222,13 @@ type ReviewSpec struct {
 	Replies     *bool         `yaml:"replies,omitempty"`
 }
 
-// ConfidenceSpec sets how a review is judged at one scope: the model that
-// scores the reviewed pull request and the one that takes its call when it
-// fails, a model written here, even empty, replacing the broader scope's,
-// how hard they reason, the score the pull request must reach, whether
-// the commit status fails under it, the highest risk a change may carry
-// and still be approved, and the admin's guidance to the scorer on rating
-// risk and the least risk a change to some paths is rated, which a scope
-// that writes it, even empty, replaces the broader scope's.
+// ConfidenceSpec sets how a review is judged: the model that scores the
+// reviewed pull request and the one that takes its call when it fails, a
+// model written here, even empty, replacing kritika's default, how hard
+// they reason, the score the pull request must reach, whether the commit
+// status fails under it, the highest risk a change may carry and still be
+// approved, and the admin's guidance to the scorer on rating risk and the
+// least risk a change to some paths is rated.
 type ConfidenceSpec struct {
 	Model        *ModelRef     `yaml:"model,omitempty"`
 	Fallback     *ModelRef     `yaml:"fallback,omitempty"`
@@ -244,8 +239,8 @@ type ConfidenceSpec struct {
 	Instructions *string       `yaml:"instructions,omitempty"`
 	Floors       RiskFloors    `yaml:"floors,omitempty"`
 	// When are the conditions one of which a pull request must hold for to
-	// be scored, as a rule's; a scope that writes them, even empty,
-	// replaces the broader scope's, and none scores every pull request.
+	// be scored, as a rule's; none, or an empty list, scores every pull
+	// request.
 	When []When `yaml:"when,omitempty"`
 }
 
@@ -321,9 +316,7 @@ const (
 	DefaultConfidenceThreshold = MaxConfidence
 )
 
-// TriggerSpec sets which pull requests get a review, and when, at one
-// scope. Its include and exclude lists add to the broader scope's, a
-// condition with a name already listed replacing that one where it stands.
+// TriggerSpec sets which pull requests get a review, and when.
 type TriggerSpec struct {
 	Filters `yaml:",inline"`
 	// Limit pauses a pull request's automatic reviews once that many have
@@ -480,20 +473,6 @@ type Connection struct {
 	Gitea   GiteaBot           `yaml:"-"`
 }
 
-// Repository carries per-repository overrides, the configuration's
-// owner/name entry for it. Other repositories the connection reaches are
-// discovered but wait for dashboard enablement.
-type Repository struct {
-	// Name is the repository's name under its account, without the owner.
-	Name string `yaml:"-"`
-	// Overrides keep their yaml names, which the policy table looks them
-	// up by, though the entry is decoded as the file's repositories map.
-	Overrides `yaml:",inline"`
-
-	// where names the entry in errors.
-	where string
-}
-
 // RepoTraits is what kritika knows of a repository beyond its name: what the
 // forge says of it, that an archived repository is read-only and a fork a
 // copy of another one, who can read it, and its dashboard enablement. Newly
@@ -648,9 +627,9 @@ type Review struct {
 	// model call the repository's reviewers did not ask for.
 	Replies bool          `json:"replies"`
 	Context []ContextFile `json:"context"`
-	// Rules are the checks the configuration writes, the broadest scope's
-	// first. The API serves them from the rules routes, with what each
-	// enforced, not with the settings.
+	// Rules are the checks the configuration writes. The API serves them
+	// from the rules routes, with what each enforced, not with the
+	// settings.
 	Rules []Rule `json:"-"`
 }
 
@@ -663,7 +642,7 @@ type ContextFile struct {
 	Paths       []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 }
 
-// CommentsSpec sets how a review comments at one scope: whether findings
+// CommentsSpec sets how a review comments: whether findings
 // go inline, the repository files that replace the built-in summary
 // and finding templates, where an empty path restores the built-in one,
 // and whether the comments carry the dashboard's URL, which only the
@@ -697,27 +676,20 @@ func (r Review) Referenced() []string {
 // Account is a forge account, github/<name>, and the unit of isolation. It
 // exists because a connection serves it. Its entry under the
 // configuration's accounts holds what is its alone, its limits and
-// providers, and its owner/* and owner/name entries under repositories its
-// repositories' settings; an account with neither inherits the defaults.
+// providers; an account without one inherits the defaults.
 type Account struct {
 	Forge Forge  `yaml:"-"`
 	Name  string `yaml:"-"`
-	// Overrides are its owner/* entry's. They and Limits keep their yaml
-	// names, which the policy table looks them up by, though the account is
-	// gathered from the file's accounts and repositories maps.
-	Overrides `yaml:",inline"`
 	// Limits and Providers are its accounts entry's: its caps, and its own
 	// model providers, its keys for the models it pays for. A model
-	// reference for its repositories names one of them or one of the
-	// instance's, and a name may not be both.
+	// reference in its repositories' .kritika.yaml names one of them or one
+	// of the instance's, and a name may not be both.
 	Limits    LimitsSpec          `yaml:"limits"`
 	Providers map[string]Provider `yaml:"-"`
-	// Repositories are its owner/name entries.
-	Repositories []Repository `yaml:"-"`
 
-	// entry and pattern name its accounts entry and its owner/* entry in
-	// errors, "" for one it does not have.
-	entry, pattern string
+	// entry names its accounts entry in errors, "" for one it does not
+	// have.
+	entry string
 }
 
 // Egress is what runner pods may reach through the worker's gateway beyond
@@ -770,13 +742,14 @@ func (f *File) SecretEnv() []string { return f.secretEnv }
 // it with their own copy to report drift.
 func (f *File) Hash() string { return f.hash }
 
-// Settings are the effective settings for one repository after defaults,
-// account and repository layers are merged.
+// Settings are the effective settings of an account's repositories:
+// kritika's defaults under the file's root, with the account's limits. A
+// repository's .kritika.yaml is merged over them separately.
 type Settings struct {
 	Enabled bool
 	Models  Models
 	// Filters are the admin's conditions on which pull requests are
-	// reviewed, compiled, the broadest scope's first.
+	// reviewed, compiled.
 	Filters Filters
 	Limits  Limits
 	// Ignore is DefaultIgnore plus the repository's own globs. The in-repo

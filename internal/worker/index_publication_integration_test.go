@@ -31,6 +31,7 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 	if err := st.ApplyConfig(t.Context(), file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	if _, err := st.EnsureIndexSchema(t.Context(), "kritika_app", "fake-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,7 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 			})
 			// No River worker acknowledges this attempt after publication, as
 			// when the process exits before its asynchronous completion lands.
-			_, _, err := w.embed(ctx, job, account, embed, file.Embedding, "new", run, runner, nil, file.Settings(account, ""))
+			_, _, err := w.embed(ctx, job, account, embed, file.Embedding, "new", run, runner, nil, file.Settings(account))
 			if tt.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
 					t.Fatalf("embed = %v, want error containing %q", err, tt.wantError)
@@ -204,7 +205,7 @@ func prepareIndexPublication(
 	}
 	job = &river.Job[jobs.IndexArgs]{JobRow: row, Args: args}
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name,managed_by) VALUES($1,$2,$3,'file')`, repo, account.ID(), name); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name) VALUES($1,$2,$3)`, repo, account.ID(), name); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status)

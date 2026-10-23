@@ -71,15 +71,17 @@ accounts:
   org-1:
     providers:
       org-1-key: { type: openrouter, apiKey: { env: ORG_1_OPENROUTER_API_KEY } }
-repositories:
-  org-1/*:
-    review: { model: org-1-key/vendor/large-model }
 ```
 
-A model named `<key name>/<model>` in the account's `owner/*` or
-`owner/name` entries, or in one of its repositories' `.kritika.yaml`, runs
-on that key and the account pays for it. A key's name may not be one the
-instance's providers use.
+A model named `<key name>/<model>` in the `.kritika.yaml` of one of the
+account's repositories runs on that key and the account pays for it:
+
+```yaml
+review: { model: org-1-key/vendor/large-model }
+```
+
+A key's name may not be one the instance's providers use, and the
+instance's own settings may not name an account's key.
 
 ### Headers
 
@@ -446,11 +448,11 @@ confidence:
   effort: low
 ```
 
-| Where                 | What it sets                                                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| nothing               | the provider's default, for both                                                                                                        |
-| a scope               | its level, like any [repository setting](configuration.md#repository-settings-and-repositories); a `.kritika.yaml` replaces the admin's |
-| a scope, `effort: ""` | the provider's default again, where a broader scope set a level                                                                         |
+| Where                                    | What it sets                                                                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| nothing                                  | the provider's default, for both                                                                                         |
+| the file's root or a `.kritika.yaml`     | its level, like any [repository setting](configuration.md#repository-settings); a `.kritika.yaml` replaces the admin's |
+| a `.kritika.yaml`, `effort: ""`          | the provider's default again, where the admin set a level                                                                |
 
 Each provider type gets the level in its own form:
 
@@ -506,9 +508,9 @@ review:
   alone: `review.effort` and `review.fallback` are its own.
 - The summary's footer names the route and the condition that picked the
   model, as `via deep (migrations)`.
-- A scope that writes `review.model` replaces the broader scope's, routes
-  and all. In a repository's `.kritika.yaml`, every model a list names
-  must be of a provider the account may use, or the whole list is dropped
+- A repository's `.kritika.yaml` that writes `review.model` replaces the
+  instance's, routes and all. Every model its list names must be of a
+  provider the account may use, or the whole list is dropped
   ([repository models](repository-config.md#models)).
 - A route's model waits for its own [`concurrency`](configuration.md#accounts)
   slots, as a repository's own model does. Follow-ups run on the default.

@@ -34,6 +34,7 @@ func TestThreadWorker(t *testing.T) {
 	if err := appStore.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, appStore, file, "onedr0p/home-ops")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 
 	const number = 7

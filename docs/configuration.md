@@ -309,10 +309,9 @@ gitea:
 | `webhookSecret` | the secret of the webhooks added on each account                                                                                             |
 | `bots`          | optional: the logins on the instance that are bots beside the bot users Gitea marks, whose pull requests and comments kritika treats as a bot's |
 
-An entry under `accounts` or `repositories` names an account by its name
-alone, so it is the account's on the forge serving that name; a name
-served on two forges can have no entry. A GitLab project in a subgroup is
-keyed by its full path, such as `platform/backend/api`.
+An entry under `accounts` names an account by its name alone, so it is the
+account's on the forge serving that name; a name served on two forges can
+have no entry.
 
 ## `providers` and `embedding`
 
@@ -331,12 +330,12 @@ embedding:
   dims: 1024
 ```
 
-## Repository settings and `repositories`
+## Repository settings
 
 The repository settings are written at the file's root and apply to every
-repository, and `repositories` holds the entries that change them for
-some: `owner/*` for every repository of an account, and `owner/name` for
-one. They come in five groups, with a few keys beside them:
+repository; a repository changes them for itself in its own
+[`.kritika.yaml`](repository-config.md). They come in five groups, with a
+few keys beside them:
 
 | Group        | Keys                                                                                | What they set                              |
 | ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -375,28 +374,17 @@ skills:
   scope:
     review-renovate-pr:
       when: [{ expr: pr.headRef.startsWith("renovate/") }]
-repositories:
-  org-1/*:
-    review: { model: org-1-key/vendor/large-model }
-    rules:
-      - {
-          id: wrap-errors,
-          rule: 'Wrap errors with fmt.Errorf("<package>: %w", err).',
-          paths: ["**/*.go"],
-        }
-  org-1/repo-1:
-    review: { approve: true }
-    trigger:
-      include:
-        - expr: pr.baseRef == "main"
-    agent: { commandTimeout: 1m }
 ```
+
+Settings that differ between repositories, a model an organization's own
+key pays for or a rule for one language, belong in the repositories'
+`.kritika.yaml`; the instance file holds what every repository shares.
 
 ### What only the admin sets
 
-The root and each entry take the keys a repository's own `.kritika.yaml`
-takes, which the [`.kritika.yaml` reference](repository-config.md)
-describes, and these, which are the admin's alone:
+The root takes the keys a repository's own `.kritika.yaml` takes, which
+the [`.kritika.yaml` reference](repository-config.md) describes, and these,
+which are the admin's alone:
 
 | Key                       | What                                                                                                                                                                                                                                                                                |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -408,38 +396,42 @@ describes, and these, which are the admin's alone:
 | `review.incremental`      | how many files of the change may move since the last review before a re-review covers the whole pull request again; 25 unless set ([incremental reviews](#incremental-reviews))                                                                                                     |
 | `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. The summary of the last one says so, and `@<app slug> review` and `resume` still work ([commands](reviews.md#commands)) |
 | `agent`                   | the bounds of a review's tool loop ([the agent](#the-agent))                                                                                                                                                                                                                        |
-| `limits`                  | at the root alone: every account's limits ([`accounts`](#accounts))                                                                                                                                                                                                                 |
-| `enabled`                 | at the root and `owner/*` only: the default for existing or explicitly listed repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
+| `limits`                  | every account's limits, unless its entry sets its own ([`accounts`](#accounts))                                                                                                                                                                                                     |
+| `enabled`                 | the default for existing repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off                          |
 
 A repository adds tools of its own through the
 [`tools`](repository-config.md#repository-tools) of its `.kritika.yaml`;
 it cannot supply mise `[settings]`, which stay the admin's.
 
-`trigger.settle` is no longer a key, at the root or in an entry: a file
-that still sets it does not load, so remove it before upgrading. A new
-head is reviewed as soon as a slot is free, and a review that starts
-cancels the pull request's older active reviews
-([overlapping reviews](reviews.md#overlapping-reviews)).
+`trigger.settle` and `repositories` are no longer keys: a file that still
+sets either does not load, so remove them before upgrading. A new head is
+reviewed as soon as a slot is free, and a review that starts cancels the
+pull request's older active reviews
+([overlapping reviews](reviews.md#overlapping-reviews)). What `owner/*`
+and `owner/name` entries once set moves to each repository's
+`.kritika.yaml` where that file takes the key; the keys
+[only the admin sets](#what-only-the-admin-sets) stay at the root, since a
+`.kritika.yaml` naming one does not parse.
 
 ### Precedence
 
-A value applies in this order: kritika's default, the file's root,
-`owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
-value replaces the broader one's, except:
+A value applies in this order: kritika's default, the file's root, and the
+repository's `.kritika.yaml`. A value the file writes replaces the root's,
+except:
 
-| Key                                  | Across the root, `owner/*` and `owner/name`                              | From a `.kritika.yaml`                                            |
-| ------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| `ignore`                             | globs add up                                                             | globs add up                                                      |
-| `rules`                              | add up by id                                                             | added; a rule under an admin's id is dropped                      |
-| `context`                            | replaces                                                                 | added                                                             |
-| `trigger.include`, `trigger.exclude` | add up by name ([trigger conditions](#which-pull-requests-are-reviewed)) | judged beside the admin's lists; a name an admin's has is dropped |
-| `skills.paths`                       | replaces                                                                 | replaces                                                          |
-| `skills.scope`                       | adds up by skill name                                                    | adds up by skill name, the file's winning                         |
-| `review.fixes`                       | replaces                                                                 | can only turn it on                                               |
-| `confidence.risk`                    | replaces                                                                 | can only lower it                                                 |
-| `review.approve`'s `when`            | replaces, with the rest of `review.approve`                              | judged beside the admin's; `approve: true` keeps the admin's      |
-| `confidence.when`                    | replaces, even empty                                                     | judged beside the admin's; a pull request it alone leaves unscored is not approved where a score is asked for |
-| `enabled`                            | replaces                                                                 | can only turn it off                                              |
+| Key                                  | From a `.kritika.yaml`                                            |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| `ignore`                             | globs add up                                                      |
+| `rules`                              | added; a rule under an admin's id is dropped                      |
+| `context`                            | added                                                             |
+| `trigger.include`, `trigger.exclude` | judged beside the admin's lists; a name an admin's has is dropped |
+| `skills.paths`                       | replaces                                                          |
+| `skills.scope`                       | adds up by skill name, the file's winning                         |
+| `review.fixes`                       | can only turn it on                                               |
+| `confidence.risk`                    | can only lower it                                                 |
+| `review.approve`'s `when`            | judged beside the admin's; `approve: true` keeps the admin's      |
+| `confidence.when`                    | judged beside the admin's; a pull request it alone leaves unscored is not approved where a score is asked for |
+| `enabled`                            | can only turn it off                                              |
 
 ### Confidence and risk
 
@@ -459,7 +451,7 @@ none, and no `exclude` condition holds. A condition has:
 | ------- | -------------------------------------------------------------------------------------------------------------- |
 | `expr`  | a CEL expression over the pull request ([the `pr` variable](repository-config.md#include-and-exclude-recipes)) |
 | `paths` | globs that hold when a changed path matches one of them                                                        |
-| `name`  | optional; names the condition in a skipped review's commit status, and lets a narrower scope replace it        |
+| `name`  | optional; names the condition in a skipped review's commit status; a repository's condition under it is dropped |
 
 A condition takes an `expr`, `paths` or both, when both must hold.
 
@@ -489,9 +481,7 @@ trigger:
   shows as a skipped review; its commit status names the exclusion that
   held when it has a name. The lists are then judged with the first 64 KiB
   of the description.
-- **Across scopes:** the lists add up across the root, `owner/*` and
-  `owner/name`, and a named condition replaces the broader scope's of that
-  name where it stands. A name may not be given twice in one list.
+- **Names:** a name may not be given twice in one list.
 - **A repository's lists:** a `.kritika.yaml` has lists of its own,
   judged beside the admin's: a pull request must pass both, and a
   condition in the file under a name an admin's has is dropped.
@@ -658,18 +648,15 @@ kritika registers every repository each App reaches, once the
 configuration is applied and again on every poll, and "Resync from GitHub"
 on the Repositories page does the same at once. Each also disables the
 repositories the App no longer reaches, such as one deleted, renamed or
-transferred on GitHub, unless the configuration lists them; a listing that
-fails or comes back empty disables nothing. Newly discovered repositories
-start **off**, even when the root or `owner/*` sets `enabled: true`. Turn
-them on from the Repositories page to begin polling, indexing and reviews.
-Resyncs and webhooks preserve that choice. Existing repositories keep their
-current state. Explicit configuration entries use its defaults unless an
-admin has made a choice in the UI, even if discovery registered the
-repository first. A rename webhook within the same account preserves
-enablement. A transfer to another account requires that account's admin to
-enable the repository. If a rename webhook is missed, a sync cannot link
-the old and new names, so the new name waits for enablement.
-Whether one runs is decided in this order:
+transferred on GitHub; a listing that fails or comes back empty disables
+nothing. Newly discovered repositories start **off**, even when the root
+sets `enabled: true`. Turn them on from the Repositories page to begin
+polling, indexing and reviews. Resyncs and webhooks preserve that choice.
+Existing repositories keep their current state. A rename webhook within
+the same account preserves enablement. A transfer to another account
+requires that account's admin to enable the repository. If a rename
+webhook is missed, a sync cannot link the old and new names, so the new
+name waits for enablement. Whether one runs is decided in this order:
 
 1. an archived repository never runs: unarchive it on GitHub, then
    resync, then turn it on in the UI if it is off;
@@ -677,12 +664,11 @@ Whether one runs is decided in this order:
    one an admin turned on or off on the Repositories page runs as they chose;
 3. a fork does not run, since an account can reach many forks it never
    meant to review;
-4. any other runs as `enabled` says, at the root or `owner/*`: on unless
-   one sets `enabled: false`.
+4. any other runs as the root's `enabled` says: on unless it sets
+   `enabled: false`.
 
-An `owner/name` entry may not set `enabled`: the dashboard owns a
-repository's on or off. The root and `owner/*` defaults apply only to
-existing or explicitly listed repositories without a dashboard choice.
+The dashboard owns a repository's on or off; the root's `enabled` applies
+only to existing repositories without a dashboard choice.
 A repository that is off, that the App no longer reaches, or whose account
 no App serves is neither reviewed, polled nor indexed. Its index is
 dropped once it has been off for `KRITIKA_INDEX_GRACE`, counted from the

@@ -38,13 +38,14 @@ func TestIndexDocumentPrompt(t *testing.T) {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, "passage: "); err != nil {
 		t.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	repo := configfile.RepositoryID(account.ID(), "prompt/repo")
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name,managed_by) VALUES($1,$2,'prompt/repo','file')`, repo, account.ID())
+		_, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name) VALUES($1,$2,'prompt/repo')`, repo, account.ID())
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -97,7 +98,7 @@ func TestIndexDocumentPrompt(t *testing.T) {
 	})
 	w := Index{Store: st, Logger: slog.New(slog.DiscardHandler)}
 	if _, _, err := w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
-		file.Embedding, "abc", run, runner, nil, file.Settings(account, "")); err != nil {
+		file.Embedding, "abc", run, runner, nil, file.Settings(account)); err != nil {
 		t.Fatalf("embed: %v", err)
 	}
 	if !slices.Equal(embedded, []string{"passage: main.go\nfunc f() {}"}) {
@@ -135,6 +136,7 @@ func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	// The leader applied the same model with a document prompt.
 	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, "passage: "); err != nil {
 		t.Fatal(err)
@@ -179,6 +181,7 @@ func TestIndexWaitsForARebuildMidway(t *testing.T) {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}

@@ -20,6 +20,7 @@ func TestWorkerReadContracts(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account, other := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	reviewID := insertReview(t, ctx, s, account)
 	var prID, repoID, runID string
@@ -166,6 +167,7 @@ func TestReviewHistorySelection(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account, other := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	id := insertReview(t, ctx, s, account)
 	var prID string
@@ -471,6 +473,7 @@ func TestOtherReviewRunningStates(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	id := insertReview(t, ctx, s, account)
 	for _, tt := range []struct {
@@ -509,6 +512,7 @@ func TestReviewBaselineConfidence(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	id := insertReview(t, ctx, s, account)
 	for _, tt := range []struct {

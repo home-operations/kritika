@@ -26,6 +26,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	const model = "test/adaptive-slots"
 	var runID string

@@ -20,6 +20,7 @@ func TestPublicationCheckpoint(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	other := accountID(t, s, "beta")
 	id := insertReview(t, ctx, s, account)
@@ -161,6 +162,7 @@ func TestPublicationTerminalPayload(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	id := insertReview(t, ctx, s, account)
 	const jobID = 987654322

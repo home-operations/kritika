@@ -122,15 +122,15 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 
 // SweepStoppedIndexes drops the index of every repository that has not run
 // for longer than grace and returns how many it dropped. A repository runs
-// while it is enabled and runs, given its account ID, full name and traits,
-// says it does. Its clock, stopped_at, starts at the first sweep that finds
+// while it is enabled and runs, given its account ID and traits, says it
+// does. Its clock, stopped_at, starts at the first sweep that finds
 // it holding an index and not running, and is cleared by the first that
 // finds it running or holding none. The repository is left with no active
 // generation, which is marked superseded, so running it again onboards a
 // fresh index. It runs on the owner connection, which row-level security
 // does not restrict. Leader only.
 func (s *Store) SweepStoppedIndexes(
-	ctx context.Context, grace time.Duration, runs func(accountID, fullName string, t configfile.RepoTraits) bool,
+	ctx context.Context, grace time.Duration, runs func(accountID string, t configfile.RepoTraits) bool,
 ) (int64, error) {
 	if s.owner == nil {
 		return 0, errors.New("store: SweepStoppedIndexes needs the owner connection")
@@ -147,7 +147,7 @@ func (s *Store) SweepStoppedIndexes(
 		}
 		// Locked, so a repository turned on meanwhile is either seen running
 		// or waits until its index is gone, never swept halfway.
-		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, name, enabled, archived, fork, turned_on,
+		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on,
 				active_index_run_id IS NOT NULL
 			FROM repositories WHERE active_index_run_id IS NOT NULL OR stopped_at IS NOT NULL
 			FOR UPDATE`)
@@ -155,11 +155,11 @@ func (s *Store) SweepStoppedIndexes(
 			return err
 		}
 		var stopped, others []string
-		var id, accountID, name string
+		var id, accountID string
 		var enabled, indexed bool
 		var t configfile.RepoTraits
-		_, err = pgx.ForEachRow(rows, []any{&id, &accountID, &name, &enabled, &t.Archived, &t.Fork, &t.TurnedOn, &indexed}, func() error {
-			if indexed && (!enabled || !runs(accountID, name, t)) {
+		_, err = pgx.ForEachRow(rows, []any{&id, &accountID, &enabled, &t.Archived, &t.Fork, &t.TurnedOn, &indexed}, func() error {
+			if indexed && (!enabled || !runs(accountID, t)) {
 				stopped = append(stopped, id)
 			} else {
 				others = append(others, id)
@@ -224,7 +224,7 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 }
 
 // OnboardCandidates lists up to limit enabled repositories, of those
-// enabled also admits by account ID, full name and traits, whose active index
+// enabled also admits by account ID and traits, whose active index
 // generation is missing or was built by another embedder than index_schema
 // records, with no index job queued or running, and no onboarding job that
 // finished within retryAfter without building an index: one that failed or
@@ -236,13 +236,13 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 // first, as the ones a review is likeliest to need soon. Owner connection:
 // it spans every account.
 func (s *Store) OnboardCandidates(
-	ctx context.Context, limit int, retryAfter time.Duration, enabled func(accountID, fullName string, t configfile.RepoTraits) bool,
+	ctx context.Context, limit int, retryAfter time.Duration, enabled func(accountID string, t configfile.RepoTraits) bool,
 ) ([]RepoRef, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: OnboardCandidates needs the owner connection")
 	}
 	rows, err := s.owner.Query(ctx, `WITH candidates AS (
-			SELECT r.id, r.account_id, r.name, r.archived, r.fork, r.turned_on, r.created_at,
+			SELECT r.id, r.account_id, r.archived, r.fork, r.turned_on, r.created_at,
 				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
 			FROM repositories r
 			WHERE r.enabled AND r.turned_on IS DISTINCT FROM false
@@ -255,7 +255,7 @@ func (s *Store) OnboardCandidates(
 			                  AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
 			                                  AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))
 		)
-		SELECT id, account_id, name, archived, fork, turned_on FROM (
+		SELECT id, account_id, archived, fork, turned_on FROM (
 			SELECT c.*, row_number() OVER (PARTITION BY account_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c
 		) ranked
 		ORDER BY turn, active DESC NULLS LAST, created_at, id`, retryAfter.Seconds())
@@ -266,12 +266,11 @@ func (s *Store) OnboardCandidates(
 	var refs []RepoRef
 	for len(refs) < limit && rows.Next() {
 		var r RepoRef
-		var name string
 		var t configfile.RepoTraits
-		if err := rows.Scan(&r.ID, &r.AccountID, &name, &t.Archived, &t.Fork, &t.TurnedOn); err != nil {
+		if err := rows.Scan(&r.ID, &r.AccountID, &t.Archived, &t.Fork, &t.TurnedOn); err != nil {
 			return nil, fmt.Errorf("store: list onboarding candidates: %w", err)
 		}
-		if enabled(r.AccountID, name, t) {
+		if enabled(r.AccountID, t) {
 			refs = append(refs, r)
 		}
 	}

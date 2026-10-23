@@ -66,64 +66,29 @@ func TestLoadFull(t *testing.T) {
 		}
 	})
 
-	t.Run("settings layer defaults, account, repository", func(t *testing.T) {
+	t.Run("settings come from the root, limits from the account", func(t *testing.T) {
 		ho, _ := f.Account(ForgeGitHub, "home-operations")
 		od, _ := f.Account(ForgeGitHub, "onedr0p")
 		tests := []struct {
-			name     string
-			account  *Account
-			repo     string
-			enabled  bool
-			review   ModelRef
-			conc     int
-			perDay   int
-			filterOK map[string]any   // a PR the effective filter must accept
-			filterNo []map[string]any // PRs the effective filter must reject
+			name    string
+			account *Account
+			perDay  int
 		}{
-			{
-				name: "unlisted repo inherits account", account: ho, repo: "home-operations/other",
-				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
-				filterOK: SamplePR(), filterNo: []map[string]any{with(SamplePR(), "draft", true)},
-			},
-			{
-				name: "listed repo inherits the account", account: ho, repo: "home-operations/flate",
-				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
-				filterOK: SamplePR(),
-			},
-			{
-				name: "repo exclusion adds to the inherited one", account: ho, repo: "home-operations/kopiur",
-				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
-				filterOK: SamplePR(), filterNo: []map[string]any{with(SamplePR(), "draft", true), with(SamplePR(), "labels", []any{map[string]any{"name": "skip-review", "color": "0"}})},
-			},
-			{
-				name: "listed repo inherits enabled", account: ho, repo: "home-operations/charts-mirror",
-				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
-			},
-			{
-				name: "account overrides review model", account: od, repo: "onedr0p/home-ops",
-				enabled: true, review: "local/claude-opus-5", conc: 3,
-				filterOK: SamplePR(),
-			},
+			{name: "an account with limits of its own", account: ho, perDay: 200},
+			{name: "an account without an entry", account: od},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				s := f.Settings(tt.account, tt.repo)
-				if s.Enabled != tt.enabled || s.Models.Review != tt.review ||
-					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay {
+				s := f.Settings(tt.account)
+				if !s.Enabled || s.Models.Review != "openrouter/openai/gpt-6-sol" || s.Models.Fallback != "local/claude-sonnet-5" ||
+					s.Limits.Concurrency != 3 || s.Limits.ReviewsPerDay != tt.perDay {
 					t.Fatalf("Settings = %+v", s)
 				}
-				if s.Models.Fallback != "local/claude-sonnet-5" {
-					t.Fatalf("fallback should inherit from defaults, got %q", s.Models.Fallback)
+				if skip, by, err := s.Filters.Skips(SamplePR(), nil); err != nil || skip {
+					t.Fatalf("filter should accept: by=%v err=%v", by, err)
 				}
-				if tt.filterOK != nil {
-					if skip, by, err := s.Filters.Skips(tt.filterOK, nil); err != nil || skip {
-						t.Fatalf("filter should accept: by=%v err=%v", by, err)
-					}
-				}
-				for _, pr := range tt.filterNo {
-					if skip, _, err := s.Filters.Skips(pr, nil); err != nil || !skip {
-						t.Fatalf("filter should reject %v: skip=%v err=%v", pr, skip, err)
-					}
+				if skip, _, err := s.Filters.Skips(with(SamplePR(), "draft", true), nil); err != nil || !skip {
+					t.Fatalf("filter should reject a draft: skip=%v err=%v", skip, err)
 				}
 			})
 		}
@@ -131,7 +96,7 @@ func TestLoadFull(t *testing.T) {
 
 	t.Run("concurrency falls back to the default when unset everywhere", func(t *testing.T) {
 		g := &File{Accounts: []Account{{Forge: ForgeGitHub, Name: "x"}}}
-		if got := g.Settings(&g.Accounts[0], "x/y").Limits.Concurrency; got != DefaultConcurrency {
+		if got := g.Settings(&g.Accounts[0]).Limits.Concurrency; got != DefaultConcurrency {
 			t.Fatalf("concurrency = %d, want %d", got, DefaultConcurrency)
 		}
 	})
@@ -217,12 +182,9 @@ func TestIgnore(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	ho, _ := f.Account(ForgeGitHub, "home-operations")
-	got := f.Settings(ho, "home-operations/flate").Ignore
+	got := f.Settings(ho).Ignore
 	if len(got) != len(DefaultIgnore)+1 || got[len(got)-1] != "**/testdata/**" {
 		t.Fatalf("ignore = %v", got)
-	}
-	if n := len(f.Settings(ho, "home-operations/other").Ignore); n != len(DefaultIgnore) {
-		t.Fatalf("unlisted repo ignore = %d globs, want defaults only", n)
 	}
 }
 
@@ -345,7 +307,7 @@ confidence: { model: or/%[2]s, fallback: or/%[1]s }
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := f.Settings(&f.Accounts[0], "acme/repo")
+	s := f.Settings(&f.Accounts[0])
 	for _, ref := range []struct {
 		got  ModelRef
 		want string
@@ -362,9 +324,9 @@ confidence: { model: or/%[2]s, fallback: or/%[1]s }
 	}
 }
 
-// TestUnpricedModels: the models set for providers whose API reports no
-// cost are listed where pricing has no price under them as written, at
-// every scope; providers that report a cost are not.
+// TestUnpricedModels: the models the file's root sets for providers whose
+// API reports no cost are listed where pricing has no price under them as
+// written; providers that report a cost are not.
 func TestUnpricedModels(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -372,19 +334,23 @@ func TestUnpricedModels(t *testing.T) {
     type: anthropic
     apiKey: { env: TEST_WEBHOOK_SECRET }
     pricing: { ~sonnet-latest: { input: 2 }, claude-x: { input: 3 } }
-review: { model: a/~opus-latest, fallback: or/~acme/large-latest }
+review:
+  model:
+    - { model: or/~acme/large-latest, when: [{ expr: pr.bot }] }
+    - { model: a/~opus-latest }
+  fallback: priced/claude-x
 confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
-` + acme(`  acme/*: { confidence: { model: priced/claude-y } }
-  acme/x: { review: { model: priced/claude-x, fallback: oc/glm } }
-`)
+` + minimal
 	f, err := Parse([]byte(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Priced by its alias and by its id, the confidence model and the
+	// review fallback are not listed, nor is a route's openrouter model,
+	// whose API reports its cost.
 	want := []UnpricedModel{
 		{Setting: "review.model", Ref: "a/~opus-latest"},
 		{Setting: "confidence.fallback", Ref: "o/gpt-x"},
-		{Setting: "repositories.acme/*.confidence.model", Ref: "priced/claude-y"},
 	}
 	if got := f.UnpricedModels(); !slices.Equal(got, want) {
 		t.Fatalf("UnpricedModels = %+v, want %+v", got, want)
@@ -398,15 +364,6 @@ func githubMinimal(clientFields string) string {
 apps:
   acme-bot: { accounts: [acme], ` + clientFields + `privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
-}
-
-// acme is minimal with entries, lines of the repositories map, such as
-// "  acme/*: { trigger: { limit: 3 } }\n".
-func acme(entries string) string {
-	if entries == "" {
-		return minimal
-	}
-	return minimal + "repositories:\n" + entries
 }
 
 // acmeAccount is minimal with keys, lines of acme's accounts entry.
@@ -424,32 +381,24 @@ func loadBytes(t *testing.T, raw []byte) (*File, error) {
 	return load(t, string(raw))
 }
 
-// TestEnabledDefault checks enabled resolves like the other overrides: the
-// defaults and an account set the fallback for a repository without a
-// dashboard choice.
+// TestEnabledDefault checks enabled resolves like the other settings: the
+// file's root sets the fallback for a repository without a dashboard
+// choice.
 func TestEnabledDefault(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	tests := []struct {
 		name, doc string
-		want      map[string]bool
+		want      bool
 	}{
-		{"on unless turned off", acme("  acme/listed: { trigger: { limit: 3 } }\n"),
-			map[string]bool{"acme/new": true, "acme/listed": true}},
-		{"off at the defaults", "enabled: false\n" + acme("  acme/listed: {}\n"),
-			map[string]bool{"acme/new": false, "acme/listed": false}},
-		{"owner/* over the defaults", "enabled: false\n" + acme("  acme/*: { enabled: true }\n"),
-			map[string]bool{"acme/new": true}},
-		{"off at owner/*", acme("  acme/*: { enabled: false }\n  acme/listed: {}\n"),
-			map[string]bool{"acme/new": false, "acme/listed": false}},
+		{"on unless turned off", minimal, true},
+		{"off at the root", "enabled: false\n" + minimal, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustLoad(t, tt.doc)
-			for repo, want := range tt.want {
-				if got := f.Settings(&f.Accounts[0], repo).Enabled; got != want {
-					t.Errorf("%s enabled = %v, want %v", repo, got, want)
-				}
+			if got := f.Settings(&f.Accounts[0]).Enabled; got != tt.want {
+				t.Errorf("enabled = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -467,21 +416,20 @@ func TestRuns(t *testing.T) {
 		traits          RepoTraits
 		want            bool
 	}{
-		{"a source repository", acme(""), "acme/app", RepoTraits{}, true},
-		{"a source repository turned off", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{}, false},
-		{"a fork", acme(""), "acme/copy", fork, false},
-		{"a fork owner/* turns on", acme("  acme/*: { enabled: true }\n"), "acme/copy", fork, false},
-		{"a fork with an entry", acme("  acme/copy: { trigger: { limit: 3 } }\n"), "acme/copy", fork, false},
-		{"an archived repository", acme(""), "acme/old", archived, false},
-		{"a repository an admin turned off", acme("  acme/*: { enabled: true }\n"), "acme/app", RepoTraits{TurnedOn: new(false)}, false},
-		{"a repository an admin turned on", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{TurnedOn: new(true)}, true},
-		{"a fork an admin turned on", acme(""), "acme/copy", RepoTraits{Fork: true, TurnedOn: new(true)}, true},
-		{"an archived repository an admin turned on", acme(""), "acme/old", RepoTraits{Archived: true, TurnedOn: new(true)}, false},
+		{"a source repository", minimal, "acme/app", RepoTraits{}, true},
+		{"a source repository turned off", "enabled: false\n" + minimal, "acme/app", RepoTraits{}, false},
+		{"a fork", minimal, "acme/copy", fork, false},
+		{"a fork the root turns on", "enabled: true\n" + minimal, "acme/copy", fork, false},
+		{"an archived repository", minimal, "acme/old", archived, false},
+		{"a repository an admin turned off", "enabled: true\n" + minimal, "acme/app", RepoTraits{TurnedOn: new(false)}, false},
+		{"a repository an admin turned on", "enabled: false\n" + minimal, "acme/app", RepoTraits{TurnedOn: new(true)}, true},
+		{"a fork an admin turned on", minimal, "acme/copy", RepoTraits{Fork: true, TurnedOn: new(true)}, true},
+		{"an archived repository an admin turned on", minimal, "acme/old", RepoTraits{Archived: true, TurnedOn: new(true)}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustLoad(t, tt.doc)
-			if got := f.Runs(&f.Accounts[0], tt.repo, tt.traits); got != tt.want {
+			if got := f.Runs(&f.Accounts[0], tt.traits); got != tt.want {
 				t.Errorf("Runs(%s, %+v) = %v, want %v", tt.repo, tt.traits, got, tt.want)
 			}
 		})
@@ -556,8 +504,7 @@ func TestAccountProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	withOwn := minimal + "accounts:\n  acme:\n    providers:\n" +
-		"      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" +
-		"repositories:\n  acme/*: { review: { model: own/big } }\n"
+		"      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"
 	f, err := loadBytes(t, []byte(withOwn))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -659,22 +606,21 @@ func TestParseRejects(t *testing.T) {
 		{"a kritika alias price on openrouter", "providers:\n  p:\n    type: openrouter\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
 			"    pricing: { ~sol-latest: { input: 3 } }\n" + minimal, "providers.p.pricing: an openrouter alias must be ~<author>/<family>-latest"},
 		{"model referencing undeclared provider", "review:\n  model: nope/gpt\n" + minimal, "not declared under providers"},
-		{"owner/* model referencing undeclared provider", acme("  acme/*: { review: { model: nope/gpt } }\n"), "not declared under providers"},
 		{"negative limit", "limits:\n  reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative account limit", acmeAccount("    limits: { tokensPerMonth: -1 }\n"), "accounts.acme.limits: limits must not be negative"},
-		{"negative trigger limit", acme("  acme/x: { trigger: { limit: -1 } }\n"), "repositories.acme/x.trigger.limit must not be negative"},
-		{"trigger.lines is not a key", acme("  acme/x: { trigger: { lines: 500 } }\n"), "field lines not found"},
-		{"trigger condition with a bad glob", acme("  acme/x: { trigger: { include: [{ paths: ['['] }] } }\n"), `include[0]: paths[0] "[" is not a valid glob`},
+		{"negative trigger limit", "trigger: { limit: -1 }\n" + minimal, "configfile: trigger.limit must not be negative"},
+		{"trigger.lines is not a key", "trigger: { lines: 500 }\n" + minimal, "field lines not found"},
+		{"trigger condition with a bad glob", "trigger: { include: [{ paths: ['['] }] }\n" + minimal, `include[0]: paths[0] "[" is not a valid glob`},
 		{"a feedback level", "review:\n  feedback: detailed\n" + minimal, "field feedback not found"},
 		{"context without a description", "context: [{ path: db/schema.sql }]\n" + minimal, "configfile: context[0]: description is required"},
 		{"context outside the repository", "context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
 		{"context with a bad glob", "context: [{ path: x, description: x, paths: ['['] }]\n" + minimal, "paths[0] \"[\" is not a valid glob"},
 		{"rule with a bad id", "rules: [{ id: Wrap_Errors, rule: x }]\n" + minimal, `configfile: rules[0].id "Wrap_Errors" must be`},
-		{"rule listed twice", acme("  acme/*: { rules: [{ id: a, rule: x }, { id: a, rule: y }] }\n"), `repositories.acme/*.rules[1].id "a" is listed twice`},
-		{"blank rule", acme("  acme/x: { rules: [{ id: a, rule: ' ' }] }\n"), "repositories.acme/x.rules[0]: set one of rule or file"},
+		{"rule listed twice", "rules: [{ id: a, rule: x }, { id: a, rule: y }]\n" + minimal, `configfile: rules[1].id "a" is listed twice`},
+		{"blank rule", "rules: [{ id: a, rule: ' ' }]\n" + minimal, "configfile: rules[0]: set one of rule or file"},
 		{"overlong rule", "rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
 		{"rule with a bad glob", "rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
-		{"rule condition syntax error", acme("  acme/x: { rules: [{ id: a, rule: x, when: [{ expr: 'pr.draft &&' }] }] }\n"), "repositories.acme/x.rules[0].when[0]"},
+		{"rule condition syntax error", "rules: [{ id: a, rule: x, when: [{ expr: 'pr.draft &&' }] }]\n" + minimal, "configfile: rules[0].when[0]"},
 		{"rule condition on pr.lines", "rules: [{ id: a, rule: x, when: [{ expr: pr.lines > 10 }] }]\n" + minimal,
 			"configfile: rules[0].when[0]: pr.lines is known to a trigger condition alone"},
 		{"rule condition with no expression", "rules: [{ id: a, rule: x, when: [{ name: empty }] }]\n" + minimal,
@@ -682,7 +628,7 @@ func TestParseRejects(t *testing.T) {
 		{"rule condition name given twice", "rules: [{ id: a, rule: x, when: [{ name: n, expr: 'true' }, { name: n, expr: 'true' }] }]\n" + minimal,
 			`configfile: rules[0].when[1]: name "n" is given twice`},
 		{"rule condition not a bool", "rules: [{ id: a, rule: x, when: [{ expr: pr.title }] }]\n" + minimal, "configfile: rules[0].when[0]"},
-		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
+		{"bad ignore glob", "ignore: ['[']\n" + minimal, `configfile: ignore[0] "[" is not a valid glob`},
 		{"include syntax error", "trigger:\n  include: [{ expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.include[0]"},
 		{"exclude syntax error", "trigger:\n  exclude: [{ expr: 'true' }, { expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.exclude[1]"},
 		{"include with no expression", "trigger:\n  include: [{ name: empty }]\n" + minimal, "configfile: trigger.include[0]: expr or paths is required"},
@@ -693,18 +639,12 @@ func TestParseRejects(t *testing.T) {
 			`configfile: trigger.exclude[1]: name "a" is given twice`},
 		{"include as a bare expression", "trigger:\n  include: 'true'\n" + minimal, "cannot construct"},
 		{"include fails smoke test", "trigger:\n  include: [{ expr: 'pr.labels[5].name == \"x\"' }]\n" + minimal, "smoke test"},
-		{"repository include error", acme("  acme/x: { trigger: { include: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/x.trigger.include[0]"},
-		{"repository exclude error", acme("  acme/x: { trigger: { exclude: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/x.trigger.exclude[0]"},
-		{"owner exclude error", acme("  acme/*: { trigger: { exclude: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/*.trigger.exclude[0]"},
+		{"include not a bool", "trigger:\n  include: [{ expr: 'pr.title' }]\n" + minimal, "configfile: trigger.include[0]"},
 		{"a single filter expression", "trigger:\n  filterExpr: 'true'\n" + minimal, "field filterExpr not found"},
 		{"a forks switch", "trigger:\n  forks: true\n" + minimal, "field forks not found"},
-		{"a repository key without an owner", acme("  x: {}\n"), "keyed owner/* or owner/name"},
-		{"a repository key too deep", acme("  acme/x/y: {}\n"), "keyed owner/* or owner/name"},
-		{"duplicate repository", acme("  acme/x: {}\n  ACME/x: {}\n"), "duplicates repositories.ACME/x"},
-		{"a repository entry that says where it starts", acme("  acme/x: { enabled: false }\n"), "repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
+		{"a repositories map", "repositories: { acme/x: {} }\n" + minimal, "field repositories not found"},
 		{"a defaults wrapper", "defaults: { enabled: false }\n" + minimal, "field defaults not found"},
 		{"a models block at the root", "models: { review: p/m }\n" + minimal, "field models not found"},
-		{"a flat limit on an entry", acme("  acme/x: { limit: 3 }\n"), "field limit not found"},
 		{"an unknown polling section", "polling: { interval: 5m }\n" + minimal, "field polling not found"},
 	}
 	for _, tt := range tests {
@@ -728,7 +668,7 @@ func TestJobTimeoutBounds(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
 	withTimeout := func(seconds int64) string {
-		return acme(fmt.Sprintf("  acme/x: { agent: { timeout: %ds } }\n", seconds))
+		return fmt.Sprintf("agent: { timeout: %ds }\n", seconds) + minimal
 	}
 
 	tests := []struct {
@@ -755,7 +695,10 @@ func TestJobTimeoutBounds(t *testing.T) {
 	}
 }
 
-func TestScopePrecedence(t *testing.T) {
+// TestRootSettings: the file's root sets every repository's settings over
+// kritika's defaults, and an account's limits lay over the root's, a zero
+// written there clearing the root's value.
+func TestRootSettings(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	const head = `providers:
@@ -771,109 +714,62 @@ rules: [{ id: ops, file: ops/rules.md }]
 comments: { summary: ops/summary.tmpl }
 limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 `
-	// doc gives acme's owner/* and acme/x entries the flow keys owner and
-	// repo, and its accounts entry limits when there are any.
-	doc := func(limits, owner, repo string) string {
-		out := head + acme("  acme/*: { "+owner+" }\n  acme/x: { "+repo+" }\n")
+	// doc gives acme's accounts entry limits when there are any.
+	doc := func(limits string) string {
+		out := head + minimal
 		if limits != "" {
 			out += "accounts:\n  acme: { limits: { " + limits + " } }\n"
 		}
 		return out
 	}
-	parse := func(t *testing.T, doc string) *File {
-		t.Helper()
-		f, err := loadBytes(t, []byte(doc))
-		if err != nil {
-			t.Fatalf("Parse: %v", err)
-		}
-		return f
-	}
 
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
-		f := parse(t, doc("", "", ""))
-		s := f.Settings(&f.Accounts[0], "acme/x")
+		f := mustLoad(t, doc(""))
+		s := f.Settings(&f.Accounts[0])
 		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.MaxAutoReviews != 4 || s.Agent.MaxSteps != 9 ||
-			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
+			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 || s.Limits.ReviewsPerDay != 5 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)
 		}
-	})
-
-	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
-		f := parse(t, doc("tokensPerMonth: 0", `trigger: { include: [{ name: bots, expr: "true" }, { expr: pr.open }], exclude: [{ name: drafts, expr: "false" }, { expr: pr.fork }], limit: 0 }, review: { fallback: "" }`, `comments: { summary: "" }`))
-		s := f.Settings(&f.Accounts[0], "acme/x")
-		// A condition under a broader scope's name replaces it where it
-		// stands, and one without a name is added.
-		if filterExprs(s.Filters.Include) != "true, pr.open" || filterExprs(s.Filters.Exclude) != "false, pr.fork" || s.MaxAutoReviews != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
-			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
-			t.Fatalf("cleared settings = %+v", s)
-		}
-		if s.Review.Templates.Summary != "" {
-			t.Fatalf("cleared review = %+v", s.Review)
-		}
-	})
-
-	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
-		f := parse(t, doc("", `agent: { steps: 7, prompt: 30000 }, review: { fixes: true }, ignore: ["account/**"]`,
-			`review: { model: p/small }, ignore: ["repo/**"], agent: { tokens: 500 }`))
-		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Agent.MaxPromptTokens != 30_000 || s.Models.Review != "p/small" {
-			t.Fatalf("settings = %+v", s)
-		}
-		if !s.Review.RequireSuggestedFix || !reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) {
-			t.Fatalf("review = %+v, want the account's strictness over the defaults' rules", s.Review)
-		}
-		want := append(append([]string(nil), DefaultIgnore...), "defaults/**", "account/**", "repo/**")
-		if !slices.Equal(s.Ignore, want) {
+		if want := append(slices.Clone(DefaultIgnore), "defaults/**"); !slices.Equal(s.Ignore, want) {
 			t.Fatalf("ignore = %v, want %v", s.Ignore, want)
 		}
 	})
 
+	t.Run("a zero limit written for the account clears the root's", func(t *testing.T) {
+		f := mustLoad(t, doc("tokensPerMonth: 0"))
+		if s := f.Settings(&f.Accounts[0]); s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
+			t.Fatalf("limits = %+v", s.Limits)
+		}
+	})
+
 	t.Run("an explicit concurrency must be positive", func(t *testing.T) {
-		if _, err := loadBytes(t, []byte(doc("concurrency: 0", "", ""))); err == nil ||
-			!strings.Contains(err.Error(), "concurrency must be positive") {
+		if _, err := load(t, doc("concurrency: 0")); err == nil || !strings.Contains(err.Error(), "concurrency must be positive") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})
 }
 
 // TestReviewPresentation checks every finding goes inline, and the comments
-// carry the dashboard's URL, unless a scope turns either off.
+// carry the dashboard's URL, unless the file turns either off.
 func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	parse := func(t *testing.T, owner, repos string) *File {
-		t.Helper()
-		f, err := loadBytes(t, []byte(acme("  acme/*: { "+owner+" }\n"+repos)))
-		if err != nil {
-			t.Fatalf("Parse: %v", err)
-		}
-		return f
+	f := mustLoad(t, minimal)
+	if s := f.Settings(&f.Accounts[0]); !s.Review.InlineComments || !s.Review.Dashboard || s.Review.Approve {
+		t.Fatalf("review = %+v, want every finding inline, the dashboard in the comments and no approval", s.Review)
 	}
-	f := parse(t, "", "  acme/x: {}\n")
-	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || !s.Review.Dashboard {
-		t.Fatalf("review = %+v, want every finding inline and the dashboard in the comments", s.Review)
+	f = mustLoad(t, "comments: { dashboard: false }\n"+minimal)
+	if s := f.Settings(&f.Accounts[0]); s.Review.Dashboard || !s.Review.InlineComments {
+		t.Fatalf("review = %+v, want the dashboard off and inline comments left on", s.Review)
 	}
-	f = parse(t, "comments: { dashboard: false }", "  acme/x: { comments: { dashboard: true } }\n  acme/y: {}\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.Dashboard {
-		t.Fatalf("review = %+v, want the repository's dashboard over the account's", s.Review)
+	f = mustLoad(t, "comments: { inline: false }\n"+minimal)
+	if s := f.Settings(&f.Accounts[0]); s.Review.InlineComments || !s.Review.Dashboard {
+		t.Fatalf("review = %+v, want inline comments off and the dashboard left on", s.Review)
 	}
-	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Dashboard || !s.Review.InlineComments {
-		t.Fatalf("review = %+v, want the account's dashboard off and inline comments left on", s.Review)
-	}
-	f = parse(t, "comments: { inline: false }", "  acme/x: { comments: { inline: true } }\n  acme/y: {}\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments {
-		t.Fatalf("review = %+v, want the repository's inline comments over the account's", s.Review)
-	}
-	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.InlineComments {
-		t.Fatalf("review = %+v, want the account's inline comments off", s.Review)
-	}
-	f = parse(t, "review: { approve: true }", "  acme/x: { review: { approve: false } }\n  acme/y: {}\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x"); s.Review.Approve {
-		t.Fatalf("review = %+v, want the repository's approve over the account's", s.Review)
-	}
-	if s := f.Settings(&f.Accounts[0], "acme/y"); !s.Review.Approve {
-		t.Fatalf("review = %+v, want the account's approve", s.Review)
+	f = mustLoad(t, "review: { approve: true }\n"+minimal)
+	if s := f.Settings(&f.Accounts[0]); !s.Review.Approve {
+		t.Fatalf("review = %+v, want approval on", s.Review)
 	}
 }
 
@@ -884,55 +780,24 @@ func TestSettingsProviders(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, "providers:\n  p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"+
 		acmeAccount("    providers:\n      own: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"))
-	if got := f.Settings(&f.Accounts[0], "acme/x").Providers; !slices.Equal(got, []string{"own", "p"}) {
+	if got := f.Settings(&f.Accounts[0]).Providers; !slices.Equal(got, []string{"own", "p"}) {
 		t.Fatalf("providers = %q, want [own p]", got)
 	}
 }
 
-// TestRulesAddUp: each scope's rules follow the broader scope's, and one
-// with an id already listed replaces that rule where it stands.
-func TestRulesAddUp(t *testing.T) {
+func TestAgentReview(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, "rules: [{ id: a, rule: A }, { id: b, rule: B }]\n"+
-		acme("  acme/*: { rules: [{ id: c, rule: C }] }\n  acme/x: { rules: [{ id: a, rule: A2, paths: ['**/*.go'] }] }\n"))
-	for repo, want := range map[string][]Rule{
-		"acme/x":        {{ID: "a", Rule: "A2", Paths: []string{"**/*.go"}}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
-		"acme/unlisted": {{ID: "a", Rule: "A"}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
-	} {
-		if got := f.Settings(&f.Accounts[0], repo).Review.Rules; !reflect.DeepEqual(got, want) {
-			t.Errorf("%s: rules = %+v, want %+v", repo, got, want)
-		}
-	}
-	for repo, want := range map[string]map[string]Scope{
-		"acme/x":        {"a": ScopeRepository, "b": ScopeDefaults, "c": ScopeAccount},
-		"acme/unlisted": {"a": ScopeDefaults, "b": ScopeDefaults, "c": ScopeAccount},
-	} {
-		if got := f.RuleScopes(&f.Accounts[0], repo); !maps.Equal(got, want) {
-			t.Errorf("%s: scopes = %v, want %v", repo, got, want)
-		}
-	}
-}
-
-func TestRepositoryAgentReview(t *testing.T) {
-	t.Setenv("TEST_PRIVATE_KEY", "tok")
-	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	withRepo := func(repo string) string {
-		return acme("  acme/x: " + repo + "\n")
-	}
+	// withRoot is minimal with block, lines written at the file's root.
+	withRoot := func(block string) string { return block + minimal }
 	t.Run("defaults resolve when unset", func(t *testing.T) {
-		f, err := loadBytes(t, []byte(withRepo("{}")))
-		if err != nil {
-			t.Fatal(err)
+		f := mustLoad(t, withRoot(""))
+		s := f.Settings(&f.Accounts[0])
+		if !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
 		}
-		for _, repo := range []string{"acme/x", "acme/unlisted"} {
-			s := f.Settings(&f.Accounts[0], repo)
-			if !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
-				t.Fatalf("%s: agent=%+v incremental=%+v", repo, s.Agent, s.Incremental)
-			}
-			if s.Review.RequireSuggestedFix || len(s.Review.Rules) != 0 || s.Review.Templates != (ReviewTemplates{}) {
-				t.Fatalf("%s: review = %+v", repo, s.Review)
-			}
+		if s.Review.RequireSuggestedFix || len(s.Review.Rules) != 0 || s.Review.Templates != (ReviewTemplates{}) {
+			t.Fatalf("review = %+v", s.Review)
 		}
 		if DefaultMaxDeltaFiles != 25 {
 			t.Fatalf("DefaultMaxDeltaFiles = %d", DefaultMaxDeltaFiles)
@@ -942,16 +807,13 @@ func TestRepositoryAgentReview(t *testing.T) {
 		}
 	})
 
-	t.Run("repository values override the defaults", func(t *testing.T) {
-		f, err := loadBytes(t, []byte(withRepo(`{
-      agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, parts: 3, timeout: 3m, commandTimeout: 10s, fetches: 3 },
-      review: { incremental: 5, fixes: true },
-      rules: [{ id: style, file: docs/rules.md }],
-      comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl } }`)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		s := f.Settings(&f.Accounts[0], "acme/x")
+	t.Run("written values override the defaults", func(t *testing.T) {
+		f := mustLoad(t, withRoot(`agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, parts: 3, timeout: 3m, commandTimeout: 10s, fetches: 3 }
+review: { incremental: 5, fixes: true }
+rules: [{ id: style, file: docs/rules.md }]
+comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl }
+`))
+		s := f.Settings(&f.Accounts[0])
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, MaxPromptTokens: 120_000, MaxParts: 3, Timeout: 3 * time.Minute,
 			CommandTimeout: 10 * time.Second, MaxFetches: 3}
 		if !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
@@ -967,40 +829,37 @@ func TestRepositoryAgentReview(t *testing.T) {
 	})
 
 	t.Run("a partial agent block keeps the other defaults", func(t *testing.T) {
-		f, err := loadBytes(t, []byte(withRepo("{ agent: { steps: 7 } }")))
-		if err != nil {
-			t.Fatal(err)
-		}
+		f := mustLoad(t, withRoot("agent: { steps: 7 }\n"))
 		want := DefaultAgent
 		want.MaxSteps = 7
-		if got := f.Settings(&f.Accounts[0], "acme/x").Agent; !reflect.DeepEqual(got, want) {
+		if got := f.Settings(&f.Accounts[0]).Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)
 		}
 	})
 
-	rejects := []struct{ name, repo, want string }{
-		{"zero steps", "{ agent: { steps: 0 } }", "agent.steps must be positive"},
-		{"zero parts", "{ agent: { parts: 0 } }", "agent.parts must be positive"},
-		{"zero fetches", "{ agent: { fetches: 0 } }", "agent.fetches must be positive"},
-		{"negative steps", "{ agent: { steps: -1 } }", "agent.steps must be positive"},
-		{"zero tool output", "{ agent: { output: 0 } }", "agent.output must be positive"},
-		{"zero tokens", "{ agent: { tokens: 0 } }", "agent.tokens must be positive"},
-		{"negative tokens", "{ agent: { tokens: -5 } }", "agent.tokens must be positive"},
-		{"zero prompt", "{ agent: { prompt: 0 } }", "agent.prompt must be at least 8000"},
-		{"a prompt below the minimum", "{ agent: { prompt: 7999 } }", "agent.prompt must be at least 8000"},
-		{"zero timeout", "{ agent: { timeout: 0s } }", "agent.timeout must be positive"},
-		{"zero delta files", "{ review: { incremental: 0 } }", "review.incremental must be positive"},
-		{"negative delta files", "{ review: { incremental: -3 } }", "review.incremental must be positive"},
-		{"unknown agent key", "{ agent: { maxSteps: 3 } }", "field maxSteps not found"},
-		{"zero command timeout", "{ agent: { commandTimeout: 0s } }", "agent.commandTimeout must be at least 1s"},
-		{"sub-second command timeout", "{ agent: { commandTimeout: 500ms } }", "agent.commandTimeout must be at least 1s"},
-		{"absolute rule file", "{ rules: [{ id: a, file: /etc/passwd }] }", "must be relative"},
-		{"escaping template path", "{ comments: { summary: ../x.tmpl } }", "escapes the repository"},
-		{"a rule with a file and text", "{ rules: [{ id: a, rule: Check., file: a.md }] }", "set one of rule or file"},
+	rejects := []struct{ name, block, want string }{
+		{"zero steps", "agent: { steps: 0 }", "agent.steps must be positive"},
+		{"zero parts", "agent: { parts: 0 }", "agent.parts must be positive"},
+		{"zero fetches", "agent: { fetches: 0 }", "agent.fetches must be positive"},
+		{"negative steps", "agent: { steps: -1 }", "agent.steps must be positive"},
+		{"zero tool output", "agent: { output: 0 }", "agent.output must be positive"},
+		{"zero tokens", "agent: { tokens: 0 }", "agent.tokens must be positive"},
+		{"negative tokens", "agent: { tokens: -5 }", "agent.tokens must be positive"},
+		{"zero prompt", "agent: { prompt: 0 }", "agent.prompt must be at least 8000"},
+		{"a prompt below the minimum", "agent: { prompt: 7999 }", "agent.prompt must be at least 8000"},
+		{"zero timeout", "agent: { timeout: 0s }", "agent.timeout must be positive"},
+		{"zero delta files", "review: { incremental: 0 }", "review.incremental must be positive"},
+		{"negative delta files", "review: { incremental: -3 }", "review.incremental must be positive"},
+		{"unknown agent key", "agent: { maxSteps: 3 }", "field maxSteps not found"},
+		{"zero command timeout", "agent: { commandTimeout: 0s }", "agent.commandTimeout must be at least 1s"},
+		{"sub-second command timeout", "agent: { commandTimeout: 500ms }", "agent.commandTimeout must be at least 1s"},
+		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]", "must be relative"},
+		{"escaping template path", "comments: { summary: ../x.tmpl }", "escapes the repository"},
+		{"a rule with a file and text", "rules: [{ id: a, rule: Check., file: a.md }]", "set one of rule or file"},
 	}
 	for _, tt := range rejects {
 		t.Run("rejects "+tt.name, func(t *testing.T) {
-			_, err := loadBytes(t, []byte(withRepo(tt.repo)))
+			_, err := load(t, withRoot(tt.block+"\n"))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
 			}

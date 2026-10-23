@@ -16,6 +16,7 @@ func TestReleaseWakesSnoozedReview(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	const model = "test/wake-model"
 	t.Cleanup(func() {
@@ -95,6 +96,7 @@ func TestWakeIfSlotFree(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	const model = "test/wake-free-model"
 	t.Cleanup(func() {

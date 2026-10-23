@@ -19,6 +19,7 @@ func TestRunnerCannotSelectAccountPolicy(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	runs := map[string]string{}
 	t.Cleanup(func() {

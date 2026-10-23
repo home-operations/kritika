@@ -74,14 +74,12 @@ apps:
     clientId: Iv1.y
     privateKey: { env: TEST_PEM }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  acme/widgets:
-    agent:
-      steps: 6
-      commandTimeout: 5s
-    rules:
-      - { id: into-main, rule: Keep main releasable., when: [{ expr: 'pr.baseRef == "main"' }] }
-      - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
+agent:
+  steps: 6
+  commandTimeout: 5s
+rules:
+  - { id: into-main, rule: Keep main releasable., when: [{ expr: 'pr.baseRef == "main"' }] }
+  - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
 `
 
 // agentJobTimeout is the harness client's JobTimeout.
@@ -397,6 +395,7 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	if err := appStore.ApplyConfig(ctx, h.file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, appStore, h.file, "acme/widgets")
 	h.account, _ = h.file.Account(configfile.ForgeGitHub, "acme")
 	h.other, _ = h.file.Account(configfile.ForgeGitHub, "globex")
 	h.dir, h.base, h.head = testRepo(t)
@@ -2584,7 +2583,7 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	// offers no search tool.
 	otherRepo := configfile.RepositoryID(h.account.ID(), "acme/gadgets")
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(h.ctx, `INSERT INTO repositories (id, account_id, name, managed_by) VALUES ($1, $2, 'acme/gadgets', 'forge')
+		_, err := tx.Exec(h.ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, 'acme/gadgets')
 			ON CONFLICT DO NOTHING`, otherRepo, h.account.ID())
 		return err
 	}); err != nil {

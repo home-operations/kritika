@@ -28,7 +28,7 @@ func gitlabEnv(t *testing.T) {
 func TestParseGitLabConnection(t *testing.T) {
 	gitlabEnv(t)
 	f := mustLoad(t, gitlabMinimal("runnerToken: { env: TEST_RUNNER_TOKEN }, ")+
-		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\nrepositories:\n  acme/*: { trigger: { limit: 2 } }\n")
+		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\n")
 	in, ok := f.Connection("acme-lab")
 	if !ok || in.Forge != ForgeGitLab || in.GitLab.Host != "gitlab.example.com" || !slices.Equal(in.Accounts, []string{"acme"}) {
 		t.Fatalf("connection = %+v", in)
@@ -40,8 +40,8 @@ func TestParseGitLabConnection(t *testing.T) {
 		t.Fatalf("ForgeHosts = %q", got)
 	}
 	a, ok := f.Account(ForgeGitLab, "acme")
-	if !ok || a.Key() != "gitlab/acme" || a.Limits.ReviewsPerDay == nil || *a.Limits.ReviewsPerDay != 3 || a.Trigger.Limit == nil {
-		t.Fatalf("the account's entries must be the GitLab account's: %+v", a)
+	if !ok || a.Key() != "gitlab/acme" || a.Limits.ReviewsPerDay == nil || *a.Limits.ReviewsPerDay != 3 {
+		t.Fatalf("the account's entry must be the GitLab account's: %+v", a)
 	}
 	if f.ConnectionFor(a) != in {
 		t.Fatal("ConnectionFor must find the GitLab connection")
@@ -57,20 +57,6 @@ func TestParseGitLabConnection(t *testing.T) {
 
 // TestParseGitLabWithoutRunnerToken: runners fetch with the API token
 // when no read-only one is given.
-// TestParseGitLabSubgroupRepository: a project in a subgroup is keyed by
-// its full path, and its settings are found by it.
-func TestParseGitLabSubgroupRepository(t *testing.T) {
-	gitlabEnv(t)
-	f := mustLoad(t, gitlabMinimal("")+"repositories:\n  acme/platform/widgets: { trigger: { limit: 2 } }\n")
-	a, _ := f.Account(ForgeGitLab, "acme")
-	if r := a.Repository("acme/platform/widgets"); r == nil || r.Name != "platform/widgets" || r.Trigger.Limit == nil {
-		t.Fatal("the subgroup project's entry must apply")
-	}
-	if a.Repository("acme/widgets") != nil {
-		t.Fatal("another project keeps the account's settings")
-	}
-}
-
 func TestParseGitLabWithoutRunnerToken(t *testing.T) {
 	gitlabEnv(t)
 	f := mustLoad(t, gitlabMinimal(""))
@@ -120,9 +106,6 @@ func TestParseGitLabRejects(t *testing.T) {
 		{"a runner token unset", gitlabMinimal("runnerToken: { env: TEST_DOES_NOT_EXIST }, "), "gitlab.acme-lab.runnerToken: environment variable TEST_DOES_NOT_EXIST is not set"},
 		{"no webhook secret", strings.Replace(gitlabMinimal(""), ", webhookSecret: { env: TEST_GITLAB_WEBHOOK }", "", 1), "gitlab.acme-lab.webhookSecret: reference must set env"},
 		{"a secret token for a signing token", strings.Replace(gitlabMinimal(""), "TEST_GITLAB_WEBHOOK", "TEST_BAD_WEBHOOK", 1), "gitlab.acme-lab.webhookSecret must be the webhook's signing token"},
-		{"a subgroup key on GitHub", minimal + "repositories:\n  acme/sub/widgets: {}\n", "keyed owner/* or owner/name"},
-		{"an empty subgroup", gitlabMinimal("") + "repositories:\n  acme/sub//widgets: {}\n", "owner/subgroup/name"},
-		{"a subgroup glob", gitlabMinimal("") + "repositories:\n  acme/sub/*: {}\n", "owner/subgroup/name"},
 		{"a Forgejo field", gitlabMinimal("audience: x, "), "field audience not found"},
 		{"a bad name", strings.Replace(gitlabMinimal(""), "acme-lab:", "Acme Lab:", 1), "gitlab.Acme Lab: a connection's name"},
 		{"the host denied", gitlabMinimal("") + "egress:\n  deny: [gitlab.example.com]\n", "gitlab.example.com is denied, which a connection needs"},

@@ -24,6 +24,7 @@ func TestEnsureRepositoryVisibility(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
 	name := "alpha/visible"
 	id := configfile.RepositoryID(a.ID(), name)
@@ -74,6 +75,7 @@ func TestListReposPublic(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
 	repos := map[string]configfile.RepoTraits{
 		"alpha/visible-plain":    {Visibility: "public"},
@@ -125,6 +127,7 @@ func TestRepositoryTraitsWritesOnlyChanges(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
 	name := "alpha/visible-stamped"
 	id := configfile.RepositoryID(a.ID(), name)
@@ -200,6 +203,7 @@ func TestRegisterRepositoriesLeavesNewerTraits(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
 	name := "alpha/visible-listed"
 	id := configfile.RepositoryID(a.ID(), name)
@@ -267,6 +271,7 @@ func TestRegisterRepositoriesLeavesNewerDisable(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
 	name := "alpha/removed-listed"
 	id := configfile.RepositoryID(a.ID(), name)

@@ -34,21 +34,6 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-repositories:
-  alpha/one: {}
-  alpha/two: {}
-  east/busy: {}
-  east/quiet: {}
-  east/later: {}
-  east/rebuilt: {}
-  east/skipped: {}
-  east/failed: {}
-  east/queued: {}
-  east/indexed: {}
-  east/stale: {}
-  east/off: {}
-  west/one: {}
-  west/old-failure: {}
 `
 
 // TestOnboardCandidates checks which repositories the onboarding feeder is
@@ -61,6 +46,9 @@ func TestOnboardCandidates(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, onboardAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/off")
+	listRepos(t, s, "west", "west/one", "west/old-failure")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "m", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
@@ -143,7 +131,7 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("OnboardingInFlight = %d, %v; want %d", after, err, before+1)
 	}
 
-	all := func(string, string, configfile.RepoTraits) bool { return true }
+	all := func(string, configfile.RepoTraits) bool { return true }
 	refs, err := s.OnboardCandidates(ctx, 1000, time.Hour, all)
 	if err != nil {
 		t.Fatalf("OnboardCandidates: %v", err)
@@ -162,13 +150,11 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("OnboardCandidates(1) = %v, %v", limited, err)
 	}
 	// A repository its settings leave off is passed over, and takes none
-	// of the limit.
-	ours := func(_, name string, _ configfile.RepoTraits) bool {
-		_, ok := ids[name]
-		return ok && name != "east/busy"
-	}
+	// of the limit: here, every one of east's.
+	west := accountID(t, s, "west")
+	ours := func(account string, _ configfile.RepoTraits) bool { return account == west }
 	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, ours); err != nil || len(limited) != 1 || names[limited[0].ID] != "west/one" {
-		t.Fatalf("OnboardCandidates(1, without east/busy) = %v, %v; want west/one", limited, err)
+		t.Fatalf("OnboardCandidates(1, without east's) = %v, %v; want west/one", limited, err)
 	}
 	// The callback sees what the forge says of each: here, that the
 	// busiest is a fork.
@@ -176,9 +162,9 @@ func TestOnboardCandidates(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET fork = false WHERE id = $1`, ids["east/busy"])
 	})
-	sources := func(_, name string, traits configfile.RepoTraits) bool {
-		_, ok := ids[name]
-		return ok && !traits.Fork
+	east := accountID(t, s, "east")
+	sources := func(account string, traits configfile.RepoTraits) bool {
+		return (account == east || account == west) && !traits.Fork
 	}
 	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, sources); err != nil || len(limited) != 1 || names[limited[0].ID] != "west/one" {
 		t.Fatalf("OnboardCandidates(1, no forks) = %v, %v; want west/one", limited, err)

@@ -5,8 +5,12 @@ package storetest
 import (
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -39,4 +43,33 @@ func Open(t testing.TB) *store.Store {
 		t.Fatalf("storetest: migrate: %v", err)
 	}
 	return st
+}
+
+// Repositories records the repositories named, "owner/name", as the forge
+// would report them to their accounts in f, turned on in the dashboard, so
+// a test's reviews and indexing may run on them.
+func Repositories(t testing.TB, st *store.Store, f *configfile.File, names ...string) {
+	t.Helper()
+	ctx := t.Context()
+	for _, name := range names {
+		owner, _, _ := strings.Cut(name, "/")
+		var account *configfile.Account
+		for i := range f.Accounts {
+			if strings.EqualFold(f.Accounts[i].Name, owner) {
+				account = &f.Accounts[i]
+			}
+		}
+		if account == nil {
+			t.Fatalf("storetest: no account serves %s", name)
+		}
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			id, _, err := store.EnsureRepository(ctx, tx, account.ID(), store.ReachedRepository{FullName: name})
+			if err != nil {
+				return err
+			}
+			return store.TurnOn(ctx, tx, id, true)
+		}); err != nil {
+			t.Fatalf("storetest: repository %s: %v", name, err)
+		}
+	}
 }

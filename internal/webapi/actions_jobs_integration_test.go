@@ -42,8 +42,6 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-repositories:
-  aj/one: {}
 `
 
 // actionsEnv exercises the dashboard actions (rerun, cancel, reindex)
@@ -77,6 +75,7 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	storetest.Repositories(t, st, file, "aj/one")
 	cur := configfile.NewCurrent(file)
 	webURL, _ := url.Parse("https://kritika.example")
 	h, err := auth.New(auth.Config{Store: st, Current: cur, WebURL: webURL, Logger: logger})

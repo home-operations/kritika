@@ -103,36 +103,25 @@ type UnpricedModel struct {
 }
 
 // UnpricedModels lists the review, fallback and confidence models of the
-// file's own settings and of every account's entries whose provider's API
-// reports no cost, as anthropic's and openai's do not, and whose pricing
-// has no price under the model as written: its id, or the floating alias
-// that prices whatever model it selects. A repository's .kritika.yaml is
-// read only when it is reviewed, so its models are not listed.
+// file's own settings whose provider's API reports no cost, as anthropic's
+// and openai's do not, and whose pricing has no price under the model as
+// written: its id, or the floating alias that prices whatever model it
+// selects. A repository's .kritika.yaml is read only when it is reviewed,
+// so its models are not listed.
 func (f *File) UnpricedModels() []UnpricedModel {
 	var out []UnpricedModel
-	check := func(where string, t *Account, r *Overrides) {
-		for _, m := range append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
-			namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback}) {
-			if m.ref == nil || *m.ref == "" {
-				continue
-			}
-			p, ok := f.Provider(t, m.ref.Provider())
-			if !ok || (p.Type != ProviderAnthropic && p.Type != ProviderOpenAI) {
-				continue
-			}
-			if _, priced := p.Pricing[m.ref.Model()]; !priced {
-				out = append(out, UnpricedModel{Setting: where + m.key, Ref: *m.ref})
-			}
+	r := &f.Defaults.Overrides
+	for _, m := range append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
+		namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback}) {
+		if m.ref == nil || *m.ref == "" {
+			continue
 		}
-	}
-	check("", nil, &f.Defaults.Overrides)
-	for i := range f.Accounts {
-		a := &f.Accounts[i]
-		if a.pattern != "" {
-			check(a.pattern+".", a, &a.Overrides)
+		p, ok := f.Provider(nil, m.ref.Provider())
+		if !ok || (p.Type != ProviderAnthropic && p.Type != ProviderOpenAI) {
+			continue
 		}
-		for j := range a.Repositories {
-			check(a.Repositories[j].where+".", a, &a.Repositories[j].Overrides)
+		if _, priced := p.Pricing[m.ref.Model()]; !priced {
+			out = append(out, UnpricedModel{Setting: m.key, Ref: *m.ref})
 		}
 	}
 	return out
