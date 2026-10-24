@@ -80,7 +80,9 @@ func TestGroupSignals(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); _ = cmd.Wait() })
+		// The leader may be reaped by then, so not its group: a child each
+		// case leaves running has a cleanup of its own.
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 		child := 0
 		if args[0] == "spawn" {
 			line, err := bufio.NewReader(stdout).ReadString('\n')
