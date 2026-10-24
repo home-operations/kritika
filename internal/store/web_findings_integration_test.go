@@ -388,8 +388,8 @@ func checkDismissedOwn(ctx context.Context, t *testing.T, tx pgx.Tx, reviewID st
 }
 
 // checkDismissedBy checks that TestDismissedFindings's dismissal is found
-// by its source alone, counted in the summary, and found by another
-// source once the finding is dismissed again by it.
+// by its source alone, read back with it, counted in the summary, and
+// found by another source once the finding is dismissed again by it.
 func checkDismissedBy(t *testing.T, s *Store, account, pull string) {
 	t.Helper()
 	ctx := t.Context()
@@ -411,6 +411,7 @@ func checkDismissedBy(t *testing.T, s *Store, account, pull string) {
 		t.Errorf("dismissed by command = %q and by concession = %q, want naming and none", got, none)
 	}
 	var sum FindingSummary
+	var before, after []Dismissal
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		finding, _, err := LatestFinding(ctx, tx, pull, "fp-b")
 		if err != nil {
@@ -419,13 +420,23 @@ func checkDismissedBy(t *testing.T, s *Store, account, pull string) {
 		if sum, err = SummarizeFindings(ctx, tx, FindingFilter{}); err != nil {
 			return err
 		}
-		return RecordDismissal(ctx, tx, Dismissal{AccountID: account, PullRequestID: pull, Fingerprint: "fp-b", Finding: finding,
-			Reason: "kritika conceded: fair", Author: "kritika", CommentID: 100, Source: DismissedByConcession})
+		if before, err = Dismissals(ctx, tx, pull); err != nil {
+			return err
+		}
+		if err := RecordDismissal(ctx, tx, Dismissal{AccountID: account, PullRequestID: pull, Fingerprint: "fp-b", Finding: finding,
+			Reason: "kritika conceded: fair", Author: "kritika", CommentID: 100, Source: DismissedByConcession}); err != nil {
+			return err
+		}
+		after, err = Dismissals(ctx, tx, pull)
+		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if want := (FindingCounts{Findings: 2, Dismissed: 1}); sum.FindingCounts != want {
 		t.Errorf("summary = %+v, want %+v", sum.FindingCounts, want)
+	}
+	if len(before) != 1 || before[0].Source != DismissedByCommand || len(after) != 1 || after[0].Source != DismissedByConcession {
+		t.Errorf("Dismissals read %+v, then %+v; want it by command, then by concession", before, after)
 	}
 	if got, none := by(DismissedByConcession), by(DismissedByCommand); !slices.Equal(got, []string{"naming"}) || none != nil {
 		t.Errorf("dismissed again by concession = %q and by command = %q, want naming and none", got, none)

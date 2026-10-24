@@ -70,7 +70,7 @@ func DeleteDismissal(ctx context.Context, tx pgx.Tx, pullRequestID, fingerprint 
 // Dismissals lists the pull request's dismissed findings, oldest first.
 func Dismissals(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Dismissal, error) {
 	rows, err := tx.Query(ctx, `SELECT account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author,
-		comment_id FROM dismissals WHERE pull_request_id = $1 ORDER BY created_at, fingerprint`, pullRequestID)
+		comment_id, source FROM dismissals WHERE pull_request_id = $1 ORDER BY created_at, fingerprint`, pullRequestID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list dismissals: %w", err)
 	}
@@ -78,7 +78,7 @@ func Dismissals(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Dismiss
 		var d Dismissal
 		var sev string
 		err := row.Scan(&d.AccountID, &d.PullRequestID, &d.Fingerprint, &d.Finding.Path, &d.Finding.Line, &sev, &d.Finding.Title,
-			&d.Finding.Explanation, &d.Reason, &d.Author, &d.CommentID)
+			&d.Finding.Explanation, &d.Reason, &d.Author, &d.CommentID, &d.Source)
 		d.Finding.Severity = review.Severity(sev)
 		return d, err
 	})
