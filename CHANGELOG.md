@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.103](https://github.com/home-operations/kritika/compare/0.0.102...0.0.103) (2026-10-24)
+
+
+### Continuous Integration
+
+* mark issues and PRs stale after 180 days, close 14 days later ([f6c72ea](https://github.com/home-operations/kritika/commit/f6c72ea1b1b8811a827233181d33338de184aa3d))
+
 ## [0.0.102](https://github.com/home-operations/kritika/compare/0.0.101...0.0.102) (2026-10-24)
 
 
