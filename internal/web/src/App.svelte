@@ -18,8 +18,6 @@
     mdiMagnify,
     mdiChartBoxOutline,
     mdiViewGridOutline,
-    mdiDomain,
-    mdiPowerPlugOutline,
     mdiTrayFull,
     mdiSourcePull,
     mdiScaleBalance,
@@ -36,8 +34,7 @@
     mdiUnfoldMoreHorizontal,
     mdiCheck,
   } from './lib/icons';
-  import { INSTANCE_TABS, SECTIONS, NAV_GROUPS, isInstanceTab, reportingRoute, pageIn, pageOfInstance, scopeOf, sectionOf, type InstanceTab, type Section } from './lib/sections';
-  import type { ConsolePage, Route } from './lib/routes';
+  import { INSTANCE_TABS, SECTIONS, NAV_GROUPS, isInstanceTab, reportingRoute, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
   import { focusWhenShown, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Wordmark from './lib/Wordmark.svelte';
@@ -114,21 +111,6 @@
   const currentSlug = $derived(scopeOf(router.route));
   const currentSection = $derived(sectionOf(router.route));
   const instanceTabs = $derived(INSTANCE_TABS.filter((t) => (!t.admin || me?.admin)));
-
-  const instanceIcon: Partial<Record<Route['name'], string>> = {
-    overview: mdiViewGridOutline,
-    instanceQueue: mdiTrayFull,
-    instancePulls: mdiSourcePull,
-    instanceAnalytics: mdiChartBoxOutline,
-    instanceUsage: mdiCurrencyUsd,
-  };
-  const consoleIcon: Record<ConsolePage | 'accounts', string> = {
-    accounts: mdiDomain,
-    connections: mdiPowerPlugOutline,
-    settings: mdiCogOutline,
-    audit: mdiTextBoxOutline,
-  };
-  const tabIcon = (t: InstanceTab) => (t.route.name === 'console' ? consoleIcon[t.route.page ?? 'accounts'] : instanceIcon[t.route.name]) ?? mdiViewGridOutline;
 
   const sectionIcon: Record<Section, string> = {
     overview: mdiViewGridOutline,
@@ -272,7 +254,7 @@
         {#each instanceTabs.filter((t) => t.group === group) as t (t.label)}
           {@const on = isInstanceTab(t, router.route)}
           <a class="section-tab inline-flex items-center gap-1.5 border-solid border-b-transparent no-underline text-ui-md whitespace-nowrap min-h-9 py-2 px-3 border-0 rounded-md text-muted" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
-            <Icon path={tabIcon(t)} size={15} />
+            <Icon path={t.icon} size={15} />
             <span class="section-label inline-flex flex-col" data-label={t.label}>{t.label}</span>
           </a>
         {/each}

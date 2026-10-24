@@ -5,6 +5,7 @@
 // switcher or a link that names it. Rune-free, like routes.ts, so tests can
 // import it.
 import { analyticsFilter, pullFilter, usageFilter, type Route } from './routes';
+import { mdiChartBoxOutline, mdiCogOutline, mdiCurrencyUsd, mdiDomain, mdiPowerPlugOutline, mdiSourcePull, mdiTextBoxOutline, mdiTrayFull, mdiViewGridOutline } from './icons';
 
 export type Section = 'overview' | 'analytics' | 'usage' | 'pulls' | 'findings' | 'queue' | 'followups' | 'repos' | 'rules' | 'settings';
 
@@ -58,21 +59,23 @@ export function reportingRoute(to: Route, from: Route): Route {
 export interface InstanceTab {
   label: string;
   route: Route;
+  // icon is its icon in the sidebar and the command palette alike.
+  icon: string;
   admin?: boolean;
   // group is the sidebar heading it sits under, shared with NAV_GROUPS.
   group: string;
 }
 
 export const INSTANCE_TABS: readonly InstanceTab[] = [
-  { label: 'Overview', route: { name: 'overview' }, group: 'Operations' },
-  { label: 'Pull requests', route: { name: 'instancePulls' }, group: 'Operations' },
-  { label: 'Queue', route: { name: 'instanceQueue' }, group: 'Operations' },
-  { label: 'Analytics', route: { name: 'instanceAnalytics' }, group: 'Insights' },
-  { label: 'Usage & costs', route: { name: 'instanceUsage' }, group: 'Insights' },
-  { label: 'Accounts', route: { name: 'console' }, admin: true, group: 'Configuration' },
-  { label: 'Connections', route: { name: 'console', page: 'connections' }, admin: true, group: 'Configuration' },
-  { label: 'Settings', route: { name: 'console', page: 'settings' }, admin: true, group: 'Configuration' },
-  { label: 'Audit log', route: { name: 'console', page: 'audit' }, admin: true, group: 'Configuration' },
+  { label: 'Overview', route: { name: 'overview' }, icon: mdiViewGridOutline, group: 'Operations' },
+  { label: 'Pull requests', route: { name: 'instancePulls' }, icon: mdiSourcePull, group: 'Operations' },
+  { label: 'Queue', route: { name: 'instanceQueue' }, icon: mdiTrayFull, group: 'Operations' },
+  { label: 'Analytics', route: { name: 'instanceAnalytics' }, icon: mdiChartBoxOutline, group: 'Insights' },
+  { label: 'Usage & costs', route: { name: 'instanceUsage' }, icon: mdiCurrencyUsd, group: 'Insights' },
+  { label: 'Accounts', route: { name: 'console' }, icon: mdiDomain, admin: true, group: 'Configuration' },
+  { label: 'Connections', route: { name: 'console', page: 'connections' }, icon: mdiPowerPlugOutline, admin: true, group: 'Configuration' },
+  { label: 'Settings', route: { name: 'console', page: 'settings' }, icon: mdiCogOutline, admin: true, group: 'Configuration' },
+  { label: 'Audit log', route: { name: 'console', page: 'audit' }, icon: mdiTextBoxOutline, admin: true, group: 'Configuration' },
 ];
 
 // isInstanceTab reports whether r is on t's page: the administration's

@@ -19,7 +19,6 @@
   import {
     mdiMagnify,
     mdiLogin,
-    mdiConsoleLine,
     mdiSourceRepository,
     mdiSourcePull,
     mdiTrayFull,
@@ -66,7 +65,10 @@
     }
     if (me?.admin) {
       for (const t of INSTANCE_TABS.filter((t) => t.admin)) {
-        entries.push({ label: t.label, hint: 'administration', words: true, route: t.route, icon: mdiConsoleLine, keywords: 'admin console instance settings configuration' });
+        // Settings alone answers to "settings" and "configuration", as the
+        // single "Instance settings" page did, so a search for either opens it.
+        const settings = t.route.name === 'console' && t.route.page === 'settings' ? ' settings configuration' : '';
+        entries.push({ label: t.label, hint: 'administration', words: true, route: t.route, icon: t.icon, keywords: `admin console instance${settings}` });
       }
       if (searching) {
         for (const { label, page, target, keywords } of CONSOLE_SECTIONS) {

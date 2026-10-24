@@ -16,7 +16,6 @@ export {
   mdiTrayFull,
   mdiKeyboardOutline,
   mdiLogout,
-  mdiConsoleLine,
   mdiDomain,
   mdiPowerPlugOutline,
   mdiViewGridOutline,
