@@ -18,7 +18,8 @@ for (const width of [390, 1440]) {
       ['queue', `${account}/queue`], ['findings', `${account}/findings`],
       ['followups', `${account}/followups`], ['rules', `${account}/rules`],
       ['audit', `${account}/admin/audit`], ['settings', '/#/settings'], ['instance', '/#/admin'],
-      ['instance-connections', '/#/admin/connections'], ['instance-settings', '/#/admin/settings'], ['instance-audit', '/#/admin/audit'],
+      ['instance-connections', '/#/admin/connections'], ['instance-users', '/#/admin/users'], ['instance-settings', '/#/admin/settings'],
+      ['instance-audit', '/#/admin/audit'],
       ...['summary', 'diff', 'activity', 'timeline', 'conversation', 'usage', 'raw'].map((tab) =>
         [`review-${tab}`, `${account}/pulls/alpha/one/7?tab=${tab}`]),
     ];

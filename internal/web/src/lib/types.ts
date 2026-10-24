@@ -123,6 +123,32 @@ export interface AccountSummary {
 
 // live is false for an entry of the instance spec no connection serves,
 // which conflict explains.
+// AdminUser is a user who has signed in, as an admin lists them. access is
+// what their newest session the configuration still honours lets them
+// read, null without one; sessions counts those sessions.
+export interface AdminUser extends User {
+  signIns: UserSignIn[];
+  access: UserAccess | null;
+  sessions: number;
+  firstSeenAt: string;
+  lastSignInAt: string | null;
+}
+
+// UserSignIn is one of a user's sign-ins: the provider type and the login
+// it knows them by.
+export interface UserSignIn {
+  provider: string;
+  login: string;
+}
+
+// UserAccess is what a session lets its user read: everything as an
+// admin, every account, or the slugs of accounts.
+export interface UserAccess {
+  admin: boolean;
+  allAccounts: boolean;
+  accounts: string[];
+}
+
 export interface AdminAccount extends AccountSummary {
   live: boolean;
   conflict?: string;

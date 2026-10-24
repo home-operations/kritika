@@ -1,0 +1,20 @@
+{
+  "id": "u-1",
+  "displayName": "Ada Lovelace",
+  "email": "ada@example.com",
+  "avatarUrl": "https://img.example/a.png",
+  "signIns": [
+    {
+      "provider": "github",
+      "login": "ada"
+    }
+  ],
+  "access": {
+    "admin": false,
+    "allAccounts": false,
+    "accounts": ["github/alpha"]
+  },
+  "sessions": 2,
+  "firstSeenAt": "2026-09-01T12:00:00Z",
+  "lastSignInAt": "2026-09-01T12:01:30Z"
+}

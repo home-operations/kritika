@@ -143,6 +143,7 @@ Admins run the instance from **All accounts**, under **Configuration**:
 | --- | --- |
 | Accounts | Follow the setup checklist while something is missing, and see the accounts the instance serves. |
 | Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves. |
+| Users | See everyone who has signed in, how they sign in, what their newest session reads and when they last signed in, and sign someone out everywhere. |
 | Settings | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs. |
 | Audit log | Inspect management actions across accounts. |
 
@@ -159,7 +160,9 @@ Admins can:
 - reindex a repository;
 - enable or disable repositories;
 - resync repository access from the account's forge;
-- uninstall an App from an account the configuration does not serve.
+- uninstall an App from an account the configuration does not serve;
+- sign a user out everywhere, which ends every session of theirs, an
+  admin's own included.
 
 Re-run, cancel and reindex requests queue work. A duplicate review or index
 request can be refused while one is already queued or running.

@@ -18,6 +18,7 @@ export {
   mdiLogout,
   mdiDomain,
   mdiPowerPlugOutline,
+  mdiAccountMultipleOutline,
   mdiViewGridOutline,
   mdiSourceRepository,
   mdiCurrencyUsd,

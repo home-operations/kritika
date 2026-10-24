@@ -5,7 +5,7 @@
 // switcher or a link that names it. Rune-free, like routes.ts, so tests can
 // import it.
 import { analyticsFilter, pullFilter, usageFilter, type Route } from './routes';
-import { mdiChartBoxOutline, mdiCogOutline, mdiCurrencyUsd, mdiDomain, mdiPowerPlugOutline, mdiSourcePull, mdiTextBoxOutline, mdiTrayFull, mdiViewGridOutline } from './icons';
+import { mdiAccountMultipleOutline, mdiChartBoxOutline, mdiCogOutline, mdiCurrencyUsd, mdiDomain, mdiPowerPlugOutline, mdiSourcePull, mdiTextBoxOutline, mdiTrayFull, mdiViewGridOutline } from './icons';
 
 export type Section = 'overview' | 'analytics' | 'usage' | 'pulls' | 'findings' | 'queue' | 'followups' | 'repos' | 'rules' | 'settings';
 
@@ -74,6 +74,7 @@ export const INSTANCE_TABS: readonly InstanceTab[] = [
   { label: 'Usage & costs', route: { name: 'instanceUsage' }, icon: mdiCurrencyUsd, group: 'Insights' },
   { label: 'Accounts', route: { name: 'console' }, icon: mdiDomain, admin: true, group: 'Configuration' },
   { label: 'Connections', route: { name: 'console', page: 'connections' }, icon: mdiPowerPlugOutline, admin: true, group: 'Configuration' },
+  { label: 'Users', route: { name: 'console', page: 'users' }, icon: mdiAccountMultipleOutline, admin: true, group: 'Configuration' },
   { label: 'Settings', route: { name: 'console', page: 'settings' }, icon: mdiCogOutline, admin: true, group: 'Configuration' },
   { label: 'Audit log', route: { name: 'console', page: 'audit' }, icon: mdiTextBoxOutline, admin: true, group: 'Configuration' },
 ];
