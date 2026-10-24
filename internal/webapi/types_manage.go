@@ -68,6 +68,8 @@ const (
 	AuditRepoTurnOn   AuditAction = "repo.turn_on"
 	AuditRepoTurnOff  AuditAction = "repo.turn_off"
 	AuditUserSignOut  AuditAction = "user.sign_out"
+	AuditTokenCreate  AuditAction = "token.create"
+	AuditTokenRevoke  AuditAction = "token.revoke"
 )
 
 // TurnOnRequest turns a repository on, or off.

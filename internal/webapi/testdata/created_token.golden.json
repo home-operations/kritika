@@ -1,0 +1,12 @@
+{
+  "id": "tok-2",
+  "name": "ci",
+  "owner": null,
+  "allAccounts": true,
+  "accounts": [],
+  "status": "active",
+  "createdAt": "2026-09-01T12:00:00Z",
+  "expiresAt": null,
+  "lastUsedAt": null,
+  "token": "kritika_example"
+}
