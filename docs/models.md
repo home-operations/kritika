@@ -45,7 +45,9 @@ through kritika's gateway ([the model endpoint](security.md#the-model-endpoint))
 ### Cost accounting
 
 Review, follow-up and confidence calls use the provider's reported cost
-when present, otherwise the model's configured `pricing`. Without either,
+when present, otherwise the model's configured `pricing`. A reported cost
+is a number, or the `total_cost` of an object, which is how Bifrost
+passes a provider's cost on; any other shape counts as none. Without either,
 kritika warns on the first unpriced call for each account, provider and
 selected model in each process, naming the requested model reference and
 selected ID. This also covers fallbacks, repository overrides and new IDs

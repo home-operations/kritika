@@ -61,6 +61,12 @@ func TestReportedCost(t *testing.T) {
 		{"reported zero", "requested", nil, `{"prompt_tokens":1000000,"cost":0}`, Pricing{"requested": {Input: 2}}, 0, false},
 		{"reported paid", "requested", nil, `{"prompt_tokens":1000000,"cost":0.25}`, nil, 0.25, false},
 		{"null cost", "requested", nil, `{"prompt_tokens":1000000,"cost":null}`, nil, 0, true},
+		// Bifrost passes a provider's cost on as an object.
+		{"reported total", "requested", nil, `{"prompt_tokens":1000000,"cost":{"input_cost":0.1,"output_cost":0.15,"total_cost":0.25}}`,
+			Pricing{"requested": {Input: 2}}, 0.25, false},
+		{"reported object without a total", "requested", nil, `{"prompt_tokens":1000000,"cost":{}}`, Pricing{"requested": {Input: 2}}, 2, false},
+		{"null total", "requested", nil, `{"prompt_tokens":1000000,"cost":{"total_cost":null}}`, nil, 0, true},
+		{"cost of another shape", "requested", nil, `{"prompt_tokens":1000000,"cost":"0.25"}`, nil, 0, true},
 		{"the model asked for under another id", "requested", nil, `{"prompt_tokens":1000000}`, Pricing{"requested": {Input: 2}}, 2, false},
 		{"unpriced server fallback", "requested", fallback, `{"prompt_tokens":1000000}`, Pricing{"requested": {Input: 2}}, 0, true},
 		{"priced server fallback", "requested", fallback, `{"prompt_tokens":1000000}`, Pricing{"acme/large": {Input: 3}}, 3, false},
