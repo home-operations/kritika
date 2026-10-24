@@ -27,5 +27,15 @@
       schedule: ["* 0-3 * * 1"],
       automerge: false,
     },
+    {
+      // Only the image builds use these, which pull requests do not run, and
+      // a fresh release can still be uploading its assets and checksums.
+      description: "Group the images' chisel and gh, hold them for 3 days and merge them by hand",
+      matchDepNames: ["cli/cli", "github.com/canonical/chisel"],
+      groupName: "image tools",
+      groupSlug: "image-tools",
+      minimumReleaseAge: "3 days",
+      automerge: false,
+    },
   ],
 }
