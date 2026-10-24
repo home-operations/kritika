@@ -158,6 +158,7 @@ func (f *followUp) recordConcession(ctx context.Context, replyID int64, modelNam
 		return store.RecordDismissal(ctx, tx, store.Dismissal{
 			AccountID: f.account.ID(), PullRequestID: f.pr.id, Fingerprint: fingerprint, Finding: finding,
 			Reason: "kritika conceded: " + textcut.Truncate(reply, 200), Author: f.botLogin, CommentID: replyID,
+			Source: store.DismissedByConcession,
 		})
 	})
 }

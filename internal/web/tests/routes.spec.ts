@@ -32,6 +32,7 @@ const ROUTES: Route[] = [
   { name: 'findings', slug: 'github/acme' },
   { name: 'rules', slug: 'github/acme' },
   { name: 'findings', slug: 'github/acme', filter: { severity: 'p0', status: 'addressed', repo: 'kritika/kritika', q: 'nil deref' } },
+  { name: 'findings', slug: 'github/acme', filter: { status: 'dismissed', dismissed: 'conceded', path: 'internal/store/', is: 'downvoted' } },
   { name: 'queue', slug: 'github/acme' },
   { name: 'usage', slug: 'github/acme' },
   { name: 'followups', slug: 'github/acme' },
@@ -53,6 +54,7 @@ test.describe('routes: parse(href(r)) === r', () => {
 });
 
 const MALFORMED: [string, Route][] = [
+  ['#/a/github/acme/findings?is=upvoted&dismissed=ignored', { name: 'findings', slug: 'github/acme' }],
   ['#/a/github/acme/usage?group=account', { name: 'usage', slug: 'github/acme' }],
   ['#/a/github/acme/usage?group=account&metric=tokens', { name: 'usage', slug: 'github/acme', filter: { metric: 'tokens' } }],
   ['', { name: 'overview' }],

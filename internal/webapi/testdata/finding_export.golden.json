@@ -1,0 +1,38 @@
+{
+  "items": [
+    {
+      "id": "f-1",
+      "path": "a.go",
+      "line": 3,
+      "endLine": 5,
+      "severity": "p0",
+      "category": "correctness",
+      "title": "nil deref",
+      "explanation": "x may be nil",
+      "suggestedFix": "",
+      "replacement": "",
+      "agentPrompt": "",
+      "fingerprint": "fp",
+      "postedInline": true,
+      "forgeCommentId": 55,
+      "createdAt": "2026-09-01T12:00:00Z",
+      "reactionsUp": 0,
+      "reactionsDown": 0,
+      "rules": ["wrap-errors"],
+      "agents": [],
+      "status": "dismissed",
+      "dismissReason": "house style",
+      "dismissSource": "command",
+      "reviewId": "rev-1",
+      "pull": {
+        "repository": "alpha/one",
+        "number": 7,
+        "title": "Add widgets",
+        "url": "https://git.example/alpha/one/pulls/7"
+      },
+      "firstSeenAt": "2026-09-01T12:00:00Z",
+      "lastSeenAt": "2026-09-01T12:01:30Z"
+    }
+  ],
+  "truncated": true
+}

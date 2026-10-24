@@ -20,6 +20,25 @@ type Dismissal struct {
 	Reason, Author           string
 	// CommentID is the comment that dismissed it.
 	CommentID int64
+	Source    DismissalSource
+}
+
+// DismissalSource is what dismissed a finding.
+type DismissalSource string
+
+// Dismissal sources.
+const (
+	// DismissedByCommand is a maintainer's "@<bot> dismiss <reason>" reply.
+	DismissedByCommand DismissalSource = "command"
+	// DismissedByResolution is a maintainer resolving the finding's thread.
+	DismissedByResolution DismissalSource = "resolved"
+	// DismissedByConcession is kritika conceding the finding in a reply.
+	DismissedByConcession DismissalSource = "conceded"
+)
+
+// Valid reports whether s is a dismissal source.
+func (s DismissalSource) Valid() bool {
+	return s == DismissedByCommand || s == DismissedByResolution || s == DismissedByConcession
 }
 
 // RecordDismissal records a dismissal, replacing an earlier one of the
@@ -27,12 +46,12 @@ type Dismissal struct {
 func RecordDismissal(ctx context.Context, tx pgx.Tx, d Dismissal) error {
 	f := d.Finding
 	if _, err := tx.Exec(ctx, `INSERT INTO dismissals
-		(account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author, comment_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), $10, $11)
+		(account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author, comment_id, source)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), $10, $11, $12)
 		ON CONFLICT (pull_request_id, fingerprint) DO UPDATE SET reason = excluded.reason, author = excluded.author,
-			comment_id = excluded.comment_id, created_at = now()`,
+			comment_id = excluded.comment_id, source = excluded.source, created_at = now()`,
 		d.AccountID, d.PullRequestID, d.Fingerprint, f.Path, f.Line, string(f.Severity), f.Title, f.Explanation,
-		d.Reason, d.Author, d.CommentID); err != nil {
+		d.Reason, d.Author, d.CommentID, string(d.Source)); err != nil {
 		return fmt.Errorf("store: record dismissal: %w", err)
 	}
 	return nil
@@ -51,7 +70,7 @@ func DeleteDismissal(ctx context.Context, tx pgx.Tx, pullRequestID, fingerprint 
 // Dismissals lists the pull request's dismissed findings, oldest first.
 func Dismissals(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Dismissal, error) {
 	rows, err := tx.Query(ctx, `SELECT account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author,
-		comment_id FROM dismissals WHERE pull_request_id = $1 ORDER BY created_at, fingerprint`, pullRequestID)
+		comment_id, source FROM dismissals WHERE pull_request_id = $1 ORDER BY created_at, fingerprint`, pullRequestID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list dismissals: %w", err)
 	}
@@ -59,7 +78,7 @@ func Dismissals(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Dismiss
 		var d Dismissal
 		var sev string
 		err := row.Scan(&d.AccountID, &d.PullRequestID, &d.Fingerprint, &d.Finding.Path, &d.Finding.Line, &sev, &d.Finding.Title,
-			&d.Finding.Explanation, &d.Reason, &d.Author, &d.CommentID)
+			&d.Finding.Explanation, &d.Reason, &d.Author, &d.CommentID, &d.Source)
 		d.Finding.Severity = review.Severity(sev)
 		return d, err
 	})

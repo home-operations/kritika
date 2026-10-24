@@ -66,16 +66,16 @@ func TestCountCitations(t *testing.T) {
 		{Kind: RuleWritten, ID: "no-tokens", Repositories: []string{"alpha/one"}},
 	}
 	cited := []store.RuleCitation{
-		{Repository: "alpha/one", Rule: "wrap-errors", Findings: 3, Addressed: 1},
+		{Repository: "alpha/one", Rule: "wrap-errors", Findings: 3, Addressed: 1, Dismissed: 1, Downvoted: 2},
 		{Repository: "alpha/three", Rule: "wrap-errors", Findings: 1, Addressed: 1},
 		{Repository: "alpha/two", Rule: "wrap-errors", Findings: 2, Addressed: 2},
-		{Repository: "alpha/four", Rule: "no-tokens", Findings: 5},
+		{Repository: "alpha/four", Rule: "no-tokens", Findings: 5, Dismissed: 5},
 	}
 	got := countCitations(rules, cited)
-	want := [][2]int{{0, 0}, {2, 2}, {4, 2}, {0, 0}}
+	want := [][4]int{{0, 0, 0, 0}, {2, 2, 0, 0}, {4, 2, 1, 2}, {0, 0, 0, 0}}
 	for i, r := range got {
-		if [2]int{r.Findings, r.Addressed} != want[i] {
-			t.Errorf("rule %d (%s %s) counts = %d/%d, want %d/%d", i, r.Kind, r.ID, r.Findings, r.Addressed, want[i][0], want[i][1])
+		if c := [4]int{r.Findings, r.Addressed, r.Dismissed, r.Downvoted}; c != want[i] {
+			t.Errorf("rule %d (%s %s) counts = %v, want %v", i, r.Kind, r.ID, c, want[i])
 		}
 	}
 }

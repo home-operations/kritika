@@ -8,6 +8,7 @@
   import { threadUrl, forgeName } from '../../links';
   import Reactions from '../../components/Reactions.svelte';
   import Pill from '../../components/Pill.svelte';
+  import { DISMISSED_BY } from '../../format';
 
   // pullUrl is the pull request on the forge, where an inline finding's
   // thread is, and slug the account, whose forge anchors the thread.
@@ -24,7 +25,7 @@
     {#if f.status === 'addressed'}
       <Pill tone="ok" label="addressed" title="A later review of the pull request no longer reports it" />
     {:else if f.status === 'dismissed'}
-      <Pill label="dismissed" title="A maintainer dismissed it in its thread" />
+      <Pill label="dismissed" title={f.dismissSource ? DISMISSED_BY[f.dismissSource] : 'Dismissed in its thread'} />
     {/if}
     {#each f.rules as id (id)}<span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Enforces the review rule {id}">{id}</span>{/each}
     {#each f.agents as name (name)}<span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Raised by the {name} agent">{name}</span>{/each}

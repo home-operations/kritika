@@ -143,6 +143,7 @@ func (w *Thread) apply(
 		return store.RecordDismissal(ctx, tx, store.Dismissal{
 			AccountID: args.AccountID, PullRequestID: pr.id, Fingerprint: fingerprint, Finding: finding,
 			Reason: "thread resolved by " + args.Sender, Author: args.Sender, CommentID: args.CommentID,
+			Source: store.DismissedByResolution,
 		})
 	})
 	switch {

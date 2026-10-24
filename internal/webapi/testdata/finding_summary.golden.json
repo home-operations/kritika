@@ -1,0 +1,62 @@
+{
+  "findings": 12,
+  "addressed": 6,
+  "dismissed": 3,
+  "downvoted": 2,
+  "categories": [
+    {
+      "key": "correctness",
+      "repository": "",
+      "findings": 7,
+      "addressed": 4,
+      "dismissed": 1,
+      "downvoted": 1
+    },
+    {
+      "key": "tests",
+      "repository": "",
+      "findings": 5,
+      "addressed": 2,
+      "dismissed": 2,
+      "downvoted": 1
+    }
+  ],
+  "rules": [
+    {
+      "key": "wrap-errors",
+      "repository": "",
+      "findings": 4,
+      "addressed": 1,
+      "dismissed": 2,
+      "downvoted": 1
+    }
+  ],
+  "agents": [
+    {
+      "key": "default",
+      "repository": "",
+      "findings": 12,
+      "addressed": 6,
+      "dismissed": 3,
+      "downvoted": 2
+    }
+  ],
+  "directories": [
+    {
+      "key": "internal/",
+      "repository": "alpha/one",
+      "findings": 8,
+      "addressed": 5,
+      "dismissed": 1,
+      "downvoted": 0
+    },
+    {
+      "key": "",
+      "repository": "alpha/one",
+      "findings": 4,
+      "addressed": 1,
+      "dismissed": 2,
+      "downvoted": 2
+    }
+  ]
+}

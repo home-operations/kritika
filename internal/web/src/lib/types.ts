@@ -542,9 +542,11 @@ export interface Finding {
   // default pass alone did, and "default" may appear alongside others.
   agents: string[];
   // status is what became of it on its pull request; dismissReason is the
-  // reason a dismissed one was dismissed with.
+  // reason a dismissed one was dismissed with, and dismissSource what
+  // dismissed it.
   status: FindingStatus;
   dismissReason: string;
+  dismissSource: DismissSource | '';
 }
 
 export type AnalyticsGroup = 'day' | 'week' | 'month';
@@ -630,13 +632,48 @@ export interface Rule {
   when: { name: string; expr: string }[];
   source: RuleSource;
   repositories: string[];
-  // findings and addressed are a written rule's: its repositories'
-  // findings that cite its id, and how many of those were addressed.
+  // findings, addressed, dismissed and downvoted are a written rule's: its
+  // repositories' findings that cite its id, and how many of those were
+  // addressed, dismissed, or drew a 👎 on their comment.
   findings: number;
   addressed: number;
+  dismissed: number;
+  downvoted: number;
 }
 
 export type FindingStatus = 'open' | 'addressed' | 'dismissed';
+
+// DismissSource is what dismissed a finding: the dismiss command, a
+// maintainer resolving its thread, or kritika conceding it in a reply.
+export type DismissSource = 'command' | 'resolved' | 'conceded';
+
+// FindingCounts is how many findings there are, and how many of those were
+// addressed, dismissed, or drew a 👎 on their comment.
+export interface FindingCounts {
+  findings: number;
+  addressed: number;
+  dismissed: number;
+  downvoted: number;
+}
+
+// FindingGroup is the findings that share a key, counted: a category, a
+// rule id, an agent's name ("default" for the default pass), or a
+// directory of repository one below the path filter, with a trailing
+// slash, the path filter itself ("" for none) for a file in no directory
+// below it.
+export interface FindingGroup extends FindingCounts {
+  key: string;
+  repository: string;
+}
+
+// FindingSummary is the findings the list's filters keep, counted, and the
+// most common categories, rules, agents and directories among them.
+export interface FindingSummary extends FindingCounts {
+  categories: FindingGroup[];
+  rules: FindingGroup[];
+  agents: FindingGroup[];
+  directories: FindingGroup[];
+}
 
 // Category is what kind of problem a finding is; '' on a finding recorded
 // before it had one.

@@ -100,7 +100,7 @@ func (f *followUp) dismiss(ctx context.Context, reason string) (store.FollowupSt
 		found = true
 		return store.RecordDismissal(ctx, tx, store.Dismissal{
 			AccountID: f.account.ID(), PullRequestID: f.pr.id, Fingerprint: fingerprint, Finding: finding,
-			Reason: reason, Author: f.comment.Author, CommentID: f.comment.ID,
+			Reason: reason, Author: f.comment.Author, CommentID: f.comment.ID, Source: store.DismissedByCommand,
 		})
 	})
 	if err != nil {

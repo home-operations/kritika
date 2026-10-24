@@ -109,7 +109,7 @@ func finding(f store.FindingRow) Finding {
 		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
 		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
 		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: f.Rules, Agents: f.Reviewers,
-		Status: f.Status, DismissReason: f.DismissReason,
+		Status: f.Status, DismissReason: f.DismissReason, DismissSource: f.DismissSource,
 	}
 }
 

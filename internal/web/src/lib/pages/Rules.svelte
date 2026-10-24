@@ -15,7 +15,7 @@
   import StateView from '../components/StateView.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
   import Icon from '../Icon.svelte';
-  import { mdiCheckDecagramOutline, mdiFileDocumentOutline } from '../icons';
+  import { mdiCheckDecagramOutline, mdiFileDocumentOutline, mdiThumbDownOutline } from '../icons';
 
   let { slug }: { slug: string } = $props();
 
@@ -112,7 +112,7 @@
                   <th scope="col">Applies to</th>
                   <th scope="col">Set in</th>
                   <th scope="col">Repositories</th>
-                  <th scope="col" class="num" title="Findings that cite a rule, and how many a later review found addressed">Findings</th>
+                  <th scope="col" class="num" title="Findings that cite a rule, and how many a later review found addressed, how many were dismissed, and how many drew a thumbs down">Findings</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,6 +165,13 @@
                           {#if r.findings}
                             <a href={href({ name: 'findings', slug, filter: citedBy(r) })} title="Findings that cite {r.id}">{wholeNumber(r.findings)}</a>
                             <span class="small muted text-ui-sm">{wholeNumber(r.addressed)} addressed</span>
+                            <span class="small muted text-ui-sm inline-flex items-center gap-1">
+                              {#if r.dismissed}<a href={href({ name: 'findings', slug, filter: findingFilter({ ...citedBy(r), status: 'dismissed' }) })} title="Dismissed findings that cite {r.id}">{wholeNumber(r.dismissed)} dismissed</a>{:else}<span>0 dismissed</span>{/if}
+                              {#if r.downvoted}
+                                <span aria-hidden="true">·</span>
+                                <a class="inline-flex items-center gap-0.5" href={href({ name: 'findings', slug, filter: findingFilter({ ...citedBy(r), is: 'downvoted' }) })} title="Findings that cite {r.id} whose comment drew a thumbs down">{wholeNumber(r.downvoted)} <Icon path={mdiThumbDownOutline} size={12} label="thumbs down" /></a>
+                              {/if}
+                            </span>
                           {:else}<span class="muted">0</span>{/if}
                         </span>
                       {/if}

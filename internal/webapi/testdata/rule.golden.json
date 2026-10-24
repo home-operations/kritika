@@ -9,5 +9,7 @@
   "source": "defaults",
   "repositories": ["alpha/one"],
   "findings": 3,
-  "addressed": 1
+  "addressed": 1,
+  "dismissed": 1,
+  "downvoted": 1
 }

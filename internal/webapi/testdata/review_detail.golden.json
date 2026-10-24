@@ -67,7 +67,8 @@
       "rules": ["wrap-errors"],
       "agents": ["security", "default"],
       "status": "open",
-      "dismissReason": ""
+      "dismissReason": "",
+      "dismissSource": ""
     }
   ],
   "runnerRun": {

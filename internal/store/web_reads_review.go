@@ -40,9 +40,10 @@ type FindingRow struct {
 	// reviewer alone.
 	Reviewers []string
 	// Status is what became of it on its pull request, and DismissReason
-	// the reason a dismissed one was dismissed with.
+	// the reason a dismissed one was dismissed with, by DismissSource.
 	Status        FindingStatus
 	DismissReason string
+	DismissSource DismissalSource
 }
 
 // ListFindings returns a review's findings, most serious first, each with
@@ -56,7 +57,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix,
 			f.replacement, f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up,
 			f.reactions_down, f.rules, f.category, coalesce(l.dismissed, false), coalesce(l.dismiss_reason, ''),
-			coalesce(l.addressed, false), f.agents
+			coalesce(l.dismiss_source, ''), coalesce(l.addressed, false), f.agents
 		FROM findings f LEFT JOIN latest l
 			ON coalesce(nullif(l.fingerprint, ''), l.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
 		WHERE f.review_id = $1
@@ -70,7 +71,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		var dismissed, addressed bool
 		err := row.Scan(&f.ID, &f.Path, &f.Line, &f.EndLine, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.Replacement,
 			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules, &cat,
-			&dismissed, &f.DismissReason, &addressed, &f.Reviewers)
+			&dismissed, &f.DismissReason, &f.DismissSource, &addressed, &f.Reviewers)
 		f.Severity, f.Category, f.Status = review.Severity(sev), review.Category(cat), findingStatus(dismissed, addressed)
 		return f, err
 	})

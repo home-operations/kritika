@@ -636,7 +636,8 @@
   .account-breakdown .meter {
     @apply mt-1;
   }
-  .refused-hosts .meter {
+  .refused-hosts .meter,
+  .finding-groups .meter {
     @apply min-w-20 mt-1;
   }
   .deflist dt {

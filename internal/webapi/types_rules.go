@@ -28,10 +28,10 @@ const RuleFromRepository RuleSource = "repository"
 // repositories whose reviews read it. ID is a written rule's, with its
 // Text or, for a file rule, its Path, and WhenExpr, the CEL expression
 // over the pull request it applies only when true of; Path and
-// Description are a context file's. Findings and Addressed are a written
-// rule's too: its repositories' findings that cite its id, once per pull
-// request as the findings list counts them, and how many of those were
-// addressed.
+// Description are a context file's. Findings, Addressed, Dismissed and
+// Downvoted are a written rule's too: its repositories' findings that cite
+// its id, once per pull request as the findings list counts them, and how
+// many of those were addressed, dismissed, or drew a 👎 on their comment.
 type Rule struct {
 	Kind         RuleKind          `json:"kind"`
 	ID           string            `json:"id"`
@@ -44,4 +44,6 @@ type Rule struct {
 	Repositories []string          `json:"repositories"`
 	Findings     int               `json:"findings"`
 	Addressed    int               `json:"addressed"`
+	Dismissed    int               `json:"dismissed"`
+	Downvoted    int               `json:"downvoted"`
 }

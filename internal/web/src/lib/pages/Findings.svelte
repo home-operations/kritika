@@ -4,17 +4,20 @@
   // or a maintainer dismissed it.
   import { tick, untrack } from 'svelte';
   import { href, replace } from '../router.svelte';
-  import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
+  import { DISMISS_SOURCES, FINDING_IS, FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
   import { Paged, Resource, errorMessage } from '../resource.svelte';
+  import { basePath } from '../base';
   import { accountApi, pullRoute, threadUrl, forgeName } from '../links';
-  import { CATEGORIES, SEVERITIES } from '../format';
+  import { CATEGORIES, DISMISSED_BY, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
   import Dialog from '../components/Dialog.svelte';
   import FindingCard from './review/FindingCard.svelte';
   import { isTyping } from '../keyboard.svelte';
   import { listKeys } from '../listkeys';
-  import type { AccountFinding, Page, Repository } from '../types';
+  import type { AccountFinding, FindingSummary as Summary, Page, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
+  import FindingSummary, { type GroupKind } from '../components/FindingSummary.svelte';
+  import HelpPopover from '../components/HelpPopover.svelte';
   import LoadMore from '../components/LoadMore.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
@@ -37,23 +40,34 @@
   let { slug, filter }: { slug: string; filter?: FindingFilter } = $props();
 
   const account = $derived(accountApi(slug));
-  function query(after?: string): string {
-    const p = new URLSearchParams({ limit: '50' });
-    for (const k of ['severity', 'category', 'status', 'repo', 'rule', 'agent', 'q'] as const) {
+  // filterParams is the filter as the findings API reads it, after extra.
+  function filterParams(extra: Record<string, string> = {}): URLSearchParams {
+    const p = new URLSearchParams(extra);
+    for (const k of ['severity', 'category', 'status', 'dismissed', 'repo', 'rule', 'agent', 'path', 'is', 'q'] as const) {
       const v = filter?.[k];
       if (v) p.set(k, v);
     }
+    return p;
+  }
+  function query(after?: string): string {
+    const p = filterParams({ limit: '50' });
     if (after) p.set('cursor', after);
     return `${account}/findings?${p}`;
   }
+  const exportHref = (format: 'markdown' | 'json') => `${basePath}${account}/findings/export?${filterParams({ format })}`;
   const paged = new Paged<AccountFinding>(query, (f) => f.id);
   const res = paged.first;
   const repos = Resource.json<Page<Repository>>(() => `${account}/repos?limit=100`);
+  const summary = Resource.live<Summary>(() => `${account}/findings/summary?${filterParams()}`);
+  let summaryKind = $state<GroupKind>('categories');
   $effect(() => {
     void paged.load();
   });
   $effect(() => {
     void repos.load();
+  });
+  $effect(() => {
+    void summary.load();
   });
 
   const specs = $derived<TokenSpec[]>([
@@ -61,6 +75,7 @@
     { key: 'severity', hint: 'p0, p1 or p2', values: SEVERITIES },
     { key: 'category', hint: 'what kind of problem', values: CATEGORIES },
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
+    { key: 'dismissed', hint: 'by command, resolved or conceded', values: DISMISS_SOURCES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
     // A finding no named agent raised is the default agent's, so the default agent is offered only with a named one on the page;
     // a agent filter in force keeps its token whatever the page holds, so editing the box does not drop it.
@@ -72,9 +87,16 @@
           open: true,
         }]
       : []),
+    // No suggestions: a suggestion would replace a path typed in another case, which names another path.
+    { key: 'path', hint: 'a path the findings are under', values: [], open: true },
+    { key: 'is', hint: 'downvoted: its comment drew a thumbs down', values: FINDING_IS },
   ]);
   const boxText = (f: FindingFilter | undefined) =>
-    formatTokens(specs, { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, rule: f?.rule, agent: f?.agent }, f?.q);
+    formatTokens(
+      specs,
+      { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, dismissed: f?.dismissed, rule: f?.rule, agent: f?.agent, path: f?.path, is: f?.is },
+      f?.q,
+    );
 
   // As on the pull request list: written is the box's text for the filter it
   // last wrote to the URL, and any other change to the filter rewrites it.
@@ -175,7 +197,18 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Findings" {slug} />
+    <PageHeader title="Findings" {slug}>
+      {#snippet actions()}
+        <a class="btn" href={exportHref('markdown')} download>Export Markdown</a>
+        <a class="btn" href={exportHref('json')} download>Export JSON</a>
+        <HelpPopover label="About exports">
+          <p>
+            An export holds the findings these filters keep, newest first, up to 1,000. Give the Markdown to a coding agent to
+            suggest AGENTS.md, skill or rule changes; the JSON has every field the list has.
+          </p>
+        </HelpPopover>
+      {/snippet}
+    </PageHeader>
     <div class="toolbar flex flex-wrap items-center gap-2" role="search">
       <TokenSearch
         id="finding-search"
@@ -193,6 +226,13 @@
         onchange={(status) => replace({ name: 'findings', slug, filter: findingFilter({ ...filter, status }) })}
       />
     </div>
+    {#if summary.data?.findings}
+      <FindingSummary {slug} {filter} summary={summary.data} bind:kind={summaryKind} />
+    {:else if summary.error}
+      <p class="error-text text-danger text-ui-sm m-0" role="alert">
+        Could not load the common findings: {errorMessage(summary.error)} <button class="btn" onclick={() => void summary.load()}>Retry</button>
+      </p>
+    {/if}
     <StateView {res} retry={() => paged.load()}>
       {#if paged.items.length === 0 && filter}
         <div class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">
@@ -209,7 +249,7 @@
                 <th scope="col">Finding</th>
                 <th scope="col">Severity · kind</th>
                 <th scope="col">Pull request</th>
-                <th scope="col" title="Addressed once a later review of the pull request no longer reports it; dismissed when a maintainer replied so in its thread">Status</th>
+                <th scope="col" title="Addressed once a later review of the pull request no longer reports it; dismissed with the dismiss command, by resolving its thread, or when kritika conceded it there">Status</th>
                 <th scope="col" class="num">Found</th>
               </tr>
             </thead>
@@ -247,7 +287,7 @@
                     </span>
                   </td>
                   <td>
-                    <span class="status tone-{statusTone[f.status]}">
+                    <span class="status tone-{statusTone[f.status]}" title={f.dismissSource ? DISMISSED_BY[f.dismissSource] : undefined}>
                       <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={statusIcon[f.status]} size={12} /></span>
                       <span class="status-word">{f.status}</span>
                     </span>

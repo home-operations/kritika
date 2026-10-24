@@ -38,6 +38,7 @@ export const job = golden<T.Job>('job');
 export const instanceQueue = golden<T.InstanceQueue>('instance_queue');
 export const followup = golden<T.Followup>('followup');
 export const accountFinding: T.AccountFinding = { agents: [], ...golden<T.AccountFinding>('account_finding') };
+export const findingSummary = golden<T.FindingSummary>('finding_summary');
 export const analytics = golden<T.Analytics>('analytics');
 export const attention = golden<T.Attention>('attention');
 export const rule = golden<T.Rule>('rule');
@@ -122,6 +123,7 @@ export function defaultApi(): [RegExp, Body][] {
     ],
     [new RegExp(`${t}/pulls/alpha/one/7$`), pullDetail],
     [new RegExp(`${t}/findings$`), pageOf([accountFinding])],
+    [new RegExp(`${t}/findings/summary$`), findingSummary],
     [new RegExp(`${t}/analytics$`), analytics],
     [new RegExp(`${t}/attention$`), { failed: 0, capped: 0, p0: 0, paused: 0 } satisfies T.Attention],
     [new RegExp(`${t}/rules$`), [rule]],

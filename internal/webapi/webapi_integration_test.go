@@ -289,6 +289,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("unpriced billing reaches the dashboard", func(t *testing.T) { testUnpricedDashboard(t, e) })
 	t.Run("usage compares filtered adjacent windows", func(t *testing.T) { testUsageComparison(t, e) })
 	t.Run("unknown repository searches are empty", func(t *testing.T) { testUnknownRepositorySearch(t, e) })
+	t.Run("findings export as a file to download", func(t *testing.T) { testFindingsExport(t, e) })
 	t.Run("diff preparation is explicit", func(t *testing.T) { testDiffPreparation(t, e) })
 	t.Run("global review usage is bounded", func(t *testing.T) { testInstanceReviewUsageLimit(t, e) })
 	t.Run("tool usage counts executions across accounts", func(t *testing.T) { testToolUsage(t, e) })
@@ -320,6 +321,9 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
 		{a + "/findings?repo=wa/one&severity=p0&status=open", `"title":"nil deref"`},
+		{a + "/findings/summary?repo=wa/one", `"directories":[{"key":"","repository":"wa/one","findings":2,"addressed":0,"dismissed":0`},
+		{a + "/findings/export?format=markdown&severity=p0", "## nil deref\n\n- p0 · open\n- a.go:3 in wa/one#7, PR of webapi-a"},
+		{a + "/findings/export?format=json", `"title":"nil deref"`},
 		{a + "/rules", `"path":"docs/rules-of-webapi-a.md","description":"","paths":[],"when":[],"source":"repository","repositories":["wa/one"]`},
 		{a + "/followups?repo=wa/one", fmt.Sprintf(`"commentId":%d`, followupComment)},
 		{a + fmt.Sprintf("/followups/%d/transcript", followupComment), `"system":"follow of webapi-a"`},
@@ -547,6 +551,33 @@ func testPullNumbersOutsideInt4(t *testing.T, e *apiEnv) {
 		if status != want.status || !bytes.Contains(body, []byte(want.marker)) {
 			t.Errorf("%s: status %d, body %s, want %d with %s", path, status, body, want.status, want.marker)
 		}
+	}
+}
+
+// testFindingsExport downloads the account's findings as Markdown and as
+// JSON, each a file named for the account, and refuses an export of no
+// format it serves.
+func testFindingsExport(t *testing.T, e *apiEnv) {
+	a := "/api/v1/accounts/github/wa/findings/export"
+	for _, tc := range []struct {
+		query, contentType, file string
+	}{
+		{"?format=markdown", "text/markdown; charset=utf-8", "kritika-findings-wa.md"},
+		{"?format=json&repo=wa/one", "application/json", "kritika-findings-wa.json"},
+	} {
+		resp, err := e.get(t.Context(), "member-a", a+tc.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if got := resp.Header.Get("Content-Disposition"); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != tc.contentType ||
+			got != `attachment; filename=`+tc.file {
+			t.Errorf("%s: status %d, %s, %s; want 200, %s, a file named %s", tc.query, resp.StatusCode, resp.Header.Get("Content-Type"), got,
+				tc.contentType, tc.file)
+		}
+	}
+	if status, body := e.getBody("member-a", a+"?format=csv"); status != 400 || !bytes.Contains(body, []byte("format must be markdown or json")) {
+		t.Errorf("csv: status %d, body %s; want 400", status, body)
 	}
 }
 

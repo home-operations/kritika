@@ -386,7 +386,7 @@ for (const [path, label] of [['pulls', 'Search pull requests'], ['findings', 'Se
     }
     await search.fill('repo:archived/repo');
     await expect(page).toHaveURL(/repo=archived%2Frepo/);
-    await expect(page.locator('tbody tr')).toHaveCount(1);
+    await expect(page.locator(path === 'pulls' ? '.pull-row' : '.finding-row')).toHaveCount(1);
   });
 
   test(path + ' reports unknown static tokens even when repository suggestions fail', async ({ page }) => {
