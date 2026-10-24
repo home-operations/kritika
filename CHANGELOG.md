@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.102](https://github.com/home-operations/kritika/compare/0.0.101...0.0.102) (2026-10-24)
+
+
+### Features
+
+* **api:** a read-only MCP endpoint for agents ([#1223](https://github.com/home-operations/kritika/issues/1223)) ([c63f578](https://github.com/home-operations/kritika/commit/c63f5789a45f7b36b1268b16c3743ad5b3bd00e9))
+* **auth:** personal access tokens ([#1221](https://github.com/home-operations/kritika/issues/1221)) ([e759d37](https://github.com/home-operations/kritika/commit/e759d372a04e417e559ffdb8001a715b633e875c))
+* **web:** a users page for admins, with sign out everywhere ([#1219](https://github.com/home-operations/kritika/issues/1219)) ([7513c9b](https://github.com/home-operations/kritika/commit/7513c9b577959ce97a578419facf8e24450a495f))
+* **web:** manage API tokens in settings, revoke them as an admin ([#1222](https://github.com/home-operations/kritika/issues/1222)) ([681dd57](https://github.com/home-operations/kritika/commit/681dd5796f2fc7a28512110aef146a767e29bd28))
+
+
+### Code Refactoring
+
+* **web:** split Instance settings into pages ([#1218](https://github.com/home-operations/kritika/issues/1218)) ([4e01c81](https://github.com/home-operations/kritika/commit/4e01c81c108c09c9909beea64126bbfc594666e0))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool gh (2.102.1 → 2.103.0) ([#1224](https://github.com/home-operations/kritika/issues/1224)) ([5ad8500](https://github.com/home-operations/kritika/commit/5ad8500a6d246fb611644f67ada131d8a2fc60b0))
+* **mise:** update tool github:grafana/dashboard-linter (0.3.0 → v0.4.0) ([#1225](https://github.com/home-operations/kritika/issues/1225)) ([5ad710c](https://github.com/home-operations/kritika/commit/5ad710c86b677db4c55f98ef3bf0a055db133ace))
+
 ## [0.0.101](https://github.com/home-operations/kritika/compare/0.0.100...0.0.101) (2026-10-24)
 
 
