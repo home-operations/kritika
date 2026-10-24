@@ -32,6 +32,7 @@ results and costs. Confidence scores and automatic approvals are optional.
 | Ask the bot a question or re-run a review | [Reviews and commands](reviews.md#commands) |
 | Add rules for my repository | [Repository settings](repository-config.md) |
 | Find a failed review or check spending | [Dashboard](dashboard.md) |
+| Let a coding agent read reviews and findings | [MCP endpoint](mcp.md) |
 | Use scores or automatic approvals | [Confidence and approvals](confidence.md) |
 | Connect a Forgejo, GitLab or Gitea instance | [Git forges](forges.md) |
 

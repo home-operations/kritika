@@ -111,6 +111,40 @@ func TestRequirePrincipal(t *testing.T) {
 	}
 }
 
+// TestRequireToken: only a kritika bearer token gets as far as the store,
+// and a principal a session cookie gave the request does not count.
+func TestRequireToken(t *testing.T) {
+	h := testHandler(t, "https://kritika.example.com", nil)
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("next reached without a token") })
+	tests := []struct {
+		name, authorization, challenge string
+	}{
+		{"no header", "", `Bearer realm="kritika"`},
+		{"another scheme", "Basic dXNlcjpwYXNz", `Bearer realm="kritika", error="invalid_token"`},
+		{"no token", "Bearer", `Bearer realm="kritika", error="invalid_token"`},
+		{"not a kritika token", "Bearer ghp_abc", `Bearer realm="kritika", error="invalid_token"`},
+		{"the prefix as a scheme", "kritika_abc", `Bearer realm="kritika", error="invalid_token"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			r = r.WithContext(WithPrincipal(r.Context(), &Principal{Admin: true}))
+			if tt.authorization != "" {
+				r.Header.Set("Authorization", tt.authorization)
+			}
+			w := httptest.NewRecorder()
+			h.RequireToken(next).ServeHTTP(w, r)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", w.Code)
+			}
+			assertCode(t, w, "unauthenticated")
+			if got := w.Header().Get("WWW-Authenticate"); got != tt.challenge {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, tt.challenge)
+			}
+		})
+	}
+}
+
 func TestPrincipalCanRead(t *testing.T) {
 	member := &Principal{Accounts: map[string]bool{"t1": true}}
 	tests := []struct {

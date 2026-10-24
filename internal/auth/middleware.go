@@ -164,6 +164,53 @@ func (h *Handler) RequirePrincipal(next http.Handler) http.Handler {
 	})
 }
 
+// RequireToken authenticates a request by the personal access token its
+// Authorization header carries as a bearer, and by nothing else: it
+// replaces whatever principal a session cookie gave the request, so a page
+// open in a signed-in browser cannot reach what it guards. A token stands
+// as a session does, and is refused once it expires, is revoked, or its
+// sign-in is no longer honoured.
+func (h *Handler) RequireToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		p, ok, err := h.token(r)
+		if err != nil {
+			h.logger.ErrorContext(ctx, "auth: look up token", "error", err)
+			writeJSON(w, http.StatusInternalServerError, errorBody{Code: codeInternal})
+			return
+		}
+		if !ok {
+			challenge := `Bearer realm="kritika"`
+			if r.Header.Get("Authorization") != "" {
+				challenge += `, error="invalid_token"`
+			}
+			w.Header().Set("WWW-Authenticate", challenge)
+			writeJSON(w, http.StatusUnauthorized, errorBody{Code: codeUnauthenticated})
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, p)))
+	})
+}
+
+// token resolves r's bearer token to the principal it acts as, false when
+// there is none or it does not stand.
+func (h *Handler) token(r *http.Request) (*Principal, bool, error) {
+	scheme, value, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	value = strings.TrimSpace(value)
+	if !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(value, store.APITokenPrefix) {
+		return nil, false, nil
+	}
+	t, err := h.store.LookupAPIToken(r.Context(), value, h.now())
+	if errors.Is(err, store.ErrSession) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	p, ok := SessionPrincipal(h.current.Get(), t.Session())
+	return p, ok, nil
+}
+
 // SameOrigin rejects a state-changing request that does not carry X-Kritika:
 // 1 and come from the dashboard's own origin. A cross-site form cannot set
 // a custom header, and a cross-site script that does must pass a CORS

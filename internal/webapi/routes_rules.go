@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"cmp"
+	"context"
 	"net/http"
 	"slices"
 	"strings"
@@ -21,7 +22,17 @@ const rulesRepoPage = 500
 // repository's own from its .kritika.yaml as its last review read it; a
 // written rule with the findings that cite it.
 func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountScope) error {
-	ctx := r.Context()
+	rules, err := s.accountRules(r.Context(), t, "")
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, rules)
+	return nil
+}
+
+// accountRules is what listRules serves, of the repository named repo
+// alone unless it is "".
+func (s *Server) accountRules(ctx context.Context, t *accountScope, repo string) ([]Rule, error) {
 	var repos []store.RepoRow
 	var files map[string]store.RepoFileRow
 	var cited []store.RuleCitation
@@ -46,10 +57,15 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 		cited, err = store.RuleCitations(ctx, tx)
 		return err
 	}); err != nil {
-		return err
+		return nil, err
 	}
 	in := make([]repoRules, 0, len(repos))
+	found := repo == ""
 	for _, row := range repos {
+		if repo != "" && !strings.EqualFold(row.FullName, repo) {
+			continue
+		}
+		found = true
 		if !row.Enabled || !t.file.Runs(t.account, row.RepoTraits) {
 			continue
 		}
@@ -59,8 +75,10 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 		}
 		in = append(in, rr)
 	}
-	writeJSON(w, http.StatusOK, countCitations(collectRules(in), cited))
-	return nil
+	if !found {
+		return nil, errNotFound("repository")
+	}
+	return countCitations(collectRules(in), cited), nil
 }
 
 // countCitations adds to each written rule the findings of its

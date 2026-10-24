@@ -274,6 +274,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("global pulls enforce scope and pagination", func(t *testing.T) { testInstancePulls(t, e) })
 	t.Run("global analytics and usage add up readable accounts", func(t *testing.T) { testInstanceSeries(t, e) })
 	t.Run("read endpoints scope to the account", func(t *testing.T) { testReadEndpointsScopeToAccount(t, e) })
+	t.Run("the MCP endpoint reads through a token", func(t *testing.T) { testMCP(t, e) })
 	t.Run("account B's ids under account A", func(t *testing.T) { testCrossAccountIDs(t, e) })
 	t.Run("me and account lists", func(t *testing.T) { testMeAndAccountLists(t, e) })
 	t.Run("a user's settings are their own", func(t *testing.T) { testUserSettings(t, e) })

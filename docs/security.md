@@ -791,9 +791,12 @@ user namespace as before.
 ### Personal access tokens
 
 A user creates API tokens in their own settings, for agents that read
-through the MCP endpoint. No admin, instance or configuration-file tokens
-exist.
+through the [MCP endpoint](mcp.md). No admin, instance or configuration-file
+tokens exist.
 
+- Only the MCP endpoint takes a token, and it takes nothing else. The
+  dashboard's API refuses a token, and the endpoint ignores a session
+  cookie, so a page open in a signed-in browser cannot call it.
 - A token reads what its creator's sign-in let them read when they created
   it, or the accounts they chose among those, and never more. It never
   carries an admin's rights, and nothing a token reaches changes anything.

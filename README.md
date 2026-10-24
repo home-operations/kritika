@@ -27,6 +27,7 @@ a follow-up question or request another review.
 - Answers questions in pull request comments.
 - Offers optional confidence scores and automatic approvals.
 - Shows reviews, usage and costs in a web dashboard.
+- Lets coding agents read reviews and findings through a read-only MCP endpoint.
 
 ## What you need
 

@@ -71,25 +71,32 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = jsonv2.MarshalWrite(w, v, jsonOptions) // a failed write has no one to report to
 }
 
-// writeError writes err as ErrorBody: an apiError as itself, a store miss
-// as 404, a bad cursor or filter as 400, anything else as a logged 500 that says
-// nothing about its cause.
-func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
+// classify is the status and ErrorBody err is answered with: an apiError
+// as itself, a store miss as 404, a bad cursor or filter as 400. Anything
+// else is unexpected, false, and a 500 that says nothing about its cause.
+func classify(err error) (int, ErrorBody, bool) {
 	if e, ok := errors.AsType[*apiError](err); ok {
-		writeJSON(w, e.status, ErrorBody{Code: e.code, Message: e.message})
-		return
+		return e.status, ErrorBody{Code: e.code, Message: e.message}, true
 	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, ErrorBody{Code: CodeNotFound, Message: "not found"})
+		return http.StatusNotFound, ErrorBody{Code: CodeNotFound, Message: "not found"}, true
 	case errors.Is(err, store.ErrCursor):
-		writeJSON(w, http.StatusBadRequest, ErrorBody{Code: CodeInvalidCursor, Message: "cursor is not valid"})
+		return http.StatusBadRequest, ErrorBody{Code: CodeInvalidCursor, Message: "cursor is not valid"}, true
 	case errors.Is(err, store.ErrFilter), errors.Is(err, store.ErrPageLimit):
-		writeJSON(w, http.StatusBadRequest, ErrorBody{Code: CodeBadRequest, Message: "invalid filter"})
-	case r.Context().Err() != nil:
-		// The client went away; there is no one to answer.
-	default:
-		logger.ErrorContext(r.Context(), "webapi: request failed", "method", r.Method, "path", r.URL.Path, "error", err)
-		writeJSON(w, http.StatusInternalServerError, ErrorBody{Code: CodeInternal, Message: "internal error"})
+		return http.StatusBadRequest, ErrorBody{Code: CodeBadRequest, Message: "invalid filter"}, true
 	}
+	return http.StatusInternalServerError, ErrorBody{Code: CodeInternal, Message: "internal error"}, false
+}
+
+// writeError writes err as classify answers it, logging an unexpected one.
+func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
+	status, body, expected := classify(err)
+	if !expected {
+		if r.Context().Err() != nil {
+			return // the client went away; there is no one to answer
+		}
+		logger.ErrorContext(r.Context(), "webapi: request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	}
+	writeJSON(w, status, body)
 }

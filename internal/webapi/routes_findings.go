@@ -65,11 +65,15 @@ func (s *Server) summarizeFindings(w http.ResponseWriter, r *http.Request, t *ac
 	}); err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, FindingSummary{
+	writeJSON(w, http.StatusOK, findingSummary(sum))
+	return nil
+}
+
+func findingSummary(sum store.FindingSummary) FindingSummary {
+	return FindingSummary{
 		FindingCounts: findingCounts(sum.FindingCounts), Categories: findingGroups(sum.Categories), Rules: findingGroups(sum.Rules),
 		Agents: findingGroups(sum.Agents), Directories: findingGroups(sum.Directories),
-	})
-	return nil
+	}
 }
 
 // exportFindings serves the findings the list's filters keep, newest
@@ -123,17 +127,8 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 		Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Reviewer: q.Get("agent"), Path: q.Get("path"),
 		DismissedBy: store.DismissalSource(q.Get("dismissed")), Query: q.Get("q"),
 	}
-	if f.Severity != "" && !f.Severity.Valid() {
-		return f, errBadRequest(CodeBadRequest, "severity must be p0, p1 or p2")
-	}
-	if f.Category != "" && !f.Category.Valid() {
-		return f, errBadRequest(CodeBadRequest, "category must be correctness, security, performance, reliability, maintainability or tests")
-	}
-	if f.Status != "" && !f.Status.Valid() {
-		return f, errBadRequest(CodeBadRequest, "status must be open, addressed or dismissed")
-	}
-	if f.DismissedBy != "" && !f.DismissedBy.Valid() {
-		return f, errBadRequest(CodeBadRequest, "dismissed must be command, resolved or conceded")
+	if err := checkFindingFilter(f); err != nil {
+		return f, err
 	}
 	switch q.Get("is") {
 	case "":
@@ -143,6 +138,22 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 		return f, errBadRequest(CodeBadRequest, "is must be downvoted")
 	}
 	return f, nil
+}
+
+// checkFindingFilter refuses a severity, category, status or dismissal
+// source that is none of them.
+func checkFindingFilter(f store.FindingFilter) error {
+	switch {
+	case f.Severity != "" && !f.Severity.Valid():
+		return errBadRequest(CodeBadRequest, "severity must be p0, p1 or p2")
+	case f.Category != "" && !f.Category.Valid():
+		return errBadRequest(CodeBadRequest, "category must be correctness, security, performance, reliability, maintainability or tests")
+	case f.Status != "" && !f.Status.Valid():
+		return errBadRequest(CodeBadRequest, "status must be open, addressed or dismissed")
+	case f.DismissedBy != "" && !f.DismissedBy.Valid():
+		return errBadRequest(CodeBadRequest, "dismissed must be command, resolved or conceded")
+	}
+	return nil
 }
 
 func accountFindings(rows []store.AccountFinding) []AccountFinding {
