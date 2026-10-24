@@ -186,7 +186,13 @@ or Calico's own policies where the cluster serves their API, as Helm,
 Flux and Argo CD see it, and standard NetworkPolicies otherwise. Before
 upgrading, add a forge or model port other than 443 to
 `networkPolicy.egressPorts` and check what follows, or turn the policies
-off where something else confines runner pods' egress.
+off where something else confines runner pods' egress. On Cilium, the
+flavor's DNS rules need its L7 proxy: where it is off, Cilium refuses the
+runner's policy and runs fail until `networkPolicy.type` is `default`.
+
+`networkPolicy.allowDNS` is removed: both policies always allow DNS to the
+cluster's DNS, which runner pods need to find the gateway and the
+database. `networkPolicy.postgresPort` is now `networkPolicy.postgres.port`.
 
 With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
 Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if

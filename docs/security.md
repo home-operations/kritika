@@ -163,6 +163,13 @@ the runner role's database URI to `runnerNames` when the database is
 outside the cluster. Cilium refuses any other name. The `default` and
 `calico` flavors cannot filter names.
 
+These rules need Cilium's L7 proxy, which is on unless turned off. Where
+it is off, Cilium refuses the runner's CiliumNetworkPolicy for them. The
+`cilium` flavor also renders a plain NetworkPolicy for runner pods that
+allows the database and the gateway and no DNS, so a refused policy
+leaves them unable to look up any name: every run fails rather than run
+with no policy, until `networkPolicy.type` is `default`.
+
 Runner pods resolve with `ndots: 4`, so the gateway's name, such as
 `kritika-gateway.kritika.svc.cluster.local`, is looked up as written
 rather than first through the search list, whose expansions of it Cilium

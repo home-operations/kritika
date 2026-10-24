@@ -181,7 +181,13 @@ or Calico's own policies where the cluster serves their API, as Helm,
 Flux and Argo CD see it, and standard NetworkPolicies otherwise. Before
 upgrading, add a forge or model port other than 443 to
 `networkPolicy.egressPorts` and check what follows, or turn the policies
-off where something else confines runner pods' egress.
+off where something else confines runner pods' egress. On Cilium, the
+flavor's DNS rules need its L7 proxy: where it is off, Cilium refuses the
+runner's policy and runs fail until `networkPolicy.type` is `default`.
+
+`networkPolicy.allowDNS` is removed: both policies always allow DNS to the
+cluster's DNS, which runner pods need to find the gateway and the
+database. `networkPolicy.postgresPort` is now `networkPolicy.postgres.port`.
 
 With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
 Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
@@ -312,7 +318,6 @@ Kubernetes: `>=1.34.0-0`
 | monitoring.serviceMonitor.relabelings | list | `[]` | Prometheus relabelings. |
 | monitoring.serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout. |
 | nameOverride | string | `""` | Override the chart name used in resource names. |
-| networkPolicy.allowDNS | bool | `true` | Allow DNS egress (UDP/TCP 53) to the cluster's DNS, as `dns` describes it, and nowhere else. |
 | networkPolicy.dns.namespace | string | `"kube-system"` | Namespace of the cluster's DNS pods. |
 | networkPolicy.dns.nodeLocalAddresses | list | `[]` | Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity. |
 | networkPolicy.dns.podSelector | object | `{}` | Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`. |
@@ -322,8 +327,8 @@ Kubernetes: `>=1.34.0-0`
 | networkPolicy.postgres.cidrs | list | `[]` | CIDRs of a database outside the cluster, such as `192.0.2.10/32`. |
 | networkPolicy.postgres.namespace | string | `""` | Namespace of the database's pods; the release namespace when empty. |
 | networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set. |
-| networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
-| networkPolicy.type | string | `"auto"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto": "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders "default". Set the flavor where the cluster serves a policy API its CNI does not enforce. |
+| networkPolicy.postgres.port | int | `5432` | Port of the database, which the service pods may reach at any address and runner pods only where the rest of `postgres` says. |
+| networkPolicy.type | string | `"auto"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto": "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders "default". The Cilium flavor's DNS rules need Cilium's L7 proxy, on unless turned off: without it Cilium refuses the runner's policy, and a NetworkPolicy the flavor adds then keeps runner pods from looking up any name, so runs fail until the type is "default". Set the flavor where the cluster serves a policy API its CNI does not enforce. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |
 | podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget when there is more than one replica. |

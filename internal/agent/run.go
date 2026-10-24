@@ -119,8 +119,8 @@ type RunTool struct {
 	ran        []string
 	executions map[string]int
 	// proxyHosts are the hosts of the proxies in the commands' environment,
-	// lowercased: a URL of theirs given to curl, as a proxy option's value,
-	// is not a source.
+	// as hostKey spells them: a URL of theirs given to curl, as a proxy
+	// option's value, is not a source.
 	proxyHosts []string
 	// errors are the setup failure notes, one per command in failed.
 	failed, errors []string
@@ -151,7 +151,7 @@ func NewRunTool(c RunConfig) *RunTool {
 }
 
 // proxyHosts are the hosts of the HTTP_PROXY and HTTPS_PROXY URLs in env,
-// in either case, lowercased.
+// in either case, as hostKey spells them.
 func proxyHosts(env []string) []string {
 	var hosts []string
 	for _, kv := range env {
@@ -159,12 +159,16 @@ func proxyHosts(env []string) []string {
 		if !strings.EqualFold(name, "HTTP_PROXY") && !strings.EqualFold(name, "HTTPS_PROXY") {
 			continue
 		}
-		if u, err := url.Parse(value); err == nil && u.Hostname() != "" && !slices.Contains(hosts, strings.ToLower(u.Hostname())) {
-			hosts = append(hosts, strings.ToLower(u.Hostname()))
+		if u, err := url.Parse(value); err == nil && u.Hostname() != "" && !slices.Contains(hosts, hostKey(u.Hostname())) {
+			hosts = append(hosts, hostKey(u.Hostname()))
 		}
 	}
 	return hosts
 }
+
+// hostKey is a host as its spellings compare: lowercased, without a
+// trailing dot.
+func hostKey(host string) string { return strings.TrimSuffix(strings.ToLower(host), ".") }
 
 // Names are the commands the tool offers, sorted.
 func (rt *RunTool) Names() []string { return rt.names }
@@ -456,7 +460,7 @@ func (rt *RunTool) record(args []string) {
 	for _, a := range args {
 		u, err := url.Parse(a)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
-			slices.Contains(rt.proxyHosts, strings.ToLower(u.Hostname())) {
+			slices.Contains(rt.proxyHosts, hostKey(u.Hostname())) {
 			continue
 		}
 		u.User = nil

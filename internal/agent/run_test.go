@@ -411,6 +411,7 @@ func TestRunToolSourcesLeaveOutTheProxy(t *testing.T) {
 	for _, input := range []string{
 		`{"command":"curl","args":["--proxy","http://:tok@kritika-gateway.kritika.svc:8082","https://example.com/a"]}`,
 		`{"command":"curl","args":["-x","http://KRITIKA-GATEWAY.kritika.svc:8082","--proxy-user",":tok","http://example.com/b"]}`,
+		`{"command":"curl","args":["--proxy","http://:tok@kritika-gateway.kritika.svc.:8082","https://example.com/a"]}`,
 	} {
 		if _, err := rt.Run(t.Context(), json.RawMessage(input)); err != nil {
 			t.Fatal(err)
