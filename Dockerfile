@@ -71,7 +71,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 RUN mkdir /rootfs \
  && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs \
       base-files_base base-files_chisel base-passwd_data ca-certificates_data \
-      libc6_libs libgcc-s1_libs libstdc++6_libs tzdata_zoneinfo \
+      libc6_libs libgcc-s1_libs libstdc++6_libs tzdata-legacy_zoneinfo \
       curl_bins findutils_find grep_bins jq_bins \
  && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
  && echo 'nonroot:x:65532:' >> /rootfs/etc/group
