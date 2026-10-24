@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,35 +60,70 @@ func TestRunToolStopsWhatACommandStarted(t *testing.T) {
 	}
 }
 
-// TestGroupSignals: a timeout kills the command's group until the command's
-// exit has been seen, and nothing after.
+// TestGroupSignals: a timeout kills the command's group, the command alone
+// once its exit cannot be seen before its reap, and nothing once it was.
 func TestGroupSignals(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := func() *exec.Cmd {
-		cmd := exec.Command(self, "sleep")
+	// start runs the helper with args as a group's leader, and returns it
+	// and the pid of the child it started, if any.
+	start := func(args ...string) (*exec.Cmd, int) {
+		cmd := exec.Command(self, args...)
 		cmd.Env = append(os.Environ(), helperEnv+"=1")
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-		return cmd
+		t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); _ = cmd.Wait() })
+		child := 0
+		if args[0] == "spawn" {
+			line, err := bufio.NewReader(stdout).ReadString('\n')
+			if err != nil {
+				t.Fatal(err)
+			}
+			if child, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "child="))); err != nil {
+				t.Fatalf("line %q: %v", line, err)
+			}
+		}
+		return cmd, child
 	}
-	var group groupSignals
-	running := start()
-	if err := group.kill(running.Process.Pid); err != nil {
-		t.Fatalf("kill = %v", err)
+	killed := func(cmd *exec.Cmd) bool {
+		return cmd.Wait() != nil && cmd.ProcessState.Sys().(syscall.WaitStatus).Signal() == syscall.SIGKILL
 	}
-	if err := running.Wait(); err == nil || running.ProcessState.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
-		t.Fatalf("the group was not killed: %v", err)
+
+	var whole groupSignals
+	leader, child := start("spawn", "wait")
+	if err := whole.kill(leader.Process); err != nil || !killed(leader) {
+		t.Fatalf("kill = %v; the leader was not killed", err)
 	}
-	group.exit()
-	spared := start()
-	if err := group.kill(spared.Process.Pid); !errors.Is(err, os.ErrProcessDone) {
-		t.Fatalf("kill after exit = %v, want os.ErrProcessDone", err)
+	for deadline := time.Now().Add(5 * time.Second); !exited(child); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the group's other process, %d, was not killed", child)
+		}
+	}
+
+	var alone groupSignals
+	alone.leaderOnly()
+	leader, child = start("spawn", "wait")
+	t.Cleanup(func() { _ = syscall.Kill(child, syscall.SIGKILL) })
+	if err := alone.kill(leader.Process); err != nil || !killed(leader) {
+		t.Fatalf("kill = %v; the leader was not killed", err)
+	}
+	if exited(child) {
+		t.Fatalf("the group's other process, %d, was killed", child)
+	}
+
+	var done groupSignals
+	done.exit()
+	spared, _ := start("sleep")
+	if err := done.kill(spared.Process); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("kill after the exit = %v, want os.ErrProcessDone", err)
 	}
 	if err := syscall.Kill(spared.Process.Pid, 0); err != nil {
 		t.Fatalf("a group was signalled after the exit: %v", err)

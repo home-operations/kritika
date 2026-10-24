@@ -339,7 +339,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	// its own while it is signalled.
 	var group groupSignals
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return group.kill(cmd.Process.Pid) }
+	cmd.Cancel = func() error { return group.kill(cmd.Process) }
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
@@ -351,6 +351,8 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 		if stopped {
 			group.exit()
+		} else {
+			group.leaderOnly()
 		}
 		err = cmd.Wait()
 	}
@@ -382,29 +384,42 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 }
 
 // groupSignals is what signals a command's process group, a timeout, until
-// the command's exit has been seen and the group stopped: the reap that
-// follows may free the group's id for another.
+// the command is about to be reaped, which may free the group's id for
+// another: from then on it signals nothing, or the command alone, which
+// os.Process signals safely after the reap too. A kill in flight finishes
+// before either.
 type groupSignals struct {
-	mu     sync.Mutex
-	exited bool
+	mu sync.Mutex
+	// exited says the command's exit was seen and its group stopped, and
+	// leader that the exit could not be seen before the reap.
+	exited, leader bool
 }
 
-// kill kills the process group pgid, unless the command that leads it has
-// exited.
-func (g *groupSignals) kill(pgid int) error {
+// kill kills the process group the command p leads.
+func (g *groupSignals) kill(p *os.Process) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.exited {
+	switch {
+	case g.exited:
 		return os.ErrProcessDone
+	case g.leader:
+		return p.Kill()
 	}
-	return syscall.Kill(-pgid, syscall.SIGKILL)
+	return syscall.Kill(-p.Pid, syscall.SIGKILL)
 }
 
-// exit says the command's exit has been seen and its group stopped; a kill
-// in flight finishes first.
+// exit says the command's exit has been seen and its group stopped.
 func (g *groupSignals) exit() {
 	g.mu.Lock()
 	g.exited = true
+	g.mu.Unlock()
+}
+
+// leaderOnly says the command will be reaped without its exit seen first,
+// so a timeout from then on kills it alone.
+func (g *groupSignals) leaderOnly() {
+	g.mu.Lock()
+	g.leader = true
 	g.mu.Unlock()
 }
 

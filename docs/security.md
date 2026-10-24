@@ -354,8 +354,8 @@ What bounds a command:
   out and once it exits, so nothing it started outlives the call. A
   program that leaves the group on purpose, with `setsid`, is still
   stopped when the run's pod ends. Where the runtime refuses the wait
-  this relies on, the run's log says so, and a command's group is stopped
-  only when it times out.
+  this relies on, the run's log says so, and a timeout stops the command
+  alone, since its group's id may no longer be its own.
 - **A bare environment:** `PATH`, with the tools' directories first, its
   own `HOME`, `XDG_CACHE_HOME` and the gateway, the mise config's `[env]`,
   the admin's variables, and for `gh` the run's token as `GH_TOKEN`. The pod's `NO_PROXY` is not
