@@ -234,6 +234,15 @@ func (rt *RunTool) Def() model.ToolDef {
 		desc += " fd finds files and directories by name, extension or type (`fd -e yaml values`, `fd -t d charts`), " +
 			"where the list_files tool's glob is not enough."
 	}
+	if slices.Contains(rt.names, "grep") {
+		desc += " The grep command searches file contents where the grep tool falls short: by file type " +
+			"(`grep -rn --include='*.go' <pattern> .`) or in what fetch_repo and a cut output write beside the checkout; " +
+			"for a few lines around a match in the checkout, the grep tool's context_lines is enough."
+	}
+	if slices.Contains(rt.names, "find") {
+		desc += " find lists files and directories by name, type or size (`find . -name '*.yaml'`, `find . -type d -name charts`), " +
+			"where the list_files tool's glob is not enough."
+	}
 	if slices.Contains(rt.names, "jq") {
 		desc += " jq reads one path of a JSON file (`jq '.dependencies' package.json`), where read_file would return " +
 			"the whole file."

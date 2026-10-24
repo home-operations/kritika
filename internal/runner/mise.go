@@ -652,6 +652,21 @@ func (m *miseTools) resolve(ctx context.Context, command string) (string, []stri
 	return bin, m.commandEnv(), nil
 }
 
+// resolveWith resolves the commands m offers as resolve does, and any
+// other command as the binary onPath names for it, run in m's environment
+// too, and not once home could not be made read-only again.
+func (m *miseTools) resolveWith(onPath map[string]string) func(context.Context, string) (string, []string, error) {
+	return func(ctx context.Context, command string) (string, []string, error) {
+		if m.byCommand[command] != nil {
+			return m.resolve(ctx, command)
+		}
+		if err := m.usable(); err != nil {
+			return "", nil, err
+		}
+		return onPath[command], m.commandEnv(), nil
+	}
+}
+
 // install installs t with mise. A repository's tool is locked first, by
 // the run itself (see lock), and installed as a locked install, which
 // mise checks against the lock; while the gateway keeps such downloads,

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/pelletier/go-toml/v2"
 )
 
 func TestCommandEnv(t *testing.T) {
@@ -208,26 +207,24 @@ func TestKeptOutputRead(t *testing.T) {
 	}
 }
 
-// TestDefaultCommandsMatchImage: the commands a runner image without mise
-// offers from its PATH are those the -tools image declares.
+// TestDefaultCommandsMatchImage: the commands the run tool looks for on
+// PATH are those the -tools image carries: the commands of the slices the
+// Dockerfile cuts into its root, a package's under <package>_bins and
+// findutils' find alone under findutils_find, and gh from its release.
 func TestDefaultCommandsMatchImage(t *testing.T) {
-	doc, err := os.ReadFile("../../build/tools/mise.toml")
+	dockerfile, err := os.ReadFile("../../Dockerfile")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var image struct {
-		Tools map[string]any `toml:"tools"`
-	}
-	if err := toml.Unmarshal(doc, &image); err != nil {
-		t.Fatal(err)
-	}
 	var commands []string
-	for name, tool := range image.Tools {
-		options, _ := tool.(map[string]any)
-		if bins := binsOf(options["filter_bins"]); bins != nil {
-			commands = append(commands, bins...)
-		} else {
-			commands = append(commands, name)
+	for field := range strings.FieldsSeq(string(dockerfile)) {
+		switch pkg, slice, _ := strings.Cut(field, "_"); {
+		case slice == "bins":
+			commands = append(commands, pkg)
+		case pkg == "findutils" && slice == "find":
+			commands = append(commands, "find")
+		case field == "depName=cli/cli":
+			commands = append(commands, "gh")
 		}
 	}
 	slices.Sort(commands)

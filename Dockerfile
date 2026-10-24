@@ -54,25 +54,45 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
 
+# ---- Runner tools' root -----------------------------------------------------
+# curl, find, grep and jq as Ubuntu builds them, with glibc, libgcc and
+# libstdc++ for a repository's tools, cut from Ubuntu's packages by chisel
+# into a root with no shell and no package manager, and gh as its release
+# builds it, a static binary. The stage runs on the build platform and
+# fetches the target's: chisel cuts what the release's archive serves when
+# the image builds, and gh is checked against its release's checksums.
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS rootfs
+ARG TARGETARCH
+# renovate: datasource=go depName=github.com/canonical/chisel
+ARG CHISEL_VERSION=v1.5.1
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go install github.com/canonical/chisel/cmd/chisel@${CHISEL_VERSION}
+RUN mkdir /rootfs \
+ && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs \
+      base-files_base base-files_chisel base-passwd_data ca-certificates_data \
+      libc6_libs libgcc-s1_libs libstdc++6_libs \
+      curl_bins findutils_find grep_bins jq_bins \
+ && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
+ && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+# renovate: datasource=github-releases depName=cli/cli
+ARG GH_VERSION=v2.103.0
+RUN version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz" \
+ && release="https://github.com/cli/cli/releases/download/${GH_VERSION}" \
+ && curl -fsSLO "${release}/${asset}" \
+ && curl -fsSL "${release}/gh_${version}_checksums.txt" | awk -v a="${asset}" '$2 == a' | sha256sum -c - \
+ && mkdir -p /rootfs/usr/local/bin \
+ && tar -xzf "${asset}" -C /rootfs/usr/local/bin --strip-components=2 "gh_${version}_linux_${TARGETARCH}/bin/gh"
+
 # ---- Runtime with runner tools ----------------------------------------------
-# kritika with mise and the tools the agent's run tool offers: the chart's
-# runner image. Built with --target tools, published as the -tools tag.
-# Distroless with glibc for the tools' release builds, and no shell.
+# kritika with the commands the agent's run tool offers: the chart's runner
+# image. Built with --target tools, published as the -tools tag.
 FROM mirror.gcr.io/jdxcode/mise:${MISE_VERSION} AS mise
-FROM gcr.io/distroless/cc:nonroot AS tools
-# mise lives outside PATH. The runner runs it by path; a command the agent
-# runs must not find it.
+FROM scratch AS tools
+COPY --from=rootfs /rootfs /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# mise installs a repository's tools. It lives outside PATH: the runner
+# runs it by path, and a command the agent runs must not find it.
 COPY --from=mise /usr/local/bin/mise /opt/mise/bin/mise
-# The tools are system installs from the image's system config, at what
-# its lock pins. A run's mise uses them at those versions instead of
-# downloading. Installing from the system config also makes the links
-# mise keeps beside each install, which a run could not add later. Root's
-# home holds mise's state and cache, on a tmpfs, so only the installs
-# reach the image.
-COPY build/tools/mise.toml /etc/mise/config.toml
-COPY build/tools/mise.lock /etc/mise/mise.lock
-USER root
-RUN --mount=type=tmpfs,target=/root ["/opt/mise/bin/mise", "install", "--system", "--locked"]
 USER 65532
 COPY --from=builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]
