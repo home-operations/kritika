@@ -138,7 +138,7 @@ test.describe('signed-in shell', () => {
 
     // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
-    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs', 'Settings']);
+    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs', 'Accounts', 'Connections', 'Settings', 'Audit log']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
     for (const href of await instance.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) expect(href).not.toContain('/a/');
@@ -177,9 +177,13 @@ test.describe('signed-in shell', () => {
     await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Audit log' })).toBeVisible();
     await page.goto('/#/admin');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
+    // Each administration page is a tab of its own, the one shown alone current.
+    for (const [hash, tab] of [['#/admin', 'Accounts'], ['#/admin/connections', 'Connections'], ['#/admin/settings', 'Settings'], ['#/admin/audit', 'Audit log']]) {
+      await page.goto(`/${hash}`);
+      await expect(page.locator('.sections .section-tab.active')).toHaveText(tab!);
+      await expect(page.locator('main h1')).toHaveText(tab!);
+    }
   });
 
   test('global pull and queue navigation stays consistent as accounts are added', async ({ page, signIn }) => {
@@ -298,8 +302,8 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.palette-input input')).toBeFocused();
 
     await page.keyboard.type('console');
-    // The Configuration page's sections match too, after the page itself.
-    await expect(page.locator('.row-title').first()).toHaveText('Instance settings');
+    // The administration's sections match too, after its pages.
+    await expect(page.locator('.row-title').first()).toHaveText('Accounts');
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/admin$/);

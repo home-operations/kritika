@@ -41,7 +41,7 @@
   {#if route.name === 'overview'}
     <Overview />
   {:else if route.name === 'console'}
-    <Console />
+    <Console page={route.page} />
   {:else if route.name === 'instanceQueue'}
     <InstanceQueue filter={route.filter} />
   {:else if route.name === 'preferences'}

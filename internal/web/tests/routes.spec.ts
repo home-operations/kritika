@@ -11,6 +11,9 @@ const ROUTES: Route[] = [
   { name: 'overview' },
   { name: 'signin' },
   { name: 'console' },
+  { name: 'console', page: 'connections' },
+  { name: 'console', page: 'settings' },
+  { name: 'console', page: 'audit' },
   { name: 'instanceQueue' },
   { name: 'instancePulls', filter: { state: 'all', outcome: 'failed', q: 'a b&c' } },
   { name: 'instanceAnalytics', filter: { days: '7' } },
@@ -62,6 +65,7 @@ const MALFORMED: [string, Route][] = [
   ['#/nonsense', { name: 'overview' }],
   ['#/signin/extra', { name: 'overview' }],
   ['#/admin/extra', { name: 'overview' }],
+  ['#/admin/audit/extra', { name: 'overview' }],
   ['#/a', { name: 'overview' }],
   ['#/a/', { name: 'overview' }],
   ['#/a//repos', { name: 'overview' }],
@@ -134,6 +138,7 @@ test('switching account keeps the page, and a record gives way to its list', () 
     [{ name: 'instanceUsage', filter: { days: '90', group: 'account', repo: 'acme/one' } }, { name: 'usage', slug: b, filter: { days: '90' } }],
     [{ name: 'overview' }, { name: 'account', slug: b }],
     [{ name: 'console' }, { name: 'account', slug: b }],
+    [{ name: 'console', page: 'audit' }, { name: 'account', slug: b }],
   ];
   for (const [from, to] of cases) expect(pageIn(from, b), JSON.stringify(from)).toEqual(to);
 });
@@ -145,6 +150,7 @@ test('widening scope preserves pull and queue filters', () => {
   expect(pageOfInstance({ name: 'analytics', slug, filter: { days: '7' } })).toEqual({ name: 'instanceAnalytics', filter: { days: '7' } });
   expect(pageOfInstance({ name: 'usage', slug, filter: { group: 'model', metric: 'tokens' } })).toEqual({ name: 'instanceUsage', filter: { group: 'model', metric: 'tokens' } });
   expect(pageOfInstance({ name: 'console' })).toEqual({ name: 'console' });
+  expect(pageOfInstance({ name: 'console', page: 'settings' })).toEqual({ name: 'console', page: 'settings' });
 });
 
 test('repository filters stay with their account while portable pull filters travel', () => {

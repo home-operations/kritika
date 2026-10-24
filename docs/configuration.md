@@ -160,10 +160,10 @@ provider.
 
 | Role   | What it may do                                                                                                                                                                                                   |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Admin  | runs the instance from the dashboard: turns repositories on and off, queues re-runs, cancels and reindexes, and reads every account, the audit log and the [Configuration page](dashboard.md#configuration-page) |
+| Admin  | runs the instance from the dashboard: turns repositories on and off, queues re-runs, cancels and reindexes, and reads every account, the audit log and the [Settings page](dashboard.md#administration)           |
 | Member | reads reviews, conversations and transcripts, with no write access: every account, or only the accounts serving the forge accounts their sign-in placed them on                                                  |
 
-The Configuration page lists the instance settings read-only, each with
+The Settings page lists the instance settings read-only, each with
 its source: the environment, the configuration file, or kritika's default.
 A secret shows only whether it is set, and a URL's credentials are hidden.
 Every admin write is audit-logged in the same transaction as the change it
@@ -712,7 +712,7 @@ an account's entry replaces it key by key:
 name ([an account's own keys](models.md#an-accounts-own-keys)).
 
 An account runs while a connection serves it. An entry for an account no
-connection serves is kept, but not run, and the Configuration page lists
+connection serves is kept, but not run, and the Accounts page lists
 it as not served.
 
 ## `egress`

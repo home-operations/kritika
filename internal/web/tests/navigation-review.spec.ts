@@ -147,11 +147,31 @@ test('reporting navigation keeps the period and 24-hour analytics charts partial
   await expect(page.getByRole('img', { name: /^Failure rate per partial day/ })).toBeVisible();
 });
 
-for (const [word, label] of [['spend', 'Usage & costs'], ['configuration', 'Instance settings']]) {
-  test(`palette preserves the ${word} search synonym`, async ({ page }) => {
+for (const [word, label, url] of [
+  ['spend', 'Usage & costs', /#\/usage$/],
+  ['configuration', 'Settings', /#\/admin\/settings$/],
+  ['settings', 'Settings', /#\/admin\/settings$/],
+  ['instance settings', 'Settings', /#\/admin\/settings$/],
+] as const) {
+  test(`a palette search for ${word} opens ${label} first`, async ({ page }) => {
     await page.goto(`${account}/queue`);
     await page.keyboard.press('Control+k');
-    await page.locator('.palette-input input').fill(word!);
-    await expect(page.locator('.palette-row').filter({ hasText: label }).first()).toBeVisible();
+    await page.locator('.palette-input input').fill(word);
+    await expect(page.locator('.palette-row .row-title').first()).toHaveText(label);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(url);
   });
 }
+
+test('the palette shows the administration pages with their sidebar icons', async ({ page }) => {
+  await page.goto('/#/');
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input input').fill('administration');
+  const rows = page.locator('.palette-row');
+  await expect(rows).not.toHaveCount(0);
+  for (const row of await rows.all()) {
+    const label = (await row.locator('.row-title').textContent())!;
+    const link = page.locator('.desktop-navigation').getByRole('link', { name: label, exact: true });
+    await expect(row.locator('svg path')).toHaveAttribute('d', (await link.locator('svg path').getAttribute('d'))!);
+  }
+});

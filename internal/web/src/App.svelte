@@ -18,7 +18,6 @@
     mdiMagnify,
     mdiChartBoxOutline,
     mdiViewGridOutline,
-    mdiConsoleLine,
     mdiTrayFull,
     mdiSourcePull,
     mdiScaleBalance,
@@ -35,8 +34,7 @@
     mdiUnfoldMoreHorizontal,
     mdiCheck,
   } from './lib/icons';
-  import { INSTANCE_TABS, SECTIONS, NAV_GROUPS, reportingRoute, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
-  import type { Route } from './lib/routes';
+  import { INSTANCE_TABS, SECTIONS, NAV_GROUPS, isInstanceTab, reportingRoute, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
   import { focusWhenShown, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Wordmark from './lib/Wordmark.svelte';
@@ -113,15 +111,6 @@
   const currentSlug = $derived(scopeOf(router.route));
   const currentSection = $derived(sectionOf(router.route));
   const instanceTabs = $derived(INSTANCE_TABS.filter((t) => (!t.admin || me?.admin)));
-
-  const instanceIcon: Partial<Record<Route['name'], string>> = {
-    overview: mdiViewGridOutline,
-    instanceQueue: mdiTrayFull,
-    instancePulls: mdiSourcePull,
-    instanceAnalytics: mdiChartBoxOutline,
-    instanceUsage: mdiCurrencyUsd,
-    console: mdiConsoleLine,
-  };
 
   const sectionIcon: Record<Section, string> = {
     overview: mdiViewGridOutline,
@@ -262,10 +251,10 @@
     <nav class="sections flex mb-[-1px] flex-col overflow-visible gap-[3px] p-0" aria-label="Instance">
       {#each [...new Set(instanceTabs.map((t) => t.group))] as group (group)}
         <p class="workspace-heading mt-4 mx-3 mb-1.5 text-muted text-ui-xs uppercase tracking-[0.04em]">{group}</p>
-        {#each instanceTabs.filter((t) => t.group === group) as t (t.route.name)}
-          {@const on = router.route.name === t.route.name}
+        {#each instanceTabs.filter((t) => t.group === group) as t (t.label)}
+          {@const on = isInstanceTab(t, router.route)}
           <a class="section-tab inline-flex items-center gap-1.5 border-solid border-b-transparent no-underline text-ui-md whitespace-nowrap min-h-9 py-2 px-3 border-0 rounded-md text-muted" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
-            <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
+            <Icon path={t.icon} size={15} />
             <span class="section-label inline-flex flex-col" data-label={t.label}>{t.label}</span>
           </a>
         {/each}
@@ -323,7 +312,7 @@
           <Dialog.Root bind:open={navOpen}>
             <Dialog.Trigger class="btn mobile-nav-trigger">
               <Icon path={mdiViewGridOutline} size={16} />
-              Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : instanceTabs.find((t) => t.route.name === router.route.name)?.label ?? (router.route.name === 'preferences' ? 'Your settings' : 'All accounts')}</span>
+              Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : instanceTabs.find((t) => isInstanceTab(t, router.route))?.label ?? (router.route.name === 'preferences' ? 'Your settings' : 'All accounts')}</span>
               <Icon path={mdiChevronDown} size={14} />
             </Dialog.Trigger>
             <Dialog.Portal>
