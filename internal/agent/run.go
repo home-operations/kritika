@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
@@ -331,11 +332,18 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
+	// The command and the processes it starts form a process group of their
+	// own, which is stopped as a whole when the command times out and once
+	// it has exited, so nothing it started outlives the call.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
 	err = cmd.Run()
 	if cmd.Process != nil {
+		// A group with no process left is ESRCH, which is fine.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		rt.executions[req.Command]++
 	}
 	switch {

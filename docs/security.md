@@ -349,6 +349,11 @@ What bounds a command:
 
 - **No shell:** a command runs without one, and the `-tools` image has
   none either.
+- **Its own lifetime:** a command and the processes it starts form a
+  process group of their own, stopped as a whole when the command times
+  out and once it exits, so nothing it started outlives the call. A
+  program that leaves the group on purpose, with `setsid`, is still
+  stopped when the run's pod ends.
 - **A bare environment:** `PATH`, with the tools' directories first, its
   own `HOME`, `XDG_CACHE_HOME` and the gateway, the mise config's `[env]`,
   the admin's variables, and for `gh` the run's token as `GH_TOKEN`. The pod's `NO_PROXY` is not
