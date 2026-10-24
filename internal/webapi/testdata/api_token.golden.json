@@ -1,0 +1,16 @@
+{
+  "id": "tok-1",
+  "name": "laptop agent",
+  "owner": {
+    "id": "u-1",
+    "displayName": "Ada Lovelace",
+    "email": "ada@example.com",
+    "avatarUrl": ""
+  },
+  "allAccounts": false,
+  "accounts": ["github/alpha"],
+  "status": "active",
+  "createdAt": "2026-09-01T12:00:00Z",
+  "expiresAt": "2026-09-01T12:01:30Z",
+  "lastUsedAt": "2026-09-01T12:01:30Z"
+}

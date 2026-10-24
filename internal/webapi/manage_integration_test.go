@@ -223,6 +223,132 @@ func TestManage(t *testing.T) {
 	t.Run("actions", func(t *testing.T) { testActions(t, e, md) })
 	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e, md) })
 	t.Run("users", func(t *testing.T) { testUsers(t, e) })
+	t.Run("tokens", func(t *testing.T) { testTokens(t, e) })
+}
+
+// send sends a request with a JSON body as who, with the same-origin
+// headers.
+func (e *manageEnv) send(who, method, path, body string) (int, []byte) {
+	e.t.Helper()
+	req, err := http.NewRequest(method, e.http.URL+path, strings.NewReader(body))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	req.AddCookie(e.cookie[who])
+	req.Header.Set("Origin", "https://kritika.example")
+	req.Header.Set("X-Kritika", "1")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.http.Client().Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return resp.StatusCode, out
+}
+
+// testTokens: a user creates tokens from what their session reads, lists
+// and revokes their own, and an admin lists and revokes anyone's; a token's
+// value is shown once, and creating and revoking are audited.
+func testTokens(t *testing.T, e *manageEnv) {
+	create := func(who, body string) CreatedToken {
+		t.Helper()
+		status, out := e.send(who, "POST", "/api/v1/me/tokens", body)
+		e.expect(status, out, http.StatusCreated, "")
+		var c CreatedToken
+		if err := json.Unmarshal(out, &c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	list := func(who, path string) []APIToken {
+		t.Helper()
+		status, out := e.do(who, "GET", path)
+		e.expect(status, out, http.StatusOK, "")
+		var tokens []APIToken
+		if err := json.Unmarshal(out, &tokens); err != nil {
+			t.Fatal(err)
+		}
+		return tokens
+	}
+
+	laptop := create("member", `{"name":" laptop agent ","accounts":[],"expiresInDays":30}`)
+	if !strings.HasPrefix(laptop.Token, store.APITokenPrefix) || laptop.Name != "laptop agent" || laptop.AllAccounts ||
+		!slices.Equal(laptop.Accounts, []string{"github/md"}) || laptop.Status != TokenActive || laptop.Owner != nil ||
+		laptop.ExpiresAt == nil || time.Until(*laptop.ExpiresAt) < 29*24*time.Hour {
+		t.Fatalf("created = %+v; want a member's 30-day token reading github/md", laptop)
+	}
+	if every := create("admin", `{"name":"ci","accounts":[],"expiresInDays":0}`); !every.AllAccounts || every.ExpiresAt != nil {
+		t.Fatalf("an admin's token = %+v; want every account, never expiring", every)
+	}
+	for _, tc := range []struct{ who, body, want string }{
+		{"member", `{"name":"","accounts":[],"expiresInDays":30}`, "name must be"},
+		{"member", `{"name":"` + strings.Repeat("x", 101) + `","accounts":[],"expiresInDays":30}`, "name must be"},
+		{"member", `{"name":"x","accounts":[],"expiresInDays":10}`, "expiresInDays must be"},
+		{"member", `{"name":"x","accounts":["github/mf"],"expiresInDays":7}`, "accounts must be accounts you read"},
+		{"member", `{"name":"x","accounts":[],"expiresInDays":7,"admin":true}`, "not valid JSON"},
+		{"outsider", `{"name":"x","accounts":[],"expiresInDays":7}`, "at least one account"},
+	} {
+		status, out := e.send(tc.who, "POST", "/api/v1/me/tokens", tc.body)
+		if status != http.StatusBadRequest || !strings.Contains(string(out), tc.want) {
+			t.Errorf("%s creating %s: status %d, %s; want 400 saying %q", tc.who, tc.body, status, out, tc.want)
+		}
+	}
+
+	mine := list("member", "/api/v1/me/tokens")
+	if len(mine) != 1 || mine[0].ID != laptop.ID || mine[0].Owner != nil {
+		t.Fatalf("the member's tokens = %+v; want the laptop agent alone, with no owner", mine)
+	}
+	if _, out := e.do("member", "GET", "/api/v1/me/tokens"); strings.Contains(string(out), laptop.Token) {
+		t.Fatalf("a token's value is listed: %s", out)
+	}
+	status, out := e.do("member", "GET", "/api/v1/admin/tokens")
+	e.expect(status, out, http.StatusNotFound, CodeNotFound)
+	all := list("admin", "/api/v1/admin/tokens")
+	i := slices.IndexFunc(all, func(a APIToken) bool { return a.ID == laptop.ID })
+	if i < 0 || all[i].Owner == nil || all[i].Owner.ID != e.users["member"] {
+		t.Fatalf("an admin's list = %+v; want the laptop agent with its owner", all)
+	}
+
+	// A token goes stale when the sign-in configuration it came from changes,
+	// and expires at its expiry.
+	e.exec(`UPDATE api_tokens SET grant_key = 'before' WHERE id = $1`, laptop.ID)
+	if got := list("member", "/api/v1/me/tokens"); got[0].Status != TokenStale {
+		t.Errorf("after a sign-in change = %s, want stale", got[0].Status)
+	}
+	e.exec(`UPDATE api_tokens SET expires_at = now() - interval '1 minute' WHERE id = $1`, laptop.ID)
+	if got := list("member", "/api/v1/me/tokens"); got[0].Status != TokenExpired {
+		t.Errorf("after its expiry = %s, want expired", got[0].Status)
+	}
+
+	path := "/api/v1/me/tokens/" + laptop.ID
+	status, out = e.do("admin", "DELETE", path)
+	e.expect(status, out, http.StatusNotFound, CodeNotFound)
+	status, out = e.do("member", "DELETE", path, false)
+	e.expect(status, out, http.StatusForbidden, "")
+	status, out = e.do("member", "DELETE", "/api/v1/me/tokens/not-a-uuid")
+	e.expect(status, out, http.StatusNotFound, CodeNotFound)
+	status, out = e.do("member", "DELETE", path)
+	e.expect(status, out, http.StatusNoContent, "")
+	status, out = e.do("member", "DELETE", path)
+	e.expect(status, out, http.StatusNotFound, CodeNotFound)
+
+	agent := create("member", `{"name":"agent","accounts":["github/md"],"expiresInDays":7}`)
+	status, out = e.do("member", "DELETE", "/api/v1/admin/tokens/"+agent.ID)
+	e.expect(status, out, http.StatusNotFound, CodeNotFound)
+	status, out = e.do("admin", "DELETE", "/api/v1/admin/tokens/"+agent.ID)
+	e.expect(status, out, http.StatusNoContent, "")
+	if got := list("member", "/api/v1/me/tokens"); len(got) != 0 {
+		t.Errorf("after an admin revoked it, the member's tokens = %+v", got)
+	}
+	for _, name := range []string{"laptop agent", "agent"} {
+		if c, r := e.audits(AuditTokenCreate, name), e.audits(AuditTokenRevoke, name); c != 1 || r != 1 {
+			t.Errorf("%s: %d creations and %d revocations audited, want one each", name, c, r)
+		}
+	}
 }
 
 // testUsers: an admin lists every user with what their session reads, and

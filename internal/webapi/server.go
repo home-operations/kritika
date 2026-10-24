@@ -181,6 +181,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerActions(mux)
 	s.registerAudit(mux)
 	s.registerUsers(mux)
+	s.registerTokens(mux)
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {

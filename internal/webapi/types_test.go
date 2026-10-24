@@ -127,6 +127,14 @@ var goldens = map[string]any{
 		SignIns: []UserSignIn{{Provider: "github", Login: "ada"}},
 		Access:  &UserAccess{Accounts: []string{"github/alpha"}}, Sessions: 2, FirstSeenAt: t0, LastSignInAt: &t1,
 	},
+	"api_token": APIToken{
+		ID: "tok-1", Name: "laptop agent", Owner: &User{ID: "u-1", DisplayName: "Ada Lovelace", Email: "ada@example.com"},
+		Accounts: []string{"github/alpha"}, Status: TokenActive, CreatedAt: t0, ExpiresAt: &t1, LastUsedAt: &t1,
+	},
+	"created_token": CreatedToken{
+		APIToken: APIToken{ID: "tok-2", Name: "ci", AllAccounts: true, Accounts: []string{}, Status: TokenActive, CreatedAt: t0},
+		Token:    "kritika_example",
+	},
 	"account_detail": AccountDetail{
 		Slug: "github/alpha",
 		Connection: Connection{
