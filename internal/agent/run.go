@@ -334,17 +334,18 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
 	// The command and the processes it starts form a process group of their
 	// own, which is stopped as a whole when the command times out and once
-	// it has exited, so nothing it started outlives the call.
+	// it has exited (stopGroupOnExit), so nothing it started outlives the
+	// call. The command is reaped only after that, so the group's id stays
+	// its own while it is signalled.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
-	err = cmd.Run()
-	if cmd.Process != nil {
-		// A group with no process left is ESRCH, which is fine.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if err = cmd.Start(); err == nil {
 		rt.executions[req.Command]++
+		stopGroupOnExit(cmd.Process.Pid)
+		err = cmd.Wait()
 	}
 	switch {
 	case ctx.Err() != nil:
@@ -352,6 +353,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	case cctx.Err() != nil:
 		stopped := fmt.Sprintf("%sstopped after %s\n%s", note, rt.cfg.Timeout, rt.mask(out.String()))
 		return rt.result(stopped, out, out.dropped(), rt.mask(errs.String())), nil
+	// A process that left the group still held the output open when the
+	// command exited: the command ran, and its output is what it wrote.
+	case errors.Is(err, exec.ErrWaitDelay):
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return "", rt.setupError(req.Command, err)

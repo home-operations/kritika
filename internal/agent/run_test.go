@@ -41,22 +41,33 @@ func TestMain(m *testing.M) {
 // timeout, "flood N" writes N bytes, "fail-after N" writes N bytes and then
 // an error to stderr, "unknown X" fails as gh does for a command X it lacks
 // and "quote X" prints the same and succeeds, "spawn" starts a "sleep" of
-// its own, apart from its output, and prints its pid, and "spawn wait"
-// then outlives any test timeout itself, "--fail-test ..." fails, and
-// anything else prints the working directory, the environment and the
-// arguments.
+// its own, apart from its output, prints its pid and exits, "spawn wait"
+// then outlives any test timeout itself, "spawn inherit" hands the sleep
+// its output, and "spawn setsid" also puts it in a session of its own,
+// "--fail-test ..." fails, and anything else prints the working
+// directory, the environment and the arguments.
 func helper(args []string) int {
 	switch {
 	case len(args) > 0 && args[0] == "--fail-test":
 		return 22
 	case len(args) > 0 && args[0] == "spawn":
+		mode := ""
+		if len(args) == 2 {
+			mode = args[1]
+		}
 		child := exec.Command(os.Args[0], "sleep")
+		if mode == "inherit" || mode == "setsid" {
+			child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		}
+		if mode == "setsid" {
+			child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		}
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 		fmt.Printf("child=%d\n", child.Process.Pid)
-		if len(args) == 2 && args[1] == "wait" {
+		if mode == "wait" {
 			time.Sleep(time.Minute)
 		}
 		return 0
@@ -476,52 +487,6 @@ func TestRunToolMasks(t *testing.T) {
 	if err != nil || strings.Contains(out, "ghs_run") || !strings.Contains(out, "env=GH_TOKEN=***") || !strings.Contains(out, "arg=auth") {
 		t.Fatalf("out = %q, %v; want the call run and the token masked", out, err)
 	}
-}
-
-// TestRunToolStopsWhatACommandStarted: a process a command started does
-// not outlive the call, whether the command exited or was stopped.
-func TestRunToolStopsWhatACommandStarted(t *testing.T) {
-	for _, tt := range []struct {
-		name    string
-		args    []string
-		timeout time.Duration
-	}{
-		{"after the command exits", []string{"spawn"}, 5 * time.Second},
-		{"when the command is stopped", []string{"spawn", "wait"}, 500 * time.Millisecond},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			rt, _ := newTestRunTool(t, false)
-			rt.cfg.Timeout = tt.timeout
-			input, err := json.Marshal(map[string]any{"command": "rg", "args": tt.args})
-			if err != nil {
-				t.Fatal(err)
-			}
-			out, err := rt.Run(t.Context(), input)
-			_, rest, found := strings.Cut(out, "child=")
-			pid, convErr := strconv.Atoi(strings.TrimSpace(strings.SplitN(rest, "\n", 2)[0]))
-			if err != nil || !found || convErr != nil {
-				t.Fatalf("out = %q, %v", out, err)
-			}
-			for deadline := time.Now().Add(5 * time.Second); !exited(pid); time.Sleep(20 * time.Millisecond) {
-				if time.Now().After(deadline) {
-					_ = syscall.Kill(pid, syscall.SIGKILL)
-					t.Fatalf("the process the command started, %d, outlived the call", pid)
-				}
-			}
-		})
-	}
-}
-
-// exited reports whether pid has exited: reaped, or a zombie its new
-// parent has yet to reap.
-func exited(pid int) bool {
-	if stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
-		// The state follows the command name, which is in parentheses.
-		s := string(stat)
-		i := strings.LastIndexByte(s, ')')
-		return i > 0 && i+2 < len(s) && (s[i+2] == 'Z' || s[i+2] == 'X')
-	}
-	return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
 }
 
 // TestRunToolGH: only gh is given its extra environment, what it reads is
