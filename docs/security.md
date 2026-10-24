@@ -203,8 +203,9 @@ JSON with `jq`; a container image it reads with
 on the release's `-tools` image, pinned by digest like the chart's image,
 whose root holds no shell and no package manager: `curl`, `find`, `grep`
 and `jq` as Ubuntu 26.04 builds them, cut from its packages with
-[chisel](https://github.com/canonical/chisel) together with glibc, libgcc
-and libstdc++, `gh` as its release builds it, checked against the
+[chisel](https://github.com/canonical/chisel) together with glibc, libgcc,
+libstdc++ and the timezone database, `gh` as its release builds it,
+checked against the
 release's checksums, and [mise](https://mise.jdx.dev/). Every other tool
 is the repository's: the [`tools`](repository-config.md#repository-tools)
 of its `.kritika.yaml`, mise's `[tools]` table, which the runner writes as

@@ -56,8 +56,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ---- Runner tools' root -----------------------------------------------------
 # curl, find, grep and jq as Ubuntu builds them, with glibc, libgcc and
-# libstdc++ for a repository's tools, cut from Ubuntu's packages by chisel
-# into a root with no shell and no package manager, and gh as its release
+# libstdc++ for a repository's tools and the timezone database for a TZ
+# the admin sets, cut from Ubuntu's packages by chisel into a root with no
+# shell and no package manager, and gh as its release
 # builds it, a static binary. The stage runs on the build platform and
 # fetches the target's: chisel cuts what the release's archive serves when
 # the image builds, and gh is checked against its release's checksums.
@@ -70,7 +71,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 RUN mkdir /rootfs \
  && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs \
       base-files_base base-files_chisel base-passwd_data ca-certificates_data \
-      libc6_libs libgcc-s1_libs libstdc++6_libs \
+      libc6_libs libgcc-s1_libs libstdc++6_libs tzdata_zoneinfo \
       curl_bins findutils_find grep_bins jq_bins \
  && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
  && echo 'nonroot:x:65532:' >> /rootfs/etc/group
