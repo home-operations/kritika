@@ -24,12 +24,15 @@ configuration applied. `KRITIKA_SMOKE_KEEP=1` leaves the cluster running
 for a look afterwards, and `KRITIKA_SMOKE_IMAGE` names an image already
 built, to skip the build.
 
-The Dockerfile's `rootfs` stage builds the runner image's root: the
-Ubuntu slices `chisel cut` takes `curl`, `find`, `grep` and `jq` from,
-and `gh` from its release, checked against the release's checksums.
-Renovate bumps `chisel` and `gh` through the annotations above their
-versions. A repository's `.kritika.yaml` `tools` add to the image's
-commands. `mise run
+Both images are `FROM scratch` on a root `chisel cut` takes from
+Ubuntu 26.04's slices: the Dockerfile's `serve-root` stage cuts kritika
+serve's, the base files, users, CA certificates, MIME types and timezone
+database the `chisel` stage lists in `BASE_SLICES`, and `tools-root` the
+runner's, those with glibc, libgcc, libstdc++, `curl`, `find`, `grep` and
+`jq`, and `gh` from its release, checked against the release's
+checksums. Renovate bumps `chisel` and `gh` through the annotations above
+their versions. A repository's `.kritika.yaml` `tools` add to the runner
+image's commands. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
 

@@ -54,25 +54,37 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
 
-# ---- Runner tools' root -----------------------------------------------------
-# curl, find, grep and jq as Ubuntu builds them, with glibc, libgcc and
-# libstdc++ for a repository's tools and the timezone database for a TZ
-# the admin sets, cut from Ubuntu's packages by chisel into a root with no
-# shell and no package manager, and gh as its release
-# builds it, a static binary. The stage runs on the build platform and
-# fetches the target's: chisel cuts what the release's archive serves when
-# the image builds, and gh is checked against its release's checksums.
-FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS rootfs
-ARG TARGETARCH
+# ---- Roots ------------------------------------------------------------------
+# The images' roots, cut from Ubuntu's packages by chisel, with no shell and
+# no package manager. chisel runs on the build platform and cuts the
+# target's packages, at what the release's archive serves when the image
+# builds. Both roots carry the base files, the users, the CA certificates,
+# the MIME types and the timezone database, legacy names included, for a TZ
+# the admin sets.
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS chisel
 # renovate: datasource=go depName=github.com/canonical/chisel
 ARG CHISEL_VERSION=v1.5.1
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go install github.com/canonical/chisel/cmd/chisel@${CHISEL_VERSION}
+ENV BASE_SLICES="base-files_base base-files_release-info base-files_chisel base-passwd_data ca-certificates_data media-types_data netbase_config tzdata-legacy_zoneinfo"
+
+# kritika serve's root: the base, and no program but kritika.
+FROM chisel AS serve-root
+ARG TARGETARCH
 RUN mkdir /rootfs \
- && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs \
-      base-files_base base-files_chisel base-passwd_data ca-certificates_data \
-      libc6_libs libgcc-s1_libs libstdc++6_libs tzdata-legacy_zoneinfo \
-      curl_bins findutils_find grep_bins jq_bins \
+ && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs ${BASE_SLICES} \
+ && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
+ && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+
+# The runner tools' root: the base, glibc, libgcc and libstdc++ for a
+# repository's tools, curl, find, grep and jq as Ubuntu builds them, and gh
+# as its release builds it, a static binary, checked against its release's
+# checksums.
+FROM chisel AS tools-root
+ARG TARGETARCH
+RUN mkdir /rootfs \
+ && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs ${BASE_SLICES} \
+      libc6_libs libgcc-s1_libs libstdc++6_libs curl_bins findutils_find grep_bins jq_bins \
  && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
  && echo 'nonroot:x:65532:' >> /rootfs/etc/group
 # renovate: datasource=github-releases depName=cli/cli
@@ -89,7 +101,7 @@ RUN version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz
 # image. Built with --target tools, published as the -tools tag.
 FROM mirror.gcr.io/jdxcode/mise:${MISE_VERSION} AS mise
 FROM scratch AS tools
-COPY --from=rootfs /rootfs /
+COPY --from=tools-root /rootfs /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # mise installs a repository's tools. It lives outside PATH: the runner
 # runs it by path, and a command the agent runs must not find it.
@@ -100,7 +112,9 @@ ENTRYPOINT ["/kritika"]
 
 # ---- Runtime --------------------------------------------------------------
 # The default target, last so a build without --target produces it.
-FROM gcr.io/distroless/static:nonroot
+FROM scratch
+COPY --from=serve-root /rootfs /
 WORKDIR /
+USER 65532
 COPY --from=builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]
