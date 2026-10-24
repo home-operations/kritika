@@ -22,6 +22,8 @@ export const me: T.Me = { ...golden<T.Me>('me'), settings: NO_SETTINGS };
 export const accountSummary = golden<T.AccountSummary>('account_summary');
 export const adminAccount = golden<T.AdminAccount>('admin_account');
 export const adminUser = golden<T.AdminUser>('admin_user');
+export const apiToken = golden<T.APIToken>('api_token');
+export const createdToken = golden<T.CreatedToken>('created_token');
 export const instanceSetting = golden<T.InstanceSetting>('instance_setting');
 export const toolUsage = golden<T.ToolUsage>('tool_usage');
 export const repoPage = golden<T.Page<T.Repository>>('page');
@@ -113,6 +115,8 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/pulls$/, pageOf([{ ...pull, account: SLUG }])],
     [/\/api\/v1\/admin\/accounts$/, [adminAccount]],
     [/\/api\/v1\/admin\/users$/, [adminUser]],
+    [/\/api\/v1\/admin\/tokens$/, [apiToken]],
+    [/\/api\/v1\/me\/tokens$/, [{ ...apiToken, owner: null }]],
     [/\/api\/v1\/admin\/instance$/, [instanceSetting]],
     [/\/api\/v1\/admin\/tools$/, toolUsage],
     [/\/api\/v1\/admin\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],

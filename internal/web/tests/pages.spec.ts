@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import * as g from './golden';
-import type { AccountDetail, Pull, ReviewStatus, Rule } from '../src/lib/types';
+import type { AccountDetail, APIToken, CreatedToken, Pull, ReviewStatus, Rule } from '../src/lib/types';
 
 const T = `#/a/${g.SLUG}`;
 
@@ -1522,6 +1522,102 @@ test.describe('your settings', () => {
     await page.evaluate((h) => (location.hash = h), `${T}/pulls/alpha/one/7`);
     await page.getByRole('button', { name: 'Pull request details', exact: true }).click();
     await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 21:00:00 GMT+9');
+  });
+
+  test('a token is created from a name, accounts and an expiry, and its value shown once', async ({ page }) => {
+    let made = false;
+    const created: CreatedToken = { ...g.createdToken, name: 'laptop agent', allAccounts: false, accounts: [g.SLUG], expiresAt: '2026-12-01T12:00:00Z' };
+    const listed: APIToken = { ...g.apiToken, name: created.name, accounts: created.accounts, owner: null };
+    await g.mockApi(page, [[/\/api\/v1\/me\/tokens$/, () => (made ? [listed] : [])], ...g.defaultApi()]);
+    const sent = await g.mockWrites(page, [['POST', /\/api\/v1\/me\/tokens$/, () => {
+      made = true;
+      return { status: 201, body: created };
+    }]]);
+    await page.goto('/#/settings');
+    const panel = page.getByRole('region', { name: 'API tokens' });
+    await expect(panel).toContainText('You have no tokens.');
+    const form = panel.getByRole('form', { name: 'Create a token' });
+    const submit = form.getByRole('button', { name: 'Create token' });
+    await expect(submit).toBeDisabled();
+    await form.getByLabel('Name').fill('laptop agent');
+    await form.getByLabel('Only these accounts').check();
+    await expect(submit).toBeDisabled();
+    await form.getByLabel(g.SLUG).check();
+    await form.getByLabel('Expires').selectOption({ label: '90 days' });
+    await submit.click();
+    await expect.poll(() => sent.map((s) => s.body)).toEqual([{ name: 'laptop agent', accounts: [g.SLUG], expiresInDays: 90 }]);
+    const shown = panel.getByRole('status');
+    await expect(shown).toContainText('laptop agent is ready');
+    await expect(shown.locator('code')).toHaveText(created.token);
+    await expect(panel.locator('.token-table tbody tr')).toHaveCount(1);
+    await expect(form.getByLabel('Name')).toHaveValue('');
+    await shown.getByRole('button', { name: 'Done' }).click();
+    await expect(panel.getByText(created.token)).toHaveCount(0);
+  });
+
+  test("revoking a just-created token takes its value off the page, and focus goes to the list's heading", async ({ page }) => {
+    const created: CreatedToken = { ...g.createdToken, name: 'laptop agent' };
+    const listed: APIToken = { ...g.apiToken, id: created.id, name: created.name, owner: null };
+    let state: 'none' | 'made' | 'revoked' = 'none';
+    await g.mockApi(page, [[/\/api\/v1\/me\/tokens$/, () => (state === 'made' ? [listed] : [])], ...g.defaultApi()]);
+    await g.mockWrites(page, [
+      ['POST', /\/api\/v1\/me\/tokens$/, () => {
+        state = 'made';
+        return { status: 201, body: created };
+      }],
+      ['DELETE', new RegExp(`/api/v1/me/tokens/${created.id}$`), () => {
+        state = 'revoked';
+        return { status: 204 };
+      }],
+    ]);
+    await page.goto('/#/settings');
+    const panel = page.getByRole('region', { name: 'API tokens' });
+    await panel.getByRole('form', { name: 'Create a token' }).getByLabel('Name').fill(created.name);
+    await panel.getByRole('button', { name: 'Create token' }).click();
+    await expect(panel.getByRole('status')).toContainText('laptop agent is ready');
+    await panel.getByRole('button', { name: `Revoke ${created.name}` }).focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('alertdialog', { name: 'Revoke the token?' }).getByRole('button', { name: 'Revoke' }).click();
+    await expect(panel).toContainText('You have no tokens.');
+    await expect(panel.getByRole('status')).toHaveCount(0);
+    await expect(page.locator('#pref-tokens')).toBeFocused();
+  });
+
+  test('a name is at most 100 characters as the API counts them, after trimming', async ({ page }) => {
+    await page.goto('/#/settings');
+    const form = page.getByRole('region', { name: 'API tokens' }).getByRole('form', { name: 'Create a token' });
+    const submit = form.getByRole('button', { name: 'Create token' });
+    await form.getByLabel('Name').fill(`  ${'🔑'.repeat(100)}  `);
+    await expect(submit).toBeEnabled();
+    await form.getByLabel('Name').fill('x'.repeat(101));
+    await expect(submit).toBeDisabled();
+    await expect(form).toContainText('A name is at most 100 characters.');
+  });
+
+  test('a token is revoked once confirmed, and a refused creation says why', async ({ page }) => {
+    const t: APIToken = { ...g.apiToken, owner: null };
+    let revoked = false;
+    await g.mockApi(page, [[/\/api\/v1\/me\/tokens$/, () => (revoked ? [] : [t])], ...g.defaultApi()]);
+    const sent = await g.mockWrites(page, [
+      ['DELETE', new RegExp(`/api/v1/me/tokens/${t.id}$`), () => {
+        revoked = true;
+        return { status: 204 };
+      }],
+      ['POST', /\/api\/v1\/me\/tokens$/, g.apiError(400, 'bad_request', 'a token must read at least one account')],
+    ]);
+    await page.goto('/#/settings');
+    const panel = page.getByRole('region', { name: 'API tokens' });
+    const row = panel.locator('.token-table tbody tr');
+    await expect(row).toContainText(t.name);
+    await expect(row.locator('.pill')).toHaveText('active');
+    await row.getByRole('button', { name: `Revoke ${t.name}` }).click();
+    await page.getByRole('alertdialog', { name: 'Revoke the token?' }).getByRole('button', { name: 'Revoke' }).click();
+    await expect.poll(() => sent.filter((s) => s.method === 'DELETE').length).toBe(1);
+    await expect(panel).toContainText('You have no tokens.');
+
+    await panel.getByRole('form', { name: 'Create a token' }).getByLabel('Name').fill('x');
+    await panel.getByRole('button', { name: 'Create token' }).click();
+    await expect(panel.getByRole('alert')).toContainText('a token must read at least one account');
   });
 
   test('settings kept with the user apply from the first page', async ({ page }) => {

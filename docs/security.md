@@ -787,3 +787,21 @@ user namespace as before.
 - The summary comment is public, on a fork's pull request too, which is
   why the cost of a pull request's reviews shows only when the admin turns
   `review.cost` on.
+
+### Personal access tokens
+
+A user creates API tokens in their own settings, for agents that read
+through the MCP endpoint. No admin, instance or configuration-file tokens
+exist.
+
+- A token reads what its creator's sign-in let them read when they created
+  it, or the accounts they chose among those, and never more. It never
+  carries an admin's rights, and nothing a token reaches changes anything.
+- It expires when its creator chose, or never. It also stops reading, like
+  a session, when the sign-in it came from is removed or its role mappings
+  change. Unlike a session it cannot re-check membership, so someone who
+  leaves keeps a token until it expires or is revoked: choose an expiry,
+  and revoke a token on the admin's Users page when someone leaves.
+- kritika keeps only a token's SHA-256. Its value, prefixed `kritika_` so a
+  leaked one is easy to recognise, is shown once.
+- Creating and revoking a token are audit-logged, without its value.

@@ -34,7 +34,7 @@ test('time zones filter by city, retain the selection on Escape, and save Auto',
   await page.goto('/#/settings');
   const input = page.getByRole('combobox', { name: 'Time zone', exact: true });
   await input.fill('New York');
-  await expect(page.getByRole('option')).toHaveText(['America/New_York']);
+  await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['America/New_York']);
   await input.press('Escape');
   await expect(input).toHaveValue('Auto');
   await expect(page.getByRole('listbox')).toHaveCount(0);

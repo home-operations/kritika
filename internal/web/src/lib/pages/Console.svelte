@@ -7,6 +7,7 @@
   import AdminAccounts from './admin/AdminAccounts.svelte';
   import AdminSettings from './admin/AdminSettings.svelte';
   import AdminUsers from './admin/AdminUsers.svelte';
+  import AdminTokens from './admin/AdminTokens.svelte';
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
 
   let { page }: { page?: ConsolePage } = $props();
@@ -23,6 +24,7 @@
       <ConnectionsSection />
     {:else if page === 'users'}
       <AdminUsers />
+      <AdminTokens />
     {:else if page === 'settings'}
       <AdminSettings />
     {:else if page === 'audit'}
