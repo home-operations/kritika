@@ -398,7 +398,12 @@ func indexRuns(rows []store.IndexRunRow) []IndexRun {
 
 // repoFilter resolves ?repo=owner/name to a repository id, "" without one.
 func repoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, error) {
-	name := r.URL.Query().Get("repo")
+	return repoID(ctx, tx, r.URL.Query().Get("repo"))
+}
+
+// repoID resolves a repository of the account by its full name to its id,
+// "" for no name.
+func repoID(ctx context.Context, tx pgx.Tx, name string) (string, error) {
 	if name == "" {
 		return "", nil
 	}

@@ -122,6 +122,7 @@ nav:
   - Using kritika:
       - Reviews and commands: reviews.md
       - Dashboard: dashboard.md
+      - MCP endpoint: mcp.md
       - Repository settings: repository-config.md
       - Confidence and approvals: confidence.md
   - Operations:

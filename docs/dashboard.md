@@ -121,7 +121,7 @@ Daily charts use UTC. If the top bar says **Reconnecting…**, live data may be
 out of date until the connection returns.
 
 Under **API tokens**, create a personal access token for an agent that reads
-through kritika's MCP endpoint. Name it, choose whether it reads everything
+through kritika's [MCP endpoint](mcp.md). Name it, choose whether it reads everything
 you can read or only some of those accounts, and choose when it expires: in
 7, 30 or 90 days, a year, or never. Its value is shown once. A token never
 changes anything, and stops reading once it expires, is revoked, or the

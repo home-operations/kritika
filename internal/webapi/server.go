@@ -153,12 +153,16 @@ func (s *Server) routes() http.Handler {
 	s.auth.Register(signIn)
 	signIn.HandleFunc("/", s.notFound)
 
+	mcpHandler := s.mcpHandler()
 	ui := s.uiHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == metaPath:
 			w.Header().Set("Cache-Control", "no-store")
 			public.ServeHTTP(w, r)
+		case r.URL.Path == mcpPath:
+			w.Header().Set("Cache-Control", "no-store")
+			mcpHandler.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/api/"):
 			w.Header().Set("Cache-Control", "no-store")
 			apiHandler.ServeHTTP(w, r)

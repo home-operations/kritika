@@ -2,7 +2,9 @@ package webapi
 
 import (
 	"cmp"
+	"context"
 	"errors"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -161,52 +163,73 @@ func pull(p store.PullRow) Pull {
 
 // findPull resolves {owner}/{repo}/{number}.
 func findPull(r *http.Request, tx pgx.Tx) (store.PullRow, error) {
-	ctx := r.Context()
 	number, err := strconv.ParseInt(r.PathValue("number"), 10, 32)
-	if err != nil || number <= 0 {
+	if err != nil {
 		return store.PullRow{}, errNotFound("pull request")
 	}
-	repo, err := findRepo(ctx, tx, r)
+	return lookupPull(r.Context(), tx, r.PathValue("owner")+"/"+r.PathValue("repo"), number)
+}
+
+// lookupPull resolves the pull request number of the account's repository
+// named repo.
+func lookupPull(ctx context.Context, tx pgx.Tx, repo string, number int64) (store.PullRow, error) {
+	if number <= 0 || number > math.MaxInt32 {
+		return store.PullRow{}, errNotFound("pull request")
+	}
+	row, err := lookupRepo(ctx, tx, repo)
 	if err != nil {
 		return store.PullRow{}, err
 	}
-	p, err := store.FindPull(ctx, tx, repo.ID, int(number))
+	p, err := store.FindPull(ctx, tx, row.ID, int(number))
 	if errors.Is(err, store.ErrNotFound) {
 		return p, errNotFound("pull request")
 	}
 	return p, err
 }
 
+// pullRecord is a pull request with every review, newest first, and
+// follow-up, and its review job that has not finished, nil for none.
+type pullRecord struct {
+	pull      store.PullRow
+	reviews   []store.ReviewRow
+	followups []store.FollowupRow
+	job       *store.JobRow
+}
+
+// loadPull reads p's reviews, follow-ups and live review job.
+func loadPull(ctx context.Context, tx pgx.Tx, p store.PullRow) (pullRecord, error) {
+	rec := pullRecord{pull: p}
+	var err error
+	if rec.reviews, err = store.ListPullReviews(ctx, tx, p.ID); err != nil {
+		return rec, err
+	}
+	f := store.FollowupFilter{PullRequestID: p.ID}
+	if rec.followups, _, err = store.ListFollowups(ctx, tx, f, store.Page{Limit: pullFollowups}); err != nil {
+		return rec, err
+	}
+	rec.job, err = store.FindLiveReviewJob(ctx, tx, p.RepositoryID, p.Number)
+	return rec, err
+}
+
 func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
-	var d PullDetail
+	var rec pullRecord
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		p, err := findPull(r, tx)
 		if err != nil {
 			return err
 		}
-		reviews, err := store.ListPullReviews(ctx, tx, p.ID)
-		if err != nil {
-			return err
-		}
-		followups, _, err := store.ListFollowups(ctx, tx, store.FollowupFilter{PullRequestID: p.ID}, store.Page{Limit: pullFollowups})
-		if err != nil {
-			return err
-		}
-		job, err := store.FindLiveReviewJob(ctx, tx, p.RepositoryID, p.Number)
-		if err != nil {
-			return err
-		}
-		d = PullDetail{Pull: pull(p), Reviews: make([]Review, len(reviews)), Followups: followupList(followups)}
-		if job != nil {
-			d.Job = new(jobItem(*job))
-		}
-		for i, v := range reviews {
-			d.Reviews[i] = reviewItem(v)
-		}
-		return nil
+		rec, err = loadPull(ctx, tx, p)
+		return err
 	}); err != nil {
 		return err
+	}
+	d := PullDetail{Pull: pull(rec.pull), Reviews: make([]Review, len(rec.reviews)), Followups: followupList(rec.followups)}
+	if rec.job != nil {
+		d.Job = new(jobItem(*rec.job))
+	}
+	for i, v := range rec.reviews {
+		d.Reviews[i] = reviewItem(v)
 	}
 	writeJSON(w, http.StatusOK, d)
 	return nil
