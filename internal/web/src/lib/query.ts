@@ -46,7 +46,9 @@ const RULES: { path: RegExp; kinds: readonly EventKind[]; review?: boolean }[] =
   { path: new RegExp(`^${ACCOUNT}/repos$`), kinds: ['review', 'index_run'] },
   { path: new RegExp(`^${ACCOUNT}/repos/[^/]+/[^/]+$`), kinds: RUNS },
   { path: new RegExp(`^${ACCOUNT}/pulls$`), kinds: RUNS },
-  { path: new RegExp(`^${ACCOUNT}/findings$`), kinds: ['review'] },
+  // A follow-up can dismiss a finding.
+  { path: new RegExp(`^${ACCOUNT}/findings$`), kinds: ['review', 'followup'] },
+  { path: new RegExp(`^${ACCOUNT}/findings/summary$`), kinds: ['review', 'followup'] },
   { path: new RegExp(`^${ACCOUNT}/followups$`), kinds: ['followup'] },
   { path: new RegExp(`^${ACCOUNT}/chatgpt/allowances$`), kinds: ['model_call'] },
   // Only the events of the review the path names.

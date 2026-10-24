@@ -74,6 +74,8 @@ func countCitations(rules []Rule, cited []store.RuleCitation) []Rule {
 			if c.Rule == r.ID && slices.Contains(r.Repositories, c.Repository) {
 				rules[i].Findings += c.Findings
 				rules[i].Addressed += c.Addressed
+				rules[i].Dismissed += c.Dismissed
+				rules[i].Downvoted += c.Downvoted
 			}
 		}
 	}

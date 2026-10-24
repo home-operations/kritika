@@ -74,7 +74,7 @@ test('mobile findings show status and open the inspector without sideways scroll
   await page.goto(`${account}/findings`);
   const row = page.locator('.finding-row').first();
   await expect(row.locator('.status-word')).toBeInViewport();
-  expect(await page.locator('.table-wrap').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  expect(await page.locator('.table-wrap:has(.finding-table)').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await row.locator('.finding-link').click();
   await expect(page.getByRole('dialog', { name: 'Finding details' })).toBeVisible();

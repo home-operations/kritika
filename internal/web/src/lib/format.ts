@@ -1,6 +1,6 @@
 // Pure display formatting shared by every page. No runes, so tests and
 // tooling can import it directly.
-import type { SkipReason, JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category } from './types';
+import type { SkipReason, JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category, DismissSource } from './types';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
@@ -140,6 +140,13 @@ export const followupTone: Record<FollowupStatus, Tone> = {
 
 export const SEVERITIES: readonly Severity[] = ['p0', 'p1', 'p2'];
 export const CATEGORIES: readonly Category[] = ['correctness', 'security', 'performance', 'reliability', 'maintainability', 'tests'];
+
+// DISMISSED_BY says what dismissed a finding, by its dismissSource.
+export const DISMISSED_BY: Record<DismissSource, string> = {
+  command: 'Dismissed with the dismiss command in its thread',
+  resolved: 'Dismissed when a maintainer resolved its thread',
+  conceded: 'Dismissed when kritika conceded it in its thread',
+};
 
 // isActive reports whether a review is still moving, i.e. its page should
 // follow live events.

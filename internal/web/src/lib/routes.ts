@@ -38,7 +38,7 @@
 // otherwise, including when the malformation is what prevents the slug
 // itself from being parsed (e.g. "#/a//acme").
 
-import type { FindingStatus, ReviewStatus, Severity, Category, UsageGroup } from './types';
+import type { DismissSource, FindingStatus, ReviewStatus, Severity, Category, UsageGroup } from './types';
 import { SEVERITIES, CATEGORIES } from './format';
 
 export const REVIEW_TABS = ['summary', 'diff', 'activity', 'conversation', 'timeline', 'raw', 'usage'] as const;
@@ -84,17 +84,24 @@ export function pullFilter(f: { state?: string; outcome?: string; is?: string; r
 
 // FindingFilter is the findings list's filters, in the hash's query like a
 // PullFilter's; a field is present only when it narrows the list.
+// dismissed narrows to the findings that source dismissed, path to those
+// under a path, and is to those whose comment drew a 👎.
 export interface FindingFilter {
   severity?: Severity;
   category?: Category;
   status?: FindingStatus;
+  dismissed?: DismissSource;
   repo?: string;
   rule?: string;
   agent?: string;
+  path?: string;
+  is?: 'downvoted';
   q?: string;
 }
 
 export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed', 'dismissed'];
+export const DISMISS_SOURCES: readonly DismissSource[] = ['command', 'resolved', 'conceded'];
+export const FINDING_IS = ['downvoted'] as const;
 
 // findingFilter drops the fields of f that match everything; undefined when
 // nothing is left.
@@ -102,9 +109,12 @@ export function findingFilter(f: {
   severity?: string;
   category?: string;
   status?: string;
+  dismissed?: string;
   repo?: string;
   rule?: string;
   agent?: string;
+  path?: string;
+  is?: string;
   q?: string;
 }): FindingFilter | undefined {
   const out: FindingFilter = {};
@@ -114,9 +124,14 @@ export function findingFilter(f: {
   if (category) out.category = category;
   const status = FINDING_STATUSES.find((s) => s === f.status);
   if (status) out.status = status;
+  const dismissed = DISMISS_SOURCES.find((s) => s === f.dismissed);
+  if (dismissed) out.dismissed = dismissed;
   if (f.repo) out.repo = f.repo;
   if (f.rule) out.rule = f.rule;
   if (f.agent) out.agent = f.agent;
+  if (f.path) out.path = f.path;
+  const is = FINDING_IS.find((i) => i === f.is);
+  if (is) out.is = is;
   if (f.q) out.q = f.q;
   return Object.keys(out).length ? out : undefined;
 }

@@ -55,11 +55,34 @@ Search accepts plain text and filters:
 | List | Example filters |
 | --- | --- |
 | Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0` |
-| Findings | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `rule:wrap-errors`, `agent:security` |
+| Findings | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `is:downvoted` |
 
 Filters are suggested as you type. `agent:` is offered once a finding on the
 page names an agent; `agent:default` finds the default pass's. Expand a list row to preview its latest
 review without leaving the list.
+
+### Findings
+
+**Common findings** counts the findings the filters keep, and how many of
+them a later review found addressed, were dismissed, or drew a 👎. Group
+them by category, rule, agent or directory, and select a group to narrow
+the list to it; a directory then shows the directories below it. A group that keeps
+coming back is worth an instruction in `AGENTS.md` or a skill, so the
+change's author gets it right the first time. A group that is often
+dismissed or drew a 👎 is worth a [rule](repository-config.md#rules)
+telling reviews what not to report. Like the analytics, 👎 counts come
+from GitHub alone and need polling enabled.
+
+`path:` keeps the findings under a path, `is:downvoted` those that drew a
+👎, and `dismissed:` those dismissed one way: `command`, with
+`@<bot> dismiss`; `resolved`, by resolving the thread; or `conceded`, when
+kritika agreed in the thread that the finding was wrong. Hover a dismissed
+finding's status to see which.
+
+**Export Markdown** and **Export JSON** download the findings the filters
+keep, newest first, up to 1,000. Give the Markdown to a coding agent and
+ask it to propose those instructions and rules. Reviews read `AGENTS.md`
+only when it is listed under [`context`](repository-config.md#context).
 
 ### Queue
 
@@ -86,7 +109,9 @@ spending excludes subscription fees. Cache details depend on transcript retentio
 ### Rules
 
 The Rules page lists configured rules and context files, their source and
-scope, and findings that cite each rule. Edit rules in the
+scope, and findings that cite each rule, with how many of those were
+addressed, dismissed, or drew a 👎. A rule whose findings are often
+dismissed may need rewording. Edit rules in the
 [configuration file](configuration.md) or [repository settings](repository-config.md#rules).
 
 ### Your settings

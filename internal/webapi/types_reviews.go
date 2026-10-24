@@ -68,10 +68,11 @@ type Finding struct {
 	// reviewer alone.
 	Agents []string `json:"agents"`
 	// Status is what became of it on its pull request: whether a later
-	// review no longer reported it, or a maintainer dismissed it, with
-	// DismissReason the reason they gave.
-	Status        store.FindingStatus `json:"status"`
-	DismissReason string              `json:"dismissReason"`
+	// review no longer reported it, or it was dismissed, with
+	// DismissReason the reason given and DismissSource what dismissed it.
+	Status        store.FindingStatus   `json:"status"`
+	DismissReason string                `json:"dismissReason"`
+	DismissSource store.DismissalSource `json:"dismissSource"`
 }
 
 // RunnerRun is the Kubernetes Job that prepared a review.

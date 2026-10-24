@@ -212,6 +212,29 @@ var goldens = map[string]any{
 		},
 		ReviewID: "rev-1", Pull: goldenPullRef, FirstSeenAt: t0, LastSeenAt: t1,
 	},
+	"finding_summary": FindingSummary{
+		FindingCounts: FindingCounts{Findings: 12, Addressed: 6, Dismissed: 3, Downvoted: 2},
+		Categories: []FindingGroup{
+			{Key: "correctness", Findings: 7, Addressed: 4, Dismissed: 1, Downvoted: 1},
+			{Key: "tests", Findings: 5, Addressed: 2, Dismissed: 2, Downvoted: 1},
+		},
+		Rules:  []FindingGroup{{Key: "wrap-errors", Findings: 4, Addressed: 1, Dismissed: 2, Downvoted: 1}},
+		Agents: []FindingGroup{{Key: "default", Findings: 12, Addressed: 6, Dismissed: 3, Downvoted: 2}},
+		Directories: []FindingGroup{
+			{Key: "internal/", Repository: "alpha/one", Findings: 8, Addressed: 5, Dismissed: 1, Downvoted: 0},
+			{Key: "", Repository: "alpha/one", Findings: 4, Addressed: 1, Dismissed: 2, Downvoted: 2},
+		},
+	},
+	"finding_export": FindingExport{
+		Items: []AccountFinding{{
+			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityP0, Category: review.CategoryCorrectness,
+			Title: "nil deref", Explanation: "x may be nil", Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)),
+			CreatedAt: t0, Rules: []string{"wrap-errors"}, Agents: []string{}, Status: store.FindingDismissed,
+			DismissReason: "house style", DismissSource: store.DismissedByCommand,
+			ReviewID: "rev-1", Pull: goldenPullRef, FirstSeenAt: t0, LastSeenAt: t1,
+		}},
+		Truncated: true,
+	},
 	"review_diff": ReviewDiff{Diff: "diff --git a/a.go b/a.go\n", DeltaDiff: ""},
 	"review_raw": ReviewRaw{
 		RepoFiles: map[string]string{".kritika.yaml": "review: { approve: true }\n"},
@@ -262,7 +285,8 @@ var goldens = map[string]any{
 	"rule": Rule{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
 		When:   []configfile.When{},
-		Source: RuleSource(configfile.SourceDefaults), Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
+		Source: RuleSource(configfile.SourceDefaults), Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1, Dismissed: 1,
+		Downvoted: 1,
 	},
 	"job": goldenJob,
 	"instance_queue": InstanceQueue{

@@ -700,7 +700,7 @@ test.describe('findings', () => {
     const f = g.accountFinding;
     const list = [
       { ...f, id: 'f-o', status: 'open' },
-      { ...f, id: 'f-d', status: 'dismissed', dismissReason: 'house style' },
+      { ...f, id: 'f-d', status: 'dismissed', dismissReason: 'house style', dismissSource: 'command' },
     ];
     await g.mockApi(page, [[/\/findings$/, g.pageOf(list)], ...g.defaultApi()]);
     await page.goto(`/${T}/findings`);
@@ -708,6 +708,7 @@ test.describe('findings', () => {
     await expect(rows.nth(0).locator('.status')).toHaveClass(/tone-accent/);
     await expect(rows.nth(1).locator('.status')).toHaveClass(/tone-muted/);
     await expect(rows.nth(1)).toContainText('house style');
+    await expect(rows.nth(1).locator('.status')).toHaveAttribute('title', 'Dismissed with the dismiss command in its thread');
     const status = page.getByRole('radiogroup', { name: 'Status' });
     await expect(status.getByRole('radio', { name: 'All' })).toBeChecked();
     await status.getByRole('radio', { name: 'Open' }).click();
@@ -786,6 +787,105 @@ test.describe('findings', () => {
     await expect(head.getByTitle('Raised by the default agent')).toHaveText('default');
   });
 
+  test('common findings count what the filters keep, and a group narrows the list to itself', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/findings?status=dismissed`);
+    const s = g.findingSummary;
+    const panel = page.getByRole('region', { name: 'Common findings' });
+    await expect(panel.locator('.finding-totals')).toHaveText(`${s.findings} findings · ${s.addressed} addressed · ${s.dismissed} dismissed · ${s.downvoted}`);
+    await expect(panel.locator('.finding-totals').getByRole('img', { name: 'thumbs down' })).toBeVisible();
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings/summary')).at(-1)?.searchParams.get('status')).toBe('dismissed');
+    const rows = panel.locator('tbody tr');
+    const c = s.categories[0]!;
+    await expect(rows).toHaveCount(s.categories.length);
+    await expect(rows.first()).toHaveText(new RegExp(`${c.key}\\s*${c.findings}\\s*${c.addressed}\\s*${c.dismissed}\\s*${c.downvoted}`));
+
+    // Without a repository filter, a directory names its repository; the
+    // files in no directory below the path filter are no path to narrow to.
+    await panel.getByRole('radio', { name: 'Directories' }).click();
+    const [dir, root] = s.directories;
+    await expect(rows.nth(0).getByRole('link')).toHaveText(`${dir!.repository} · ${dir!.key}`);
+    await expect(rows.nth(1)).toContainText(`${root!.repository} · root`);
+    await expect(rows.nth(1).getByRole('link')).toHaveCount(0);
+    await rows.nth(0).getByRole('link').click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?status=dismissed&repo=alpha%2Fone&path=internal%2F$`));
+    await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue('repo:alpha/one status:dismissed path:internal/');
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams.get('path')).toBe('internal/');
+    // Under the path, its own files are the ones in no directory below it.
+    await expect(rows.nth(0)).toContainText('internal/ (files)');
+    await expect(rows.nth(0).getByRole('link')).toHaveCount(0);
+    await expect(rows.nth(1)).toContainText('root');
+
+    await panel.getByRole('radio', { name: 'Rules' }).click();
+    await rows.first().getByRole('link', { name: s.rules[0]!.key }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?status=dismissed&repo=alpha%2Fone&rule=${s.rules[0]!.key}&path=internal%2F$`));
+  });
+
+  test('with a rule or an agent filtered, another rule or agent narrows nothing, its group holding only findings citing both', async ({ page }) => {
+    const both = { ...g.findingSummary.rules[0]!, key: 'no-tokens', findings: 1 };
+    await g.mockApi(page, [[/\/findings\/summary$/, { ...g.findingSummary, rules: [g.findingSummary.rules[0]!, both], agents: [g.findingSummary.agents[0]!, { ...both, key: 'security' }] }], ...g.defaultApi()]);
+    const panel = page.getByRole('region', { name: 'Common findings' });
+    const rows = panel.locator('tbody tr');
+    for (const [query, tab, title] of [['rule=wrap-errors', 'Rules', 'The list already filters by a rule'], ['agent=default', 'Agents', 'The list already filters by an agent']] as const) {
+      await page.goto(`/${T}/findings?${query}`);
+      await panel.getByRole('radio', { name: tab }).click();
+      await expect(rows).toHaveCount(2);
+      await expect(rows.getByRole('link')).toHaveCount(0);
+      await expect(rows.nth(1).locator('td').first()).toHaveAttribute('title', title);
+    }
+    // Without one, each narrows the list.
+    await page.goto(`/${T}/findings`);
+    await panel.getByRole('radio', { name: 'Rules' }).click();
+    await expect(rows.getByRole('link')).toHaveText(['wrap-errors', 'no-tokens']);
+  });
+
+  test('a directory whose path holds a space is counted but narrows nothing', async ({ page }) => {
+    const spaced = { ...g.findingSummary.directories[0]!, key: 'docs/My Folder/' };
+    await g.mockApi(page, [[/\/findings\/summary$/, { ...g.findingSummary, directories: [spaced] }], ...g.defaultApi()]);
+    await page.goto(`/${T}/findings`);
+    const panel = page.getByRole('region', { name: 'Common findings' });
+    await panel.getByRole('radio', { name: 'Directories' }).click();
+    const row = panel.locator('tbody tr');
+    await expect(row).toContainText(`${spaced.repository} · ${spaced.key}`);
+    await expect(row.getByRole('link')).toHaveCount(0);
+  });
+
+  test('a follow-up, which can dismiss a finding, refreshes the list and its summary', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route('**/api/events', async (route) => {
+      await gate;
+      await route.fulfill({ contentType: 'text/event-stream', body: `event: followup\ndata: ${JSON.stringify({ ...g.liveEvent, kind: 'followup', account: g.SLUG })}\n\n` });
+    });
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/findings`);
+    await expect(page.getByRole('region', { name: 'Common findings' })).toBeVisible();
+    const count = (end: string) => seen.filter((u) => u.pathname.endsWith(end)).length;
+    const list = count('/findings');
+    const summary = count('/findings/summary');
+    release();
+    await expect.poll(() => count('/findings/summary')).toBeGreaterThan(summary);
+    await expect.poll(() => count('/findings')).toBeGreaterThan(list);
+  });
+
+  test('the dismissal, 👎 and path filters reach the list, the summary and the exports', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/findings`);
+    await page.getByRole('combobox', { name: 'Search findings' }).fill('dismissed:conceded is:downvoted path:internal/ nil');
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?dismissed=conceded&path=internal%2F&is=downvoted&q=nil$`));
+    const want = { dismissed: 'conceded', path: 'internal/', is: 'downvoted', q: 'nil' };
+    const last = (end: string) => seen.filter((u) => u.pathname.endsWith(end)).at(-1)?.searchParams;
+    await expect.poll(() => last('/findings')?.get('dismissed')).toBe('conceded');
+    expect(Object.fromEntries(last('/findings')!)).toEqual({ limit: '50', ...want });
+    await expect.poll(() => last('/findings/summary')?.get('dismissed')).toBe('conceded');
+    expect(Object.fromEntries(last('/findings/summary')!)).toEqual(want);
+    for (const [name, format] of [['Export Markdown', 'markdown'], ['Export JSON', 'json']] as const) {
+      const exported = new URL((await page.getByRole('link', { name }).getAttribute('href'))!, 'http://dashboard');
+      expect(exported.pathname).toBe(`/api/v1/accounts/${g.SLUG}/findings/export`);
+      expect(Object.fromEntries(exported.searchParams)).toEqual({ format, ...want });
+    }
+  });
+
   test('a cited rule narrows the list to the findings that cite it', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/findings`);
@@ -822,6 +922,9 @@ test.describe('rules', () => {
     await expect(row.getByRole('link', { name: r.repositories[0]! })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
     // Its findings, narrowed to its one repository.
     await expect(row.locator('.rule-cited')).toContainText(`${r.addressed} addressed`);
+    // Its dismissed and 👎 findings, the ones to answer with a rule.
+    await expect(row.getByRole('link', { name: `${r.dismissed} dismissed` })).toHaveAttribute('href', `#/a/${g.SLUG}/findings?status=dismissed&repo=alpha%2Fone&rule=${r.id}`);
+    await expect(row.getByRole('link', { name: `${r.downvoted} thumbs down` })).toHaveAttribute('href', `#/a/${g.SLUG}/findings?repo=alpha%2Fone&rule=${r.id}&is=downvoted`);
     await expect(row.getByRole('link', { name: String(r.findings), exact: true })).toHaveAttribute(
       'href',
       `#/a/${g.SLUG}/findings?repo=alpha%2Fone&rule=${r.id}`,
