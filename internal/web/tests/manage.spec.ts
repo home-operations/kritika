@@ -366,6 +366,57 @@ test.describe('configuration page', () => {
   });
 });
 
+test.describe('users page', () => {
+  test('lists who signed in, how, and what their session reads', async ({ page }) => {
+    const u = g.adminUser;
+    const op: T.AdminUser = { ...u, id: 'u-2', displayName: 'Op', email: '', signIns: [{ provider: 'oidc', login: '' }], access: { admin: true, allAccounts: false, accounts: [] }, sessions: 1 };
+    const gone: T.AdminUser = { ...u, id: 'u-3', displayName: 'Gone', access: null, sessions: 0, lastSignInAt: null };
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/users$/, [u, op, gone]]]);
+    await page.goto('/#/admin/users');
+    const rows = page.locator('#op-users').locator('../..').locator('tbody tr');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText(u.displayName);
+    await expect(rows.nth(0)).toContainText(u.email);
+    await expect(rows.nth(0)).toContainText(`${u.signIns[0]!.provider}: ${u.signIns[0]!.login}`);
+    await expect(rows.nth(0)).toContainText(u.access!.accounts[0]!);
+    await expect(rows.nth(1).locator('.pill')).toHaveText('admin');
+    await expect(rows.nth(1)).toContainText('oidc');
+    await expect(rows.nth(2)).toContainText('no active session');
+    await expect(rows.nth(2).getByRole('button', { name: 'Sign Gone out everywhere' })).toBeDisabled();
+  });
+
+  test('signs a user out everywhere once confirmed', async ({ page }) => {
+    const u = g.adminUser;
+    let signedOut = false;
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/users$/, () => [{ ...u, sessions: signedOut ? 0 : u.sessions, access: signedOut ? null : u.access }]]]);
+    const sent = await g.mockWrites(page, [['DELETE', new RegExp(`/api/v1/admin/users/${u.id}/sessions$`), () => {
+      signedOut = true;
+      return { status: 204 };
+    }]]);
+    await page.goto('/#/admin/users');
+    const button = page.getByRole('button', { name: `Sign ${u.displayName} out everywhere` });
+    await button.click();
+    const dialog = page.getByRole('alertdialog', { name: 'Sign out everywhere?' });
+    await expect(dialog).toContainText(`every session of ${u.displayName}`);
+    await expect(dialog).not.toContainText('That includes yours');
+    await dialog.getByRole('button', { name: 'Keep them' }).click();
+    expect(sent).toHaveLength(0);
+    await button.click();
+    await dialog.getByRole('button', { name: 'Sign out' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    await expect(page.getByRole('status')).toContainText(`Signed ${u.displayName} out everywhere`);
+    await expect(page.locator('#op-users').locator('../..').locator('tbody tr').first()).toContainText('no active session');
+  });
+
+  test('warns an admin that signing themselves out everywhere ends their own session', async ({ page }) => {
+    const self: T.AdminUser = { ...g.adminUser, id: adminMe.user.id };
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/users$/, [self]]]);
+    await page.goto('/#/admin/users');
+    await page.getByRole('button', { name: `Sign ${self.displayName} out everywhere` }).click();
+    await expect(page.getByRole('alertdialog', { name: 'Sign out everywhere?' })).toContainText('That includes yours');
+  });
+});
+
 test.describe('settings search', () => {
   test('the palette finds a section of an administration page only when searching, and focuses it on its page', async ({ page }) => {
     await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);

@@ -138,7 +138,7 @@ test.describe('signed-in shell', () => {
 
     // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
-    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs', 'Accounts', 'Connections', 'Settings', 'Audit log']);
+    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs', 'Accounts', 'Connections', 'Users', 'Settings', 'Audit log']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
     for (const href of await instance.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) expect(href).not.toContain('/a/');
@@ -179,7 +179,7 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.account-button')).toHaveText('All accounts');
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0);
     // Each administration page is a tab of its own, the one shown alone current.
-    for (const [hash, tab] of [['#/admin', 'Accounts'], ['#/admin/connections', 'Connections'], ['#/admin/settings', 'Settings'], ['#/admin/audit', 'Audit log']]) {
+    for (const [hash, tab] of [['#/admin', 'Accounts'], ['#/admin/connections', 'Connections'], ['#/admin/users', 'Users'], ['#/admin/settings', 'Settings'], ['#/admin/audit', 'Audit log']]) {
       await page.goto(`/${hash}`);
       await expect(page.locator('.sections .section-tab.active')).toHaveText(tab!);
       await expect(page.locator('main h1')).toHaveText(tab!);

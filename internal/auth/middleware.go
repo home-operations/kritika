@@ -122,6 +122,15 @@ func honoured(file *configfile.File, sess store.Session) bool {
 	return ok && origin == sess.Identity.Origin && key == sess.Grant.Key
 }
 
+// SessionPrincipal is the principal sess acts as under file, and false when
+// file no longer honours it.
+func SessionPrincipal(file *configfile.File, sess store.Session) (*Principal, bool) {
+	if !honoured(file, sess) {
+		return nil, false
+	}
+	return principalFor(file, sess), true
+}
+
 // principalFor builds the principal a session acts as under file.
 func principalFor(file *configfile.File, sess store.Session) *Principal {
 	g := sess.Grant

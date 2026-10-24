@@ -12,6 +12,7 @@ const ROUTES: Route[] = [
   { name: 'signin' },
   { name: 'console' },
   { name: 'console', page: 'connections' },
+  { name: 'console', page: 'users' },
   { name: 'console', page: 'settings' },
   { name: 'console', page: 'audit' },
   { name: 'instanceQueue' },

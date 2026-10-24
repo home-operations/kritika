@@ -197,9 +197,9 @@ func identityUser(ctx context.Context, tx pgx.Tx, id SignInIdentity) (string, er
 }
 
 // CreateSession stores a new session for the user, signed in through
-// the provider at origin with grant g, valid until expires, and returns its
-// cookie value. Only the value's SHA-256 is kept. Expired sessions are
-// swept on the way.
+// the provider at origin with grant g, valid until expires, records the
+// sign-in on the user, and returns its cookie value. Only the value's
+// SHA-256 is kept. Expired sessions are swept on the way.
 func (s *Store) CreateSession(
 	ctx context.Context, userID, provider, origin string, g SessionGrant, now, expires time.Time,
 ) (string, error) {
@@ -213,10 +213,18 @@ func (s *Store) CreateSession(
 	if _, err := s.app.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
-	if _, err := s.app.Exec(ctx, `INSERT INTO sessions
-		(token_hash, user_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		tokenHash(token), userID, provider, origin, g.Role, g.AllAccounts, g.Accounts, g.Key, now, expires); err != nil {
+	err := pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `INSERT INTO sessions
+			(token_hash, user_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			tokenHash(token), userID, provider, origin, g.Role, g.AllAccounts, g.Accounts, g.Key, now, expires); err != nil {
+			return err
+		}
+		// The later of two overlapping sign-ins wins, whichever commits last.
+		_, err := tx.Exec(ctx, `UPDATE users SET last_sign_in_at = GREATEST(last_sign_in_at, $2) WHERE id = $1`, userID, now)
+		return err
+	})
+	if err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
 	return token, nil

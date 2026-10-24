@@ -1728,6 +1728,7 @@ test('each page names itself in the browser tab', async ({ page }) => {
     [`${T}/queue`, `Queue · ${g.SLUG} · kritika`],
     ['#/admin', 'Accounts · kritika'],
     ['#/admin/connections', 'Connections · kritika'],
+    ['#/admin/users', 'Users · kritika'],
     ['#/admin/settings', 'Settings · kritika'],
     ['#/admin/audit', 'Audit log · kritika'],
   ]) {

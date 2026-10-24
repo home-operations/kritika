@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -96,6 +97,8 @@ type manageEnv struct {
 	srv     *Server
 	http    *httptest.Server
 	cookie  map[string]*http.Cookie
+	// users are the ids of the users signIn signed in, by name.
+	users map[string]string
 }
 
 func newManageEnv(t *testing.T) *manageEnv {
@@ -109,7 +112,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(owner.Close)
-	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}}
+	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}, users: map[string]string{}}
 
 	t.Setenv("KRITIKA_TEST_TOKEN", "tok")
 	file := configfiletest.Load(t, manageConfig)
@@ -154,6 +157,7 @@ func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 		e.t.Fatal(err)
 	}
 	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritika.example"}), Value: token}
+	e.users[name] = user.ID
 }
 
 // do sends a request as who; a mutation carries the same-origin headers
@@ -218,6 +222,78 @@ func TestManage(t *testing.T) {
 	e.signIn("member", "mgr-member", memberOfAccounts("github/md"))
 	t.Run("actions", func(t *testing.T) { testActions(t, e, md) })
 	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e, md) })
+	t.Run("users", func(t *testing.T) { testUsers(t, e) })
+}
+
+// testUsers: an admin lists every user with what their session reads, and
+// signs one out everywhere, which ends their sessions and is audited; no
+// one else sees the route.
+func testUsers(t *testing.T, e *manageEnv) {
+	e.signIn("leaver", "mgr-leaver", memberOfAccounts("github/md"))
+	status, body := e.do("member", "GET", "/api/v1/admin/users")
+	e.expect(status, body, http.StatusNotFound, CodeNotFound)
+	users := func() map[string]AdminUser {
+		t.Helper()
+		status, body := e.do("admin", "GET", "/api/v1/admin/users")
+		e.expect(status, body, http.StatusOK, "")
+		var list []AdminUser
+		if err := json.Unmarshal(body, &list); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]AdminUser{}
+		for _, u := range list {
+			out[u.ID] = u
+		}
+		return out
+	}
+	got := users()
+	admin, leaver := got[e.users["admin"]], got[e.users["leaver"]]
+	if admin.Access == nil || !admin.Access.Admin || admin.Sessions != 1 || admin.LastSignInAt == nil {
+		t.Fatalf("admin = %+v; want an admin with one session", admin)
+	}
+	if leaver.Access == nil || leaver.Access.Admin || !slices.Equal(leaver.Access.Accounts, []string{"github/md"}) || leaver.Sessions != 1 ||
+		len(leaver.SignIns) != 1 || leaver.SignIns[0].Provider != "oidc" {
+		t.Fatalf("leaver = %+v; want a member of github/md with one session and their sign-in", leaver)
+	}
+
+	// Access is what the newest honoured session reads. A newer session whose
+	// sign-in has changed since counts for nothing, not even as live.
+	for _, accounts := range [][]string{{"github/md"}, {"github/mf"}, {"github/md", "github/mf"}} {
+		e.signIn("juggler", "mgr-juggler", memberOfAccounts(accounts...))
+	}
+	juggler := e.users["juggler"]
+	e.exec(`UPDATE sessions SET created_at = now() - interval '3 hours' WHERE user_id = $1 AND accounts = '{github/md}'`, juggler)
+	e.exec(`UPDATE sessions SET created_at = now() - interval '2 hours' WHERE user_id = $1 AND accounts = '{github/mf}'`, juggler)
+	e.exec(`UPDATE sessions SET created_at = now() - interval '1 hour', grant_key = 'before' WHERE user_id = $1 AND cardinality(accounts) = 2`, juggler)
+	e.signIn("stale", "mgr-stale", memberOfAccounts("github/md"))
+	e.exec(`UPDATE sessions SET grant_key = 'before' WHERE user_id = $1`, e.users["stale"])
+	got = users()
+	if j := got[juggler]; j.Sessions != 2 || j.Access == nil || !slices.Equal(j.Access.Accounts, []string{"github/mf"}) {
+		t.Errorf("juggler = %+v; want two honoured sessions, reading what the newer of them reads", j)
+	}
+	if s, listed := got[e.users["stale"]]; !listed || s.Sessions != 0 || s.Access != nil {
+		t.Errorf("stale = %+v, listed %v; want them listed, with no honoured session and no access", s, listed)
+	}
+
+	path := "/api/v1/admin/users/" + leaver.ID + "/sessions"
+	status, body = e.do("member", "DELETE", path)
+	e.expect(status, body, http.StatusNotFound, CodeNotFound)
+	status, body = e.do("admin", "DELETE", path, false)
+	e.expect(status, body, http.StatusForbidden, "")
+	for _, missing := range []string{"not-a-uuid", "00000000-0000-0000-0000-000000000000"} {
+		status, body = e.do("admin", "DELETE", "/api/v1/admin/users/"+missing+"/sessions")
+		e.expect(status, body, http.StatusNotFound, CodeNotFound)
+	}
+	status, body = e.do("admin", "DELETE", path)
+	e.expect(status, body, http.StatusNoContent, "")
+	status, body = e.do("leaver", "GET", "/api/v1/me")
+	e.expect(status, body, http.StatusUnauthorized, "")
+	if n := e.audits(AuditUserSignOut, "leaver"); n != 1 {
+		t.Errorf("sign-out audits = %d, want 1", n)
+	}
+	if gone := users()[e.users["leaver"]]; gone.Sessions != 0 || gone.Access != nil || gone.LastSignInAt == nil {
+		t.Errorf("leaver signed out = %+v; want no session or access, and their last sign-in kept", gone)
+	}
 }
 
 func testActions(t *testing.T, e *manageEnv, md string) {

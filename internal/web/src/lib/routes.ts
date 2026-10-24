@@ -44,7 +44,7 @@ import { SEVERITIES, CATEGORIES } from './format';
 export const REVIEW_TABS = ['summary', 'diff', 'activity', 'conversation', 'timeline', 'raw', 'usage'] as const;
 
 // The instance administration's pages beside its accounts, #/admin itself.
-export const CONSOLE_PAGES = ['connections', 'settings', 'audit'] as const;
+export const CONSOLE_PAGES = ['connections', 'users', 'settings', 'audit'] as const;
 export type ConsolePage = (typeof CONSOLE_PAGES)[number];
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 

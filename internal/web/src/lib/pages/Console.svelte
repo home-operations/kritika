@@ -6,10 +6,11 @@
   import type { ConsolePage } from '../routes';
   import AdminAccounts from './admin/AdminAccounts.svelte';
   import AdminSettings from './admin/AdminSettings.svelte';
+  import AdminUsers from './admin/AdminUsers.svelte';
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
 
   let { page }: { page?: ConsolePage } = $props();
-  const TITLES: Record<ConsolePage | 'accounts', string> = { accounts: 'Accounts', connections: 'Connections', settings: 'Settings', audit: 'Audit log' };
+  const TITLES: Record<ConsolePage | 'accounts', string> = { accounts: 'Accounts', connections: 'Connections', users: 'Users', settings: 'Settings', audit: 'Audit log' };
   const title = $derived(TITLES[page ?? 'accounts']);
 </script>
 
@@ -20,6 +21,8 @@
     <PageHeader {title} />
     {#if page === 'connections'}
       <ConnectionsSection />
+    {:else if page === 'users'}
+      <AdminUsers />
     {:else if page === 'settings'}
       <AdminSettings />
     {:else if page === 'audit'}

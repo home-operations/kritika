@@ -122,6 +122,11 @@ var goldens = map[string]any{
 	},
 	"account_summary": goldenSummary,
 	"admin_account":   AdminAccount{AccountSummary: goldenSummary, Live: false, Conflict: "no connection serves this account"},
+	"admin_user": AdminUser{
+		User:    User{ID: "u-1", DisplayName: "Ada Lovelace", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
+		SignIns: []UserSignIn{{Provider: "github", Login: "ada"}},
+		Access:  &UserAccess{Accounts: []string{"github/alpha"}}, Sessions: 2, FirstSeenAt: t0, LastSignInAt: &t1,
+	},
 	"account_detail": AccountDetail{
 		Slug: "github/alpha",
 		Connection: Connection{

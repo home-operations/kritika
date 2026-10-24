@@ -16,6 +16,7 @@ export const CONSOLE_SECTIONS: readonly SettingEntry[] = [
   { label: 'Setup', target: '#op-setup', keywords: 'checklist missing error refused reload' },
   { label: 'Accounts', target: '#op-accounts', keywords: 'served usage' },
   { label: 'Connections', page: 'connections', target: '#op-connections', keywords: 'github app forgejo gitlab gitea installations uninstall connections' },
+  { label: 'Users', page: 'users', target: '#op-users', keywords: 'people members sign-ins sign out sessions' },
   { label: 'Download cache', page: 'settings', target: '#op-download-cache', keywords: 'gateway s3 storage bucket retention downloads' },
   { label: 'Most used tools', page: 'settings', target: '#op-tools', keywords: 'commands executions usage graph mise' },
   { label: 'Instance configuration', page: 'settings', target: '#op-instance', keywords: 'environment sources instance providers embedding' },
