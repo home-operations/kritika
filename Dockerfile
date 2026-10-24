@@ -60,21 +60,19 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # target's packages, at what the release's archive serves when the image
 # builds. Both roots carry the base files, the users, the CA certificates,
 # the MIME types and the timezone database, legacy names included, for a TZ
-# the admin sets.
+# the admin sets, and a dpkg status for scanners (scripts/chisel-root.sh).
 FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS chisel
 # renovate: datasource=go depName=github.com/canonical/chisel
 ARG CHISEL_VERSION=v1.5.1
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go install github.com/canonical/chisel/cmd/chisel@${CHISEL_VERSION}
 ENV BASE_SLICES="base-files_base base-files_release-info base-files_chisel base-passwd_data ca-certificates_data media-types_data netbase_config tzdata-legacy_zoneinfo"
+COPY --chmod=755 scripts/chisel-root.sh /usr/local/bin/chisel-root
 
 # kritika serve's root: the base, and no program but kritika.
 FROM chisel AS serve-root
 ARG TARGETARCH
-RUN mkdir /rootfs \
- && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs ${BASE_SLICES} \
- && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
- && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+RUN chisel-root
 
 # The runner tools' root: the base, glibc, libgcc and libstdc++ for a
 # repository's tools, curl, find, grep and jq as Ubuntu builds them, and gh
@@ -82,11 +80,7 @@ RUN mkdir /rootfs \
 # checksums.
 FROM chisel AS tools-root
 ARG TARGETARCH
-RUN mkdir /rootfs \
- && chisel cut --release ubuntu-26.04 --arch "${TARGETARCH}" --root /rootfs ${BASE_SLICES} \
-      libc6_libs libgcc-s1_libs libstdc++6_libs curl_bins findutils_find grep_bins jq_bins \
- && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/usr/sbin/nologin' >> /rootfs/etc/passwd \
- && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+RUN chisel-root libc6_libs libgcc-s1_libs libstdc++6_libs curl_bins findutils_find grep_bins jq_bins
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=v2.103.0
 RUN version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz" \

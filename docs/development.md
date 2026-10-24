@@ -30,7 +30,11 @@ serve's, the base files, users, CA certificates, MIME types and timezone
 database the `chisel` stage lists in `BASE_SLICES`, and `tools-root` the
 runner's, those with glibc, libgcc, libstdc++, `curl`, `find`, `grep` and
 `jq`, and `gh` from its release, checked against the release's
-checksums. Renovate bumps `chisel` and `gh` through the annotations above
+checksums. `scripts/chisel-root.sh` makes both cuts and writes the control
+files of the packages a cut took slices of to the root's dpkg status:
+vulnerability scanners such as Trivy and syft find a chiselled root's
+packages there and nowhere else. A package is listed whole, so a scanner
+can report a file of it the root does not carry. Renovate bumps `chisel` and `gh` through the annotations above
 their versions. A repository's `.kritika.yaml` `tools` add to the runner
 image's commands. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
