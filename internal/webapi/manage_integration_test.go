@@ -256,6 +256,25 @@ func testUsers(t *testing.T, e *manageEnv) {
 		t.Fatalf("leaver = %+v; want a member of github/md with one session and their sign-in", leaver)
 	}
 
+	// Access is what the newest honoured session reads. A newer session whose
+	// sign-in has changed since counts for nothing, not even as live.
+	for _, accounts := range [][]string{{"github/md"}, {"github/mf"}, {"github/md", "github/mf"}} {
+		e.signIn("juggler", "mgr-juggler", memberOfAccounts(accounts...))
+	}
+	juggler := e.users["juggler"]
+	e.exec(`UPDATE sessions SET created_at = now() - interval '3 hours' WHERE user_id = $1 AND accounts = '{github/md}'`, juggler)
+	e.exec(`UPDATE sessions SET created_at = now() - interval '2 hours' WHERE user_id = $1 AND accounts = '{github/mf}'`, juggler)
+	e.exec(`UPDATE sessions SET created_at = now() - interval '1 hour', grant_key = 'before' WHERE user_id = $1 AND cardinality(accounts) = 2`, juggler)
+	e.signIn("stale", "mgr-stale", memberOfAccounts("github/md"))
+	e.exec(`UPDATE sessions SET grant_key = 'before' WHERE user_id = $1`, e.users["stale"])
+	got = users()
+	if j := got[juggler]; j.Sessions != 2 || j.Access == nil || !slices.Equal(j.Access.Accounts, []string{"github/mf"}) {
+		t.Errorf("juggler = %+v; want two honoured sessions, reading what the newer of them reads", j)
+	}
+	if s, listed := got[e.users["stale"]]; !listed || s.Sessions != 0 || s.Access != nil {
+		t.Errorf("stale = %+v, listed %v; want them listed, with no honoured session and no access", s, listed)
+	}
+
 	path := "/api/v1/admin/users/" + leaver.ID + "/sessions"
 	status, body = e.do("member", "DELETE", path)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
