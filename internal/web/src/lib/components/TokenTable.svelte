@@ -36,8 +36,10 @@
     confirmOpen = true;
   }
 
-  // The list reloads before the dialog closes, so that focus goes to the
-  // fallback, not to a Revoke button about to leave with its row.
+  // After a revocation the list reloads before the dialog closes, so that
+  // focus goes to the fallback, not to a Revoke button about to leave with
+  // its row. One that fails leaves the list, and a token's reveal, as they
+  // were.
   async function revoke(): Promise<void> {
     const t = revoking;
     if (!t) return;
@@ -45,10 +47,10 @@
     try {
       await sendJSON('DELETE', revokePath(t.id));
       toast(`Revoked ${t.name}`);
+      await onrevoked(t.id);
     } catch (err) {
       toast(`Revoke failed: ${describe(err)}`, 'danger');
     } finally {
-      await onrevoked(t.id);
       busy = false;
       confirmOpen = false;
     }

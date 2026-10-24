@@ -1583,6 +1583,30 @@ test.describe('your settings', () => {
     await expect(page.locator('#pref-tokens')).toBeFocused();
   });
 
+  test("a revocation that fails keeps a just-created token's value and its row", async ({ page }) => {
+    const created: CreatedToken = { ...g.createdToken, name: 'laptop agent' };
+    const listed: APIToken = { ...g.apiToken, id: created.id, name: created.name, owner: null };
+    let made = false;
+    await g.mockApi(page, [[/\/api\/v1\/me\/tokens$/, () => (made ? [listed] : [])], ...g.defaultApi()]);
+    await g.mockWrites(page, [
+      ['POST', /\/api\/v1\/me\/tokens$/, () => {
+        made = true;
+        return { status: 201, body: created };
+      }],
+      ['DELETE', new RegExp(`/api/v1/me/tokens/${created.id}$`), g.apiError(500, 'internal', 'internal error')],
+    ]);
+    await page.goto('/#/settings');
+    const panel = page.getByRole('region', { name: 'API tokens' });
+    await panel.getByRole('form', { name: 'Create a token' }).getByLabel('Name').fill(created.name);
+    await panel.getByRole('button', { name: 'Create token' }).click();
+    await expect(panel.getByRole('status')).toContainText('laptop agent is ready');
+    await panel.getByRole('button', { name: `Revoke ${created.name}` }).click();
+    await page.getByRole('alertdialog', { name: 'Revoke the token?' }).getByRole('button', { name: 'Revoke' }).click();
+    await expect(page.locator('.toast span')).toHaveText(/^Revoke failed: /);
+    await expect(panel.getByRole('status').locator('code')).toHaveText(created.token);
+    await expect(panel.locator('.token-table tbody tr')).toHaveCount(1);
+  });
+
   test('a name is at most 100 characters as the API counts them, after trimming', async ({ page }) => {
     await page.goto('/#/settings');
     const form = page.getByRole('region', { name: 'API tokens' }).getByRole('form', { name: 'Create a token' });
