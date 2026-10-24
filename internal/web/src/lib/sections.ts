@@ -69,8 +69,18 @@ export const INSTANCE_TABS: readonly InstanceTab[] = [
   { label: 'Queue', route: { name: 'instanceQueue' }, group: 'Operations' },
   { label: 'Analytics', route: { name: 'instanceAnalytics' }, group: 'Insights' },
   { label: 'Usage & costs', route: { name: 'instanceUsage' }, group: 'Insights' },
-  { label: 'Settings', route: { name: 'console' }, admin: true, group: 'Configuration' },
+  { label: 'Accounts', route: { name: 'console' }, admin: true, group: 'Configuration' },
+  { label: 'Connections', route: { name: 'console', page: 'connections' }, admin: true, group: 'Configuration' },
+  { label: 'Settings', route: { name: 'console', page: 'settings' }, admin: true, group: 'Configuration' },
+  { label: 'Audit log', route: { name: 'console', page: 'audit' }, admin: true, group: 'Configuration' },
 ];
+
+// isInstanceTab reports whether r is on t's page: the administration's
+// tabs share one route name and differ by page.
+export function isInstanceTab(t: InstanceTab, r: Route): boolean {
+  if (r.name !== t.route.name) return false;
+  return r.name !== 'console' || r.page === (t.route.name === 'console' ? t.route.page : undefined);
+}
 
 // scopeOf is the account a route is in the scope of, undefined for one in
 // the instance's.

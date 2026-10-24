@@ -12,7 +12,7 @@ const memberMe: T.Me = { ...g.me, admin: false, accounts: [S] };
 
 test('most used tools graph shows executions and switches period', async ({ page }) => {
   const seen = await setup(page, adminMe);
-  await page.goto('/#/admin');
+  await page.goto('/#/admin/settings');
   const panel = page.getByRole('region', { name: 'Most used tools', exact: true });
   await expect(panel).toContainText('60 executions');
   await expect(panel).toContainText('12 recorded runs');
@@ -37,7 +37,7 @@ test('most used tools graph shows executions and switches period', async ({ page
 
 test('most used tools graph distinguishes empty history and read failures', async ({ page }) => {
   await setup(page, adminMe, [[/\/api\/v1\/admin\/tools$/, { ...g.toolUsage, tools: [], totalExecutions: 0, recordedRuns: 0 }]]);
-  await page.goto('/#/admin');
+  await page.goto('/#/admin/settings');
   const panel = page.getByRole('region', { name: 'Most used tools', exact: true });
   await expect(panel).toContainText('No tool executions recorded in this period.');
   await expect(panel).toContainText('2 runs without execution counts excluded');
@@ -292,7 +292,7 @@ test.describe('configuration page', () => {
       [new RegExp(`${path}$`), () => (reads++ === 0 ? [served, g.appInstallation] : [served])],
     ]);
     const sent = await g.mockWrites(page, [['DELETE', new RegExp(`${path}/${g.appInstallation.id}$`), { status: 204 }]]);
-    await page.goto('/#/admin');
+    await page.goto('/#/admin/connections');
     const panel = page.locator('#op-connections').locator('../..');
     await expect(panel.getByRole('row').filter({ hasText: conn.name })).toContainText(conn.accounts[0]);
     await panel.getByRole('button', { name: 'Installations' }).click();
@@ -328,7 +328,7 @@ test.describe('configuration page', () => {
       [/\/api\/v1\/admin\/audit$/, g.pageOf([])],
       [/\/api\/v1\/admin\/connections$/, [{ ...conn, lastUnsignedWebhookAt: later }]],
     ]);
-    await page.goto('/#/admin');
+    await page.goto('/#/admin/connections');
     const row = page.locator('#op-connections').locator('../..').getByRole('row').filter({ hasText: conn.name });
     await expect(row).toContainText('unsigned');
     await expect(row).not.toContainText('receiving');
@@ -336,7 +336,7 @@ test.describe('configuration page', () => {
 
   test('lists the instance settings read-only with their sources', async ({ page }) => {
     await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
-    await page.goto('/#/admin');
+    await page.goto('/#/admin/settings');
     const panel = page.locator('#op-instance').locator('../..');
     const row = panel.getByRole('row').filter({ hasText: g.instanceSetting.key });
     await expect(row).toContainText(g.instanceSetting.value);
@@ -367,7 +367,7 @@ test.describe('configuration page', () => {
 });
 
 test.describe('settings search', () => {
-  test('the palette finds a section of the Configuration page only when searching, and focuses it', async ({ page }) => {
+  test('the palette finds a section of an administration page only when searching, and focuses it on its page', async ({ page }) => {
     await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     await page.goto('/#/');
     await page.keyboard.press('ControlOrMeta+k');
@@ -376,8 +376,24 @@ test.describe('settings search', () => {
     await expect(page.locator('.palette-row')).toHaveCount(1);
     await expect(page.locator('.palette-row')).toContainText('configuration');
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/#\/admin$/);
+    await expect(page).toHaveURL(/#\/admin\/connections$/);
     await expect(page.locator('#op-connections')).toBeFocused();
+  });
+
+  test('a search names a page and the section of the same name on it apart', async ({ page }) => {
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/#/');
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('connections');
+    const rows = page.locator('.palette-row').filter({ hasText: 'Connections' });
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: 'configuration' })).toHaveCount(1);
+    await rows.filter({ hasText: 'configuration' }).click();
+    await expect(page).toHaveURL(/#\/admin\/connections$/);
+    await expect(page.locator('#op-connections')).toBeFocused();
+    expect(errors).toEqual([]);
   });
 
   test("a repository's settings filter to what matches", async ({ page }) => {
@@ -525,7 +541,7 @@ for (const backend of ['s3', 'filesystem', 'disabled']) {
       { section: 'file', key: 'gatewayCacheS3Prefix', value: 'gateway/', source: 'file' },
     ];
     await setup(page, adminMe, [[/\/api\/v1\/admin\/instance$/, settings]]);
-    await page.goto('/#/admin');
+    await page.goto('/#/admin/settings');
     const panel = page.getByRole('region', { name: 'Download cache', exact: true });
     await expect(panel).toContainText(backend === 'disabled' ? 'Disabled' : 'Enabled');
     await expect(panel.locator('.tone-ok')).toHaveCount(0);

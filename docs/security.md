@@ -782,7 +782,7 @@ user namespace as before.
   re-review: no dashboard view shows it, one that holds the run's own
   tokens is not kept, and the leader deletes it after two hours.
 - An admin's every write is audit-logged in the same transaction as the
-  change it makes, and the Configuration page shows a secret only as set
+  change it makes, and the Settings page shows a secret only as set
   or not, with a URL's credentials hidden.
 - The summary comment is public, on a fork's pull request too, which is
   why the cost of a pull request's reviews shows only when the admin turns

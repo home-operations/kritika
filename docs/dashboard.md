@@ -8,7 +8,7 @@ the service. Application settings live in the [configuration file](configuration
 
 ## First run
 
-Sign in as an admin and open **All accounts → Settings**. The setup checklist
+Sign in as an admin and open **All accounts → Accounts**. The setup checklist
 shows what is missing:
 
 1. A GitHub App declared under `apps`, a Forgejo bot under `forgejo`, a GitLab service account under `gitlab`, or a Gitea bot under `gitea`.
@@ -135,14 +135,18 @@ Expand **Repository settings** to inspect effective settings, or **Index runs**
 to investigate indexing failures. See [which repositories run](configuration.md#which-repositories-run)
 for how dashboard choices and configured defaults interact.
 
-## Configuration page
+## Administration
 
-The **Settings** page of **All accounts**, titled **Instance settings**, is
-the admins'. It shows the setup checklist, served accounts, connections, the
-egress gateway's **Download cache** settings, the **Most used tools** of
-recent runs, effective settings and the audit log. Search or filter settings to find their source.
+Admins run the instance from **All accounts**, under **Configuration**:
 
-This page does not edit the configuration file. Change the file and roll out
+| Page | Use it to… |
+| --- | --- |
+| Accounts | Follow the setup checklist while something is missing, and see the accounts the instance serves. |
+| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves. |
+| Settings | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs. |
+| Audit log | Inspect management actions across accounts. |
+
+These pages do not edit the configuration file. Change the file and roll out
 the deployment. External ConfigMap changes and secret rotations require a
 restart or a controller such as Reloader.
 

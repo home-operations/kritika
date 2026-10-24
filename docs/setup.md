@@ -142,7 +142,7 @@ be enabled in the dashboard.
 
 Open your public URL and sign in as `admin` with the password you supplied.
 
-1. Open **All accounts → Settings** and check the setup checklist.
+1. Open **All accounts → Accounts** and check the setup checklist.
 2. Select your account and open **Repositories**.
 3. Enable a repository you want reviewed.
 

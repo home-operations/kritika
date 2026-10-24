@@ -147,7 +147,7 @@ test('reporting navigation keeps the period and 24-hour analytics charts partial
   await expect(page.getByRole('img', { name: /^Failure rate per partial day/ })).toBeVisible();
 });
 
-for (const [word, label] of [['spend', 'Usage & costs'], ['configuration', 'Instance settings']]) {
+for (const [word, label] of [['spend', 'Usage & costs'], ['configuration', 'Settings']]) {
   test(`palette preserves the ${word} search synonym`, async ({ page }) => {
     await page.goto(`${account}/queue`);
     await page.keyboard.press('Control+k');

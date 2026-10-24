@@ -5,7 +5,7 @@
 //
 //   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
-//   #/admin                                   admin console (cross-account)
+//   #/admin[/<page>]                          instance administration: its accounts, or a ConsolePage
 //   #/pulls[?<filter>]                       pull requests across accounts
 //   #/queue[?<filter>]                       the queue of every account
 //   #/analytics[?days=1|7|90]                analytics across accounts
@@ -42,6 +42,10 @@ import type { DismissSource, FindingStatus, ReviewStatus, Severity, Category, Us
 import { SEVERITIES, CATEGORIES } from './format';
 
 export const REVIEW_TABS = ['summary', 'diff', 'activity', 'conversation', 'timeline', 'raw', 'usage'] as const;
+
+// The instance administration's pages beside its accounts, #/admin itself.
+export const CONSOLE_PAGES = ['connections', 'settings', 'audit'] as const;
+export type ConsolePage = (typeof CONSOLE_PAGES)[number];
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 function isReviewTab(v: string | undefined): v is ReviewTab {
@@ -185,7 +189,7 @@ export function analyticsFilter(f: Record<string, string | undefined>): Analytic
 export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
-  | { name: 'console' }
+  | { name: 'console'; page?: ConsolePage }
   | { name: 'instancePulls'; filter?: PullFilter }
   | { name: 'analytics'; slug: string; filter?: AnalyticsFilter }
   | { name: 'instanceQueue'; filter?: QueueFilter }
@@ -328,6 +332,10 @@ export function parse(hash: string): Route {
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'admin') return { name: 'console' };
+  if (parts.length === 2 && parts[0] === 'admin') {
+    const page = CONSOLE_PAGES.find((p) => p === parts[1]);
+    if (page) return { name: 'console', page };
+  }
   if (parts.length === 1 && parts[0] === 'pulls') {
     const filter = pullFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
     return { name: 'instancePulls', ...(filter ? { filter } : {}) };
@@ -368,7 +376,7 @@ export function href(r: Route): string {
     case 'signin':
       return '#/signin';
     case 'console':
-      return '#/admin';
+      return r.page ? `#/admin/${r.page}` : '#/admin';
     case 'instancePulls':
       return `#/pulls${querySuffix(r.filter)}`;
     case 'analytics':

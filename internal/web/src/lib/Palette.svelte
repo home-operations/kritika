@@ -2,10 +2,10 @@
   // The Cmd/Ctrl+K command palette: jump to any page from anywhere, from a
   // registry of routes (global pages, plus the current account's pages when
   // the active route is inside one). A search also finds the sections of
-  // the Instance settings page, which the palette focuses once its page
+  // the administration's pages, which the palette focuses once their page
   // shows them.
   import type { Route } from './router.svelte';
-  import { reportingRoute } from './sections';
+  import { INSTANCE_TABS, reportingRoute } from './sections';
   import { router, navigate, href } from './router.svelte';
   import { Command, Dialog } from 'bits-ui';
   import { palette, closeOverlays } from './keyboard.svelte';
@@ -53,7 +53,7 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
-  // Gated the same way as the sidebar: Instance settings
+  // Gated the same way as the sidebar: the administration's pages
   // and each account's audit log are for admins, and "Sign in" only makes
   // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
@@ -65,10 +65,12 @@
       entries.push({ label: 'Usage & costs', hint: 'all accounts', words: true, route: { name: 'instanceUsage' }, icon: mdiCurrencyUsd, keywords: 'usage cost tokens spend' });
     }
     if (me?.admin) {
-      entries.push({ label: 'Instance settings', hint: 'instance', words: true, route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings configuration' });
+      for (const t of INSTANCE_TABS.filter((t) => t.admin)) {
+        entries.push({ label: t.label, hint: 'administration', words: true, route: t.route, icon: mdiConsoleLine, keywords: 'admin console instance settings configuration' });
+      }
       if (searching) {
-        for (const { label, target, keywords } of CONSOLE_SECTIONS) {
-          entries.push({ label, hint: 'configuration', words: true, route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
+        for (const { label, page, target, keywords } of CONSOLE_SECTIONS) {
+          entries.push({ label, hint: 'configuration', words: true, route: page ? { name: 'console', page } : { name: 'console' }, icon: mdiCogOutline, target, keywords });
         }
       }
     }
@@ -144,6 +146,10 @@
     return entries.filter((e) => [e.label, e.hint, e.keywords].some((s) => s?.toLowerCase().includes(needle)));
   });
 
+  // rowKey tells rows apart: a page and a section on it share a label and a
+  // route, and differ by the section's target.
+  const rowKey = (row: Entry) => `${row.label}\u0000${href(row.route)}\u0000${row.target ?? ''}`;
+
   function commit(row: Entry | undefined): void {
     if (!row) return;
     closeOverlays();
@@ -165,8 +171,8 @@
         </div>
 
         <Command.List id="palette-results" class="palette-body overflow-y-auto pt-1 px-0 pb-1.5" tabindex={0}>
-          {#each rows as row (`${row.label}\u0000${href(row.route)}`)}
-            <Command.Item class="palette-row flex items-center gap-2.5 w-full py-[7px] px-3.5 border-0 bg-transparent text-inherit text-left cursor-pointer" value={`${row.label}\u0000${href(row.route)}`} onSelect={() => commit(row)}>
+          {#each rows as row (rowKey(row))}
+            <Command.Item class="palette-row flex items-center gap-2.5 w-full py-[7px] px-3.5 border-0 bg-transparent text-inherit text-left cursor-pointer" value={rowKey(row)} onSelect={() => commit(row)}>
               <Icon path={row.icon} size={14} />
               <span class="row-main flex-auto min-w-0 flex flex-col">
                 <span class="row-title font-medium overflow-hidden text-ellipsis whitespace-nowrap">{row.label}</span>
