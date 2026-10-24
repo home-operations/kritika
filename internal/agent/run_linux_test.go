@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -55,6 +56,41 @@ func TestRunToolStopsWhatACommandStarted(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestGroupSignals: a timeout kills the command's group until the command's
+// exit has been seen, and nothing after.
+func TestGroupSignals(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := func() *exec.Cmd {
+		cmd := exec.Command(self, "sleep")
+		cmd.Env = append(os.Environ(), helperEnv+"=1")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+		return cmd
+	}
+	var group groupSignals
+	running := start()
+	if err := group.kill(running.Process.Pid); err != nil {
+		t.Fatalf("kill = %v", err)
+	}
+	if err := running.Wait(); err == nil || running.ProcessState.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
+		t.Fatalf("the group was not killed: %v", err)
+	}
+	group.exit()
+	spared := start()
+	if err := group.kill(spared.Process.Pid); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("kill after exit = %v, want os.ErrProcessDone", err)
+	}
+	if err := syscall.Kill(spared.Process.Pid, 0); err != nil {
+		t.Fatalf("a group was signalled after the exit: %v", err)
 	}
 }
 

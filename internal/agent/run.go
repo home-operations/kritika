@@ -337,14 +337,21 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	// it has exited (stopGroupOnExit), so nothing it started outlives the
 	// call. The command is reaped only after that, so the group's id stays
 	// its own while it is signalled.
+	var group groupSignals
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.Cancel = func() error { return group.kill(cmd.Process.Pid) }
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
 	if err = cmd.Start(); err == nil {
 		rt.executions[req.Command]++
-		stopGroupOnExit(cmd.Process.Pid)
+		stopped, serr := stopGroupOnExit(cmd.Process.Pid)
+		if serr != nil && rt.cfg.Logger != nil {
+			rt.cfg.Logger.Warn("what a command started is not stopped on its exit", "command", req.Command, "error", serr)
+		}
+		if stopped {
+			group.exit()
+		}
 		err = cmd.Wait()
 	}
 	switch {
@@ -372,6 +379,33 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 	}
 	return rt.result(fmt.Sprintf("%sexit code %d\n%s", note, code, text), out, dropped, stderr), nil
+}
+
+// groupSignals is what signals a command's process group, a timeout, until
+// the command's exit has been seen and the group stopped: the reap that
+// follows may free the group's id for another.
+type groupSignals struct {
+	mu     sync.Mutex
+	exited bool
+}
+
+// kill kills the process group pgid, unless the command that leads it has
+// exited.
+func (g *groupSignals) kill(pgid int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.exited {
+		return os.ErrProcessDone
+	}
+	return syscall.Kill(-pgid, syscall.SIGKILL)
+}
+
+// exit says the command's exit has been seen and its group stopped; a kill
+// in flight finishes first.
+func (g *groupSignals) exit() {
+	g.mu.Lock()
+	g.exited = true
+	g.mu.Unlock()
 }
 
 // prepare runs Prepare before the first command and returns its note, as
