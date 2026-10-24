@@ -149,6 +149,38 @@ export interface UserAccess {
   accounts: string[];
 }
 
+// APIToken is a personal access token as its owner or an admin lists it,
+// never its value. accounts are the accounts it reads unless allAccounts;
+// owner is set in an admin's list alone.
+export interface APIToken {
+  id: string;
+  name: string;
+  owner: User | null;
+  allAccounts: boolean;
+  accounts: string[];
+  status: TokenStatus;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+}
+
+// TokenStatus: a token stops at its expiry, and goes stale when the
+// sign-in configuration it came from changes.
+export type TokenStatus = 'active' | 'expired' | 'stale';
+
+// CreateTokenRequest creates a token reading accounts, or everything its
+// creator reads when it names none, for expiresInDays days, 0 for never.
+export interface CreateTokenRequest {
+  name: string;
+  accounts: string[];
+  expiresInDays: number;
+}
+
+// CreatedToken is a token just created, with its value, shown this once.
+export interface CreatedToken extends APIToken {
+  token: string;
+}
+
 export interface AdminAccount extends AccountSummary {
   live: boolean;
   conflict?: string;

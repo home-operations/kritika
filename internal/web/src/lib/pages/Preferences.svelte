@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageHeader from '../components/PageHeader.svelte';
-  // The viewer's own settings: how the dashboard writes times for them, and
-  // its theme.
+  // The viewer's own settings: how the dashboard writes times for them, its
+  // theme, and their personal access tokens.
   // Each is saved as it is chosen, and kept with the user, so it holds in
   // any browser they sign in from.
   import { session, saveSettings } from '../session.svelte';
@@ -10,6 +10,7 @@
   import Segmented from '../components/Segmented.svelte';
   import TimeZonePicker from '../components/TimeZonePicker.svelte';
   import Spinner from '../Spinner.svelte';
+  import ApiTokens from './settings/ApiTokens.svelte';
 
   const settings = $derived(session.me?.settings);
   // A zone chosen in another browser may be one this one does not list.
@@ -64,6 +65,7 @@
           </dd>
         </dl>
       </section>
+      <ApiTokens />
     {:else}
       <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {/if}

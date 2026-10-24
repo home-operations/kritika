@@ -408,6 +408,26 @@ test.describe('users page', () => {
     await expect(page.locator('#op-users').locator('../..').locator('tbody tr').first()).toContainText('no active session');
   });
 
+  test("lists every user's tokens with their owners, and revokes one", async ({ page }) => {
+    const t = g.apiToken;
+    let revoked = false;
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/tokens$/, () => (revoked ? [] : [t])]]);
+    const sent = await g.mockWrites(page, [['DELETE', new RegExp(`/api/v1/admin/tokens/${t.id}$`), () => {
+      revoked = true;
+      return { status: 204 };
+    }]]);
+    await page.goto('/#/admin/users');
+    const panel = page.getByRole('region', { name: 'API tokens' });
+    const row = panel.locator('tbody tr');
+    await expect(row).toContainText(t.name);
+    await expect(row).toContainText(t.owner!.displayName);
+    await row.getByRole('button', { name: `Revoke ${t.name}` }).click();
+    await page.getByRole('alertdialog', { name: 'Revoke the token?' }).getByRole('button', { name: 'Revoke' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    await expect(page.getByRole('status')).toContainText(`Revoked ${t.name}`);
+    await expect(panel).toContainText('No one has created a token.');
+  });
+
   test('warns an admin that signing themselves out everywhere ends their own session', async ({ page }) => {
     const self: T.AdminUser = { ...g.adminUser, id: adminMe.user.id };
     await setup(page, adminMe, [[/\/api\/v1\/admin\/users$/, [self]]]);
