@@ -1016,8 +1016,8 @@
           "type": "integer"
         },
         "type": {
-          "default": "default",
-          "description": "Policy flavor for your CNI: \"default\" (networking.k8s.io/v1 NetworkPolicy), \"cilium\" (CiliumNetworkPolicy) or \"calico\" (projectcalico.org/v3 NetworkPolicy).",
+          "default": "auto",
+          "description": "Policy flavor for your CNI: \"default\" (networking.k8s.io/v1 NetworkPolicy), \"cilium\" (CiliumNetworkPolicy), \"calico\" (projectcalico.org/v3 NetworkPolicy), or \"auto\": \"cilium\" when the cluster serves CiliumNetworkPolicy, else \"calico\" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else \"default\". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders \"default\". Set the flavor where the cluster serves a policy API its CNI does not enforce.",
           "title": "type",
           "type": "string"
         }

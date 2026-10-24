@@ -106,7 +106,19 @@ them, the host's identity, which no CIDR selects. */}}
 {{- $pgPods := dict "namespace" ($pg.namespace | default .Release.Namespace) "podSelector" $pg.podSelector }}
 {{- /* The database's pods are a peer unless cidrs alone say where it is. */}}
 {{- $pgPeer := or $pg.podSelector $pg.namespace (not $pg.cidrs) }}
-{{- if eq $np.type "default" }}
+{{- /* auto renders the flavor whose API the cluster serves, as Helm, Flux
+and Argo CD see it; helm template without --api-versions sees neither and
+renders the default flavor. */}}
+{{- $type := $np.type }}
+{{- if eq $type "auto" }}
+{{- $type = "default" }}
+{{- if .Capabilities.APIVersions.Has "cilium.io/v2/CiliumNetworkPolicy" }}
+{{- $type = "cilium" }}
+{{- else if .Capabilities.APIVersions.Has "projectcalico.org/v3/NetworkPolicy" }}
+{{- $type = "calico" }}
+{{- end }}
+{{- end }}
+{{- if eq $type "default" }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -198,7 +210,7 @@ spec:
       ports:
         - port: {{ $gateway }}
           protocol: TCP
-{{- else if eq $np.type "cilium" }}
+{{- else if eq $type "cilium" }}
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -295,7 +307,7 @@ spec:
         - ports:
             - port: {{ $gateway | quote }}
               protocol: TCP
-{{- else if eq $np.type "calico" }}
+{{- else if eq $type "calico" }}
 apiVersion: projectcalico.org/v3
 kind: NetworkPolicy
 metadata:
@@ -384,6 +396,6 @@ spec:
         ports:
           - {{ $gateway }}
 {{- else }}
-{{- fail (printf "networkPolicy.type must be one of: default, cilium, calico (got %q)" $np.type) }}
+{{- fail (printf "networkPolicy.type must be one of: auto, default, cilium, calico (got %q)" $np.type) }}
 {{- end }}
 {{- end }}

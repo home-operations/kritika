@@ -4,10 +4,49 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: is rendered by default
+  - it: is rendered by default, in the default flavor on a cluster that serves no other policy API
     asserts:
       - hasDocuments:
           count: 2
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+
+  - it: auto renders the Cilium flavor on a cluster that serves CiliumNetworkPolicy
+    capabilities:
+      apiVersions:
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: CiliumNetworkPolicy
+
+  - it: auto renders the Calico flavor on a cluster that serves Calico's NetworkPolicy
+    capabilities:
+      apiVersions:
+        - projectcalico.org/v3/NetworkPolicy
+    asserts:
+      - isAPIVersion:
+          of: projectcalico.org/v3
+
+  - it: auto prefers Cilium on a cluster that serves both
+    capabilities:
+      apiVersions:
+        - projectcalico.org/v3/NetworkPolicy
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - isKind:
+          of: CiliumNetworkPolicy
+
+  - it: renders the flavor set over what the cluster serves
+    set:
+      networkPolicy.type: default
+    capabilities:
+      apiVersions:
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - isAPIVersion:
+          of: networking.k8s.io/v1
 
   - it: is not rendered when turned off
     set:
@@ -448,7 +487,7 @@ tests:
       networkPolicy.type: bogus
     asserts:
       - failedTemplate:
-          errorMessage: 'networkPolicy.type must be one of: default, cilium, calico (got "bogus")'
+          errorMessage: 'networkPolicy.type must be one of: auto, default, cilium, calico (got "bogus")'
 
   - it: permits the S3 endpoint port for serve without granting it to runners
     set:

@@ -118,6 +118,10 @@ type RunTool struct {
 	sources    []string
 	ran        []string
 	executions map[string]int
+	// proxyHosts are the hosts of the proxies in the commands' environment,
+	// lowercased: a URL of theirs given to curl, as a proxy option's value,
+	// is not a source.
+	proxyHosts []string
 	// errors are the setup failure notes, one per command in failed.
 	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
@@ -143,7 +147,23 @@ func NewRunTool(c RunConfig) *RunTool {
 	"required": ["command"],
 	"additionalProperties": false
 }`, enum)
-	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema), executions: map[string]int{}}
+	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema), executions: map[string]int{}, proxyHosts: proxyHosts(c.Env)}
+}
+
+// proxyHosts are the hosts of the HTTP_PROXY and HTTPS_PROXY URLs in env,
+// in either case, lowercased.
+func proxyHosts(env []string) []string {
+	var hosts []string
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		if !strings.EqualFold(name, "HTTP_PROXY") && !strings.EqualFold(name, "HTTPS_PROXY") {
+			continue
+		}
+		if u, err := url.Parse(value); err == nil && u.Hostname() != "" && !slices.Contains(hosts, strings.ToLower(u.Hostname())) {
+			hosts = append(hosts, strings.ToLower(u.Hostname()))
+		}
+	}
+	return hosts
 }
 
 // Names are the commands the tool offers, sorted.
@@ -431,11 +451,12 @@ func (rt *RunTool) recordRead(command string, args []string) {
 }
 
 // record keeps each http(s) URL in args as a source, without any
-// credentials it carries.
+// credentials it carries, but one on a proxy's host.
 func (rt *RunTool) record(args []string) {
 	for _, a := range args {
 		u, err := url.Parse(a)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			slices.Contains(rt.proxyHosts, strings.ToLower(u.Hostname())) {
 			continue
 		}
 		u.User = nil

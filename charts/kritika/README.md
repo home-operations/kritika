@@ -176,9 +176,11 @@ stay available. See the
 ### Migrating NetworkPolicies
 
 `networkPolicy.enabled` is on by default, so an install that left it off
-gets both policies on upgrade. Before upgrading, set `networkPolicy.type`
-for the cluster's CNI, add a forge or model port other than 443 to
-`networkPolicy.egressPorts`, and check what follows, or turn the policies
+gets both policies on upgrade. `networkPolicy.type` is `auto`: Cilium's
+or Calico's own policies where the cluster serves their API, as Helm,
+Flux and Argo CD see it, and standard NetworkPolicies otherwise. Before
+upgrading, add a forge or model port other than 443 to
+`networkPolicy.egressPorts` and check what follows, or turn the policies
 off where something else confines runner pods' egress.
 
 With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
@@ -321,7 +323,7 @@ Kubernetes: `>=1.34.0-0`
 | networkPolicy.postgres.namespace | string | `""` | Namespace of the database's pods; the release namespace when empty. |
 | networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set. |
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
-| networkPolicy.type | string | `"default"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy). |
+| networkPolicy.type | string | `"auto"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto": "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders "default". Set the flavor where the cluster serves a policy API its CNI does not enforce. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |
 | podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget when there is more than one replica. |

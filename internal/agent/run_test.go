@@ -396,6 +396,31 @@ func TestRunToolRecordsCurlSources(t *testing.T) {
 	}
 }
 
+// TestRunToolSourcesLeaveOutTheProxy: the gateway's URL, given to curl as
+// a proxy option's value, is not a source, in whatever case its host is.
+func TestRunToolSourcesLeaveOutTheProxy(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := NewRunTool(RunConfig{
+		Dir: t.TempDir(), Commands: map[string]string{"curl": self}, Timeout: 2 * time.Second, MaxOutputBytes: 4096, Proxied: true,
+		Env: []string{helperEnv + "=1", "GOCOVERDIR=" + t.TempDir(),
+			"HTTPS_PROXY=http://:tok@kritika-gateway.kritika.svc:8082", "http_proxy=http://:tok@kritika-gateway.kritika.svc:8082"},
+	})
+	for _, input := range []string{
+		`{"command":"curl","args":["--proxy","http://:tok@kritika-gateway.kritika.svc:8082","https://example.com/a"]}`,
+		`{"command":"curl","args":["-x","http://KRITIKA-GATEWAY.kritika.svc:8082","--proxy-user",":tok","http://example.com/b"]}`,
+	} {
+		if _, err := rt.Run(t.Context(), json.RawMessage(input)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := rt.Sources(); !slices.Equal(got, []string{"https://example.com/a", "https://example.com/b"}) {
+		t.Fatalf("sources = %q", got)
+	}
+}
+
 // TestRunToolRecordsRan: the commands run are listed once each in first-use
 // order, and one the tool does not offer is not among them.
 func TestRunToolRecordsRan(t *testing.T) {

@@ -181,9 +181,11 @@ stay available. See the
 ### Migrating NetworkPolicies
 
 `networkPolicy.enabled` is on by default, so an install that left it off
-gets both policies on upgrade. Before upgrading, set `networkPolicy.type`
-for the cluster's CNI, add a forge or model port other than 443 to
-`networkPolicy.egressPorts`, and check what follows, or turn the policies
+gets both policies on upgrade. `networkPolicy.type` is `auto`: Cilium's
+or Calico's own policies where the cluster serves their API, as Helm,
+Flux and Argo CD see it, and standard NetworkPolicies otherwise. Before
+upgrading, add a forge or model port other than 443 to
+`networkPolicy.egressPorts` and check what follows, or turn the policies
 off where something else confines runner pods' egress.
 
 With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.

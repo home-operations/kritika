@@ -503,8 +503,8 @@ httpRoute:
 networkPolicy:
   # -- Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.
   enabled: true
-  # -- Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy).
-  type: default
+  # -- Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto": "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders "default". Set the flavor where the cluster serves a policy API its CNI does not enforce.
+  type: auto
   # -- Allow DNS egress (UDP/TCP 53) to the cluster's DNS, as `dns` describes it, and nowhere else.
   allowDNS: true
   # The cluster's DNS, the one peer the pods may send port 53 to.
