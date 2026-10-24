@@ -267,11 +267,13 @@ func (o *OpenAI) step(
 	out.Usage = Usage{Input: max(u.PromptTokens-cached-written, 0), CacheRead: cached, CacheWrite: written, Output: u.CompletionTokens}
 
 	// Cost and the serving provider are OpenRouter's additions to the
-	// response, which the SDK's types do not carry.
+	// response, which the SDK's types do not carry. The cost is read raw:
+	// it only prices the call, so a shape reportedCost cannot read must not
+	// fail the step.
 	var extra struct {
 		Provider string `json:"provider"`
 		Usage    struct {
-			Cost *float64 `json:"cost"`
+			Cost json.RawMessage `json:"cost"`
 		} `json:"usage"`
 		chatGPTCarry
 	}
@@ -284,12 +286,30 @@ func (o *OpenAI) step(
 	if o.gateway {
 		out.ChatGPTOutput = extra.ChatGPTOutput
 	}
-	if extra.Usage.Cost != nil {
-		out.CostUSD = *extra.Usage.Cost
+	if cost, ok := reportedCost(extra.Usage.Cost); ok {
+		out.CostUSD = cost
 	} else {
 		out.CostUSD, out.Unpriced = o.price(out.Model, modelID, alias, fallbacks, out.Usage)
 	}
 	return out, nil
+}
+
+// reportedCost is the cost a response's usage reports, and whether it
+// reports one: a number, as OpenRouter and kritika's gateway send it, or
+// the total_cost of an object, as Bifrost passes a provider's cost on. Any
+// other shape, an object without a total included, reports none.
+func reportedCost(raw json.RawMessage) (float64, bool) {
+	var cost *float64
+	if json.Unmarshal(raw, &cost) == nil && cost != nil {
+		return *cost, true
+	}
+	var obj struct {
+		TotalCost *float64 `json:"total_cost"`
+	}
+	if json.Unmarshal(raw, &obj) == nil && obj.TotalCost != nil {
+		return *obj.TotalCost, true
+	}
+	return 0, false
 }
 
 // price is what a call the provider reported no cost for cost: the price
