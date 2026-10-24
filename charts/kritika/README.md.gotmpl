@@ -143,18 +143,20 @@ their `uri` key for `database.*.existingSecret`, failover and backups.
 Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
-- With `networkPolicy.enabled`, a runner pod reaches nothing but the
+- `networkPolicy.enabled`, on by default, keeps a runner pod to the
   cluster's DNS, the database `networkPolicy.postgres` locates and the
-  egress gateway kritika serve runs on
-  `service.gatewayPort`, which allows what the configuration file's
-  `egress` lists and is the runner's only way to its model. With the
-  Cilium flavor, it may look up only the names of the cluster's Services
-  and those `networkPolicy.dns.runnerNames` lists.
+  egress gateway kritika serve runs on `service.gatewayPort`, which allows
+  what the configuration file's `egress` lists and is the runner's only
+  way to its model. With the Cilium flavor, it may look up only the names
+  of the cluster's Services and those `networkPolicy.dns.runnerNames`
+  lists.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
   declares and those the `tools` of a repository's `.kritika.yaml` add,
-  each download verified as its backend verifies it.
+  each download verified as its backend verifies it, with whatever
+  arguments the model gives: the pod's bounds confine a command, not a
+  check of its arguments.
 - `runner.podTemplate` puts runner pods under a sandboxed runtime such as
   gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
   with `resources`, and keeps runner pods on nodes of their own, and in a
@@ -177,6 +179,12 @@ stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 
 ### Migrating NetworkPolicies
+
+`networkPolicy.enabled` is on by default, so an install that left it off
+gets both policies on upgrade. Before upgrading, set `networkPolicy.type`
+for the cluster's CNI, add a forge or model port other than 443 to
+`networkPolicy.egressPorts`, and check what follows, or turn the policies
+off where something else confines runner pods' egress.
 
 With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
 Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if

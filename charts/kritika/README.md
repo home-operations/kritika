@@ -138,18 +138,20 @@ their `uri` key for `database.*.existingSecret`, failover and backups.
 Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
-- With `networkPolicy.enabled`, a runner pod reaches nothing but the
+- `networkPolicy.enabled`, on by default, keeps a runner pod to the
   cluster's DNS, the database `networkPolicy.postgres` locates and the
-  egress gateway kritika serve runs on
-  `service.gatewayPort`, which allows what the configuration file's
-  `egress` lists and is the runner's only way to its model. With the
-  Cilium flavor, it may look up only the names of the cluster's Services
-  and those `networkPolicy.dns.runnerNames` lists.
+  egress gateway kritika serve runs on `service.gatewayPort`, which allows
+  what the configuration file's `egress` lists and is the runner's only
+  way to its model. With the Cilium flavor, it may look up only the names
+  of the cluster's Services and those `networkPolicy.dns.runnerNames`
+  lists.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
   declares and those the `tools` of a repository's `.kritika.yaml` add,
-  each download verified as its backend verifies it.
+  each download verified as its backend verifies it, with whatever
+  arguments the model gives: the pod's bounds confine a command, not a
+  check of its arguments.
 - `runner.podTemplate` puts runner pods under a sandboxed runtime such as
   gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
   with `resources`, and keeps runner pods on nodes of their own, and in a
@@ -172,6 +174,12 @@ stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 
 ### Migrating NetworkPolicies
+
+`networkPolicy.enabled` is on by default, so an install that left it off
+gets both policies on upgrade. Before upgrading, set `networkPolicy.type`
+for the cluster's CNI, add a forge or model port other than 443 to
+`networkPolicy.egressPorts`, and check what follows, or turn the policies
+off where something else confines runner pods' egress.
 
 With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
 Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
@@ -308,7 +316,7 @@ Kubernetes: `>=1.34.0-0`
 | networkPolicy.dns.podSelector | object | `{}` | Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`. |
 | networkPolicy.dns.runnerNames | list | `[]` | With the Cilium flavor, the names runner pods may look up besides those of the cluster's Services, `<service>.<namespace>.svc.cluster.local`, which the cluster's DNS answers itself (an ExternalName Service's goes on to the name its author set): the database's host when it is outside the cluster. Each is a name, or a Cilium `matchPattern` in which `*` stands for part of one label. Cilium refuses any other name; the other flavors do not filter names. |
 | networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
-| networkPolicy.enabled | bool | `false` | Create the NetworkPolicies. |
+| networkPolicy.enabled | bool | `true` | Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress. |
 | networkPolicy.postgres.cidrs | list | `[]` | CIDRs of a database outside the cluster, such as `192.0.2.10/32`. |
 | networkPolicy.postgres.namespace | string | `""` | Namespace of the database's pods; the release namespace when empty. |
 | networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set. |

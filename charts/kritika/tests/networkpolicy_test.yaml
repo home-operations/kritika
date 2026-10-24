@@ -4,7 +4,14 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: is not rendered by default
+  - it: is rendered by default
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: is not rendered when turned off
+    set:
+      networkPolicy.enabled: false
     asserts:
       - hasDocuments:
           count: 0

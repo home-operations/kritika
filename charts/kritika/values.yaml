@@ -492,17 +492,17 @@ httpRoute:
   # -- Redirect HTTP to HTTPS (301) instead of routing to the backend (needs HTTP+HTTPS listeners).
   httpsRedirect: false
 
-# NetworkPolicies (off by default): one for the service pods (ingress to the
-# webhook and metrics ports, and to the gateway port from runner pods;
-# egress to the cluster's DNS, the forges and models over the egress ports,
-# Postgres and the API server) and one for runner pods (egress only: the
-# cluster's DNS, Postgres and the gateway port on the service pods, through
-# which everything else is reached). Runner pods reach the Postgres port
-# only where `postgres` says the database is; the service pods reach it at
-# any address, as they do the egress ports.
+# NetworkPolicies: one for the service pods (ingress to the webhook and
+# metrics ports, and to the gateway port from runner pods; egress to the
+# cluster's DNS, the forges and models over the egress ports, Postgres and
+# the API server) and one for runner pods (egress only: the cluster's DNS,
+# Postgres and the gateway port on the service pods, through which
+# everything else is reached). Runner pods reach the Postgres port only
+# where `postgres` says the database is; the service pods reach it at any
+# address, as they do the egress ports.
 networkPolicy:
-  # -- Create the NetworkPolicies.
-  enabled: false
+  # -- Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.
+  enabled: true
   # -- Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy).
   type: default
   # -- Allow DNS egress (UDP/TCP 53) to the cluster's DNS, as `dns` describes it, and nowhere else.

@@ -909,7 +909,7 @@
       "type": "string"
     },
     "networkPolicy": {
-      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports, and to the gateway port from runner pods;\negress to the cluster's DNS, the forges and models over the egress ports,\nPostgres and the API server) and one for runner pods (egress only: the\ncluster's DNS, Postgres and the gateway port on the service pods, through\nwhich everything else is reached). Runner pods reach the Postgres port\nonly where `postgres` says the database is; the service pods reach it at\nany address, as they do the egress ports.",
+      "description": "NetworkPolicies: one for the service pods (ingress to the webhook and\nmetrics ports, and to the gateway port from runner pods; egress to the\ncluster's DNS, the forges and models over the egress ports, Postgres and\nthe API server) and one for runner pods (egress only: the cluster's DNS,\nPostgres and the gateway port on the service pods, through which\neverything else is reached). Runner pods reach the Postgres port only\nwhere `postgres` says the database is; the service pods reach it at any\naddress, as they do the egress ports.",
       "properties": {
         "allowDNS": {
           "default": true,
@@ -972,8 +972,8 @@
           "type": "array"
         },
         "enabled": {
-          "default": false,
-          "description": "Create the NetworkPolicies.",
+          "default": true,
+          "description": "Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.",
           "title": "enabled",
           "type": "boolean"
         },

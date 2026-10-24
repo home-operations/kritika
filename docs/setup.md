@@ -111,14 +111,14 @@ ingress:
   tls:
     - hosts: [kritika.example.com]
       secretName: kritika-tls
-
-networkPolicy:
-  enabled: true
 ```
 
-This example's NetworkPolicy expects Postgres in the release namespace and
-standard cluster DNS. Set [`networkPolicy.postgres`](database.md#secrets-and-connection-uris)
-and [`networkPolicy.dns`](security.md#name-lookups) if yours differ.
+The chart's NetworkPolicies, on by default, expect Postgres in the release
+namespace, standard cluster DNS, and forges and models on port 443. Set
+[`networkPolicy.postgres`](database.md#secrets-and-connection-uris),
+[`networkPolicy.dns`](security.md#name-lookups) and
+`networkPolicy.egressPorts` if yours differ, and `networkPolicy.type` to
+`cilium` or `calico` to use your CNI's own policies.
 
 Install the chart using your values file:
 
