@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.101](https://github.com/home-operations/kritika/compare/0.0.100...0.0.101) (2026-10-24)
+
+
+### Features
+
+* **web:** summarize common findings and export them ([#1214](https://github.com/home-operations/kritika/issues/1214)) ([7734ce2](https://github.com/home-operations/kritika/commit/7734ce2c13fb2cbf9eb6ae5b75604003666b4362))
+
+
+### Bug Fixes
+
+* **model:** read a gateway's cost object instead of failing the step ([#1217](https://github.com/home-operations/kritika/issues/1217)) ([6bbfb21](https://github.com/home-operations/kritika/commit/6bbfb21e5325d1e305ac8f2097ad8bdba6241a03))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action docker/github-builder (v1.18.0 → v1.18.1) ([#1216](https://github.com/home-operations/kritika/issues/1216)) ([abb97fb](https://github.com/home-operations/kritika/commit/abb97fb39b8448505758dce1018117606d92cb4f))
+* **github-action:** update action jdx/mise-action (v5.2.1 → v5.2.2) ([#1212](https://github.com/home-operations/kritika/issues/1212)) ([bb1864a](https://github.com/home-operations/kritika/commit/bb1864a1780fd0564eac6dfb44be5bf094c8b123))
+* **mise:** update tool gh (2.102.0 → 2.102.1) ([#1210](https://github.com/home-operations/kritika/issues/1210)) ([806e2d5](https://github.com/home-operations/kritika/commit/806e2d5afade7149b4cccf8e19cd51d7ba529f22))
+
 ## [0.0.100](https://github.com/home-operations/kritika/compare/0.0.99...0.0.100) (2026-10-23)
 
 
