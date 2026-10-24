@@ -645,9 +645,9 @@ embedding:
   submits its findings as a call to `submit_review`, which its last step
   tells it to make, and a follow-up's reply is a tool call too.
 - The kritika pods call the server; a review's runner reaches it only
-  through their gateway. With the chart's `networkPolicy.enabled`,
-  add the server's port to `networkPolicy.egressPorts`, which allows only
-  443 unless set.
+  through their gateway. The chart's NetworkPolicies, on by default,
+  allow only port 443 unless `networkPolicy.egressPorts` says otherwise,
+  so add the server's port there.
 - A server that reports no cost leaves calls unpriced unless
   `pricing` gives the model's prices, in dollars per million tokens of
   `input`, `output`, `cacheRead` and `cacheWrite`, keyed by the model's

@@ -909,14 +909,8 @@
       "type": "string"
     },
     "networkPolicy": {
-      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports, and to the gateway port from runner pods;\negress to the cluster's DNS, the forges and models over the egress ports,\nPostgres and the API server) and one for runner pods (egress only: the\ncluster's DNS, Postgres and the gateway port on the service pods, through\nwhich everything else is reached). Runner pods reach the Postgres port\nonly where `postgres` says the database is; the service pods reach it at\nany address, as they do the egress ports.",
+      "description": "NetworkPolicies: one for the service pods (ingress to the webhook and\nmetrics ports, and to the gateway port from runner pods; egress to the\ncluster's DNS, the forges and models over the egress ports, Postgres and\nthe API server) and one for runner pods (egress only: the cluster's DNS,\nPostgres and the gateway port on the service pods, through which\neverything else is reached). Runner pods reach the Postgres port only\nwhere `postgres` says the database is; the service pods reach it at any\naddress, as they do the egress ports.",
       "properties": {
-        "allowDNS": {
-          "default": true,
-          "description": "Allow DNS egress (UDP/TCP 53) to the cluster's DNS, as `dns` describes it, and nowhere else.",
-          "title": "allowDNS",
-          "type": "boolean"
-        },
         "dns": {
           "description": "The cluster's DNS, the one peer the pods may send port 53 to.",
           "properties": {
@@ -972,13 +966,13 @@
           "type": "array"
         },
         "enabled": {
-          "default": false,
-          "description": "Create the NetworkPolicies.",
+          "default": true,
+          "description": "Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.",
           "title": "enabled",
           "type": "boolean"
         },
         "postgres": {
-          "description": "Where the database the runner role's URI names is, the one peer runner\npods may reach postgresPort at: every pod in the release namespace unless\nset.",
+          "description": "Where the database the runner role's URI names is, the one peer runner\npods may reach its port at: every pod in the release namespace unless\nset.",
           "properties": {
             "cidrs": {
               "description": "CIDRs of a database outside the cluster, such as `192.0.2.10/32`.",
@@ -1003,21 +997,21 @@
               "required": [],
               "title": "podSelector",
               "type": "object"
+            },
+            "port": {
+              "default": 5432,
+              "description": "Port of the database, which the service pods may reach at any address and runner pods only where the rest of `postgres` says.",
+              "title": "port",
+              "type": "integer"
             }
           },
           "required": [],
           "title": "postgres",
           "type": "object"
         },
-        "postgresPort": {
-          "default": 5432,
-          "description": "Postgres port allowed for egress.",
-          "title": "postgresPort",
-          "type": "integer"
-        },
         "type": {
-          "default": "default",
-          "description": "Policy flavor for your CNI: \"default\" (networking.k8s.io/v1 NetworkPolicy), \"cilium\" (CiliumNetworkPolicy) or \"calico\" (projectcalico.org/v3 NetworkPolicy).",
+          "default": "auto",
+          "description": "Policy flavor for your CNI: \"default\" (networking.k8s.io/v1 NetworkPolicy), \"cilium\" (CiliumNetworkPolicy), \"calico\" (projectcalico.org/v3 NetworkPolicy), or \"auto\": \"cilium\" when the cluster serves CiliumNetworkPolicy, else \"calico\" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else \"default\". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders \"default\". The Cilium flavor's DNS rules need Cilium's L7 proxy, on unless turned off: without it Cilium refuses the runner's policy, and a NetworkPolicy the flavor adds then keeps runner pods from looking up any name, so runs fail until the type is \"default\". Set the flavor where the cluster serves a policy API its CNI does not enforce.",
           "title": "type",
           "type": "string"
         }

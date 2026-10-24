@@ -211,16 +211,15 @@ database:
 `database.app.role` and `database.runner.role` must name the roles the URIs
 log in as, if they are not `kritika_app` and `kritika_runner`.
 
-With the chart's `networkPolicy.enabled`, runner pods reach the Postgres
-port only where `networkPolicy.postgres` says the runner role's database
-is: any pod in the release namespace unless set. Name the cluster's pods
-by the label CNPG gives them, with their namespace when it is not the
-release's, or the pods of a session-mode pooler the runner's URI goes
-through:
+With the chart's NetworkPolicies, on by default, runner pods reach the
+Postgres port only where `networkPolicy.postgres` says the runner role's
+database is: any pod in the release namespace unless set. Name the
+cluster's pods by the label CNPG gives them, with their namespace when it
+is not the release's, or the pods of a session-mode pooler the runner's
+URI goes through:
 
 ```yaml
 networkPolicy:
-  enabled: true
   postgres:
     podSelector:
       cnpg.io/cluster: kritika-postgres
@@ -228,11 +227,10 @@ networkPolicy:
 
 A database outside the cluster goes in `networkPolicy.postgres.cidrs`; with
 the `cilium` flavor, list its host in `networkPolicy.dns.runnerNames` too,
-so runner pods may look it up. An install already running with
-`networkPolicy.enabled` must set these before it upgrades to a chart that
-narrows the port, when its database is not in the release namespace: the
-upgrade succeeds, and kritika serve, whose own policy keeps the port open,
-stays ready, but every run fails to connect.
+so runner pods may look it up. When the database is not in the release
+namespace, set these before installing or upgrading: otherwise the upgrade
+succeeds, and kritika serve, whose own policy keeps the port open, stays
+ready, but every run fails to connect.
 
 ## Connections
 

@@ -24,6 +24,17 @@ tests:
           path: spec.containers[0].args
           content: http://RELEASE-NAME-kritika-metrics:8081/readyz
 
+  - it: is not selected by the server's NetworkPolicy, Service or PDB
+    asserts:
+      - notExists:
+          path: metadata.labels["app.kubernetes.io/name"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: test
+
   - it: follows the metrics port
     set:
       service.metricsPort: 9090

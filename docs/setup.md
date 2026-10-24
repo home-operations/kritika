@@ -111,14 +111,17 @@ ingress:
   tls:
     - hosts: [kritika.example.com]
       secretName: kritika-tls
-
-networkPolicy:
-  enabled: true
 ```
 
-This example's NetworkPolicy expects Postgres in the release namespace and
-standard cluster DNS. Set [`networkPolicy.postgres`](database.md#secrets-and-connection-uris)
-and [`networkPolicy.dns`](security.md#name-lookups) if yours differ.
+The chart's NetworkPolicies, on by default, expect Postgres in the release
+namespace, standard cluster DNS, and forges and models on port 443. Set
+[`networkPolicy.postgres`](database.md#secrets-and-connection-uris),
+[`networkPolicy.dns`](security.md#name-lookups) and
+`networkPolicy.egressPorts` if yours differ. `networkPolicy.type: auto`
+renders Cilium's or Calico's own policies where the cluster serves their
+API, and standard NetworkPolicies otherwise; Argo CD passes the cluster's
+APIs to `helm template` for it, but plain `helm template` needs
+`--api-versions` or a type set.
 
 Install the chart using your values file:
 

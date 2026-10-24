@@ -10,8 +10,8 @@ that pod can reach.
 | --- | --- |
 | Use a dedicated namespace. | kritika can create Jobs and Secrets in its namespace. |
 | Keep `runner.admissionPolicy.enabled` on. | Restricts the Jobs and Secrets the service can create to the expected runner forms. |
-| Enable `networkPolicy.enabled`. | Restricts runners to DNS, Postgres and the gateway. Configure [database](database.md#secrets-and-connection-uris) and [DNS](#name-lookups) destinations for your cluster. |
-| Set `runner.podTemplate.spec.runtimeClassName`. | Uses an installed sandboxed runtime, such as gVisor, to isolate untrusted work. |
+| Keep `networkPolicy.enabled` on, the default. | Restricts runners to DNS, Postgres and the gateway, the only bound on where a command a review runs can connect. `networkPolicy.type: auto`, the default, renders Cilium's or Calico's own policies where the cluster serves their API. Configure [database](database.md#secrets-and-connection-uris) and [DNS](#name-lookups) destinations for your cluster. |
+| Set `runner.podTemplate.spec.runtimeClassName`. | Uses an installed sandboxed runtime, such as gVisor, to isolate untrusted work, the commands a review runs among it. |
 | Set `runner.podTemplate.spec.resources`. | Limits the CPU and memory a runner can consume. |
 | Map sign-in roles from trusted groups or roles. | Avoids granting access from profile fields users can change themselves. See [role mappings](configuration.md#role-mappings). |
 
@@ -73,8 +73,10 @@ runner Jobs are handed it as `HTTPS_PROXY` and `HTTP_PROXY`, with the run's
 gateway token as the proxy URL's password. The gateway admits a proxy
 request by that token alone, so nothing else that reaches the port can
 relay through it or use a credential it adds. With
-`networkPolicy.enabled`, a runner's git fetch and every command it runs go
-through the gateway, which allows a destination by name and by the address
+`networkPolicy.enabled`, the default, a runner's git fetch and every
+command it runs go through the gateway to reach anything but the
+cluster's DNS and the database, and the gateway allows a destination by
+name and by the address
 it resolves to. Each connection's forge is allowed once it is declared:
 `github.com` and `api.github.com` for a GitHub App, and the instance's host
 for a Forgejo, GitLab or Gitea connection. The configuration file's
@@ -160,6 +162,13 @@ Service points at, which its author set, not the runner. Add the host of
 the runner role's database URI to `runnerNames` when the database is
 outside the cluster. Cilium refuses any other name. The `default` and
 `calico` flavors cannot filter names.
+
+These rules need Cilium's L7 proxy, which is on unless turned off. Where
+it is off, Cilium refuses the runner's CiliumNetworkPolicy for them. The
+`cilium` flavor also renders a plain NetworkPolicy for runner pods that
+allows the database and the gateway and no DNS, so a refused policy
+leaves them unable to look up any name: every run fails rather than run
+with no policy, until `networkPolicy.type` is `default`.
 
 Runner pods resolve with `ndots: 4`, so the gateway's name, such as
 `kritika-gateway.kritika.svc.cluster.local`, is looked up as written
@@ -291,14 +300,34 @@ code from the pull request despite the checkout's missing execute bits.
 Such a tool can also invoke mise by its absolute path; keeping mise out of
 the offered commands does not prevent subprocess execution.
 
+The run tool chooses which programs run, never how: it passes the model's
+arguments as given, and those follow what the model reads, the pull
+request under review included. A command, the image's or a repository's
+alike, can therefore do whatever its program can: run another program in
+the image, read what the runner's user can read in the pod, print what
+its own environment holds, and send it wherever the network lets it. The
+runner pod is the boundary. Its NetworkPolicy, on by default, lets runner
+pods reach three places: the cluster's DNS, the Postgres port where
+`networkPolicy.postgres` says the database is, and the gateway, so
+`egress.allow` and `egress.deny` hold for everything else a command
+connects to. Without the policy a command can connect around the
+gateway, so turn it off only where something else confines runner pods'
+egress. A command reaches the first two directly as well: the cluster's
+DNS forwards the lookup of an outside name, which only the `cilium`
+flavor filters (see [Name lookups](#name-lookups)), and the database
+admits only the runner role's credentials, which a command never sees. A
+sandboxed runtime keeps a kernel exploit from reaching the node (see
+[Runner sandbox](#runner-sandbox)).
+
 The clean environment hides the runner's database and model credentials,
 but commands still receive the gateway proxy credential, and the tool
 offered as `gh` receives the run's read-only GitHub token, so a repository
 tool is not offered as `gh` unless the image has it installed at the
-repository's version; a summary note says so. Egress remains bounded by
-the gateway and network policy. Replacing a default tool also
-keeps the argument restrictions written for the shipped version; another
-version may interpret those flags differently. An instance that reviews
+repository's version; a summary note says so. Both are the run's own: the
+gateway token stops working when the run ends, or `config.gatewayTokenTtl`
+past the Job's deadline at the latest, and the GitHub token, which reads
+what the run may read and nothing more, expires an hour after it is
+minted, whether the run has ended or not. An instance that reviews
 repositories whose tool choices it does not trust should run them on a
 runner image without mise, which reads no repository config.
 
@@ -336,10 +365,12 @@ What bounds a command:
   host the gateway refuses is a failed command naming the reason rather
   than a success whose output is the refusal. It also limits `curl` to
   `http` and `https`, the schemes the proxy variables cover, so a URL of
-  any other, given or redirected to, is refused rather than reached
-  without the gateway. Neither a config's `[env]` nor the admin's
-  variables may set what the runner sets or what would point a tool past
-  the argument checks:
+  any other, given or redirected to, fails rather than trying a
+  connection without the gateway; an argument can lift that limit, and
+  the NetworkPolicy then refuses such a connection anywhere but the
+  cluster's DNS and the database's port. Neither a config's
+  `[env]` nor the admin's variables may set what the runner sets, or what
+  would change every call of a tool rather than the one the model makes:
   `HOME`, `PATH`, the proxy variables, `GH_*`, `GIT_*`, `MISE_*`, `LD_*`,
   `GITHUB_TOKEN`, `CURL_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`,
   `RIPGREP_CONFIG_PATH`, `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and
@@ -350,7 +381,13 @@ What bounds a command:
   directory holding it. A command writes to the checkout, to the
   `../upstream/` directory beside it, and to `XDG_CACHE_HOME`, a directory
   of the same scratch space where a tool that keeps a cache, such as
-  flate, puts it. mise's own cache stays under `HOME`.
+  flate, puts it. mise's own cache stays under `HOME`. These are
+  permissions, not a mount: the commands run as the runner's user, so a
+  program that changes permissions, such as an interpreter a repository
+  adds, can make `HOME` writable again and change what the run's later
+  commands find there, the `.curlrc`, the mise config or a tool installed
+  in it. The image's own tools, `gh` among them, are in its read-only
+  root.
 - **mise is never a command:** the runner runs it by its path outside
   `PATH`, a tool that would provide a `mise` command is not offered, and
   every install goes through the runner, with a two-minute timeout. A
@@ -364,20 +401,16 @@ What bounds a command:
   `tuf-repo-cdn.sigstore.dev` for a tool whose aqua recipe verifies an
   attestation; mise also asks `mise-versions.jdx.dev` for a tool's
   versions, and falls back to the GitHub API when the gateway refuses it.
-- **Refused arguments:** the run tool refuses the arguments that would
-  print a credential, run a program outside the list or reach the
-  network around the gateway: `gh auth`, `alias`, `config` and
-  `extension`; `fd -x` and `-X`; `rg --pre` and `--hostname-bin`;
-  `curl --trace`, `--trace-ascii`, `--trace-config` and `--config`/`-K`,
-  which would print the proxy credential in pieces the mask cannot
-  match; `curl`'s proxy options (`-x`/`--proxy`, `--noproxy`,
-  `--preproxy`, `--proxy1.0`, `--socks4`, `--socks4a`, `--socks5` and
-  `--socks5-hostname`), `--resolve`, `--unix-socket` and
-  `--abstract-unix-socket`, which would connect around the gateway; and
-  `--proto`, `--next`/`-:` and `-q`/`--disable`, which would
-  lift the `.curlrc`'s limit to `http` and `https`. A `curl` option is
-  refused in its `--expand-` form too. It masks the token in a command's
-  output and in the submitted review.
+- **Masked output:** the run's tokens, the proxy credential as `curl -v`
+  prints it, and the values of the admin's variables from a Secret are
+  masked out of a command's output, the files a cut output is kept in
+  and the submitted review. A program can still print one in a form the
+  mask does not match, as `curl --trace` does in its hex dump of the
+  headers. The gateway token stops working with the run and the GitHub
+  token within the hour, but an admin's variable never does, so scope its
+  token to what the commands need, or have the gateway add it through
+  [`egress.credentials`](#the-egress-gateway), so the runner never holds
+  it.
 - **A plain checkout:** the files are written without execute bits,
   preventing direct execution, when the first command runs; a review
   that reads the head through its own tools alone writes none. An
@@ -740,8 +773,9 @@ A runner parses untrusted content and runs what the model asks. Set
 cluster offers
 (`gvisor` with runsc, or a Kata class), so a kernel vulnerability
 reachable from the pod is contained by the sandbox rather than the node.
-It is advised, not required: without it the pod's other bounds still hold,
-but the container runtime alone separates it from the node.
+A command may run any program in the image with any arguments, so set it
+wherever the cluster offers one: without it the pod's other bounds still
+hold, but the container runtime alone separates it from the node.
 
 Set `runner.podTemplate.spec.resources` too, which bound the whole pod:
 the runner and every command its run tool starts. Without them runner

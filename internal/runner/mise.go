@@ -45,10 +45,11 @@ var miseSystemVars = []string{"MISE_SYSTEM_CONFIG_DIR", "MISE_SYSTEM_DATA_DIR"}
 
 // A mise config's [env] may not set the names the runner sets for a
 // command, a name that carries a credential, or one that points a tool at
-// a config file or the loader at a library, which the argument checks
-// never see: a .curlrc in the checkout could turn on the trace that prints
-// the proxy credential. The runner's own variables win, and a dropped name
-// is noted in the review's summary.
+// a config file or the loader at a library: CURL_HOME would trade the
+// .curlrc the runner writes for one in the checkout, and LD_PRELOAD would
+// load a library into every command, gh with the run's token among them.
+// The runner's own variables win, and a dropped name is noted in the
+// review's summary.
 var (
 	reservedEnv = []string{
 		"HOME", "PATH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GITHUB_TOKEN",

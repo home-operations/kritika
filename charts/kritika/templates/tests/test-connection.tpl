@@ -3,8 +3,14 @@ kind: Pod
 metadata:
   name: {{ include "kritika.fullname" . }}-test-connection
   namespace: {{ .Release.Namespace }}
+  # Not kritika.labels: the server's selector labels would put this pod
+  # under the server's NetworkPolicy, whose egress leaves out the metrics
+  # port it probes, and behind the server's Service and PDB.
   labels:
-    {{- include "kritika.labels" . | nindent 4 }}
+    helm.sh/chart: {{ include "kritika.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: test
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     helm.sh/hook: test
     # before-hook-creation only (no hook-succeeded): `helm test` then never
