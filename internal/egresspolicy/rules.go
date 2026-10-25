@@ -1,4 +1,7 @@
-package egress
+// Package egresspolicy is what the gateway lets a runner reach: the hosts
+// and addresses it allows and denies, the credentials it adds and the
+// hosts its cache keeps nothing from. Package egress enforces it.
+package egresspolicy
 
 import (
 	"net/netip"
@@ -78,10 +81,10 @@ const (
 	reasonResolvesDenied    = "resolves to a denied address"
 )
 
-// refuses returns why the rules refuse a destination before it is
+// Refuses returns why the rules refuse a destination before it is
 // resolved, or "" when they admit it so far: a name must pass the host
 // rules, and an address must be covered by an Allow prefix.
-func (r Rules) refuses(host string) string {
+func (r Rules) Refuses(host string) string {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		switch addr = addr.Unmap(); {
 		case r.Deny.contains(addr):
@@ -101,10 +104,10 @@ func (r Rules) refuses(host string) string {
 	return ""
 }
 
-// admit returns the resolved addresses of a name the rules let the proxy
+// Admit returns the resolved addresses of a name the rules let the proxy
 // dial, or why none may be: a denied address never, a private one only
 // when an Allow prefix covers it.
-func (r Rules) admit(addrs []netip.Addr) ([]netip.Addr, string) {
+func (r Rules) Admit(addrs []netip.Addr) ([]netip.Addr, string) {
 	var ok []netip.Addr
 	denied := false
 	for _, a := range addrs {

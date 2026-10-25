@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/home-operations/kritika/internal/egress"
+	"github.com/home-operations/kritika/internal/egresspolicy"
 )
 
 // GitHubHost is the forge a GitHub App and GitHub sign-in talk to, and
@@ -70,8 +70,8 @@ func (f *File) validateEgress() error {
 // alone as a prefix of its own length and an IPv4-mapped IPv6 entry as the
 // IPv4 it maps, which is how the gateway sees such a destination; an error
 // names the entry's index.
-func parseList(entries []string) (egress.List, error) {
-	var l egress.List
+func parseList(entries []string) (egresspolicy.List, error) {
+	var l egresspolicy.List
 	for i, e := range entries {
 		if p, err := netip.ParsePrefix(e); err == nil {
 			if a := p.Addr(); a.Is4In6() && p.Bits() >= 96 {
@@ -86,7 +86,7 @@ func parseList(entries []string) (egress.List, error) {
 			continue
 		}
 		if err := checkHost(e); err != nil {
-			return egress.List{}, fmt.Errorf("[%d]: %w", i, err)
+			return egresspolicy.List{}, fmt.Errorf("[%d]: %w", i, err)
 		}
 		l.Hosts = append(l.Hosts, e)
 	}
@@ -117,8 +117,8 @@ func checkHost(h string) error {
 // API, which mise sends the run's token, not even for a locked install.
 // Provider endpoints are not among them: a runner reaches its model
 // through the gateway's model endpoint, and the worker calls the provider.
-func (f *File) EgressRules() egress.Rules {
-	allow := egress.List{Hosts: slices.Clone(f.Egress.allow.Hosts), Prefixes: f.Egress.allow.Prefixes}
+func (f *File) EgressRules() egresspolicy.Rules {
+	allow := egresspolicy.List{Hosts: slices.Clone(f.Egress.allow.Hosts), Prefixes: f.Egress.allow.Prefixes}
 	for _, h := range f.forgeHosts() {
 		if !slices.Contains(allow.Hosts, h) {
 			allow.Hosts = append(allow.Hosts, h)
@@ -128,7 +128,7 @@ func (f *File) EgressRules() egress.Rules {
 	for host, secret := range f.Egress.credentials {
 		creds[host] = "Bearer " + secret.Value()
 	}
-	return egress.Rules{
+	return egresspolicy.Rules{
 		Allow: allow, Deny: f.Egress.deny, Credentials: creds, Uncached: []string{GitHubAPIHost},
 	}
 }

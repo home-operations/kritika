@@ -4,14 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"reflect"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/gookit/validate/v2"
-
-	"github.com/home-operations/kritika/internal/egress"
+	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
 // minRetention keeps transcripts and diffs available for at least a day.
@@ -74,12 +74,28 @@ func (s Settings) Validate() error {
 		if s.GatewayCacheMaxEntrySize > 5<<30 {
 			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed 5Gi")
 		}
-		if err := (egress.S3Options{Endpoint: s.GatewayCacheS3Endpoint, Region: s.GatewayCacheS3Region,
-			Bucket: s.GatewayCacheS3Bucket}).Validate(); err != nil {
+		if err := checkS3Bucket(s.GatewayCacheS3Endpoint, s.GatewayCacheS3Region, s.GatewayCacheS3Bucket); err != nil {
 			extra = append(extra, err.Error())
 		}
 	}
 	return validationError(v, extra...)
+}
+
+// checkS3Bucket checks where the gateway cache's bucket is, without
+// contacting the object store.
+func checkS3Bucket(endpoint, region, bucket string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Hostname() == "" || (u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP) ||
+		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return errors.New("gatewayCacheS3Endpoint: the S3 endpoint must be an http(s) origin without credentials, path, query or fragment")
+	}
+	if region == "" {
+		return errors.New("gatewayCacheS3Region: the S3 region must be set")
+	}
+	if err := s3utils.CheckValidBucketName(bucket); err != nil {
+		return fmt.Errorf("gatewayCacheS3Bucket: S3 bucket: %w", err)
+	}
+	return nil
 }
 
 // ValidateServe checks what serve needs beyond the common set.

@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
@@ -217,10 +218,10 @@ const (
 // host the rules do not name as uncached. A URL with a query is not: a
 // signed URL's query is its credential, and a query would let one asset
 // be kept under any number of names.
-func cacheable(r *http.Request, host string, rules Rules) bool {
+func cacheable(r *http.Request, host string, rules egresspolicy.Rules) bool {
 	locked := LockedInstall(r.Context()) || Refill(r.Context()) && r.Method == http.MethodGet
 	if r.Method != http.MethodGet && r.Method != http.MethodHead || r.URL.RawQuery != "" || r.URL.ForceQuery ||
-		rules.keptOut(host) || !locked {
+		keptOut(rules, host) || !locked {
 		return false
 	}
 	for _, h := range []string{"Authorization", "Cookie"} {
@@ -233,7 +234,7 @@ func cacheable(r *http.Request, host string, rules Rules) bool {
 
 // keptOut reports whether the cache keeps nothing from host, as the rules
 // match a name: a host they name as uncached, or one with a credential.
-func (r Rules) keptOut(host string) bool {
+func keptOut(r egresspolicy.Rules, host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	_, credentialed := r.Credentials[host]
 	return credentialed || slices.Contains(r.Uncached, host)
@@ -549,10 +550,10 @@ func (p *Proxy) checkRedirect(req *http.Request, via []*http.Request) error {
 		return &refusal{req.URL.Host, "only port 443 is served"}
 	}
 	rules := p.Rules()
-	if reason := rules.refuses(req.URL.Hostname()); reason != "" {
+	if reason := rules.Refuses(req.URL.Hostname()); reason != "" {
 		return &refusal{req.URL.Host, reason}
 	}
-	if rules.keptOut(req.URL.Hostname()) {
+	if keptOut(rules, req.URL.Hostname()) {
 		return fmt.Errorf("egress: cache: redirect to %s, which the cache keeps nothing from", req.URL.Host)
 	}
 	return nil

@@ -13,8 +13,6 @@ import (
 	"strings"
 
 	"github.com/caarlos0/env/v11"
-
-	"github.com/home-operations/kritika/internal/egress"
 )
 
 // Command selects what a kritika process runs: the service, or one review or
@@ -155,7 +153,7 @@ func (c *Config) parseWebURL() error {
 	if err != nil {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
 	}
-	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
@@ -194,7 +192,7 @@ func (c *Config) validate() error {
 		return err
 	}
 	if c.GatewayURL != "" {
-		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
+		if err := checkGatewayURL(c.GatewayURL); err != nil {
 			return fmt.Errorf("config: gatewayUrl: KRITIKA_GATEWAY_URL: %w", err)
 		}
 	}
@@ -202,6 +200,26 @@ func (c *Config) validate() error {
 		return err
 	}
 	c.logLevel = logLevels[strings.ToLower(c.LogLevel)]
+	return nil
+}
+
+// The schemes of the URLs the settings name.
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
+
+// checkGatewayURL checks a gateway URL a runner will be handed: http, a
+// host, no path and no credentials, since the run token becomes its
+// password.
+func checkGatewayURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != schemeHTTP || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
+		return errors.New("must be http://host:port")
+	}
 	return nil
 }
 
