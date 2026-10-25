@@ -16,7 +16,6 @@ test('most used tools graph shows executions and switches period', async ({ page
   const panel = page.getByRole('region', { name: 'Most used tools', exact: true });
   await expect(panel).toContainText('60 executions');
   await expect(panel).toContainText('12 recorded runs');
-  await expect(panel).toContainText('2 runs without execution counts excluded');
   const rows = panel.locator('tbody tr');
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText('rg');
@@ -40,7 +39,6 @@ test('most used tools graph distinguishes empty history and read failures', asyn
   await page.goto('/#/admin/settings');
   const panel = page.getByRole('region', { name: 'Most used tools', exact: true });
   await expect(panel).toContainText('No tool executions recorded in this period.');
-  await expect(panel).toContainText('2 runs without execution counts excluded');
   await expect(panel.locator('.tool-bar')).toHaveCount(0);
   await page.route('**/api/v1/admin/tools?*', (route) => route.fulfill({
     status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'internal', message: 'Could not read tool usage' }),

@@ -128,8 +128,7 @@ func TestAgentRejects(t *testing.T) {
 	for _, tt := range []struct {
 		name, doc, want string
 	}{
-		{"a review.model list", routesProviders + "review: { model: [{ model: a/opus }] }\n" + minimal,
-			"review.model takes one model; pick another for some pull requests with an agent of review.agents"},
+		{"a review.model list", routesProviders + "review: { model: [{ model: a/opus }] }\n" + minimal, "cannot construct !!seq into configfile.ModelRef"},
 		{"an agent without a name", agents("    - { model: a/opus }\n"), "review.agents[0] (): name must be"},
 		{"the default pass's name", agents("    - { name: default, model: a/opus }\n"), `"default" is the default pass`},
 		{"a name twice", agents("    - { name: a, model: a/opus }\n    - { name: a, model: a/opus }\n"), "review.agents[1] (a): name is given twice"},

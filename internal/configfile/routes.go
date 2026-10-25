@@ -33,13 +33,8 @@ type ModelRoute struct {
 	When     []Filter      `json:"when"`
 }
 
-// UnmarshalYAML takes a model. A list, the routes review.model once took,
-// is refused for the agents that replaced them.
+// UnmarshalYAML takes a model.
 func (m *ReviewModel) UnmarshalYAML(n *yaml.Node) error {
-	if n.Kind == yaml.SequenceNode {
-		return errors.New("review.model takes one model; pick another for some pull requests with an agent of review.agents " +
-			"that has no categories, which replaces the default pass when its conditions hold")
-	}
 	return n.Decode(&m.Default)
 }
 

@@ -79,8 +79,8 @@ type publicationInput struct {
 	Reviewers []string           `json:",omitempty"`
 }
 
-// publicationSnapshot decodes both persisted stage formats, including snapshots
-// written before delivery carried reviewer names. New writes use a stage input.
+// publicationSnapshot decodes either stage's persisted input: a
+// publicationInput, version 1, or a preparationInput, version 2.
 type publicationSnapshot struct {
 	publicationInput
 	Preparation *publicationPreparation `json:",omitempty"`

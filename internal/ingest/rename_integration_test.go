@@ -22,7 +22,7 @@ func TestRenamePreservesEnablement(t *testing.T) {
 		transfer    bool
 		want        *bool
 	}{
-		{name: "legacy-default"},
+		{name: "no-choice"},
 		{name: "enabled", choice: new(true), want: new(true)},
 		{name: "disabled", choice: new(false), want: new(false)},
 		{name: "destination-choice", choice: new(true), destination: new(false), want: new(false)},

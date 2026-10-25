@@ -37,7 +37,7 @@ func TestPlanReviewers(t *testing.T) {
 		want      []share
 		full      bool
 	}{
-		{name: "no reviewers is the review as it always was"},
+		{name: "no reviewers splits nothing"},
 		{name: "the default reviewer alone too", reviewers: []runspec.Reviewer{def}},
 		{name: "the default reviewer the last review did not run reviews the whole change", reviewers: []runspec.Reviewer{{Name: def.Name, Full: true}},
 			scope: review.ScopeIncremental, full: true},

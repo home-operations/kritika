@@ -3,7 +3,7 @@ package review
 // Summary is the review's overall judgement for the sticky comment.
 type Summary struct {
 	// Headline is one sentence on what the change does, the summary
-	// section's first line; "" from a review made before it was asked for.
+	// section's first line.
 	Headline string   `json:"headline,omitempty"`
 	Take     string   `json:"take"`
 	Praise   []string `json:"praise"`

@@ -237,13 +237,6 @@ func TestOrphanedRuns(t *testing.T) {
 	liveRun, _ := insertRun(t, ctx, s, alpha, insertReview(t, ctx, s, alpha), live)
 	reviewRun, review := insertRun(t, ctx, s, alpha, insertReview(t, ctx, s, alpha), retried)
 	indexRun, indexGen := insertRun(t, ctx, s, alpha, "", gone)
-	// A run River never knew the job of, from before runs recorded one.
-	var legacy string
-	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index') RETURNING id`, alpha).Scan(&legacy)
-	}); err != nil {
-		t.Fatal(err)
-	}
 	// A run of the retried job that its worker did end.
 	endedRun, _ := insertRun(t, ctx, s, alpha, insertReview(t, ctx, s, alpha), retried)
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
@@ -262,8 +255,8 @@ func TestOrphanedRuns(t *testing.T) {
 		ids = append(ids, r.ID)
 	}
 	if want := []string{leftRun, reviewRun, indexRun}; !slices.Equal(ids, want) {
-		t.Fatalf("orphaned = %v, want %v: unfinished, of a job not running or with a newer run (not %s, %s or %s)",
-			ids, want, liveRun, legacy, endedRun)
+		t.Fatalf("orphaned = %v, want %v: unfinished, of a job not running or with a newer run (not %s or %s)",
+			ids, want, liveRun, endedRun)
 	}
 	if r := got[1]; r.AccountID != alpha || r.Kind != RunnerKindReview || r.ReviewID != review || r.IndexRunID != "" {
 		t.Fatalf("review run = %+v", r)

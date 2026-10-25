@@ -201,9 +201,7 @@ Counts are stored in `agent_runs.command_counts` alongside the saved result,
 so they survive restarts. They also aggregate across replicas without
 Prometheus labels for arbitrary command names. Split review parts share one
 counter. The period uses the result's save time. Active runs, and runs lost
-before saving their result, are not included. Runs from older runners have no
-counts and are shown as excluded, rather than estimated from the distinct
-commands they used.
+before saving their result, are not included.
 
 ## Alerts
 
@@ -411,7 +409,7 @@ These intervals overlap: do not sum stages or their percentiles. Forge stages
 are operations and may make multiple HTTP requests. `agent_to_*` uses the
 database's agent-record timestamp, which approximates agent completion and
 requires aligned database and worker clocks. Negative durations are clamped to
-zero. Older checkpoints without an agent timestamp produce no such sample.
+zero. A checkpoint without an agent row produces no such sample.
 Other stages include failed attempts. All `review stage ended` logs carry
 `review`, `run`, `job`, `stage` and `elapsed`. JSON duration fields are
 nanoseconds.
@@ -448,8 +446,7 @@ account and model for aggregate observed waiting time. Group
 `review model slot wait ended` logs by job to inspect repeated waits. This
 metric is separate from `kritika_lease_wait_seconds`, which measures waits
 inside an active worker. The slot wait overlaps queue delay and must not be
-added to it. Old jobs without the timestamp and canceled jobs never picked up
-again have no sample. A process crash before River saves cleared metadata can
+added to it. Canceled jobs never picked up again have no sample. A process crash before River saves cleared metadata can
 cause a repeated observation. A pickup that fails before the wait is recorded
 leaves it to the next attempt, retry backoff included. These are operational
 metrics, not an exactly-once accounting ledger.

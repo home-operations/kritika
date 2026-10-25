@@ -87,21 +87,9 @@ The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
   `env` and `envFrom`, but a file setting and its environment variable cannot
   both be set. Chart-managed environment variables are reserved.
 - Auth, apps, providers, embedding and review policy are declared in the file.
-  Their environment values must be explicitly referenced with `{ env: NAME }`;
-  automatic env declarations and policy overrides are not supported.
+  Their environment values must be explicitly referenced with `{ env: NAME }`.
 - The config path, database DSNs and per-run credentials/spec path are env-only.
   The chart supplies the config path and database DSNs from its deployment values.
-
-**Migration:** move `configFile` into `config`, flat policy keys such as
-`config.reviewModel` into `config.review.model`, and password `valueFrom`
-entries into `env` with references in the file. Move
-`config.runnerRuntimeClass` and `config.runnerDeadline` into
-`runner.podTemplate.spec.runtimeClassName` and
-`runner.jobTemplate.spec.activeDeadlineSeconds`. Move automatic auth, app, provider
-and policy env configuration into the file, keeping secret values in env with
-explicit file references. See the
-[configuration reference](https://kritika.home-operations.com/configuration/)
-for the complete migration and external ConfigMap rules.
 
 The
 [setup guide](https://kritika.home-operations.com/setup/)
@@ -172,68 +160,6 @@ chart confines them:
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
-
-### Migrating runner tools
-
-`runner.mise.config` and `KRITIKA_RUNNER_MISE_CONFIG` are removed, as
-`runner.tools` and `KRITIKA_RUNNER_TOOLS` were before them. Declare each
-tool under `tools` in the `.kritika.yaml` of the repositories whose
-reviews use it. See the
-[migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
-
-The runner image carries `curl`, `find`, `gh`, `grep` and `jq`, and no
-longer `rg`, `fd` or `yq`: a repository whose reviews want one declares it
-under `tools` in its `.kritika.yaml`. See
-[migrating from rg, fd and yq](https://kritika.home-operations.com/security/#migrating-from-rg-fd-and-yq).
-
-### Migrating NetworkPolicies
-
-`networkPolicy.enabled` is on by default, so an install that left it off
-gets both policies on upgrade. `networkPolicy.type` is `auto`: Cilium's
-or Calico's own policies where the cluster serves their API, as Helm,
-Flux and Argo CD see it, and standard NetworkPolicies otherwise. Before
-upgrading, add a forge or model port other than 443 to
-`networkPolicy.egressPorts` and check what follows, or turn the policies
-off where something else confines runner pods' egress. On Cilium, the
-flavor's DNS rules need its L7 proxy: where it is off, Cilium refuses the
-runner's policy and runs fail until `networkPolicy.type` is `default`.
-
-`networkPolicy.allowDNS` is removed: both policies always allow DNS to the
-cluster's DNS, which runner pods need to find the gateway and the
-database. `networkPolicy.postgresPort` is now `networkPolicy.postgres.port`.
-
-With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
-Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
-its pods are not `k8s-app: kube-dns` in `kube-system`, and list a NodeLocal
-DNSCache's address in `networkPolicy.dns.nodeLocalAddresses`. With the
-Cilium flavor, runner pods may look up only the cluster's Service names.
-See [name lookups](https://kritika.home-operations.com/security/#name-lookups).
-
-kritika serve and runner pods reach the Postgres port only where
-`networkPolicy.postgres` says the database is, any pod in the release
-namespace unless set. Before upgrading, set its `namespace` when the
-database is in another namespace, and check that a `podSelector` takes in
-every pod the owner, application and runner URIs connect to, not only the
-runner's: `cnpg.io/cluster: kritika-postgres` selects a CloudNativePG
-cluster's instances and its Poolers' pods alike. Otherwise kritika serve
-cannot reach the database. See
-[Postgres](https://kritika.home-operations.com/database/#secrets-and-connection-uris).
-
-`networkPolicy.postgres.cidrs` and `networkPolicy.dns.runnerNames` are
-removed: the chart supports the database as a CloudNativePG cluster in the
-same Kubernetes cluster alone. Helm ignores them, so move a database
-outside the cluster into CloudNativePG before upgrading: neither kritika
-serve nor its runs can reach it otherwise.
-
-The S3 gateway cache's endpoint no longer adds its port to kritika serve's
-policy: the port in its URL is a Service's, which a NetworkPolicy never
-matches when the Service sends it to another port on the pods. Before
-upgrading, allow the pods of a bucket in the cluster on their own port in
-`networkPolicy.extraEgress`, such as port 8080 on Ceph RGW's pods under
-Rook, and make sure `networkPolicy.egressPorts` lists the port of a
-bucket outside the cluster: 443 is there only while the list is the
-default. See
-[shared S3 storage](https://kritika.home-operations.com/security/#shared-s3-storage).
 
 ### Topology
 

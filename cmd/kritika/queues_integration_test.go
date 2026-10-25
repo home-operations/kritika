@@ -47,7 +47,7 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := make([]int64, 0, cfg.ReviewWorkers+3)
+	ids := make([]int64, 0, cfg.ReviewWorkers+2)
 	t.Cleanup(func() {
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
 		defer done()
@@ -86,13 +86,7 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 			t.Fatal("follow-up workers did not saturate")
 		}
 	}
-	// An old-queue job stays behind the occupied workers; new thread work
-	// must complete before those workers are released.
-	legacy, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91010, Resolved: true}, &river.InsertOpts{Queue: jobs.QueueFollowUp + suffix})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids = append(ids, legacy.Job.ID)
+	// Thread work completes while every follow-up worker is occupied.
 	fresh, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91011, Resolved: true}, &river.InsertOpts{Queue: (jobs.ThreadArgs{}).InsertOpts().Queue + suffix})
 	if err != nil {
 		t.Fatal(err)
@@ -107,86 +101,67 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 		t.Fatal("thread job waited behind saturated follow-ups")
 	}
 	close(release)
-	for {
-		select {
-		case event := <-events:
-			if event.Job.ID == legacy.Job.ID {
-				if event.Job.Queue != jobs.QueueFollowUp+suffix {
-					t.Fatalf("legacy job moved queues: %+v", event.Job)
-				}
-				untouched, err := client.JobGet(ctx, unrelated.Job.ID)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if untouched.State != "available" || untouched.Attempt != 0 {
-					t.Fatalf("unrelated job was worked: %+v", untouched)
-				}
-				return
-			}
-		case <-ctx.Done():
-			t.Fatal("legacy thread job did not drain on followup")
-		}
+	untouched, err := client.JobGet(ctx, unrelated.Job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if untouched.State != "available" || untouched.Attempt != 0 {
+		t.Fatalf("unrelated job was worked: %+v", untouched)
 	}
 }
 
-func TestThreadUniquenessAcrossQueues(t *testing.T) {
+func TestThreadUniqueness(t *testing.T) {
 	st := storetest.Open(t)
 	client, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, firstQueue := range []string{jobs.QueueFollowUp, jobs.QueueThread} {
-		for _, state := range []string{"available", "running"} {
-			t.Run(firstQueue+"/"+state, func(t *testing.T) {
-				ctx := t.Context()
-				tx, err := st.App().Begin(ctx)
-				if err != nil {
-					t.Fatal(err)
+	for _, state := range []string{"available", "running"} {
+		t.Run(state, func(t *testing.T) {
+			ctx := t.Context()
+			tx, err := st.App().Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := tx.Rollback(context.Background()); err != nil {
+					t.Error(err)
 				}
-				defer func() {
-					if err := tx.Rollback(context.Background()); err != nil {
-						t.Error(err)
-					}
-				}()
-				args := jobs.ThreadArgs{CommentID: 91020, Resolved: true}
-				first, err := client.InsertTx(ctx, tx, args, &river.InsertOpts{Queue: firstQueue})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := tx.Exec(ctx, "UPDATE river_job SET state = $2::text::river_job_state WHERE id = $1", first.Job.ID, state); err != nil {
-					t.Fatal(err)
-				}
-				secondQueue := jobs.QueueThread
-				if firstQueue == jobs.QueueThread {
-					secondQueue = jobs.QueueFollowUp
-				}
-				duplicate, err := client.InsertTx(ctx, tx, args, &river.InsertOpts{Queue: secondQueue})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !duplicate.UniqueSkippedAsDuplicate || duplicate.Job.ID != first.Job.ID {
-					t.Fatalf("cross-queue duplicate = %+v, want job %d", duplicate, first.Job.ID)
-				}
-				restored := args
-				restored.Resolved = false
-				different, err := client.InsertTx(ctx, tx, restored, &river.InsertOpts{Queue: secondQueue})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if different.UniqueSkippedAsDuplicate {
-					t.Fatal("different thread state was deduplicated")
-				}
-				if _, err := tx.Exec(ctx, "UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1", first.Job.ID); err != nil {
-					t.Fatal(err)
-				}
-				again, err := client.InsertTx(ctx, tx, args, &river.InsertOpts{Queue: secondQueue})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if again.UniqueSkippedAsDuplicate {
-					t.Fatal("completed thread job prevented a later update")
-				}
-			})
-		}
+			}()
+			args := jobs.ThreadArgs{CommentID: 91020, Resolved: true}
+			first, err := client.InsertTx(ctx, tx, args, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(ctx, "UPDATE river_job SET state = $2::text::river_job_state WHERE id = $1", first.Job.ID, state); err != nil {
+				t.Fatal(err)
+			}
+			duplicate, err := client.InsertTx(ctx, tx, args, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !duplicate.UniqueSkippedAsDuplicate || duplicate.Job.ID != first.Job.ID {
+				t.Fatalf("duplicate = %+v, want job %d", duplicate, first.Job.ID)
+			}
+			restored := args
+			restored.Resolved = false
+			different, err := client.InsertTx(ctx, tx, restored, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if different.UniqueSkippedAsDuplicate {
+				t.Fatal("different thread state was deduplicated")
+			}
+			if _, err := tx.Exec(ctx, "UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1", first.Job.ID); err != nil {
+				t.Fatal(err)
+			}
+			again, err := client.InsertTx(ctx, tx, args, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if again.UniqueSkippedAsDuplicate {
+				t.Fatal("completed thread job prevented a later update")
+			}
+		})
 	}
 }

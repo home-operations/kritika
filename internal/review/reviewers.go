@@ -33,8 +33,7 @@ func (f Finding) Specialist() string {
 }
 
 // AgentNames names the reviewers that raised f, as comments credit them,
-// or "" when the default reviewer alone did: a repository with no other
-// reviewer reads its findings as it always has.
+// or "" when the default reviewer alone did.
 func (f Finding) AgentNames() string {
 	if f.Specialist() == "" {
 		return ""

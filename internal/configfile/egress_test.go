@@ -155,7 +155,4 @@ func TestEgressCache(t *testing.T) {
 	if none.GatewayCaches() {
 		t.Error("GatewayCaches = true with no cache directory")
 	}
-	if _, err := loadBytes(t, []byte("gatewayCacheDir: /c\negress:\n  allow: [get.helm.sh]\n  cache: [get.helm.sh]\n"+minimal)); err == nil {
-		t.Error("egress.cache, which is removed, was accepted")
-	}
 }

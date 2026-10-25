@@ -105,8 +105,7 @@ type RenderData struct {
 }
 
 // NamedAgents reports whether the review ran a reviewer other than the
-// default one, alone or beside it, which the default template names: a
-// review by the default reviewer alone reads as it always has.
+// default one, alone or beside it, which the default template names.
 func (d RenderData) NamedAgents() bool {
 	return slices.ContainsFunc(d.Agents, func(r string) bool { return r != DefaultReviewer })
 }

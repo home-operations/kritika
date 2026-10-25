@@ -340,8 +340,9 @@ totals exclude subscription fees, but calls made through a paid fallback
 still contribute their API costs. The account's Usage page shows ChatGPT
 controls only when a ChatGPT provider is configured for that account. It
 can filter to plan calls and group token usage by hour or week. Review
-usage also totals ChatGPT calls and tokens by run. Older records without a
-run ID are labelled "Run not recorded". Token counts do not measure the
+usage also totals ChatGPT calls and tokens by run. Usage outside a run,
+such as the embedding of a review's similar code, is labelled "Run not
+recorded". Token counts do not measure the
 percentage of a plan allowance consumed.
 
 When OpenAI supplies quota headers or rate-limit events on an inference
@@ -641,11 +642,7 @@ it leaves every query and chunk whole.
 A new `queryPrompt` applies once kritika restarts with it, as any
 configuration change does, and needs no new index. `documentPrompt`
 shapes the stored vectors, so changing it rebuilds every repository's
-index, as a new model does. Set it in a rollout of its own, once every
-pod runs a release that reads it. Before going back to a release that
-doesn't read it, unset it and let the index rebuild. Otherwise a pod that
-doesn't read it would add chunks embedded without it to an index built
-with it.
+index, as a new model does.
 
 ## Local models
 

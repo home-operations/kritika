@@ -110,11 +110,11 @@ func (w *publicationWorker) resumePublication(ctx context.Context, job *river.Jo
 	return true, w.publicationEnded(ctx, job, p, status, deliveryErr)
 }
 
-// startedAt is when the review a checkpoint belongs to was picked up,
-// fallback for a checkpoint from before the time was carried.
+// startedAt is when the review a checkpoint belongs to was picked up, or
+// fallback when there is no checkpoint to read.
 func startedAt(payload json.RawMessage, fallback time.Time) time.Time {
 	var s struct{ Started time.Time }
-	if json.Unmarshal(payload, &s) != nil || s.Started.IsZero() {
+	if json.Unmarshal(payload, &s) != nil {
 		return fallback
 	}
 	return s.Started

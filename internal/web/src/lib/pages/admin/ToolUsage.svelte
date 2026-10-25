@@ -58,9 +58,6 @@
         {:else}
           <p class="muted">No tool executions recorded in this period.</p>
         {/if}
-        {#if data.uncountedRuns}
-          <p class="small muted text-ui-sm">{wholeNumber(data.uncountedRuns)} runs without execution counts excluded. Older runners did not record these counts.</p>
-        {/if}
       </div>
     {/snippet}
   </StateView>

@@ -40,12 +40,6 @@ func checkIndexIgnoreChanges(
 		indexJobDone(cctx, t, st, job.Job.ID)
 	})
 	active := activeIndexGeneration(ctx, t, st, account, repository)
-	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE index_runs SET ignore_hash='' WHERE id=$1`, active)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
 	r, err := git.PlainOpen(lf.dir)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +52,6 @@ func checkIndexIgnoreChanges(
 		name, global, repoConfig string
 		other, rebuild           bool
 	}{
-		{name: "legacy generation", other: true, rebuild: true},
 		{name: "global rule added at same commit", global: "ignore: [other.go]\n", rebuild: true},
 		{name: "unchanged rules at same commit", global: "ignore: [other.go]\n"},
 		{name: "global rule removed at same commit", other: true, rebuild: true},

@@ -3,8 +3,7 @@
 # their pods, one watch of each by the runner role label however many runs
 # are in flight, lists a Job's pods and reads their logs, records Events on
 # those Jobs and on its own pods and reads why a Job created no pod; nothing
-# cluster-wide, and nothing else. get on Jobs is what a replica of an older
-# release, still finishing its runs mid-rollout, reads them with.
+# cluster-wide, and nothing else.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -15,7 +14,7 @@ metadata:
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "list", "watch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]

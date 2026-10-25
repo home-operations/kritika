@@ -182,7 +182,7 @@ func (s *Store) OrphanedRuns(ctx context.Context, limit int) ([]OrphanedRun, err
 	}
 	rows, err := s.owner.Query(ctx, `SELECT r.id, r.account_id, r.kind, coalesce(r.review_id::text, ''), coalesce(r.index_run_id::text, '')
 		FROM runner_runs r
-		WHERE r.finished_at IS NULL AND r.river_job_id IS NOT NULL
+		WHERE r.finished_at IS NULL
 		  AND (NOT EXISTS (SELECT 1 FROM river_job j WHERE j.id = r.river_job_id AND j.state = 'running')
 		    OR EXISTS (SELECT 1 FROM runner_runs newer
 		      WHERE newer.river_job_id = r.river_job_id AND newer.finished_at IS NULL AND newer.created_at > r.created_at))

@@ -9,8 +9,8 @@ import (
 )
 
 // TestStartedAt: a checkpoint carries the review's first pickup, which a
-// resumed stage times the review from; one from before it was carried, or
-// one that cannot be read, leaves the stage's own.
+// resumed stage times the review from; one that cannot be read leaves the
+// stage's own.
 func TestStartedAt(t *testing.T) {
 	t.Parallel()
 	started := time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC)
@@ -25,7 +25,6 @@ func TestStartedAt(t *testing.T) {
 		want    time.Time
 	}{
 		{name: "carried", payload: string(carried), want: started},
-		{name: "not carried", payload: `{"Version":1}`, want: fallback},
 		{name: "unreadable", payload: `{`, want: fallback},
 	}
 	for _, tt := range tests {
