@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/chunk"
@@ -42,17 +41,14 @@ func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspe
 	// a mise config adds mid-run.
 	secrets.Redacted = &runspec.Redactions{}
 	st = st.ForRunner(secrets.DatabaseToken)
-	if err := st.WithRunnerJob(ctx, spec.RunID, func(tx pgx.Tx) error {
-		var id string
-		return tx.QueryRow(ctx, `SELECT id FROM runner_runs WHERE id = $1`, spec.RunID).Scan(&id)
-	}); err != nil {
+	if err := st.AuthorizeRunner(ctx, spec.RunID); err != nil {
 		return fmt.Errorf("runner: database credential does not authorize this run: %w", err)
 	}
 	hctx, stop := context.WithCancel(ctx)
 	beating := make(chan struct{})
 	go func() {
 		defer close(beating)
-		heartbeat(hctx, runspec.HeartbeatInterval, func(ctx context.Context) error { return beat(ctx, st, spec.RunID) }, logger)
+		heartbeat(hctx, runspec.HeartbeatInterval, func(ctx context.Context) error { return st.HeartbeatRunner(ctx, spec.RunID) }, logger)
 	}()
 	defer func() {
 		stop()
@@ -111,7 +107,7 @@ func priorDelta(res *gitfetch.Result, p runspec.Spec, logger *slog.Logger) (*str
 }
 
 func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
-	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
+	if err := st.SetRunnerPhase(ctx, p.RunID, "fetching"); err != nil {
 		return err
 	}
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{
@@ -124,7 +120,7 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 	defer func() { _ = res.Close() }()
 	logger.Info("fetched", "head", p.Head[:7], "base", p.Base[:7], "changed_paths", len(res.Changed), "diff_bytes", len(res.Diff))
 
-	if err := setPhase(ctx, st, p.RunID, "parsing"); err != nil {
+	if err := st.SetRunnerPhase(ctx, p.RunID, "parsing"); err != nil {
 		return err
 	}
 	headTree, err := res.Head.Tree()
@@ -228,27 +224,18 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 		notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
 	}
 
-	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
+	if err := st.SetRunnerPhase(ctx, p.RunID, "writing"); err != nil {
 		return err
 	}
-	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
-		// account_id is copied from the run row: the runner never receives it
-		// and cannot invent one, and the policy only opens its own run.
-		_, err := tx.Exec(ctx, `
-			INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
-				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail)
-			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM runner_runs WHERE id = $1`,
-			p.RunID, p.Head, p.Base, res.PatchID, packDiff, res.Changed, stagesJSON, filesJSON, notes,
-			priorHead, packDelta, deltaPaths, string(scope), scopeReason, skip, ruleIDs, skipDetail)
-		if err != nil {
-			return fmt.Errorf("runner: write context pack: %w", err)
-		}
-		if skip != "" {
-			return setPhaseTx(ctx, tx, p.RunID, "done")
-		}
-		// A review is not done until its agent has run too.
-		return setPhaseTx(ctx, tx, p.RunID, "reviewing")
-	})
+	phase := "reviewing"
+	if skip != "" {
+		phase = "done"
+	}
+	err = st.WriteRunnerContext(ctx, p.RunID, store.RunnerContextPack{
+		Head: p.Head, Base: p.Base, PatchID: res.PatchID, Diff: packDiff, ChangedPaths: res.Changed,
+		Stages: stagesJSON, Files: filesJSON, Notes: notes, PriorHead: priorHead, DeltaDiff: packDelta,
+		DeltaPaths: deltaPaths, Scope: string(scope), ScopeReason: scopeReason, SkipReason: skip, RuleIDs: ruleIDs, SkipDetail: skipDetail,
+	}, phase)
 	if err != nil {
 		return err
 	}
@@ -418,41 +405,12 @@ func heartbeat(ctx context.Context, interval time.Duration, beat func(context.Co
 	}
 }
 
-func beat(ctx context.Context, st *store.Store, runID string) error {
-	return st.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, runID); err != nil {
-			return fmt.Errorf("runner: heartbeat: %w", err)
-		}
-		return nil
-	})
-}
-
-func setPhase(ctx context.Context, st *store.Store, runID, phase string) error {
-	return st.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error { return setPhaseTx(ctx, tx, runID, phase) })
-}
-
-// setPhaseTx is setPhase in tx, alongside what the run wrote there.
-func setPhaseTx(ctx context.Context, tx pgx.Tx, runID, phase string) error {
-	tag, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, runID, phase)
-	if err != nil {
-		return fmt.Errorf("runner: set phase: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("runner: run %s is not visible to this role", runID)
-	}
-	return nil
-}
-
 // fail records cause as the run's error, with its secrets masked: a git or
 // provider error may carry a credential.
 func fail(ctx context.Context, st *store.Store, runID string, secrets runspec.Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	err := st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`,
-			runID, secrets.Mask(cause.Error()))
-		return err
-	})
+	err := st.RecordRunnerFailure(fctx, runID, secrets.Mask(cause.Error()))
 	if err != nil {
 		return fmt.Errorf("runner: record failure: %w", err)
 	}

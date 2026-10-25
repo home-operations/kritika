@@ -27,7 +27,7 @@ const submitIfNeededDescription = "Submit the reply, or none and why, and end th
 // tools until it submits the reply, which the worker posts. It writes no
 // context pack: nothing builds on a follow-up.
 func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
-	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
+	if err := st.SetRunnerPhase(ctx, p.RunID, "fetching"); err != nil {
 		return err
 	}
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base})
@@ -37,7 +37,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets r
 	defer func() { _ = res.Close() }()
 	logger.Info("fetched", "head", p.Head[:7], "base", p.Base[:7], "changed_paths", len(res.Changed), "diff_bytes", len(res.Diff))
 
-	if err := setPhase(ctx, st, p.RunID, "parsing"); err != nil {
+	if err := st.SetRunnerPhase(ctx, p.RunID, "parsing"); err != nil {
 		return err
 	}
 	headTree, err := res.Head.Tree()
@@ -82,7 +82,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets r
 		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	}, p.Prompt.Prior, p.Thread)
-	if err := setPhase(ctx, st, p.RunID, "reviewing"); err != nil {
+	if err := st.SetRunnerPhase(ctx, p.RunID, "reviewing"); err != nil {
 		return err
 	}
 	return runAgentic(ctx, st, p, secrets, headTree, p.Ignore, tools, agentPrompt{

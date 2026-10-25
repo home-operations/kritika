@@ -338,7 +338,7 @@ func TestAgentErrorsAreMasked(t *testing.T) {
 	}
 	submitted, err := newAgentRecord(agent.Result{Stop: agent.StopSubmitted, Submitted: json.RawMessage(`{"summary":"the token is git-token"}`)},
 		nil, nil, secrets)
-	if err != nil || submitted.result != `{"summary":"the token is ***"}` {
+	if err != nil || string(submitted.result) != `{"summary":"the token is ***"}` {
 		t.Fatalf("submitted review = %s, %v", submitted.result, err)
 	}
 	if rec, err := newAgentRecord(agent.Result{Stop: agent.StopMaxSteps}, nil, nil, secrets); err != nil || string(rec.sources) != "[]" {
