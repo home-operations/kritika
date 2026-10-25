@@ -187,10 +187,14 @@ func TestCheckConfig(t *testing.T) {
 	const admin = "auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\n"
 	for _, tt := range []struct {
 		name, raw string
+		webURL    string
 		noFile    bool
 		wantErr   string
 	}{
 		{name: "valid", raw: admin + "webUrl: https://kritika.example.com\n"},
+		{name: "web URL from environment", raw: admin, webURL: "https://kritika.example.com"},
+		{name: "missing web URL", raw: admin, wantErr: "webUrl: KRITIKA_WEB_URL"},
+		{name: "empty web URL", raw: admin + "webUrl: ''\n", wantErr: "webUrl: KRITIKA_WEB_URL"},
 		{name: "unknown key", raw: admin + "repositories: []\n", wantErr: "field repositories not found"},
 		{name: "invalid setting", raw: admin + "logLevel: loud\n", wantErr: "logLevel"},
 		{name: "unset secret", raw: "auth: {admin: {password: {env: TEST_UNSET_PASSWORD}}}\n", wantErr: "TEST_UNSET_PASSWORD is not set"},
@@ -201,6 +205,9 @@ func TestCheckConfig(t *testing.T) {
 			// A check needs neither the database nor KRITIKA_CONFIG_FILE.
 			t.Setenv("KRITIKA_DATABASE_URL", "")
 			t.Setenv("KRITIKA_CONFIG_FILE", "")
+			if tt.webURL != "" {
+				t.Setenv("KRITIKA_WEB_URL", tt.webURL)
+			}
 			t.Setenv("TEST_ADMIN_PASSWORD", "pw")
 			var args []string
 			if !tt.noFile {
@@ -227,7 +234,7 @@ func TestCheckConfig(t *testing.T) {
 
 func TestCheckConfigReadsConfigFileVariable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\nwebUrl: https://kritika.example.com\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("KRITIKA_CONFIG_FILE", path)

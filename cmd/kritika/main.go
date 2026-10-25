@@ -307,6 +307,9 @@ func checkConfig(args []string, out io.Writer) error {
 	if _, err := loadConfig(cfg); err != nil {
 		return err
 	}
+	if cfg.WebURL == "" {
+		return errors.New("config: webUrl: KRITIKA_WEB_URL is required to serve")
+	}
 	_, err = fmt.Fprintf(out, "%s: the configuration is valid\n", path)
 	return err
 }
