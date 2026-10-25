@@ -509,7 +509,6 @@ export interface Confidence {
   threshold: number;
   passed: boolean;
   reason: string;
-  // risk is '' for a review scored before risk was rated.
   risk: Risk | '';
   model: string;
 }
@@ -733,8 +732,7 @@ export interface FindingSummary extends FindingCounts {
   directories: FindingGroup[];
 }
 
-// Category is what kind of problem a finding is; '' on a finding recorded
-// before it had one.
+// Category is what kind of problem a finding is.
 export type Category = 'correctness' | 'security' | 'performance' | 'reliability' | 'maintainability' | 'tests';
 
 // AccountFinding is one finding of a pull request, however many of its
@@ -1167,7 +1165,6 @@ export interface ToolUsage {
   from: string;
   to: string;
   recordedRuns: number;
-  uncountedRuns: number;
   totalExecutions: number;
   tools: { name: string; executions: number }[];
 }

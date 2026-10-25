@@ -108,7 +108,7 @@ test('an incomplete run with one open finding uses a singular count', async ({ p
   await expect(page.getByLabel('Review outcome')).toContainText('1 open finding recorded');
 });
 
-test('a skipped run with a legacy error reason is not presented as an execution failure', async ({ page }) => {
+test('a run skipped for a closed pull request is not presented as an execution failure', async ({ page }) => {
   const skipped = { ...g.reviewDetail.review, status: 'skipped', skipReason: '', error: 'the pull request is closed' };
   await g.mockApi(page, [
     [/\/reviews\/rev-1$/, { ...g.reviewDetail, review: skipped, findings: [], summary: null }],

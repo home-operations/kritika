@@ -17,7 +17,6 @@ type ToolUsage struct {
 	From            time.Time       `json:"from"`
 	To              time.Time       `json:"to"`
 	RecordedRuns    int64           `json:"recordedRuns"`
-	UncountedRuns   int64           `json:"uncountedRuns"`
 	TotalExecutions int64           `json:"totalExecutions"`
 	Tools           []ToolExecution `json:"tools"`
 }
@@ -46,7 +45,6 @@ func (s *Server) getToolUsage(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		out.RecordedRuns += data.RecordedRuns
-		out.UncountedRuns += data.UncountedRuns
 		for name, count := range data.Counts {
 			counts[name] += count
 			out.TotalExecutions += count

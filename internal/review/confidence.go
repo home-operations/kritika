@@ -29,7 +29,7 @@ type Confidence struct {
 	// Model is the model that scored it.
 	Model string `json:"model"`
 	// Rubric identifies the standing instructions the scorer was given (see
-	// ConfidenceRubric), "" for a score from before it was recorded.
+	// ConfidenceRubric).
 	Rubric string `json:"rubric,omitempty"`
 	// Rated is the risk the scorer gave when a floor held Risk above it,
 	// and Held the path that set the floor; both "" when none did.

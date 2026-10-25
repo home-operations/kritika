@@ -240,13 +240,13 @@ replica never becomes ready.
 Postgres allows 100 connections unless `max_connections` says otherwise.
 Connections open on demand, so an idle replica holds few:
 
-| Connections              | Per        | At most                                                                                                                                                                                                                                    | `statement_timeout`                                                                      | `application_name`    |
-| ------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | --------------------- |
-| the application pool     | replica    | 16                                                                                                                                                                                                                                         | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`         |
-| the owner pool           | replica    | 4                                                                                                                                                                                                                                          | ten minutes, for a migration that builds an index                                        | `kritika-owner`       |
-| the `LISTEN` connection  | replica    | 1                                                                                                                                                                                                                                          | one minute, as the application pool's                                                    | `kritika-listen`      |
-| review publication locks | replica    | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader; another `KRITIKA_REVIEW_WORKERS` while thread jobs wait on `followup` ([queue upgrades](#queue-upgrades-and-rollbacks)) | one minute                                                                               | `kritika-publication` |
-| a runner's pool          | runner Job | uses one or two                                                                                                                                                                                                                            | one minute, as the application pool's                                                    | `kritika-app`         |
+| Connections              | Per        | At most                                                                                                           | `statement_timeout`                                                                      | `application_name`    |
+| ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------- |
+| the application pool     | replica    | 16                                                                                                                | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`         |
+| the owner pool           | replica    | 4                                                                                                                 | ten minutes, for a migration that builds an index                                        | `kritika-owner`       |
+| the `LISTEN` connection  | replica    | 1                                                                                                                 | one minute, as the application pool's                                                    | `kritika-listen`      |
+| review publication locks | replica    | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute                                                                               | `kritika-publication` |
+| a runner's pool          | runner Job | uses one or two                                                                                                   | one minute, as the application pool's                                                    | `kritika-app`         |
 
 Each active review publication holds a separate application-role connection
 for its advisory lock, without an open transaction. This keeps slow forge
@@ -432,57 +432,6 @@ job ID. Its cancellation polling and state transitions still treat that job
 as cancelled. The worker keeps that cancellation fence rather than ignoring
 the marker. Checkpoints inherit the database's replication and backup
 limitations described above.
-
-## Queue upgrades and rollbacks
-
-The `thread` queue separates finding resolution/restoration from model
-follow-ups. Releases that support it consume thread jobs on both `thread` and
-`followup`. Queued jobs on `followup` still wait for a follow-up worker.
-Uniqueness spans both queues. Workers check GitHub's current resolved state
-and ignore superseded events. They keep the original event's sender
-permission and outdated-line checks.
-
-Older binaries apply the event state without that check. To avoid stale writes
-from those workers during the transition, stop all older replicas before
-starting the new release. This requires a service interruption. Arrange
-webhook redelivery for deliveries that fail during it. A rolling upgrade
-retains jobs, but cannot guarantee thread-state ordering while old workers
-are still running.
-
-A rollback to a release without the `thread` consumer leaves its queued jobs
-in Postgres. They stay unprocessed and are absent from that release's queue
-UI and metrics. To recover them without relying on those views:
-
-1. Stop **all** replicas of the newer release, including webhook producers,
-   and wait for their workers to exit. Do not run the update below while any
-   worker could still complete a job.
-2. Using the database owner connection, move unfinished thread jobs back to
-   `followup`. The following transaction also makes interrupted running jobs
-   available again. Retry schedules, arguments and uniqueness keys are
-   retained.
-
-   ```sql
-   BEGIN;
-   UPDATE river_job
-   SET queue = 'followup',
-       state = CASE WHEN state = 'running' THEN 'available'::river_job_state ELSE state END
-   WHERE kind = 'thread' AND queue = 'thread'
-     AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled');
-   SELECT state, count(*) FROM river_job
-   WHERE kind = 'thread' AND queue = 'thread'
-     AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
-   GROUP BY state;
-   COMMIT;
-   ```
-
-3. Verify the query returned no unfinished `thread` rows, then start the older
-   release. Redeliver webhooks that failed during the interruption. The older
-   release's follow-up workers can execute the unchanged thread-job arguments.
-
-The transaction can be repeated after the replicas are stopped. Completed,
-cancelled and discarded history stays on its original queue. Rolling back also
-restores the older worker's ordering limitations. Review affected finding
-states if thread changes overlapped the interruption.
 
 ## Model-call accounting recovery
 

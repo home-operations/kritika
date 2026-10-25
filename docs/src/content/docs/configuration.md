@@ -871,9 +871,6 @@ follow-up workers. Increase `threadWorkers` if queue-delay metrics show
 it is needed. Database connections and forge API limits remain shared with
 reviews, so raising worker counts does not guarantee higher throughput.
 
-See [queue upgrades and rollbacks](/database/#queue-upgrades-and-rollbacks)
-before switching between releases that use different queue names.
-
 Other file settings are `webUrl` (required public URL), `addr`, `metricsAddr`,
 `gatewayAddr`, `gatewayUrl`, `executor`, `databaseAppRole` and
 `databaseRunnerRole`. The chart derives all except `webUrl` from deployment
@@ -883,55 +880,3 @@ database values. The runner image is
 `runner.podTemplate.spec.containers[0].image`. How long a finished Job is
 kept is `runner.jobTemplate.spec.ttlSecondsAfterFinished`. Database Secret
 names are references, not DSNs.
-
-## Migrating Helm values
-
-Move the contents of `configFile` into `config`. Move flat policy keys into
-their YAML sections, for example
-`config.reviewModel` becomes `config.review.model`, and
-`config.authAdminPassword` becomes `config.auth.admin.password: { env: ADMIN_PASSWORD }`.
-Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.
-Move `config.runnerRuntimeClass` to `runner.podTemplate.spec.runtimeClassName`
-and `config.runnerDeadline` to `runner.jobTemplate.spec.activeDeadlineSeconds`,
-in seconds. Runtime keys such as
-`config.logLevel`, `config.reviewWorkers` and `config.pollInterval` keep their names.
-Move automatic auth, app, provider and policy env configuration into the file.
-Those env names no longer configure the application implicitly. Existing secret
-variable names can still be used in explicit `{ env: NAME }` references.
-Remove old empty-string duration placeholders such as `config.pollInterval: ""`;
-omit the key to use its default. The chart rejects empty duration strings.
-Operational env settings remain supported. Remove their corresponding variables
-from `env` or `envFrom` when moving them into the file, to avoid duplicates.
-
-Example Helm values:
-
-```yaml
-config:
-  webUrl: https://kritika.example.com
-  logLevel: info
-  reviewWorkers: 2
-  pollInterval: 10m
-  auth:
-    admin:
-      password: { env: ADMIN_PASSWORD }
-  providers:
-    openrouter:
-      type: openrouter
-      apiKey: { env: OPENROUTER_API_KEY }
-  review:
-    model: openrouter/vendor/large-model
-runner:
-  jobTemplate:
-    spec:
-      activeDeadlineSeconds: 1200
-  podTemplate:
-    spec:
-      runtimeClassName: gvisor
-env:
-  ADMIN_PASSWORD:
-    valueFrom:
-      secretKeyRef: { name: kritika-auth, key: password }
-  OPENROUTER_API_KEY:
-    valueFrom:
-      secretKeyRef: { name: kritika-models, key: openrouter }
-```

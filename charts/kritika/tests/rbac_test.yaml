@@ -19,7 +19,7 @@ tests:
           content:
             apiGroups: ["batch"]
             resources: ["jobs"]
-            verbs: ["create", "get", "list", "watch", "delete"]
+            verbs: ["create", "list", "watch", "delete"]
         template: rbac.tpl
         documentIndex: 0
       - contains:

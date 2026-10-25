@@ -87,7 +87,7 @@ func TestWriteAgentRun(t *testing.T) {
 	}
 	if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
 		data, err := store.ReadCommandUsage(ctx, tx, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-		if err == nil && (!maps.Equal(data.Counts, map[string]int64{"rg": 3, "jq": 1}) || data.RecordedRuns != 2 || data.UncountedRuns != 0) {
+		if err == nil && (!maps.Equal(data.Counts, map[string]int64{"rg": 3, "jq": 1}) || data.RecordedRuns != 2) {
 			t.Errorf("saved usage = %+v", data)
 		}
 		return err

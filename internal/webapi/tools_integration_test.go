@@ -37,7 +37,7 @@ func testToolUsage(t *testing.T, e *apiEnv) {
 		t.Fatalf("admin: %d %s", status, body)
 	}
 	want := []ToolExecution{{Name: "rg", Executions: 5}, {Name: "yq", Executions: 4}, {Name: "jq", Executions: 1}}
-	if !slices.Equal(got.Tools, want) || got.TotalExecutions != 10 || got.RecordedRuns != 3 || got.UncountedRuns != 1 ||
+	if !slices.Equal(got.Tools, want) || got.TotalExecutions != 10 || got.RecordedRuns != 3 ||
 		!got.From.Equal(from) || !got.To.Equal(to) {
 		t.Fatalf("usage = %+v", got)
 	}
@@ -53,7 +53,7 @@ func testToolUsage(t *testing.T, e *apiEnv) {
 	}
 	if err := e.st.WithAccount(t.Context(), e.b.accountID, func(tx pgx.Tx) error {
 		data, err := store.ReadCommandUsage(t.Context(), tx, from, to)
-		if err == nil && (!maps.Equal(data.Counts, map[string]int64{"rg": 2, "yq": 4}) || data.RecordedRuns != 1 || data.UncountedRuns != 0) {
+		if err == nil && (!maps.Equal(data.Counts, map[string]int64{"rg": 2, "yq": 4}) || data.RecordedRuns != 1) {
 			t.Errorf("account B saw other accounts: %+v", data)
 		}
 		return err
