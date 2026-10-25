@@ -1,4 +1,4 @@
-// Command kritika-runner is the kritika of a runner Job: "kritika run"
+// Command kritika-runner executes a runner Job: "kritika-runner run"
 // carries out the one review, follow-up or index run its job document
 // names, then exits. It is built apart from kritika serve, so a runner's
 // image carries none of serve's packages.
@@ -46,7 +46,7 @@ func main() {
 
 func run() (err error) {
 	if args := os.Args[1:]; len(args) != 1 || args[0] != "run" {
-		return fmt.Errorf("unknown arguments %q: usage: kritika run", args)
+		return fmt.Errorf("unknown arguments %q: usage: kritika-runner run", args)
 	}
 	cfg, err := config.Load()
 	if err != nil {
