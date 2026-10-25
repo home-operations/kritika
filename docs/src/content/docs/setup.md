@@ -3,11 +3,14 @@ title: Setup
 ---
 
 This guide gets kritika from a fresh installation to its first GitHub review.
-You do not need a `.kritika.yaml` in your repositories. For a Forgejo
-instance, declare a bot as [Git forges](forges.md#forgejo) describes in
-place of the App, for a GitLab instance a service account as
-[Git forges](forges.md#gitlab) does, and for a Gitea instance a bot user
-as [Git forges](forges.md#gitea) does.
+You do not need a `.kritika.yaml` in your repositories. In place of the App,
+declare:
+
+- A bot for a Forgejo instance, as [Git forges](forges.md#forgejo) describes.
+- A service account for a GitLab instance, as
+  [Git forges](forges.md#gitlab) describes.
+- A bot user for a Gitea instance, as [Git forges](forges.md#gitea)
+  describes.
 
 ## Before you start
 
@@ -32,14 +35,14 @@ In your GitHub account or organization's **Developer settings**, create a GitHub
 3. Give it the permissions below and subscribe to the listed events.
 4. Generate a private key and save the App's **client ID**.
 
-| Permission | Access |
-| --- | --- |
-| Contents | Read-only; read and write if the bot should resolve finding threads. |
-| Metadata | Read-only. |
-| Pull requests | Read and write. |
-| Issues | Read-only; read and write for reactions on pull requests and conversation comments. |
-| Commit statuses | Read and write. |
-| Members (organization) | Read-only, only for GitHub sign-in that uses organization role mappings. |
+| Permission             | Access                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| Contents               | Read-only; read and write if the bot should resolve finding threads.                |
+| Metadata               | Read-only.                                                                          |
+| Pull requests          | Read and write.                                                                     |
+| Issues                 | Read-only; read and write for reactions on pull requests and conversation comments. |
+| Commit statuses        | Read and write.                                                                     |
+| Members (organization) | Read-only, only for GitHub sign-in that uses organization role mappings.            |
 
 Subscribe to **Pull request**, **Pull request review comment**,
 **Pull request review thread**, **Issue comment**, **Push** and **Repository**.
@@ -49,22 +52,22 @@ Contents write access also permits pushing code, although kritika does not push.
 If you change permissions later, each installation must approve them.
 
 Allow installation only on your account unless you intend to serve several.
-Anyone can install a public App: kritika reviews only the accounts listed in
-`apps` and ignores any other installation, which an admin can uninstall from
-the dashboard's Connections section.
+Anyone can install a public App. kritika reviews only the accounts listed in
+`apps` and ignores any other installation. An admin can uninstall such an
+installation from the dashboard's Connections section.
 
 ## Deploy
 
 Create a namespace for kritika and provision these Secrets there using your
 usual secret management tool. Do not commit their values.
 
-| Secret in this example | Keys |
-| --- | --- |
-| `kritika-postgres-credentials` | `uri`: owner database connection string. |
-| `kritika-postgres-app` | `uri`: application database connection string. |
-| `kritika-postgres-runner` | `uri`: runner database connection string. |
-| `kritika-credentials` | `ADMIN_PASSWORD`, `OPENROUTER_API_KEY`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET`. |
-| `kritika-tls` | TLS certificate and key for your public hostname. |
+| Secret in this example         | Keys                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `kritika-postgres-credentials` | `uri`: owner database connection string.                                                       |
+| `kritika-postgres-app`         | `uri`: application database connection string.                                                 |
+| `kritika-postgres-runner`      | `uri`: runner database connection string.                                                      |
+| `kritika-credentials`          | `ADMIN_PASSWORD`, `OPENROUTER_API_KEY`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET`. |
+| `kritika-tls`                  | TLS certificate and key for your public hostname.                                              |
 
 The [database guide](database.md#secrets-and-connection-uris) explains the connection
 strings. Owner and application connections need direct or session-mode access;
@@ -119,13 +122,14 @@ The chart's NetworkPolicies, on by default, expect Postgres in the release
 namespace, standard cluster DNS, and forges and models on port 443. Set
 [`networkPolicy.postgres`](database.md#secrets-and-connection-uris),
 [`networkPolicy.dns`](security.md#name-lookups) and
-`networkPolicy.egressPorts` if yours differ, and allow what kritika serve
+`networkPolicy.egressPorts` if yours differ. Allow what kritika serve
 reaches in the cluster, such as an S3 bucket or a model server, in
-`networkPolicy.extraEgress`. `networkPolicy.type: auto`
-renders Cilium's or Calico's own policies where the cluster serves their
-API, and standard NetworkPolicies otherwise; Argo CD passes the cluster's
-APIs to `helm template` for it, but plain `helm template` needs
-`--api-versions` or a type set.
+`networkPolicy.extraEgress`.
+
+`networkPolicy.type: auto` renders Cilium's or Calico's own policies where
+the cluster serves their API, and standard NetworkPolicies otherwise. Argo CD
+passes the cluster's APIs to `helm template` for it, but plain
+`helm template` needs `--api-versions` or a type set.
 
 Install the chart using your values file:
 
@@ -170,14 +174,14 @@ If nothing happens, check:
 2. **Webhook delivered?** Open the GitHub App's recent webhook deliveries.
 3. **Job failed or waiting?** Open the dashboard's Queue and expand its error.
 
-| Webhook response | Meaning |
-| --- | --- |
-| `202` | Accepted; the account and repository must still be enabled for reviews. |
-| `204` | Ping received. |
-| `400`, `413` | Invalid or oversized delivery. |
-| `401` | Webhook secret missing or different from GitHub's. |
-| `404` | App name in the URL is wrong. |
-| `500` | kritika could not queue the delivery. |
+| Webhook response | Meaning                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `202`            | Accepted; the account and repository must still be enabled for reviews. |
+| `204`            | Ping received.                                                          |
+| `400`, `413`     | Invalid or oversized delivery.                                          |
+| `401`            | Webhook secret missing or different from GitHub's.                      |
+| `404`            | App name in the URL is wrong.                                           |
+| `500`            | kritika could not queue the delivery.                                   |
 
 For everyday use, see [reviews and commands](reviews.md).
 

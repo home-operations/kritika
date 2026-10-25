@@ -40,18 +40,18 @@ Every tool reads one account the token can read. Name a repository as
 `account` instead. Pass `forge` (`github`, `forgejo`, `gitlab` or `gitea`)
 only when your token reads accounts of that name on more than one forge.
 
-| Tool | What it reads |
-| --- | --- |
-| `get_pull` | A pull request by `repository` and `number`: its head commit, its reviews newest first with the commit each one reviewed and why it was skipped or failed, its review job that has not finished, and the bot's follow-ups. |
-| `get_review` | A review by `repository` and `reviewId`: its summary and findings, each with its explanation, suggested fix, prompt for a coding agent, rules, and whether it is open, addressed or dismissed, and by what. |
-| `list_findings` | The findings of a repository or account, newest first, filtered as the dashboard's Findings page filters them: `severity`, `category`, `status`, `dismissed`, `rule`, `agent`, `path`, `downvoted` and a text `query`. |
-| `common_findings` | The same filters' findings counted, with their most common categories, rules, agents and directories, and how many of each were addressed, dismissed or drew a 👎. |
-| `list_rules` | The written rules and context files a repository or account is reviewed with, and the findings that cite each written rule. |
-| `list_followups` | The bot's follow-ups to @-mentions in a repository or account, newest first. |
+| Tool              | What it reads                                                                                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_pull`        | A pull request by `repository` and `number`: its head commit, its reviews newest first with the commit each one reviewed and why it was skipped or failed, its review job that has not finished, and the bot's follow-ups. |
+| `get_review`      | A review by `repository` and `reviewId`: its summary and findings, each with its explanation, suggested fix, prompt for a coding agent, rules, and whether it is open, addressed or dismissed, and by what.                |
+| `list_findings`   | The findings of a repository or account, newest first, filtered as the dashboard's Findings page filters them: `severity`, `category`, `status`, `dismissed`, `rule`, `agent`, `path`, `downvoted` and a text `query`.     |
+| `common_findings` | The same filters' findings counted, with their most common categories, rules, agents and directories, and how many of each were addressed, dismissed or drew a 👎.                                                         |
+| `list_rules`      | The written rules and context files a repository or account is reviewed with, and the findings that cite each written rule.                                                                                                |
+| `list_followups`  | The bot's follow-ups to @-mentions in a repository or account, newest first.                                                                                                                                               |
 
-`list_findings` and `list_followups` return a page at a time: `limit` takes
-up to 200, 50 unless given, and a page's `nextCursor`, passed back as
-`cursor`, reads the next.
+`list_findings` and `list_followups` return a page at a time. `limit` takes
+up to 200 and is 50 unless given. Pass a page's `nextCursor` back as
+`cursor` to read the next page.
 
 ## What it leaves out
 

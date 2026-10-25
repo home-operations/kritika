@@ -26,18 +26,18 @@ shows what is missing:
 The account switcher selects one account or **All accounts**. Press
 `Ctrl+K` or `⌘K` to find a page or a recently updated pull request.
 
-| Page | Use it to… |
-| --- | --- |
-| Overview | See running work and problems that need attention. |
+| Page          | Use it to…                                                          |
+| ------------- | ------------------------------------------------------------------- |
+| Overview      | See running work and problems that need attention.                  |
 | Pull requests | Read reviews, inspect findings and open their threads on the forge. |
-| Queue | Find waiting, running, retrying or failed jobs. |
-| Repositories | Enable repositories and inspect their settings and code index. |
-| Analytics | Compare review activity, findings and spending over time. |
-| Usage & costs | Inspect costs by account, repository, model or review. |
-| Follow-ups | Read questions and the bot's replies. |
-| Findings | Search findings across reviews. |
-| Rules | See which review rules apply and where they come from. |
-| Audit log | Inspect management actions, as an admin. |
+| Queue         | Find waiting, running, retrying or failed jobs.                     |
+| Repositories  | Enable repositories and inspect their settings and code index.      |
+| Analytics     | Compare review activity, findings and spending over time.           |
+| Usage & costs | Inspect costs by account, repository, model or review.              |
+| Follow-ups    | Read questions and the bot's replies.                               |
+| Findings      | Search findings across reviews.                                     |
+| Rules         | See which review rules apply and where they come from.              |
+| Audit log     | Inspect management actions, as an admin.                            |
 
 Some pages are available only within an account. **All accounts** combines
 activity and usage across accounts you can read.
@@ -50,14 +50,14 @@ for its explanation and suggested fix. A finding an
 without a name is the default pass's. **Run details** contains the timeline,
 model conversation, usage and raw data for troubleshooting. When agents ran,
 the timeline lists each agent's parts with their cost, and the cost of each
-agent, `default` for the default pass.
+agent. The default pass is listed as `default`.
 
 Search accepts plain text and filters:
 
-| List | Example filters |
-| --- | --- |
-| Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0` |
-| Findings | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `is:downvoted` |
+| List          | Example filters                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0`                                                                                           |
+| Findings      | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `is:downvoted` |
 
 Filters are suggested as you type. `agent:` is offered once a finding on the
 page names an agent; `agent:default` finds the default pass's. Expand a list row to preview its latest
@@ -75,11 +75,14 @@ dismissed or drew a 👎 is worth a [rule](repository-config.md#rules)
 telling reviews what not to report. Like the analytics, 👎 counts come
 from GitHub alone and need polling enabled.
 
-`path:` keeps the findings under a path, `is:downvoted` those that drew a
-👎, and `dismissed:` those dismissed one way: `command`, with
-`@<bot> dismiss`; `resolved`, by resolving the thread; or `conceded`, when
-kritika agreed in the thread that the finding was wrong. Hover a dismissed
-finding's status to see which.
+`path:` keeps the findings under a path, and `is:downvoted` keeps those
+that drew a 👎. `dismissed:` keeps those dismissed one way:
+
+- `command`, with `@<bot> dismiss`;
+- `resolved`, by resolving the thread;
+- `conceded`, when kritika agreed in the thread that the finding was wrong.
+
+Hover a dismissed finding's status to see which.
 
 **Export Markdown** and **Export JSON** download the findings the filters
 keep, newest first, up to 1,000. Give the Markdown to a coding agent and
@@ -123,23 +126,23 @@ Daily charts use UTC. If the top bar says **Reconnecting…**, live data may be
 out of date until the connection returns.
 
 Under **API tokens**, create a personal access token for an agent that reads
-through kritika's [MCP endpoint](mcp.md). Name it, choose whether it reads everything
-you can read or only some of those accounts, and choose when it expires: in
-7, 30 or 90 days, a year, or never. Its value is shown once. A token never
-changes anything, and stops reading once it expires, is revoked, or the
-sign-in it came from changes, when the list marks it **expired** or
-**stale**. See [personal access tokens](security.md#personal-access-tokens).
+through kritika's [MCP endpoint](mcp.md). Name it, and choose whether it
+reads everything you can read or only some of those accounts. Then choose
+when it expires: in 7, 30 or 90 days, a year, or never. Its value is shown
+once. A token never changes anything. It stops reading once it expires, is
+revoked, or the sign-in it came from changes; the list then marks it
+**expired** or **stale**. See
+[personal access tokens](security.md#personal-access-tokens).
 
 ## Repositories
 
 Admins can enable or disable repositories individually or in bulk, and request
 reindexing. Enablement changes are saved and audited.
 
-Use **Resync**, which names the account's forge, such as **Resync from
-Forgejo**, after changing the App's or the bot's access or unarchiving a
-repository.
-Then enable the repository if it is still off. The next poll can pick up open
-pull requests created while it was disabled.
+Use **Resync** after changing the App's or the bot's access, or after
+unarchiving a repository. It names the account's forge, such as
+**Resync from Forgejo**. Then enable the repository if it is still off. The
+next poll can pick up open pull requests created while it was disabled.
 
 Expand **Repository settings** to inspect effective settings, or **Index runs**
 to investigate indexing failures. See [which repositories run](configuration.md#which-repositories-run)
@@ -149,13 +152,13 @@ for how dashboard choices and configured defaults interact.
 
 Admins run the instance from **All accounts**, under **Configuration**:
 
-| Page | Use it to… |
-| --- | --- |
-| Accounts | Follow the setup checklist while something is missing, and see the accounts the instance serves. |
-| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves. |
-| Users | See everyone who has signed in, how they sign in, what their newest session reads and when they last signed in; sign someone out everywhere, and revoke anyone's API token. |
-| Settings | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs. |
-| Audit log | Inspect management actions across accounts. |
+| Page        | Use it to…                                                                                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accounts    | Follow the setup checklist while something is missing, and see the accounts the instance serves.                                                                            |
+| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves.                                                             |
+| Users       | See everyone who has signed in, how they sign in, what their newest session reads and when they last signed in; sign someone out everywhere, and revoke anyone's API token. |
+| Settings    | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs.                               |
+| Audit log   | Inspect management actions across accounts.                                                                                                                                 |
 
 These pages do not edit the configuration file. Change the file and roll out
 the deployment. External ConfigMap changes and secret rotations require a

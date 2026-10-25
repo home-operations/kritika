@@ -6,16 +6,16 @@ Use the [setup example](setup.md#deploy) for a first installation. For every
 available value, see the generated
 [chart reference](https://github.com/home-operations/kritika/blob/main/charts/kritika/README.md).
 
-| Values | Purpose | Guide |
-| --- | --- | --- |
-| `config`, `existingConfigMap` | Application settings; choose one source. | [Configuration](configuration.md) |
-| `env`, `envFrom` | Credentials from existing Secrets. | [Setup](setup.md#deploy) |
-| `database` | Three database connection Secrets and role names. | [Database](database.md) |
-| `runner` | Runner resources, runtime, placement and deadlines. | [Security](security.md#runner-sandbox) |
-| `networkPolicy` | Allowed network access for pods. | [Security](security.md#hardening-an-install) |
-| `service`, `ingress`, `httpRoute` | Ports and public access. | [Setup](setup.md#deploy) |
-| `image`, `replicas`, `resources` | Service image, replica count and resources. | [Chart topology](https://github.com/home-operations/kritika/blob/main/charts/kritika/README.md#topology) |
-| `monitoring` | Prometheus scraping, alerts and Grafana dashboards. | [Monitoring](metrics.md) |
+| Values                            | Purpose                                             | Guide                                                                                                    |
+| --------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `config`, `existingConfigMap`     | Application settings; choose one source.            | [Configuration](configuration.md)                                                                        |
+| `env`, `envFrom`                  | Credentials from existing Secrets.                  | [Setup](setup.md#deploy)                                                                                 |
+| `database`                        | Three database connection Secrets and role names.   | [Database](database.md)                                                                                  |
+| `runner`                          | Runner resources, runtime, placement and deadlines. | [Security](security.md#runner-sandbox)                                                                   |
+| `networkPolicy`                   | Allowed network access for pods.                    | [Security](security.md#hardening-an-install)                                                             |
+| `service`, `ingress`, `httpRoute` | Ports and public access.                            | [Setup](setup.md#deploy)                                                                                 |
+| `image`, `replicas`, `resources`  | Service image, replica count and resources.         | [Chart topology](https://github.com/home-operations/kritika/blob/main/charts/kritika/README.md#topology) |
+| `monitoring`                      | Prometheus scraping, alerts and Grafana dashboards. | [Monitoring](metrics.md)                                                                                 |
 
 ## values.yaml
 
