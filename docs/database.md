@@ -1,10 +1,9 @@
 # Postgres with CloudNativePG
 
 kritika keeps everything it knows in one Postgres database: reviews, findings,
-the job queue, transcripts and the similar-code index. This page sets that
-database up with [CloudNativePG](https://cloudnative-pg.io/docs/1.30/) (CNPG).
-Any Postgres that meets the requirements below works; CNPG is what the
-examples use.
+the job queue, transcripts and the similar-code index. The chart supports that
+database as a [CloudNativePG](https://cloudnative-pg.io/docs/1.30/) (CNPG)
+cluster in the same Kubernetes cluster, which this page sets up.
 
 ## What kritika needs
 
@@ -211,12 +210,12 @@ database:
 `database.app.role` and `database.runner.role` must name the roles the URIs
 log in as, if they are not `kritika_app` and `kritika_runner`.
 
-With the chart's NetworkPolicies, on by default, runner pods reach the
-Postgres port only where `networkPolicy.postgres` says the runner role's
+With the chart's NetworkPolicies, on by default, kritika serve and runner
+pods reach the Postgres port only where `networkPolicy.postgres` says the
 database is: any pod in the release namespace unless set. Name the
 cluster's pods by the label CNPG gives them, with their namespace when it
-is not the release's, or the pods of a session-mode pooler the runner's
-URI goes through:
+is not the release's. CNPG gives a `Pooler`'s pods the same label, so it
+also covers a URI that goes through a session-mode pooler:
 
 ```yaml
 networkPolicy:
@@ -225,12 +224,10 @@ networkPolicy:
       cnpg.io/cluster: kritika-postgres
 ```
 
-A database outside the cluster goes in `networkPolicy.postgres.cidrs`; with
-the `cilium` flavor, list its host in `networkPolicy.dns.runnerNames` too,
-so runner pods may look it up. When the database is not in the release
-namespace, set these before installing or upgrading: otherwise the upgrade
-succeeds, and kritika serve, whose own policy keeps the port open, stays
-ready, but every run fails to connect.
+The selector must take in every pod the three URIs connect to. When the
+database is not in the release namespace, set these before installing or
+upgrading: otherwise neither kritika serve nor a run can connect, and a new
+replica never becomes ready.
 
 ## Connections
 

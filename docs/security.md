@@ -155,13 +155,11 @@ that name's servers, so a lookup alone tells them the name, and `curl`
 looks up an `https://` URL's host even when it fetches the URL through the
 gateway. With the `cilium` flavor, a runner pod may look up only the names
 of the cluster's Services, `<service>.<namespace>.svc.cluster.local`,
-which the cluster's DNS answers itself, the gateway's and an in-cluster
-database's among them, and those `networkPolicy.dns.runnerNames` lists.
-The lookup of an `ExternalName` Service's name goes on to the name the
-Service points at, which its author set, not the runner. Add the host of
-the runner role's database URI to `runnerNames` when the database is
-outside the cluster. Cilium refuses any other name. The `default` and
-`calico` flavors cannot filter names.
+which the cluster's DNS answers itself, the gateway's and the database's
+among them. The lookup of an `ExternalName` Service's name goes on to the
+name the Service points at, which its author set, not the runner. Cilium
+refuses any other name. The `default` and `calico` flavors cannot filter
+names.
 
 These rules need Cilium's L7 proxy, which is on unless turned off. Where
 it is off, Cilium refuses the runner's CiliumNetworkPolicy for them. The

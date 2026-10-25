@@ -88,6 +88,39 @@ them, the host's identity, which no CIDR selects. */}}
 {{- end }}
 {{- end }}
 {{- end -}}
+{{- /* Egress to the Postgres port on the database's pods alone, the one
+peer both policies allow it at, in each flavor: each takes
+networkPolicy.postgres with the namespace filled in. */}}
+{{- define "kritika.postgresEgress" -}}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .namespace | quote }}
+      podSelector:
+        matchLabels:
+          {{- toYaml .podSelector | nindent 10 }}
+  ports:
+    - port: {{ .port }}
+      protocol: TCP
+{{- end -}}
+{{- define "kritika.ciliumPostgresEgress" -}}
+- toEndpoints:
+    - matchLabels:
+        {{- include "kritika.ciliumLabels" . | nindent 8 }}
+  toPorts:
+    - ports:
+        - port: {{ .port | quote }}
+          protocol: TCP
+{{- end -}}
+{{- define "kritika.calicoPostgresEgress" -}}
+- action: Allow
+  protocol: TCP
+  destination:
+    namespaceSelector: {{ printf "kubernetes.io/metadata.name == '%s'" .namespace | quote }}
+    selector: {{ include "kritika.calicoSelector" .podSelector | quote }}
+    ports:
+      - {{ .port }}
+{{- end -}}
 {{- /* The runner pods' NetworkPolicy: no ingress at all; egress to the
 database and the gateway port on the server pods, through which the git
 remote, the model and similar-code endpoints and every allowed host are
@@ -113,22 +146,7 @@ spec:
     {{- if .withDNS }}
     {{- include "kritika.dnsEgress" .dns | nindent 4 }}
     {{- end }}
-    - to:
-        {{- if .pgPeer }}
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .pgPods.namespace | quote }}
-          podSelector:
-            matchLabels:
-              {{- toYaml .pgPods.podSelector | nindent 14 }}
-        {{- end }}
-        {{- range .pg.cidrs }}
-        - ipBlock:
-            cidr: {{ . | quote }}
-        {{- end }}
-      ports:
-        - port: {{ .postgres }}
-          protocol: TCP
+    {{- include "kritika.postgresEgress" .pg | nindent 4 }}
     - to:
         - podSelector:
             matchLabels:
@@ -142,8 +160,7 @@ spec:
 {{- $public := int .Values.service.port }}
 {{- $metrics := int .Values.service.metricsPort }}
 {{- $gateway := int .Values.service.gatewayPort }}
-{{- $postgres := int $np.postgres.port }}
-{{- $serverPorts := concat $np.egressPorts (list $postgres) }}
+{{- $serverPorts := $np.egressPorts }}
 {{- if and .Values.gatewayCache.enabled (eq .Values.gatewayCache.storage.type "s3") }}
 {{- $endpoint := urlParse (tpl .Values.gatewayCache.storage.endpoint .) }}
 {{- $port := trimPrefix ":" (regexFind ":[0-9]+$" $endpoint.host) | default (ternary "443" "80" (eq $endpoint.scheme "https")) }}
@@ -151,10 +168,7 @@ spec:
 {{- end }}
 {{- $serverSelector := printf "app.kubernetes.io/name == '%s' && app.kubernetes.io/instance == '%s'" (include "kritika.name" .) .Release.Name }}
 {{- $dns := dict "namespace" $np.dns.namespace "podSelector" ($np.dns.podSelector | default (dict "k8s-app" "kube-dns")) "nodeLocalAddresses" $np.dns.nodeLocalAddresses }}
-{{- $pg := $np.postgres }}
-{{- $pgPods := dict "namespace" ($pg.namespace | default .Release.Namespace) "podSelector" $pg.podSelector }}
-{{- /* The database's pods are a peer unless cidrs alone say where it is. */}}
-{{- $pgPeer := or $pg.podSelector $pg.namespace (not $pg.cidrs) }}
+{{- $pg := dict "namespace" ($np.postgres.namespace | default .Release.Namespace) "podSelector" $np.postgres.podSelector "port" (int $np.postgres.port) }}
 {{- /* auto renders the flavor whose API the cluster serves, as Helm, Flux
 and Argo CD see it; helm template without --api-versions sees neither and
 renders the default flavor. */}}
@@ -167,7 +181,7 @@ renders the default flavor. */}}
 {{- $type = "calico" }}
 {{- end }}
 {{- end }}
-{{- $runner := dict "root" . "dns" $dns "withDNS" true "pg" $pg "pgPods" $pgPods "pgPeer" $pgPeer "postgres" $postgres "gateway" $gateway }}
+{{- $runner := dict "root" . "dns" $dns "withDNS" true "pg" $pg "gateway" $gateway }}
 {{- if eq $type "default" }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -201,11 +215,15 @@ spec:
           protocol: TCP
   egress:
     {{- include "kritika.dnsEgress" $dns | nindent 4 }}
+    {{- /* Without ports, a rule with no to would allow every destination. */}}
+    {{- with $serverPorts }}
     - ports:
-        {{- range $serverPorts }}
+        {{- range . }}
         - port: {{ . }}
           protocol: TCP
         {{- end }}
+    {{- end }}
+    {{- include "kritika.postgresEgress" $pg | nindent 4 }}
     # The API server, to create and watch runner Jobs.
     - ports:
         - port: 443
@@ -244,15 +262,18 @@ spec:
               protocol: TCP
   egress:
     {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns) | nindent 4 }}
+    {{- with $serverPorts }}
     - toEntities:
         - cluster
         - world
       toPorts:
         - ports:
-            {{- range $serverPorts }}
+            {{- range . }}
             - port: {{ . | quote }}
               protocol: TCP
             {{- end }}
+    {{- end }}
+    {{- include "kritika.ciliumPostgresEgress" $pg | nindent 4 }}
     - toEntities:
         - kube-apiserver
       toPorts:
@@ -281,25 +302,8 @@ spec:
   egress:
     {{- /* The cluster's DNS answers its Services' names itself, but for an
     ExternalName Service's, whose lookup goes on to the name its author set. */}}
-    {{- $names := prepend $np.dns.runnerNames "*.*.svc.cluster.local" }}
-    {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns "names" $names) | nindent 4 }}
-    {{- if $pgPeer }}
-    - toEndpoints:
-        - matchLabels:
-            {{- include "kritika.ciliumLabels" $pgPods | nindent 12 }}
-      toPorts:
-        - ports:
-            - port: {{ $postgres | quote }}
-              protocol: TCP
-    {{- end }}
-    {{- with $pg.cidrs }}
-    - toCIDR:
-        {{- toYaml . | nindent 8 }}
-      toPorts:
-        - ports:
-            - port: {{ $postgres | quote }}
-              protocol: TCP
-    {{- end }}
+    {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns "names" (list "*.*.svc.cluster.local")) | nindent 4 }}
+    {{- include "kritika.ciliumPostgresEgress" $pg | nindent 4 }}
     - toEndpoints:
         - matchLabels:
             {{- include "kritika.selectorLabels" . | nindent 12 }}
@@ -345,13 +349,16 @@ spec:
           - {{ $gateway }}
   egress:
     {{- include "kritika.calicoDNSEgress" $dns | nindent 4 }}
+    {{- with $serverPorts }}
     - action: Allow
       protocol: TCP
       destination:
         ports:
-          {{- range $serverPorts }}
+          {{- range . }}
           - {{ . }}
           {{- end }}
+    {{- end }}
+    {{- include "kritika.calicoPostgresEgress" $pg | nindent 4 }}
     - action: Allow
       protocol: TCP
       destination:
@@ -375,25 +382,7 @@ spec:
     - Egress
   egress:
     {{- include "kritika.calicoDNSEgress" $dns | nindent 4 }}
-    {{- if $pgPeer }}
-    - action: Allow
-      protocol: TCP
-      destination:
-        namespaceSelector: {{ printf "kubernetes.io/metadata.name == '%s'" $pgPods.namespace | quote }}
-        selector: {{ include "kritika.calicoSelector" $pgPods.podSelector | quote }}
-        ports:
-          - {{ $postgres }}
-    {{- end }}
-    {{- /* One rule a CIDR: a rule's nets may not mix IPv4 and IPv6. */}}
-    {{- range $pg.cidrs }}
-    - action: Allow
-      protocol: TCP
-      destination:
-        nets:
-          - {{ . | quote }}
-        ports:
-          - {{ $postgres }}
-    {{- end }}
+    {{- include "kritika.calicoPostgresEgress" $pg | nindent 4 }}
     - action: Allow
       protocol: TCP
       destination:

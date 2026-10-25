@@ -132,6 +132,10 @@ connection. A transaction-mode pooler, such as PgBouncer or a CloudNativePG
 between transactions, which breaks both. `kritika_leader` is 1 on the replica
 that holds the lock.
 
+The chart supports the database as a CloudNativePG cluster in the same
+Kubernetes cluster: the chart's NetworkPolicies let kritika serve and
+runner pods reach the Postgres port only on the pods
+`networkPolicy.postgres` selects.
 [Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
 sets this up end to end: a two-instance cluster with VectorChord mounted as
 an image volume extension, the extensions through a `Database` resource, the
@@ -148,8 +152,7 @@ chart confines them:
   egress gateway kritika serve runs on `service.gatewayPort`, which allows
   what the configuration file's `egress` lists and is the runner's only
   way to its model. With the Cilium flavor, it may look up only the names
-  of the cluster's Services and those `networkPolicy.dns.runnerNames`
-  lists.
+  of the cluster's Services.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the five programs the runner image
@@ -203,16 +206,24 @@ With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
 Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
 its pods are not `k8s-app: kube-dns` in `kube-system`, and list a NodeLocal
 DNSCache's address in `networkPolicy.dns.nodeLocalAddresses`. With the
-Cilium flavor, runner pods may look up only the cluster's Service names
-and those `networkPolicy.dns.runnerNames` lists: add the host of a
-database outside the cluster, or runs cannot look it up. See
-[name lookups](https://kritika.home-operations.com/security/#name-lookups).
+Cilium flavor, runner pods may look up only the cluster's Service names.
+See [name lookups](https://kritika.home-operations.com/security/#name-lookups).
 
-Runner pods reach the Postgres port only where `networkPolicy.postgres`
-says the database is, any pod in the release namespace unless set. Before
-upgrading, set its `namespace`, `podSelector` or `cidrs` when the database
-is elsewhere, or runs cannot connect while kritika serve still can. See
+kritika serve and runner pods reach the Postgres port only where
+`networkPolicy.postgres` says the database is, any pod in the release
+namespace unless set. Before upgrading, set its `namespace` when the
+database is in another namespace, and check that a `podSelector` takes in
+every pod the owner, application and runner URIs connect to, not only the
+runner's: `cnpg.io/cluster: kritika-postgres` selects a CloudNativePG
+cluster's instances and its Poolers' pods alike. Otherwise kritika serve
+cannot reach the database. See
 [Postgres](https://kritika.home-operations.com/database/#secrets-and-connection-uris).
+
+`networkPolicy.postgres.cidrs` and `networkPolicy.dns.runnerNames` are
+removed: the chart supports the database as a CloudNativePG cluster in the
+same Kubernetes cluster alone. Helm ignores them, so move a database
+outside the cluster into CloudNativePG before upgrading: neither kritika
+serve nor its runs can reach it otherwise.
 
 ### Topology
 
