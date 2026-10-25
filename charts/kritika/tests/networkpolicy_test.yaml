@@ -362,6 +362,18 @@ tests:
             - matchPattern: "*.*.svc.newcluster.local"
         documentIndex: 1
 
+  - it: on Cilium, lets runner pods look up Services in a single-label cluster DNS domain
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.type: cilium
+      clusterDomain: local
+    asserts:
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*.*.svc.local"
+        documentIndex: 1
+
   - it: on Calico, sends DNS to the cluster's DNS by selector and to each node-local address by nets
     set:
       networkPolicy.enabled: true

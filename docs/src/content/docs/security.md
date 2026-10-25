@@ -207,11 +207,12 @@ leaves runner pods unable to look up any name. Every run fails,
 rather than running with no policy, until `networkPolicy.type` is
 `default`.
 
-Runner pods resolve with `ndots: 4`, so the gateway's name, such as
-`kritika-gateway.kritika.svc.cluster.local`, is looked up as written
-rather than first through the search list. Cilium would refuse the
-search list's expansions of that name, and musl's resolver, which mise
-uses, gives up at a refusal.
+Runner pods resolve with `ndots: 3`, so the gateway's name, such as
+`kritika-gateway.kritika.svc.cluster.local` or
+`kritika-gateway.kritika.svc.local` with a single-label `clusterDomain`,
+is looked up as written rather than first through the search list.
+Cilium would refuse the search list's expansions of that name, and musl's
+resolver, which mise uses, gives up at a refusal.
 
 ### The model endpoint
 
