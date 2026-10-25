@@ -494,11 +494,11 @@ httpRoute:
 
 # NetworkPolicies: one for the service pods (ingress to the webhook and
 # metrics ports, and to the gateway port from runner pods; egress to the
-# cluster's DNS, the forges and models over the egress ports, Postgres and
-# the API server) and one for runner pods (egress only: the cluster's DNS,
-# Postgres and the gateway port on the service pods, through which
-# everything else is reached). Both reach the Postgres port only where
-# `postgres` says the database is.
+# cluster's DNS, the forges and models over the egress ports, Postgres, the
+# API server and what `extraEgress` adds) and one for runner pods (egress
+# only: the cluster's DNS, Postgres and the gateway port on the service
+# pods, through which everything else is reached). Both reach the Postgres
+# port only where `postgres` says the database is.
 networkPolicy:
   # -- Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.
   enabled: true
@@ -522,9 +522,25 @@ networkPolicy:
     # @schema
     # -- Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity.
     nodeLocalAddresses: []
-  # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone.
+  # -- TCP ports the service pods may egress to at any address, for forges, model endpoints and S3 storage outside the cluster. Runner pods reach the gateway alone.
   egressPorts:
     - 443
+  # @schema
+  # type: array
+  # items: { type: object }
+  # @schema
+  # -- More egress rules for the service pods, as a networking.k8s.io/v1 NetworkPolicy's `egress`, rendered as a NetworkPolicy of their own whatever the type, since Cilium and Calico allow what any policy selecting a pod allows: for a destination in the cluster, such as an S3 bucket on Ceph RGW or a model server, its pods and their own ports, which a NetworkPolicy matches rather than a Service's. Runner pods never get them.
+  extraEgress: []
+  #  - to:
+  #      - namespaceSelector:
+  #          matchLabels:
+  #            kubernetes.io/metadata.name: rook-ceph
+  #        podSelector:
+  #          matchLabels:
+  #            rook_object_store: ceph-objectstore
+  #    ports:
+  #      - port: 8080
+  #        protocol: TCP
   # Where the database is, the one peer the service pods and runner pods
   # may reach its port at: every pod in the release namespace unless set.
   # It must take in every pod the owner, application and runner URIs

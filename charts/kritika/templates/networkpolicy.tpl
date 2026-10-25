@@ -160,12 +160,6 @@ spec:
 {{- $public := int .Values.service.port }}
 {{- $metrics := int .Values.service.metricsPort }}
 {{- $gateway := int .Values.service.gatewayPort }}
-{{- $serverPorts := $np.egressPorts }}
-{{- if and .Values.gatewayCache.enabled (eq .Values.gatewayCache.storage.type "s3") }}
-{{- $endpoint := urlParse (tpl .Values.gatewayCache.storage.endpoint .) }}
-{{- $port := trimPrefix ":" (regexFind ":[0-9]+$" $endpoint.host) | default (ternary "443" "80" (eq $endpoint.scheme "https")) }}
-{{- $serverPorts = append $serverPorts (int $port) | uniq }}
-{{- end }}
 {{- $serverSelector := printf "app.kubernetes.io/name == '%s' && app.kubernetes.io/instance == '%s'" (include "kritika.name" .) .Release.Name }}
 {{- $dns := dict "namespace" $np.dns.namespace "podSelector" ($np.dns.podSelector | default (dict "k8s-app" "kube-dns")) "nodeLocalAddresses" $np.dns.nodeLocalAddresses }}
 {{- $pg := dict "namespace" ($np.postgres.namespace | default .Release.Namespace) "podSelector" $np.postgres.podSelector "port" (int $np.postgres.port) }}
@@ -216,7 +210,7 @@ spec:
   egress:
     {{- include "kritika.dnsEgress" $dns | nindent 4 }}
     {{- /* Without ports, a rule with no to would allow every destination. */}}
-    {{- with $serverPorts }}
+    {{- with $np.egressPorts }}
     - ports:
         {{- range . }}
         - port: {{ . }}
@@ -262,7 +256,7 @@ spec:
               protocol: TCP
   egress:
     {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns) | nindent 4 }}
-    {{- with $serverPorts }}
+    {{- with $np.egressPorts }}
     - toEntities:
         - cluster
         - world
@@ -349,7 +343,7 @@ spec:
           - {{ $gateway }}
   egress:
     {{- include "kritika.calicoDNSEgress" $dns | nindent 4 }}
-    {{- with $serverPorts }}
+    {{- with $np.egressPorts }}
     - action: Allow
       protocol: TCP
       destination:
@@ -391,5 +385,26 @@ spec:
           - {{ $gateway }}
 {{- else }}
 {{- fail (printf "networkPolicy.type must be one of: auto, default, cilium, calico (got %q)" $np.type) }}
+{{- end }}
+{{- /* A policy of its own in every flavor: Cilium and Calico enforce a
+NetworkPolicy beside their own policies and allow what any of them allows,
+so extraEgress takes one syntax whatever the type. */}}
+{{- with $np.extraEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kritika.fullname" $ }}-extra-egress
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kritika.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kritika.selectorLabels" $ | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml . | nindent 4 }}
 {{- end }}
 {{- end }}

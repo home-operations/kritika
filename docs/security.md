@@ -622,9 +622,31 @@ The existing Secret has `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` keys, th
 names a Rook `ObjectBucketClaim` and the AWS tooling write, so a claim's generated
 Secret can be named directly. Without it, the
 SDK uses IAM credentials, including web identity where configured. Credentials
-are never passed to runner Jobs or stored in application configuration. The
-chart permits the endpoint's TCP port in serve's network policy; runner egress
-continues to go through the gateway.
+are never passed to runner Jobs or stored in application configuration. Runner
+egress continues to go through the gateway.
+
+With the chart's NetworkPolicies, kritika serve reaches a bucket outside the
+cluster on `networkPolicy.egressPorts`, 443 unless set. For a bucket in the
+cluster, allow its pods in `networkPolicy.extraEgress`, on the port the pods
+listen on: a NetworkPolicy matches the connection after its Service has sent
+it to a pod, so a Service's own port never matches when it differs. Under
+Rook, Ceph RGW's Service sends its `gateway.port`, such as 80, to port 8080
+on the pods:
+
+```yaml
+networkPolicy:
+  extraEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: rook-ceph
+          podSelector:
+            matchLabels:
+              rook_object_store: ceph-objectstore
+      ports:
+        - port: 8080
+          protocol: TCP
+```
 
 Entries are complete objects under `<prefix>/v1/<hash-of-original-HTTPS-URL>`.
 The object's metadata records the fetch time, body size and origin response

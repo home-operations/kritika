@@ -220,6 +220,16 @@ same Kubernetes cluster alone. Helm ignores them, so move a database
 outside the cluster into CloudNativePG before upgrading: neither kritika
 serve nor its runs can reach it otherwise.
 
+The S3 gateway cache's endpoint no longer adds its port to kritika serve's
+policy: the port in its URL is a Service's, which a NetworkPolicy never
+matches when the Service sends it to another port on the pods. Before
+upgrading, allow the pods of a bucket in the cluster on their own port in
+`networkPolicy.extraEgress`, such as port 8080 on Ceph RGW's pods under
+Rook, and make sure `networkPolicy.egressPorts` lists the port of a
+bucket outside the cluster: 443 is there only while the list is the
+default. See
+[shared S3 storage](https://kritika.home-operations.com/security/#shared-s3-storage).
+
 ### Topology
 
 The chart runs one Deployment of `kritika serve`, one replica by default.
@@ -337,8 +347,9 @@ Kubernetes: `>=1.34.0-0`
 | networkPolicy.dns.namespace | string | `"kube-system"` | Namespace of the cluster's DNS pods. |
 | networkPolicy.dns.nodeLocalAddresses | list | `[]` | Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity. |
 | networkPolicy.dns.podSelector | object | `{}` | Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`. |
-| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
+| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to at any address, for forges, model endpoints and S3 storage outside the cluster. Runner pods reach the gateway alone. |
 | networkPolicy.enabled | bool | `true` | Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress. |
+| networkPolicy.extraEgress | list | `[]` | More egress rules for the service pods, as a networking.k8s.io/v1 NetworkPolicy's `egress`, rendered as a NetworkPolicy of their own whatever the type, since Cilium and Calico allow what any policy selecting a pod allows: for a destination in the cluster, such as an S3 bucket on Ceph RGW or a model server, its pods and their own ports, which a NetworkPolicy matches rather than a Service's. Runner pods never get them. |
 | networkPolicy.postgres.namespace | string | `""` | Namespace of the database's pods; the release namespace when empty. |
 | networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres`, which CloudNativePG gives a cluster's instances and its Poolers' pods alike, so it also covers a URI that goes through a session-mode Pooler. Empty selects every pod in `namespace`. |
 | networkPolicy.postgres.port | int | `5432` | Port of the database, which the pods may reach only where the rest of `postgres` says. |

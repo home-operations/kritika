@@ -225,6 +225,16 @@ same Kubernetes cluster alone. Helm ignores them, so move a database
 outside the cluster into CloudNativePG before upgrading: neither kritika
 serve nor its runs can reach it otherwise.
 
+The S3 gateway cache's endpoint no longer adds its port to kritika serve's
+policy: the port in its URL is a Service's, which a NetworkPolicy never
+matches when the Service sends it to another port on the pods. Before
+upgrading, allow the pods of a bucket in the cluster on their own port in
+`networkPolicy.extraEgress`, such as port 8080 on Ceph RGW's pods under
+Rook, and make sure `networkPolicy.egressPorts` lists the port of a
+bucket outside the cluster: 443 is there only while the list is the
+default. See
+[shared S3 storage](https://kritika.home-operations.com/security/#shared-s3-storage).
+
 ### Topology
 
 The chart runs one Deployment of `kritika serve`, one replica by default.

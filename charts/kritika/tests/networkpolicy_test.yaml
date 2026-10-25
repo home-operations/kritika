@@ -587,7 +587,8 @@ tests:
           value: [{ port: 6432, protocol: TCP }]
         documentIndex: 1
 
-  - it: permits the S3 endpoint port for serve without granting it to runners
+  # The endpoint's port is a Service's, which a NetworkPolicy does not match.
+  - it: adds no port for the S3 gateway cache's endpoint
     set:
       networkPolicy.enabled: true
       gatewayCache:
@@ -598,15 +599,106 @@ tests:
           region: garage
           bucket: kritika
     asserts:
-      - contains:
+      - hasDocuments:
+          count: 2
+      - equal:
           path: spec.egress[1].ports
-          content: { port: 3900, protocol: TCP }
+          value: [{ port: 443, protocol: TCP }]
         documentIndex: 0
       - equal:
           path: spec.egress[1].ports
           value: [{ port: 5432, protocol: TCP }]
         documentIndex: 1
+
+  - it: renders extraEgress as a NetworkPolicy of its own for the service pods alone
+    set:
+      networkPolicy.extraEgress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: rook-ceph
+              podSelector:
+                matchLabels:
+                  rook_object_store: ceph-objectstore
+          ports:
+            - port: 8080
+              protocol: TCP
+    asserts:
+      - hasDocuments:
+          count: 3
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+        documentIndex: 2
       - equal:
-          path: spec.egress[2].ports
-          value: [{ port: 8082, protocol: TCP }]
+          path: metadata.name
+          value: RELEASE-NAME-kritika-extra-egress
+        documentIndex: 2
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: kritika
+            app.kubernetes.io/instance: RELEASE-NAME
+        documentIndex: 2
+      - equal:
+          path: spec.policyTypes
+          value: [Egress]
+        documentIndex: 2
+      - equal:
+          path: spec.egress
+          value:
+            - to:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: rook-ceph
+                  podSelector:
+                    matchLabels:
+                      rook_object_store: ceph-objectstore
+              ports:
+                - port: 8080
+                  protocol: TCP
+        documentIndex: 2
+      # Neither flavor policy changes.
+      - equal:
+          path: spec.egress[1].ports
+          value: [{ port: 443, protocol: TCP }]
+        documentIndex: 0
+      - lengthEqual:
+          path: spec.egress
+          count: 3
         documentIndex: 1
+
+  - it: renders extraEgress as a standard NetworkPolicy beside Cilium's
+    set:
+      networkPolicy.type: cilium
+      networkPolicy.extraEgress:
+        - ports:
+            - port: 8080
+              protocol: TCP
+    asserts:
+      - hasDocuments:
+          count: 4
+      - isKind:
+          of: NetworkPolicy
+        documentIndex: 3
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritika-extra-egress
+        documentIndex: 3
+
+  - it: renders extraEgress as a standard NetworkPolicy beside Calico's
+    set:
+      networkPolicy.type: calico
+      networkPolicy.extraEgress:
+        - ports:
+            - port: 8080
+              protocol: TCP
+    asserts:
+      - hasDocuments:
+          count: 3
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+        documentIndex: 2
+      - equal:
+          path: spec.egress
+          value: [{ ports: [{ port: 8080, protocol: TCP }] }]
+        documentIndex: 2
