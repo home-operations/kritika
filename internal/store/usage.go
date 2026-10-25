@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -19,6 +20,9 @@ const (
 // served when there is one: its whole prompt, cached part included, as
 // input.
 type Usage struct {
+	// ID and CreatedAt preserve a durable invocation across accounting retries.
+	ID                                                       string
+	CreatedAt                                                *time.Time
 	AccountID, RepositoryID, ReviewID, Role, Model, Upstream string
 	RunnerRunID                                              string
 	Input, Output                                            int64
@@ -31,10 +35,12 @@ type Usage struct {
 func InsertUsage(ctx context.Context, tx pgx.Tx, u Usage) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO usage
 		(account_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd,
-		 chatgpt_plan, runner_run_id, unpriced)
-		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, nullif($11, '')::uuid, $12)`,
+		 chatgpt_plan, runner_run_id, unpriced, id, created_at)
+		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, nullif($11, '')::uuid, $12,
+			coalesce(nullif($13, '')::uuid, gen_random_uuid()), coalesce($14, now()))
+		ON CONFLICT (id) DO NOTHING`,
 		u.AccountID, u.RepositoryID, u.ReviewID, u.Role, u.Model, u.Upstream, u.Input, u.Output, u.CostUSD, u.ChatGPTPlan,
-		u.RunnerRunID, u.Unpriced); err != nil {
+		u.RunnerRunID, u.Unpriced, u.ID, u.CreatedAt); err != nil {
 		return fmt.Errorf("store: insert usage: %w", err)
 	}
 	return nil

@@ -469,3 +469,30 @@ The transaction can be repeated after the replicas are stopped. Completed,
 cancelled and discarded history stays on its original queue. Rolling back also
 restores the older worker's ordering limitations; review affected finding
 states if thread changes overlapped the interruption.
+
+## Model-call accounting recovery
+
+`model_invocations` records each logical model call before dispatch. For runner
+calls, the record and token-budget reservation commit together. The provider's
+outcome is then saved separately from settlement. Settlement replaces the
+reservation with actual usage and inserts a usage row with the invocation's ID
+and original timestamp, in one transaction. Repeating settlement cannot charge
+the same invocation twice.
+
+The leader's rescuer retries completed, unsettled outcomes. An expired call
+without a saved outcome becomes `uncertain` and retains its reservation: the
+provider may have charged for it. A late outcome can still settle that call.
+Operators can inspect pending records with an owner connection:
+
+```sql
+SELECT id, account_id, runner_run_id, state, reserved_tokens, created_at
+FROM model_invocations
+WHERE state <> 'settled'
+ORDER BY created_at;
+```
+
+Recovery never repeats a provider request. This ledger does not deduplicate
+client retries or guarantee exactly-once provider execution, and it does not
+reconstruct an outcome lost before persistence. Transcripts remain best effort
+and are separate from accounting. The ledger contains usage metadata and token
+hashes, not prompts, responses, or credentials.

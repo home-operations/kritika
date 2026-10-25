@@ -177,7 +177,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON users, identities, sessions, login_states, api_tokens TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE ON chatgpt_sessions TO ` + app,
 		`GRANT SELECT, INSERT ON audit_events TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls, egress_refusals TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls, egress_refusals, model_invocations TO ` + app,
 		// The runner role sees only its own job through the runner_job
 		// policies; it needs the table privileges those policies gate. On
 		// runner_runs it may update only what a runner reports, never the

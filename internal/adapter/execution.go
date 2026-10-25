@@ -2,18 +2,15 @@ package adapter
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Reservation is the gateway budget reserved before a provider call.
+// Reservation is the gateway budget to reserve before a provider call.
 type Reservation struct {
 	Token  string
 	Tokens int64
@@ -30,11 +27,12 @@ type Execution struct {
 	Served      Route
 	Attempts    int
 
-	call      Call
-	fallbacks []string
-	file      *configfile.File
-	account   *configfile.Account
-	logger    *slog.Logger
+	invocation string
+	call       Call
+	fallbacks  []string
+	file       *configfile.File
+	account    *configfile.Account
+	logger     *slog.Logger
 }
 
 // Execution resolves both routes before the caller reserves a run's budget.
@@ -87,7 +85,33 @@ func (e *Execution) Complete(ctx context.Context, req model.CompletionRequest) (
 	return resp, err
 }
 
+// Begin records the invocation before dispatch and atomically reserves a
+// runner's budget. A gateway calls it separately to classify admission errors.
+func (e *Execution) Begin(ctx context.Context) error {
+	if e.invocation != "" {
+		return nil
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(model.GatewayStepBudget)
+	}
+	var token string
+	var reserved int64
+	if r := e.Reservation; r != nil {
+		token, reserved = r.Token, r.Tokens
+	}
+	id, err := e.Recorder.Store.BeginModelInvocation(ctx, e.Usage, token, reserved, deadline.Add(2*time.Minute))
+	if err == nil {
+		e.invocation = id
+	}
+	return err
+}
+
 func (e *Execution) invoke(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+	e.Served = e.call.Route
+	if err := e.Begin(ctx); err != nil {
+		return model.StepResponse{}, err
+	}
 	req.Fallbacks = e.fallbacks
 	started := time.Now()
 	resp, attempts, served, err := e.call.Do(ctx, req)
@@ -96,7 +120,7 @@ func (e *Execution) invoke(ctx context.Context, req model.StepRequest) (model.St
 	record.Duration = time.Since(started)
 	if chargeErr := e.charge(ctx, resp, err == nil); chargeErr != nil {
 		// A paid answer remains useful even when accounting is unavailable.
-		e.logger.Error("model call usage not recorded", "error", chargeErr)
+		e.logger.Error("model call accounting pending recovery", "invocation", e.invocation, "error", chargeErr)
 	}
 	req.Model = served.Ref.Model()
 	var token string
@@ -107,27 +131,18 @@ func (e *Execution) invoke(ctx context.Context, req model.StepRequest) (model.St
 	return resp, err
 }
 
-// charge settles the reservation separately from usage so a failed usage write
-// cannot refund an answered call. Both writes outlive request cancellation.
+// charge saves the provider outcome before settlement, so a failed usage write
+// can be reconciled without repeating the paid request.
 func (e *Execution) charge(ctx context.Context, resp model.StepResponse, answered bool) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 	defer cancel()
-	spent := resp.Usage.Prompt() + resp.Usage.Output
-	var budgetErr error
-	if r := e.Reservation; r != nil {
-		if !answered {
-			return e.Recorder.Store.ChargeGatewayToken(ctx, r.Token, -r.Tokens)
-		}
-		budgetErr = e.Recorder.Store.ChargeGatewayToken(ctx, r.Token, spent-r.Tokens)
-	} else if spent == 0 {
-		return nil
-	}
 	usage := e.Usage
 	usage.Model, usage.Upstream = resp.Model, resp.Upstream
 	usage.Input, usage.Output, usage.CostUSD = resp.Usage.Prompt(), resp.Usage.Output, resp.CostUSD
 	usage.ChatGPTPlan, usage.Unpriced = resp.ChatGPTPlan, resp.Unpriced
-	usageErr := e.Recorder.Store.WithAccount(ctx, usage.AccountID, func(tx pgx.Tx) error {
-		return store.InsertUsage(ctx, tx, usage)
-	})
-	return errors.Join(budgetErr, usageErr)
+	if err := e.Recorder.Store.CompleteModelInvocation(ctx, e.invocation, usage, answered); err != nil {
+		return err
+	}
+	_, err := e.Recorder.Store.SettleModelInvocation(ctx, usage.AccountID, e.invocation)
+	return err
 }

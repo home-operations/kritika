@@ -122,9 +122,6 @@ apps:
 				if err != nil {
 					t.Fatal(err)
 				}
-				if ok, err := st.ReserveGatewayTokens(ctx, token, 50); err != nil || !ok {
-					t.Fatalf("reserve: %v, %v", ok, err)
-				}
 				call.Reservation = &Reservation{Token: token, Tokens: 50}
 				_, err = call.Step(ctx, model.StepRequest{System: system})
 			} else {

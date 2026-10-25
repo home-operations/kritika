@@ -390,9 +390,6 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// The step is reserved before it runs; its actual spend replaces the
 	// estimate once the provider answers.
 	reserved := promptEstimate(body, req) + req.MaxTokens
-	if !g.reserve(ctx, w, c, reserved) {
-		return
-	}
 	call.Recorder = adapter.Recorder{Store: g.Store, Metrics: g.Metrics}
 	call.Record = store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
@@ -408,6 +405,17 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// turn.
 	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
 	defer cancel()
+	if err := call.Begin(sctx); err != nil {
+		if errors.Is(err, store.ErrModelBudget) {
+			reason := fmt.Sprintf("the run's budget of %d tokens is spent", c.grant.Budget)
+			c.logger.Info("gateway: call refused", "reason", reason)
+			refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
+		} else {
+			c.logger.Error("gateway: call not reserved", "error", err)
+			refuse(w, http.StatusInternalServerError, "server_error", "the run's budget could not be checked")
+		}
+		return
+	}
 	resp, err := call.Step(sctx, req)
 	served := call.Served
 	if err != nil {
