@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
@@ -118,6 +119,10 @@ type RunTool struct {
 	sources    []string
 	ran        []string
 	executions map[string]int
+	// proxyHosts are the hosts of the proxies in the commands' environment,
+	// as hostKey spells them: a URL of theirs given to curl, as a proxy
+	// option's value, is not a source.
+	proxyHosts []string
 	// errors are the setup failure notes, one per command in failed.
 	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
@@ -143,8 +148,28 @@ func NewRunTool(c RunConfig) *RunTool {
 	"required": ["command"],
 	"additionalProperties": false
 }`, enum)
-	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema), executions: map[string]int{}}
+	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema), executions: map[string]int{}, proxyHosts: proxyHosts(c.Env)}
 }
+
+// proxyHosts are the hosts of the HTTP_PROXY and HTTPS_PROXY URLs in env,
+// in either case, as hostKey spells them.
+func proxyHosts(env []string) []string {
+	var hosts []string
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		if !strings.EqualFold(name, "HTTP_PROXY") && !strings.EqualFold(name, "HTTPS_PROXY") {
+			continue
+		}
+		if u, err := url.Parse(value); err == nil && u.Hostname() != "" && !slices.Contains(hosts, hostKey(u.Hostname())) {
+			hosts = append(hosts, hostKey(u.Hostname()))
+		}
+	}
+	return hosts
+}
+
+// hostKey is a host as its spellings compare: lowercased, without a
+// trailing dot.
+func hostKey(host string) string { return strings.TrimSuffix(strings.ToLower(host), ".") }
 
 // Names are the commands the tool offers, sorted.
 func (rt *RunTool) Names() []string { return rt.names }
@@ -269,9 +294,6 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	if !ok {
 		return "", fmt.Errorf("agent: run: %q is not one of %s", req.Command, strings.Join(rt.names, ", "))
 	}
-	if why := refusedArgs(req.Command, req.Args); why != "" {
-		return "", fmt.Errorf("agent: run: %s: %s", req.Command, why)
-	}
 	if !slices.Contains(rt.ran, req.Command) {
 		rt.ran = append(rt.ran, req.Command)
 	}
@@ -310,12 +332,29 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
+	// The command and the processes it starts form a process group of their
+	// own, which is stopped as a whole when the command times out and once
+	// it has exited (stopGroupOnExit), so nothing it started outlives the
+	// call. The command is reaped only after that, so the group's id stays
+	// its own while it is signalled.
+	var group groupSignals
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return group.kill(cmd.Process) }
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
-	err = cmd.Run()
-	if cmd.Process != nil {
+	if err = cmd.Start(); err == nil {
 		rt.executions[req.Command]++
+		stopped, serr := stopGroupOnExit(cmd.Process.Pid)
+		if serr != nil && rt.cfg.Logger != nil {
+			rt.cfg.Logger.Warn("what a command started is not stopped on its exit", "command", req.Command, "error", serr)
+		}
+		if stopped {
+			group.exit()
+		} else {
+			group.leaderOnly()
+		}
+		err = cmd.Wait()
 	}
 	switch {
 	case ctx.Err() != nil:
@@ -323,6 +362,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	case cctx.Err() != nil:
 		stopped := fmt.Sprintf("%sstopped after %s\n%s", note, rt.cfg.Timeout, rt.mask(out.String()))
 		return rt.result(stopped, out, out.dropped(), rt.mask(errs.String())), nil
+	// A process that left the group still held the output open when the
+	// command exited: the command ran, and its output is what it wrote.
+	case errors.Is(err, exec.ErrWaitDelay):
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return "", rt.setupError(req.Command, err)
@@ -339,6 +381,46 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 	}
 	return rt.result(fmt.Sprintf("%sexit code %d\n%s", note, code, text), out, dropped, stderr), nil
+}
+
+// groupSignals is what signals a command's process group, a timeout, until
+// the command is about to be reaped, which may free the group's id for
+// another: from then on it signals nothing, or the command alone, which
+// os.Process signals safely after the reap too. A kill in flight finishes
+// before either.
+type groupSignals struct {
+	mu sync.Mutex
+	// exited says the command's exit was seen and its group stopped, and
+	// leader that the exit could not be seen before the reap.
+	exited, leader bool
+}
+
+// kill kills the process group the command p leads.
+func (g *groupSignals) kill(p *os.Process) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	switch {
+	case g.exited:
+		return os.ErrProcessDone
+	case g.leader:
+		return p.Kill()
+	}
+	return syscall.Kill(-p.Pid, syscall.SIGKILL)
+}
+
+// exit says the command's exit has been seen and its group stopped.
+func (g *groupSignals) exit() {
+	g.mu.Lock()
+	g.exited = true
+	g.mu.Unlock()
+}
+
+// leaderOnly says the command will be reaped without its exit seen first,
+// so a timeout from then on kills it alone.
+func (g *groupSignals) leaderOnly() {
+	g.mu.Lock()
+	g.leader = true
+	g.mu.Unlock()
 }
 
 // prepare runs Prepare before the first command and returns its note, as
@@ -419,136 +501,6 @@ func (rt *RunTool) mask(out string) string {
 	return rt.cfg.Mask(out)
 }
 
-// ghRefused are the gh commands that print the token gh is signed in with
-// or run a program of the caller's choosing.
-var ghRefused = []string{"auth", "alias", "config", "extension", "extensions", "ext"}
-
-// ghFlagTakesValue reports whether a flag before gh's command takes the
-// next argument for its value: every one but the root command's own,
-// which take none, as cobra parses them. A flag with its value attached
-// by "=" and a group of short flags take nothing more.
-func ghFlagTakesValue(a string) bool {
-	switch {
-	case a == "-h" || a == "--help" || a == "--version" || a == "--" || strings.Contains(a, "="):
-		return false
-	case strings.HasPrefix(a, "--"):
-		return true
-	}
-	return len(a) == 2
-}
-
-// fdValueFlags are fd's short flags that take a value, which ends a group
-// of short flags: what follows one in the same argument is its value.
-const fdValueFlags = "dEteSocjC"
-
-// curlValueFlags are curl's short options that take a value, which ends a
-// group of short options as fdValueFlags does fd's.
-const curlValueFlags = "AbCcDdEeFHhKmoPQrTtUuwXxYyz"
-
-// curlRefused are curl's options the run tool refuses, by long name or
-// short letter, and why. A trace wraps the sent headers at 64 bytes, in
-// hex with --trace, so the proxy credential comes out in pieces the output
-// mask cannot match; -v prints each header whole. A config file from the
-// checkout could set any option. The proxy options, --resolve, which
-// points the proxy's name at another address, and a Unix socket, which
-// curl prefers to the proxy, connect around the gateway. The rest would
-// lift the limit to http and https the runner's .curlrc sets: --next
-// starts options anew without it, and -q or --disable first skips it.
-var curlRefused = map[string]string{
-	"trace": curlPrints, "trace-ascii": curlPrints, "trace-config": curlPrints,
-	"config": curlReads, "K": curlReads,
-	"proxy": curlAround, "x": curlAround, "noproxy": curlAround, "preproxy": curlAround, "proxy1.0": curlAround,
-	"socks4": curlAround, "socks4a": curlAround, "socks5": curlAround, "socks5-hostname": curlAround, "resolve": curlAround,
-	"unix-socket": curlAround, "abstract-unix-socket": curlAround,
-	"proto": curlUnlimits, "next": curlUnlimits, ":": curlUnlimits, "disable": curlUnlimits, "q": curlUnlimits,
-}
-
-const (
-	curlPrints   = "it prints the proxy credential; use -v"
-	curlReads    = "it reads options from a file"
-	curlAround   = "it connects around the egress gateway"
-	curlUnlimits = "it lifts curl's limit to http and https URLs"
-)
-
-// refusedArgs says why command must not run with args, or "": the
-// commands are an allowlist, and these arguments would have one run a
-// program outside it, print a credential or reach the network around the
-// egress gateway. The model's arguments are steered by the content under
-// review, so they are not trusted.
-func refusedArgs(command string, args []string) string {
-	switch command {
-	case "gh":
-		// gh's command is its first positional argument, with the flags
-		// before it read as cobra reads them: a flag the root command does
-		// not have takes the next argument for its value, so "gh
-		// --hostname h auth token" runs "auth token".
-		for i := 0; i < len(args); i++ {
-			a := args[i]
-			if !strings.HasPrefix(a, "-") {
-				if slices.Contains(ghRefused, a) {
-					return "gh " + a + " is not offered"
-				}
-				break
-			}
-			if ghFlagTakesValue(a) {
-				i++
-			}
-		}
-	case "rg":
-		// A standalone "--" may be a flag's value (for example, -e --),
-		// so it cannot safely end this scan without parsing every flag.
-		for _, a := range args {
-			name, _, _ := strings.Cut(a, "=")
-			if name == "--pre" || name == "--hostname-bin" {
-				return name + " is an execution option and is not offered; use --regexp=" + name + " for a pattern or ./" + name + " for a path"
-			}
-		}
-	case "fd":
-		for _, a := range args {
-			name, _, _ := strings.Cut(a, "=")
-			switch {
-			case name == "--exec" || name == "--exec-batch":
-				return name + " is not offered: it runs another program"
-			case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):
-				continue
-			}
-			for _, f := range a[1:] {
-				if f == 'x' || f == 'X' {
-					return "-" + string(f) + " is not offered: it runs another program"
-				}
-				if strings.ContainsRune(fdValueFlags, f) {
-					break
-				}
-			}
-		}
-	case "curl":
-		// curl reads --expand-<option> as <option>, with variables
-		// expanded in its value.
-		for _, a := range args {
-			name, _, _ := strings.Cut(a, "=")
-			if long, ok := strings.CutPrefix(name, "--"); ok {
-				long = strings.TrimPrefix(long, "expand-")
-				if why, ok := curlRefused[long]; ok {
-					return "--" + long + " is not offered: " + why
-				}
-				continue
-			}
-			if !strings.HasPrefix(a, "-") {
-				continue
-			}
-			for _, f := range a[1:] {
-				if why, ok := curlRefused[string(f)]; ok {
-					return "-" + string(f) + " is not offered: " + why
-				}
-				if strings.ContainsRune(curlValueFlags, f) {
-					break
-				}
-			}
-		}
-	}
-	return ""
-}
-
 // recordRead keeps as sources what a command that succeeded read: the
 // URLs curl was given and the resource a gh call names. One that failed
 // read nothing a review rests on.
@@ -564,11 +516,12 @@ func (rt *RunTool) recordRead(command string, args []string) {
 }
 
 // record keeps each http(s) URL in args as a source, without any
-// credentials it carries.
+// credentials it carries, but one on a proxy's host.
 func (rt *RunTool) record(args []string) {
 	for _, a := range args {
 		u, err := url.Parse(a)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			slices.Contains(rt.proxyHosts, hostKey(u.Hostname())) {
 			continue
 		}
 		u.User = nil

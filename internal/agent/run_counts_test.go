@@ -18,7 +18,6 @@ func TestRunToolExecutionCounts(t *testing.T) {
 		{"nonzero exit", `{"command":"rg","args":["exit","1"]}`, nil, 1},
 		{"timeout", `{"command":"rg","args":["sleep"]}`, func(rt *RunTool) { rt.cfg.Timeout = 50 * time.Millisecond }, 1},
 		{"unoffered", `{"command":"unknown"}`, nil, 0},
-		{"refused", `{"command":"rg","args":["--pre","sh"]}`, nil, 0},
 		{"install failure", `{"command":"rg"}`, func(rt *RunTool) {
 			rt.cfg.Resolve = func(context.Context, string) (string, []string, error) {
 				return "", nil, errors.New("install failed")

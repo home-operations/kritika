@@ -4,7 +4,58 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: is not rendered by default
+  - it: is rendered by default, in the default flavor on a cluster that serves no other policy API
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+
+  - it: auto renders the Cilium flavor on a cluster that serves CiliumNetworkPolicy
+    capabilities:
+      apiVersions:
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - hasDocuments:
+          count: 3
+      - isKind:
+          of: CiliumNetworkPolicy
+        documentIndex: 0
+      - isKind:
+          of: CiliumNetworkPolicy
+        documentIndex: 1
+
+  - it: auto renders the Calico flavor on a cluster that serves Calico's NetworkPolicy
+    capabilities:
+      apiVersions:
+        - projectcalico.org/v3/NetworkPolicy
+    asserts:
+      - isAPIVersion:
+          of: projectcalico.org/v3
+
+  - it: auto prefers Cilium on a cluster that serves both
+    capabilities:
+      apiVersions:
+        - projectcalico.org/v3/NetworkPolicy
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - isKind:
+          of: CiliumNetworkPolicy
+        documentIndex: 0
+
+  - it: renders the flavor set over what the cluster serves
+    set:
+      networkPolicy.type: default
+    capabilities:
+      apiVersions:
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+
+  - it: is not rendered when turned off
+    set:
+      networkPolicy.enabled: false
     asserts:
       - hasDocuments:
           count: 0
@@ -69,11 +120,19 @@ tests:
       networkPolicy.type: cilium
     asserts:
       - hasDocuments:
-          count: 2
+          count: 3
       - isAPIVersion:
           of: cilium.io/v2
+        documentIndex: 0
       - isKind:
           of: CiliumNetworkPolicy
+        documentIndex: 0
+      - isAPIVersion:
+          of: cilium.io/v2
+        documentIndex: 1
+      - isKind:
+          of: CiliumNetworkPolicy
+        documentIndex: 1
       - contains:
           path: spec.ingress[0].fromEntities
           content: all
@@ -127,6 +186,34 @@ tests:
           path: spec.egress[2].toPorts[0].ports[0].port
           value: "8082"
         documentIndex: 1
+
+  - it: on Cilium, also keeps runner pods to the database and the gateway without DNS, should Cilium refuse its DNS rules
+    set:
+      networkPolicy.type: cilium
+    asserts:
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+        documentIndex: 2
+      - equal:
+          path: spec.podSelector.matchLabels["kritika.home-operations.com/role"]
+          value: runner
+        documentIndex: 2
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+        documentIndex: 2
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+        documentIndex: 2
+      - equal:
+          path: spec.egress[0].ports
+          value: [{ port: 5432, protocol: TCP }]
+        documentIndex: 2
+      - equal:
+          path: spec.egress[1].ports
+          value: [{ port: 8082, protocol: TCP }]
+        documentIndex: 2
 
   - it: renders Calico NetworkPolicies for type=calico, denying runner ingress by listing it with no rules
     set:
@@ -218,24 +305,6 @@ tests:
                 cidr: 169.254.20.10/32
             - ipBlock:
                 cidr: fd00::10/128
-        documentIndex: 1
-
-  - it: leaves DNS out with allowDNS false
-    set:
-      networkPolicy.enabled: true
-      networkPolicy.allowDNS: false
-    asserts:
-      - notContains:
-          path: spec.egress[0].ports
-          content:
-            port: 53
-            protocol: UDP
-        documentIndex: 1
-      - equal:
-          path: spec.egress[0].ports
-          value:
-            - port: 5432
-              protocol: TCP
         documentIndex: 1
 
   - it: on Cilium, lets runner pods look up only the cluster's Services and runnerNames
@@ -441,7 +510,20 @@ tests:
       networkPolicy.type: bogus
     asserts:
       - failedTemplate:
-          errorMessage: 'networkPolicy.type must be one of: default, cilium, calico (got "bogus")'
+          errorMessage: 'networkPolicy.type must be one of: auto, default, cilium, calico (got "bogus")'
+
+  - it: takes the database's port from postgres.port, for both pods
+    set:
+      networkPolicy.postgres.port: 6432
+    asserts:
+      - contains:
+          path: spec.egress[1].ports
+          content: { port: 6432, protocol: TCP }
+        documentIndex: 0
+      - equal:
+          path: spec.egress[1].ports
+          value: [{ port: 6432, protocol: TCP }]
+        documentIndex: 1
 
   - it: permits the S3 endpoint port for serve without granting it to runners
     set:
