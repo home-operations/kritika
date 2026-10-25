@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.105](https://github.com/home-operations/kritika/compare/0.0.104...0.0.105) (2026-10-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* drop compatibility with earlier releases and migration notes ([#1247](https://github.com/home-operations/kritika/issues/1247))
+
+### Bug Fixes
+
+* **chart:** stop counting a replaced leader in KritikaMultipleLeaders ([#1246](https://github.com/home-operations/kritika/issues/1246)) ([575eced](https://github.com/home-operations/kritika/commit/575eced7ddb7f6e7c0018b345ff443000c9b8c44))
+* **container:** name the runner binary kritika-runner ([#1243](https://github.com/home-operations/kritika/issues/1243)) ([999b4e1](https://github.com/home-operations/kritika/commit/999b4e1dcc5ca716866683832ad7f10c1b44c6a8))
+
+
+### Code Refactoring
+
+* drop compatibility with earlier releases and migration notes ([#1247](https://github.com/home-operations/kritika/issues/1247)) ([aae41af](https://github.com/home-operations/kritika/commit/aae41affbab8250c836dab451dd35c308e65806a))
+
+
+### Documentation
+
+* build the docs site with Astro Starlight instead of MkDocs ([#1245](https://github.com/home-operations/kritika/issues/1245)) ([9abc02f](https://github.com/home-operations/kritika/commit/9abc02f7ebe3dc5e713c21aeb8df5db4f2fc4ab2))
+
 ## [0.0.104](https://github.com/home-operations/kritika/compare/0.0.103...0.0.104) (2026-10-25)
 
 
