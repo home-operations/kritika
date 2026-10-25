@@ -257,7 +257,7 @@ A `pool_max_conns` in a URI replaces that pool's ceiling. Raise the
 application pool's ceiling if jobs wait on the pool.
 `kritika_db_pool_empty_acquires_total` counts those waits, and
 `kritika_db_pool_connections` shows the pool's connections against the
-ceiling ([metrics](metrics.md)). For more replicas, raise `max_connections`
+ceiling ([metrics](/metrics/)). For more replicas, raise `max_connections`
 under the Cluster's `postgresql.parameters`. A `pool_ping_timeout` in a URI
 replaces that pool's five-second bound on a ping of an idle connection.
 CNPG's `cnpg_backends_total` metric shows what each `application_name`

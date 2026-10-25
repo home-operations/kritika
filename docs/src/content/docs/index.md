@@ -6,7 +6,7 @@ kritika is an AI reviewer for pull requests on GitHub, Forgejo, GitLab and Gitea
 related code, posts findings with suggested fixes, and answers follow-up
 questions in comments.
 
-**New installation? Start with [Setup](setup.md).**
+**New installation? Start with [Setup](/setup/).**
 
 :::caution[Under active development]
 
@@ -28,15 +28,15 @@ results and costs. Confidence scores and automatic approvals are optional.
 
 ## Find what you need
 
-| I want to…                                   | Start here                                  |
-| -------------------------------------------- | ------------------------------------------- |
-| Install kritika and get a first review       | [Setup](setup.md)                           |
-| Ask the bot a question or re-run a review    | [Reviews and commands](reviews.md#commands) |
-| Add rules for my repository                  | [Repository settings](repository-config.md) |
-| Find a failed review or check spending       | [Dashboard](dashboard.md)                   |
-| Let a coding agent read reviews and findings | [MCP endpoint](mcp.md)                      |
-| Use scores or automatic approvals            | [Confidence and approvals](confidence.md)   |
-| Connect a Forgejo, GitLab or Gitea instance  | [Git forges](forges.md)                     |
+| I want to…                                   | Start here                                 |
+| -------------------------------------------- | ------------------------------------------ |
+| Install kritika and get a first review       | [Setup](/setup/)                           |
+| Ask the bot a question or re-run a review    | [Reviews and commands](/reviews/#commands) |
+| Add rules for my repository                  | [Repository settings](/repository-config/) |
+| Find a failed review or check spending       | [Dashboard](/dashboard/)                   |
+| Let a coding agent read reviews and findings | [MCP endpoint](/mcp/)                      |
+| Use scores or automatic approvals            | [Confidence and approvals](/confidence/)   |
+| Connect a Forgejo, GitLab or Gitea instance  | [Git forges](/forges/)                     |
 
 The **Operations** pages cover the database, security and monitoring.
 The **Reference** pages list configuration options, providers and Helm values.

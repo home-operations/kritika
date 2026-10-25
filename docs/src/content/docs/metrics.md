@@ -12,7 +12,7 @@ monitoring:
 ```
 
 This requires the Prometheus Operator. For a failed or stuck review, the
-[dashboard Queue](dashboard.md#queue) is usually the quickest place to start.
+[dashboard Queue](/dashboard/#queue) is usually the quickest place to start.
 The tables below are the metric reference for custom queries and alerts.
 
 The management port serves `/metrics` alongside `/healthz` and `/readyz`.
@@ -35,7 +35,7 @@ chart's `monitoring.serviceMonitor.enabled` creates a Prometheus Operator
 | `kritika_review_slot_wait_seconds`                                                                                | account, model                  | actual elapsed slot-snooze intervals observed at the next pickup, including queue delay                                                                                                                                            |
 | `kritika_findings_total`                                                                                          | account, severity, category     | findings posted                                                                                                                                                                                                                    |
 | `kritika_confidence_scores_total`                                                                                 | account, score, risk            | reviews the confidence model scored, by score (0 to 5) and risk: low, medium, high, critical                                                                                                                                       |
-| `kritika_confidence_held_total`                                                                                   | account, what                   | confidence answers kritika held to its own rule: `score` held under the findings' ceiling, `risk` given as no level and taken as critical, `floor` raised to a path's floor ([confidence](confidence.md))                          |
+| `kritika_confidence_held_total`                                                                                   | account, what                   | confidence answers kritika held to its own rule: `score` held under the findings' ceiling, `risk` given as no level and taken as critical, `floor` raised to a path's floor ([confidence](/confidence/))                           |
 | `kritika_followups_total`                                                                                         | account, outcome                | mentions, and replies in finding threads that do not mention the bot, handled: answered, limited, ignored, failed                                                                                                                  |
 | `kritika_threads_total`                                                                                           | account, outcome                | finding threads a person resolved or unresolved: dismissed, addressed, restored, ignored, failed                                                                                                                                   |
 | `kritika_index_runs_total`                                                                                        | account, mode, status           | index runs                                                                                                                                                                                                                         |

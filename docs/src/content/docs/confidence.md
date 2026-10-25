@@ -112,8 +112,8 @@ that one of their conditions holds for:
 - A `when` block in place of `confidence.gate: true` narrows the gate.
 - A `when` block in place of `review.approve: true` narrows approval.
 
-Each is a list of conditions, as a [rule's](repository-config.md#rules) is:
-an `expr` over [`pr`](repository-config.md#include-and-exclude-recipes) with
+Each is a list of conditions, as a [rule's](/repository-config/#rules) is:
+an `expr` over [`pr`](/repository-config/#include-and-exclude-recipes) with
 an optional `name`. To score every pull request, gate only Renovate's, and
 approve only its small bumps:
 
@@ -219,8 +219,8 @@ changes. These trigger a fresh rating:
 | Key                       | Default                            | What                                                                                                                                                                                                                 | From a `.kritika.yaml`                     |
 | ------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | `confidence.model`        | none: nothing is scored            | the model that scores, a `<provider>/<model>` held to the same providers as `review.model`                                                                                                                           | replaces                                   |
-| `confidence.fallback`     | none                               | the model that takes the scorer's call when the confidence model fails ([fallback](models.md#fallback))                                                                                                              | replaces                                   |
-| `confidence.effort`       | the provider's                     | how hard the scorer, and the fallback that takes its call, reasons ([effort](models.md#effort))                                                                                                                      | replaces                                   |
+| `confidence.fallback`     | none                               | the model that takes the scorer's call when the confidence model fails ([fallback](/models/#fallback))                                                                                                               | replaces                                   |
+| `confidence.effort`       | the provider's                     | how hard the scorer, and the fallback that takes its call, reasons ([effort](/models/#effort))                                                                                                                       | replaces                                   |
 | `confidence.threshold`    | 5                                  | the score approvals need, and a gated commit status                                                                                                                                                                  | replaces, either way                       |
 | `confidence.gate`         | off                                | `true` fails the commit status under the threshold, so it can be a required check; a `when` block gates only the pull requests one of its conditions holds for ([only some pull requests](#only-some-pull-requests)) | replaces, either way                       |
 | `confidence.when`         | none: every pull request is scored | conditions, one of which a pull request must hold for to be scored ([only some pull requests](#only-some-pull-requests))                                                                                             | adds conditions that must hold as well     |

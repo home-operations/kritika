@@ -3,7 +3,5 @@ CHANGELOG.md
 .release-please-manifest.json
 charts/kritika/README.md
 charts/kritika/values.schema.json
-# The docs pages, kept as written: oxfmt would realign every table. And the
-# docs site's build output.
-docs/src/content/
+# The docs site's build output.
 site/

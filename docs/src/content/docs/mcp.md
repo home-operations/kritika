@@ -16,7 +16,7 @@ session, so any replica answers any request.
 ## Connect an agent
 
 Create a token under **Settings → API tokens** in the dashboard, as
-[Your settings](dashboard.md#your-settings) describes, and give it to the
+[Your settings](/dashboard/#your-settings) describes, and give it to the
 agent as a bearer token. The endpoint takes nothing else: a dashboard
 session does not sign it in.
 
@@ -58,5 +58,5 @@ up to 200 and is 50 unless given. Pass a page's `nextCursor` back as
 The endpoint changes nothing: asking for a review, a question or a dismissal
 stays on the forge. It also reports no runner runs, model usage or cost,
 transcripts, raw output, diffs, or anything only an admin sees. See
-[personal access tokens](security.md#personal-access-tokens) for what a
+[personal access tokens](/security/#personal-access-tokens) for what a
 token can read and when it stops.

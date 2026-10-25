@@ -112,18 +112,17 @@ Garage 2.4.1 and VersityGW 1.9.0 with its POSIX backend.
 This site is Astro Starlight, a Node project in `docs/` pinned in
 `docs/pnpm-lock.yaml`. mise installs Node and pnpm. Pages live in
 `docs/src/content/docs/`, and each is titled in its front matter. Their
-order in the sidebar is set in `docs/astro.config.mjs`. Pages link to each
-other as relative `.md` files, which GitHub follows too; the build turns
-them into the site's paths.
+order in the sidebar is set in `docs/astro.config.mjs`, so a new page needs
+an entry there. Pages link to each other by their site paths, such as
+`/database/#secrets-and-connection-uris`.
 
 ```sh
 mise run docs-serve   # live preview at http://localhost:4321/
 mise run docs         # build into site/, as CI does
 ```
 
-The build fails on a broken internal link or anchor, and on a page missing
-from the sidebar. Pull requests into `main` build the site; a push to `main`
-publishes it to GitHub Pages.
+The build fails on a broken internal link or anchor. Pull requests into
+`main` build the site; a push to `main` publishes it to GitHub Pages.
 
 ## Evaluation
 

@@ -16,7 +16,7 @@ review:
 ```
 
 Replace `vendor/large-model` with the model you want to use. In Helm, put these
-settings under `config` and supply the key from a Secret as shown in [Setup](setup.md#deploy).
+settings under `config` and supply the key from a Secret as shown in [Setup](/setup/#deploy).
 
 Everything else is optional:
 
@@ -26,9 +26,9 @@ Everything else is optional:
 | Retry temporary failures                    | Provider [`retries`](#retries)                                                |
 | Adjust reasoning effort                     | [`review.effort`](#effort)                                                    |
 | Use a stronger model for some pull requests | [Agents that replace the default pass](#agents-that-replace-the-default-pass) |
-| Score reviews or approve pull requests      | [`confidence.model`](confidence.md)                                           |
+| Score reviews or approve pull requests      | [`confidence.model`](/confidence/)                                            |
 | Search for similar code                     | [`embedding.model`](#the-embedder)                                            |
-| Use a different model for one repository    | [Repository settings](repository-config.md#models)                            |
+| Use a different model for one repository    | [Repository settings](/repository-config/#models)                             |
 
 ## Providers
 
@@ -42,7 +42,7 @@ Everything else is optional:
 | `headers` | headers sent with every request, keyed by name; each value is inline or a reference like `apiKey` ([headers](#headers))                       |
 
 Provider credentials never enter a runner pod: the agent reaches its model
-through kritika's gateway ([the model endpoint](security.md#the-model-endpoint)).
+through kritika's gateway ([the model endpoint](/security/#the-model-endpoint)).
 
 ### Cost accounting
 
@@ -64,7 +64,7 @@ provider when `pricing` has no price under the model as written.
 The dashboard labels these calls **Unpriced** and marks totals that
 contain them as incomplete. The summary footer does the same when
 `review.cost` is on, and `kritika_model_unpriced_calls_total` counts them
-([metrics](metrics.md)). Per-review averages include only the reviews
+([metrics](/metrics/)). Per-review averages include only the reviews
 whose cost is known. An explicit zero price or an upstream-reported zero
 remains $0, and ChatGPT calls remain included in the plan. Existing
 history is not reclassified. Tokens count against an account's `limits`
@@ -72,7 +72,7 @@ either way.
 
 ### An account's own keys
 
-An account's entry under [`accounts`](configuration.md#accounts) can
+An account's entry under [`accounts`](/configuration/#accounts) can
 declare providers of its own:
 
 ```yaml
@@ -415,7 +415,7 @@ account's in-flight requests would exceed its balance.
   fallback on another provider, the review model's attempts get at most
   half of that time, so the fallback always gets a turn.
 - The scorer's call has the two minutes a score gets
-  ([confidence](confidence.md#the-score)), shared the same way.
+  ([confidence](/confidence/#the-score)), shared the same way.
 - A split review's summary call has 100 seconds, and the review model's
   attempts may take all of them. That is about one slow answer, which
   half of the 100 seconds would cut short.
@@ -429,7 +429,7 @@ A step that still fails that way after the provider's `retries` and the
 fallback are spent does not end the review. The runner keeps the
 conversation and sends the step again after 30 seconds, then after one,
 two and four minutes, while the agent's
-[`timeout`](configuration.md#the-agent) allows. Only a step that fails
+[`timeout`](/configuration/#the-agent) allows. Only a step that fails
 after the last of those ends the review as failed.
 
 ## Fallback
@@ -444,7 +444,7 @@ review's step has failed on the review model, and its provider's
 to the fallback. The fallback gets that provider's own `retries`, and the
 review carries on there. The step's usage is recorded under the model
 that answered. A follow-up's steps fall back the same way, and so does a
-split review's summary call ([large reviews](configuration.md#the-agent)).
+split review's summary call ([large reviews](/configuration/#the-agent)).
 
 `confidence.fallback` does the same for the scorer's call. On the
 confidence model's provider, it goes to the provider with the call. On
@@ -476,11 +476,11 @@ confidence:
   effort: low
 ```
 
-| Where                                | What it sets                                                                                                           |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| nothing                              | the provider's default, for both                                                                                       |
-| the file's root or a `.kritika.yaml` | its level, like any [repository setting](configuration.md#repository-settings); a `.kritika.yaml` replaces the admin's |
-| a `.kritika.yaml`, `effort: ""`      | the provider's default again, where the admin set a level                                                              |
+| Where                                | What it sets                                                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| nothing                              | the provider's default, for both                                                                                      |
+| the file's root or a `.kritika.yaml` | its level, like any [repository setting](/configuration/#repository-settings); a `.kritika.yaml` replaces the admin's |
+| a `.kritika.yaml`, `effort: ""`      | the provider's default again, where the admin set a level                                                             |
 
 Each provider type gets the level in its own form:
 
@@ -518,10 +518,10 @@ review:
 ```
 
 An agent with `categories` reviews beside the default pass instead; see
-[agents](repository-config.md#agents).
+[agents](/repository-config/#agents).
 
 - An agent's `when` takes the same conditions as `trigger.include`
-  ([trigger conditions](configuration.md#which-pull-requests-are-reviewed)).
+  ([trigger conditions](/configuration/#which-pull-requests-are-reviewed)).
   Each condition is an `expr`, `paths` or both, with an optional `name`.
   When a condition has both, both must hold. One condition holding is
   enough, and `paths` holds when one changed file matches, whatever else
@@ -545,8 +545,8 @@ An agent with `categories` reviews beside the default pass instead; see
 - A repository's `.kritika.yaml` that writes `review.model`, or agents of
   this kind, replaces the instance's agents of this kind as a whole. Every
   model they name must be of a provider the account may use, or they are
-  all dropped ([repository models](repository-config.md#models)).
-- An agent's model waits for its own [`concurrency`](configuration.md#accounts)
+  all dropped ([repository models](/repository-config/#models)).
+- An agent's model waits for its own [`concurrency`](/configuration/#accounts)
   slots, as a repository's own model does. Follow-ups run on the default.
 
 Since `paths` holds when any changed file matches, these agents suit
@@ -694,7 +694,7 @@ chat completions API. It routes requests and caches prompts by a
 per-conversation header, `x-opencode-session`, and refuses a request
 without one. A provider of type `opencode` sends that header. In it, a
 review's steps name their run, or the run whose conversation they carry
-on ([incremental reviews](configuration.md#incremental-reviews)). A
+on ([incremental reviews](/configuration/#incremental-reviews)). A
 follow-up names its mention. The provider's `baseUrl` is Go's,
 `https://opencode.ai/zen/go/v1`, unless set. Zen is the same type at
 `https://opencode.ai/zen/v1`.

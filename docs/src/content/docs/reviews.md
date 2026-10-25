@@ -11,14 +11,14 @@ Mention the bot by its login: your GitHub App's slug, or the username of
 the bot or service account on another forge. You need write access to the
 repository, and webhooks must be working.
 
-| Comment                   | What it does                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------- |
-| `@<bot> <question>`       | Reads the code and answers in the thread.                                               |
-| `@<bot> review`           | Requests a full review of the current commit.                                           |
-| `@<bot> review <name>`    | Runs the [agent](repository-config.md#agents) of that name alone on the current commit. |
-| `@<bot> pause`            | Stops automatic reviews for this pull request.                                          |
-| `@<bot> resume`           | Resumes automatic reviews.                                                              |
-| `@<bot> dismiss <reason>` | Dismisses a finding when posted in its thread.                                          |
+| Comment                   | What it does                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `@<bot> <question>`       | Reads the code and answers in the thread.                                              |
+| `@<bot> review`           | Requests a full review of the current commit.                                          |
+| `@<bot> review <name>`    | Runs the [agent](/repository-config/#agents) of that name alone on the current commit. |
+| `@<bot> pause`            | Stops automatic reviews for this pull request.                                         |
+| `@<bot> resume`           | Resumes automatic reviews.                                                             |
+| `@<bot> dismiss <reason>` | Dismisses a finding when posted in its thread.                                         |
 
 `@<bot> review <name>` can name a specialist, the default pass
 (`default`), or the default pass on the model of an agent that replaces
@@ -42,10 +42,10 @@ kritika handles at most five mentions per pull request per hour, including comma
 | Findings      | Inline comments with an explanation and a suggested fix when available. |
 | Commit status | `Kritika / Review` on the reviewed commit.                              |
 | Reactions     | 👀 while working, 👍 when posted, 😕 on failure.                        |
-| Approval      | Only when [automatic approvals](confidence.md#approvals) are enabled.   |
+| Approval      | Only when [automatic approvals](/confidence/#approvals) are enabled.    |
 
 Reactions and automatic thread resolution need the relevant
-[GitHub App permissions](setup.md#register-the-github-app).
+[GitHub App permissions](/setup/#register-the-github-app).
 
 ### Findings
 
@@ -56,7 +56,7 @@ Reactions and automatic thread resolution need the relevant
 | `p2`     | Optional polish.              |
 
 Findings also have a category: correctness, security, performance, reliability,
-maintainability or tests. With [agents](repository-config.md#agents) beside
+maintainability or tests. With [agents](/repository-config/#agents) beside
 the default pass, a finding that a specialist raised also names the agents
 that raised it. A finding that the default pass alone raised names none. The
 summary includes findings outside the visible diff, which cannot get an
@@ -72,13 +72,13 @@ as a fix; use the dismiss command if you want a lasting dismissal.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
 On Forgejo, kritika neither reads nor resolves threads, so the dismiss
-command is the way, as [Git forges](forges.md#what-works-where) lists. On GitLab
+command is the way, as [Git forges](/forges/#what-works-where) lists. On GitLab
 and Gitea, kritika resolves a fixed finding's thread, but resolving one
 yourself sends no event, so it does not dismiss the finding.
 
 ### Replies in finding threads
 
-With [`review.replies`](configuration.md#what-only-the-admin-sets) on,
+With [`review.replies`](/configuration/#what-only-the-admin-sets) on,
 kritika also reads a reply in one of its finding threads that does not
 mention it. The reply must come from someone with write access and be
 made while the thread is unresolved. kritika answers when the reply needs
@@ -89,7 +89,7 @@ already settled. The dashboard records why. When the thread convinces
 kritika that the finding was wrong, its reply says so. The finding is then
 dismissed as `@<bot> dismiss` would dismiss it, and the thread is resolved.
 This works on GitHub alone, for the reason
-[Git forges](forges.md#what-works-where) gives.
+[Git forges](/forges/#what-works-where) gives.
 
 Such replies count against the five follow-ups per pull request per hour,
 whether or not a reply is posted. Once kritika has replied three times in
@@ -128,12 +128,12 @@ tells the review to:
 - never propose adopting what the new version adds.
 
 A version number alone never sets a severity. The
-[confidence scorer](confidence.md#risk) rates the step's risk separately.
+[confidence scorer](/confidence/#risk) rates the step's risk separately.
 
 ### The summary comment
 
-With [confidence scoring](confidence.md) on, the comment's heading is the
-score, and the change's [risk](confidence.md#risk) leads the scorer's reason
+With [confidence scoring](/confidence/) on, the comment's heading is the
+score, and the change's [risk](/confidence/#risk) leads the scorer's reason
 below it. The approval decision, when enabled, comes next. Then come the
 findings, whose suggested fixes are in their inline comments, and then the
 summary of the change. The comment also includes:
@@ -154,14 +154,14 @@ review read shows it, the summary also says what merging sets off: what
 takes effect and when, what restarts, what a revert cannot undo, or a
 check to make afterwards. It does not repeat the findings. A suggested check
 is not evidence that it passed. Optional
-[flow diagrams](repository-config.md#flow-diagrams) and
-[comment templates](repository-config.md#comment-templates) change
+[flow diagrams](/repository-config/#flow-diagrams) and
+[comment templates](/repository-config/#comment-templates) change
 presentation.
 
 ### The commit status
 
 **Findings alone do not fail the check.** To block merges based on a score,
-enable [confidence gating](confidence.md#the-commit-status) and make the check
+enable [confidence gating](/confidence/#the-commit-status) and make the check
 required on the forge.
 
 | State   | Meaning                                                                             |
@@ -186,12 +186,12 @@ it passes the gate.
 | Manual review              | Reviews the whole pull request again.                                                   |
 
 Drafts, forks and bot pull requests are included unless
-[trigger rules](configuration.md#which-pull-requests-are-reviewed) exclude them.
+[trigger rules](/configuration/#which-pull-requests-are-reviewed) exclude them.
 An unchanged bot rebase is usually skipped; it is reviewed again if scoring
 is enabled but the previous review had no score.
 
 Automatic reviews stop when the pull request closes, is paused, or reaches
-`trigger.limit`. See [incremental reviews](configuration.md#incremental-reviews)
+`trigger.limit`. See [incremental reviews](/configuration/#incremental-reviews)
 for how later reviews handle earlier findings.
 
 ### Overlapping reviews
@@ -206,5 +206,5 @@ can restart a runner and repeat unfinished model work. Split reviews save each
 completed part and reuse it on retries of the same job when the review inputs,
 model policy and prompts still match. A manual re-review starts fresh. The
 dashboard marks reused parts; their usage remains charged to the original
-run. Check the dashboard's [Queue](dashboard.md#queue) for retries and
+run. Check the dashboard's [Queue](/dashboard/#queue) for retries and
 errors.

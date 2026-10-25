@@ -6,10 +6,10 @@ This guide gets kritika from a fresh installation to its first GitHub review.
 You do not need a `.kritika.yaml` in your repositories. In place of the App,
 declare:
 
-- A bot for a Forgejo instance, as [Git forges](forges.md#forgejo) describes.
+- A bot for a Forgejo instance, as [Git forges](/forges/#forgejo) describes.
 - A service account for a GitLab instance, as
-  [Git forges](forges.md#gitlab) describes.
-- A bot user for a Gitea instance, as [Git forges](forges.md#gitea)
+  [Git forges](/forges/#gitlab) describes.
+- A bot user for a Gitea instance, as [Git forges](/forges/#gitea)
   describes.
 
 ## Before you start
@@ -17,13 +17,13 @@ declare:
 Have these ready:
 
 - A Kubernetes cluster and Helm.
-- [Postgres with VectorChord and three database roles](database.md).
+- [Postgres with VectorChord and three database roles](/database/).
 - An HTTPS address, such as `https://kritika.example.com`, reachable by GitHub.
 - A model provider credential. The example below uses OpenRouter.
 
 Install kritika in its own namespace. Keep the chart's admission policy enabled,
 configure its NetworkPolicy for your DNS and database, and use a sandboxed runner
-runtime where available. See [deployment security](security.md#hardening-an-install).
+runtime where available. See [deployment security](/security/#hardening-an-install).
 
 ## Register the GitHub App
 
@@ -69,7 +69,7 @@ usual secret management tool. Do not commit their values.
 | `kritika-credentials`          | `ADMIN_PASSWORD`, `OPENROUTER_API_KEY`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET`. |
 | `kritika-tls`                  | TLS certificate and key for your public hostname.                                              |
 
-The [database guide](database.md#secrets-and-connection-uris) explains the connection
+The [database guide](/database/#secrets-and-connection-uris) explains the connection
 strings. Owner and application connections need direct or session-mode access;
 transaction-mode pooling is not supported.
 
@@ -120,8 +120,8 @@ ingress:
 
 The chart's NetworkPolicies, on by default, expect Postgres in the release
 namespace, standard cluster DNS, and forges and models on port 443. Set
-[`networkPolicy.postgres`](database.md#secrets-and-connection-uris),
-[`networkPolicy.dns`](security.md#name-lookups) and
+[`networkPolicy.postgres`](/database/#secrets-and-connection-uris),
+[`networkPolicy.dns`](/security/#name-lookups) and
 `networkPolicy.egressPorts` if yours differ. Allow what kritika serve
 reaches in the cluster, such as an S3 bucket or a model server, in
 `networkPolicy.extraEgress`.
@@ -157,9 +157,9 @@ Open your public URL and sign in as `admin` with the password you supplied.
 2. Select your account and open **Repositories**.
 3. Enable a repository you want reviewed.
 
-You can add [GitHub, Forgejo, Gitea, GitLab or OIDC sign-in](configuration.md#auth)
+You can add [GitHub, Forgejo, Gitea, GitLab or OIDC sign-in](/configuration/#auth)
 later.
-[Embedding](models.md#the-embedder) is optional: it adds similar-code search
+[Embedding](/models/#the-embedder) is optional: it adds similar-code search
 but is not needed for the first review.
 
 ## Check that it works
@@ -183,7 +183,7 @@ If nothing happens, check:
 | `404`            | App name in the URL is wrong.                                           |
 | `500`            | kritika could not queue the delivery.                                   |
 
-For everyday use, see [reviews and commands](reviews.md).
+For everyday use, see [reviews and commands](/reviews/).
 
 ## Without webhooks
 

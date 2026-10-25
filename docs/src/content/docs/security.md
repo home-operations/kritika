@@ -8,18 +8,18 @@ that pod can reach.
 
 ## Hardening an install
 
-| Setting or action                               | Why it matters                                                                                                               |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Use a dedicated namespace.                      | kritika can create Jobs and Secrets in its namespace.                                                                        |
-| Keep `runner.admissionPolicy.enabled` on.       | Restricts the Jobs and Secrets the service can create to the expected runner forms.                                          |
-| Keep `networkPolicy.enabled` on, the default.   | Restricts runners to DNS, Postgres and the gateway, the only bound on where the commands a review runs can connect.          |
-| Set `runner.podTemplate.spec.runtimeClassName`. | Uses an installed sandboxed runtime, such as gVisor, to isolate untrusted work, including the commands a review runs.        |
-| Set `runner.podTemplate.spec.resources`.        | Limits the CPU and memory a runner can consume.                                                                              |
-| Map sign-in roles from trusted groups or roles. | Avoids granting access from profile fields users can change themselves. See [role mappings](configuration.md#role-mappings). |
+| Setting or action                               | Why it matters                                                                                                              |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Use a dedicated namespace.                      | kritika can create Jobs and Secrets in its namespace.                                                                       |
+| Keep `runner.admissionPolicy.enabled` on.       | Restricts the Jobs and Secrets the service can create to the expected runner forms.                                         |
+| Keep `networkPolicy.enabled` on, the default.   | Restricts runners to DNS, Postgres and the gateway, the only bound on where the commands a review runs can connect.         |
+| Set `runner.podTemplate.spec.runtimeClassName`. | Uses an installed sandboxed runtime, such as gVisor, to isolate untrusted work, including the commands a review runs.       |
+| Set `runner.podTemplate.spec.resources`.        | Limits the CPU and memory a runner can consume.                                                                             |
+| Map sign-in roles from trusted groups or roles. | Avoids granting access from profile fields users can change themselves. See [role mappings](/configuration/#role-mappings). |
 
 `networkPolicy.type: auto`, the default, renders Cilium's or Calico's own
 policies where the cluster serves their API. Configure
-[database](database.md#secrets-and-connection-uris) and [DNS](#name-lookups)
+[database](/database/#secrets-and-connection-uris) and [DNS](#name-lookups)
 destinations for your cluster.
 
 Without the admission policy, the service's Role can create Jobs that mount
@@ -67,17 +67,17 @@ permissions.
 
 ## What a pull request cannot change
 
-- A repository's [`.kritika.yaml`](repository-config.md), its rule files
+- A repository's [`.kritika.yaml`](/repository-config/), its rule files
   and its skills are read from the merge base, never from the pull
   request's own tree. A pull request therefore cannot rewrite them to
   steer its own review.
 - `.kritika.yaml` can narrow the admin's settings and add rules, but
-  [some keys](configuration.md#what-only-the-admin-sets) are the admin's
+  [some keys](/configuration/#what-only-the-admin-sets) are the admin's
   alone: the agent's bounds, `confidence.instructions`,
   `confidence.floors`, `review.cost` and `review.replies`. Because the
   two `confidence` keys are the admin's, a pull request cannot talk its
   own risk down. A repository adds commands only through its
-  [`tools`](repository-config.md#repository-tools), which are read from
+  [`tools`](/repository-config/#repository-tools), which are read from
   the merge base.
 - A trigger condition in `.kritika.yaml` is dropped when one of the
   admin's trigger conditions has the same name. So is a rule with an
@@ -88,7 +88,7 @@ Context files, including explicitly listed `AGENTS.md` or `CLAUDE.md`,
 are read from the pull request's head. A pull request can change or delete
 them and thereby change the background material its reviewer reads. They
 are optional references, not trusted review instructions. Put requirements
-that a pull request must not rewrite in merge-base [rules](repository-config.md#rules).
+that a pull request must not rewrite in merge-base [rules](/repository-config/#rules).
 
 ## The egress gateway
 
@@ -156,7 +156,7 @@ The refusal a runner's command sees says why. The gateway also records it
 against the run, as the host the agent asked for and the reason. It never
 records an address the name resolved to, so a private address stays out
 of the dashboard. The **Refused hosts** panel of the
-[analytics](dashboard.md#analytics) lists these refusals, so what you add
+[analytics](/dashboard/#analytics) lists these refusals, so what you add
 to `allow` comes from real refusals. A run has at most 100 such rows, one
 per host and reason, so a looping agent cannot fill the table. The leader
 deletes them with the run's transcripts.
@@ -236,7 +236,7 @@ can:
 
 - read a dependency bump's release notes and upstream pull requests with
   `gh`, which is offered on GitHub alone, as
-  [Git forges](forges.md#what-works-where) lists
+  [Git forges](/forges/#what-works-where) lists
 - fetch anything else with `curl`
 - search with `grep` and `find`
 - read JSON with `jq`
@@ -255,7 +255,7 @@ and coreutils but no package manager. It also holds:
 - [mise](https://mise.jdx.dev/)
 
 Every other tool is the repository's: the
-[`tools`](repository-config.md#repository-tools) of its `.kritika.yaml`.
+[`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`.
 That is mise's `[tools]` table, which the runner writes as the run's mise
 config. A tool from it replaces an image command of the same name, except
 `gh`. That lets a repository add a tool without an image build, such as
@@ -551,7 +551,7 @@ arguments.
   named version under one other name, such as `v1.2.3` or `chart-1.2.3`
   for `1.2.3`, that tag is fetched in its place and the answer says so.
   Otherwise the error names the closest tag.
-- **Bounded:** [`agent.fetches`](configuration.md#the-agent) fetches, 8
+- **Bounded:** [`agent.fetches`](/configuration/#the-agent) fetches, 8
   unless set, and 8 tag listings a review. Each takes at most 128 MiB
   from the server and two minutes. The fetches and the run tool's kept
   outputs share 256 MiB of files written beside the checkout. Symlinks,
@@ -593,7 +593,7 @@ never a registry request.
   registry, they are `ghcr.io` and `pkg-containers.githubusercontent.com`.
   A refused host fails the read, and the error names it.
 - **Bounded:** as many inspections as
-  [`agent.fetches`](configuration.md#the-agent) allows fetches, and 8 tag
+  [`agent.fetches`](/configuration/#the-agent) allows fetches, and 8 tag
   listings. Each takes at most 16 MiB from the registry and a minute, and
   reads a manifest or config of at most 4 MiB. Nothing is written: no
   layer is ever pulled.
@@ -832,7 +832,7 @@ replica streams a hit over one connection, so a large entry may arrive
 more slowly than from its origin. Uploads are off the request path and
 their deadline grows with size.
 Run `mise run test-s3` against the provider before relying on it; the
-[compatibility suite](development.md#s3-cache-compatibility) was only run
+[compatibility suite](/development/#s3-cache-compatibility) was only run
 against the servers it names.
 
 Costs follow the request pattern: a HEAD per eligible request, a GET per cold
@@ -904,7 +904,7 @@ and the environment, and move what it held:
 
 The image carries `curl`, `find`, `gh`, `grep` and `jq`, and every review
 offers those and the repository's tools, `gh` on GitHub alone
-([Git forges](forges.md#what-works-where)).
+([Git forges](/forges/#what-works-where)).
 A container image needs no tool: `fetch_oci` reads its registry.
 
 ### Migrating from rg, fd and yq
@@ -966,7 +966,7 @@ node's user namespace as before.
 
 - A transcript may contain repository content the agent read, and every
   member of its account can read it
-  ([retention](configuration.md#how-kritika-runs)).
+  ([retention](/configuration/#how-kritika-runs)).
 - A review agent's conversation is also kept, for the pull request's next
   re-review. It is kept unmasked, since a provider's prompt cache matches
   only the exact text. No dashboard view shows it, a conversation that
@@ -982,7 +982,7 @@ node's user namespace as before.
 ### Personal access tokens
 
 A user creates API tokens in their own settings, for agents that read
-through the [MCP endpoint](mcp.md). No admin, instance or configuration-file
+through the [MCP endpoint](/mcp/). No admin, instance or configuration-file
 tokens exist.
 
 - Only the MCP endpoint takes a token, and it takes nothing else. The

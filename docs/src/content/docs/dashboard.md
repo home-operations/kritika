@@ -6,7 +6,7 @@ Open the address set in `config.webUrl` and sign in. The dashboard shows review
 progress, findings and costs for the accounts you can access.
 
 Use the forge to discuss findings. Use the dashboard to inspect reviews and manage
-the service. Application settings live in the [configuration file](configuration.md).
+the service. Application settings live in the [configuration file](/configuration/).
 
 ## First run
 
@@ -46,7 +46,7 @@ activity and usage across accounts you can read.
 
 Open a pull request for its summary, findings and activity. Expand a finding
 for its explanation and suggested fix. A finding an
-[agent](repository-config.md#agents) raised carries the agent's name; one
+[agent](/repository-config/#agents) raised carries the agent's name; one
 without a name is the default pass's. **Run details** contains the timeline,
 model conversation, usage and raw data for troubleshooting. When agents ran,
 the timeline lists each agent's parts with their cost, and the cost of each
@@ -71,7 +71,7 @@ them by category, rule, agent or directory, and select a group to narrow
 the list to it; a directory then shows the directories below it. A group that keeps
 coming back is worth an instruction in `AGENTS.md` or a skill, so the
 change's author gets it right the first time. A group that is often
-dismissed or drew a 👎 is worth a [rule](repository-config.md#rules)
+dismissed or drew a 👎 is worth a [rule](/repository-config/#rules)
 telling reviews what not to report. Like the analytics, 👎 counts come
 from GitHub alone and need polling enabled.
 
@@ -87,7 +87,7 @@ Hover a dismissed finding's status to see which.
 **Export Markdown** and **Export JSON** download the findings the filters
 keep, newest first, up to 1,000. Give the Markdown to a coding agent and
 ask it to propose those instructions and rules. Reviews read `AGENTS.md`
-only when it is listed under [`context`](repository-config.md#context).
+only when it is listed under [`context`](/repository-config/#context).
 
 ### Queue
 
@@ -105,7 +105,7 @@ The page also shows addressed findings and reactions to inline comments.
 Reactions are counted on GitHub alone and need polling enabled.
 
 **Refused hosts** shows destinations blocked by the egress gateway. Review why
-a host was blocked before adding it to [`egress.allow`](security.md#the-egress-gateway).
+a host was blocked before adding it to [`egress.allow`](/security/#the-egress-gateway).
 
 In **Usage & costs**, select a repository, model or review to inspect spending.
 **Unpriced** means a call has no known price and totals are incomplete. API
@@ -117,7 +117,7 @@ The Rules page lists configured rules and context files, their source and
 scope, and findings that cite each rule, with how many of those were
 addressed, dismissed, or drew a 👎. A rule whose findings are often
 dismissed may need rewording. Edit rules in the
-[configuration file](configuration.md) or [repository settings](repository-config.md#rules).
+[configuration file](/configuration/) or [repository settings](/repository-config/#rules).
 
 ### Your settings
 
@@ -126,13 +126,13 @@ Daily charts use UTC. If the top bar says **Reconnecting…**, live data may be
 out of date until the connection returns.
 
 Under **API tokens**, create a personal access token for an agent that reads
-through kritika's [MCP endpoint](mcp.md). Name it, and choose whether it
+through kritika's [MCP endpoint](/mcp/). Name it, and choose whether it
 reads everything you can read or only some of those accounts. Then choose
 when it expires: in 7, 30 or 90 days, a year, or never. Its value is shown
 once. A token never changes anything. It stops reading once it expires, is
 revoked, or the sign-in it came from changes; the list then marks it
 **expired** or **stale**. See
-[personal access tokens](security.md#personal-access-tokens).
+[personal access tokens](/security/#personal-access-tokens).
 
 ## Repositories
 
@@ -145,7 +145,7 @@ unarchiving a repository. It names the account's forge, such as
 next poll can pick up open pull requests created while it was disabled.
 
 Expand **Repository settings** to inspect effective settings, or **Index runs**
-to investigate indexing failures. See [which repositories run](configuration.md#which-repositories-run)
+to investigate indexing failures. See [which repositories run](/configuration/#which-repositories-run)
 for how dashboard choices and configured defaults interact.
 
 ## Administration
@@ -187,4 +187,4 @@ A configuration that fails validation prevents startup. If the leader cannot
 apply it to the database, kritika keeps the last applied configuration and
 sets `kritika_config_error`. Fix the problem and restart to try again.
 
-See [monitoring](metrics.md) for alerts and [security](security.md) for access controls.
+See [monitoring](/metrics/) for alerts and [security](/security/) for access controls.

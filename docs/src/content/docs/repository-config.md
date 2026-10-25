@@ -67,7 +67,7 @@ They are used for the review and for follow-ups. A model of any other
 provider is dropped, and the account's limits bound what a choice can cost.
 
 `review.model` replaces the admin's model and the admin's [agents that
-replace the default pass](models.md#agents-that-replace-the-default-pass).
+replace the default pass](/models/#agents-that-replace-the-default-pass).
 The file may write its own such agents. When a review's model fails, the
 review goes on with the fallback, on the same provider or another. A
 follow-up does the same.
@@ -75,7 +75,7 @@ follow-up does the same.
 `review.effort` sets how hard the review model reasons, and
 `confidence.effort` sets how hard the scorer reasons. Each covers its
 fallback too. The value is one of `none`, `minimal`, `low`, `medium`,
-`high`, `xhigh` or `max` ([effort](models.md#effort)). Each setting
+`high`, `xhigh` or `max` ([effort](/models/#effort)). Each setting
 replaces the admin's. `""` restores the provider's default, and a value
 that is not a level is dropped.
 
@@ -85,7 +85,7 @@ that is not a level is dropped.
 allows. That is one with no findings at P0 or P1, or, with a confidence
 score, one whose score and risk allow it. The setting replaces the admin's
 in either direction, so a repository can turn it on where the instance
-leaves it off ([approvals](confidence.md#approvals)).
+leaves it off ([approvals](/confidence/#approvals)).
 
 A block with `when` conditions, like a [rule's](#rules), approves only a
 pull request that one of them holds for:
@@ -140,7 +140,7 @@ request is also not approved, so the file cannot lift the admin's risk
 policy by narrowing scoring.
 
 `confidence.instructions` and `confidence.floors` are the admin's alone
-([confidence and approvals](confidence.md)).
+([confidence and approvals](/confidence/)).
 
 ### Trigger conditions
 
@@ -316,7 +316,7 @@ review:
 - **An agent without `categories` replaces the default pass** when its
   conditions hold. The first such agent whose conditions hold picks the
   review's model, as [agents that replace the default
-  pass](models.md#agents-that-replace-the-default-pass) describes. It
+  pass](/models/#agents-that-replace-the-default-pass) describes. It
   takes only `name`, `model`, `fallback`, `effort`, `when` and `enabled`.
 
 A specialist takes:
@@ -346,7 +346,7 @@ A specialist takes:
 - **Split by agent.** A large diff is split into parts within each agent,
   and the run is sized and budgeted for every agent's parts. An agent
   whose parts did not all submit leaves the review
-  [incomplete](reviews.md#the-commit-status). Its findings are posted, and
+  [incomplete](/reviews/#the-commit-status). Its findings are posted, and
   the summary names the agent. A retry of the same job reuses the parts
   that did submit.
 - **Judged over the whole pull request.** Which agents run, and on which
@@ -382,7 +382,7 @@ A specialist takes:
   [tools](#repository-tools) and commands, as the default pass does. There
   is no per-agent tool list.
 - **Model slots.** A review holds a slot of the account's
-  [`limits.concurrency`](configuration.md#accounts) on the model of each
+  [`limits.concurrency`](/configuration/#accounts) on the model of each
   specialist it runs, as it does on the default pass's model. It waits for
   those slots as it waits for the default pass's.
 
@@ -448,7 +448,7 @@ The summary template's dot is the review:
 | `.Reviews`                                                                   | how many reviews of the pull request this one makes                                                                                                                                                           |
 | `.Model`                                                                     | the review model                                                                                                                                                                                              |
 | `.Effort`                                                                    | the effort it reasoned at, "" for the provider's default                                                                                                                                                      |
-| `.Route`                                                                     | the [agent that replaced the default pass](models.md#agents-that-replace-the-default-pass) and the condition that held, escaped for Markdown, "" for the default                                              |
+| `.Route`                                                                     | the [agent that replaced the default pass](/models/#agents-that-replace-the-default-pass) and the condition that held, escaped for Markdown, "" for the default                                               |
 | `.Cost`                                                                      | what the pull request's reviews have cost, "" unless the admin's `review.cost` is on                                                                                                                          |
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                                                                                                         |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                                                                                                       |
@@ -531,9 +531,9 @@ A tool installs at the version given, on the first call that needs it,
 which can take a moment. A failed install fails that tool call without
 stopping the review. Release hosts need the admin's `egress.allow`
 permission, and so do the hosts a backend verifies against
-([runner tools](security.md#runner-tools)). Once the admin gives the
+([runner tools](/security/#runner-tools)). Once the admin gives the
 gateway a download cache, later runs reuse what a run locked
-([the gateway's cache](security.md#the-gateways-download-cache)).
+([the gateway's cache](/security/#the-gateways-download-cache)).
 
 An entry may take these options: `os`, `filter_bins`, `asset_pattern`,
 `additional_asset_patterns`, `matching`, `matching_regex`, `no_app`,

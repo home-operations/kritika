@@ -11,13 +11,13 @@ kritika reviews pull requests on these forges:
 
 A connection is one App, integration, service account or bot user,
 together with the accounts it serves. The
-[configuration reference](configuration.md#apps) has every key. This page
+[configuration reference](/configuration/#apps) has every key. This page
 says what each forge needs and what works on it.
 
 ## GitHub
 
 A GitHub connection is a GitHub App, registered as the
-[setup guide](setup.md#register-the-github-app) describes and declared
+[setup guide](/setup/#register-the-github-app) describes and declared
 under `apps`. The App's webhook reaches kritika at `/hooks/<name>`.
 Installation events keep the served repositories current, and kritika
 mints a short-lived, read-only installation token for each run.
@@ -103,7 +103,7 @@ forgejo:
 
 `host` is the instance's hostname alone, reached over HTTPS. Runner pods
 are allowed to reach it through the
-[egress gateway](security.md#the-egress-gateway), as they are allowed to
+[egress gateway](/security/#the-egress-gateway), as they are allowed to
 reach GitHub for an App. A name belongs to one connection only, under
 `apps`, `forgejo`, `gitlab` or `gitea`. An account is served by one
 connection on its forge.
@@ -158,7 +158,7 @@ auth:
 kritika asks for the `read:user` and `read:organization` scopes alone.
 Among the accounts that the instance's connections serve, a person reads
 their own and any organization they are a member of. A
-[role mapping](configuration.md#role-mappings) can grant more.
+[role mapping](/configuration/#role-mappings) can grant more.
 
 ## GitLab
 
@@ -202,7 +202,7 @@ gitlab:
 ```
 
 `host` is the instance's hostname alone, reached over HTTPS. Runner pods
-may reach it through the [egress gateway](security.md#the-egress-gateway).
+may reach it through the [egress gateway](/security/#the-egress-gateway).
 An account is a top-level group or a user. For a group, kritika serves the
 projects of its subgroups too. A project in a subgroup is named by its
 full path, such as `platform/backend/api`.
@@ -252,7 +252,7 @@ the instance's OpenID Connect userinfo endpoint, so the token it holds can
 read nothing through the API. Among the accounts that the instance's
 connections serve, a person reads their own and any top-level group they
 are a member of, directly or through an ancestor group. A
-[role mapping](configuration.md#role-mappings) can grant more.
+[role mapping](/configuration/#role-mappings) can grant more.
 
 ## Gitea
 
@@ -303,7 +303,7 @@ gitea:
 ```
 
 `host` is the instance's hostname alone, reached over HTTPS. Runner pods
-may reach it through the [egress gateway](security.md#the-egress-gateway).
+may reach it through the [egress gateway](/security/#the-egress-gateway).
 Gitea marks a bot user as a bot. `bots` lists any other login on the
 instance that a bot runs as, such as an ordinary account that Renovate
 uses. kritika then treats that login as a bot, as on
@@ -405,7 +405,7 @@ installation stays until someone removes it. The dashboard's Connections
 section lists it as not served, with an Uninstall action.
 
 A private App, which only the account that owns it can install, avoids
-this. The [setup guide](setup.md#register-the-github-app) says when to
+this. The [setup guide](/setup/#register-the-github-app) says when to
 choose one. An App is declared by one `apps` entry. It has one webhook, so
 a second entry's accounts would be strangers on the first entry's hook
 path.
