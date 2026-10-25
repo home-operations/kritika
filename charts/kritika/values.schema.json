@@ -809,6 +809,12 @@
               "title": "multipleLeadersFor",
               "type": "string"
             },
+            "multipleLeadersWindow": {
+              "default": "1m",
+              "description": "How far back KritikaMultipleLeaders looks for each replica's latest leader sample. Keep it longer than the ServiceMonitor interval and shorter than multipleLeadersFor, so a replaced leader drops out of the sum before the alert fires.",
+              "title": "multipleLeadersWindow",
+              "type": "string"
+            },
             "noLeaderFor": {
               "default": "5m",
               "description": "How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute.",

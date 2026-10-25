@@ -48,6 +48,9 @@ tests:
           path: spec.groups[0].rules[1].alert
           value: KritikaMultipleLeaders
       - equal:
+          path: spec.groups[0].rules[1].expr
+          value: sum by (namespace, job) (last_over_time(kritika_leader[1m])) > 1
+      - equal:
           path: spec.groups[0].rules[1].for
           value: 2m
       - equal:
@@ -114,6 +117,20 @@ tests:
       - equal:
           path: spec.groups[1].rules[1].for
           value: 30m
+
+  - it: widens the leader sample window for a longer scrape interval
+    set:
+      monitoring.prometheusRule.enabled: true
+      monitoring.serviceMonitor.interval: 2m
+      monitoring.prometheusRule.multipleLeadersWindow: 5m
+      monitoring.prometheusRule.multipleLeadersFor: 10m
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[1].expr
+          value: sum by (namespace, job) (last_over_time(kritika_leader[5m])) > 1
+      - equal:
+          path: spec.groups[0].rules[1].for
+          value: 10m
 
   - it: renders shared queue aggregation and search errors with custom thresholds
     set:
