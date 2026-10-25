@@ -1,4 +1,6 @@
-# Repository settings
+---
+title: Repository settings
+---
 
 A repository works without any configuration file. Add `.kritika.yaml` at its
 root when you want custom review rules, ignored paths or trigger conditions.
@@ -20,7 +22,7 @@ Merge a configuration change before expecting it to apply to later reviews.
 Indexing uses the configuration at the commit being indexed.
 
 The file contains no credentials. Models must use a provider the admin configured.
-The [JSON Schema](kritika.schema.json) provides editor completion and validation.
+The [JSON Schema](https://kritika.home-operations.com/kritika.schema.json) provides editor completion and validation.
 For custom tools, see [repository tools](#repository-tools).
 
 ## What it may set
@@ -498,7 +500,7 @@ The options an entry may take are `os`, `filter_bins`, `asset_pattern`,
 and `platforms`, whose per-platform tables (`linux-x64`, `linux-arm64`)
 take the same options; each typed as mise reads it, a string, a list of
 strings, a boolean or a whole number, which the
-[schema](kritika.schema.json) spells out, and `url` an `https://` URL.
+[schema](https://kritika.home-operations.com/kritika.schema.json) spells out, and `url` an `https://` URL.
 Every other option, among them `postinstall`, `install_env`, `depends`,
 `api_url` and `headers`, fails the file, as does a value holding a
 template or a name carrying options or a version (`tool[exe=x]`,

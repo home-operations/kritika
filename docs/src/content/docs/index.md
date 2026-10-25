@@ -1,4 +1,6 @@
-# kritika
+---
+title: kritika
+---
 
 kritika is an AI reviewer for pull requests on GitHub, Forgejo, GitLab and Gitea. It reads the change and
 related code, posts findings with suggested fixes, and answers follow-up
@@ -6,13 +8,13 @@ questions in comments.
 
 **New installation? Start with [Setup](setup.md).**
 
-/// warning | Under active development
+:::caution[Under active development]
 
 Configuration and APIs can change between releases. Read the
 [changelog](https://github.com/home-operations/kritika/blob/main/CHANGELOG.md)
 before upgrading.
 
-///
+:::
 
 ## How it works
 

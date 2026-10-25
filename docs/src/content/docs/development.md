@@ -1,4 +1,6 @@
-# Development
+---
+title: Development
+---
 
 Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-operations/kritika/blob/main/.mise/config.toml):
 
@@ -87,18 +89,21 @@ Garage 2.4.1 and VersityGW 1.9.0 with its POSIX backend.
 
 ## Docs
 
-This site is MkDocs Material, declared in `pyproject.toml`, pinned in
-`uv.lock` and run through uv, which mise installs. Pages live in `docs/`, and their order in
-`mkdocs.yml`'s `nav`.
+This site is Astro Starlight, a Node project in `docs/` pinned in
+`docs/pnpm-lock.yaml`; mise installs Node and pnpm. Pages live in
+`docs/src/content/docs/`, each titled in its front matter, and their order in
+the sidebar in `docs/astro.config.mjs`. Pages link to each other as relative
+`.md` files, which GitHub follows too; the build turns them into the site's
+paths.
 
 ```sh
-mise run docs-serve   # live preview at http://127.0.0.1:8000/
-mise run docs         # build into site/ with --strict, as CI does
+mise run docs-serve   # live preview at http://localhost:4321/
+mise run docs         # build into site/, as CI does
 ```
 
-`--strict` fails the build on a broken link or a page missing from `nav`.
-Pull requests into `main` build the site; a push to `main` publishes it to
-GitHub Pages.
+The build fails on a broken internal link or anchor, and on a page missing
+from the sidebar. Pull requests into `main` build the site; a push to `main`
+publishes it to GitHub Pages.
 
 ## Evaluation
 

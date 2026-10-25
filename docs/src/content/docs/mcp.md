@@ -1,4 +1,6 @@
-# MCP endpoint
+---
+title: MCP endpoint
+---
 
 kritika serves a read-only [Model Context Protocol](https://modelcontextprotocol.io)
 endpoint, so a coding agent can read its reviews, findings, rules and

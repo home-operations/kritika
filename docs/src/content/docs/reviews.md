@@ -1,4 +1,6 @@
-# Reviews
+---
+title: Reviews
+---
 
 kritika reviews enabled repositories when pull requests open or change. It
 updates one summary comment and adds findings beside the relevant lines.

@@ -1,4 +1,6 @@
-# Security
+---
+title: Security
+---
 
 Reviews process untrusted code and text. Each review runs in a separate pod
 with limited credentials. Use the deployment controls below to restrict what

@@ -1,4 +1,6 @@
-# Models and providers
+---
+title: Models and providers
+---
 
 You need a provider credential and a `review.model` to start reviewing.
 A model name has the form `<provider>/<model>`: the first part matches a key

@@ -1,4 +1,6 @@
-# Configuration
+---
+title: Configuration
+---
 
 For a first installation, use [Setup](setup.md). This page is the full settings
 reference.

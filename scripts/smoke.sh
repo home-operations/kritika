@@ -96,7 +96,7 @@ log "creating the roles' Secrets"
 kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
 password() { head -c 24 /dev/urandom | base64 | tr -d '/+=\n'; }
 host="kritika-postgres-rw.${ns}.svc"
-# As docs/database.md: a basic-auth Secret per role, with the URI kritika
+# As the database docs page: a basic-auth Secret per role, with the URI kritika
 # reads under uri. The owner's is also the Cluster's bootstrap Secret.
 role_secret() {
   local name=$1 role=$2 pw
@@ -122,7 +122,7 @@ kubectl -n "$ns" create secret generic kritika-smoke-bot \
   --dry-run=client -o yaml | kubectl apply -f -
 
 log "creating the Postgres cluster"
-# docs/database.md's Cluster, Database and DatabaseRoles, with one instance.
+# The database docs page's Cluster, Database and DatabaseRoles, with one instance.
 kubectl -n "$ns" apply -f - <<MANIFEST
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

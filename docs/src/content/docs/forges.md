@@ -1,4 +1,6 @@
-# Git forges
+---
+title: Git forges
+---
 
 kritika reviews pull requests on GitHub, through a GitHub App, on a
 Forgejo instance, through an authorized integration of a bot user, on a

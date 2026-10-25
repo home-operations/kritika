@@ -1,4 +1,6 @@
-# Helm chart values
+---
+title: Helm chart values
+---
 
 Use the [setup example](setup.md#deploy) for a first installation. For every
 available value, see the generated

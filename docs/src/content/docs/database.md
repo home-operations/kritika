@@ -1,4 +1,6 @@
-# Postgres with CloudNativePG
+---
+title: Postgres with CloudNativePG
+---
 
 kritika keeps everything it knows in one Postgres database: reviews, findings,
 the job queue, transcripts and the similar-code index. The chart supports that

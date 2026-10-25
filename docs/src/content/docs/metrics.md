@@ -1,4 +1,6 @@
-# Metrics
+---
+title: Metrics
+---
 
 For a basic monitoring setup, enable the chart's ServiceMonitor and use its
 [alerts](#alerts) and [Grafana dashboards](#grafana-dashboard).

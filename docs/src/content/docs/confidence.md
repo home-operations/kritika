@@ -1,4 +1,6 @@
-# Confidence and approvals
+---
+title: Confidence and approvals
+---
 
 These features are optional and off by default:
 

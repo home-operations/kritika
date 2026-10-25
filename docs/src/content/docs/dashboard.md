@@ -1,4 +1,6 @@
-# Dashboard
+---
+title: Dashboard
+---
 
 Open the address set in `config.webUrl` and sign in. The dashboard shows review
 progress, findings and costs for the accounts you can access.
