@@ -9,15 +9,13 @@ export function markdownLinks({ fileURL }) {
   if (!fileURL) return;
   const file = fileURLToPath(fileURL);
   if (!file.startsWith(contentDir)) return;
-  return {
-    name: "markdown-links",
-    link(node, ctx) {
-      const match = /^([^#?:]+)\.md(#.*)?$/.exec(node.url);
-      if (!match || node.url.startsWith("/")) return;
-      const slug = path
-        .relative(contentDir, path.resolve(path.dirname(file), match[1]))
-        .replace(/(^|\/)index$/, "");
-      ctx.setProperty(node, "url", `/${slug ? `${slug}/` : ""}${match[2] ?? ""}`);
-    },
+  const rewrite = (node, ctx) => {
+    const match = /^([^#?:]+)\.md(#.*)?$/.exec(node.url);
+    if (!match || node.url.startsWith("/")) return;
+    const slug = path
+      .relative(contentDir, path.resolve(path.dirname(file), match[1]))
+      .replace(/(^|\/)index$/, "");
+    ctx.setProperty(node, "url", `/${slug ? `${slug}/` : ""}${match[2] ?? ""}`);
   };
+  return { name: "markdown-links", link: rewrite, definition: rewrite };
 }

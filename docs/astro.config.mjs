@@ -73,6 +73,7 @@ export default defineConfig({
           href: "https://github.com/home-operations/kritika",
         },
       ],
+      tableOfContents: { maxHeadingLevel: 6 },
       // Shiki has no PromQL grammar.
       expressiveCode: { shiki: { langAlias: { promql: "txt" } } },
       editLink: {
