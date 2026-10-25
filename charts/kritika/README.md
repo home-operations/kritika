@@ -127,6 +127,10 @@ connection. A transaction-mode pooler, such as PgBouncer or a CloudNativePG
 between transactions, which breaks both. `kritika_leader` is 1 on the replica
 that holds the lock.
 
+The chart supports the database as a CloudNativePG cluster in the same
+Kubernetes cluster: the chart's NetworkPolicies let kritika serve and
+runner pods reach the Postgres port only on the pods
+`networkPolicy.postgres` selects.
 [Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
 sets this up end to end: a two-instance cluster with VectorChord mounted as
 an image volume extension, the extensions through a `Database` resource, the
@@ -143,8 +147,7 @@ chart confines them:
   egress gateway kritika serve runs on `service.gatewayPort`, which allows
   what the configuration file's `egress` lists and is the runner's only
   way to its model. With the Cilium flavor, it may look up only the names
-  of the cluster's Services and those `networkPolicy.dns.runnerNames`
-  lists.
+  of the cluster's Services.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the five programs the runner image
@@ -198,16 +201,34 @@ With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
 Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
 its pods are not `k8s-app: kube-dns` in `kube-system`, and list a NodeLocal
 DNSCache's address in `networkPolicy.dns.nodeLocalAddresses`. With the
-Cilium flavor, runner pods may look up only the cluster's Service names
-and those `networkPolicy.dns.runnerNames` lists: add the host of a
-database outside the cluster, or runs cannot look it up. See
-[name lookups](https://kritika.home-operations.com/security/#name-lookups).
+Cilium flavor, runner pods may look up only the cluster's Service names.
+See [name lookups](https://kritika.home-operations.com/security/#name-lookups).
 
-Runner pods reach the Postgres port only where `networkPolicy.postgres`
-says the database is, any pod in the release namespace unless set. Before
-upgrading, set its `namespace`, `podSelector` or `cidrs` when the database
-is elsewhere, or runs cannot connect while kritika serve still can. See
+kritika serve and runner pods reach the Postgres port only where
+`networkPolicy.postgres` says the database is, any pod in the release
+namespace unless set. Before upgrading, set its `namespace` when the
+database is in another namespace, and check that a `podSelector` takes in
+every pod the owner, application and runner URIs connect to, not only the
+runner's: `cnpg.io/cluster: kritika-postgres` selects a CloudNativePG
+cluster's instances and its Poolers' pods alike. Otherwise kritika serve
+cannot reach the database. See
 [Postgres](https://kritika.home-operations.com/database/#secrets-and-connection-uris).
+
+`networkPolicy.postgres.cidrs` and `networkPolicy.dns.runnerNames` are
+removed: the chart supports the database as a CloudNativePG cluster in the
+same Kubernetes cluster alone. Helm ignores them, so move a database
+outside the cluster into CloudNativePG before upgrading: neither kritika
+serve nor its runs can reach it otherwise.
+
+The S3 gateway cache's endpoint no longer adds its port to kritika serve's
+policy: the port in its URL is a Service's, which a NetworkPolicy never
+matches when the Service sends it to another port on the pods. Before
+upgrading, allow the pods of a bucket in the cluster on their own port in
+`networkPolicy.extraEgress`, such as port 8080 on Ceph RGW's pods under
+Rook, and make sure `networkPolicy.egressPorts` lists the port of a
+bucket outside the cluster: 443 is there only while the list is the
+default. See
+[shared S3 storage](https://kritika.home-operations.com/security/#shared-s3-storage).
 
 ### Topology
 
@@ -326,13 +347,12 @@ Kubernetes: `>=1.34.0-0`
 | networkPolicy.dns.namespace | string | `"kube-system"` | Namespace of the cluster's DNS pods. |
 | networkPolicy.dns.nodeLocalAddresses | list | `[]` | Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity. |
 | networkPolicy.dns.podSelector | object | `{}` | Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`. |
-| networkPolicy.dns.runnerNames | list | `[]` | With the Cilium flavor, the names runner pods may look up besides those of the cluster's Services, `<service>.<namespace>.svc.cluster.local`, which the cluster's DNS answers itself (an ExternalName Service's goes on to the name its author set): the database's host when it is outside the cluster. Each is a name, or a Cilium `matchPattern` in which `*` stands for part of one label. Cilium refuses any other name; the other flavors do not filter names. |
-| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
+| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to at any address, for forges, model endpoints and S3 storage outside the cluster. Runner pods reach the gateway alone. |
 | networkPolicy.enabled | bool | `true` | Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress. |
-| networkPolicy.postgres.cidrs | list | `[]` | CIDRs of a database outside the cluster, such as `192.0.2.10/32`. |
+| networkPolicy.extraEgress | list | `[]` | More egress rules for the service pods, as a networking.k8s.io/v1 NetworkPolicy's `egress`, rendered as a NetworkPolicy of their own whatever the type, since Cilium and Calico allow what any policy selecting a pod allows: for a destination in the cluster, such as an S3 bucket on Ceph RGW or a model server, its pods and their own ports, which a NetworkPolicy matches rather than a Service's. Runner pods never get them. |
 | networkPolicy.postgres.namespace | string | `""` | Namespace of the database's pods; the release namespace when empty. |
-| networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set. |
-| networkPolicy.postgres.port | int | `5432` | Port of the database, which the service pods may reach at any address and runner pods only where the rest of `postgres` says. |
+| networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres`, which CloudNativePG gives a cluster's instances and its Poolers' pods alike, so it also covers a URI that goes through a session-mode Pooler. Empty selects every pod in `namespace`. |
+| networkPolicy.postgres.port | int | `5432` | Port of the database, which the pods may reach only where the rest of `postgres` says. |
 | networkPolicy.type | string | `"auto"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto": "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders "default". The Cilium flavor's DNS rules need Cilium's L7 proxy, on unless turned off: without it Cilium refuses the runner's policy, and a NetworkPolicy the flavor adds then keeps runner pods from looking up any name, so runs fail until the type is "default". Set the flavor where the cluster serves a policy API its CNI does not enforce. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |

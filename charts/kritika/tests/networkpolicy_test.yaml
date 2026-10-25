@@ -77,7 +77,7 @@ tests:
       - contains:
           path: spec.egress[1].ports
           content:
-            port: 5432
+            port: 443
             protocol: TCP
         documentIndex: 0
       - equal:
@@ -145,7 +145,7 @@ tests:
           path: spec.ingress[1].toPorts[0].ports[0].port
           value: "8082"
         documentIndex: 0
-      # DNS to kube-dns alone, then the egress ports and Postgres, then the API server.
+      # DNS to kube-dns alone, then the egress ports, then Postgres's pods, then the API server.
       - equal:
           path: spec.egress[0].toEndpoints[0].matchLabels["k8s-app"]
           value: kube-dns
@@ -154,14 +154,16 @@ tests:
           path: spec.egress[1].toEntities
           content: world
         documentIndex: 0
-      - contains:
+      - equal:
           path: spec.egress[1].toPorts[0].ports
-          content:
-            port: "5432"
-            protocol: TCP
+          value: [{ port: "443", protocol: TCP }]
+        documentIndex: 0
+      - equal:
+          path: spec.egress[2].toPorts[0].ports
+          value: [{ port: "5432", protocol: TCP }]
         documentIndex: 0
       - contains:
-          path: spec.egress[2].toEntities
+          path: spec.egress[3].toEntities
           content: kube-apiserver
         documentIndex: 0
       # Runners: default deny on ingress, no 443 to the world, the gateway on the server pods.
@@ -234,12 +236,16 @@ tests:
           path: spec.ingress[1].source.selector
           value: kritika.home-operations.com/role == 'runner'
         documentIndex: 0
-      - contains:
+      - equal:
           path: spec.egress[2].destination.ports
-          content: 5432
+          value: [443]
+        documentIndex: 0
+      - equal:
+          path: spec.egress[3].destination.ports
+          value: [5432]
         documentIndex: 0
       - contains:
-          path: spec.egress[3].destination.ports
+          path: spec.egress[4].destination.ports
           content: 6443
         documentIndex: 0
       - equal:
@@ -307,14 +313,13 @@ tests:
                 cidr: fd00::10/128
         documentIndex: 1
 
-  - it: on Cilium, lets runner pods look up only the cluster's Services and runnerNames
+  - it: on Cilium, lets runner pods look up only the cluster's Services
     set:
       networkPolicy.enabled: true
       networkPolicy.type: cilium
       networkPolicy.dns.podSelector:
         "yes": resolver
       networkPolicy.dns.nodeLocalAddresses: [169.254.20.10]
-      networkPolicy.dns.runnerNames: [db.example.com, "*.db.example.com"]
     asserts:
       - equal:
           path: spec.egress[0].toEndpoints[0].matchLabels
@@ -326,8 +331,6 @@ tests:
           path: spec.egress[0].toPorts[0].rules.dns
           value:
             - matchPattern: "*.*.svc.cluster.local"
-            - matchName: db.example.com
-            - matchPattern: "*.db.example.com"
         documentIndex: 1
       # A NodeLocal DNSCache on the node has the host's identity.
       - equal:
@@ -382,7 +385,7 @@ tests:
           value: ["fd00::10/128"]
         documentIndex: 1
 
-  - it: lets runner pods reach Postgres in the release namespace alone by default
+  - it: lets both pods reach Postgres in the release namespace alone by default
     set:
       networkPolicy.enabled: true
     asserts:
@@ -399,24 +402,33 @@ tests:
               - port: 5432
                 protocol: TCP
         documentIndex: 1
-      # The service pods reach it at any address, as they do the egress ports.
       - equal:
           path: spec.egress[1]
           value:
             ports:
               - port: 443
                 protocol: TCP
+        documentIndex: 0
+      - equal:
+          path: spec.egress[2]
+          value:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+                podSelector:
+                  matchLabels: {}
+            ports:
               - port: 5432
                 protocol: TCP
         documentIndex: 0
 
-  - it: takes where the database is from networkPolicy.postgres
+  - it: takes where the database is from networkPolicy.postgres, for both pods
     set:
       networkPolicy.enabled: true
       networkPolicy.postgres.namespace: db
       networkPolicy.postgres.podSelector:
         cnpg.io/cluster: kritika-postgres
-      networkPolicy.postgres.cidrs: [192.0.2.10/32]
     asserts:
       - equal:
           path: spec.egress[1].to
@@ -427,29 +439,24 @@ tests:
               podSelector:
                 matchLabels:
                   cnpg.io/cluster: kritika-postgres
-            - ipBlock:
-                cidr: 192.0.2.10/32
         documentIndex: 1
-
-  - it: leaves the pods out when cidrs alone say where the database is
-    set:
-      networkPolicy.enabled: true
-      networkPolicy.postgres.cidrs: [192.0.2.10/32]
-    asserts:
       - equal:
-          path: spec.egress[1].to
+          path: spec.egress[2].to
           value:
-            - ipBlock:
-                cidr: 192.0.2.10/32
-        documentIndex: 1
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: db
+              podSelector:
+                matchLabels:
+                  cnpg.io/cluster: kritika-postgres
+        documentIndex: 0
 
-  - it: on Cilium, lets runner pods reach Postgres at the database's pods and CIDRs
+  - it: on Cilium, lets both pods reach Postgres at the database's pods alone
     set:
       networkPolicy.enabled: true
       networkPolicy.type: cilium
       networkPolicy.postgres.podSelector:
         cnpg.io/cluster: kritika-postgres
-      networkPolicy.postgres.cidrs: [192.0.2.10/32]
     asserts:
       - equal:
           path: spec.egress[1]
@@ -464,28 +471,35 @@ tests:
                     protocol: TCP
         documentIndex: 1
       - equal:
-          path: spec.egress[2].toCIDR
-          value: [192.0.2.10/32]
-        documentIndex: 1
-      - notContains:
-          path: spec.egress
-          content:
+          path: spec.egress[1]
+          value:
             toEntities:
               - cluster
               - world
             toPorts:
               - ports:
+                  - port: "443"
+                    protocol: TCP
+        documentIndex: 0
+      - equal:
+          path: spec.egress[2]
+          value:
+            toEndpoints:
+              - matchLabels:
+                  k8s:io.kubernetes.pod.namespace: NAMESPACE
+                  cnpg.io/cluster: kritika-postgres
+            toPorts:
+              - ports:
                   - port: "5432"
                     protocol: TCP
-        documentIndex: 1
+        documentIndex: 0
 
-  - it: on Calico, lets runner pods reach Postgres at the database's pods and each CIDR
+  - it: on Calico, lets both pods reach Postgres at the database's pods alone
     set:
       networkPolicy.enabled: true
       networkPolicy.type: calico
       networkPolicy.postgres.podSelector:
         cnpg.io/cluster: kritika-postgres
-      networkPolicy.postgres.cidrs: [192.0.2.10/32, "2001:db8::10/128"]
     asserts:
       - equal:
           path: spec.egress[2].destination
@@ -496,13 +510,61 @@ tests:
               - 5432
         documentIndex: 1
       - equal:
-          path: spec.egress[3].destination.nets
-          value: [192.0.2.10/32]
-        documentIndex: 1
+          path: spec.egress[2].destination
+          value:
+            ports:
+              - 443
+        documentIndex: 0
       - equal:
-          path: spec.egress[4].destination.nets
-          value: ["2001:db8::10/128"]
-        documentIndex: 1
+          path: spec.egress[3].destination
+          value:
+            namespaceSelector: kubernetes.io/metadata.name == 'NAMESPACE'
+            selector: cnpg.io/cluster == 'kritika-postgres'
+            ports:
+              - 5432
+        documentIndex: 0
+
+  - it: leaves the service pods' egress port rule out when egressPorts is empty
+    set:
+      networkPolicy.egressPorts: []
+    asserts:
+      # A rule with neither ports nor a destination would allow every destination.
+      - lengthEqual:
+          path: spec.egress
+          count: 3
+        documentIndex: 0
+      - equal:
+          path: spec.egress[1].ports
+          value: [{ port: 5432, protocol: TCP }]
+        documentIndex: 0
+
+  - it: on Cilium, leaves the service pods' egress port rule out when egressPorts is empty
+    set:
+      networkPolicy.type: cilium
+      networkPolicy.egressPorts: []
+    asserts:
+      - equal:
+          path: spec.egress[1].toPorts[0].ports
+          value: [{ port: "5432", protocol: TCP }]
+        documentIndex: 0
+      - lengthEqual:
+          path: spec.egress
+          count: 3
+        documentIndex: 0
+
+  - it: on Calico, leaves the service pods' egress port rule out when egressPorts is empty
+    set:
+      networkPolicy.type: calico
+      networkPolicy.egressPorts: []
+    asserts:
+      - equal:
+          path: spec.egress[2].destination.ports
+          value: [5432]
+        documentIndex: 0
+      - lengthEqual:
+          path: spec.egress
+          count: 4
+        documentIndex: 0
 
   - it: fails fast on an unknown type
     set:
@@ -516,16 +578,17 @@ tests:
     set:
       networkPolicy.postgres.port: 6432
     asserts:
-      - contains:
-          path: spec.egress[1].ports
-          content: { port: 6432, protocol: TCP }
+      - equal:
+          path: spec.egress[2].ports
+          value: [{ port: 6432, protocol: TCP }]
         documentIndex: 0
       - equal:
           path: spec.egress[1].ports
           value: [{ port: 6432, protocol: TCP }]
         documentIndex: 1
 
-  - it: permits the S3 endpoint port for serve without granting it to runners
+  # The endpoint's port is a Service's, which a NetworkPolicy does not match.
+  - it: adds no port for the S3 gateway cache's endpoint
     set:
       networkPolicy.enabled: true
       gatewayCache:
@@ -536,15 +599,106 @@ tests:
           region: garage
           bucket: kritika
     asserts:
-      - contains:
+      - hasDocuments:
+          count: 2
+      - equal:
           path: spec.egress[1].ports
-          content: { port: 3900, protocol: TCP }
+          value: [{ port: 443, protocol: TCP }]
         documentIndex: 0
       - equal:
           path: spec.egress[1].ports
           value: [{ port: 5432, protocol: TCP }]
         documentIndex: 1
+
+  - it: renders extraEgress as a NetworkPolicy of its own for the service pods alone
+    set:
+      networkPolicy.extraEgress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: rook-ceph
+              podSelector:
+                matchLabels:
+                  rook_object_store: ceph-objectstore
+          ports:
+            - port: 8080
+              protocol: TCP
+    asserts:
+      - hasDocuments:
+          count: 3
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+        documentIndex: 2
       - equal:
-          path: spec.egress[2].ports
-          value: [{ port: 8082, protocol: TCP }]
+          path: metadata.name
+          value: RELEASE-NAME-kritika-extra-egress
+        documentIndex: 2
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: kritika
+            app.kubernetes.io/instance: RELEASE-NAME
+        documentIndex: 2
+      - equal:
+          path: spec.policyTypes
+          value: [Egress]
+        documentIndex: 2
+      - equal:
+          path: spec.egress
+          value:
+            - to:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: rook-ceph
+                  podSelector:
+                    matchLabels:
+                      rook_object_store: ceph-objectstore
+              ports:
+                - port: 8080
+                  protocol: TCP
+        documentIndex: 2
+      # Neither flavor policy changes.
+      - equal:
+          path: spec.egress[1].ports
+          value: [{ port: 443, protocol: TCP }]
+        documentIndex: 0
+      - lengthEqual:
+          path: spec.egress
+          count: 3
         documentIndex: 1
+
+  - it: renders extraEgress as a standard NetworkPolicy beside Cilium's
+    set:
+      networkPolicy.type: cilium
+      networkPolicy.extraEgress:
+        - ports:
+            - port: 8080
+              protocol: TCP
+    asserts:
+      - hasDocuments:
+          count: 4
+      - isKind:
+          of: NetworkPolicy
+        documentIndex: 3
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritika-extra-egress
+        documentIndex: 3
+
+  - it: renders extraEgress as a standard NetworkPolicy beside Calico's
+    set:
+      networkPolicy.type: calico
+      networkPolicy.extraEgress:
+        - ports:
+            - port: 8080
+              protocol: TCP
+    asserts:
+      - hasDocuments:
+          count: 3
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+        documentIndex: 2
+      - equal:
+          path: spec.egress
+          value: [{ ports: [{ port: 8080, protocol: TCP }] }]
+        documentIndex: 2

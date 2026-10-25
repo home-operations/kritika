@@ -494,12 +494,11 @@ httpRoute:
 
 # NetworkPolicies: one for the service pods (ingress to the webhook and
 # metrics ports, and to the gateway port from runner pods; egress to the
-# cluster's DNS, the forges and models over the egress ports, Postgres and
-# the API server) and one for runner pods (egress only: the cluster's DNS,
-# Postgres and the gateway port on the service pods, through which
-# everything else is reached). Runner pods reach the Postgres port only
-# where `postgres` says the database is; the service pods reach it at any
-# address, as they do the egress ports.
+# cluster's DNS, the forges and models over the egress ports, Postgres, the
+# API server and what `extraEgress` adds) and one for runner pods (egress
+# only: the cluster's DNS, Postgres and the gateway port on the service
+# pods, through which everything else is reached). Both reach the Postgres
+# port only where `postgres` says the database is.
 networkPolicy:
   # -- Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.
   enabled: true
@@ -523,20 +522,31 @@ networkPolicy:
     # @schema
     # -- Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity.
     nodeLocalAddresses: []
-    # @schema
-    # type: array
-    # items: { type: string, minLength: 1 }
-    # @schema
-    # -- With the Cilium flavor, the names runner pods may look up besides those of the cluster's Services, `<service>.<namespace>.svc.cluster.local`, which the cluster's DNS answers itself (an ExternalName Service's goes on to the name its author set): the database's host when it is outside the cluster. Each is a name, or a Cilium `matchPattern` in which `*` stands for part of one label. Cilium refuses any other name; the other flavors do not filter names.
-    runnerNames: []
-  # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone.
+  # -- TCP ports the service pods may egress to at any address, for forges, model endpoints and S3 storage outside the cluster. Runner pods reach the gateway alone.
   egressPorts:
     - 443
-  # Where the database the runner role's URI names is, the one peer runner
-  # pods may reach its port at: every pod in the release namespace unless
-  # set.
+  # @schema
+  # type: array
+  # items: { type: object }
+  # @schema
+  # -- More egress rules for the service pods, as a networking.k8s.io/v1 NetworkPolicy's `egress`, rendered as a NetworkPolicy of their own whatever the type, since Cilium and Calico allow what any policy selecting a pod allows: for a destination in the cluster, such as an S3 bucket on Ceph RGW or a model server, its pods and their own ports, which a NetworkPolicy matches rather than a Service's. Runner pods never get them.
+  extraEgress: []
+  #  - to:
+  #      - namespaceSelector:
+  #          matchLabels:
+  #            kubernetes.io/metadata.name: rook-ceph
+  #        podSelector:
+  #          matchLabels:
+  #            rook_object_store: ceph-objectstore
+  #    ports:
+  #      - port: 8080
+  #        protocol: TCP
+  # Where the database is, the one peer the service pods and runner pods
+  # may reach its port at: every pod in the release namespace unless set.
+  # It must take in every pod the owner, application and runner URIs
+  # connect to.
   postgres:
-    # -- Port of the database, which the service pods may reach at any address and runner pods only where the rest of `postgres` says.
+    # -- Port of the database, which the pods may reach only where the rest of `postgres` says.
     port: 5432
     # -- Namespace of the database's pods; the release namespace when empty.
     namespace: ""
@@ -544,14 +554,8 @@ networkPolicy:
     # type: object
     # additionalProperties: { type: string }
     # @schema
-    # -- Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set.
+    # -- Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres`, which CloudNativePG gives a cluster's instances and its Poolers' pods alike, so it also covers a URI that goes through a session-mode Pooler. Empty selects every pod in `namespace`.
     podSelector: {}
-    # @schema
-    # type: array
-    # items: { type: string, minLength: 1 }
-    # @schema
-    # -- CIDRs of a database outside the cluster, such as `192.0.2.10/32`.
-    cidrs: []
 
 # -- Resource requests and limits of the kritika serve pods.
 resources:

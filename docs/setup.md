@@ -117,7 +117,9 @@ The chart's NetworkPolicies, on by default, expect Postgres in the release
 namespace, standard cluster DNS, and forges and models on port 443. Set
 [`networkPolicy.postgres`](database.md#secrets-and-connection-uris),
 [`networkPolicy.dns`](security.md#name-lookups) and
-`networkPolicy.egressPorts` if yours differ. `networkPolicy.type: auto`
+`networkPolicy.egressPorts` if yours differ, and allow what kritika serve
+reaches in the cluster, such as an S3 bucket or a model server, in
+`networkPolicy.extraEgress`. `networkPolicy.type: auto`
 renders Cilium's or Calico's own policies where the cluster serves their
 API, and standard NetworkPolicies otherwise; Argo CD passes the cluster's
 APIs to `helm template` for it, but plain `helm template` needs

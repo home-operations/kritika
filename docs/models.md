@@ -646,8 +646,10 @@ embedding:
   tells it to make, and a follow-up's reply is a tool call too.
 - The kritika pods call the server; a review's runner reaches it only
   through their gateway. The chart's NetworkPolicies, on by default,
-  allow only port 443 unless `networkPolicy.egressPorts` says otherwise,
-  so add the server's port there.
+  allow only port 443 unless `networkPolicy.egressPorts` says otherwise.
+  Add a server outside the cluster's port there; for a server in the
+  cluster, allow its pods on the port they listen on, rather than its
+  Service's, in `networkPolicy.extraEgress`.
 - A server that reports no cost leaves calls unpriced unless
   `pricing` gives the model's prices, in dollars per million tokens of
   `input`, `output`, `cacheRead` and `cacheWrite`, keyed by the model's

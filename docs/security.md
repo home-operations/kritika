@@ -155,13 +155,11 @@ that name's servers, so a lookup alone tells them the name, and `curl`
 looks up an `https://` URL's host even when it fetches the URL through the
 gateway. With the `cilium` flavor, a runner pod may look up only the names
 of the cluster's Services, `<service>.<namespace>.svc.cluster.local`,
-which the cluster's DNS answers itself, the gateway's and an in-cluster
-database's among them, and those `networkPolicy.dns.runnerNames` lists.
-The lookup of an `ExternalName` Service's name goes on to the name the
-Service points at, which its author set, not the runner. Add the host of
-the runner role's database URI to `runnerNames` when the database is
-outside the cluster. Cilium refuses any other name. The `default` and
-`calico` flavors cannot filter names.
+which the cluster's DNS answers itself, the gateway's and the database's
+among them. The lookup of an `ExternalName` Service's name goes on to the
+name the Service points at, which its author set, not the runner. Cilium
+refuses any other name. The `default` and `calico` flavors cannot filter
+names.
 
 These rules need Cilium's L7 proxy, which is on unless turned off. Where
 it is off, Cilium refuses the runner's CiliumNetworkPolicy for them. The
@@ -624,9 +622,31 @@ The existing Secret has `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` keys, th
 names a Rook `ObjectBucketClaim` and the AWS tooling write, so a claim's generated
 Secret can be named directly. Without it, the
 SDK uses IAM credentials, including web identity where configured. Credentials
-are never passed to runner Jobs or stored in application configuration. The
-chart permits the endpoint's TCP port in serve's network policy; runner egress
-continues to go through the gateway.
+are never passed to runner Jobs or stored in application configuration. Runner
+egress continues to go through the gateway.
+
+With the chart's NetworkPolicies, kritika serve reaches a bucket outside the
+cluster on `networkPolicy.egressPorts`, 443 unless set. For a bucket in the
+cluster, allow its pods in `networkPolicy.extraEgress`, on the port the pods
+listen on: a NetworkPolicy matches the connection after its Service has sent
+it to a pod, so a Service's own port never matches when it differs. Under
+Rook, Ceph RGW's Service sends its `gateway.port`, such as 80, to port 8080
+on the pods:
+
+```yaml
+networkPolicy:
+  extraEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: rook-ceph
+          podSelector:
+            matchLabels:
+              rook_object_store: ceph-objectstore
+      ports:
+        - port: 8080
+          protocol: TCP
+```
 
 Entries are complete objects under `<prefix>/v1/<hash-of-original-HTTPS-URL>`.
 The object's metadata records the fetch time, body size and origin response
