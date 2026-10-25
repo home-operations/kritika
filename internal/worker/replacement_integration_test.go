@@ -193,15 +193,25 @@ func TestReplacementCancelsARunningReview(t *testing.T) {
 func TestReplacementBeforePublicationPostsNothing(t *testing.T) {
 	h := newAgenticHarness(t, 1992)
 	h.sm.reset(scriptSubmit)
-	var winner store.Started
+	// The hook runs on the runner's goroutine and the review's end is seen
+	// through the database, which orders nothing for the race detector:
+	// the rival's start comes back over a channel.
+	rival := make(chan store.Started, 1)
 	h.exec.after = func() {
-		var err error
-		if winner, err = h.rival(t, h.head, 7_000_004); err != nil {
+		winner, err := h.rival(t, h.head, 7_000_004)
+		if err != nil {
 			t.Error(err)
 		}
+		rival <- winner
 	}
 	h.dispatch(t, h.head)
 	id, status, errText := h.waitReview(t, h.head)
+	var winner store.Started
+	select {
+	case winner = <-rival:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the rival never started")
+	}
 	if status != "canceled" || errText != store.ReplacedReviewError || len(winner.Replaced) != 1 || winner.Replaced[0] != id {
 		t.Fatalf("review = %s (%q), replaced %v; want canceled as replaced by the rival", status, errText, winner.Replaced)
 	}
