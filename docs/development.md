@@ -24,18 +24,16 @@ configuration applied. `KRITIKA_SMOKE_KEEP=1` leaves the cluster running
 for a look afterwards, and `KRITIKA_SMOKE_IMAGE` names an image already
 built, to skip the build.
 
-Both images are `FROM scratch` on a root `chisel cut` takes from
-Ubuntu 26.04's slices: the Dockerfile's `serve-root` stage cuts kritika
-serve's, the base files, users, CA certificates, MIME types and timezone
-database the `chisel` stage lists in `BASE_SLICES`, and `tools-root` the
-runner's, those with glibc, libgcc, libstdc++, `curl`, `find`, `grep` and
-`jq`, and `gh` from its release, checked against the release's
-checksums. `scripts/chisel-root.sh` makes both cuts and writes the control
-files of the packages a cut took slices of to the root's dpkg status:
-vulnerability scanners such as Trivy and syft find a chiselled root's
-packages there and nowhere else. A package is listed whole, so a scanner
-can report a file of it the root does not carry. Renovate bumps `chisel` and `gh` through the annotations above
-their versions. A repository's `.kritika.yaml` `tools` add to the runner
+kritika serve's image is `gcr.io/distroless/static:nonroot`. The runner's
+`-tools` image is `FROM scratch` on a root of [Red Hat Hardened
+Images](https://www.redhat.com/en/products/hardened-images): the
+Dockerfile's `tools-root` stage, the builder variant of `core-runtime`,
+installs `curl`, `find`, `grep`, `jq`, libstdc++ and the timezone database
+with dnf into a copy of `core-runtime`, so the image has its bash and
+coreutils but no package manager, and fetches `gh` from its release,
+checked against the release's checksums. Grype reads the root's rpm
+database; Trivy does not recognize Hardened Images yet. Renovate bumps the
+two images' digests and `gh`, through the annotation above its version. A repository's `.kritika.yaml` `tools` add to the runner
 image's commands. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.

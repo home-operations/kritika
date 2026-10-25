@@ -54,36 +54,27 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
 
-# ---- Roots ------------------------------------------------------------------
-# The images' roots, cut from Ubuntu's packages by chisel, with no shell and
-# no package manager. chisel runs on the build platform and cuts the
-# target's packages, at what the release's archive serves when the image
-# builds. Both roots carry the base files, the users, the CA certificates,
-# the MIME types and the timezone database, legacy names included, for a TZ
-# the admin sets, and a dpkg status for scanners (scripts/chisel-root.sh).
-FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS chisel
-# renovate: datasource=go depName=github.com/canonical/chisel
-ARG CHISEL_VERSION=v1.5.1
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go install github.com/canonical/chisel/cmd/chisel@${CHISEL_VERSION}
-ENV BASE_SLICES="base-files_base base-files_release-info base-files_chisel base-passwd_data ca-certificates_data media-types_data netbase_config tzdata-legacy_zoneinfo"
-COPY --chmod=755 scripts/chisel-root.sh /usr/local/bin/chisel-root
-
-# kritika serve's root: the base, and no program but kritika.
-FROM chisel AS serve-root
+# ---- Runner tools root ------------------------------------------------------
+# The runner's root: Red Hat Hardened Images' core runtime, its bash,
+# coreutils, glibc and CA certificates, with curl, find, grep and jq,
+# libstdc++ for a repository's tools and the timezone database, legacy names
+# included, for a TZ the admin sets. The builder variant's dnf installs them
+# into a copy of it, so the image carries no package manager. Renovate bumps
+# both images' digests.
+FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:329ff8f46fe69f036b96c3463272aa778a6df6a4f7570f080fd248a414652b6e AS core-runtime
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:057ba34d73d5308cd0eeeb2637ec9880c55fe4075ce3321edd9e7ee12c363754 AS tools-root
+USER 0
+COPY --from=core-runtime / /rootfs
+RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak_deps=False --nodocs \
+      curl findutils grep jq libstdc++ tzdata \
+ && dnf --installroot /rootfs --use-host-config clean all
+# gh as its release builds it, a static binary, checked against its
+# release's checksums.
 ARG TARGETARCH
-RUN chisel-root
-
-# The runner tools' root: the base, glibc, libgcc and libstdc++ for a
-# repository's tools, curl, find, grep and jq as Ubuntu builds them, and gh
-# as its release builds it, a static binary, checked against its release's
-# checksums.
-FROM chisel AS tools-root
-ARG TARGETARCH
-RUN chisel-root libc6_libs libgcc-s1_libs libstdc++6_libs curl_bins findutils_find grep_bins jq_bins
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=v2.103.0
-RUN version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz" \
+RUN dnf install -y --setopt=install_weak_deps=False gawk gzip tar \
+ && version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz" \
  && release="https://github.com/cli/cli/releases/download/${GH_VERSION}" \
  && curl -fsSLO "${release}/${asset}" \
  && curl -fsSL "${release}/gh_${version}_checksums.txt" | awk -v a="${asset}" '$2 == a' | sha256sum -c - \
@@ -100,15 +91,13 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # mise installs a repository's tools. It lives outside PATH: the runner
 # runs it by path, and a command the agent runs must not find it.
 COPY --from=mise /usr/local/bin/mise /opt/mise/bin/mise
-USER 65532
+USER 65532:65532
 COPY --from=builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]
 
 # ---- Runtime --------------------------------------------------------------
 # The default target, last so a build without --target produces it.
-FROM scratch
-COPY --from=serve-root /rootfs /
+FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-USER 65532
 COPY --from=builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]

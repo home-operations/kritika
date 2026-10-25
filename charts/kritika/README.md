@@ -148,11 +148,11 @@ chart confines them:
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the five programs the runner image
-  carries, `curl`, `find`, `gh`, `grep` and `jq`, in a root with no shell,
-  and those the `tools` of a repository's `.kritika.yaml` add, each
-  download verified as its backend verifies it, with whatever arguments
-  the model gives: the pod's bounds confine a command, not a check of its
-  arguments.
+  carries, `curl`, `find`, `gh`, `grep` and `jq`, in a root with bash but
+  no package manager, and those the `tools` of a repository's
+  `.kritika.yaml` add, each download verified as its backend verifies it,
+  with whatever arguments the model gives: the pod's bounds confine a
+  command, not a check of its arguments.
 - `runner.podTemplate` puts runner pods under a sandboxed runtime such as
   gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
   with `resources`, and keeps runner pods on nodes of their own, and in a

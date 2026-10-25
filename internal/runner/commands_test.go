@@ -208,24 +208,33 @@ func TestKeptOutputRead(t *testing.T) {
 }
 
 // TestDefaultCommandsMatchImage: the commands the run tool looks for on
-// PATH are those the -tools image carries: the commands of the slices the
-// Dockerfile cuts into its root, a package's under <package>_bins and
-// findutils' find alone under findutils_find, and gh from its release.
+// PATH are those the -tools image carries: the packages the Dockerfile's dnf
+// installs into its root, each by its command, findutils' being find, less
+// the library and data packages, and gh from its release.
 func TestDefaultCommandsMatchImage(t *testing.T) {
 	dockerfile, err := os.ReadFile("../../Dockerfile")
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, install, ok := strings.Cut(string(dockerfile), "--installroot /rootfs")
+	if !ok {
+		t.Fatal("the Dockerfile installs no packages into the tools root")
+	}
+	install, _, _ = strings.Cut(install, "&&")
 	var commands []string
-	for field := range strings.FieldsSeq(string(dockerfile)) {
-		switch pkg, slice, _ := strings.Cut(field, "_"); {
-		case slice == "bins":
-			commands = append(commands, pkg)
-		case pkg == "findutils" && slice == "find":
+	for field := range strings.FieldsSeq(install) {
+		switch field {
+		case `\`, "libstdc++", "tzdata":
+		case "findutils":
 			commands = append(commands, "find")
-		case field == "depName=cli/cli":
-			commands = append(commands, "gh")
+		default:
+			if !strings.HasPrefix(field, "-") {
+				commands = append(commands, field)
+			}
 		}
+	}
+	if strings.Contains(string(dockerfile), "depName=cli/cli") {
+		commands = append(commands, "gh")
 	}
 	slices.Sort(commands)
 	if !slices.Equal(commands, defaultCommands) {

@@ -201,12 +201,12 @@ to read a dependency bump's release notes and upstream pull requests with
 JSON with `jq`; a container image it reads with
 [`fetch_oci`](#images-and-artifacts), which needs no tool. Runner Jobs run
 on the release's `-tools` image, pinned by digest like the chart's image,
-whose root holds no shell and no package manager: `curl`, `find`, `grep`
-and `jq` as Ubuntu 26.04 builds them, cut from its packages with
-[chisel](https://github.com/canonical/chisel) together with glibc, libgcc,
-libstdc++ and the timezone database, `gh` as its release builds it,
-checked against the
-release's checksums, and [mise](https://mise.jdx.dev/). Every other tool
+whose root, from [Red Hat Hardened
+Images](https://www.redhat.com/en/products/hardened-images), holds bash
+and coreutils but no package manager: `curl`, `find`, `grep` and `jq` as
+its packages build them, with glibc, libstdc++ and the timezone database,
+`gh` as its release builds it, checked against the release's checksums,
+and [mise](https://mise.jdx.dev/). Every other tool
 is the repository's: the [`tools`](repository-config.md#repository-tools)
 of its `.kritika.yaml`, mise's `[tools]` table, which the runner writes as
 the run's mise config, and whose tool replaces an image command of the
@@ -351,8 +351,9 @@ egress:
 
 What bounds a command:
 
-- **No shell:** a command runs without one, and the `-tools` image has
-  none either.
+- **No shell of its own:** the run tool starts the program itself, not
+  through a shell. The `-tools` image does carry bash, which a command
+  such as `find -exec` can start, inside the same bounds.
 - **Its own lifetime:** a command and the processes it starts form a
   process group of their own, stopped as a whole when the command times
   out and once it exits, so nothing it started outlives the call. A
