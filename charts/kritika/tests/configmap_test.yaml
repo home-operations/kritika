@@ -20,6 +20,23 @@ tests:
           path: data["config.yaml"]
           pattern: "env: GITHUB_APP_PRIVATE_KEY"
 
+  - it: writes the gateway's in-cluster address in the cluster's DNS domain
+    set:
+      clusterDomain: newcluster.local
+      service.gatewayPort: 9090
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'gatewayUrl: "?http://RELEASE-NAME-kritika-gateway\.NAMESPACE\.svc\.newcluster\.local:9090"?'
+
+  - it: writes the gateway's address in a single-label cluster DNS domain
+    set:
+      clusterDomain: local
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'gatewayUrl: "?http://RELEASE-NAME-kritika-gateway\.NAMESPACE\.svc\.local:8082"?'
+
   - it: tells Reloader to ignore it, since the pods' checksum already rolls them
     asserts:
       - equal:

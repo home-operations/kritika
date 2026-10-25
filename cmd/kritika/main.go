@@ -1,12 +1,14 @@
 // Command kritika reviews GitHub pull requests against an index of the
 // repository. "kritika serve" runs the service; each review, follow-up and
 // index run it makes runs in a runner Job of cmd/kritika-runner's.
+// "kritika config check" checks a configuration file without serving it.
 package main
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -70,6 +72,9 @@ func run() (err error) {
 	command, err := config.ParseCommand(os.Args[1:])
 	if err != nil {
 		return err
+	}
+	if command == config.CommandConfigCheck {
+		return checkConfig(os.Args[3:], os.Stdout)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -278,6 +283,48 @@ func loadConfig(cfg *config.Config) (*configfile.File, error) {
 		return nil, errNoSignIn
 	}
 	return f, nil
+}
+
+// checkConfig loads the configuration file args name, or else
+// KRITIKA_CONFIG_FILE's, as serve does at startup, and says on out that
+// serve would accept it. The environment is read as serve reads it, the
+// variables the file's secret references name among them, but the
+// database is not, and nothing is connected to: the settings a deployment
+// gives serve besides the file, such as the chart's gatewayUrl, are not
+// required. The runner templates are decoded as the executor decodes
+// them, but the API's dry run of a runner Job is left to startup.
+func checkConfig(args []string, out io.Writer) error {
+	path := os.Getenv("KRITIKA_CONFIG_FILE")
+	if len(args) > 0 {
+		path = args[0]
+	}
+	if path == "" {
+		return errors.New("config: usage: kritika config check [<file>]: name a file or set KRITIKA_CONFIG_FILE")
+	}
+	cfg, err := config.LoadFile(path)
+	if err != nil {
+		return err
+	}
+	if _, err := loadConfig(cfg); err != nil {
+		return err
+	}
+	if cfg.WebURL == "" {
+		return errors.New("config: webUrl: KRITIKA_WEB_URL is required to serve")
+	}
+	if cfg.Executor == config.ExecutorKubernetes {
+		if _, err := executor.DecodeJobTemplate(cfg.RunnerJobTemplate); err != nil {
+			return fmt.Errorf("runner.jobTemplate: KRITIKA_RUNNER_JOB_TEMPLATE: %w", err)
+		}
+		// A pod template must name the runner's image, and the chart passes
+		// it besides an existingConfigMap's file, which then has none.
+		if len(cfg.RunnerPodTemplate) > 0 {
+			if _, err := executor.DecodePodTemplate(cfg.RunnerPodTemplate); err != nil {
+				return fmt.Errorf("runner.podTemplate: KRITIKA_RUNNER_POD_TEMPLATE: %w", err)
+			}
+		}
+	}
+	_, err = fmt.Fprintf(out, "%s: the configuration is valid\n", path)
+	return err
 }
 
 // startPublic hands the public listener what it serves until ctx ends: the

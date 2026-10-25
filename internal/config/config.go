@@ -15,9 +15,9 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-// Command selects what a kritika process runs: the service, or the
-// connection of a provider to a ChatGPT plan. A runner Job runs
-// cmd/kritika-runner instead.
+// Command selects what a kritika process runs: the service, the
+// connection of a provider to a ChatGPT plan, or a check of a
+// configuration file. A runner Job runs cmd/kritika-runner instead.
 type Command string
 
 // Commands a kritika process can run.
@@ -28,6 +28,10 @@ const (
 	CommandServe Command = "serve"
 	// CommandChatGPTLogin connects a configured provider to a ChatGPT plan.
 	CommandChatGPTLogin Command = "chatgpt login"
+	// CommandConfigCheck loads a configuration file as serve would at
+	// startup, without the database, and reports whether serve would
+	// accept it.
+	CommandConfigCheck Command = "config check"
 )
 
 // ParseCommand reads the command from a process's arguments, without the
@@ -39,10 +43,14 @@ func ParseCommand(args []string) (Command, error) {
 	if (len(args) == 3 || len(args) == 4) && args[0] == "chatgpt" && args[1] == "login" {
 		return CommandChatGPTLogin, nil
 	}
+	if (len(args) == 2 || len(args) == 3) && args[0] == "config" && args[1] == "check" {
+		return CommandConfigCheck, nil
+	}
 	if len(args) == 1 && Command(args[0]) == CommandServe {
 		return CommandServe, nil
 	}
-	return "", fmt.Errorf("config: unknown arguments %q: usage: kritika [serve | chatgpt login [<forge/account>] <provider>]", args)
+	return "", fmt.Errorf("config: unknown arguments %q: usage: "+
+		"kritika [serve | chatgpt login [<forge/account>] <provider> | config check [<file>]]", args)
 }
 
 // Executor selects how runners run.
@@ -149,7 +157,7 @@ func (c *Config) parseWebURL() error {
 	if err != nil {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
 	}
-	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" {
+	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Hostname() == "" {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
@@ -167,20 +175,53 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, envError[Config](err)
 	}
-	if cfg.ConfigFile != "" {
-		raw, err := os.ReadFile(cfg.ConfigFile)
-		if err != nil {
-			return nil, fmt.Errorf("config: %w", err)
-		}
-		cfg.document, err = cfg.readFile(raw)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err := cfg.validate(); err != nil {
+	if err := cfg.load(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// LoadFile reads the settings and the configuration file at path as Load
+// does, for kritika config check: the variables only a running process
+// reads, the database DSNs among them, are neither read nor required.
+func LoadFile(path string) (*Config, error) {
+	s, err := env.ParseAs[Settings]()
+	if err != nil {
+		return nil, envError[Settings](err)
+	}
+	// Load's parse unsets these before the file's secret references
+	// resolve, so a reference to one fails there and must fail here too.
+	params, err := env.GetFieldParams(&Config{})
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	for _, p := range params {
+		if p.Unset {
+			if err := os.Unsetenv(p.Key); err != nil {
+				return nil, fmt.Errorf("config: %w", err)
+			}
+		}
+	}
+	cfg := Config{Settings: s, ConfigFile: path}
+	if err := cfg.load(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// load reads the configuration file, when there is one, and validates the
+// settings.
+func (c *Config) load() error {
+	if c.ConfigFile != "" {
+		raw, err := os.ReadFile(c.ConfigFile)
+		if err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
+		if c.document, err = c.readFile(raw); err != nil {
+			return err
+		}
+	}
+	return c.validate()
 }
 
 func (c *Config) validate() error {

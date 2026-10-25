@@ -183,6 +183,78 @@ func TestConfigurationSnapshot(t *testing.T) {
 	}
 }
 
+func TestCheckConfig(t *testing.T) {
+	const admin = "auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\n"
+	for _, tt := range []struct {
+		name, raw string
+		webURL    string
+		noFile    bool
+		wantErr   string
+	}{
+		{name: "valid", raw: admin + "webUrl: https://kritika.example.com\n"},
+		{name: "web URL from environment", raw: admin, webURL: "https://kritika.example.com"},
+		{name: "missing web URL", raw: admin, wantErr: "webUrl: KRITIKA_WEB_URL"},
+		{name: "empty web URL", raw: admin + "webUrl: ''\n", wantErr: "webUrl: KRITIKA_WEB_URL"},
+		{name: "unknown key", raw: admin + "repositories: []\n", wantErr: "field repositories not found"},
+		{name: "invalid setting", raw: admin + "logLevel: loud\n", wantErr: "logLevel"},
+		{name: "unset secret", raw: "auth: {admin: {password: {env: TEST_UNSET_PASSWORD}}}\n", wantErr: "TEST_UNSET_PASSWORD is not set"},
+		{name: "secret serve unsets", raw: "auth: {admin: {password: {env: KRITIKA_GIT_TOKEN}}}\nwebUrl: https://kritika.example.com\n",
+			wantErr: "KRITIKA_GIT_TOKEN is not set"},
+		{name: "no sign in", raw: "egress: {allow: [first.example]}\n", wantErr: errNoSignIn.Error()},
+		{name: "runner templates", raw: admin + "webUrl: https://kritika.example.com\n" +
+			"runner: {jobTemplate: {spec: {ttlSecondsAfterFinished: 60}}, podTemplate: {spec: {containers: [{name: runner, image: runner:1}]}}}\n"},
+		{name: "invalid job template", raw: admin + "webUrl: https://kritika.example.com\n" +
+			"runner: {jobTemplate: {spec: {ttlSecondsAfterFinished: 0}}}\n", wantErr: "runner.jobTemplate"},
+		{name: "unknown pod template field", raw: admin + "webUrl: https://kritika.example.com\n" +
+			"runner: {podTemplate: {spec: {bogusField: 1}}}\n", wantErr: "runner.podTemplate"},
+		{name: "no file named", noFile: true, wantErr: "usage"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// A check needs neither the database nor KRITIKA_CONFIG_FILE.
+			t.Setenv("KRITIKA_DATABASE_URL", "")
+			t.Setenv("KRITIKA_CONFIG_FILE", "")
+			// Set, but serve unsets it before the file's references resolve.
+			t.Setenv("KRITIKA_GIT_TOKEN", "token")
+			if tt.webURL != "" {
+				t.Setenv("KRITIKA_WEB_URL", tt.webURL)
+			}
+			t.Setenv("TEST_ADMIN_PASSWORD", "pw")
+			var args []string
+			if !tt.noFile {
+				path := filepath.Join(t.TempDir(), "config.yaml")
+				if err := os.WriteFile(path, []byte(tt.raw), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				args = []string{path}
+			}
+			var out strings.Builder
+			err := checkConfig(args, &out)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("checkConfig = %v, want an error naming %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || !strings.Contains(out.String(), "the configuration is valid") {
+				t.Fatalf("checkConfig = %v, output %q", err, out.String())
+			}
+		})
+	}
+}
+
+func TestCheckConfigReadsConfigFileVariable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\nwebUrl: https://kritika.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KRITIKA_CONFIG_FILE", path)
+	t.Setenv("TEST_ADMIN_PASSWORD", "pw")
+	var out strings.Builder
+	if err := checkConfig(nil, &out); err != nil || !strings.HasPrefix(out.String(), path+":") {
+		t.Fatalf("checkConfig = %v, output %q", err, out.String())
+	}
+}
+
 func TestChatGPTLoginRequiresConfigFile(t *testing.T) {
 	if err := validate(config.CommandChatGPTLogin, &config.Config{}); err == nil || !strings.Contains(err.Error(), "KRITIKA_CONFIG_FILE") {
 		t.Fatalf("validate = %v", err)

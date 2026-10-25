@@ -141,7 +141,7 @@ ConfigMap the file is read from.
 In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 */}}
 {{- define "kritika.gatewayURL" -}}
-{{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritika.fullname" .) .Release.Namespace (int .Values.service.gatewayPort) -}}
+{{- printf "http://%s-gateway.%s.svc.%s:%d" (include "kritika.fullname" .) .Release.Namespace .Values.clusterDomain (int .Values.service.gatewayPort) -}}
 {{- end }}
 
 {{/* Where the gateway's cache emptyDir is mounted, when gatewayCache is enabled. */}}
