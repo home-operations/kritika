@@ -1,6 +1,6 @@
 // Pure display formatting shared by every page. No runes, so tests and
 // tooling can import it directly.
-import type { SkipReason, JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category, DismissSource } from './types';
+import type { SkipReason, JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, IndexJob, FollowupStatus, Category, DismissSource } from './types';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
@@ -130,6 +130,17 @@ export const indexTone: Record<IndexRunStatus, Tone> = {
   failed: 'danger',
   superseded: 'muted',
 };
+
+// indexJobText says what an index job queued or running is doing: its
+// trigger, then where it stands.
+const indexTriggerText: Record<string, string> = { onboard: 'First index', push: 'Update', reindex: 'Reindex' };
+export function indexJobText(j: IndexJob): string {
+  const what = indexTriggerText[j.trigger] ?? 'Index';
+  if (j.state === 'running') return `${what} running`;
+  if (j.state === 'retryable') return `${what} retrying`;
+  if (j.state === 'scheduled') return `${what} scheduled`;
+  return `${what} queued`;
+}
 
 export const followupTone: Record<FollowupStatus, Tone> = {
   answered: 'ok',

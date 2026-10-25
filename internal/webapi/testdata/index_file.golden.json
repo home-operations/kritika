@@ -1,0 +1,5 @@
+{
+  "path": "cmd/app/main.go",
+  "language": "go",
+  "chunks": 4
+}

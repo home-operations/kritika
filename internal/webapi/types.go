@@ -3,6 +3,8 @@ package webapi
 import (
 	"time"
 
+	"github.com/riverqueue/river/rivertype"
+
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
@@ -161,6 +163,69 @@ type IndexState struct {
 	ActiveAt      *time.Time           `json:"activeAt"`
 	LastRunStatus store.IndexRunStatus `json:"lastRunStatus"`
 	LastRunAt     *time.Time           `json:"lastRunAt"`
+	// Job is the repository's index job queued or running, the running one
+	// when there are several; null when there is none.
+	Job *IndexJob `json:"job"`
+	// Backlog is the repository's place, from 1, among the account's
+	// repositories waiting for the onboarding feeder to queue their first
+	// index, which it keeps only a few of queued or running at once; 0 when
+	// it is not waiting.
+	Backlog int `json:"backlog,omitzero"`
+}
+
+// IndexJob is an index job queued or running.
+type IndexJob struct {
+	ID          int64              `json:"id"`
+	State       rivertype.JobState `json:"state"`
+	Trigger     string             `json:"trigger"`
+	Full        bool               `json:"full"`
+	Attempt     int                `json:"attempt"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	AttemptedAt *time.Time         `json:"attemptedAt"`
+}
+
+// IndexContents is what a repository's active index generation holds;
+// null fields and zero counts when it has none.
+type IndexContents struct {
+	Indexed    bool       `json:"indexed"`
+	Commit     string     `json:"commit"`
+	EmbedModel string     `json:"embedModel"`
+	EmbedDims  int        `json:"embedDims"`
+	BuiltAt    *time.Time `json:"builtAt"`
+	FinishedAt *time.Time `json:"finishedAt"`
+	Chunks     int        `json:"chunks"`
+	Files      int        `json:"files"`
+	// Current is false when another embedder than the applied one built
+	// the generation: similar-code lookups skip it until it is rebuilt.
+	Current bool `json:"current"`
+}
+
+// IndexFile is one file an index generation holds.
+type IndexFile struct {
+	Path     string `json:"path"`
+	Language string `json:"language"`
+	Chunks   int    `json:"chunks"`
+}
+
+// IndexChunk is one chunk of an indexed file. Text is served to admins
+// only: it is the default branch's code, more than a review shows a
+// reader of the account.
+type IndexChunk struct {
+	StartLine int    `json:"startLine"`
+	EndLine   int    `json:"endLine"`
+	Language  string `json:"language"`
+	Symbol    string `json:"symbol"`
+	Kind      string `json:"kind"`
+	Scope     string `json:"scope"`
+	Text      string `json:"text,omitzero"`
+}
+
+// IndexChunks are the chunks of one indexed file, up to a bound;
+// Truncated says the file holds more.
+type IndexChunks struct {
+	Path      string       `json:"path"`
+	Items     []IndexChunk `json:"items"`
+	Truncated bool         `json:"truncated"`
 }
 
 // ReviewRef is a review's id, status and start.
@@ -252,6 +317,9 @@ type RepoDetail struct {
 	Sources    map[string]configfile.Source `json:"sources"`
 	RepoConfig *RepoConfig                  `json:"repoConfig"`
 	IndexRuns  []IndexRun                   `json:"indexRuns"`
+	// IndexJobs are the repository's index jobs queued or running, the
+	// running ones first.
+	IndexJobs []IndexJob `json:"indexJobs"`
 }
 
 // Label is a pull request label.

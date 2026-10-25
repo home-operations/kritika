@@ -39,6 +39,9 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}", s.account(s.getAccount))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos", s.account(s.listRepos))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}", s.account(s.getRepo))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/index", s.account(s.getIndex))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/index/files", s.account(s.listIndexFiles))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/index/chunks", s.account(s.listIndexChunks))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/index-runs", s.account(s.listIndexRuns))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/pulls", s.account(s.listPulls))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/pulls/{owner}/{repo}/{number}", s.account(s.getPull))
@@ -264,8 +267,12 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	ctx := r.Context()
 	var rows []store.RepoRow
 	var next *store.Cursor
+	var queue indexQueue
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		rows, next, err = store.ListRepos(ctx, tx, f, page)
+		if rows, next, err = store.ListRepos(ctx, tx, f, page); err != nil {
+			return err
+		}
+		queue, err = readIndexQueue(ctx, tx, t)
 		return err
 	}); err != nil {
 		return err
@@ -273,6 +280,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	items := make([]Repository, len(rows))
 	for i, row := range rows {
 		items[i] = repository(row, t.file.Runs(t.account, row.RepoTraits))
+		queue.apply(&items[i])
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))
 	return nil
@@ -311,9 +319,13 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	var row store.RepoRow
 	var runs []store.IndexRunRow
 	var file *store.RepoFileRow
+	var queue indexQueue
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		var err error
 		if row, err = findRepo(ctx, tx, r); err != nil {
+			return err
+		}
+		if queue, err = readIndexQueue(ctx, tx, t); err != nil {
 			return err
 		}
 		if runs, _, err = store.ListIndexRuns(ctx, tx, row.ID, store.Page{Limit: recentIndexRuns}); err != nil {
@@ -335,6 +347,11 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 		Repository: repository(row, t.file.Runs(t.account, row.RepoTraits)),
 		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
+		IndexJobs: queue.jobs[row.ID],
+	}
+	queue.apply(&d.Repository)
+	if d.IndexJobs == nil {
+		d.IndexJobs = []IndexJob{}
 	}
 	writeJSON(w, http.StatusOK, d)
 	return nil

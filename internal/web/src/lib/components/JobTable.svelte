@@ -11,6 +11,8 @@
   import Segmented from './Segmented.svelte';
   import ActionDialog from './ActionDialog.svelte';
   import RowToggle from './RowToggle.svelte';
+  import SortHeader from './SortHeader.svelte';
+  import { Sorter } from '../sort.svelte';
   import { rowToggles } from '../rowclick';
   import type { ComponentProps } from 'svelte';
 
@@ -18,6 +20,8 @@
   const tableId = $props.id();
   let expanded = $state<Record<string, boolean>>({});
   const queueState = $derived(filter?.state ?? 'all');
+  const kind = $derived(filter?.kind ?? 'all');
+  const ofKind = $derived(kind === 'all' ? jobs : jobs.filter((j) => (j.kind === 'index') === (kind === 'index')));
   const search = $derived(filter?.q ?? '');
   type Action = Omit<ComponentProps<typeof ActionDialog>, 'open' | 'ondone'>;
   let selected = $state<Action>();
@@ -28,15 +32,24 @@
     if (['review', 'review_prepare', 'review_publish'].includes(j.kind) && j.args.repository && j.args.number) return { label: 'Re-run', title: `Re-run ${j.args.repository}#${j.args.number}?`, body: "Queue a fresh review of the pull request's current head. This may differ from the failed job's commit. Closed or merged pull requests will be skipped.", path: rerunPath(account(j), j.args), done: 'Re-run queued' };
     if (j.kind === 'index' && j.args.repository) return { label: 'Reindex', title: `Reindex ${j.args.repository}?`, body: "Queue a full index of the repository's current default branch.", path: reindexPath(account(j), j.args.repository), done: 'Reindex queued' };
   }
-  const visible = $derived(jobs.filter((j) => {
+  // activity is the time the Activity column shows.
+  const activity = (j: J): string | null | undefined =>
+    j.finalizedAt ?? (waiting(j) ? j.scheduledAt : j.state === 'running' && j.heartbeatAt ? j.heartbeatAt : (j.attemptedAt ?? j.createdAt));
+  const sorter = new Sorter<'account' | 'job' | 'status' | 'activity', J>({
+    account: (j) => account(j),
+    job: (j) => j.id,
+    status: (j) => j.state,
+    activity,
+  });
+  const visible = $derived(sorter.sort(ofKind.filter((j) => {
     const matches = queueState === 'all' || (queueState === 'attention' ? attention(j) : queueState === 'running' ? j.state === 'running' : queueState === 'waiting' ? waiting(j) : !!j.finalizedAt);
     return matches && `${account(j)} ${j.args.repository} ${j.args.number} ${j.kind} ${j.id}`.toLowerCase().includes(search.toLowerCase());
-  }));
+  })));
   const filters = $derived([
-    { value: 'all', label: `All (${jobs.length})` },
-    { value: 'attention', label: `Needs attention (${jobs.filter(attention).length})` },
-    { value: 'running', label: `Running (${jobs.filter((j) => j.state === 'running').length})` },
-    { value: 'waiting', label: `Waiting (${jobs.filter(waiting).length})` },
+    { value: 'all', label: `All (${ofKind.length})` },
+    { value: 'attention', label: `Needs attention (${ofKind.filter(attention).length})` },
+    { value: 'running', label: `Running (${ofKind.filter((j) => j.state === 'running').length})` },
+    { value: 'waiting', label: `Waiting (${ofKind.filter(waiting).length})` },
     { value: 'finished', label: 'Finished' },
   ] as const);
 </script>
@@ -46,14 +59,22 @@
     <span class="sr-only">Search jobs</span>
     <input type="search" aria-label="Search jobs" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Search by repository, account or job" />
   </label>
+  <label class="select">
+    <span class="sr-only">Job kind</span>
+    <select aria-label="Job kind" bind:value={() => kind, (v: string) => onfilter({ ...filter, kind: v === 'index' || v === 'runs' ? v : undefined })}>
+      <option value="all">All jobs</option>
+      <option value="runs">Reviews and follow-ups</option>
+      <option value="index">Index jobs</option>
+    </select>
+  </label>
   <Segmented label="Queue state" options={filters} value={queueState} onchange={(v) => onfilter({ ...filter, state: v === 'all' ? undefined : v })} />
 </div>
 <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
   <table class="data queue-table">
     <thead>
       <tr>
-        {#if several}<th scope="col">Account</th>{/if}
-        <th scope="col">Job / target</th><th scope="col">Status</th><th scope="col">Activity</th>{#if isAdmin()}<th scope="col">Actions</th>{/if}<th scope="col" class="relative"><span class="sr-only">Details</span></th>
+        {#if several}<SortHeader label="Account" key="account" {sorter} />{/if}
+        <SortHeader label="Job / target" key="job" {sorter} /><SortHeader label="Status" key="status" {sorter} /><SortHeader label="Activity" key="activity" {sorter} />{#if isAdmin()}<th scope="col">Actions</th>{/if}<th scope="col" class="relative"><span class="sr-only">Details</span></th>
       </tr>
     </thead>
     <tbody>

@@ -223,6 +223,52 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// onboardCandidate holds for a repository, r, OnboardCandidates may offer,
+// whatever enabled says of it; $1 is the retryAfter, in seconds.
+// onboardActivity is when its pull requests last moved, which orders an
+// account's candidates.
+var onboardCandidate = `r.enabled AND r.turned_on IS DISTINCT FROM false
+	AND (r.active_index_run_id IS NULL OR EXISTS (SELECT 1 FROM index_runs g, index_schema s
+	    WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt)
+	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt)))
+	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE ` + liveIndexJob + ` AND j.args->>'repository_id' = r.id::text)
+	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
+	                AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)
+	                AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
+	                                AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))`
+
+const onboardActivity = `(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id)`
+
+// BacklogRepo is a repository waiting for the onboarding feeder to offer
+// its first index, and what the forge says of it.
+type BacklogRepo struct {
+	ID string
+	configfile.RepoTraits
+}
+
+// OnboardBacklog lists the transaction's account's repositories the
+// onboarding feeder would offer, as OnboardCandidates selects them, in
+// the order it would offer them, for the dashboard to say where each one
+// waits. The caller drops those the account's settings leave off, as
+// OnboardCandidates' enabled does.
+func OnboardBacklog(ctx context.Context, tx pgx.Tx, retryAfter time.Duration) ([]BacklogRepo, error) {
+	rows, err := tx.Query(ctx, `SELECT r.id::text, r.archived, r.fork, r.turned_on FROM repositories r
+		WHERE `+onboardCandidate+`
+		ORDER BY `+onboardActivity+` DESC NULLS LAST, r.created_at, r.id`, retryAfter.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("store: list onboarding backlog: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (BacklogRepo, error) {
+		var r BacklogRepo
+		err := row.Scan(&r.ID, &r.Archived, &r.Fork, &r.TurnedOn)
+		return r, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: list onboarding backlog: %w", err)
+	}
+	return out, nil
+}
+
 // OnboardCandidates lists up to limit enabled repositories, of those
 // enabled also admits by account ID and traits, whose active index
 // generation is missing or was built by another embedder than index_schema
@@ -242,18 +288,9 @@ func (s *Store) OnboardCandidates(
 		return nil, errors.New("store: OnboardCandidates needs the owner connection")
 	}
 	rows, err := s.owner.Query(ctx, `WITH candidates AS (
-			SELECT r.id, r.account_id, r.archived, r.fork, r.turned_on, r.created_at,
-				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
+			SELECT r.id, r.account_id, r.archived, r.fork, r.turned_on, r.created_at, `+onboardActivity+` AS active
 			FROM repositories r
-			WHERE r.enabled AND r.turned_on IS DISTINCT FROM false
-			  AND (r.active_index_run_id IS NULL OR EXISTS (SELECT 1 FROM index_runs g, index_schema s
-			      WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt)
-			        IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt)))
-			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text)
-			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
-			                  AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)
-			                  AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
-			                                  AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))
+			WHERE `+onboardCandidate+`
 		)
 		SELECT id, account_id, archived, fork, turned_on FROM (
 			SELECT c.*, row_number() OVER (PARTITION BY account_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c

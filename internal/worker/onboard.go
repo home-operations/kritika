@@ -14,13 +14,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Onboarding pace: how often the feeder tops the window up, and how long a
-// repository whose onboarding job ended without building an index waits to
-// be offered again. River keeps finished jobs longer than that.
-const (
-	onboardInterval   = 30 * time.Second
-	onboardRetryAfter = time.Hour
-)
+// onboardInterval is how often the feeder tops the window up.
+const onboardInterval = 30 * time.Second
 
 // Onboarder feeds onboarding index jobs to the index queue a few at a time:
 // after a first install, or a model change that drops every index, all
@@ -70,7 +65,7 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 	if room <= 0 {
 		return nil
 	}
-	refs, err := o.Store.OnboardCandidates(ctx, room, onboardRetryAfter, func(accountID string, t configfile.RepoTraits) bool {
+	refs, err := o.Store.OnboardCandidates(ctx, room, jobs.OnboardRetryAfter, func(accountID string, t configfile.RepoTraits) bool {
 		a, ok := f.AccountByID(accountID)
 		return ok && f.Runs(a, t)
 	})

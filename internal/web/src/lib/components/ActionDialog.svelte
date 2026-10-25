@@ -1,7 +1,7 @@
 <script lang="ts">
   // A state-changing action behind a confirm dialog: POST, announce the
   // result as a toast, then let the page refetch.
-  import { sendJSON } from '../api.svelte';
+  import { ApiError, sendJSON } from '../api.svelte';
   import { describe } from '../manage';
   import { toast } from '../toast.svelte';
   import type { Accepted } from '../types';
@@ -17,9 +17,12 @@
     danger?: boolean;
     // done names the result, e.g. "Re-run queued".
     done: string;
+    // already, when set, is what to say when the server answers that the
+    // same job is already queued, which is no failure.
+    already?: string;
     ondone?: () => void;
   }
-  let { open = $bindable(false), label, title, body, path, danger = false, done, ondone }: Props = $props();
+  let { open = $bindable(false), label, title, body, path, danger = false, done, already, ondone }: Props = $props();
   let busy = $state(false);
 
   async function run(): Promise<void> {
@@ -28,7 +31,8 @@
       const res = await sendJSON<Accepted>('POST', path);
       toast(res?.jobId ? `${done}, job #${res.jobId}` : done);
     } catch (err) {
-      toast(`${label} failed: ${describe(err)}`, 'danger');
+      if (already && err instanceof ApiError && err.code === 'already_queued') toast(already);
+      else toast(`${label} failed: ${describe(err)}`, 'danger');
     } finally {
       busy = false;
       open = false;

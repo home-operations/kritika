@@ -2,7 +2,7 @@
   import PageHeader from '../components/PageHeader.svelte';
   import { Switch } from 'bits-ui';
   import { href, replace } from '../router.svelte';
-  import { Paged } from '../resource.svelte';
+  import { Paged, pollJobs } from '../resource.svelte';
   import { indexTone } from '../format';
   import { repoRoute, accountApi, reindexPath, turnedOnPath, forgeName } from '../links';
   import { getJSON, sendJSON } from '../api.svelte';
@@ -20,6 +20,9 @@
   import RowToggle from '../components/RowToggle.svelte';
   import { rowToggles } from '../rowclick';
   import RepoPreview from '../components/RepoPreview.svelte';
+  import SortHeader from '../components/SortHeader.svelte';
+  import IndexQueueStatus from '../components/IndexQueueStatus.svelte';
+  import { Sorter } from '../sort.svelte';
   import Dialog from '../components/Dialog.svelte';
   import Icon from '../Icon.svelte';
   import { mdiCheck, mdiProgressClock, mdiAlertCircleOutline, mdiSwapHorizontal } from '../icons';
@@ -56,11 +59,15 @@
   $effect(() => {
     void paged.load();
   });
+  // A queued job's progress raises no event until its run starts, so the
+  // list polls while any repository it shows is queued or waiting.
+  const pending = $derived(paged.items.some((r) => r.index.job || r.index.backlog));
+  $effect(() => (pending ? pollJobs(() => void paged.refresh()) : undefined));
 
   function visible(): Repository[] {
     const needle = search.trim().toLowerCase();
     const all = paged.items;
-    return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle)) : all;
+    return sorter.sort(needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle)) : all);
   }
 
   const manage = $derived(isAdmin());
@@ -81,6 +88,22 @@
     superseded: mdiSwapHorizontal,
   };
   const plural = (n: number): string => (n === 1 ? '1 repository' : `${n} repositories`);
+
+  // The Index column sorts by where each repository stands: indexing,
+  // queued, waiting its turn to be queued, then by its last run.
+  const runRank: Record<IndexRunStatus, number> = { running: 0, failed: 4, completed: 5, superseded: 6 };
+  function indexRank(r: Repository): number {
+    if (r.index.job) return r.index.job.state === 'running' ? 0 : 1;
+    if (r.index.backlog) return 2 + r.index.backlog / 1e6;
+    return r.index.lastRunStatus ? runRank[r.index.lastRunStatus] : 7;
+  }
+  // Sorting orders the repositories loaded so far; the server pages them by name.
+  const sorter = new Sorter<'name' | 'enabled' | 'index' | 'review', Repository>({
+    name: (r) => r.fullName,
+    enabled: (r) => (isOn(r) ? 0 : 1),
+    index: indexRank,
+    review: (r) => r.lastReview?.createdAt,
+  });
 
   function pick(fullName: string, on: boolean): void {
     selected = on ? [...selected, fullName] : selected.filter((n) => n !== fullName);
@@ -176,7 +199,10 @@
     {:else if kind === 'archived'}
       <p class="small muted text-ui-sm">Archived repositories are inactive. Unarchive on {forge}, resync, then turn it on if it is off.</p>
     {:else}
-      <p class="small muted text-ui-sm">Newly discovered repositories start off. Turn on the repositories you want reviewed and indexed.</p>
+      <p class="small muted text-ui-sm">
+        Newly discovered repositories start off. Turn on the repositories you want reviewed and indexed. Their first indexes are queued a
+        few at a time; the rest show as waiting, numbered in the order they will be queued.
+      </p>
     {/if}
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {@const rows = visible()}
@@ -202,10 +228,10 @@
                     {/if}
                   </th>
                 {/if}
-                <th scope="col">Repository</th>
-                <th scope="col">Enabled</th>
-                <th scope="col">Index</th>
-                <th scope="col">Last review</th>
+                <SortHeader label="Repository" key="name" {sorter} />
+                <SortHeader label="Enabled" key="enabled" {sorter} />
+                <SortHeader label="Index" key="index" {sorter} />
+                <SortHeader label="Last review" key="review" {sorter} />
                 <th scope="col" class="relative"><span class="sr-only">Preview</span></th>
               </tr>
             </thead>
@@ -251,7 +277,8 @@
                         <span class="status-word">{st}</span>
                       </span>
                       <Time iso={repo.index.lastRunAt} />
-                    {:else}<span class="muted">never</span>{/if}
+                    {:else if !repo.index.job && !repo.index.backlog}<span class="muted">never</span>{/if}
+                    <IndexQueueStatus index={repo.index} />
                   </td>
                   <td>
                     {#if repo.lastReview}

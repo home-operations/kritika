@@ -7,6 +7,7 @@ package jobs
 
 import (
 	"strings"
+	"time"
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
@@ -52,6 +53,12 @@ const (
 	TriggerOnboard = "onboard"
 	TriggerPush    = "push"
 )
+
+// OnboardRetryAfter is how long a repository whose onboarding job ended
+// without building an index waits to be offered again: the feeder's pace,
+// and the dashboard's, which shows where a repository waits for it. River
+// keeps finished jobs longer than that.
+const OnboardRetryAfter = time.Hour
 
 // Index job priorities, highest first: River always fetches a higher
 // priority first, so an onboarding wave never delays keeping an indexed

@@ -671,6 +671,20 @@
   table.data thead th {
     @apply text-muted font-semibold bg-surface;
   }
+  /* A sortable header's button reads as the header itself. */
+  table.data th .sort-button {
+    @apply inline-flex items-center gap-1 p-0 border-0 bg-transparent text-inherit font-[inherit] cursor-pointer rounded-sm;
+  }
+  table.data th .sort-button:hover,
+  table.data th .sort-button:focus-visible {
+    @apply text-ink;
+  }
+  table.data th .sort-icon {
+    @apply inline-flex opacity-40;
+  }
+  table.data th .sort-icon.sort-active {
+    @apply opacity-100 text-accent;
+  }
   table.data tfoot th,
   table.data tfoot td {
     @apply font-[650] border-b-0;

@@ -50,4 +50,7 @@ export {
   mdiThumbUpOutline,
   mdiThumbDownOutline,
   mdiTextBoxOutline,
+  mdiArrowUp,
+  mdiArrowDown,
+  mdiSwapVertical,
 } from '@mdi/js';
