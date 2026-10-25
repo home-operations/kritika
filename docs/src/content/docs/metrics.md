@@ -214,7 +214,7 @@ label to every rule, and `additionalRuleAnnotations` adds an annotation.
 | Alert                          | Fires when                                                                                                                         | Severity | Wait |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
 | `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                       | critical | 5m   |
-| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it in the last minute                        | critical | 2m   |
+| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`            | critical | 2m   |
 | `KritikaConfigError`           | `kritika_config_error == 1`: the leader could not apply the file                                                                   | warning  | 5m   |
 | `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                         | warning  | 15m  |
 | `KritikaQueueDelayed`          | Oldest runnable review/followup/thread job exceeds 600 seconds, using the last successful sample within 5m and max across replicas | warning  | 15m  |

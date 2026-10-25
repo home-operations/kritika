@@ -47,7 +47,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
         - alert: KritikaMultipleLeaders
-          expr: sum by (namespace, job) (last_over_time(kritika_leader[1m])) > 1
+          expr: sum by (namespace, job) (last_over_time(kritika_leader[{{ .Values.monitoring.prometheusRule.multipleLeadersWindow }}])) > 1
           for: {{ .Values.monitoring.prometheusRule.multipleLeadersFor }}
           labels:
             {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "critical") | nindent 12 }}

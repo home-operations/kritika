@@ -629,6 +629,8 @@ monitoring:
     noLeaderFor: 5m
     # -- How long more than one replica may report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval.
     multipleLeadersFor: 2m
+    # -- How far back KritikaMultipleLeaders looks for each replica's latest leader sample. Keep it longer than the ServiceMonitor interval and shorter than multipleLeadersFor, so a replaced leader drops out of the sum before the alert fires.
+    multipleLeadersWindow: 1m
     # -- How long the leader's latest apply of the configuration may stay refused before KritikaConfigError fires.
     configErrorFor: 5m
     # -- How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.
