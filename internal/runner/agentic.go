@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -495,7 +494,7 @@ const canceledWriteTimeout = 5 * time.Second
 // agentRecord is an agent_runs row.
 type agentRecord struct {
 	stop                         agent.StopReason
-	result                       any
+	result                       json.RawMessage
 	steps                        int
 	toolCalls, timeline, sources []byte
 	usage                        model.Usage
@@ -578,36 +577,19 @@ func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []s
 		return agentRecord{}, fmt.Errorf("runner: encode timeline: %w", err)
 	}
 	if res.Stop == agent.StopSubmitted {
-		rec.result = secrets.Mask(string(res.Submitted))
+		rec.result = json.RawMessage(secrets.Mask(string(res.Submitted)))
 	}
 	return rec, nil
 }
 
 // writeAgentRun records the agent's row and moves the run to phase.
 func writeAgentRun(ctx context.Context, st *store.Store, p runspec.Spec, rec agentRecord, phase string) error {
-	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts,
-				unpriced_steps, command_errors, command_counts, forced_by)
-			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
-				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22, coalesce($23::jsonb, '{}'::jsonb), $24
-			FROM runner_runs WHERE id = $1`,
-			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
-			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued, rec.parts,
-			rec.unpricedSteps, rec.commandErrors, rec.commandCounts, string(rec.forcedBy))
-		if err != nil {
-			return fmt.Errorf("runner: write agent run: %w", err)
-		}
-		if rec.conversation != nil {
-			if _, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
-				SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
-				p.RunID, rec.session, string(rec.conversation), rec.tokens, rec.granted); err != nil {
-				return fmt.Errorf("runner: write conversation: %w", err)
-			}
-		}
-		return setPhaseTx(ctx, tx, p.RunID, phase)
-	})
+	return st.WriteRunnerAgent(ctx, p.RunID, store.RunnerAgentRecord{
+		Stop: string(rec.stop), ForcedBy: string(rec.forcedBy), Result: rec.result, Steps: rec.steps,
+		ToolCalls: rec.toolCalls, Timeline: rec.timeline, Sources: rec.sources, Usage: rec.usage,
+		CostUSD: rec.costUSD, UnpricedSteps: rec.unpricedSteps, SkillsOffered: rec.skillsOffered, SkillsOpened: rec.skillsOpened,
+		CommandsOffered: rec.commandsOffered, CommandsRun: rec.commandsRun, CommandErrors: rec.commandErrors,
+		CommandCounts: rec.commandCounts, Model: rec.model, Error: rec.err, ContinuedFrom: rec.continued, Parts: rec.parts,
+		Conversation: rec.conversation, Tokens: rec.tokens, Session: rec.session, GrantedModel: rec.granted,
+	}, phase)
 }
