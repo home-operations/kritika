@@ -60,14 +60,18 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # libstdc++ for a repository's tools and the timezone database, legacy names
 # included, for a TZ the admin sets. The builder variant's dnf installs them
 # into a copy of it, so the image carries no package manager. Renovate bumps
-# both images' digests.
+# both images' digests. core-runtime names no user 65532, which a runtime
+# that adds none to /etc/passwd leaves a tool unable to look up, so the
+# root gets a nonroot user and group of that id.
 FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:329ff8f46fe69f036b96c3463272aa778a6df6a4f7570f080fd248a414652b6e AS core-runtime
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:057ba34d73d5308cd0eeeb2637ec9880c55fe4075ce3321edd9e7ee12c363754 AS tools-root
 USER 0
 COPY --from=core-runtime / /rootfs
 RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak_deps=False --nodocs \
       curl findutils grep jq libstdc++ tzdata \
- && dnf --installroot /rootfs --use-host-config clean all
+ && dnf --installroot /rootfs --use-host-config clean all \
+ && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+ && echo 'nonroot:x:65532:' >> /rootfs/etc/group
 # gh as its release builds it, a static binary, checked against its
 # release's checksums.
 ARG TARGETARCH
