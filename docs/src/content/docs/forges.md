@@ -108,6 +108,23 @@ reach GitHub for an App. A name belongs to one connection only, under
 `apps`, `forgejo`, `gitlab` or `gitea`. An account is served by one
 connection on its forge.
 
+The connection allows the instance's name, not its addresses. The gateway
+still refuses a name that resolves only to addresses
+[off the public internet](/security/#the-egress-gateway), so for an
+instance on a private address, such as one on the LAN or behind
+split-horizon DNS, every runner's clone fails with
+`resolves to a private address no allow entry covers`. Add the address the
+kritika serve pods resolve the name to, or its range, to `egress.allow`:
+
+```yaml
+forgejo:
+  home:
+    host: git.home.example
+    # ...
+egress:
+  allow: [10.11.0.10]
+```
+
 `bots` lists the logins on the instance that are bots, such as a Renovate
 user. Forgejo marks no account as a bot and allows no `[bot]` in a login.
 Without the list, kritika treats every pull request and comment as a
@@ -202,7 +219,9 @@ gitlab:
 ```
 
 `host` is the instance's hostname alone, reached over HTTPS. Runner pods
-may reach it through the [egress gateway](/security/#the-egress-gateway).
+may reach it through the [egress gateway](/security/#the-egress-gateway),
+at a private address only when `egress.allow` covers it, as for
+[Forgejo](#configure-the-connection).
 An account is a top-level group or a user. For a group, kritika serves the
 projects of its subgroups too. A project in a subgroup is named by its
 full path, such as `platform/backend/api`.
@@ -303,7 +322,9 @@ gitea:
 ```
 
 `host` is the instance's hostname alone, reached over HTTPS. Runner pods
-may reach it through the [egress gateway](/security/#the-egress-gateway).
+may reach it through the [egress gateway](/security/#the-egress-gateway),
+at a private address only when `egress.allow` covers it, as for
+[Forgejo](#configure-the-connection).
 Gitea marks a bot user as a bot. `bots` lists any other login on the
 instance that a bot runs as, such as an ordinary account that Renovate
 uses. kritika then treats that login as a bot, as on
