@@ -191,7 +191,9 @@ through the gateway.
 
 With the `cilium` flavor, a runner pod may look up only the names of the
 cluster's Services, `<service>.<namespace>.svc.cluster.local`, including
-the gateway's and the database's. The cluster's DNS answers those itself.
+the gateway's and the database's. On a cluster with another DNS domain,
+set the chart's `clusterDomain` to it: the gateway's address runner Jobs
+are handed and this rule both end in it. The cluster's DNS answers those itself.
 The lookup of an `ExternalName` Service's name goes on to the name the
 Service points at, which the Service's author set, not the runner. Cilium
 refuses any other name. The `default` and `calico` flavors cannot filter

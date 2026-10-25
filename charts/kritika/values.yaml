@@ -22,6 +22,12 @@ imagePullSecrets: []
 nameOverride: ""
 # -- Override the full release name.
 fullnameOverride: ""
+# @schema
+# type: string
+# minLength: 1
+# @schema
+# -- The cluster's DNS domain, the kubelet's `clusterDomain`: the gateway's in-cluster address that runner Jobs are handed as `HTTPS_PROXY`, `<release>-gateway.<namespace>.svc.<clusterDomain>`, and the Service names the `cilium` network policy lets runner pods look up end in it. On a cluster with another domain, every runner fails to reach the gateway until this matches.
+clusterDomain: cluster.local
 
 # kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,
 # the job queues, runner Jobs, the gateway and, on the replica holding the

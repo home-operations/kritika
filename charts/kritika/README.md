@@ -4,7 +4,7 @@
 ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 ![AppVersion](https://img.shields.io/static/v1?label=AppVersion&message=0.0.104&color=informational&style=flat-square) <!-- x-release-please-version -->
 
-Self-hosted AI pull request reviewer for GitHub, backed by Postgres and per-review Kubernetes Jobs
+Self-hosted AI pull request reviewer for GitHub, Forgejo, GitLab and Gitea, backed by Postgres and per-review Kubernetes Jobs
 
 **Homepage:** <https://github.com/home-operations/kritika>
 
@@ -193,6 +193,7 @@ Kubernetes: `>=1.34.0-0`
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| clusterDomain | string | `"cluster.local"` | The cluster's DNS domain, the kubelet's `clusterDomain`: the gateway's in-cluster address that runner Jobs are handed as `HTTPS_PROXY`, `<release>-gateway.<namespace>.svc.<clusterDomain>`, and the Service names the `cilium` network policy lets runner pods look up end in it. On a cluster with another domain, every runner fails to reach the gateway until this matches. |
 | config | object | `{}` | Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys the chart derives from its deployment values (`addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor`, `runner`, and, when `gatewayCache.enabled` is set, `gatewayCacheDir`, `gatewayCacheStorage`, `gatewayCacheMaxEntrySize`, and `gatewayCacheMaxSize` for filesystem storage or the `gatewayCacheS3*` keys for S3) fail the render. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |

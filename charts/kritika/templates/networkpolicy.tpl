@@ -296,7 +296,7 @@ spec:
   egress:
     {{- /* The cluster's DNS answers its Services' names itself, but for an
     ExternalName Service's, whose lookup goes on to the name its author set. */}}
-    {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns "names" (list "*.*.svc.cluster.local")) | nindent 4 }}
+    {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns "names" (list (printf "*.*.svc.%s" .Values.clusterDomain))) | nindent 4 }}
     {{- include "kritika.ciliumPostgresEgress" $pg | nindent 4 }}
     - toEndpoints:
         - matchLabels:

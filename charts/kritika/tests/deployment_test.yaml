@@ -274,6 +274,18 @@ tests:
             name: KRITIKA_GATEWAY_URL
             value: http://RELEASE-NAME-kritika-gateway.NAMESPACE.svc.cluster.local:9090
 
+  - it: hands kritika serve the gateway's address in the cluster's DNS domain
+    set:
+      config: null
+      existingConfigMap: external-config
+      clusterDomain: newcluster.local
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_GATEWAY_URL
+            value: http://RELEASE-NAME-kritika-gateway.NAMESPACE.svc.newcluster.local:8082
+
   - it: fails without config.webUrl
     set:
       config.webUrl: ""

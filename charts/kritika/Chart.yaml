@@ -1,7 +1,7 @@
 ---
 apiVersion: v2
 name: kritika
-description: Self-hosted AI pull request reviewer for GitHub, backed by Postgres and per-review Kubernetes Jobs
+description: Self-hosted AI pull request reviewer for GitHub, Forgejo, GitLab and Gitea, backed by Postgres and per-review Kubernetes Jobs
 type: application
 # Floor matching the chart's surface: restricted Pod Security (seccompProfile),
 # batch/v1 Job TTL, networking.k8s.io/v1 NetworkPolicy, the Gateway API v1, the
@@ -24,6 +24,9 @@ keywords:
   - code-review
   - pull-request
   - github
+  - forgejo
+  - gitlab
+  - gitea
   - llm
   - kubernetes
 annotations:
