@@ -12,7 +12,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -34,7 +34,7 @@ const (
 	superviseInterval = 10 * time.Second
 	// heartbeatStale is how old a runner's heartbeat may get before the run
 	// is treated as dead: six missed beats, to ride out a slow database.
-	heartbeatStale = 6 * runner.HeartbeatInterval
+	heartbeatStale = 6 * runspec.HeartbeatInterval
 )
 
 // supervision is what the worker watches while a runner works.

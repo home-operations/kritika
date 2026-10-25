@@ -150,7 +150,7 @@ type EndedReview struct {
 	AccountID, PullRequestID, HeadSHA, MergeBaseSHA, ForgePatchID, Trigger, Error string
 	Status                                                                        ReviewStatus
 	// SkipReason is why a skipped review was: one of the repository's own
-	// (a repoconfig.SkipReason) or of the runner's (runner.Skip*).
+	// (a repoconfig.SkipReason) or of the runner's (runspec.Skip*).
 	SkipReason string
 	// JobID is the River job that ended it.
 	JobID int64

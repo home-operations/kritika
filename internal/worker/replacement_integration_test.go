@@ -23,7 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -493,8 +493,8 @@ func TestReplacementOwesTheRequestedReview(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if reason != runner.SkipUnchangedPatch || runs != 0 {
-		t.Fatalf("the skipped review = %q with %d runner run(s), want %s before any runner", reason, runs, runner.SkipUnchangedPatch)
+	if reason != runspec.SkipUnchangedPatch || runs != 0 {
+		t.Fatalf("the skipped review = %q with %d runner run(s), want %s before any runner", reason, runs, runspec.SkipUnchangedPatch)
 	}
 	h.waitForgeStatus(t, "success: kritika: skipped (patch unchanged since the last review)")
 	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), skipped)

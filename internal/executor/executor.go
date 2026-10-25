@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // Spec is one runner invocation.
@@ -19,10 +19,10 @@ type Spec struct {
 	Annotations map[string]string
 	// Job is the runner's job document, mounted from the run's Secret as the
 	// file KRITIKA_RUN_SPEC_FILE names.
-	Job runner.Spec
+	Job runspec.Spec
 	// Secrets reach the runner through a Secret owned by its Job, and are
 	// masked out of the log tail.
-	Secrets runner.Secrets
+	Secrets runspec.Secrets
 	// Deadline bounds the whole run.
 	Deadline time.Duration
 }

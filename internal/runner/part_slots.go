@@ -8,16 +8,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
-func reportPartCount(ctx context.Context, st *store.Store, p Spec, count int, logger *slog.Logger) {
+func reportPartCount(ctx context.Context, st *store.Store, p runspec.Spec, count int, logger *slog.Logger) {
 	if p.Agent != nil && p.Agent.Parts > 1 {
 		runnerPartSlots(st, p, logger)(ctx, max(1, count))
 	}
 }
 
-func runnerPartSlots(st *store.Store, p Spec, logger *slog.Logger) func(context.Context, int) int {
+func runnerPartSlots(st *store.Store, p runspec.Spec, logger *slog.Logger) func(context.Context, int) int {
 	granted := max(1, p.Agent.Parallel)
 	return func(ctx context.Context, remaining int) int {
 		queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

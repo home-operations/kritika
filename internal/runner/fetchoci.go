@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
 	"github.com/home-operations/kritika/internal/upstream"
 )
@@ -85,7 +86,7 @@ type fetchOCITool struct {
 }
 
 // newFetchOCITool is the tool for a run of p.
-func newFetchOCITool(p Spec) *fetchOCITool {
+func newFetchOCITool(p runspec.Spec) *fetchOCITool {
 	return &fetchOCITool{fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), hosts: p.Agent.Hosts}
 }
 

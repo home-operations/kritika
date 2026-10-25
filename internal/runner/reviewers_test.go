@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestPlanReviewers(t *testing.T) {
@@ -22,8 +23,8 @@ func TestPlanReviewers(t *testing.T) {
 		Diff:    sizedDiff("auth/login.go", 2<<10, "web/page.go", 2<<10, "vendor/x.go", 1<<10),
 		Changed: []string{"auth/login.go", "web/page.go", "vendor/x.go"}, DeltaDiff: sizedDiff("web/page.go", 1<<10),
 	}
-	security := Reviewer{Name: "security", Paths: []string{"auth/**"}}
-	def := Reviewer{Name: review.DefaultReviewer}
+	security := runspec.Reviewer{Name: "security", Paths: []string{"auth/**"}}
+	def := runspec.Reviewer{Name: review.DefaultReviewer}
 	type share struct {
 		reviewer string
 		paths    []string
@@ -31,27 +32,27 @@ func TestPlanReviewers(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name      string
-		reviewers []Reviewer
+		reviewers []runspec.Reviewer
 		scope     review.Scope
 		want      []share
 		full      bool
 	}{
 		{name: "no reviewers is the review as it always was"},
-		{name: "the default reviewer alone too", reviewers: []Reviewer{def}},
-		{name: "the default reviewer the last review did not run reviews the whole change", reviewers: []Reviewer{{Name: def.Name, Full: true}},
+		{name: "the default reviewer alone too", reviewers: []runspec.Reviewer{def}},
+		{name: "the default reviewer the last review did not run reviews the whole change", reviewers: []runspec.Reviewer{{Name: def.Name, Full: true}},
 			scope: review.ScopeIncremental, full: true},
 		{
 			name:      "each reviewer that applies gets its files, the default one every one but the ignored",
-			reviewers: []Reviewer{def, security, {Name: "docs", Paths: []string{"**/*.md"}}}, scope: review.ScopeFull,
+			reviewers: []runspec.Reviewer{def, security, {Name: "docs", Paths: []string{"**/*.md"}}}, scope: review.ScopeFull,
 			want: []share{
 				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go"}, review.ScopeFull},
 				{"security", []string{"auth/login.go"}, review.ScopeFull},
 			},
 		},
-		{name: "an agent alone that does not apply runs the default pass as always", reviewers: []Reviewer{{Name: "docs", Paths: []string{"**/*.md"}}}},
+		{name: "an agent alone that does not apply runs the default pass as always", reviewers: []runspec.Reviewer{{Name: "docs", Paths: []string{"**/*.md"}}}},
 		{
 			name:      "on a re-review, a file reverted since the last one is still the reviewer's",
-			reviewers: []Reviewer{def, {Name: "web", Paths: []string{"web/**"}}, {Name: "gone", Paths: []string{"old/**"}}},
+			reviewers: []runspec.Reviewer{def, {Name: "web", Paths: []string{"web/**"}}, {Name: "gone", Paths: []string{"old/**"}}},
 			scope:     review.ScopeIncremental,
 			want: []share{
 				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go", "old/x.go"}, review.ScopeIncremental},
@@ -60,12 +61,12 @@ func TestPlanReviewers(t *testing.T) {
 			},
 		},
 		{
-			name: "a reviewer alone that applies runs in shares", reviewers: []Reviewer{security}, scope: review.ScopeFull,
+			name: "a reviewer alone that applies runs in shares", reviewers: []runspec.Reviewer{security}, scope: review.ScopeFull,
 			want: []share{{"security", []string{"auth/login.go"}, review.ScopeFull}},
 		},
 		{
 			name:      "on a re-review, a reviewer none of whose files changed since still runs, judged over the whole change",
-			reviewers: []Reviewer{def, security}, scope: review.ScopeIncremental,
+			reviewers: []runspec.Reviewer{def, security}, scope: review.ScopeIncremental,
 			want: []share{
 				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go", "old/x.go"}, review.ScopeIncremental},
 				{"security", []string{"auth/login.go"}, review.ScopeIncremental},
@@ -73,7 +74,7 @@ func TestPlanReviewers(t *testing.T) {
 		},
 		{
 			name:      "on a re-review, a reviewer the last review did not run reviews its files whole",
-			reviewers: []Reviewer{def, {Name: "security", Paths: security.Paths, Full: true}}, scope: review.ScopeIncremental,
+			reviewers: []runspec.Reviewer{def, {Name: "security", Paths: security.Paths, Full: true}}, scope: review.ScopeIncremental,
 			want: []share{
 				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go", "old/x.go"}, review.ScopeIncremental},
 				{"security", []string{"auth/login.go"}, review.ScopeFull},
@@ -109,7 +110,7 @@ func TestPlanReviewers(t *testing.T) {
 func TestPlanReviewersSplit(t *testing.T) {
 	s := reviewSpec()
 	s.Agent.Parts = 4
-	s.Prompt.Reviewers = []Reviewer{{Name: review.DefaultReviewer}, {Name: "security"}}
+	s.Prompt.Reviewers = []runspec.Reviewer{{Name: review.DefaultReviewer}, {Name: "security"}}
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
 	plan := planReviewers(s, res, review.ScopeFull, nil)
 	if len(plan.shares) != 4 {
@@ -141,17 +142,17 @@ func TestPartPromptsReviewers(t *testing.T) {
 		{Path: "auth/login.go", Line: 1, Severity: review.SeverityP1, Title: "default's earlier finding"},
 		{Path: "auth/login.go", Line: 2, Severity: review.SeverityP1, Title: "security's earlier finding", Agents: []string{"security"}},
 	}
-	s.Prompt.Reviewers = []Reviewer{
+	s.Prompt.Reviewers = []runspec.Reviewer{
 		{Name: review.DefaultReviewer},
 		{Name: "security", File: "docs/security.md", Categories: []review.Category{review.CategorySecurity}, Paths: []string{"auth/**"},
-			Rules: []configfile.Rule{{ID: "no-secrets", Rule: "No secrets."}}, Limits: &ReviewerLimits{MaxSteps: 5}},
+			Rules: []configfile.Rule{{ID: "no-secrets", Rule: "No secrets."}}, Limits: &runspec.ReviewerLimits{MaxSteps: 5}},
 	}
 	head := tree(t, map[string]string{"auth/login.go": "package auth\n", "web/page.go": "package web\n"})
 	res := &gitfetch.Result{Diff: sizedDiff("auth/login.go", 1<<10, "web/page.go", 1<<10), Changed: []string{"auth/login.go", "web/page.go"}}
 	plan := planReviewers(s, res, review.ScopeFull, nil)
 	var tools agentTools
 	files := repoconfig.Files{"docs/security.md": "Trace every input to a sink."}
-	parts, _, rules, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, files, nil, plan.shares, &tools,
+	parts, _, rules, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, files, nil, plan.shares, &tools,
 		slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +203,7 @@ func TestMergePartsReviewers(t *testing.T) {
 	sub := json.RawMessage(`{"summary":{"headline":"H","take":"T.","praise":[]},"findings":[{"path":"a.go","line":1,"severity":"p2",` +
 		`"category":"security","title":"t","explanation":"e","agents":["ghost"]}]}`)
 	results := []agent.Result{{Stop: agent.StopSubmitted, Submitted: sub}, {Stop: agent.StopSubmitted, Submitted: sub}}
-	merged, records, err := mergeParts(parts, results, Secrets{})
+	merged, records, err := mergeParts(parts, results, runspec.Secrets{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,11 +222,11 @@ func TestMergePartsReviewers(t *testing.T) {
 
 func TestSpecReviewersValidate(t *testing.T) {
 	s := reviewSpec()
-	s.Prompt.Reviewers = []Reviewer{{Name: "security"}, {Name: "security"}}
+	s.Prompt.Reviewers = []runspec.Reviewer{{Name: "security"}, {Name: "security"}}
 	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "listed twice") {
 		t.Errorf("a reviewer listed twice = %v", err)
 	}
-	s.Prompt.Reviewers = []Reviewer{{Name: ""}}
+	s.Prompt.Reviewers = []runspec.Reviewer{{Name: ""}}
 	if err := s.Validate(); err == nil {
 		t.Error("an unnamed reviewer was accepted")
 	}
@@ -236,7 +237,7 @@ func TestFollowUpRole(t *testing.T) {
 	if followUpRole(s, nil) != nil {
 		t.Error("a follow-up with no reviewer has a role")
 	}
-	s.Prompt.Reviewers = []Reviewer{{Name: "security", Instructions: "Exploits.", Categories: []review.Category{review.CategorySecurity}}}
+	s.Prompt.Reviewers = []runspec.Reviewer{{Name: "security", Instructions: "Exploits.", Categories: []review.Category{review.CategorySecurity}}}
 	role := followUpRole(s, nil)
 	if role == nil || role.Name != "security" || role.Instructions != "Exploits." || role.Categories != nil {
 		t.Errorf("role = %+v, want the reviewer's, with no categories to report", role)
@@ -267,14 +268,14 @@ func TestDefaultReviewPriorOwnership(t *testing.T) {
 				logger := slog.New(slog.DiscardHandler)
 				var prompt agentPrompt
 				if split {
-					parts, _, _, err := partPrompts(t.Context(), s, Secrets{}, head, head, res, nil, nil,
+					parts, _, _, err := partPrompts(t.Context(), s, runspec.Secrets{}, head, head, res, nil, nil,
 						splitShares([][]string{{"main.go"}}, scope), &tools, logger)
 					if err != nil {
 						t.Fatal(err)
 					}
 					prompt = parts[0].prompt
 				} else {
-					prompt, _ = wholePrompt(t.Context(), s, Secrets{}, head, nil, res,
+					prompt, _ = wholePrompt(t.Context(), s, runspec.Secrets{}, head, nil, res,
 						newPromptInputs(s, nil, nil, res.Changed), scope, nil, &tools, logger)
 				}
 				if strings.Contains(prompt.user, "lens finding") || !strings.Contains(prompt.user, "default finding") ||

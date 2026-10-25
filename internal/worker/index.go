@@ -23,7 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -163,8 +163,8 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	if !resumed {
-		err := w.stage(ctx, job, account, repo.Name, client, runID, runner.Spec{
-			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
+		err := w.stage(ctx, job, account, repo.Name, client, runID, runspec.Spec{
+			Version: runspec.Version, Kind: runspec.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
 			Forge: string(account.Forge), Head: commit, Base: base, Ignore: eff.Ignore,
 		}, logger)
 		if err != nil {

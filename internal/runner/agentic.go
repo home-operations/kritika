@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -51,11 +52,6 @@ type packView struct {
 	// not split.
 	Part *review.PartInput
 }
-
-// SkipUnchangedPatch is the skip reason the runner decides beyond
-// repoconfig's: a bot's pull request whose patch id equals its last
-// prepared review's.
-const SkipUnchangedPatch = "unchanged_patch"
 
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
@@ -95,7 +91,7 @@ func (in promptInputs) ruleIDs() []string {
 // newPromptInputs selects, for a change of the changed paths, the spec's
 // rules, whose when conditions the worker has already judged, its skills
 // and its context files.
-func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
+func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
 	var in promptInputs
 	if sk := p.Prompt.Skills; sk != nil {
 		offered := repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed)
@@ -168,7 +164,7 @@ func (a agentPrompt) notes() []string {
 // code the gateway found. commands are what
 // the run tool offers, fetch says fetch_repo is offered, and search
 // search_code.
-func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
+func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
 	bumps := review.Bumps(pack.Diff)
 	// The role is part of the system prompt before the user message is
 	// budgeted from what it leaves.
@@ -213,10 +209,10 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 // nothing. A condition that fails to evaluate skips; the error is
 // returned for the log. The conditions see the pull request as the spec
 // carries it, its body cut to MaxBodyBytes.
-func agentSkip(p Spec, changed []string, patchID, diff string) (reason, detail string, err error) {
+func agentSkip(p runspec.Spec, changed []string, patchID, diff string) (reason, detail string, err error) {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
-		return SkipUnchangedPatch, "", nil
+		return runspec.SkipUnchangedPatch, "", nil
 	case repoconfig.AllIgnored(p.Ignore, changed):
 		return string(repoconfig.SkipOnlyPaths), "", nil
 	case len(p.Prompt.Filters) == 0:
@@ -242,16 +238,16 @@ func agentSkip(p Spec, changed []string, patchID, diff string) (reason, detail s
 	return "", "", nil
 }
 
-// limits are the agent loop's bounds, defaults filled in.
-func (a *AgentLimits) limits() agent.Limits {
+// agentLimits are the agent loop's bounds, defaults filled in.
+func agentLimits(a *runspec.AgentLimits) agent.Limits {
 	return agent.Limits{MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens}.WithDefaults()
 }
 
 // offeredTools are every tool the agent is offered: the read-only ones over
 // head, then extra. With fetch_repo, or a run tool that keeps cut outputs,
 // among extra, read_file reads what they write too.
-func offeredTools(p Spec, head *object.Tree, ignore []string, extra []agent.Tool) []agent.Tool {
-	limit := p.Agent.limits().MaxToolOutputBytes
+func offeredTools(p runspec.Spec, head *object.Tree, ignore []string, extra []agent.Tool) []agent.Tool {
+	limit := agentLimits(p.Agent).MaxToolOutputBytes
 	tree := agent.NewTree(head, ignore)
 	issues := make(map[int]string, len(p.Prompt.Issues))
 	for _, is := range p.Prompt.Issues {
@@ -284,7 +280,8 @@ func offeredTools(p Spec, head *object.Tree, ignore []string, extra []agent.Tool
 // prompt's submit tool. A positive timeout bounds it; running out of time
 // ends it as canceled with the timeout in Err.
 func agentLoop(
-	ctx context.Context, stepper model.Stepper, p Spec, tools []agent.Tool, prompt agentPrompt, timeout time.Duration, logger *slog.Logger,
+	ctx context.Context, stepper model.Stepper, p runspec.Spec, tools []agent.Tool, prompt agentPrompt, timeout time.Duration,
+	logger *slog.Logger,
 ) (agent.Result, []store.TimelineStep) {
 	actx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
@@ -298,7 +295,7 @@ func agentLoop(
 		Submit:   prompt.submit,
 		Validate: prompt.validate,
 		Fallback: prompt.fallback,
-		Limits:   p.Agent.limits(),
+		Limits:   agentLimits(p.Agent),
 		OnStep: func(e agent.StepEvent) {
 			tools, outputBytes := make([]string, len(e.Calls)), 0
 			for i, c := range e.Calls {
@@ -383,7 +380,7 @@ const gatewayRetries = 2
 // composed, writes its agent_runs row, with a review's conversation for
 // the next re-review, and marks the run done.
 func runAgentic(
-	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
+	ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
 	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
 ) error {
 	stepper, err := gatewayStepper(p, secrets, 0, followUpReviewer(p))
@@ -425,7 +422,7 @@ func runAgentic(
 	}
 	rec.useTools(tools)
 	rec.continued = continued
-	if p.Kind == KindReview && res.Conversation != nil {
+	if p.Kind == runspec.KindReview && res.Conversation != nil {
 		// The gateway names a run's steps by the run, unless its token
 		// names the session of a conversation it may carry on.
 		rec.conversation, rec.tokens, rec.granted = keptConversation(res.Conversation, secrets, logger), res.Conversation.Tokens, p.Model.Granted
@@ -444,7 +441,7 @@ func runAgentic(
 // of a split review its steps are for, or none when part is 0, and
 // reviewer, the reviewer other than the default one they are for, or none
 // when it is "" or the default one.
-func gatewayStepper(p Spec, secrets Secrets, part int, reviewer string) (model.Stepper, error) {
+func gatewayStepper(p runspec.Spec, secrets runspec.Secrets, part int, reviewer string) (model.Stepper, error) {
 	if reviewer == review.DefaultReviewer {
 		reviewer = ""
 	}
@@ -537,7 +534,7 @@ type agentRecord struct {
 // its run keeps for the next re-review, nil for none: one too long to
 // carry on, or one holding the run's secrets, which a conversation kept
 // unmasked must not.
-func keptConversation(c *agent.Conversation, secrets Secrets, logger *slog.Logger) []byte {
+func keptConversation(c *agent.Conversation, secrets runspec.Secrets, logger *slog.Logger) []byte {
 	if c == nil {
 		return nil
 	}
@@ -561,7 +558,7 @@ func keptConversation(c *agent.Conversation, secrets Secrets, logger *slog.Logge
 // fetched. The error text, the sources and the submitted review are
 // masked: an error may carry a token, a steered model may write one into
 // its review, and the worker shows all three.
-func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
+func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets runspec.Secrets) (agentRecord, error) {
 	rec := agentRecord{
 		stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, unpricedSteps: res.UnpricedSteps, model: res.Model,
 		err: secrets.Mask(res.Err), forcedBy: res.ForcedBy,
@@ -587,7 +584,7 @@ func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []s
 }
 
 // writeAgentRun records the agent's row and moves the run to phase.
-func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord, phase string) error {
+func writeAgentRun(ctx context.Context, st *store.Store, p runspec.Spec, rec agentRecord, phase string) error {
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,

@@ -122,7 +122,7 @@ type Config struct {
 func (c *Config) FileDocument() Document { return c.document }
 
 // ValidateRunner checks what a runner pod needs. The job document itself is
-// decoded and validated by the runner package.
+// decoded and validated by package runspec.
 func (c *Config) ValidateRunner() error {
 	if c.RunSpecFile == "" {
 		return errors.New("config: KRITIKA_RUN_SPEC_FILE is required to run")

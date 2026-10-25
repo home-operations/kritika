@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // JobTemplate is what the configuration's runner.jobTemplate sets on every
@@ -79,10 +80,10 @@ type TemplateContainer struct {
 
 // commandEnv names the runner container's variables for the run tool's
 // commands, marking those a Secret's key sets.
-func (t PodTemplate) commandEnv() []runner.CommandEnvVar {
-	env := make([]runner.CommandEnvVar, 0, len(t.runner().Env))
+func (t PodTemplate) commandEnv() []runspec.CommandEnvVar {
+	env := make([]runspec.CommandEnvVar, 0, len(t.runner().Env))
 	for _, e := range t.runner().Env {
-		env = append(env, runner.CommandEnvVar{Name: e.Name, Secret: e.ValueFrom != nil})
+		env = append(env, runspec.CommandEnvVar{Name: e.Name, Secret: e.ValueFrom != nil})
 	}
 	return env
 }
@@ -195,7 +196,7 @@ func decodeTemplate(m map[string]any, v any) error {
 // cannot take a dry run, a quota, or a run's Job of the same name, is only
 // logged.
 func (k *Kube) CheckJob(ctx context.Context, deadline time.Duration) error {
-	job := k.job(Spec{Job: runner.Spec{RunID: "00000000-0000-0000-0000-000000000000"}, Deadline: deadline})
+	job := k.job(Spec{Job: runspec.Spec{RunID: "00000000-0000-0000-0000-000000000000"}, Deadline: deadline})
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	_, err := k.Client.BatchV1().Jobs(k.Namespace).Create(cctx, job, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})

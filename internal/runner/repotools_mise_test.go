@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestMiseRepositoryTools(t *testing.T) {
@@ -67,7 +69,7 @@ func TestMiseRepositoryTools(t *testing.T) {
 			home, cache := t.TempDir(), t.TempDir()
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "XDG_CACHE_HOME=" + cache}
 			var logs strings.Builder
-			m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, false, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}},
+			m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, false, repo, []string{"gh"}, runspec.Secrets{Redacted: &runspec.Redactions{}},
 				slog.New(slog.NewTextHandler(&logs, nil)))
 			if err != nil {
 				t.Fatal(err)
@@ -158,7 +160,7 @@ func TestMiseRepositoryInstalledTool(t *testing.T) {
 				home = link
 			}
 			m, notes, err := newMiseTools(t.Context(), bin, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"},
-				nil, false, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+				nil, false, repo, []string{"gh"}, runspec.Secrets{Redacted: &runspec.Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -66,13 +66,6 @@ type Cache struct {
 	reserved int64
 }
 
-// UncachedProxyUser is the proxy username a runner gives the gateway for
-// the retry of a locked install that failed through the cache: the entry
-// it was served did not match the lock, so the cache answers from the
-// origin and keeps that in the entry's place. The gateway marks such a
-// request ForRefill.
-const UncachedProxyUser = "uncached"
-
 type refillKey struct{}
 
 // ForRefill marks ctx's request as one the cache answers from the origin,
@@ -86,15 +79,6 @@ func Refill(ctx context.Context) bool {
 	refill, _ := ctx.Value(refillKey{}).(bool)
 	return refill
 }
-
-// LockedProxyUser is the proxy username a runner gives the gateway for a
-// repository's locked install, whose downloads mise checks against the
-// lock: the cache keeps and answers such a request from any host the
-// rules allow. The gateway marks it ForLockedInstall. A command can claim
-// the name too; it then gets what the host serves any run, and what it
-// has the cache keep is served only to a request that claims the name as
-// well.
-const LockedProxyUser = "locked"
 
 type lockedInstallKey struct{}
 

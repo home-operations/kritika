@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // TestCarryOn: a review carries on the conversation the gateway serves it
@@ -22,7 +23,7 @@ import (
 // serves none, it starts afresh with the context of a fresh prompt.
 func TestCarryOn(t *testing.T) {
 	s := agentPromptSpec()
-	s.Prompt.Continue = &Continuation{RunID: "run-0", Session: "run-0"}
+	s.Prompt.Continue = &runspec.Continuation{RunID: "run-0", Session: "run-0"}
 	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "dismissed one"}}
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	tools := offeredTools(s, head, nil, nil)
@@ -82,8 +83,8 @@ func TestCarryOn(t *testing.T) {
 			}))
 			defer srv.Close()
 			s := s
-			s.Model = &ModelEndpoint{GatewayURL: srv.URL, Model: "review"}
-			got := carryOn(t.Context(), s, Secrets{GatewayToken: "krk_run"}, fresh, tools, agentDiff, slog.New(slog.DiscardHandler))
+			s.Model = &runspec.ModelEndpoint{GatewayURL: srv.URL, Model: "review"}
+			got := carryOn(t.Context(), s, runspec.Secrets{GatewayToken: "krk_run"}, fresh, tools, agentDiff, slog.New(slog.DiscardHandler))
 			if path != "GET /v1/conversation" || auth != "Bearer krk_run" {
 				t.Fatalf("request = %s with %q", path, auth)
 			}
@@ -111,7 +112,7 @@ func TestCarryOn(t *testing.T) {
 
 func TestSpecContinuation(t *testing.T) {
 	s := reviewSpec()
-	s.Prompt.Continue = &Continuation{RunID: "run-0", Session: "run-0"}
+	s.Prompt.Continue = &runspec.Continuation{RunID: "run-0", Session: "run-0"}
 	if err := s.Validate(); err != nil {
 		t.Fatalf("a continuation with a run and a session: %v", err)
 	}

@@ -234,7 +234,7 @@ type ReviewRow struct {
 	// skipped, nil when none is newer than this.
 	NewestReviewID *string
 	// SkipReason is why a skipped review was: the repository's own reason
-	// (a repoconfig.SkipReason), or the runner's (runner.Skip*).
+	// (a repoconfig.SkipReason), or the runner's (runspec.Skip*).
 	SkipReason        string
 	Error             string
 	CreatedAt         time.Time

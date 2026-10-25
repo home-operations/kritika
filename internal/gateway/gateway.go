@@ -31,6 +31,7 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
 )
@@ -126,9 +127,9 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 	}
 	ctx := context.WithValue(r.Context(), grantKey{}, grant)
 	switch user {
-	case egress.UncachedProxyUser:
+	case runspec.UncachedProxyUser:
 		ctx = egress.ForRefill(ctx)
-	case egress.LockedProxyUser:
+	case runspec.LockedProxyUser:
 		ctx = egress.ForLockedInstall(ctx)
 	}
 	return r.WithContext(ctx), true
@@ -184,8 +185,8 @@ func refusedHost(dest string) string {
 
 // proxyCredentials are the username and password of a Proxy-Authorization
 // header's Basic credentials, "" for anything else: the password is the
-// run token, and the username asks for no more than egress.UncachedProxyUser
-// or egress.LockedProxyUser says.
+// run token, and the username asks for no more than runspec.UncachedProxyUser
+// or runspec.LockedProxyUser says.
 func proxyCredentials(header string) (user, token string) {
 	scheme, encoded, _ := strings.Cut(header, " ")
 	if !strings.EqualFold(scheme, "Basic") {

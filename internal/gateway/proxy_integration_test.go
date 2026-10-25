@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/egress"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -117,15 +118,15 @@ apps:
 		})
 	}
 	// The retry of an install around the gateway's cache names the
-	// proxy's user as egress.UncachedProxyUser, and a repository's locked
-	// install as egress.LockedProxyUser; the proxy gets each request
+	// proxy's user as runspec.UncachedProxyUser, and a repository's locked
+	// install as runspec.LockedProxyUser; the proxy gets each request
 	// marked so, and only that one.
 	for _, tt := range []struct {
 		name, user     string
 		refill, locked []bool
 	}{
-		{"a retry around the gateway's cache", egress.UncachedProxyUser, []bool{false, true}, []bool{false, false}},
-		{"a locked install", egress.LockedProxyUser, []bool{false, true, false}, []bool{false, false, true}},
+		{"a retry around the gateway's cache", runspec.UncachedProxyUser, []bool{false, true}, []bool{false, false}},
+		{"a locked install", runspec.LockedProxyUser, []bool{false, true, false}, []bool{false, false, true}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if code, _, err := get(via(tt.user, token), "http://example.com/"); err != nil || code != http.StatusTeapot {

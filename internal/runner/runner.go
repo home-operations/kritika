@@ -27,19 +27,20 @@ import (
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
 // Run executes one run and reports success or failure in the run row,
 // stamping a heartbeat while it works. The store must be opened with the
 // runner role's DSN.
-func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logger *slog.Logger) error {
+func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := spec.Validate(); err != nil {
 		return err
 	}
 	// Every copy of the secrets taken from here on shares the redactions
 	// a mise config adds mid-run.
-	secrets.Redacted = &Redactions{}
+	secrets.Redacted = &runspec.Redactions{}
 	st = st.ForRunner(secrets.DatabaseToken)
 	if err := st.WithRunnerJob(ctx, spec.RunID, func(tx pgx.Tx) error {
 		var id string
@@ -51,7 +52,7 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	beating := make(chan struct{})
 	go func() {
 		defer close(beating)
-		heartbeat(hctx, HeartbeatInterval, func(ctx context.Context) error { return beat(ctx, st, spec.RunID) }, logger)
+		heartbeat(hctx, runspec.HeartbeatInterval, func(ctx context.Context) error { return beat(ctx, st, spec.RunID) }, logger)
 	}()
 	defer func() {
 		stop()
@@ -59,9 +60,9 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	}()
 	run := runReview
 	switch spec.Kind {
-	case KindIndex:
+	case runspec.KindIndex:
 		run = runIndex
-	case KindFollowUp:
+	case runspec.KindFollowUp:
 		run = runFollowUp
 	}
 	// The first thing either kind does is fetch through the gateway, which
@@ -90,7 +91,7 @@ const maxPackDiffBytes = 4 << 20
 // priorDelta is the prior head the fetch brought, nil when none was asked
 // for or it could not be had, which tells the worker the delta is unknown,
 // not empty, and the paths of the delta since it less the ignored ones.
-func priorDelta(res *gitfetch.Result, p Spec, logger *slog.Logger) (*string, []string) {
+func priorDelta(res *gitfetch.Result, p runspec.Spec, logger *slog.Logger) (*string, []string) {
 	deltaPaths := []string{}
 	switch {
 	case res.Prior != nil:
@@ -109,7 +110,7 @@ func priorDelta(res *gitfetch.Result, p Spec, logger *slog.Logger) (*string, []s
 	return nil, deltaPaths
 }
 
-func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
+func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
@@ -177,14 +178,16 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	locks := newPartLocks()
 	ruleIDs := in.ruleIDs()
 	if skip == "" {
-		tools.diff = newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)
+		tools.diff = newReadDiffTool(res.Diff, agentLimits(p.Agent).MaxToolOutputBytes)
 		if skills := slices.Concat(in.skills, in.loaded); len(skills) > 0 {
-			tools.skills = &skillTool{base: baseTree, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: skillNames(in.loaded)}
+			tools.skills = &skillTool{
+				base: baseTree, skills: skills, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes, opened: skillNames(in.loaded),
+			}
 		}
 		var commandNotes []string
 		var cleanup func()
 		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), locks.head, secrets,
-			p.Agent.limits().MaxToolOutputBytes, logger)
+			agentLimits(p.Agent).MaxToolOutputBytes, logger)
 		defer cleanup()
 		if tools.fetch != nil {
 			tools.oci = newFetchOCITool(p)
@@ -265,7 +268,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 // full for the default reviewer alone when the last review did not run it,
 // with the reason.
 func reviewShares(
-	p Spec, res *gitfetch.Result, scope review.Scope, reason string, deltaPaths []string,
+	p runspec.Spec, res *gitfetch.Result, scope review.Scope, reason string, deltaPaths []string,
 ) ([]partShare, review.Scope, string) {
 	plan := planReviewers(p, res, scope, deltaPaths)
 	if plan.shares != nil {
@@ -305,7 +308,7 @@ func wholeContext(
 // is offered over, carrying on the last review's conversation where it
 // may. It returns the context the prompt was given.
 func wholePrompt(
-	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, res *gitfetch.Result, in promptInputs,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, res *gitfetch.Result, in promptInputs,
 	scope review.Scope, chunks []contextpack.Chunk, tools *agentTools, logger *slog.Logger,
 ) (agentPrompt, []contextpack.Chunk) {
 	promptSpec := *p.Prompt
@@ -331,7 +334,7 @@ func wholePrompt(
 // without a completed index, or a refused or failed request leaves both
 // out and the run goes on.
 func similarContext(
-	ctx context.Context, p Spec, secrets Secrets, res *gitfetch.Result, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger,
 ) ([]contextpack.Chunk, *searchTool) {
 	out, ok := similarCodeFor(ctx, p, secrets, res.Diff, res.Changed, logger)
 	if !ok {
@@ -344,7 +347,7 @@ func similarContext(
 // diff's hunks, best effort: false when diff has no hunk to ask about, the
 // repository has no index, or the request failed.
 func similarCodeFor(
-	ctx context.Context, p Spec, secrets Secrets, diff string, changed []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, changed []string, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
 	queries := hunkQueries(diff)
 	if len(queries) == 0 {
@@ -363,9 +366,9 @@ func similarCodeFor(
 
 // newSearchTool is search_code over the repository's index, leaving out
 // the changed paths, which the prompt shows.
-func newSearchTool(p Spec, secrets Secrets, changed []string) *searchTool {
+func newSearchTool(p runspec.Spec, secrets runspec.Secrets, changed []string) *searchTool {
 	return &searchTool{
-		gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
+		gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
 	}
 }
 
@@ -442,7 +445,7 @@ func setPhaseTx(ctx context.Context, tx pgx.Tx, runID, phase string) error {
 
 // fail records cause as the run's error, with its secrets masked: a git or
 // provider error may carry a credential.
-func fail(ctx context.Context, st *store.Store, runID string, secrets Secrets, cause error) error {
+func fail(ctx context.Context, st *store.Store, runID string, secrets runspec.Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	err := st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {

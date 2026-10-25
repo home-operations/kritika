@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -57,7 +58,7 @@ func TestPartCheckpointPersistence(t *testing.T) {
 	}
 	result := agent.Result{Stop: agent.StopSubmitted, Submitted: submission("a.go", "repository-secret"), Model: "model",
 		Steps: 4, Usage: model.Usage{Input: 100, Output: 20}, CostUSD: 0.5, ForcedBy: agent.ForcedByTime}
-	if err := savePart(ctx, runner, s, Secrets{GitToken: "repository-secret"}, hash, 1, result, agentTools{}); err != nil {
+	if err := savePart(ctx, runner, s, runspec.Secrets{GitToken: "repository-secret"}, hash, 1, result, agentTools{}); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := loadParts(ctx, runner, s, hash, parts, slog.New(slog.DiscardHandler))

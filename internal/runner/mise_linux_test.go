@@ -15,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // TestCommandToolMise: on an image with mise, the run tool offers the
@@ -43,7 +44,7 @@ func TestCommandToolMise(t *testing.T) {
 			s := reviewSpec()
 			s.Agent.CommandTimeoutSeconds = 10
 			s.Tools = tt.tools
-			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096, logger)
+			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 4096, logger)
 			defer cleanup()
 			if fetch != nil {
 				t.Fatal("fetch_repo offered without a command that reaches the network")
@@ -127,7 +128,7 @@ func TestCommandToolMisePATH(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"values.yaml": "image: x\n"}), configfile.DefaultIgnore)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 10
-	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096,
+	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 4096,
 		slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || !slices.Equal(run.Names(), []string{"grep", "yq"}) {
@@ -153,15 +154,15 @@ func TestCommandToolMiseAdminEnv(t *testing.T) {
 	systemMiseConfig(t, "[env]\nREPO_MARKER = \"the image's\"\n\n[tools]\nyq = \""+testYqVersion+"\"\n")
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv(CommandEnvPrefix+"REPO_MARKER", "the admin's")
+	t.Setenv(runspec.CommandEnvPrefix+"REPO_MARKER", "the admin's")
 	was := miseBin
 	miseBin = bin
 	t.Cleanup(func() { miseBin = was })
 	head := agent.NewTree(tree(t, map[string]string{"values.yaml": "image: x\n"}), configfile.DefaultIgnore)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 10
-	s.Agent.Env = []CommandEnvVar{{Name: "REPO_MARKER"}}
-	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096,
+	s.Agent.Env = []runspec.CommandEnvVar{{Name: "REPO_MARKER"}}
+	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 4096,
 		slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil {

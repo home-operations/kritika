@@ -9,6 +9,7 @@ import (
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -25,7 +26,7 @@ const submitIfNeededDescription = "Submit the reply, or none and why, and end th
 // findings kritika posted and the thread, and runs it with a review's
 // tools until it submits the reply, which the worker posts. It writes no
 // context pack: nothing builds on a follow-up.
-func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
+func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
@@ -57,12 +58,12 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		return err
 	}
 	in := newPromptInputs(p, files, nil, res.Changed)
-	tools := agentTools{diff: newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)}
+	tools := agentTools{diff: newReadDiffTool(res.Diff, agentLimits(p.Agent).MaxToolOutputBytes)}
 	similar, search := similarContext(ctx, p, secrets, res, logger)
 	chunks, tools.search = append(chunks, similar...), search
 	var cleanup func()
 	tools.run, tools.fetch, tools.notes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), nil, secrets,
-		p.Agent.limits().MaxToolOutputBytes, logger)
+		agentLimits(p.Agent).MaxToolOutputBytes, logger)
 	defer cleanup()
 	if tools.fetch != nil {
 		tools.oci = newFetchOCITool(p)

@@ -13,25 +13,28 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestPartInputIdentity(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		edit func(*Spec, []reviewPart)
+		edit func(*runspec.Spec, []reviewPart)
 		same bool
 	}{
-		{"run identity", func(s *Spec, _ []reviewPart) { s.RunID = "another" }, true},
-		{"available slots", func(s *Spec, _ []reviewPart) { s.Agent.Parallel++ }, true},
-		{"token budget", func(s *Spec, _ []reviewPart) { s.Agent.MaxTokens-- }, true},
-		{"continuation", func(s *Spec, _ []reviewPart) { s.Prompt.Continue = &Continuation{RunID: "r", Session: "s"} }, true},
-		{"head", func(s *Spec, _ []reviewPart) { s.Head = "another" }, false},
-		{"base", func(s *Spec, _ []reviewPart) { s.Base = "another" }, false},
-		{"model", func(s *Spec, _ []reviewPart) { s.Model.Granted = "another" }, false},
-		{"policy", func(s *Spec, _ []reviewPart) { s.CheckpointScope = "another" }, false},
-		{"prompt", func(_ *Spec, p []reviewPart) { p[0].prompt.user = "another" }, false},
-		{"partition", func(_ *Spec, p []reviewPart) { p[0].paths = []string{"b.go"} }, false},
+		{"run identity", func(s *runspec.Spec, _ []reviewPart) { s.RunID = "another" }, true},
+		{"available slots", func(s *runspec.Spec, _ []reviewPart) { s.Agent.Parallel++ }, true},
+		{"token budget", func(s *runspec.Spec, _ []reviewPart) { s.Agent.MaxTokens-- }, true},
+		{"continuation", func(s *runspec.Spec, _ []reviewPart) {
+			s.Prompt.Continue = &runspec.Continuation{RunID: "r", Session: "s"}
+		}, true},
+		{"head", func(s *runspec.Spec, _ []reviewPart) { s.Head = "another" }, false},
+		{"base", func(s *runspec.Spec, _ []reviewPart) { s.Base = "another" }, false},
+		{"model", func(s *runspec.Spec, _ []reviewPart) { s.Model.Granted = "another" }, false},
+		{"policy", func(s *runspec.Spec, _ []reviewPart) { s.CheckpointScope = "another" }, false},
+		{"prompt", func(_ *runspec.Spec, p []reviewPart) { p[0].prompt.user = "another" }, false},
+		{"partition", func(_ *runspec.Spec, p []reviewPart) { p[0].paths = []string{"b.go"} }, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
@@ -98,7 +101,7 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 		remaining = append(remaining, n)
 		return 2
 	}
-	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil, agentTools{}, newPartLocks(), parts,
+	results, _, err := runPartLoops(ctx, s, runspec.Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil, agentTools{}, newPartLocks(), parts,
 		slog.New(slog.DiscardHandler), saved, save, report)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +143,7 @@ func TestPartsCheckpointFailureKeepsAnswer(t *testing.T) {
 		saves++
 		return errors.New("checkpoint refused")
 	}
-	results, _, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
+	results, _, err := runPartLoops(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
 		agentTools{}, newPartLocks(), parts, slog.New(slog.DiscardHandler), nil, save, nil)
 	if err != nil {
 		t.Fatalf("a failed checkpoint failed the run: %v", err)
@@ -245,7 +248,7 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 		cancel(errors.New("stop"))
 		close(release)
 	}()
-	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
+	results, _, err := runPartLoops(ctx, s, runspec.Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
 		agentTools{}, newPartLocks(), parts, slog.New(slog.DiscardHandler), nil, save, nil)
 	if err != nil {
 		t.Fatalf("cancellation lost the run: %v", err)

@@ -21,7 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -223,8 +223,8 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 func (w *Review) agentPrompt(
 	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, pull repoconfig.PullRequest, eff Effective,
 	prior priorReview, client forge.Client, logger *slog.Logger,
-) (*runner.Prompt, []string, error) {
-	p := &runner.Prompt{
+) (*runspec.Prompt, []string, error) {
+	p := &runspec.Prompt{
 		Repository: pr.repository, Context: eff.Review.Context, PullRequest: pull,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Diagram: eff.Review.Diagram,
 		MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings), Dismissed: dismissedFindings(prior.dismissed),
@@ -244,7 +244,7 @@ func (w *Review) agentPrompt(
 		}
 		p.Rules = repoconfig.RulesFor(eff.Review.Rules, vars)
 		if sk := eff.Skills; len(sk.Paths) > 0 {
-			p.Skills = &runner.Skills{Paths: sk.Paths, Scope: sk.Scope, Off: repoconfig.SkillsOff(sk.Scope, vars)}
+			p.Skills = &runspec.Skills{Paths: sk.Paths, Scope: sk.Scope, Off: repoconfig.SkillsOff(sk.Scope, vars)}
 		}
 		// The conditions only the diff can judge are the runner's; it
 		// judges them as the review's trigger, and a review someone asked
@@ -390,7 +390,7 @@ func pinModels(
 // which the agent's timeout may lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, models configfile.Models,
-	prior priorReview, cont *runner.Continuation, admitted admission, size sizing, spec *runner.Spec, secrets *runner.Secrets,
+	prior priorReview, cont *runspec.Continuation, admitted admission, size sizing, spec *runspec.Spec, secrets *runspec.Secrets,
 	deadline time.Duration, client forge.Client, logger *slog.Logger, pull repoconfig.PullRequest, chosen reviewers,
 	grants map[string]store.ReviewerGrant,
 ) (time.Duration, []string, error) {
@@ -414,8 +414,8 @@ func (w *Review) agentSpec(
 		return deadline, nil, err
 	}
 	spec.Prompt, secrets.GatewayToken = prompt, token
-	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName, Granted: grant.Model}
-	spec.Agent = &runner.AgentLimits{
+	spec.Model = &runspec.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName, Granted: grant.Model}
+	spec.Agent = &runspec.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.parts, Parallel: size.slots,
 		TimeoutSeconds:        int(settings.Agent.Timeout / time.Second),

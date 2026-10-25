@@ -23,7 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -369,7 +369,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 	if err != nil {
 		return nil, err
 	}
-	prompt := &runner.Prompt{
+	prompt := &runspec.Prompt{
 		Repository: f.pr.repository, Context: f.eff.Review.Context, Rules: repoconfig.RulesFor(f.eff.Review.Rules, rec.vars),
 		Prior: rec.findings,
 	}
@@ -379,7 +379,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		// The finding's reviewer answers for it, by its own instructions,
 		// rules and models, while it is on.
 		prompt.Rules = repoconfig.RulesFor(r.Rules, rec.vars)
-		prompt.Reviewers = []runner.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
+		prompt.Reviewers = []runspec.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
 		models := r.Models(f.settings.Models)
 		ref = models.Review
 		f.settings.Models.Effort = models.Effort
@@ -411,7 +411,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 // names, which its steps are granted by its name, pinned as the review
 // model is.
 func (f *followUp) runAgent(
-	ctx context.Context, runID, gitToken string, prompt *runner.Prompt, thread []review.Message, rec reviewRecord,
+	ctx context.Context, runID, gitToken string, prompt *runspec.Prompt, thread []review.Message, rec reviewRecord,
 	answering *store.ReviewerGrant,
 ) (*store.AgentRunRow, error) {
 	limits, ref := f.settings.Agent, f.settings.Models.Review
@@ -445,19 +445,19 @@ func (f *followUp) runAgent(
 	out := f.w.runRunner(ctx, f.w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(f.account.Key(), f.pr.repository, jobs.QueueFollowUp, f.pr.number),
 		Annotations: runnerAnnotations(f.jobID, f.pr.headSHA),
-		Job: runner.Spec{
-			Version: runner.SpecVersion, Kind: runner.KindFollowUp, RunID: runID, CloneURL: f.client.CloneURL(f.owner, f.repo),
+		Job: runspec.Spec{
+			Version: runspec.Version, Kind: runspec.KindFollowUp, RunID: runID, CloneURL: f.client.CloneURL(f.owner, f.repo),
 			Forge: string(f.account.Forge), Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
 			Tools: f.eff.Tools, Prompt: prompt, Thread: thread, Reply: f.asReply,
-			Model: &runner.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
-			Agent: &runner.AgentLimits{
+			Model: &runspec.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
+			Agent: &runspec.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
 				CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
 				Hosts: f.file.EgressHosts(), CacheLocked: f.file.GatewayCaches(),
 			},
 		},
-		Secrets:  runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
+		Secrets:  runspec.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
 		Deadline: deadline,
 	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
 	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr

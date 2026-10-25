@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/home-operations/kritika/internal/egress"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestCacheReplacements(t *testing.T) {
@@ -42,7 +42,7 @@ func TestWithProxyUser(t *testing.T) {
 		"PATH=/usr/bin", "HTTP_PROXY=http://:krk_token@gateway.example:8082", "https_proxy=http://:krk_token@gateway.example:8082",
 		"NO_PROXY=gateway.example", "OTHER=http://:krk_token@gateway.example:8082",
 	}
-	got := withProxyUser(env, egress.UncachedProxyUser)
+	got := withProxyUser(env, runspec.UncachedProxyUser)
 	want := []string{
 		"PATH=/usr/bin", "HTTP_PROXY=http://uncached:krk_token@gateway.example:8082", "https_proxy=http://uncached:krk_token@gateway.example:8082",
 		"NO_PROXY=gateway.example", "OTHER=http://:krk_token@gateway.example:8082",
@@ -182,7 +182,7 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 					http.Error(w, "refused", http.StatusForbidden)
 					return
 				}
-				if user == egress.UncachedProxyUser {
+				if user == runspec.UncachedProxyUser {
 					_, _ = io.WriteString(w, tt.refilled)
 					return
 				}
@@ -196,7 +196,7 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy, "MISE_HTTP_RETRIES=0"}
 			var logs strings.Builder
 			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, tt.cacheLocked, repo, nil,
-				Secrets{Redacted: &Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
+				runspec.Secrets{Redacted: &runspec.Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
 			if err != nil {
 				t.Fatal(err)
 			}

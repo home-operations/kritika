@@ -41,6 +41,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/poller"
 	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/server"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/web"
@@ -175,7 +176,7 @@ func run() (err error) {
 
 	if command == config.CommandRun {
 		// A runner does one thing and exits; it never becomes ready.
-		return runner.Run(ctx, st, runSpec, runner.Secrets{
+		return runner.Run(ctx, st, runSpec, runspec.Secrets{
 			GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken, DatabaseToken: cfg.DatabaseToken,
 		}, logger)
 	}
@@ -431,20 +432,20 @@ const (
 
 // validate checks what command needs of cfg beyond the common set, and
 // reads a runner's spec.
-func validate(command config.Command, cfg *config.Config) (runner.Spec, error) {
+func validate(command config.Command, cfg *config.Config) (runspec.Spec, error) {
 	if command == config.CommandChatGPTLogin {
 		if cfg.ConfigFile == "" {
-			return runner.Spec{}, errors.New("config: KRITIKA_CONFIG_FILE is required for chatgpt login")
+			return runspec.Spec{}, errors.New("config: KRITIKA_CONFIG_FILE is required for chatgpt login")
 		}
-		return runner.Spec{}, nil
+		return runspec.Spec{}, nil
 	}
 	if command == config.CommandServe {
-		return runner.Spec{}, cfg.ValidateServe()
+		return runspec.Spec{}, cfg.ValidateServe()
 	}
 	if err := cfg.ValidateRunner(); err != nil {
-		return runner.Spec{}, err
+		return runspec.Spec{}, err
 	}
-	return runner.ReadSpec(cfg.RunSpecFile)
+	return runspec.Read(cfg.RunSpecFile)
 }
 
 // storeOptions is how command connects to the database: serve with the

@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // environHelper names the role the test binary plays when TestHideEnviron
@@ -88,7 +89,7 @@ func TestCommandTool(t *testing.T) {
 	t.Run("offers the default commands on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
 		s.Agent.CommandTimeoutSeconds = 5
-		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
 		}
@@ -127,7 +128,7 @@ func TestCommandTool(t *testing.T) {
 		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
 		s := reviewSpec()
 		s.Forge = "forgejo"
-		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "fj_run", Redacted: &Redactions{}}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "fj_run", Redacted: &runspec.Redactions{}}, 1024, logger)
 		defer cleanup()
 		// The run's token is the Forgejo bot's: gh, signed in nowhere,
 		// is left out, and fetch_repo with it.
@@ -143,7 +144,7 @@ func TestCommandTool(t *testing.T) {
 		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
 		s := reviewSpec()
 		s.Agent.CommandTimeoutSeconds = 5
-		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 1024, logger)
 		defer cleanup()
 		if run == nil || fetch == nil || !slices.Equal(run.Names(), []string{"gh", "grep"}) {
 			t.Fatalf("run tool %v, fetch_repo %v", run, fetch != nil)
@@ -181,7 +182,7 @@ func TestCommandToolCheckoutLock(t *testing.T) {
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
 	lock := make(chan struct{}, 1)
-	run, _, _, cleanup := commandTool(t.Context(), s, head, lock, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024,
+	run, _, _, cleanup := commandTool(t.Context(), s, head, lock, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 1024,
 		slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil {
@@ -253,8 +254,8 @@ func TestCommandToolAdminEnv(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv(CommandEnvPrefix+"KONFLATE_URL", "https://konflate.internal.example")
-	t.Setenv(CommandEnvPrefix+"API_TOKEN", "admin-secret-token")
+	t.Setenv(runspec.CommandEnvPrefix+"KONFLATE_URL", "https://konflate.internal.example")
+	t.Setenv(runspec.CommandEnvPrefix+"API_TOKEN", "admin-secret-token")
 	t.Setenv("KONFLATE_URL", "the runner's own")
 	t.Setenv("RUNNER_ONLY", "not the commands'")
 	was := miseBin
@@ -263,8 +264,8 @@ func TestCommandToolAdminEnv(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
-	s.Agent.Env = []CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}, {Name: "UNSET_KEY", Secret: true}}
-	run, _, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, slog.New(slog.DiscardHandler))
+	s.Agent.Env = []runspec.CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}, {Name: "UNSET_KEY", Secret: true}}
+	run, _, _, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil {
 		t.Fatal("no run tool")
@@ -315,7 +316,7 @@ func TestCommandToolCache(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
-	run, _, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, slog.New(slog.DiscardHandler))
+	run, _, _, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 1024, slog.New(slog.DiscardHandler))
 	if run == nil {
 		cleanup()
 		t.Fatal("no run tool")
@@ -366,7 +367,7 @@ func TestCommandToolNothingToOffer(t *testing.T) {
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
 	s.Tools = "[tools]\n"
-	run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
+	run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	cleanup()
 	if run != nil || fetch != nil || !slices.Equal(notes, []string{"tools not offered: the runner image has no mise"}) {
 		t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
@@ -389,7 +390,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = 5, []string{"github.com", "ghcr.io"}
-	run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, slog.New(slog.DiscardHandler))
+	run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || fetch == nil {
 		t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)

@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // conversationTimeout bounds asking the gateway for the conversation to
@@ -72,7 +73,7 @@ const carryShare = 4
 // prompt, which starts afresh with the last review's findings and notes.
 // tools are every tool the agent is offered.
 func carryOn(
-	ctx context.Context, p Spec, secrets Secrets, prompt agentPrompt, tools []agent.Tool, delta string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, prompt agentPrompt, tools []agent.Tool, delta string, logger *slog.Logger,
 ) agentPrompt {
 	c, err := conversationOf(ctx, p.Model.GatewayURL, secrets.GatewayToken)
 	if err != nil {
@@ -88,7 +89,7 @@ func carryOn(
 		why = "its system prompt or tools differ from this review's"
 	case len(c.Messages) == 0 || !review.SameBrief(c.Messages[0].Text, brief):
 		why = "the pull request's title, description or linked issues changed"
-	case c.Tokens*carryShare > p.Agent.limits().MaxTokens:
+	case c.Tokens*carryShare > agentLimits(p.Agent).MaxTokens:
 		why = "too large for the run's budget"
 	}
 	if why != "" {
