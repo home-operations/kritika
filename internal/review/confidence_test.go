@@ -293,7 +293,8 @@ func TestBuildConfidenceBudget(t *testing.T) {
 		budget int
 		kept   bool
 	}{
-		{name: "the default budget leaves the diff out", budget: 0},
+		{name: "the default budget keeps the diff", kept: true},
+		{name: "a smaller budget leaves the diff out", budget: 24_000},
 		{name: "the passed budget keeps it", budget: 60_000, kept: true},
 	}
 	for _, tt := range tests {

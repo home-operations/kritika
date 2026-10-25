@@ -26,7 +26,7 @@ type Limits struct {
 
 // DefaultLimits are the fleet defaults. The configuration's agent defaults
 // take theirs from here.
-var DefaultLimits = Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 16384}
+var DefaultLimits = Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 6_000_000, MaxOutputTokensPerStep: 16384}
 
 // WithDefaults fills every zero-valued field of l from DefaultLimits,
 // leaving any field the caller already set untouched.

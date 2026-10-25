@@ -845,7 +845,8 @@ func TestBuildLargerBudgetKeepsALargeFile(t *testing.T) {
 		budget      int
 		wantOmitted []string
 	}{
-		{name: "the default budget leaves it out", wantOmitted: []string{"big.go"}},
+		{name: "the default budget keeps it"},
+		{name: "a smaller budget leaves it out", budget: 24_000, wantOmitted: []string{"big.go"}},
 		{name: "a larger budget keeps it", budget: 60_000},
 	}
 	for _, tt := range tests {

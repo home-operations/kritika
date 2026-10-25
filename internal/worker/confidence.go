@@ -34,7 +34,7 @@ const (
 // scorer's model holds.
 const (
 	confidenceBudgetShare = 2
-	confidenceBudgetCap   = 4 * review.DefaultBudgetTokens
+	confidenceBudgetCap   = 96_000
 )
 
 // confidenceBudget is the scorer's prompt budget for an agent budget of

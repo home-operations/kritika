@@ -1336,7 +1336,7 @@ func TestRun(t *testing.T) {
 func TestLimitsWithDefaults(t *testing.T) {
 	t.Run("all zero", func(t *testing.T) {
 		got := Limits{}.WithDefaults()
-		want := Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 16384}
+		want := Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 6_000_000, MaxOutputTokensPerStep: 16384}
 		if got != want {
 			t.Fatalf("WithDefaults() = %+v, want %+v", got, want)
 		}
