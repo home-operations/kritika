@@ -48,6 +48,9 @@ tests:
           path: spec.groups[0].rules[1].alert
           value: KritikaMultipleLeaders
       - equal:
+          path: spec.groups[0].rules[1].expr
+          value: sum by (namespace, job) (last_over_time(kritika_leader[1m])) > 1
+      - equal:
           path: spec.groups[0].rules[1].for
           value: 2m
       - equal:
