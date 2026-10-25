@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -56,13 +57,13 @@ func TestWriteAgentRun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, ForcedBy: tt.forced}, nil, nil, Secrets{})
+		rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, ForcedBy: tt.forced}, nil, nil, runspec.Secrets{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		rec.useTools(agentTools{})
 		rec.commandCounts = counts
-		if err := writeAgentRun(ctx, runner.ForRunner(token), Spec{RunID: id}, rec, "failed"); err != nil {
+		if err := writeAgentRun(ctx, runner.ForRunner(token), runspec.Spec{RunID: id}, rec, "failed"); err != nil {
 			t.Fatal(err)
 		}
 		if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {

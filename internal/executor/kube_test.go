@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 const (
@@ -34,14 +34,14 @@ func spec() Spec {
 	return Spec{
 		Labels:      map[string]string{"account": "acme", "pr": "42", "kind": "review"},
 		Annotations: map[string]string{"head-sha": headSHA},
-		Job: runner.Spec{
-			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: "0123456789abcdef-run",
+		Job: runspec.Spec{
+			Version: runspec.Version, Kind: runspec.KindReview, RunID: "0123456789abcdef-run",
 			CloneURL: "https://forge.example.com/acme/widgets.git", Head: headSHA, Base: baseSHA,
 			Ignore: []string{"vendor/**", "**/*.lock"},
-			Agent:  &runner.AgentLimits{}, Model: &runner.ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
-			Prompt: &runner.Prompt{Repository: "acme/widgets"},
+			Agent:  &runspec.AgentLimits{}, Model: &runspec.ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
+			Prompt: &runspec.Prompt{Repository: "acme/widgets"},
 		},
-		Secrets:  runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", DatabaseToken: "db_run_token"},
+		Secrets:  runspec.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", DatabaseToken: "db_run_token"},
 		Deadline: 5 * time.Minute,
 	}
 }
@@ -216,7 +216,7 @@ func checkSpecMount(t *testing.T, pod corev1.PodSpec, c corev1.Container) {
 func TestKubeRunRejectsOversizedSpecBeforeCreatingAnything(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	s := spec()
-	s.Job.RepoFiles = []string{strings.Repeat("<", runner.MaxSpecBytes)}
+	s.Job.RepoFiles = []string{strings.Repeat("<", runspec.MaxBytes)}
 	res := newKube(t, client).Run(t.Context(), s)
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "byte limit") {
 		t.Fatalf("err = %v", res.Err)
@@ -780,13 +780,13 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 		string(sec.Data["database-token"]) != "db_run_token" {
 		t.Fatalf("secret data = %v", sec.Data)
 	}
-	got, err := runner.DecodeSpec(sec.Data["run-spec.json"])
+	got, err := runspec.Decode(sec.Data["run-spec.json"])
 	if err != nil || got.Head != headSHA || got.Base != baseSHA || strings.Join(got.Ignore, ",") != "vendor/**,**/*.lock" {
 		t.Fatalf("run spec = %+v, %v", got, err)
 	}
 	// The run's commands get the admin's variables by name, the Secret's
 	// masked; the worker's own spec is left as it was.
-	if !slices.Equal(got.Agent.Env, []runner.CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}}) || s.Job.Agent.Env != nil {
+	if !slices.Equal(got.Agent.Env, []runspec.CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}}) || s.Job.Agent.Env != nil {
 		t.Fatalf("run spec env = %+v, worker's = %+v", got.Agent.Env, s.Job.Agent.Env)
 	}
 	if sec.Labels["kritika.home-operations.com/role"] != "runner" || sec.Labels["kritika.home-operations.com/account"] != "acme" {
@@ -1042,7 +1042,7 @@ func TestKubeRunRefusedInSetupStaysRefused(t *testing.T) {
 
 func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 	const token = "ghs_secret_token"
-	secrets := runner.Secrets{GitToken: token, GatewayToken: "krk_run_token"}
+	secrets := runspec.Secrets{GitToken: token, GatewayToken: "krk_run_token"}
 	// A secret straddles the point LogTailBytes from the end.
 	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", LogTailBytes-8) + " END\n"
 	tests := []struct {
@@ -1100,7 +1100,7 @@ func TestKubeFinishReportsItsOwnPod(t *testing.T) {
 	}
 	client := fake.NewSimpleClientset(exited(job+"-aaaaa", "this-run", 0), exited(job+"-zzzzz", "earlier", 1))
 	res := Result{JobName: job, JobUID: "this-run"}
-	newKube(t, client).finish(t.Context(), &res, runner.Secrets{})
+	newKube(t, client).finish(t.Context(), &res, runspec.Secrets{})
 	if res.PodName != job+"-aaaaa" || res.ExitCode != 0 {
 		t.Fatalf("finish reported pod %s exiting %d, want %s exiting 0", res.PodName, res.ExitCode, job+"-aaaaa")
 	}
@@ -1110,11 +1110,11 @@ func TestLogTailDropsALineCutAtTheCeiling(t *testing.T) {
 	const token = "ghs_secret_token"
 	// The read stopped inside the secret on its last line.
 	log := "first\nsecond\nclone with ghs_secr"
-	got := logTail(log, true, runner.Secrets{GitToken: token})
+	got := logTail(log, true, runspec.Secrets{GitToken: token})
 	if got != "first\nsecond\n" {
 		t.Fatalf("tail = %q", got)
 	}
-	if got := logTail(log, false, runner.Secrets{GitToken: token}); got != log {
+	if got := logTail(log, false, runspec.Secrets{GitToken: token}); got != log {
 		t.Fatalf("a read under the ceiling is kept whole, got %q", got)
 	}
 }

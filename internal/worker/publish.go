@@ -19,7 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -282,7 +282,7 @@ const maxNamedFiles = 5
 // own reason or a bot's unchanged patch, and for a filtered one the name
 // of the condition that decided, "" for none.
 func skipDescription(reason, filter string) string {
-	if reason == runner.SkipUnchangedPatch {
+	if reason == runspec.SkipUnchangedPatch {
 		return "patch unchanged since the last review"
 	}
 	desc := repoconfig.SkipReason(reason).Description()

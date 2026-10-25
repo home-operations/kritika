@@ -13,12 +13,11 @@ import (
 	"strings"
 
 	"github.com/caarlos0/env/v11"
-
-	"github.com/home-operations/kritika/internal/egress"
 )
 
-// Command selects what a kritika process runs: the service, or one review or
-// index run in a runner Job.
+// Command selects what a kritika process runs: the service, or the
+// connection of a provider to a ChatGPT plan. A runner Job runs
+// cmd/kritika-runner instead.
 type Command string
 
 // Commands a kritika process can run.
@@ -27,8 +26,6 @@ const (
 	// queues, runner Jobs, the gateway and, on the leader, the leader
 	// duties.
 	CommandServe Command = "serve"
-	// CommandRun is one run in a runner Job, which the service creates.
-	CommandRun Command = "run"
 	// CommandChatGPTLogin connects a configured provider to a ChatGPT plan.
 	CommandChatGPTLogin Command = "chatgpt login"
 )
@@ -42,13 +39,10 @@ func ParseCommand(args []string) (Command, error) {
 	if (len(args) == 3 || len(args) == 4) && args[0] == "chatgpt" && args[1] == "login" {
 		return CommandChatGPTLogin, nil
 	}
-	if len(args) == 1 {
-		switch c := Command(args[0]); c {
-		case CommandServe, CommandRun:
-			return c, nil
-		}
+	if len(args) == 1 && Command(args[0]) == CommandServe {
+		return CommandServe, nil
 	}
-	return "", fmt.Errorf("config: unknown arguments %q: usage: kritika [serve | run | chatgpt login [<forge/account>] <provider>]", args)
+	return "", fmt.Errorf("config: unknown arguments %q: usage: kritika [serve | chatgpt login [<forge/account>] <provider>]", args)
 }
 
 // Executor selects how runners run.
@@ -122,7 +116,7 @@ type Config struct {
 func (c *Config) FileDocument() Document { return c.document }
 
 // ValidateRunner checks what a runner pod needs. The job document itself is
-// decoded and validated by the runner package.
+// decoded and validated by package runspec.
 func (c *Config) ValidateRunner() error {
 	if c.RunSpecFile == "" {
 		return errors.New("config: KRITIKA_RUN_SPEC_FILE is required to run")
@@ -155,7 +149,7 @@ func (c *Config) parseWebURL() error {
 	if err != nil {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
 	}
-	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
@@ -194,7 +188,7 @@ func (c *Config) validate() error {
 		return err
 	}
 	if c.GatewayURL != "" {
-		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
+		if err := checkGatewayURL(c.GatewayURL); err != nil {
 			return fmt.Errorf("config: gatewayUrl: KRITIKA_GATEWAY_URL: %w", err)
 		}
 	}
@@ -202,6 +196,26 @@ func (c *Config) validate() error {
 		return err
 	}
 	c.logLevel = logLevels[strings.ToLower(c.LogLevel)]
+	return nil
+}
+
+// The schemes of the URLs the settings name.
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
+
+// checkGatewayURL checks a gateway URL a runner will be handed: http, a
+// host, no path and no credentials, since the run token becomes its
+// password.
+func checkGatewayURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != schemeHTTP || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
+		return errors.New("must be http://host:port")
+	}
 	return nil
 }
 

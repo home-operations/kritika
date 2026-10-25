@@ -12,7 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -82,7 +82,7 @@ func TestEarlyEndStatus(t *testing.T) {
 			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered)"},
 		{name: "an exclusion with a name", status: store.ReviewSkipped, skip: string(repoconfig.SkipFiltered), filter: "skip-label",
 			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered: skip-label)"},
-		{name: "a bot's unchanged patch", status: store.ReviewSkipped, skip: runner.SkipUnchangedPatch,
+		{name: "a bot's unchanged patch", status: store.ReviewSkipped, skip: runspec.SkipUnchangedPatch,
 			wantState: forge.StatusSuccess, want: "kritika: skipped (patch unchanged since the last review)"},
 		{name: "an admission's own reason", status: store.ReviewSkipped, reason: "no review model is configured for this repository",
 			wantState: forge.StatusSuccess, want: "kritika: skipped (no review model is configured for this repository)"},

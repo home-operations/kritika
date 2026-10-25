@@ -14,6 +14,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -30,7 +31,7 @@ type partCheckpoint struct {
 // context invalidates the whole plan. Run identity, scheduling and the token
 // budget the month left this attempt do not change the input a part reviews,
 // nor does the last review's conversation, which no part carries on.
-func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error) {
+func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string, error) {
 	p.RunID = ""
 	if p.Agent != nil {
 		limits := *p.Agent
@@ -49,7 +50,7 @@ func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error)
 		Submit       model.ToolDef
 	}
 	input := struct {
-		Spec    Spec
+		Spec    runspec.Spec
 		Prompts []prompt
 		Tools   []model.ToolDef
 	}{Spec: p}
@@ -71,7 +72,7 @@ func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error)
 // reused is left out, so its part runs again rather than failing every
 // retry that copies it.
 func loadParts(
-	ctx context.Context, st *store.Store, p Spec, hash string, parts []reviewPart, logger *slog.Logger,
+	ctx context.Context, st *store.Store, p runspec.Spec, hash string, parts []reviewPart, logger *slog.Logger,
 ) ([]partCheckpoint, error) {
 	var rows []store.PartCheckpoint
 	err := st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
@@ -119,7 +120,7 @@ func restorePart(row store.PartCheckpoint, parts []reviewPart) (partCheckpoint, 
 // savePart stores only a submitted answer, the limit that forced it, and
 // provenance. Usage stays on the source run; reusing an answer performs no
 // model steps or commands.
-func savePart(ctx context.Context, st *store.Store, p Spec, secrets Secrets, hash string, part int, res agent.Result,
+func savePart(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, hash string, part int, res agent.Result,
 	tools agentTools,
 ) error {
 	meta := agentRecord{}

@@ -16,7 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -151,7 +151,7 @@ func (w *Review) recordPreparation(
 		if decision.disposition == reviewContinue {
 			return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, priorID)
 		}
-		if pack.SkipReason == runner.SkipUnchangedPatch {
+		if pack.SkipReason == runspec.SkipUnchangedPatch {
 			pack.carried, _, err = carriedConfidence(ctx, tx, prID, reviewID, confidence)
 			if err != nil {
 				return err

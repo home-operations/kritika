@@ -22,6 +22,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
@@ -113,8 +114,8 @@ func TestS3OutageRecovery(t *testing.T) {
 				if requests.Load() != 0 {
 					t.Fatal("startup contacted S3")
 				}
-				p := &Proxy{Cache: c, Logger: slog.New(slog.DiscardHandler), Rules: func() Rules {
-					return Rules{Allow: hosts("example.com")}
+				p := &Proxy{Cache: c, Logger: slog.New(slog.DiscardHandler), Rules: func() egresspolicy.Rules {
+					return egresspolicy.Rules{Allow: hosts("example.com")}
 				}, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					resp := s3Reply(r, http.StatusOK, "")
 					resp.Body, resp.ContentLength = io.NopCloser(strings.NewReader("origin")), 6
@@ -359,7 +360,7 @@ func TestS3DownloadDoesNotWaitForUpload(t *testing.T) {
 		store.serve(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, "tool archive")
 	})
 	useS3(t, p.Cache, S3Options{Endpoint: srv.URL, Region: "test", Bucket: "cache", AccessKey: "key", SecretKey: "secret"})

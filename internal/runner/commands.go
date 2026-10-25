@@ -20,6 +20,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // defaultCommands are the commands the -tools image carries on its PATH.
@@ -41,7 +42,7 @@ var defaultCommands = []string{"curl", "find", "gh", "grep", "jq"}
 // not offered, for the review's summary, and the values a mise config
 // marks for redaction join secrets. cleanup removes the scratch space.
 func commandTool(
-	ctx context.Context, p Spec, tree *agent.Tree, head chan struct{}, secrets Secrets, maxOutput int, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, tree *agent.Tree, head chan struct{}, secrets runspec.Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
@@ -91,7 +92,7 @@ func commandTool(
 	}
 	env, proxied := commandEnv(home, cache)
 	admin := adminEnv(p.Agent.Env, secrets)
-	commandEnvs, miseSecrets := p.commandCredentials(secrets)
+	commandEnvs, miseSecrets := commandCredentials(p, secrets)
 	found := map[string]string{}
 	for _, name := range defaultCommands {
 		if path, err := exec.LookPath(name); err == nil {
@@ -113,7 +114,7 @@ func commandTool(
 			maps.Copy(found, mise.offered())
 		}
 	}
-	found = p.offered(found)
+	found = offered(p, found)
 	if len(found) == 0 {
 		return nil, nil, notes, cleanup
 	}
@@ -211,8 +212,8 @@ func commandTool(
 // carries the run's read-only token; a command that carries a credential
 // is never a binary the repository chose. On another forge the token is
 // that forge's: gh and mise get none.
-func (p Spec) commandCredentials(secrets Secrets) (map[string][]string, Secrets) {
-	if !p.onGitHub() {
+func commandCredentials(p runspec.Spec, secrets runspec.Secrets) (map[string][]string, runspec.Secrets) {
+	if !onGitHub(p) {
 		secrets.GitToken = ""
 		return map[string][]string{}, secrets
 	}
@@ -221,12 +222,16 @@ func (p Spec) commandCredentials(secrets Secrets) (map[string][]string, Secrets)
 
 // offered is found less gh on another forge than GitHub, where gh,
 // signed in nowhere, would only fail.
-func (p Spec) offered(found map[string]string) map[string]string {
-	if !p.onGitHub() {
+func offered(p runspec.Spec, found map[string]string) map[string]string {
+	if !onGitHub(p) {
 		delete(found, "gh")
 	}
 	return found
 }
+
+// onGitHub reports whether the run's repository is on GitHub, where
+// runspec.Secrets.GitToken is a GitHub token.
+func onGitHub(p runspec.Spec) bool { return p.Forge == "" || p.Forge == string(configfile.ForgeGitHub) }
 
 // curlrc is the configuration curl reads from HOME. Without a terminal
 // curl prints its progress meter to stderr, which the run tool keeps in
@@ -278,20 +283,14 @@ func markRepository(dir, cloneURL string) error {
 	return err
 }
 
-// CommandEnvPrefix prefixes, on the runner container, the names of the
-// admin's variables for the commands, so they configure the commands and
-// never the runner itself: a GODEBUG, TMPDIR or PGHOST of theirs would
-// otherwise change how the runner fetches, logs or connects.
-const CommandEnvPrefix = "KRITIKA_COMMAND_ENV_"
-
 // adminEnv is the admin's variables for the commands, read from the
 // runner's own environment under CommandEnvPrefix, where its pod template
 // put them; a value from a Secret joins the masked secrets. A variable
 // from an optional Secret key that is not set is left out.
-func adminEnv(vars []CommandEnvVar, secrets Secrets) []string {
+func adminEnv(vars []runspec.CommandEnvVar, secrets runspec.Secrets) []string {
 	var env []string
 	for _, v := range vars {
-		value, ok := os.LookupEnv(CommandEnvPrefix + v.Name)
+		value, ok := os.LookupEnv(runspec.CommandEnvPrefix + v.Name)
 		if !ok {
 			continue
 		}

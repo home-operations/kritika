@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestCommandEnv(t *testing.T) {
@@ -197,7 +198,7 @@ func TestKeptOutputRead(t *testing.T) {
 	}
 
 	head := tree(t, map[string]string{"main.go": "package main\n"})
-	read := offeredTools(Spec{Agent: &AgentLimits{}, Prompt: &Prompt{}}, head, nil, []agent.Tool{run})[0]
+	read := offeredTools(runspec.Spec{Agent: &runspec.AgentLimits{}, Prompt: &runspec.Prompt{}}, head, nil, []agent.Tool{run})[0]
 	if d := read.Def(); d.Name != "read_file" || !strings.HasSuffix(d.Description, "at the paths fetch_repo and the run tool's notes name.") {
 		t.Fatalf("def = %+v", d)
 	}

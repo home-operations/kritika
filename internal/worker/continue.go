@@ -11,7 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -45,7 +45,7 @@ func carryWindow(t configfile.ProviderType, ref configfile.ModelRef) time.Durati
 func (w *Review) continuation(
 	ctx context.Context, logger *slog.Logger, accountID string, prior priorReview, head, mergeBase string,
 	ref configfile.ModelRef, t configfile.ProviderType,
-) *runner.Continuation {
+) *runspec.Continuation {
 	if prior.id == "" || prior.headSHA == head || prior.mergeBase != mergeBase {
 		return nil
 	}
@@ -73,5 +73,5 @@ func (w *Review) continuation(
 	}
 	logger.Info("the review may carry on the last review's conversation", "run", review.ShortSHA(kept.RunID),
 		"age", kept.Age.Round(time.Second), "tokens", kept.Tokens)
-	return &runner.Continuation{RunID: kept.RunID, Session: kept.Session}
+	return &runspec.Continuation{RunID: kept.RunID, Session: kept.Session}
 }

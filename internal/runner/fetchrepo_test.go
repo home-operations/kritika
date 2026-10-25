@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gittest"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // servedRepo serves, over HTTPS, a repository with two tags: v1, with
@@ -439,12 +440,12 @@ func TestFetchedReadFile(t *testing.T) {
 	}
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 
-	plain := offeredTools(Spec{Agent: &AgentLimits{}, Prompt: &Prompt{}}, head, nil, nil)[0]
+	plain := offeredTools(runspec.Spec{Agent: &runspec.AgentLimits{}, Prompt: &runspec.Prompt{}}, head, nil, nil)[0]
 	if _, err := plain.Run(t.Context(), fetchInput(t, map[string]any{"path": "../upstream/1-repo@v2/pkg/a.go"})); err == nil ||
 		!strings.Contains(err.Error(), "escapes the tree") || strings.Contains(plain.Def().Description, "fetch_repo") {
 		t.Fatalf("without fetch_repo, read_file reads the head alone: %v", err)
 	}
-	read := offeredTools(Spec{Agent: &AgentLimits{}, Prompt: &Prompt{}}, head, nil, []agent.Tool{fetch})[0]
+	read := offeredTools(runspec.Spec{Agent: &runspec.AgentLimits{}, Prompt: &runspec.Prompt{}}, head, nil, []agent.Tool{fetch})[0]
 	if d := read.Def(); d.Name != "read_file" || !strings.HasSuffix(d.Description, "It also reads the files under ../upstream/, at the paths fetch_repo and the run tool's notes name.") {
 		t.Fatalf("def = %+v", d)
 	}

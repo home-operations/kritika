@@ -15,7 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -23,7 +23,7 @@ import (
 // them, and the note its summary states when only named no agent that is
 // on.
 type reviewers struct {
-	specs []runner.Reviewer
+	specs []runspec.Reviewer
 	note  string
 }
 
@@ -66,14 +66,14 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 	}
 	full := func(name string) bool { return prior.id != "" && !slices.Contains(prior.reviewers, name) }
 	if runDefault {
-		out.specs = append(out.specs, runner.Reviewer{Name: review.DefaultReviewer, Full: full(review.DefaultReviewer)})
+		out.specs = append(out.specs, runspec.Reviewer{Name: review.DefaultReviewer, Full: full(review.DefaultReviewer)})
 	}
 	for _, name := range names {
 		r := settings.Reviewers[name]
 		if !r.On() || only == "" && !settings.Held[name] {
 			continue
 		}
-		spec := runner.Reviewer{
+		spec := runspec.Reviewer{
 			Name: name, Instructions: r.Instructions, File: r.File, Categories: r.Categories, Paths: r.Paths,
 			Rules: repoconfig.RulesFor(r.Rules, vars), Full: full(name), Limits: reviewerLimits(r, settings.Agent, maxTokens),
 		}
@@ -82,7 +82,7 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 		}
 		if sk := settings.Skills; len(sk.Paths) > 0 {
 			scope := configfile.WithSkills(sk, r.Skills).Scope
-			spec.Skills = &runner.Skills{Paths: sk.Paths, Scope: scope, Off: repoconfig.SkillsOff(scope, vars)}
+			spec.Skills = &runspec.Skills{Paths: sk.Paths, Scope: scope, Off: repoconfig.SkillsOff(scope, vars)}
 		}
 		out.specs = append(out.specs, spec)
 	}
@@ -95,13 +95,13 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 // reviewerLimits are the bounds r's agent runs within, where they are
 // lower than the repository's agent settings and maxTokens, its budget a
 // part; nil where r sets none.
-func reviewerLimits(r configfile.Reviewer, agent configfile.AgentSettings, maxTokens int64) *runner.ReviewerLimits {
+func reviewerLimits(r configfile.Reviewer, agent configfile.AgentSettings, maxTokens int64) *runspec.ReviewerLimits {
 	if r.Agent == (configfile.ReviewerAgent{}) {
 		return nil
 	}
 	agent.MaxTokens = maxTokens
 	b := r.Bounds(agent)
-	return &runner.ReviewerLimits{MaxSteps: b.MaxSteps, MaxTokens: b.MaxTokens, TimeoutSeconds: int(b.Timeout / time.Second)}
+	return &runspec.ReviewerLimits{MaxSteps: b.MaxSteps, MaxTokens: b.MaxTokens, TimeoutSeconds: int(b.Timeout / time.Second)}
 }
 
 // reviewerGrants are the models of the reviewers other than the default
@@ -109,7 +109,7 @@ func reviewerLimits(r configfile.Reviewer, agent configfile.AgentSettings, maxTo
 // it sets none, pinned as pinModels pins the review's.
 func (w *Review) reviewerGrants(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings,
-	specs []runner.Reviewer,
+	specs []runspec.Reviewer,
 ) map[string]store.ReviewerGrant {
 	var out map[string]store.ReviewerGrant
 	for _, spec := range specs {

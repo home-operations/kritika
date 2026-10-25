@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/configfile"
-	"github.com/home-operations/kritika/internal/egress"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // urlReplacement is one of mise's url_replacements rules: a download URL
@@ -34,7 +34,7 @@ func lockedInstallEnv(common, urls []string) []string {
 	if rules := cacheReplacements(lockHosts(urls)); len(rules) > 0 {
 		env = append(env, "MISE_URL_REPLACEMENTS="+miseURLReplacements(rules))
 	}
-	return withProxyUser(env, egress.LockedProxyUser)
+	return withProxyUser(env, runspec.LockedProxyUser)
 }
 
 // miseTokenHosts are the hosts mise sends the run's GitHub token, which

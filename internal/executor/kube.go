@@ -24,7 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // runnerRole names a runner pod's container, and its component and role
@@ -115,7 +115,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		spec.Job.Agent = &agent
 	}
 	name := jobName(spec.Job.RunID)
-	runSpec, err := runner.EncodeSpec(spec.Job)
+	runSpec, err := runspec.Encode(spec.Job)
 	if err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
@@ -443,7 +443,7 @@ func refused(err error) bool {
 }
 
 // cancel deletes the Job after ctx ended, then records what the pod got to.
-func (k *Kube) cancel(ctx context.Context, res *Result, secrets runner.Secrets) {
+func (k *Kube) cancel(ctx context.Context, res *Result, secrets runspec.Secrets) {
 	res.Err = context.Cause(ctx)
 	k.deleteJob(ctx, res.JobName, types.UID(res.JobUID))
 	k.finish(ctx, res, secrets)
@@ -490,7 +490,7 @@ func jobFinished(j *batchv1.Job) bool {
 // finish fills the pod-level fields of a result from the Job's pod, with
 // the run's secrets masked out of the log tail. Best effort: a missing pod
 // leaves the fields empty rather than failing the run.
-func (k *Kube) finish(ctx context.Context, res *Result, secrets runner.Secrets) {
+func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets) {
 	started := time.Now()
 	defer func() {
 		k.logger().Info("runner result collected", "job_name", res.JobName, "elapsed", time.Since(started))
@@ -553,7 +553,7 @@ const (
 // the cut so none straddles it. A read that hit the byte ceiling ends
 // mid-line, where a secret could be cut short of its mask, so that partial
 // line is dropped.
-func logTail(log string, hitCeiling bool, secrets runner.Secrets) string {
+func logTail(log string, hitCeiling bool, secrets runspec.Secrets) string {
 	if hitCeiling {
 		if i := strings.LastIndexByte(log, '\n'); i >= 0 {
 			log = log[:i+1]
@@ -668,7 +668,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 	// take in a credential of the run's.
 	var env []corev1.EnvVar
 	for _, e := range k.PodTemplate.runner().Env {
-		e.Name = runner.CommandEnvPrefix + e.Name
+		e.Name = runspec.CommandEnvPrefix + e.Name
 		env = append(env, e)
 	}
 	env = append(env, []corev1.EnvVar{

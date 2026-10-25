@@ -51,7 +51,7 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 	"github.com/home-operations/kritika/internal/webhook"
@@ -1939,9 +1939,9 @@ func checkBotPatchIDSkip(
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_patch_id, skip_reason, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
 			FROM reviews r WHERE head_sha = $1`, newHead.String()).Scan(&forgePatch, &skipReason, &runs)
-	}); err != nil || runs != 0 || forgePatch == "" || skipReason != runner.SkipUnchangedPatch {
+	}); err != nil || runs != 0 || forgePatch == "" || skipReason != runspec.SkipUnchangedPatch {
 		t.Fatalf("skipped review: forge patch %q, reason %q, %d runner runs, %v; want a forge patch, %s and no runner",
-			forgePatch, skipReason, runs, err, runner.SkipUnchangedPatch)
+			forgePatch, skipReason, runs, err, runspec.SkipUnchangedPatch)
 	}
 
 	// A manual re-run of the same unchanged bot patch must bypass the skip:
@@ -2979,7 +2979,7 @@ func checkSupervision(
 		const running, newer = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
 		dispatch(running, false)
 		spec := started()
-		if spec.Job.Version != runner.SpecVersion || spec.Job.Kind != runner.KindReview || spec.Job.Head != running || spec.Job.Base == "" {
+		if spec.Job.Version != runspec.Version || spec.Job.Kind != runspec.KindReview || spec.Job.Head != running || spec.Job.Base == "" {
 			t.Fatalf("job = %+v", spec.Job)
 		}
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -3598,12 +3598,12 @@ func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	g.mu.Lock()
 	block, after, beforeIndex := g.block, g.after, g.beforeIndex
 	g.mu.Unlock()
-	if spec.Job.Kind == runner.KindIndex && beforeIndex != nil {
+	if spec.Job.Kind == runspec.KindIndex && beforeIndex != nil {
 		if err := beforeIndex(); err != nil {
 			return executor.Result{JobName: "kritika-run-failed", Err: err}
 		}
 	}
-	if spec.Job.Kind != runner.KindReview {
+	if spec.Job.Kind != runspec.KindReview {
 		return g.inner.Run(ctx, spec)
 	}
 	if !block {

@@ -15,13 +15,13 @@ import (
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
 func (w *Index) stage(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, repository string,
-	client forge.Client, runID string, spec runner.Spec, logger *slog.Logger,
+	client forge.Client, runID string, spec runspec.Spec, logger *slog.Logger,
 ) (err error) {
 	started := false
 	defer func() {
@@ -58,7 +58,7 @@ func (w *Index) stage(
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels:      runnerLabels(account.Key(), repository, jobs.QueueIndex, 0),
 		Annotations: runnerAnnotations(job.ID, spec.Head), Job: spec,
-		Secrets:  runner.Secrets{GitToken: token, GatewayToken: gatewayToken, DatabaseToken: databaseToken},
+		Secrets:  runspec.Secrets{GitToken: token, GatewayToken: gatewayToken, DatabaseToken: databaseToken},
 		Deadline: deadline,
 	})
 	// Runner accounting survives River cancellation, while sealing staging

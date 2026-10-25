@@ -9,6 +9,7 @@ import (
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
@@ -19,7 +20,7 @@ import (
 // the changed files that reviewer reviews, every one for the default
 // reviewer.
 type partShare struct {
-	reviewer     *Reviewer
+	reviewer     *runspec.Reviewer
 	scoped       []string
 	paths        []string
 	index, count int
@@ -36,7 +37,7 @@ func (s partShare) name() string {
 
 // full reports whether the share reviews the whole change of a review that
 // builds on the last one, its reviewer not run there.
-func (s partShare) full(p Spec) bool {
+func (s partShare) full(p runspec.Spec) bool {
 	return s.reviewer != nil && s.reviewer.Full && p.PriorHead != ""
 }
 
@@ -49,7 +50,7 @@ func (s partShare) specialist() bool {
 // spec is p as the share's reviewer reviews by it: a reviewer other than
 // the default one with its own rules and skills, in place of the
 // default's.
-func (s partShare) spec(p Spec) Spec {
+func (s partShare) spec(p runspec.Spec) runspec.Spec {
 	if !s.specialist() {
 		return p
 	}
@@ -76,7 +77,7 @@ func (s partShare) role(files repoconfig.Files) *review.Reviewer {
 
 // limits are the run's agent bounds with the share's reviewer's in place
 // of them, which the worker has kept within the run's.
-func (s partShare) limits(a *AgentLimits) *AgentLimits {
+func (s partShare) limits(a *runspec.AgentLimits) *runspec.AgentLimits {
 	if s.reviewer == nil || s.reviewer.Limits == nil {
 		return a
 	}
@@ -111,14 +112,14 @@ type reviewerPlan struct {
 // whose reviewers are the default one alone is not planned in shares. Each reviewer's files are cut into parts as a review's are,
 // within its share of the parts the run is granted, the diff since the
 // last review cut for a reviewer the last review ran.
-func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths []string) reviewerPlan {
+func planReviewers(p runspec.Spec, res *gitfetch.Result, scope review.Scope, deltaPaths []string) reviewerPlan {
 	reviewers := p.Prompt.Reviewers
 	if reviewers == nil {
 		return reviewerPlan{}
 	}
 	changed := notIgnored(res.Changed, p.Ignore)
 	type applied struct {
-		reviewer *Reviewer
+		reviewer *runspec.Reviewer
 		files    []string
 		scope    review.Scope
 	}
@@ -236,8 +237,8 @@ const noteReviewerSplit = "%s reviewed in %d parts, each run apart"
 // followUpReviewer is the reviewer a follow-up answers for, the one its
 // spec carries, "" for the default reviewer and for a review's run, whose
 // parts name their own.
-func followUpReviewer(p Spec) string {
-	if p.Kind != KindFollowUp || p.Prompt == nil || len(p.Prompt.Reviewers) == 0 {
+func followUpReviewer(p runspec.Spec) string {
+	if p.Kind != runspec.KindFollowUp || p.Prompt == nil || len(p.Prompt.Reviewers) == 0 {
 		return ""
 	}
 	return p.Prompt.Reviewers[0].Name
@@ -246,7 +247,7 @@ func followUpReviewer(p Spec) string {
 // followUpRole is the reviewer a follow-up answers for as its system
 // prompt gives it, with no categories, since a reply reports no findings;
 // nil for the default reviewer.
-func followUpRole(p Spec, files repoconfig.Files) *review.Reviewer {
+func followUpRole(p runspec.Spec, files repoconfig.Files) *review.Reviewer {
 	if followUpReviewer(p) == "" {
 		return nil
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
@@ -148,7 +149,7 @@ func testS3CacheSharesDownloads(t *testing.T, opts S3Options) {
 		w.Header().Set("Last-Modified", "Mon, 30 Mar 2026 17:49:19 GMT")
 		_, _ = io.WriteString(w, body)
 	}
-	writer := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	writer := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, writer.Cache, opts)
 	const target = "http://example.com/tool.tar.gz"
 	if w := proxied(writer, http.MethodGet, target, nil); w.Body.String() != body {
@@ -169,7 +170,7 @@ func testS3CacheSharesDownloads(t *testing.T, opts S3Options) {
 		{"date", http.MethodGet, http.Header{"If-Modified-Since": {"Mon, 30 Mar 2026 17:49:19 GMT"}}, 304, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			reader := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+			reader := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 			useS3(t, reader.Cache, opts)
 			w := proxied(reader, tt.method, target, tt.headers)
 			if w.Code != tt.status || w.Body.String() != tt.body {
@@ -190,7 +191,7 @@ func TestS3CacheFailures(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			store, opts := newS3TestStore(t)
 			var calls atomic.Int32
-			p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+			p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 				calls.Add(1)
 				_, _ = io.WriteString(w, "tool archive")
 			})
@@ -250,7 +251,7 @@ func testS3CacheConcurrentFills(t *testing.T, opts S3Options) {
 	var calls atomic.Int32
 	proxies := make([]*Proxy, 2)
 	for i := range proxies {
-		proxies[i] = cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+		proxies[i] = cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 			calls.Add(1)
 			started <- struct{}{}
 			<-release
@@ -277,7 +278,7 @@ func testS3CacheConcurrentFills(t *testing.T, opts S3Options) {
 	for _, p := range proxies {
 		waitS3Upload(t, p.Cache, cacheKey("https://example.com/tool"))
 	}
-	reader := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+	reader := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("concurrent fills did not publish a reusable object")
 		w.WriteHeader(http.StatusBadGateway)
 	})
@@ -320,7 +321,7 @@ func TestS3CachePinsReadRevision(t *testing.T) {
 // and publishes what it fetched like any fill.
 func TestS3CacheRefill(t *testing.T) {
 	store, opts := newS3TestStore(t)
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "direct")
 	})
 	useS3(t, p.Cache, opts)
@@ -382,7 +383,7 @@ func TestS3RefillOutlivesEarlierUpload(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	var calls atomic.Int32
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
 	})
 	useS3(t, p.Cache, S3Options{Endpoint: srv.URL, Region: "test", Bucket: "cache", Prefix: "instance/", AccessKey: "key", SecretKey: "secret"})
@@ -426,7 +427,7 @@ func TestS3UploadSkipsSupersededEntry(t *testing.T) {
 	store, opts := newS3TestStore(t)
 	var calls atomic.Int32
 	upstream := func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprintf(w, "archive %d", calls.Add(1)) }
-	writer := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	writer := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, writer.Cache, opts)
 	reg := prometheus.NewPedanticRegistry()
 	writer.Cache.Observe(metrics.New(reg), slog.New(slog.DiscardHandler))
@@ -438,7 +439,7 @@ func TestS3UploadSkipsSupersededEntry(t *testing.T) {
 	}
 	store.waitObject(t, path)
 	time.Sleep(5 * time.Millisecond)
-	other := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	other := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, other.Cache, opts)
 	r := httptest.NewRequest(http.MethodGet, target, nil)
 	w := httptest.NewRecorder()

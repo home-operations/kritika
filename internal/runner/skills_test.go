@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // skillDoc is a SKILL.md with the frontmatter keys given, one per line.
@@ -200,18 +201,18 @@ func TestPromptInputsSkills(t *testing.T) {
 	huge := repoconfig.Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", repoconfig.MaxSkillLoadedBytes+1)}
 	tests := []struct {
 		name       string
-		skills     *Skills
+		skills     *runspec.Skills
 		found      []repoconfig.Skill
 		want       []string
 		wantLoaded []string
 		wantNotes  []string
 	}{
 		{name: "a spec without skills offers none", found: found},
-		{name: "every skill found", skills: &Skills{Paths: configfile.DefaultSkillPaths}, found: found, want: []string{"review-go", "migrations", "renovate"}},
-		{name: "none found", skills: &Skills{Paths: configfile.DefaultSkillPaths}},
+		{name: "every skill found", skills: &runspec.Skills{Paths: configfile.DefaultSkillPaths}, found: found, want: []string{"review-go", "migrations", "renovate"}},
+		{name: "none found", skills: &runspec.Skills{Paths: configfile.DefaultSkillPaths}},
 		{
 			name: "the scope's paths and the skills that are off",
-			skills: &Skills{
+			skills: &runspec.Skills{
 				Paths: configfile.DefaultSkillPaths, Off: []string{"renovate"},
 				Scope: map[string]configfile.SkillScope{"migrations": {Paths: []string{"db/**"}}, "review-go": {Paths: []string{"**/*.go"}}},
 			},
@@ -219,20 +220,20 @@ func TestPromptInputsSkills(t *testing.T) {
 		},
 		{
 			name: "a scope that says load: false offers its skill by name",
-			skills: &Skills{
+			skills: &runspec.Skills{
 				Paths: configfile.DefaultSkillPaths, Off: []string{"renovate"},
 				Scope: map[string]configfile.SkillScope{"review-go": {Paths: []string{"**/*.go"}, Load: new(false)}},
 			},
 			found: found, want: []string{"review-go", "migrations"},
 		},
 		{
-			name: "the skills past the listing's budget are noted", skills: &Skills{Paths: configfile.DefaultSkillPaths}, found: big,
+			name: "the skills past the listing's budget are noted", skills: &runspec.Skills{Paths: configfile.DefaultSkillPaths}, found: big,
 			want:      []string{"big-0", "big-1", "big-2", "big-3"},
 			wantNotes: []string{"2 skill(s) left out, past the 4 KiB their names and descriptions are given"},
 		},
 		{
 			name: "the skills the scope loads are given whole",
-			skills: &Skills{
+			skills: &runspec.Skills{
 				Paths: configfile.DefaultSkillPaths, Off: []string{"migrations"},
 				Scope: map[string]configfile.SkillScope{"renovate": {Load: new(true)}, "migrations": {Load: new(true)}},
 			},
@@ -240,7 +241,7 @@ func TestPromptInputsSkills(t *testing.T) {
 		},
 		{
 			name:   "a skill past the loaded skills' budget is listed and noted",
-			skills: &Skills{Paths: configfile.DefaultSkillPaths, Scope: map[string]configfile.SkillScope{"huge": {Load: new(true)}}},
+			skills: &runspec.Skills{Paths: configfile.DefaultSkillPaths, Scope: map[string]configfile.SkillScope{"huge": {Load: new(true)}}},
 			found:  append(slices.Clone(found[:1]), huge), want: []string{"review-go", "huge"},
 			wantNotes: []string{"1 skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"},
 		},

@@ -20,6 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -27,7 +28,7 @@ import (
 // when it is reviewed whole: the diff it reads, the pull request's or, on
 // an incremental re-review, the diff since the last review, cut where it is
 // over review.PartBytes into no more parts than its grant covers.
-func splitReview(p Spec, res *gitfetch.Result, scope review.Scope) [][]string {
+func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]string {
 	if p.Agent == nil {
 		return nil
 	}
@@ -46,7 +47,7 @@ type reviewPart struct {
 	prompt   agentPrompt
 	reviewer string
 	full     bool
-	agent    *AgentLimits
+	agent    *runspec.AgentLimits
 }
 
 // partPrompts writes each part's prompt: its own files' diff, the context
@@ -62,7 +63,7 @@ type reviewPart struct {
 // load_skill offers every part's skills. It returns the parts, and the
 // context and the rules they were given together, which the pack keeps.
 func partPrompts(
-	ctx context.Context, p Spec, secrets Secrets, head, base *object.Tree, res *gitfetch.Result, files repoconfig.Files,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head, base *object.Tree, res *gitfetch.Result, files repoconfig.Files,
 	found []repoconfig.Skill, shares []partShare, tools *agentTools, logger *slog.Logger,
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
 	diffs := make([]string, len(shares))
@@ -111,7 +112,7 @@ func partPrompts(
 	}
 	tools.skills = nil
 	if len(skills) > 0 {
-		tools.skills = &skillTool{base: base, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: loaded}
+		tools.skills = &skillTool{base: base, skills: skills, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes, opened: loaded}
 	}
 	parts := make([]reviewPart, len(shares))
 	all := []contextpack.Chunk{}
@@ -145,7 +146,7 @@ func partPrompts(
 // partSimilarCode overlaps remote retrieval within the review's granted
 // parallelism. It reads no git objects; those belong to the serial context pass.
 func partSimilarCode(
-	ctx context.Context, p Spec, secrets Secrets, diffs, changed []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs, changed []string, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
 	// Reviewers that review the same files have the same diffs, each of
 	// which is asked about once.
@@ -177,7 +178,7 @@ func partSimilarCode(
 // raised (the default reviewer when unnamed), and of the dismissed findings that
 // no part of split reviews, which the first part checks again, as a review
 // not split would.
-func unsplitPaths(p Spec, reviewer string, split [][]string) []string {
+func unsplitPaths(p runspec.Spec, reviewer string, split [][]string) []string {
 	var out []string
 	add := func(path string) {
 		if !slices.ContainsFunc(split, func(paths []string) bool { return slices.Contains(paths, path) }) && !slices.Contains(out, path) {
@@ -199,7 +200,7 @@ func unsplitPaths(p Spec, reviewer string, split [][]string) []string {
 // dismissed findings on paths alone, of the last review's only those
 // reviewer raised (the default reviewer when unnamed), and no diagram to carry forward,
 // since the review's summary is written from all the parts'.
-func partSpec(p Spec, paths []string, reviewer string) Spec {
+func partSpec(p runspec.Spec, paths []string, reviewer string) runspec.Spec {
 	prompt := *p.Prompt
 	theirs := func(path string) bool { return !slices.Contains(paths, path) }
 	prompt.Prior = slices.DeleteFunc(slices.Clone(prompt.Prior), func(f review.Finding) bool {
@@ -339,7 +340,7 @@ func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 // findings every part submitted under a joined summary, and how each part
 // ended.
 func runParts(
-	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
+	ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
 	locks *partLocks, parts []reviewPart, logger *slog.Logger,
 ) error {
 	hash, err := partInputHash(p, parts, tools)
@@ -399,7 +400,7 @@ func runParts(
 // for, so a part late enough to pass it is left out, ending the run cleanly
 // rather than at the Job's deadline.
 func runPartLoops(
-	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
 	parts []reviewPart, logger *slog.Logger,
 	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, int) int,
 ) ([]agent.Result, []store.TimelineStep, error) {
@@ -481,7 +482,7 @@ func runPartLoops(
 // reviewer naming it, what they spent together, and why the others
 // stopped; and how each part ended, its summary once it submitted. A run
 // no part submitted for stops as its first part did.
-func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (agent.Result, []store.AgentPart, error) {
+func mergeParts(parts []reviewPart, results []agent.Result, secrets runspec.Secrets) (agent.Result, []store.AgentPart, error) {
 	merged := agent.Result{ToolCalls: map[string]int{}}
 	var submitted []review.Result
 	var stops []string

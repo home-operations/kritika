@@ -1,4 +1,8 @@
-package runner
+// Package runspec is what a worker and a runner agree on across images:
+// the job document a worker hands a runner, the credentials delivered
+// beside it, and the names a runner gives the gateway and its own
+// variables.
+package runspec
 
 import (
 	"bytes"
@@ -21,10 +25,11 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// SpecVersion is the only job document version this runner understands. A
-// worker and runner on different images must agree on it, so a runner
-// refuses any other version instead of guessing at its meaning.
-const SpecVersion = 39
+// Version is the only job document version a runner of this build
+// understands. A worker and runner on different images must agree on it,
+// so a runner refuses any other version instead of guessing at its
+// meaning.
+const Version = 39
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -111,6 +116,12 @@ type CommandEnvVar struct {
 	Secret bool   `json:"secret,omitempty"`
 }
 
+// CommandEnvPrefix prefixes, on the runner container, the names of the
+// admin's variables for the commands, so they configure the commands and
+// never the runner itself: a GODEBUG, TMPDIR or PGHOST of theirs would
+// otherwise change how the runner fetches, logs or connects.
+const CommandEnvPrefix = "KRITIKA_COMMAND_ENV_"
+
 // Prompt is what a review run needs beyond the checkout to write its
 // review prompt and to tell whether the worker will skip the review: the
 // pull request, the review settings with the merge-base .kritika.yaml
@@ -171,6 +182,11 @@ type Prompt struct {
 	// answers about, when that is not the default one.
 	Reviewers []Reviewer `json:"reviewers,omitempty"`
 }
+
+// SkipUnchangedPatch is the skip reason the runner decides beyond
+// repoconfig's: a bot's pull request whose patch id equals its last
+// prepared review's.
+const SkipUnchangedPatch = "unchanged_patch"
 
 // Reviewer is one reviewer a review runs, as its job document carries it
 // (see configfile.Reviewer): its instructions, or the merge-base file
@@ -266,50 +282,50 @@ type Spec struct {
 	Reply bool `json:"reply,omitempty"`
 }
 
-// Validate checks a spec is one this runner can carry out.
+// Validate checks a spec is one a runner of this build can carry out.
 func (s Spec) Validate() error {
-	if s.Version != SpecVersion {
-		return fmt.Errorf("runner: spec version %d is not supported (want %d)", s.Version, SpecVersion)
+	if s.Version != Version {
+		return fmt.Errorf("runspec: spec version %d is not supported (want %d)", s.Version, Version)
 	}
 	if !s.Kind.Valid() {
-		return fmt.Errorf("runner: spec kind %q is not review, index or followup", s.Kind)
+		return fmt.Errorf("runspec: spec kind %q is not review, index or followup", s.Kind)
 	}
 	if s.RunID == "" || s.CloneURL == "" {
-		return errors.New("runner: spec needs runId and cloneUrl")
+		return errors.New("runspec: spec needs runId and cloneUrl")
 	}
 	if !gitfetch.IsSHA(s.Head) {
-		return fmt.Errorf("runner: spec head %q is not a commit SHA", s.Head)
+		return fmt.Errorf("runspec: spec head %q is not a commit SHA", s.Head)
 	}
 	if s.Kind.agentic() && s.Base == "" {
-		return fmt.Errorf("runner: a %s spec needs a base", s.Kind)
+		return fmt.Errorf("runspec: a %s spec needs a base", s.Kind)
 	}
 	for _, c := range []struct{ name, sha string }{{"base", s.Base}, {"priorHead", s.PriorHead}, {"priorBase", s.PriorBase}} {
 		if c.sha != "" && !gitfetch.IsSHA(c.sha) {
-			return fmt.Errorf("runner: spec %s %q is not a commit SHA", c.name, c.sha)
+			return fmt.Errorf("runspec: spec %s %q is not a commit SHA", c.name, c.sha)
 		}
 	}
 	if s.Kind == KindFollowUp && len(s.Thread) == 0 {
-		return errors.New("runner: a followup spec needs the thread it answers")
+		return errors.New("runspec: a followup spec needs the thread it answers")
 	}
 	if s.Prompt != nil {
 		for i, r := range s.Prompt.Reviewers {
 			if r.Name == "" || slices.ContainsFunc(s.Prompt.Reviewers[:i], func(o Reviewer) bool { return o.Name == r.Name }) {
-				return fmt.Errorf("runner: spec reviewer %q is unnamed or listed twice", r.Name)
+				return fmt.Errorf("runspec: spec reviewer %q is unnamed or listed twice", r.Name)
 			}
 		}
 	}
 	if s.Kind.agentic() {
 		if s.Agent == nil {
-			return fmt.Errorf("runner: a %s spec needs agent limits", s.Kind)
+			return fmt.Errorf("runspec: a %s spec needs agent limits", s.Kind)
 		}
 		if s.Model == nil || s.Model.Model == "" || s.Model.GatewayURL == "" {
-			return fmt.Errorf("runner: a %s spec needs a model and the gateway to reach it through", s.Kind)
+			return fmt.Errorf("runspec: a %s spec needs a model and the gateway to reach it through", s.Kind)
 		}
 		if s.Prompt == nil {
-			return fmt.Errorf("runner: a %s spec needs a prompt", s.Kind)
+			return fmt.Errorf("runspec: a %s spec needs a prompt", s.Kind)
 		}
 		if c := s.Prompt.Continue; c != nil && (c.RunID == "" || c.Session == "") {
-			return fmt.Errorf("runner: a %s spec's continuation needs a run and a session", s.Kind)
+			return fmt.Errorf("runspec: a %s spec's continuation needs a run and a session", s.Kind)
 		}
 	}
 	return nil
@@ -319,9 +335,9 @@ func (s Spec) Validate() error {
 // Kubernetes caps at 1 MiB with the credentials beside it, so what grows
 // with a pull request is cut before it is encoded.
 const (
-	// MaxSpecBytes bounds an encoded spec, leaving the Secret room for the
+	// MaxBytes bounds an encoded spec, leaving the Secret room for the
 	// git and gateway tokens.
-	MaxSpecBytes = 900 << 10
+	MaxBytes = 900 << 10
 	// MaxPriorFindings is how many of the last review's findings a spec
 	// carries, and how many dismissed ones.
 	MaxPriorFindings = 200
@@ -335,7 +351,7 @@ const (
 	MaxIssueBytes = 16 << 10
 )
 
-// maxPromptBytes is what Trim leaves an encoded prompt, under MaxSpecBytes
+// maxPromptBytes is what Trim leaves an encoded prompt, under MaxBytes
 // with room for the rest of the spec.
 const maxPromptBytes = 768 << 10
 
@@ -361,47 +377,47 @@ func (p *Prompt) Trim() {
 	}
 }
 
-// EncodeSpec is the job document a runner reads, refused when it is too
+// Encode is the job document a runner reads, refused when it is too
 // large to deliver.
-func EncodeSpec(s Spec) ([]byte, error) {
+func Encode(s Spec) ([]byte, error) {
 	b, err := json.Marshal(s)
 	if err != nil {
-		return nil, fmt.Errorf("runner: encode spec: %w", err)
+		return nil, fmt.Errorf("runspec: encode spec: %w", err)
 	}
-	if len(b) > MaxSpecBytes {
-		return nil, fmt.Errorf("runner: encoded spec is %d bytes, over the %d byte limit", len(b), MaxSpecBytes)
+	if len(b) > MaxBytes {
+		return nil, fmt.Errorf("runspec: encoded spec is %d bytes, over the %d byte limit", len(b), MaxBytes)
 	}
 	return b, nil
 }
 
-// ReadSpec reads and strictly decodes the job document at path.
-func ReadSpec(path string) (Spec, error) {
+// Read reads and strictly decodes the job document at path.
+func Read(path string) (Spec, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return Spec{}, fmt.Errorf("runner: read spec: %w", err)
+		return Spec{}, fmt.Errorf("runspec: read spec: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, MaxSpecBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
 	if err != nil {
-		return Spec{}, fmt.Errorf("runner: read spec: %w", err)
+		return Spec{}, fmt.Errorf("runspec: read spec: %w", err)
 	}
-	if len(data) > MaxSpecBytes {
-		return Spec{}, fmt.Errorf("runner: spec at %s is over the %d byte limit", path, MaxSpecBytes)
+	if len(data) > MaxBytes {
+		return Spec{}, fmt.Errorf("runspec: spec at %s is over the %d byte limit", path, MaxBytes)
 	}
-	return DecodeSpec(data)
+	return Decode(data)
 }
 
-// DecodeSpec parses a job document strictly: a field this runner does not
-// know is an error, not something to ignore.
-func DecodeSpec(data []byte) (Spec, error) {
+// Decode parses a job document strictly: a field a runner of this build
+// does not know is an error, not something to ignore.
+func Decode(data []byte) (Spec, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var s Spec
 	if err := dec.Decode(&s); err != nil {
-		return Spec{}, fmt.Errorf("runner: decode spec: %w", err)
+		return Spec{}, fmt.Errorf("runspec: decode spec: %w", err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return Spec{}, errors.New("runner: decode spec: trailing data after the document")
+		return Spec{}, errors.New("runspec: decode spec: trailing data after the document")
 	}
 	if err := s.Validate(); err != nil {
 		return Spec{}, err
@@ -469,6 +485,18 @@ func (s Secrets) Mask(text string) string {
 	return text
 }
 
-// onGitHub reports whether the run's repository is on GitHub, where
-// Secrets.GitToken is a GitHub token.
-func (p Spec) onGitHub() bool { return p.Forge == "" || p.Forge == string(configfile.ForgeGitHub) }
+// UncachedProxyUser is the proxy username a runner gives the gateway for
+// the retry of a locked install that failed through the cache: the entry
+// it was served did not match the lock, so the cache answers from the
+// origin and keeps that in the entry's place. The gateway marks such a
+// request egress.ForRefill.
+const UncachedProxyUser = "uncached"
+
+// LockedProxyUser is the proxy username a runner gives the gateway for a
+// repository's locked install, whose downloads mise checks against the
+// lock: the cache keeps and answers such a request from any host the
+// rules allow. The gateway marks it egress.ForLockedInstall. A command can
+// claim the name too; it then gets what the host serves any run, and what
+// it has the cache keep is served only to a request that claims the name
+// as well.
+const LockedProxyUser = "locked"

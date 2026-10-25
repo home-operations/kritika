@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
@@ -93,7 +93,7 @@ type miseTools struct {
 	base, env []string
 	// secrets mask mise's output; the values the config marks for
 	// redaction join them.
-	secrets   Secrets
+	secrets   runspec.Secrets
 	logger    *slog.Logger
 	tools     map[string]*miseTool
 	byCommand map[string]*miseTool
@@ -147,7 +147,7 @@ func resolved(path string) string {
 // say what was not offered and why, for the review's summary.
 func newMiseTools(
 	ctx context.Context, bin, home string, base, admin []string, cacheLocked bool,
-	repo *repoMiseConfig, credentialed []string, secrets Secrets, logger *slog.Logger,
+	repo *repoMiseConfig, credentialed []string, secrets runspec.Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if repo != nil {
 		if err := os.WriteFile(filepath.Join(home, "mise.toml"), []byte(repo.config), 0o644); err != nil {
@@ -709,7 +709,7 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 			if m.cacheLocked && len(lockHosts(urls)) > 0 {
 				env, cached = lockedInstallEnv(m.env, urls), true
 				retries = []installRetry{
-					{"installing it again from upstream", withProxyUser(env, egress.UncachedProxyUser)},
+					{"installing it again from upstream", withProxyUser(env, runspec.UncachedProxyUser)},
 					{"installing it without the cache", m.env},
 				}
 			}

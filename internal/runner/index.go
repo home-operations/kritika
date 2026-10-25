@@ -13,6 +13,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/indexer"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -24,7 +25,7 @@ const stagingBatch = 500
 // cannot be fetched (unreachable after a force push, or older than the
 // server will serve by SHA) it falls back to a full build and says so in
 // the pack, so the worker never has to retry the Job.
-func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
+func runIndex(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
@@ -97,7 +98,7 @@ func buildIndex(
 	return chunks, changed, stats, mode, err
 }
 
-func fetchForIndex(ctx context.Context, p Spec, token string, logger *slog.Logger) (*gitfetch.Result, string, error) {
+func fetchForIndex(ctx context.Context, p runspec.Spec, token string, logger *slog.Logger) (*gitfetch.Result, string, error) {
 	if p.Base != "" {
 		res, err := gitfetch.Trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head, Base: p.Base})
 		if err == nil {

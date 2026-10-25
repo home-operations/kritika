@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestReservedEnvName(t *testing.T) {
@@ -205,7 +207,7 @@ func TestMiseTools(t *testing.T) {
 	systemMiseConfig(t, testMiseConfig)
 	home := t.TempDir()
 	base := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
-	secrets := Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}
+	secrets := runspec.Secrets{GitToken: "ghs_run", Redacted: &runspec.Redactions{}}
 	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, false, nil, nil, secrets, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -355,7 +357,7 @@ func TestMiseRunCanceled(t *testing.T) {
 	bin, _ := hostMise(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	m := &miseTools{bin: bin, home: t.TempDir(), secrets: Secrets{Redacted: &Redactions{}}, logger: slog.New(slog.DiscardHandler)}
+	m := &miseTools{bin: bin, home: t.TempDir(), secrets: runspec.Secrets{Redacted: &runspec.Redactions{}}, logger: slog.New(slog.DiscardHandler)}
 	if _, err := m.run(ctx, "ls", "--json"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
 	}
@@ -402,7 +404,7 @@ func TestMiseInstallSystemLinks(t *testing.T) {
 	home := t.TempDir()
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, false, nil, nil, runspec.Secrets{Redacted: &runspec.Redactions{}}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +463,7 @@ func TestMiseToolsCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scratch, "mise.toml"), []byte("[tools]\njq = \"1.8.2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, runspec.Secrets{Redacted: &runspec.Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +482,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, testMiseConfig)
 	home := t.TempDir()
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, runspec.Secrets{Redacted: &runspec.Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +540,7 @@ func TestMiseExecRelock(t *testing.T) {
 		_ = os.Chmod(filepath.Join(home, "sealed"), 0o755)
 		_ = lockTree(context.Background(), home, false)
 	})
-	m := &miseTools{bin: bin, home: home, env: []string{"HOME=" + home, "PATH=/usr/bin:/bin"}, secrets: Secrets{Redacted: &Redactions{}}, logger: slog.New(slog.DiscardHandler), locked: true}
+	m := &miseTools{bin: bin, home: home, env: []string{"HOME=" + home, "PATH=/usr/bin:/bin"}, secrets: runspec.Secrets{Redacted: &runspec.Redactions{}}, logger: slog.New(slog.DiscardHandler), locked: true}
 	if err := lockTree(t.Context(), home, true); err != nil {
 		t.Fatal(err)
 	}

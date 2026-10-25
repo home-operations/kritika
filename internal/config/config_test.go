@@ -173,6 +173,18 @@ func TestCommandValidation(t *testing.T) {
 	}
 }
 
+func TestCheckGatewayURL(t *testing.T) {
+	for raw, ok := range map[string]bool{
+		"http://kritika-gateway:8082": true, "http://kritika-gateway:8082/": true,
+		"https://kritika-gateway:8082": false, "http://": false, "http://gw/path": false, "gw:8082": false,
+		"http://run:krk_token@kritika-gateway:8082": false,
+	} {
+		if err := checkGatewayURL(raw); (err == nil) != ok {
+			t.Errorf("checkGatewayURL(%q) err = %v, want ok=%v", raw, err, ok)
+		}
+	}
+}
+
 func TestParseCommand(t *testing.T) {
 	for _, tt := range []struct {
 		args    []string
@@ -181,7 +193,7 @@ func TestParseCommand(t *testing.T) {
 	}{
 		{args: nil, want: CommandServe},
 		{args: []string{"serve"}, want: CommandServe},
-		{args: []string{"run"}, want: CommandRun},
+		{args: []string{"run"}, wantErr: true},
 		{args: []string{"chatgpt", "login", "plan"}, want: CommandChatGPTLogin},
 		{args: []string{"chatgpt", "login", "github/acme", "plan"}, want: CommandChatGPTLogin},
 		{args: []string{"chatgpt", "login"}, wantErr: true},

@@ -25,7 +25,7 @@ import (
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -162,12 +162,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 			w.otherReviewRunning(mctx, logger, args.AccountID, pr.id, reviewID))
 	}()
 	deadline := file.RunnerDeadline()
-	spec := runner.Spec{
-		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo), Forge: string(account.Forge),
+	spec := runspec.Spec{
+		Version: runspec.Version, Kind: runspec.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo), Forge: string(account.Forge),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, PriorBase: prior.mergeBase,
 		Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),
 	}
-	secrets := runner.Secrets{GitToken: b.token}
+	secrets := runspec.Secrets{GitToken: b.token}
 	secrets.DatabaseToken, err = w.Store.MintRunnerToken(ctx, args.AccountID, runID)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
@@ -453,7 +453,7 @@ func (w *Review) skipUnchangedBot(
 		return patch, false, nil
 	}
 	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", review.ShortSHA(patch))
-	e.forgePatch, e.skip = patch, runner.SkipUnchangedPatch
+	e.forgePatch, e.skip = patch, runspec.SkipUnchangedPatch
 	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
 		return patch, true, err
 	}

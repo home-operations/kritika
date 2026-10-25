@@ -14,6 +14,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
@@ -56,7 +57,7 @@ func TestCacheObservations(t *testing.T) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = io.WriteString(w, "tool archive")
 	}
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, p.Cache, opts)
 	p.Cache.Observe(m, p.Logger)
 	const target = "http://example.com/tool"
@@ -69,7 +70,7 @@ func TestCacheObservations(t *testing.T) {
 		proxied(p, tt.method, target, tt.headers)
 	}
 	waitS3Upload(t, p.Cache, cacheKey("https://example.com/tool"))
-	reader := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	reader := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, reader.Cache, opts)
 	reader.Cache.Observe(m, reader.Logger)
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
@@ -174,7 +175,7 @@ func TestCacheStorageWarningsAndFallback(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	reg := prometheus.NewPedanticRegistry()
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "direct") })
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "direct") })
 	useS3(t, p.Cache, opts)
 	p.Cache.Observe(metrics.New(reg), logger)
 	for i := range 3 {
@@ -206,7 +207,7 @@ func TestCacheStorageWarningsAndFallback(t *testing.T) {
 
 func TestCacheFillAndEvictionGauges(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 512, func(w http.ResponseWriter, _ *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 512, func(w http.ResponseWriter, _ *http.Request) {
 		close(started)
 		<-release
 		_, _ = io.WriteString(w, strings.Repeat("x", 256))

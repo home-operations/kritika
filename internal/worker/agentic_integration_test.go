@@ -42,7 +42,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 	"github.com/home-operations/kritika/internal/transcript"
@@ -1419,7 +1419,7 @@ type hookExecutor struct {
 	// st, when set, reads the last run's grant as it starts: its agent
 	// limits, Job deadline and token budget.
 	st       *store.Store
-	agent    *runner.AgentLimits
+	agent    *runspec.AgentLimits
 	deadline time.Duration
 	budget   int64
 }
@@ -1987,8 +1987,8 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id JOIN reviews v ON v.id = r.review_id
 			WHERE r.review_id = $1`, reviewID).Scan(&skip, &recorded, &agentRows)
 	})
-	if err != nil || skip != runner.SkipUnchangedPatch || recorded != skip || agentRows != 0 {
-		t.Fatalf("pack skip = %q, the review's %q, with %d agent run(s), %v; want %s on both with none", skip, recorded, agentRows, err, runner.SkipUnchangedPatch)
+	if err != nil || skip != runspec.SkipUnchangedPatch || recorded != skip || agentRows != 0 {
+		t.Fatalf("pack skip = %q, the review's %q, with %d agent run(s), %v; want %s on both with none", skip, recorded, agentRows, err, runspec.SkipUnchangedPatch)
 	}
 	h.waitForgeStatus(t, "success: kritika: skipped (patch unchanged since the last review)")
 }

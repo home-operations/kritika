@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
@@ -75,7 +76,7 @@ func expireLocal(t *testing.T, c *Cache, key string) {
 
 func TestCacheRevalidatesExpiredEntry(t *testing.T) {
 	up := &versionedUpstream{version: `"v1"`}
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
 	reg := prometheus.NewPedanticRegistry()
 	p.Cache.Observe(metrics.New(reg), slog.New(slog.DiscardHandler))
 	const target = "http://example.com/tool.tar.gz"
@@ -131,7 +132,7 @@ func TestCacheRevalidationRefusals(t *testing.T) {
 			up := &versionedUpstream{version: `"v1"`}
 			var requests atomic.Int32
 			var redirect atomic.Pointer[string]
-			rules := Rules{Allow: hosts("example.com", "objects.githubusercontent.com")}
+			rules := egresspolicy.Rules{Allow: hosts("example.com", "objects.githubusercontent.com")}
 			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 				n := requests.Add(1)
 				if to := redirect.Load(); to != nil && r.URL.Path == "/tool.tar.gz" {
@@ -207,7 +208,7 @@ func TestCacheRevalidationRefusals(t *testing.T) {
 // unconditional, fetch rather than a bypass.
 func TestCacheRevalidationFetchesWhenCopyIsGone(t *testing.T) {
 	up := &versionedUpstream{version: `"v1"`}
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
 	const target = "https://example.com/tool.tar.gz"
 	key := cacheKey(target)
 	stale := cacheEntry{URL: target, Stored: 1, Size: 12, ETag: `"v1"`, LastModified: modifiedOn, Via: target}
@@ -235,7 +236,7 @@ func TestCacheRevalidationFetchesWhenCopyIsGone(t *testing.T) {
 func TestS3CacheRevalidatesSharedEntry(t *testing.T) {
 	store, opts := newS3TestStore(t)
 	up := &versionedUpstream{version: `"v1"`}
-	writer := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
+	writer := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
 	useS3(t, writer.Cache, opts)
 	const target = "http://example.com/tool.tar.gz"
 	key := cacheKey("https://example.com/tool.tar.gz")
@@ -266,7 +267,7 @@ func TestS3CacheRevalidatesSharedEntry(t *testing.T) {
 		return entry.Stored
 	}
 	stored(1)
-	reader := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
+	reader := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
 	useS3(t, reader.Cache, opts)
 	if w := proxied(reader, http.MethodGet, target, nil); w.Body.String() != `archive "v1"` {
 		t.Fatalf("revalidated: %d %q", w.Code, w.Body.String())
@@ -287,7 +288,7 @@ func TestS3CacheRevalidatesSharedEntry(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	// Another replica finds the object fresh again.
-	third := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
+	third := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, up.serve)
 	useS3(t, third.Cache, opts)
 	if w := proxied(third, http.MethodGet, target, nil); w.Body.String() != `archive "v1"` || up.unchanged.Load() != 1 {
 		t.Fatalf("after publication: %q, %d 304s", w.Body.String(), up.unchanged.Load())

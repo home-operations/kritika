@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -60,12 +61,12 @@ type maskedError struct {
 func (e maskedError) Error() string { return e.msg }
 func (e maskedError) Unwrap() error { return e.err }
 
-func specRoundTrip(s runner.Spec) (runner.Spec, error) {
-	b, err := runner.EncodeSpec(s)
+func specRoundTrip(s runspec.Spec) (runspec.Spec, error) {
+	b, err := runspec.Encode(s)
 	if err != nil {
-		return runner.Spec{}, fmt.Errorf("executor: %w", err)
+		return runspec.Spec{}, fmt.Errorf("executor: %w", err)
 	}
-	return runner.DecodeSpec(b)
+	return runspec.Decode(b)
 }
 
 // LogTailBytes is how much of a runner's output is kept: enough to diagnose,

@@ -19,13 +19,14 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/netip"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/net/http/httpguts"
+
+	"github.com/home-operations/kritika/internal/egresspolicy"
 )
 
 // Outcomes a request ends with, for metrics.
@@ -38,7 +39,7 @@ const (
 // Proxy is the forward proxy handler.
 type Proxy struct {
 	// Rules returns the current rules; it is called per request.
-	Rules func() Rules
+	Rules func() egresspolicy.Rules
 	// Resolver resolves a destination's name; nil means net.DefaultResolver.
 	Resolver Resolver
 	// Dial opens the upstream connection to an address the rules admit;
@@ -87,7 +88,7 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 		return nil, fmt.Errorf("egress: %w", err)
 	}
 	rules := p.Rules()
-	if reason := rules.refuses(host); reason != "" {
+	if reason := rules.Refuses(host); reason != "" {
 		return nil, &refusal{host, reason}
 	}
 	addrs := []netip.Addr{}
@@ -103,7 +104,7 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 			return nil, fmt.Errorf("egress: %w", err)
 		}
 		var reason string
-		if addrs, reason = rules.admit(resolved); reason != "" {
+		if addrs, reason = rules.Admit(resolved); reason != "" {
 			return nil, &refusal{host, reason}
 		}
 	}
@@ -165,7 +166,7 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		p.refuse(r.Context(), w, "connect", r.Host, "only port 443 is served")
 		return
 	}
-	if reason := p.Rules().refuses(host); reason != "" {
+	if reason := p.Rules().Refuses(host); reason != "" {
 		p.refuse(r.Context(), w, "connect", r.Host, reason)
 		return
 	}
@@ -255,7 +256,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		p.refuse(r.Context(), w, "http", r.URL.Host, "only port 80 is served")
 		return
 	}
-	if reason := rules.refuses(host); reason != "" {
+	if reason := rules.Refuses(host); reason != "" {
 		p.refuse(r.Context(), w, "http", r.URL.Host, reason)
 		return
 	}
@@ -333,17 +334,4 @@ func (p *Proxy) httpTransport() http.RoundTripper {
 		p.transport = transport
 	})
 	return p.transport
-}
-
-// ProxyURL checks a gateway URL a runner will be handed: http, a host, no
-// path and no credentials, since the run token becomes its password.
-func ProxyURL(raw string) (*url.URL, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return nil, fmt.Errorf("egress: gateway url: %w", err)
-	}
-	if u.Scheme != plainScheme || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
-		return nil, errors.New("egress: gateway url must be http://host:port")
-	}
-	return u, nil
 }

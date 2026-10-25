@@ -26,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // sizedDiff is a unified diff adding a file of each path, in the order
@@ -88,7 +89,7 @@ func TestMergeParts(t *testing.T) {
 		{Stop: agent.StopSubmitted, Submitted: submission("c/z.go", "Three."), Steps: 1, Model: "m3", ToolCalls: map[string]int{"grep": 2},
 			ForcedBy: agent.ForcedByTime},
 	}
-	merged, records, err := mergeParts(parts, results, Secrets{})
+	merged, records, err := mergeParts(parts, results, runspec.Secrets{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestMergeParts(t *testing.T) {
 		t.Fatalf("records = %+v", records)
 	}
 	failed := []agent.Result{{Stop: agent.StopNoSubmit}, {Stop: agent.StopCanceled}, {Stop: agent.StopCanceled}}
-	if merged, _, err := mergeParts(parts, failed, Secrets{}); err != nil || merged.Stop != agent.StopNoSubmit || merged.Submitted != nil {
+	if merged, _, err := mergeParts(parts, failed, runspec.Secrets{}); err != nil || merged.Stop != agent.StopNoSubmit || merged.Submitted != nil {
 		t.Fatalf("no part submitted = %+v, %v; want the first part's stop", merged, err)
 	}
 }
@@ -132,7 +133,7 @@ func TestPartPrompts(t *testing.T) {
 	res := &gitfetch.Result{Diff: diff, Changed: []string{"a/x.go", "b/y.go"}}
 	split := [][]string{{"a/x.go"}, {"b/y.go"}}
 	var tools agentTools
-	parts, chunks, rules, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
+	parts, chunks, rules, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
 		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -160,7 +161,7 @@ func TestPartPrompts(t *testing.T) {
 		}
 	}
 	s.Prompt.Rules = nil
-	if _, _, rules, err = partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
+	if _, _, rules, err = partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
 		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +191,7 @@ func TestPartPromptsContext(t *testing.T) {
 	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
-	parts, chunks, _, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
+	parts, chunks, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
 		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +279,7 @@ func TestRunPartLoops(t *testing.T) {
 			for i := range parts {
 				parts[i] = reviewPart{paths: []string{fmt.Sprintf("p%d.go", i+1)}, prompt: loopPrompt(s, false)}
 			}
-			results, timeline, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, head, nil, agentTools{}, newPartLocks(), parts,
+			results, timeline, err := runPartLoops(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, nil, agentTools{}, newPartLocks(), parts,
 				slog.New(slog.DiscardHandler), nil, nil, nil)
 			if err != nil {
 				t.Fatal(err)

@@ -17,12 +17,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/egresspolicy"
 )
 
 // cacheProxy is a proxy with a cache in front of an HTTPS server that
 // answers for every host; the rules cache example.com unless they name
 // hosts of their own.
-func cacheProxy(t *testing.T, rules Rules, maxBytes int64, upstream http.HandlerFunc) *Proxy {
+func cacheProxy(t *testing.T, rules egresspolicy.Rules, maxBytes int64, upstream http.HandlerFunc) *Proxy {
 	t.Helper()
 	srv := httptest.NewTLSServer(upstream)
 	t.Cleanup(srv.Close)
@@ -33,7 +35,7 @@ func cacheProxy(t *testing.T, rules Rules, maxBytes int64, upstream http.Handler
 	}
 	t.Cleanup(transport.CloseIdleConnections)
 	return &Proxy{
-		Rules: func() Rules { return rules }, Logger: slog.New(slog.DiscardHandler), Transport: transport,
+		Rules: func() egresspolicy.Rules { return rules }, Logger: slog.New(slog.DiscardHandler), Transport: transport,
 		Cache: &Cache{Dir: t.TempDir(), MaxBytes: maxBytes},
 	}
 }
@@ -66,7 +68,7 @@ func entries(t *testing.T, c *Cache) int {
 func TestCacheServesRepeatDownloads(t *testing.T) {
 	var calls atomic.Int32
 	const modified = "Mon, 30 Mar 2026 17:49:19 GMT"
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		// The fetch is the gateway's own, whoever asked first.
 		if r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("User-Agent") != "kritika" || r.Header.Get("Accept") != "*/*" {
@@ -119,7 +121,7 @@ func TestCacheSharesOneFill(t *testing.T) {
 	const n = 8
 	var calls atomic.Int32
 	arrived, release := make(chan struct{}), make(chan struct{})
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
 			close(arrived)
 		}
@@ -161,7 +163,7 @@ func TestCacheBypass(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			rules := Rules{Allow: hosts("example.com", "other.example.com"), Credentials: tt.credentials}
+			rules := egresspolicy.Rules{Allow: hosts("example.com", "other.example.com"), Credentials: tt.credentials}
 			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				if want := tt.credentials["example.com"]; r.Header.Get("Authorization") != want {
@@ -215,7 +217,7 @@ func TestCacheKeepsLockedInstalls(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			rules := Rules{
+			rules := egresspolicy.Rules{
 				Allow: hosts("example.com", "other.example.com", "api.example.com"), Credentials: tt.credentials,
 				Uncached: []string{"api.example.com"},
 			}
@@ -280,7 +282,7 @@ func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1024, func(w http.ResponseWriter, r *http.Request) {
+			p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1024, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				tt.respond(w)
 			})
@@ -303,7 +305,7 @@ func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
 func TestCacheFollowsRedirects(t *testing.T) {
 	for _, tt := range []struct {
 		name, location string
-		allow          List
+		allow          egresspolicy.List
 		// redirect is what the redirect's response carries besides.
 		redirect http.Header
 		kept     bool
@@ -319,7 +321,7 @@ func TestCacheFollowsRedirects(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
-			p := cacheProxy(t, Rules{Allow: tt.allow}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+			p := cacheProxy(t, egresspolicy.Rules{Allow: tt.allow}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				if r.Host == "example.com" {
 					maps.Copy(w.Header(), tt.redirect)
@@ -359,7 +361,7 @@ func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 		{"to a host with a credential", "https://assets.example.net/blob"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rules := Rules{
+			rules := egresspolicy.Rules{
 				Allow: hosts("example.com", "api.example.net", "assets.example.net"), Uncached: []string{"api.example.net"},
 				Credentials: map[string]string{"assets.example.net": "Bearer configured"},
 			}
@@ -406,7 +408,7 @@ func TestCacheBoundsFills(t *testing.T) {
 	}
 
 	var calls atomic.Int32
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1024, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1024, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		_, _ = io.WriteString(w, strings.Repeat("x", 100))
 	})
@@ -430,7 +432,7 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	calls := map[string]int{}
 	var mu sync.Mutex
 	// Room for two entries of 100 bytes and their first lines, not three.
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 500, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 500, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		calls[r.URL.Path]++
 		mu.Unlock()
@@ -451,7 +453,7 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 
 func TestCacheRefetchesDamagedEntry(t *testing.T) {
 	var calls atomic.Int32
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		_, _ = io.WriteString(w, "tool archive")
 	})
@@ -475,7 +477,7 @@ func TestCacheRefetchesDamagedEntry(t *testing.T) {
 
 func TestCacheRefetchesExpiredEntry(t *testing.T) {
 	var calls atomic.Int32
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
 	})
 	const target = "http://example.com/tool.tar.gz"
@@ -496,7 +498,7 @@ func TestCacheRefetchesExpiredEntry(t *testing.T) {
 // entry's place for the locked installs that follow.
 func TestCacheRefills(t *testing.T) {
 	var calls atomic.Int32
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
 	})
 	const target = "http://example.com/tool.tar.gz"
@@ -537,7 +539,7 @@ func TestCacheRefillDoesNotJoinRevalidation(t *testing.T) {
 	conditional, release := make(chan struct{}, 1), make(chan struct{})
 	defer close(release)
 	var unconditional atomic.Int32
-	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("If-None-Match") == `"v1"` {
 			conditional <- struct{}{}
 			<-release

@@ -18,7 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestDecodeJobTemplate(t *testing.T) {
@@ -281,7 +281,7 @@ func TestJobSpecPodTemplate(t *testing.T) {
 	// on, so none of them configures the runner itself.
 	want := slices.Clone(adminEnv)
 	for i := range want {
-		want[i].Name = runner.CommandEnvPrefix + want[i].Name
+		want[i].Name = runspec.CommandEnvPrefix + want[i].Name
 	}
 	if env := ps.Containers[0].Env; len(env) <= len(want) || !reflect.DeepEqual(env[:len(want)], want) ||
 		env[len(want)].Name != "KRITIKA_RUN_SPEC_FILE" {

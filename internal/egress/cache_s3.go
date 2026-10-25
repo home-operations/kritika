@@ -16,7 +16,6 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
 // S3Options locates an existing bucket. Only gateway processes receive its credentials.
@@ -37,32 +36,11 @@ type s3Cache struct {
 	publishing keyLocks
 }
 
-// Validate checks configuration without contacting the object store.
-func (o S3Options) Validate() error {
-	u, err := url.Parse(o.Endpoint)
-	if err != nil || u.Hostname() == "" || (u.Scheme != upgradedScheme && u.Scheme != plainScheme) ||
-		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return errors.New("egress: cache: S3 endpoint must be an http(s) origin without credentials, path, query or fragment")
-	}
-	if o.Region == "" {
-		return errors.New("egress: cache: S3 region must be set")
-	}
-	if err := s3utils.CheckValidBucketName(o.Bucket); err != nil {
-		return fmt.Errorf("egress: cache: S3 bucket: %w", err)
-	}
-	if (o.AccessKey == "") != (o.SecretKey == "") {
-		return errors.New("egress: cache: both S3 access key and secret key must be set")
-	}
-	return nil
-}
-
 // UseS3 shares completed downloads through S3. Local fills remain usable if an
 // upload fails; their directory and budget still belong to this process alone.
 // The bucket is not contacted at startup, so its availability cannot stop serve.
+// o is as package config checked the settings it comes from.
 func (c *Cache) UseS3(o S3Options) error {
-	if err := o.Validate(); err != nil {
-		return err
-	}
 	if c.MaxEntryBytes <= 0 || c.MaxEntryBytes > 5<<30 {
 		return errors.New("egress: cache: S3 entry limit must be positive and at most 5Gi")
 	}

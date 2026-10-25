@@ -15,7 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -98,7 +98,7 @@ func TestSkipDescription(t *testing.T) {
 		filter string
 		want   string
 	}{
-		{name: "the runner's unchanged patch", reason: runner.SkipUnchangedPatch, want: "patch unchanged since the last review"},
+		{name: "the runner's unchanged patch", reason: runspec.SkipUnchangedPatch, want: "patch unchanged since the last review"},
 		{name: "filtered", reason: string(repoconfig.SkipFiltered), want: "filtered"},
 		{name: "filtered by a named condition", reason: string(repoconfig.SkipFiltered), filter: "too-large", want: "filtered: too-large"},
 		{name: "a repository skip reason", reason: string(repoconfig.SkipOnlyPaths), want: repoconfig.SkipOnlyPaths.Description()},

@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/egresspolicy"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -28,8 +30,8 @@ func TestUpgradeHopHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			called := false
 			p := &Proxy{
-				Rules: func() Rules {
-					return Rules{Allow: hosts("example.com"), Credentials: tt.credentials}
+				Rules: func() egresspolicy.Rules {
+					return egresspolicy.Rules{Allow: hosts("example.com"), Credentials: tt.credentials}
 				},
 				Logger: slog.New(slog.DiscardHandler),
 				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -121,7 +123,7 @@ func TestForwardRequestCompatibility(t *testing.T) {
 			}
 			defer transport.CloseIdleConnections()
 			p := &Proxy{
-				Rules:  func() Rules { return Rules{Allow: hosts("example.com")} },
+				Rules:  func() egresspolicy.Rules { return egresspolicy.Rules{Allow: hosts("example.com")} },
 				Logger: slog.New(slog.DiscardHandler), Transport: transport,
 			}
 			r := httptest.NewRequest(http.MethodGet, "http://example.com/?z=1;y=2&a=%zz&b=3", nil)
@@ -146,8 +148,8 @@ func TestForwardRequestCompatibility(t *testing.T) {
 func TestForwardRejectsProtocolSwitch(t *testing.T) {
 	outcomes := []string{}
 	p := &Proxy{
-		Rules: func() Rules {
-			return Rules{Allow: hosts("example.com"), Credentials: map[string]string{"example.com": "Bearer configured"}}
+		Rules: func() egresspolicy.Rules {
+			return egresspolicy.Rules{Allow: hosts("example.com"), Credentials: map[string]string{"example.com": "Bearer configured"}}
 		},
 		Logger:  slog.New(slog.DiscardHandler),
 		Observe: func(kind, outcome string) { outcomes = append(outcomes, kind+"/"+outcome) },

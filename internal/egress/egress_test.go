@@ -13,10 +13,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/egresspolicy"
 )
 
 func TestRulesAllows(t *testing.T) {
-	r := Rules{Allow: hosts("api.github.com", "*.githubusercontent.com")}
+	r := egresspolicy.Rules{Allow: hosts("api.github.com", "*.githubusercontent.com")}
 	for host, want := range map[string]bool{
 		"api.github.com": true, "API.GITHUB.COM": true, "api.github.com.": true,
 		"raw.githubusercontent.com": true, "githubusercontent.com": false, "evil-api.github.com": false, "": false,
@@ -25,7 +27,7 @@ func TestRulesAllows(t *testing.T) {
 			t.Errorf("Allows(%q) = %v, want %v", host, got, want)
 		}
 	}
-	any := Rules{Allow: hosts("*"), Deny: hosts("*.pastebin.com", "transfer.sh")}
+	any := egresspolicy.Rules{Allow: hosts("*"), Deny: hosts("*.pastebin.com", "transfer.sh")}
 	for host, want := range map[string]bool{
 		"evil.example": true, "ghcr.io.": true, "": false,
 		"pastebin.com": true, "Paste.Pastebin.com": false, "transfer.sh.": false, "transfer.sh.example": true,
@@ -35,12 +37,12 @@ func TestRulesAllows(t *testing.T) {
 		}
 	}
 	// Deny wins over an Allow entry that names the same host.
-	if (Rules{Allow: hosts("ghcr.io"), Deny: hosts("ghcr.io")}).Allows("ghcr.io") {
+	if (egresspolicy.Rules{Allow: hosts("ghcr.io"), Deny: hosts("ghcr.io")}).Allows("ghcr.io") {
 		t.Error("a host both allowed and denied must be refused")
 	}
 }
 
-func hosts(h ...string) List { return List{Hosts: h} }
+func hosts(h ...string) egresspolicy.List { return egresspolicy.List{Hosts: h} }
 
 func prefixes(ps ...string) []netip.Prefix {
 	out := make([]netip.Prefix, 0, len(ps))
@@ -98,12 +100,12 @@ var publicNames = names{
 	"nat64-sink.example": {"64:ff9b::cb00:7107"}, "nat64-private.example": {"64:ff9b::a00:5"},
 }
 
-func newProxy(t *testing.T, rules Rules) (*httptest.Server, map[string]int, *[]string) {
+func newProxy(t *testing.T, rules egresspolicy.Rules) (*httptest.Server, map[string]int, *[]string) {
 	t.Helper()
 	_, dial, dialed := upstream(t)
 	outcomes := map[string]int{}
 	p := &Proxy{
-		Rules: func() Rules { return rules }, Resolver: publicNames, Dial: dial, Logger: slog.Default(),
+		Rules: func() egresspolicy.Rules { return rules }, Resolver: publicNames, Dial: dial, Logger: slog.Default(),
 		Observe: func(kind, outcome string) { outcomes[kind+"/"+outcome]++ },
 	}
 	// The upgrade transport dials through the rules like the default one, but
@@ -125,7 +127,7 @@ func viaProxy(proxy *httptest.Server) *http.Client {
 }
 
 func TestUpgradeAddsCredentialAndStripsProxyHeaders(t *testing.T) {
-	proxy, outcomes, _ := newProxy(t, Rules{
+	proxy, outcomes, _ := newProxy(t, egresspolicy.Rules{
 		Allow: hosts("api.github.com"), Credentials: map[string]string{"api.github.com": "Bearer secret"},
 	})
 	req, _ := http.NewRequest(http.MethodPost, "http://api.github.com/repos/x/y", strings.NewReader("body"))
@@ -151,7 +153,7 @@ func TestUpgradeAddsCredentialAndStripsProxyHeaders(t *testing.T) {
 }
 
 func TestUpgradeReturnsRedirectsUnfollowed(t *testing.T) {
-	proxy, _, _ := newProxy(t, Rules{Allow: hosts("api.github.com")})
+	proxy, _, _ := newProxy(t, egresspolicy.Rules{Allow: hosts("api.github.com")})
 	resp, err := viaProxy(proxy).Get("http://api.github.com/redirect")
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +164,7 @@ func TestUpgradeReturnsRedirectsUnfollowed(t *testing.T) {
 }
 
 func TestRefusals(t *testing.T) {
-	proxy, outcomes, _ := newProxy(t, Rules{Allow: hosts("api.github.com", "*.example"), Deny: hosts("evil.example")})
+	proxy, outcomes, _ := newProxy(t, egresspolicy.Rules{Allow: hosts("api.github.com", "*.example"), Deny: hosts("evil.example")})
 	var refused []string
 	proxy.Config.Handler.(*Proxy).Refused = func(_ context.Context, kind, host, reason string) {
 		refused = append(refused, kind+" "+host+": "+reason)
@@ -195,7 +197,7 @@ func TestRefusals(t *testing.T) {
 }
 
 func TestConnectTunnelsAllowedHosts(t *testing.T) {
-	proxy, outcomes, dialed := newProxy(t, Rules{Allow: hosts("*.github.com"), Credentials: map[string]string{"api.github.com": "Bearer x"}})
+	proxy, outcomes, dialed := newProxy(t, egresspolicy.Rules{Allow: hosts("*.github.com"), Credentials: map[string]string{"api.github.com": "Bearer x"}})
 	resp, err := viaProxy(proxy).Get("https://api.github.com/tunnelled")
 	if err != nil {
 		t.Fatal(err)
@@ -218,23 +220,23 @@ func TestConnectTunnelsAllowedHosts(t *testing.T) {
 }
 
 func TestRefusesPrivateAddresses(t *testing.T) {
-	rules := Rules{Allow: List{Hosts: []string{"*"}, Prefixes: prefixes("10.0.0.7/32", "198.51.100.0/24")}, Deny: List{Prefixes: prefixes("203.0.113.7/32")}}
+	rules := egresspolicy.Rules{Allow: egresspolicy.List{Hosts: []string{"*"}, Prefixes: prefixes("10.0.0.7/32", "198.51.100.0/24")}, Deny: egresspolicy.List{Prefixes: prefixes("203.0.113.7/32")}}
 	proxy, outcomes, dialed := newProxy(t, rules)
 	for _, tt := range []struct{ url, want string }{
 		// A name resolving to a private address alone.
-		{"http://intranet.example/", reasonResolvesPrivate},
+		{"http://intranet.example/", "resolves to a private address no allow entry covers"},
 		// Link-local, where cloud metadata lives, and an IPv4-mapped IPv6 form.
-		{"http://metadata.example/", reasonResolvesPrivate},
-		{"http://mapped.example/", reasonResolvesPrivate},
-		{"http://sink.example/", reasonResolvesDenied},
+		{"http://metadata.example/", "resolves to a private address no allow entry covers"},
+		{"http://mapped.example/", "resolves to a private address no allow entry covers"},
+		{"http://sink.example/", "resolves to a denied address"},
 		// A DNS64 resolver's NAT64 forms of a denied and a private IPv4 address.
-		{"http://nat64-sink.example/", reasonResolvesDenied},
-		{"http://nat64-private.example/", reasonResolvesPrivate},
+		{"http://nat64-sink.example/", "resolves to a denied address"},
+		{"http://nat64-private.example/", "resolves to a private address no allow entry covers"},
 		// An address literal needs an allow prefix, which "*" is not.
-		{"http://10.0.0.5/", reasonAddressNotAllowed},
-		{"http://203.0.113.9/", reasonAddressNotAllowed},
-		{"http://203.0.113.7/", reasonAddressDenied},
-		{"http://[::ffff:203.0.113.7]/", reasonAddressDenied},
+		{"http://10.0.0.5/", "address not allowed"},
+		{"http://203.0.113.9/", "address not allowed"},
+		{"http://203.0.113.7/", "address denied"},
+		{"http://[::ffff:203.0.113.7]/", "address denied"},
 	} {
 		resp, err := viaProxy(proxy).Get(tt.url)
 		if err != nil {
@@ -269,7 +271,7 @@ func TestRefusesPrivateAddresses(t *testing.T) {
 }
 
 func TestUpgradeBracketsIPv6Literal(t *testing.T) {
-	proxy, outcomes, dialed := newProxy(t, Rules{Allow: List{Prefixes: prefixes("2001:db8::1/128")}})
+	proxy, outcomes, dialed := newProxy(t, egresspolicy.Rules{Allow: egresspolicy.List{Prefixes: prefixes("2001:db8::1/128")}})
 	resp, err := viaProxy(proxy).Get("http://[2001:db8::1]/x")
 	if err != nil {
 		t.Fatal(err)
@@ -283,52 +285,13 @@ func TestUpgradeBracketsIPv6Literal(t *testing.T) {
 	}
 }
 
-func TestListContainsEmbeddedIPv4(t *testing.T) {
-	l := List{Prefixes: prefixes("203.0.113.0/24", "2002::/16")}
-	for addr, want := range map[string]bool{
-		"203.0.113.7": true, "::ffff:203.0.113.7": true, "64:ff9b::cb00:7107": true, "2002:cb00:7107::": true,
-		"2002:0a00:0001::": true, "64:ff9b::a00:1": false, "198.51.100.1": false,
-	} {
-		if got := l.contains(netip.MustParseAddr(addr)); got != want {
-			t.Errorf("contains(%s) = %v, want %v", addr, got, want)
-		}
-	}
-}
-
 func TestResolutionFailureIsAnError(t *testing.T) {
-	proxy, outcomes, _ := newProxy(t, Rules{Allow: hosts("*")})
+	proxy, outcomes, _ := newProxy(t, egresspolicy.Rules{Allow: hosts("*")})
 	resp, err := viaProxy(proxy).Get("http://nowhere.example/")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != http.StatusBadGateway || outcomes["http/error"] != 1 {
 		t.Fatalf("status %d outcomes %v", resp.StatusCode, outcomes)
-	}
-}
-
-func TestPublic(t *testing.T) {
-	for addr, want := range map[string]bool{
-		"140.82.112.6": true, "2606:4700::6810:84e5": true, "203.0.113.9": true,
-		"10.1.2.3": false, "172.16.0.1": false, "172.32.0.1": true, "192.168.0.1": false, "100.64.0.1": false, "100.128.0.1": true,
-		"127.0.0.1": false, "169.254.169.254": false, "0.0.0.0": false, "224.0.0.1": false, "255.255.255.255": false, "198.18.0.1": false,
-		"168.63.129.16": false, "192.0.0.192": false,
-		"::1": false, "::": false, "fd00::1": false, "fe80::1": false, "ff02::1": false,
-		"::ffff:10.0.0.1": false, "::ffff:140.82.112.6": true, "64:ff9b::a00:1": false, "64:ff9b::8c52:7006": true, "2002:a00:1::": false, "2002:8c52:7006::": true,
-	} {
-		if got := public(netip.MustParseAddr(addr)); got != want {
-			t.Errorf("public(%s) = %v, want %v", addr, got, want)
-		}
-	}
-}
-
-func TestProxyURL(t *testing.T) {
-	for raw, ok := range map[string]bool{
-		"http://kritika-gateway:8082": true, "http://kritika-gateway:8082/": true,
-		"https://kritika-gateway:8082": false, "http://": false, "http://gw/path": false, "gw:8082": false,
-		"http://run:krk_token@kritika-gateway:8082": false,
-	} {
-		if _, err := ProxyURL(raw); (err == nil) != ok {
-			t.Errorf("ProxyURL(%q) err = %v, want ok=%v", raw, err, ok)
-		}
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 const agentDiff = `diff --git a/main.go b/main.go
@@ -72,11 +73,11 @@ func TestAgentRecordCommandErrors(t *testing.T) {
 
 // loopPrompt is a review's prompt for s as agentLoop takes it, with the
 // strict contract when strict is set.
-func loopPrompt(s Spec, strict bool) agentPrompt {
+func loopPrompt(s runspec.Spec, strict bool) agentPrompt {
 	return agentPrompt{system: "system", user: "user", submit: SubmitTool(strict, s.Prompt.Diagram), validate: review.Check}
 }
 
-func agentPromptSpec() Spec {
+func agentPromptSpec() runspec.Spec {
 	s := reviewSpec()
 	s.PriorHead = shaB
 	s.Prompt.PriorChecked = []string{"util.go: u is pure"}
@@ -280,7 +281,7 @@ func TestAgentSkip(t *testing.T) {
 		wantErr    bool
 	}{
 		{name: "reviewed", changed: []string{"main.go"}, patchID: "p2"},
-		{name: "unchanged bot patch", changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
+		{name: "unchanged bot patch", changed: []string{"main.go"}, patchID: "p1", want: runspec.SkipUnchangedPatch},
 		{name: "only ignored paths", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
 			want: string(repoconfig.SkipOnlyPaths)},
 		{name: "a path the ignore globs do not cover", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md", "main.go"}, patchID: "p2"},
@@ -301,7 +302,7 @@ func TestAgentSkip(t *testing.T) {
 		{name: "no inclusion by paths holds", changed: both, patchID: "p2",
 			filters: []configfile.Filters{{Include: []configfile.Filter{{Name: "source", Paths: []string{"src/**"}}}}}, want: filtered},
 		{name: "an unchanged bot patch is skipped as such first", changed: both, patchID: "p1", filters: []configfile.Filters{large, docs},
-			want: SkipUnchangedPatch},
+			want: runspec.SkipUnchangedPatch},
 		{name: "only ignored paths are skipped as such first", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
 			filters: []configfile.Filters{docs}, want: string(repoconfig.SkipOnlyPaths)},
 		// The expression passes the smoke test, the sample having a label,
@@ -326,7 +327,7 @@ func TestAgentSkip(t *testing.T) {
 }
 
 func TestAgentErrorsAreMasked(t *testing.T) {
-	secrets := Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
+	secrets := runspec.Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
 	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad token krk_run_token"}`},
 		nil, []string{"https://example.com/?key=krk_run_token"}, secrets)
 	if err != nil || strings.Contains(rec.err, "krk_run_token") || !strings.Contains(rec.err, "bad token ***") {
@@ -349,7 +350,7 @@ func TestAgentErrorsAreMasked(t *testing.T) {
 }
 
 func TestKeptConversation(t *testing.T) {
-	secrets := Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
+	secrets := runspec.Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
 	conv := func(text string, tokens int64) *agent.Conversation {
 		return &agent.Conversation{System: "s", Messages: []model.Message{{Role: model.RoleUser, Text: text}}, Tokens: tokens}
 	}
@@ -618,11 +619,11 @@ func TestAgentPromptBudget(t *testing.T) {
 	pack := packView{Diff: agentDiff + big, Changed: []string{"main.go", "big.go"}, Scope: review.ScopeFull}
 	tests := []struct {
 		name  string
-		agent *AgentLimits
+		agent *runspec.AgentLimits
 		kept  bool
 	}{
-		{name: "a zero budget takes the default", agent: &AgentLimits{}},
-		{name: "the configured budget keeps the large file", agent: &AgentLimits{MaxPromptTokens: 60_000}, kept: true},
+		{name: "a zero budget takes the default", agent: &runspec.AgentLimits{}},
+		{name: "the configured budget keeps the large file", agent: &runspec.AgentLimits{MaxPromptTokens: 60_000}, kept: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

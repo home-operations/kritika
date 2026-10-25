@@ -18,7 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/chunk"
-	"github.com/home-operations/kritika/internal/egress"
+	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
@@ -712,7 +712,7 @@ type Egress struct {
 	Deny        []string             `yaml:"deny,omitempty"`
 	Credentials map[string]SecretRef `yaml:"credentials,omitempty"`
 
-	allow, deny egress.List
+	allow, deny egresspolicy.List
 	credentials map[string]Secret
 }
 
