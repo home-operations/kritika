@@ -2,8 +2,11 @@ package runner
 
 import (
 	"encoding/json"
+	"flag"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -84,6 +87,59 @@ func TestCommandToolMise(t *testing.T) {
 				t.Fatalf("scratch left behind: %v", err)
 			}
 		})
+	}
+}
+
+// TestCommandToolMisePATH: on an image with mise, a default command on
+// PATH is offered beside the mise tools and runs in mise's environment,
+// and a mise tool replaces a default command of its name.
+func TestCommandToolMisePATH(t *testing.T) {
+	// The run tool runs this binary as grep with the argument "misepath":
+	// report what mise's environment sets.
+	if flag.Arg(0) == "misepath" {
+		fmt.Printf("REPO_MARKER=%s\n", os.Getenv("REPO_MARKER"))
+		os.Exit(0)
+	}
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The yq on PATH prints nothing, where mise's prints the value read.
+	quiet, err := exec.LookPath("true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin, dataDir := hostMise(t)
+	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
+	systemMiseConfig(t, "[env]\nREPO_MARKER = \"the image's\"\n\n[tools]\nyq = \""+testYqVersion+"\"\n")
+	path := t.TempDir()
+	for name, target := range map[string]string{"grep": self, "yq": quiet} {
+		if err := os.Symlink(target, filepath.Join(path, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", path)
+	t.Setenv("TMPDIR", t.TempDir())
+	was, defaults := miseBin, defaultCommands
+	miseBin, defaultCommands = bin, []string{"grep", "yq"}
+	t.Cleanup(func() { miseBin, defaultCommands = was, defaults })
+	head := agent.NewTree(tree(t, map[string]string{"values.yaml": "image: x\n"}), configfile.DefaultIgnore)
+	s := reviewSpec()
+	s.Agent.CommandTimeoutSeconds = 10
+	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096,
+		slog.New(slog.DiscardHandler))
+	defer cleanup()
+	if run == nil || !slices.Equal(run.Names(), []string{"grep", "yq"}) {
+		t.Fatalf("run tool %v, notes %v", run, notes)
+	}
+	out, err := run.Run(t.Context(), json.RawMessage(`{"command":"grep","args":["-test.run=^TestCommandToolMisePATH$","misepath"]}`))
+	if err != nil || !strings.Contains(out, "REPO_MARKER=the image's\n") {
+		t.Fatalf("grep's out = %q, %v; want it run in mise's environment", out, err)
+	}
+	out, err = run.Run(t.Context(), json.RawMessage(`{"command":"yq","args":[".image","values.yaml"]}`))
+	if err != nil || !strings.HasPrefix(out, "exit code 0\nx\n") {
+		t.Fatalf("yq's out = %q, %v; want mise's yq", out, err)
 	}
 }
 

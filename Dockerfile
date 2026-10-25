@@ -54,26 +54,48 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
 
+# ---- Runner tools root ------------------------------------------------------
+# The runner's root: Red Hat Hardened Images' core runtime, its bash,
+# coreutils, glibc and CA certificates, with curl, find, grep and jq,
+# libstdc++ for a repository's tools and the timezone database, legacy names
+# included, for a TZ the admin sets. The builder variant's dnf installs them
+# into a copy of it, so the image carries no package manager. Renovate bumps
+# both images' digests. core-runtime names no user 65532, which a runtime
+# that adds none to /etc/passwd leaves a tool unable to look up, so the
+# root gets a nonroot user and group of that id.
+FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:329ff8f46fe69f036b96c3463272aa778a6df6a4f7570f080fd248a414652b6e AS core-runtime
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:057ba34d73d5308cd0eeeb2637ec9880c55fe4075ce3321edd9e7ee12c363754 AS tools-root
+USER 0
+COPY --from=core-runtime / /rootfs
+RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak_deps=False --nodocs \
+      curl findutils grep jq libstdc++ tzdata \
+ && dnf --installroot /rootfs --use-host-config clean all \
+ && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
+ && echo 'nonroot:x:65532:' >> /rootfs/etc/group
+# gh as its release builds it, a static binary, checked against its
+# release's checksums.
+ARG TARGETARCH
+# renovate: datasource=github-releases depName=cli/cli
+ARG GH_VERSION=v2.103.0
+RUN dnf install -y --setopt=install_weak_deps=False gawk gzip tar \
+ && version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz" \
+ && release="https://github.com/cli/cli/releases/download/${GH_VERSION}" \
+ && curl -fsSLO "${release}/${asset}" \
+ && curl -fsSL "${release}/gh_${version}_checksums.txt" | awk -v a="${asset}" '$2 == a' | sha256sum -c - \
+ && mkdir -p /rootfs/usr/local/bin \
+ && tar -xzf "${asset}" -C /rootfs/usr/local/bin --strip-components=2 "gh_${version}_linux_${TARGETARCH}/bin/gh"
+
 # ---- Runtime with runner tools ----------------------------------------------
-# kritika with mise and the tools the agent's run tool offers: the chart's
-# runner image. Built with --target tools, published as the -tools tag.
-# Distroless with glibc for the tools' release builds, and no shell.
+# kritika with the commands the agent's run tool offers: the chart's runner
+# image. Built with --target tools, published as the -tools tag.
 FROM mirror.gcr.io/jdxcode/mise:${MISE_VERSION} AS mise
-FROM gcr.io/distroless/cc:nonroot AS tools
-# mise lives outside PATH. The runner runs it by path; a command the agent
-# runs must not find it.
+FROM scratch AS tools
+COPY --from=tools-root /rootfs /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# mise installs a repository's tools. It lives outside PATH: the runner
+# runs it by path, and a command the agent runs must not find it.
 COPY --from=mise /usr/local/bin/mise /opt/mise/bin/mise
-# The tools are system installs from the image's system config, at what
-# its lock pins. A run's mise uses them at those versions instead of
-# downloading. Installing from the system config also makes the links
-# mise keeps beside each install, which a run could not add later. Root's
-# home holds mise's state and cache, on a tmpfs, so only the installs
-# reach the image.
-COPY build/tools/mise.toml /etc/mise/config.toml
-COPY build/tools/mise.lock /etc/mise/mise.lock
-USER root
-RUN --mount=type=tmpfs,target=/root ["/opt/mise/bin/mise", "install", "--system", "--locked"]
-USER 65532
+USER 65532:65532
 COPY --from=builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]
 

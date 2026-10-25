@@ -73,7 +73,7 @@ func TestCommandTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+	if err := os.Symlink(self, filepath.Join(bin, "grep")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
@@ -93,9 +93,9 @@ func TestCommandTool(t *testing.T) {
 			t.Fatal("no run tool")
 		}
 		if fetch != nil {
-			t.Fatal("fetch_repo offered beside rg alone, which reaches no network")
+			t.Fatal("fetch_repo offered beside grep alone, which reaches no network")
 		}
-		if !slices.Equal(run.Names(), []string{"rg"}) {
+		if !slices.Equal(run.Names(), []string{"grep"}) {
 			t.Fatalf("names = %v", run.Names())
 		}
 		def := run.Def()
@@ -131,7 +131,7 @@ func TestCommandTool(t *testing.T) {
 		defer cleanup()
 		// The run's token is the Forgejo bot's: gh, signed in nowhere,
 		// is left out, and fetch_repo with it.
-		if run == nil || fetch != nil || !slices.Equal(run.Names(), []string{"rg"}) {
+		if run == nil || fetch != nil || !slices.Equal(run.Names(), []string{"grep"}) {
 			t.Fatalf("run tool %v, fetch_repo %v", run, fetch != nil)
 		}
 	})
@@ -145,7 +145,7 @@ func TestCommandTool(t *testing.T) {
 		s.Agent.CommandTimeoutSeconds = 5
 		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, logger)
 		defer cleanup()
-		if run == nil || fetch == nil || !slices.Equal(run.Names(), []string{"gh", "rg"}) {
+		if run == nil || fetch == nil || !slices.Equal(run.Names(), []string{"gh", "grep"}) {
 			t.Fatalf("run tool %v, fetch_repo %v", run, fetch != nil)
 		}
 		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
@@ -169,7 +169,7 @@ func TestCommandToolCheckoutLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+	if err := os.Symlink(self, filepath.Join(bin, "grep")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
@@ -190,7 +190,7 @@ func TestCommandToolCheckoutLock(t *testing.T) {
 	lock <- struct{}{}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
-	input := fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^$"}})
+	input := fetchInput(t, map[string]any{"command": "grep", "args": []string{"-test.run=^$"}})
 	if _, err := run.Run(ctx, input); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("holding head: err = %v", err)
 	}
@@ -209,7 +209,7 @@ func checkFirstCommandCheckout(t *testing.T, run *agent.RunTool, dir, cloneURL s
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
 		t.Fatalf("checkout written before a command ran: %v, %v", entries, err)
 	}
-	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^$"}}))
+	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "grep", "args": []string{"-test.run=^$"}}))
 	if err != nil || !strings.HasPrefix(out, "exit code 0\n") {
 		t.Fatalf("out = %q, err = %v", out, err)
 	}
@@ -233,7 +233,7 @@ func checkFirstCommandCheckout(t *testing.T, run *agent.RunTool, dir, cloneURL s
 // runner's own of the same name, and what it prints of a Secret's is
 // masked.
 func TestCommandToolAdminEnv(t *testing.T) {
-	// The run tool runs this binary as rg with the argument "adminenv":
+	// The run tool runs this binary as grep with the argument "adminenv":
 	// report the variables it was given.
 	if flag.Arg(0) == "adminenv" {
 		for _, name := range []string{"KONFLATE_URL", "API_TOKEN", "UNSET_KEY", "RUNNER_ONLY"} {
@@ -248,7 +248,7 @@ func TestCommandToolAdminEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+	if err := os.Symlink(self, filepath.Join(bin, "grep")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
@@ -269,7 +269,7 @@ func TestCommandToolAdminEnv(t *testing.T) {
 	if run == nil {
 		t.Fatal("no run tool")
 	}
-	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^TestCommandToolAdminEnv$", "adminenv"}}))
+	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "grep", "args": []string{"-test.run=^TestCommandToolAdminEnv$", "adminenv"}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestCommandToolAdminEnv(t *testing.T) {
 // directory of the run's scratch space, where a tool that keeps a cache
 // there, as flate does, has it; HOME still takes no write.
 func TestCommandToolCache(t *testing.T) {
-	// The run tool runs this binary as rg with the argument "cache": a
+	// The run tool runs this binary as grep with the argument "cache": a
 	// bare environment carries no helper variable, so the role is an
 	// argument. Report where a write lands.
 	if flag.Arg(0) == "cache" {
@@ -304,7 +304,7 @@ func TestCommandToolCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+	if err := os.Symlink(self, filepath.Join(bin, "grep")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
@@ -325,7 +325,7 @@ func TestCommandToolCache(t *testing.T) {
 		cleanup()
 		t.Fatalf("scratch = %v, %v", scratch, err)
 	}
-	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^TestCommandToolCache$", "cache"}}))
+	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "grep", "args": []string{"-test.run=^TestCommandToolCache$", "cache"}}))
 	if err != nil || !strings.Contains(out, "XDG_CACHE_HOME: <nil>\n") {
 		cleanup()
 		t.Fatalf("writes = %q, %v; want one under XDG_CACHE_HOME", out, err)

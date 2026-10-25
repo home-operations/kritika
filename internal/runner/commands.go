@@ -22,17 +22,17 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// defaultCommands are the commands of the tools the -tools image ships. A
-// runner image without mise offers those of them on its PATH.
-var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
+// defaultCommands are the commands the -tools image carries on its PATH.
+// The run tool offers those of them on the runner's PATH, on any image.
+var defaultCommands = []string{"curl", "find", "gh", "grep", "jq"}
 
 // commandTool is the run tool for the commands a run offers over a
 // checkout of tree written to scratch space, and fetch_repo, which writes
 // beside the checkout, when one of the commands already reaches the
-// network. On an image with mise the commands are those of the tools the
-// merged mise config declares: the image's system config, and the
-// repository's own tools, p.Tools, over it, each installed on first use.
-// An image without mise offers the defaultCommands on its PATH.
+// network. The commands are the defaultCommands on PATH and, on an image
+// with mise, over them those of the tools the merged mise config declares:
+// the image's system config, and the repository's own tools, p.Tools, over
+// it, each installed on first use.
 // head, when not nil, is the lock the parts of a split review share for
 // reading the head (partLocks), which the checkout holds while it is
 // written. Both tools are nil, with a no-op cleanup, when there is nothing to
@@ -93,6 +93,11 @@ func commandTool(
 	admin := adminEnv(p.Agent.Env, secrets)
 	commandEnvs, miseSecrets := p.commandCredentials(secrets)
 	found := map[string]string{}
+	for _, name := range defaultCommands {
+		if path, err := exec.LookPath(name); err == nil {
+			found[name] = path
+		}
+	}
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
@@ -103,13 +108,9 @@ func commandTool(
 			logger.Warn("mise tools not offered", "error", err)
 			notes = append(notes, "mise tools not offered: "+err.Error())
 		} else {
-			found = mise.offered()
-		}
-	} else {
-		for _, name := range defaultCommands {
-			if path, err := exec.LookPath(name); err == nil {
-				found[name] = path
-			}
+			// A mise tool replaces a command of its name on PATH, as a
+			// repository's tool replaces the image's.
+			maps.Copy(found, mise.offered())
 		}
 	}
 	found = p.offered(found)
@@ -177,7 +178,7 @@ func commandTool(
 		agent.MaxBlobBytes>>20)
 	var resolve func(context.Context, string) (string, []string, error)
 	if mise != nil {
-		resolve = mise.resolve
+		resolve = mise.resolveWith(found)
 		if mise.pending() {
 			note += " A command whose tool is not installed yet is installed on first use, which can take a moment."
 		}

@@ -583,6 +583,11 @@ func TestRunToolDef(t *testing.T) {
 		!strings.Contains(d, "yq does the same for a YAML file") {
 		t.Fatalf("description = %q", d)
 	}
+	gnu := NewRunTool(RunConfig{Commands: map[string]string{"grep": "/usr/bin/grep", "find": "/usr/bin/find"}, Timeout: time.Second})
+	if d := gnu.Def().Description; !strings.Contains(d, "The grep command searches file contents where the grep tool falls short") ||
+		!strings.Contains(d, "find lists files and directories by name") || strings.Contains(d, "rg searches") || strings.Contains(d, "fd finds") {
+		t.Fatalf("description = %q", d)
+	}
 }
 
 func TestCheckout(t *testing.T) {

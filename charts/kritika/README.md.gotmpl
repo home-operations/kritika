@@ -152,11 +152,12 @@ chart confines them:
   lists.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
-- The review's run tool executes the six programs the runner image
-  declares and those the `tools` of a repository's `.kritika.yaml` add,
-  each download verified as its backend verifies it, with whatever
-  arguments the model gives: the pod's bounds confine a command, not a
-  check of its arguments.
+- The review's run tool executes the five programs the runner image
+  carries, `curl`, `find`, `gh`, `grep` and `jq`, in a root with bash but
+  no package manager, and those the `tools` of a repository's
+  `.kritika.yaml` add, each download verified as its backend verifies it,
+  with whatever arguments the model gives: the pod's bounds confine a
+  command, not a check of its arguments.
 - `runner.podTemplate` puts runner pods under a sandboxed runtime such as
   gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
   with `resources`, and keeps runner pods on nodes of their own, and in a
@@ -174,9 +175,13 @@ gateway, runner tools and the sandbox in full.
 `runner.mise.config` and `KRITIKA_RUNNER_MISE_CONFIG` are removed, as
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` were before them. Declare each
 tool under `tools` in the `.kritika.yaml` of the repositories whose
-reviews use it. The runner image declares its six tools itself, so they
-stay available. See the
+reviews use it. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
+
+The runner image carries `curl`, `find`, `gh`, `grep` and `jq`, and no
+longer `rg`, `fd` or `yq`: a repository whose reviews want one declares it
+under `tools` in its `.kritika.yaml`. See
+[migrating from rg, fd and yq](https://kritika.home-operations.com/security/#migrating-from-rg-fd-and-yq).
 
 ### Migrating NetworkPolicies
 

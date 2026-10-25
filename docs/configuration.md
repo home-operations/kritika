@@ -625,14 +625,14 @@ a new title.
   diff since the last review, when that is over 64 KiB. The token grant and
   the Job deadline are sized for the parts from the pull request's size as
   the forge reports it, the deadline for running them in the slots taken.
-- **Commands:** the runner's `-tools` image offers `curl`, `fd`, `gh`,
-  `jq`, `rg` and `yq`, and the
+- **Commands:** the runner's `-tools` image offers `curl`, `find`, `gh`,
+  `grep` and `jq`, and the
   [`tools`](repository-config.md#repository-tools) of a repository's
   `.kritika.yaml`, read from the merge base, add any other tool mise
-  installs, such as `helm`, for that repository. Every command those
-  tools provide is offered; `mise` itself never is. On a custom image
-  without mise, the six default commands are offered when found on
-  `PATH`, and a repository's tools are not, which the review summary
+  installs, such as `helm` or `rg`, for that repository. Every command
+  those tools provide is offered; `mise` itself never is. On a custom
+  image, the five default commands are offered when found on `PATH`, and
+  without mise a repository's tools are not, which the review summary
   says. Tool install and command resolution failures also appear in the
   summary.
   The agent is told to use `gh` for GitHub,

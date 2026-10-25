@@ -44,7 +44,7 @@ admin's policy; detailed examples follow.
 | [`rules`](#rules)                                            | checks the review makes                                            | added after; one under an admin's id is dropped |
 | [`context`](#context)                                        | files that explain the code                                        | added after                                     |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
-| [`tools`](#repository-tools)                                 | the tools the reviews may run, over the image's                    | added; one under an image tool's name replaces it |
+| [`tools`](#repository-tools)                                 | the tools the reviews may run, beside the image's commands        | added; one providing an image command replaces it |
 | [`review.agents`](#agents)                                   | agents that review beside the default pass, or replace it           | specialists added, one under an admin's name taking only rules and skills; the others replace the admin's |
 
 A value the file may not take, such as a model of an undeclared provider,
@@ -469,10 +469,11 @@ the previously merged version for its own review. The key is mise's
 [registry](https://mise.jdx.dev/registry.html) short name or a backend
 such as `github:owner/repo`, with the version to run or a table of the
 version and the options that select, verify and extract its download.
-The repository's tools layer over the image's: an entry replaces the
-same tool, including its options, while unmentioned tools remain
-available. Reading them needs a runner image with mise; on one without,
-the review summary says they were not offered.
+The repository's tools add to the image's commands, `curl`, `find`, `gh`,
+`grep` and `jq`: a tool that provides one of them replaces it, `gh`
+excepted, while the rest remain available. Reading them needs a runner
+image with mise; on one without, the review summary says they were not
+offered.
 
 ```yaml
 tools:
@@ -484,8 +485,7 @@ tools:
 
 A tool installs on the first call that needs it, which can take a moment,
 at the version given; a failed install fails that tool call without
-stopping the review. A tool at the image's version runs from the image's
-install, and nothing is downloaded. Release hosts need the admin's
+stopping the review. Release hosts need the admin's
 `egress.allow` permission, as do the hosts a backend verifies against
 ([runner tools](security.md#runner-tools)). Once the admin gives the
 gateway a download cache, later runs reuse what a run locked

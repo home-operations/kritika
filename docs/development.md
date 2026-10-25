@@ -24,10 +24,17 @@ configuration applied. `KRITIKA_SMOKE_KEEP=1` leaves the cluster running
 for a look afterwards, and `KRITIKA_SMOKE_IMAGE` names an image already
 built, to skip the build.
 
-`build/tools/mise.toml` pins the runner image's tools, which the image
-declares in its `/etc/mise/config.toml`; a repository's `.kritika.yaml`
-`tools` add to them. After changing it, refresh its lock
-with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
+kritika serve's image is `gcr.io/distroless/static:nonroot`. The runner's
+`-tools` image is `FROM scratch` on a root of [Red Hat Hardened
+Images](https://www.redhat.com/en/products/hardened-images): the
+Dockerfile's `tools-root` stage, the builder variant of `core-runtime`,
+installs `curl`, `find`, `grep`, `jq`, libstdc++ and the timezone database
+with dnf into a copy of `core-runtime`, so the image has its bash and
+coreutils but no package manager, and fetches `gh` from its release,
+checked against the release's checksums. Grype reads the root's rpm
+database; Trivy does not recognize Hardened Images yet. Renovate bumps the
+two images' digests and `gh`, through the annotation above its version. A repository's `.kritika.yaml` `tools` add to the runner
+image's commands. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
 

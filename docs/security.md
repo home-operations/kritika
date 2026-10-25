@@ -197,20 +197,22 @@ it, so it has no switch:
 The model runs allowlisted programs over a checkout of the head commit:
 to read a dependency bump's release notes and upstream pull requests with
 `gh`, offered on GitHub alone as
-[Git forges](forges.md#what-works-where) lists, fetch anything else with `curl`, search with `rg` and `fd`, or read
-JSON and YAML with `jq` and `yq`; a container image it reads with
+[Git forges](forges.md#what-works-where) lists, fetch anything else with `curl`, search with `grep` and `find`, or read
+JSON with `jq`; a container image it reads with
 [`fetch_oci`](#images-and-artifacts), which needs no tool. Runner Jobs run
-on the release's `-tools` image, pinned by digest like the chart's image:
-a distroless image that carries [mise](https://mise.jdx.dev/) and those
-six tools as mise system installs, declared by its system config,
-`/etc/mise/config.toml`, at the
-versions `build/tools/mise.toml` pins. Every other tool is the
-repository's: the [`tools`](repository-config.md#repository-tools) of
-its `.kritika.yaml`, mise's `[tools]` table, which the runner writes as
-the run's mise config over the image's, as mise merges configs: per
-tool, the repository's entry replaces the image's, options included, and
-the image's other tools stay. So a repository adds a tool, `flate` for a
-chart's rendered output, say, without an image build:
+on the release's `-tools` image, pinned by digest like the chart's image,
+whose root, from [Red Hat Hardened
+Images](https://www.redhat.com/en/products/hardened-images), holds bash
+and coreutils but no package manager: `curl`, `find`, `grep` and `jq` as
+its packages build them, with glibc, libstdc++ and the timezone database,
+`gh` as its release builds it, checked against the release's checksums,
+and [mise](https://mise.jdx.dev/). Every other tool
+is the repository's: the [`tools`](repository-config.md#repository-tools)
+of its `.kritika.yaml`, mise's `[tools]` table, which the runner writes as
+the run's mise config, and whose tool replaces an image command of the
+same name, `gh` excepted. So a repository adds a tool, `flate` for a
+chart's rendered output, or `rg` where it prefers it to `grep`, without an
+image build:
 
 ```yaml
 tools:
@@ -218,9 +220,9 @@ tools:
 ```
 
 The file is read from the merge base, so a pull request cannot change
-the tools used to review itself. A tool at the image's version runs from
-its system install; any other downloads on the first run that uses it,
-into the run's own scratch space, at the version declared. The run locks
+the tools used to review itself. A tool downloads on the first run that
+uses it, into the run's own scratch space, at the version declared. The
+run locks
 the tool first, with `mise lock` for its platform into a lock of its
 own beside the config: mise resolves the download through the tool's
 backend and takes its checksum from what the backend publishes, the
@@ -231,21 +233,23 @@ mise checks against that lock. A tool the run cannot lock, say because
 no asset matched, installs unlocked with a warning in the log, verified
 as its backend verifies a download. No committed lock pins a download
 across runs: a release asset replaced upstream under the same tag
-installs, unless the entry pins its checksum. The run tool offers every
-command the merged config's tools provide, `mise` itself excepted. An
-image set as the runner container's in `runner.podTemplate` without mise
-offers the six default commands its builder put on its `PATH`, and no
+installs, unless the entry pins its checksum. The run tool offers the
+image's commands it finds on `PATH` and every command the merged config's
+tools provide, `mise` itself excepted. An image set as the runner
+container's in `runner.podTemplate` offers those of `curl`, `find`, `gh`,
+`grep` and `jq` its builder put on its `PATH`, and without mise no
 repository tool, which the review summary says. A follow-up posts no
 summary, so its reply carries such notes, and a command's setup failure,
 instead.
 
 A tool every repository should have belongs in the runner image: an
-image built on the `-tools` image, with the tool added to its
-`/etc/mise/config.toml` and to `/etc/mise/mise.lock`, which the runner's
-user must be able to read (`mise lock` writes it mode 0600), and
-installed with `mise install --system --locked` as the release's
-Dockerfile installs the six, set as the runner container's image in
-`runner.podTemplate`.
+image built on the `-tools` image, with the tool declared in a mise
+system config, `/etc/mise/config.toml`, and locked in `/etc/mise/mise.lock`,
+which the runner's user must be able to read (`mise lock` writes it mode
+0600), installed with `mise install --system --locked` and set as the
+runner container's image in `runner.podTemplate`. The run tool offers a
+system config's tools as it does a repository's, and only the five
+commands above from `PATH`.
 
 A `tools` entry takes its version and the options that select, verify
 and extract its download, and nothing else. The options that run a
@@ -322,8 +326,8 @@ sandboxed runtime keeps a kernel exploit from reaching the node (see
 The clean environment hides the runner's database and model credentials,
 but commands still receive the gateway proxy credential, and the tool
 offered as `gh` receives the run's read-only GitHub token, so a repository
-tool is not offered as `gh` unless the image has it installed at the
-repository's version; a summary note says so. Both are the run's own: the
+tool is never offered as `gh`, the image's is; a summary note says so.
+Both are the run's own: the
 gateway token stops working when the run ends, or `config.gatewayTokenTtl`
 past the Job's deadline at the latest, and the GitHub token, which reads
 what the run may read and nothing more, expires an hour after it is
@@ -347,8 +351,9 @@ egress:
 
 What bounds a command:
 
-- **No shell:** a command runs without one, and the `-tools` image has
-  none either.
+- **No shell of its own:** the run tool starts the program itself, not
+  through a shell. The `-tools` image does carry bash, which a command
+  such as `find -exec` can start, inside the same bounds.
 - **Its own lifetime:** a command and the processes it starts form a
   process group of their own, stopped as a whole when the command times
   out and once it exits, so nothing it started outlives the call. A
@@ -432,7 +437,7 @@ What bounds a command:
   (32 KiB by default), keeping the end of its stderr past the cut. A cut
   output is kept whole, with the token masked, in a file beside the
   checkout under `../upstream/`, which the note after the cut names, so
-  the agent searches a long render or page with `rg` or reads it with
+  the agent searches a long render or page with `grep` or reads it with
   `read_file` in line ranges rather than running the command again with
   narrower arguments. One file holds at most 4 MiB, and the files count
   against the 256 MiB `fetch_repo` may write there; past either, the note
@@ -443,8 +448,8 @@ What bounds a command:
 When the run tool offers `gh` or `curl`, which already reach the network,
 the agent also gets `fetch_repo`. It fetches another repository at a tag,
 branch or commit, such as the upstream of a dependency on any host, and
-writes its files beside the checkout for `read_file` to read and `rg` and
-`fd` to search, with the diff from an earlier ref when asked, or lists the
+writes its files beside the checkout for `read_file` to read and `grep`
+and `find` to search, with the diff from an earlier ref when asked, or lists the
 repository's tags, so the agent can find a version's tag rather than guess
 its name. kritika makes the fetch itself, with go-git: the model names a
 repository and a ref, never git arguments.
@@ -766,12 +771,24 @@ and the environment, and move what it held:
   never holds it, or else in a Secret the runner container's `env` names.
 - **`[settings]`:** no longer apply.
 
-The image's `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`,
-`rg` and `yq`, and every review offers those and the repository's tools,
-`gh` on GitHub alone ([Git forges](forges.md#what-works-where)).
-A container image needs no tool: `fetch_oci` reads its registry. If
-building on top of the `-tools` image, its preinstalled tools live in
-mise's system install directory, not `/usr/local/bin`.
+The image carries `curl`, `find`, `gh`, `grep` and `jq`, and every review
+offers those and the repository's tools, `gh` on GitHub alone
+([Git forges](forges.md#what-works-where)).
+A container image needs no tool: `fetch_oci` reads its registry.
+
+### Migrating from rg, fd and yq
+
+The `-tools` image no longer carries `rg`, `fd` or `yq`, nor a mise system
+config: `grep` and `find` search, `jq` reads JSON, and `gh` sits in
+`/usr/local/bin`. A repository whose reviews want one of the three
+declares it under `tools` in its `.kritika.yaml`:
+
+```yaml
+tools:
+  rg: "15.2.0"
+  fd: "10.5.0"
+  yq: "4.54.1"
+```
 
 ## Runner sandbox
 
