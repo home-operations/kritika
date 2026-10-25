@@ -2,6 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -82,6 +84,42 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			tt.check(t, cfg)
+		})
+	}
+}
+
+func TestLoadFile(t *testing.T) {
+	for _, tt := range []struct {
+		name, doc string
+		wantErr   string
+	}{
+		{name: "file settings", doc: "webUrl: https://kritika.example.com\nlogLevel: debug\n"},
+		{name: "invalid setting", doc: "logLevel: loud\n", wantErr: "logLevel"},
+		{name: "invalid web URL", doc: "webUrl: kritika.example.com\n", wantErr: "webUrl"},
+		{name: "missing file", wantErr: "no such file"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// A check runs where the database is not configured.
+			t.Setenv("KRITIKA_DATABASE_URL", "")
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if tt.doc != "" {
+				if err := os.WriteFile(path, []byte(tt.doc), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := LoadFile(path)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("LoadFile = %v, want an error naming %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ConfigFile != path || cfg.LogLevel != "debug" || cfg.WebURLParsed() == nil || len(cfg.FileDocument().Source) == 0 {
+				t.Fatalf("LoadFile = %+v", cfg)
+			}
 		})
 	}
 }
@@ -199,6 +237,11 @@ func TestParseCommand(t *testing.T) {
 		{args: []string{"chatgpt", "login"}, wantErr: true},
 		{args: []string{"chatgpt", "logout", "plan"}, wantErr: true},
 		{args: []string{"chatgpt", "login", "github/acme", "plan", "extra"}, wantErr: true},
+		{args: []string{"config", "check"}, want: CommandConfigCheck},
+		{args: []string{"config", "check", "config.yaml"}, want: CommandConfigCheck},
+		{args: []string{"config"}, wantErr: true},
+		{args: []string{"config", "lint", "config.yaml"}, wantErr: true},
+		{args: []string{"config", "check", "a.yaml", "b.yaml"}, wantErr: true},
 		{args: []string{"--role", "all"}, wantErr: true},
 		{args: []string{"worker"}, wantErr: true},
 		{args: []string{"serve", "extra"}, wantErr: true},

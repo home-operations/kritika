@@ -46,6 +46,32 @@ variables, but the same setting cannot appear in both sources. Application
 policy uses the file; environment variables supply only explicitly referenced
 values. CEL expression keys end in `Expr`, or use `expr` inside a condition.
 
+### Checking a file before deploying
+
+`kritika config check [<file>]` loads a file, or `KRITIKA_CONFIG_FILE`'s, the
+way `serve` does at startup, and fails on what would fail startup: unknown
+keys, invalid values, a setting in both the file and the environment, and no
+way to sign in. It does not connect to the database or any forge, and does
+not need the database variables or the settings the chart passes besides the
+file, such as `gatewayUrl` with `existingConfigMap`. It does read the
+environment, so each secret reference's variable must be set. Any value
+works except a GitLab `webhookSecret`, which must look like a signing
+token, `whsec_` followed by base64:
+
+```sh
+docker run --rm -v "$PWD/config.yaml:/config.yaml:ro" \
+  -e ADMIN_PASSWORD=x -e GITEA_TOKEN=x -e GITEA_WEBHOOK_SECRET=x \
+  ghcr.io/home-operations/kritika:<version> config check /config.yaml
+```
+
+To check the `config` you give Helm, render the chart's ConfigMap and check
+its `config.yaml`, which also has the keys the chart derives:
+
+```sh
+helm template kritika oci://ghcr.io/home-operations/charts/kritika -f values.yaml \
+  -s templates/configmap.tpl | yq '.data["config.yaml"]' > config.yaml
+```
+
 ## Helm templates
 
 Helm renders inline `config` through `tpl` with the release context. For example:
@@ -66,7 +92,7 @@ These inputs have no configuration-file equivalent:
 
 | Variable                              | Purpose                                                                                                                                         |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIKA_CONFIG_FILE`                 | Configuration file path, required by `serve` and `chatgpt login`                                                                                |
+| `KRITIKA_CONFIG_FILE`                 | Configuration file path, required by `serve` and `chatgpt login`, and `config check`'s file when it names none                                  |
 | `KRITIKA_DATABASE_URL`                | Application DSN for `serve`; runner DSN for `run`                                                                                               |
 | `KRITIKA_DATABASE_OWNER_URL`          | Owner DSN for migrations and leader work                                                                                                        |
 | `KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY` | S3 access key for serve only; paired with the secret key                                                                                        |
