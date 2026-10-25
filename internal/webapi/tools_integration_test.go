@@ -26,6 +26,7 @@ func testToolUsage(t *testing.T, e *apiEnv) {
 	}
 	seed(e.a.accountID, from, map[string]int{"rg": 3, "jq": 1})
 	seed(e.b.accountID, from.Add(time.Hour), map[string]int{"rg": 2, "yq": 4})
+	seed(e.a.accountID, from, nil)
 	seed(e.a.accountID, from, map[string]int{})
 	seed(e.a.accountID, from.Add(-time.Second), map[string]int{"outside": 999})
 	seed(e.a.accountID, to, map[string]int{"outside": 999})
