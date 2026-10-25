@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.0.103](https://github.com/home-operations/kritika/compare/0.0.102...0.0.103) (2026-10-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* run runner Jobs on a kritika binary of their own ([#1231](https://github.com/home-operations/kritika/issues/1231))
+* build the runner image on Red Hat Hardened Images ([#1229](https://github.com/home-operations/kritika/issues/1229))
+* drop the run tool's argument refusals and turn NetworkPolicies on by default ([#1228](https://github.com/home-operations/kritika/issues/1228))
+
+### Features
+
+* **agent:** increase default review budgets ([#1239](https://github.com/home-operations/kritika/issues/1239)) ([8dd3a41](https://github.com/home-operations/kritika/commit/8dd3a41b4734ee87e42fa14c40e3be224a09b5b1))
+* drop the run tool's argument refusals and turn NetworkPolicies on by default ([#1228](https://github.com/home-operations/kritika/issues/1228)) ([d1e0719](https://github.com/home-operations/kritika/commit/d1e071907c2e1c57efcee893935dd972f684b52f))
+* **model:** reconcile durable call accounting ([#1236](https://github.com/home-operations/kritika/issues/1236)) ([2077ccd](https://github.com/home-operations/kritika/commit/2077ccd2cc888ed6fa74d2c59a57461878bdb2e7))
+
+
+### Bug Fixes
+
+* **container:** update image tools ([#1234](https://github.com/home-operations/kritika/issues/1234)) ([87b6811](https://github.com/home-operations/kritika/commit/87b6811462fe426145fa5e8e2f2a45bf32a042ca))
+
+
+### Code Refactoring
+
+* **review:** separate preparation and delivery contracts ([#1235](https://github.com/home-operations/kritika/issues/1235)) ([91f09b9](https://github.com/home-operations/kritika/commit/91f09b9d6cc4a4ba8120620ae4f1f4b5bc412ce9))
+* **runner:** move persistence behind store methods ([#1238](https://github.com/home-operations/kritika/issues/1238)) ([c0e7e57](https://github.com/home-operations/kritika/commit/c0e7e57cdf1558d44f0cfb65f30892f13b2a9def))
+
+
+### Build System
+
+* build the runner image on Red Hat Hardened Images ([#1229](https://github.com/home-operations/kritika/issues/1229)) ([12d6748](https://github.com/home-operations/kritika/commit/12d674863d2c9a48b07cb24ea8ecaff272cfeaa3))
+* run runner Jobs on a kritika binary of their own ([#1231](https://github.com/home-operations/kritika/issues/1231)) ([5bff47f](https://github.com/home-operations/kritika/commit/5bff47fca25d8da64b687adef9940e73370fad09))
+
+
+### Continuous Integration
+
+* mark issues and PRs stale after 180 days, close 14 days later ([f6c72ea](https://github.com/home-operations/kritika/commit/f6c72ea1b1b8811a827233181d33338de184aa3d))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool aqua:astral-sh/uv (0.13.4 → 0.13.5) ([#1232](https://github.com/home-operations/kritika/issues/1232)) ([8f26445](https://github.com/home-operations/kritika/commit/8f26445f478cdad3271c367598bab269c9012a9e))
+
 ## [0.0.102](https://github.com/home-operations/kritika/compare/0.0.101...0.0.102) (2026-10-24)
 
 
