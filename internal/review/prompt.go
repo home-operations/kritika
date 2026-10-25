@@ -117,7 +117,7 @@ func writeBumps(b *strings.Builder, lead string, bumps []Bump) {
 }
 
 // DefaultBudgetTokens bounds the user message when Input sets no budget.
-const DefaultBudgetTokens = 24_000
+const DefaultBudgetTokens = 64_000
 
 // charsPerToken is the conservative approximation used for budgeting.
 const charsPerToken = 4

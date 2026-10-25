@@ -566,8 +566,8 @@ a new title.
 | ---------------- | -------------------- | -------------------------------------------------------------------------------------------- |
 | `steps`          | 60                   | model calls the loop may make                                                                |
 | `output`         | 32768                | bytes one tool call may return; a command's output cut to it is kept whole beside the checkout |
-| `tokens`         | 4,000,000            | prompt and output tokens the review, or each part of a split one, may spend across its steps |
-| `prompt`         | 24000, at least 8000 | tokens of the prompt a review and a follow-up start from; its [confidence score](confidence.md#the-score) gets up to twice it |
+| `tokens`         | 6,000,000            | prompt and output tokens the review, or each part of a split one, may spend across its steps |
+| `prompt`         | 64000, at least 8000 | tokens of the prompt a review and a follow-up start from; the [confidence score](confidence.md#the-score) prompt budget defaults to 96000 tokens |
 | `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                    |
 | `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                          |
 | `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |

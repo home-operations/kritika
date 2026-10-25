@@ -241,6 +241,7 @@ func ruleIDs(rules []review.Rule) []string {
 // TestPromptInputsNotes: the notes say what the prompt's budgets cut.
 func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
+	s.Agent.MaxPromptTokens = 24_000
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
 	in := newPromptInputs(s, nil, nil, []string{"main.go"})
 	if want := []string{"1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
@@ -622,7 +623,8 @@ func TestAgentPromptBudget(t *testing.T) {
 		agent *runspec.AgentLimits
 		kept  bool
 	}{
-		{name: "a zero budget takes the default", agent: &runspec.AgentLimits{}},
+		{name: "a zero budget takes the default", agent: &runspec.AgentLimits{}, kept: true},
+		{name: "a smaller configured budget omits the large file", agent: &runspec.AgentLimits{MaxPromptTokens: 24_000}},
 		{name: "the configured budget keeps the large file", agent: &runspec.AgentLimits{MaxPromptTokens: 60_000}, kept: true},
 	}
 	for _, tt := range tests {
