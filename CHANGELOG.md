@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.104](https://github.com/home-operations/kritika/compare/0.0.103...0.0.104) (2026-10-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **chart:** support only an in-cluster CloudNativePG database and add networkPolicy.extraEgress ([#1241](https://github.com/home-operations/kritika/issues/1241))
+
+### Features
+
+* **chart:** support only an in-cluster CloudNativePG database and add networkPolicy.extraEgress ([#1241](https://github.com/home-operations/kritika/issues/1241)) ([04aae0f](https://github.com/home-operations/kritika/commit/04aae0f4ce8b92ba8a31ad91abcdc9d1741d958e))
+
 ## [0.0.103](https://github.com/home-operations/kritika/compare/0.0.102...0.0.103) (2026-10-25)
 
 
