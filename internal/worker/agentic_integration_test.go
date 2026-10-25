@@ -41,6 +41,7 @@ import (
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
@@ -306,9 +307,11 @@ type agentRunRow struct {
 // agenticHarness drives agentic reviews of acme/widgets through River,
 // the local executor and the real runner.
 type agenticHarness struct {
-	number int
-	ctx    context.Context
-	st     *store.Store
+	prepare *Prepare
+	publish *Publish
+	number  int
+	ctx     context.Context
+	st      *store.Store
 	// runner is the store as a runner's role opens it.
 	runner *store.Store
 	svc    *ingest.Service
@@ -431,8 +434,10 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	h.gatewayURL = gw.URL
 	h.review.GatewayURL, h.review.GatewayTokenTTL = gw.URL, time.Hour
 	river.AddWorker(workers, h.review)
-	river.AddWorker(workers, &Prepare{Review: h.review})
-	river.AddWorker(workers, &Publish{Review: h.review})
+	h.prepare = &Prepare{Base: h.review.Base, Steppers: h.review.Steppers, WebURL: h.review.WebURL}
+	river.AddWorker(workers, h.prepare)
+	h.publish = &Publish{Base: h.review.Base, WebURL: h.review.WebURL}
+	river.AddWorker(workers, h.publish)
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
@@ -2603,4 +2608,16 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (h *agenticHarness) setForges(f forge.Clients) {
+	h.review.Forges, h.prepare.Forges, h.publish.Forges = f, f, f
+}
+
+func (h *agenticHarness) setMetrics(m *metrics.Metrics) {
+	h.review.Metrics, h.prepare.Metrics, h.publish.Metrics = m, m, m
+}
+
+func (h *agenticHarness) setSteppers(s *adapter.Steppers) {
+	h.review.Steppers, h.prepare.Steppers = s, s
 }

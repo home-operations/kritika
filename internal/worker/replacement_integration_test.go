@@ -315,7 +315,7 @@ func TestFailureStatusWaitsForStarts(t *testing.T) {
 			h := newAgenticHarness(t, 1995+i)
 			job := queuedOutcomeReview(t, h)
 			f := &statusHookForge{localForge: h.lf, failComments: tt.failComments}
-			h.review.Forges = &forges{f: f}
+			h.setForges(&forges{f: f})
 			busy := make(chan error, 1)
 			f.beforeStatus = func() {
 				_, err := h.rival(t, h.head, 7_000_010+int64(i))

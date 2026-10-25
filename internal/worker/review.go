@@ -83,7 +83,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	logger := w.Logger.With("account", args.AccountID, "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
 	// River refunds shutdown attempts, so a checkpoint may exist on attempt one.
-	if resumed, err := w.resumePublication(ctx, job, file, logger); resumed {
+	if resumed, err := w.publication().resumePublication(ctx, job, file, logger); resumed {
 		return err
 	}
 	account, err := w.account(file, args.AccountID)
@@ -242,7 +242,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.finishEnded(ctx, ended, err)
 	}
 	phase := &publishPhase{
-		w: w, file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
+		w: w.publication(), file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, lease: admitted.lease, trigger: args.Trigger, started: started, logger: logger,
 		parse: review.ParseOptions{
 			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: prep.ruleIDs,
@@ -770,7 +770,7 @@ func (w *Review) jobReviewReplaced(ctx context.Context, accountID, prID string, 
 
 // endReview ends a review as end says, and reports whether it did (see
 // store.EndReview).
-func (w *Review) endReview(ctx context.Context, accountID, reviewID string, end store.ReviewEnd) (bool, error) {
+func (w *Base) endReview(ctx context.Context, accountID, reviewID string, end store.ReviewEnd) (bool, error) {
 	var ended bool
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error

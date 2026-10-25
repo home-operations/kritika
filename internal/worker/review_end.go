@@ -103,7 +103,7 @@ func lockedWrite(
 // lock and only while the review still speaks for it (store.ReviewCeded):
 // a newer review's start sets its own status under the same lock, so the
 // write never lands over what a newer review said.
-func (w *Review) ownedWrite(ctx context.Context, e endedReview, write func(context.Context) error) {
+func (w *Base) ownedWrite(ctx context.Context, e endedReview, write func(context.Context) error) {
 	err := lockedWrite(ctx, w.Store.WithPublicationLock, e.prID, func(ctx context.Context) error {
 		var ceded bool
 		err := w.Store.WithAccount(ctx, e.accountID, func(tx pgx.Tx) error {
@@ -123,7 +123,7 @@ func (w *Review) ownedWrite(ctx context.Context, e endedReview, write func(conte
 
 // reportEnd sets the head's error status, desc, for a review that ended
 // short of publishing (see ownedWrite).
-func (w *Review) reportEnd(ctx context.Context, e endedReview, desc string) {
+func (w *Base) reportEnd(ctx context.Context, e endedReview, desc string) {
 	w.ownedWrite(ctx, e, func(ctx context.Context) error {
 		return e.client.SetStatus(ctx, e.owner, e.repo, e.headSHA, forge.StatusError, desc)
 	})

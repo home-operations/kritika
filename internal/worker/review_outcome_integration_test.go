@@ -67,7 +67,7 @@ func TestEndedReviewRecordedOnce(t *testing.T) {
 	h := newAgenticHarness(t, 1009)
 	job := queuedOutcomeReview(t, h)
 	reg := prometheus.NewRegistry()
-	h.review.Metrics = metrics.New(reg)
+	h.setMetrics(metrics.New(reg))
 	// The pull request moved on, so the job's head is superseded at once.
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = 'moved' WHERE repository_id = $1 AND number = $2`,

@@ -45,7 +45,7 @@ func TestPreparationScoringInterruption(t *testing.T) {
 			defer cancel(nil)
 			calls := 0
 			fc := &fakeCompleter{}
-			h.review.Steppers = &adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) {
+			h.setSteppers(&adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) {
 				return model.StepperFunc(func(scoreCtx context.Context, req model.StepRequest) (model.StepResponse, error) {
 					calls++
 					if calls > 1 {
@@ -74,7 +74,7 @@ func TestPreparationScoringInterruption(t *testing.T) {
 					<-scoreCtx.Done()
 					return model.StepResponse{}, scoreCtx.Err()
 				}), nil
-			}}
+			}})
 			err := h.workStages(t, ctx, h.review, job)
 			if (err != nil) != (tt.want == store.ReviewPrepared) {
 				t.Fatalf("Work = %v, want %s", err, tt.want)
@@ -116,7 +116,7 @@ func TestPreparationSnoozeDuringShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(h.ctx)
 	defer cancel(nil)
 	reg := prometheus.NewRegistry()
-	h.review.Metrics = metrics.New(reg)
+	h.setMetrics(metrics.New(reg))
 	h.exec.after = func() {
 		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			if _, err := tx.Exec(h.ctx, `UPDATE context_packs SET skip_reason = 'filtered'
@@ -228,7 +228,7 @@ func TestPreparationMergeRecovery(t *testing.T) {
 	}
 	h.review.Executor = nil
 	calls := 0
-	h.review.Steppers = &adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) {
+	h.setSteppers(&adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) {
 		return model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
 			calls++
 			var slots int
@@ -244,7 +244,7 @@ func TestPreparationMergeRecovery(t *testing.T) {
 				{ID: "merge", Name: "summary", Input: json.RawMessage(`{"headline":"Checks widgets","take":"Changes main.go and checks other.go.","praise":[]}`)},
 			}}, nil
 		}), nil
-	}}
+	}})
 	if err := h.workStages(t, h.ctx, h.review, job); err != nil {
 		t.Fatal(err)
 	}

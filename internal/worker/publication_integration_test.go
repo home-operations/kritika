@@ -60,7 +60,7 @@ func TestPublicationResumesWithoutModelWork(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	h.review.Forges = &forges{f: f}
+	h.setForges(&forges{f: f})
 	h.sm.reset(scriptSubmit)
 	h.dispatch(t, h.head)
 	id, status, why := h.waitReview(t, h.head)
@@ -191,7 +191,7 @@ func (f *unavailablePublication) CreateComment(context.Context, string, string, 
 
 func TestPublicationCancellationDuringBackoff(t *testing.T) {
 	h := newAgenticHarness(t, 972)
-	h.review.Forges = &forges{f: &unavailablePublication{h.lf}}
+	h.setForges(&forges{f: &unavailablePublication{h.lf}})
 	h.sm.reset(scriptSubmit)
 	h.dispatch(t, h.head)
 	var id string

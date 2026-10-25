@@ -38,7 +38,7 @@ func TestContextChunksGiven(t *testing.T) {
 	seedIndex(t, h, configure(h.config).Embedding, configfile.RepositoryID(h.account.ID(), "acme/widgets"),
 		strings.Repeat("func b() { helper() }\n", 2000))
 	reg := prometheus.NewRegistry()
-	h.review.Metrics = metrics.New(reg)
+	h.setMetrics(metrics.New(reg))
 	counted := func() map[string]int {
 		t.Helper()
 		families, err := reg.Gather()
