@@ -291,7 +291,8 @@ func loadConfig(cfg *config.Config) (*configfile.File, error) {
 // variables the file's secret references name among them, but the
 // database is not, and nothing is connected to: the settings a deployment
 // gives serve besides the file, such as the chart's gatewayUrl, are not
-// required.
+// required. The runner templates are decoded as the executor decodes
+// them, but the API's dry run of a runner Job is left to startup.
 func checkConfig(args []string, out io.Writer) error {
 	path := os.Getenv("KRITIKA_CONFIG_FILE")
 	if len(args) > 0 {
@@ -309,6 +310,18 @@ func checkConfig(args []string, out io.Writer) error {
 	}
 	if cfg.WebURL == "" {
 		return errors.New("config: webUrl: KRITIKA_WEB_URL is required to serve")
+	}
+	if cfg.Executor == config.ExecutorKubernetes {
+		if _, err := executor.DecodeJobTemplate(cfg.RunnerJobTemplate); err != nil {
+			return fmt.Errorf("runner.jobTemplate: KRITIKA_RUNNER_JOB_TEMPLATE: %w", err)
+		}
+		// A pod template must name the runner's image, and the chart passes
+		// it besides an existingConfigMap's file, which then has none.
+		if len(cfg.RunnerPodTemplate) > 0 {
+			if _, err := executor.DecodePodTemplate(cfg.RunnerPodTemplate); err != nil {
+				return fmt.Errorf("runner.podTemplate: KRITIKA_RUNNER_POD_TEMPLATE: %w", err)
+			}
+		}
 	}
 	_, err = fmt.Fprintf(out, "%s: the configuration is valid\n", path)
 	return err

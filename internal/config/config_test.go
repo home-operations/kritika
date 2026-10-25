@@ -139,6 +139,7 @@ func TestWebURL(t *testing.T) {
 		{name: "missing scheme", url: "dash.example.com", wantErr: true},
 		{name: "non-http scheme", url: "ftp://dash.example.com", wantErr: true},
 		{name: "missing host", url: "https:///path", wantErr: true},
+		{name: "port without host", url: "http://:8080", wantErr: true},
 		{name: "with query", url: "https://dash.example.com?x=1", wantErr: true},
 		{name: "with fragment", url: "https://dash.example.com#frag", wantErr: true},
 	}

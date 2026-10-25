@@ -54,10 +54,12 @@ keys, invalid values, a setting in both the file and the environment, and no
 way to sign in. It does not connect to the database or any forge, and does
 not need the database variables or the settings the chart passes besides the
 file, such as `gatewayUrl` with `existingConfigMap`. The dashboard's
-`webUrl` is still required, from the file or `KRITIKA_WEB_URL`. It reads the
-environment, so each secret reference's variable must be set. Any value
-works except a GitLab `webhookSecret`, which must look like a signing
-token, `whsec_` followed by base64:
+`webUrl` is still required, from the file or `KRITIKA_WEB_URL`. It decodes
+the runner templates as `serve` does, but leaves to startup the dry run in
+which the Kubernetes API validates a runner Job. It reads the environment,
+so each secret reference's variable must be set. Any value works except a
+GitLab `webhookSecret`, which must look like a signing token, `whsec_`
+followed by base64:
 
 ```sh
 docker run --rm -v "$PWD/config.yaml:/config.yaml:ro" \

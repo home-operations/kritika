@@ -157,7 +157,7 @@ func (c *Config) parseWebURL() error {
 	if err != nil {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
 	}
-	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" {
+	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Hostname() == "" {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
@@ -188,6 +188,19 @@ func LoadFile(path string) (*Config, error) {
 	s, err := env.ParseAs[Settings]()
 	if err != nil {
 		return nil, envError[Settings](err)
+	}
+	// Load's parse unsets these before the file's secret references
+	// resolve, so a reference to one fails there and must fail here too.
+	params, err := env.GetFieldParams(&Config{})
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	for _, p := range params {
+		if p.Unset {
+			if err := os.Unsetenv(p.Key); err != nil {
+				return nil, fmt.Errorf("config: %w", err)
+			}
+		}
 	}
 	cfg := Config{Settings: s, ConfigFile: path}
 	if err := cfg.load(); err != nil {
