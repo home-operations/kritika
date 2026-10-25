@@ -45,6 +45,7 @@ type rescueStore interface {
 	EndOrphanedRun(ctx context.Context, run store.OrphanedRun, reason string) error
 	SweepJobHeartbeats(ctx context.Context) (int64, error)
 	SweepIndexProgress(ctx context.Context, limit int) error
+	ReconcileModelInvocations(ctx context.Context, limit int) (store.InvocationRecovery, error)
 	WithPublicationLock(ctx context.Context, pullRequestID string, fn func(context.Context) error) error
 }
 
@@ -134,6 +135,16 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 	}
 	if err := r.Store.SweepIndexProgress(ctx, rescueBatch); err != nil {
 		errs = append(errs, err)
+	}
+	recovery, err := r.Store.ReconcileModelInvocations(ctx, rescueBatch)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	if recovery.Settled != 0 {
+		r.Logger.Info("model call accounting recovered", "calls", recovery.Settled)
+	}
+	if recovery.Uncertain != 0 {
+		r.Logger.Warn("model call outcomes unknown; reservations retained", "calls", recovery.Uncertain)
 	}
 	return errors.Join(errs...)
 }

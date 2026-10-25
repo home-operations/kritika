@@ -30,6 +30,8 @@ type fakeRescueStore struct {
 	rescues, revoked, ended []string
 	swept                   int
 	progressSweeps          int
+	invocationSweeps        int
+	invocationErr           error
 }
 
 func (f *fakeRescueStore) AbandonedJobs(context.Context, time.Duration, int) ([]store.AbandonedJob, error) {
@@ -263,5 +265,22 @@ apps:
 				t.Fatalf("statuses = %v, want %v", client.set, tt.want)
 			}
 		})
+	}
+}
+
+func (f *fakeRescueStore) ReconcileModelInvocations(context.Context, int) (store.InvocationRecovery, error) {
+	f.invocationSweeps++
+	return store.InvocationRecovery{}, f.invocationErr
+}
+
+func TestRescueModelAccounting(t *testing.T) {
+	want := errors.New("accounting unavailable")
+	st := &fakeRescueStore{invocationErr: want}
+	r := &Rescuer{Store: st, Logger: slog.New(slog.DiscardHandler)}
+	if err := r.Rescue(t.Context()); !errors.Is(err, want) {
+		t.Fatalf("Rescue: %v", err)
+	}
+	if st.invocationSweeps != 1 {
+		t.Fatalf("accounting sweeps=%d", st.invocationSweeps)
 	}
 }
