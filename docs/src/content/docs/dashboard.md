@@ -1,10 +1,12 @@
-# Dashboard
+---
+title: Dashboard
+---
 
 Open the address set in `config.webUrl` and sign in. The dashboard shows review
 progress, findings and costs for the accounts you can access.
 
 Use the forge to discuss findings. Use the dashboard to inspect reviews and manage
-the service. Application settings live in the [configuration file](configuration.md).
+the service. Application settings live in the [configuration file](/configuration/).
 
 ## First run
 
@@ -24,18 +26,18 @@ shows what is missing:
 The account switcher selects one account or **All accounts**. Press
 `Ctrl+K` or `⌘K` to find a page or a recently updated pull request.
 
-| Page | Use it to… |
-| --- | --- |
-| Overview | See running work and problems that need attention. |
+| Page          | Use it to…                                                          |
+| ------------- | ------------------------------------------------------------------- |
+| Overview      | See running work and problems that need attention.                  |
 | Pull requests | Read reviews, inspect findings and open their threads on the forge. |
-| Queue | Find waiting, running, retrying or failed jobs. |
-| Repositories | Enable repositories and inspect their settings and code index. |
-| Analytics | Compare review activity, findings and spending over time. |
-| Usage & costs | Inspect costs by account, repository, model or review. |
-| Follow-ups | Read questions and the bot's replies. |
-| Findings | Search findings across reviews. |
-| Rules | See which review rules apply and where they come from. |
-| Audit log | Inspect management actions, as an admin. |
+| Queue         | Find waiting, running, retrying or failed jobs.                     |
+| Repositories  | Enable repositories and inspect their settings and code index.      |
+| Analytics     | Compare review activity, findings and spending over time.           |
+| Usage & costs | Inspect costs by account, repository, model or review.              |
+| Follow-ups    | Read questions and the bot's replies.                               |
+| Findings      | Search findings across reviews.                                     |
+| Rules         | See which review rules apply and where they come from.              |
+| Audit log     | Inspect management actions, as an admin.                            |
 
 Some pages are available only within an account. **All accounts** combines
 activity and usage across accounts you can read.
@@ -44,18 +46,18 @@ activity and usage across accounts you can read.
 
 Open a pull request for its summary, findings and activity. Expand a finding
 for its explanation and suggested fix. A finding an
-[agent](repository-config.md#agents) raised carries the agent's name; one
+[agent](/repository-config/#agents) raised carries the agent's name; one
 without a name is the default pass's. **Run details** contains the timeline,
 model conversation, usage and raw data for troubleshooting. When agents ran,
 the timeline lists each agent's parts with their cost, and the cost of each
-agent, `default` for the default pass.
+agent. The default pass is listed as `default`.
 
 Search accepts plain text and filters:
 
-| List | Example filters |
-| --- | --- |
-| Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0` |
-| Findings | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `is:downvoted` |
+| List          | Example filters                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0`                                                                                           |
+| Findings      | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `is:downvoted` |
 
 Filters are suggested as you type. `agent:` is offered once a finding on the
 page names an agent; `agent:default` finds the default pass's. Expand a list row to preview its latest
@@ -69,20 +71,23 @@ them by category, rule, agent or directory, and select a group to narrow
 the list to it; a directory then shows the directories below it. A group that keeps
 coming back is worth an instruction in `AGENTS.md` or a skill, so the
 change's author gets it right the first time. A group that is often
-dismissed or drew a 👎 is worth a [rule](repository-config.md#rules)
+dismissed or drew a 👎 is worth a [rule](/repository-config/#rules)
 telling reviews what not to report. Like the analytics, 👎 counts come
 from GitHub alone and need polling enabled.
 
-`path:` keeps the findings under a path, `is:downvoted` those that drew a
-👎, and `dismissed:` those dismissed one way: `command`, with
-`@<bot> dismiss`; `resolved`, by resolving the thread; or `conceded`, when
-kritika agreed in the thread that the finding was wrong. Hover a dismissed
-finding's status to see which.
+`path:` keeps the findings under a path, and `is:downvoted` keeps those
+that drew a 👎. `dismissed:` keeps those dismissed one way:
+
+- `command`, with `@<bot> dismiss`;
+- `resolved`, by resolving the thread;
+- `conceded`, when kritika agreed in the thread that the finding was wrong.
+
+Hover a dismissed finding's status to see which.
 
 **Export Markdown** and **Export JSON** download the findings the filters
 keep, newest first, up to 1,000. Give the Markdown to a coding agent and
 ask it to propose those instructions and rules. Reviews read `AGENTS.md`
-only when it is listed under [`context`](repository-config.md#context).
+only when it is listed under [`context`](/repository-config/#context).
 
 ### Queue
 
@@ -100,7 +105,7 @@ The page also shows addressed findings and reactions to inline comments.
 Reactions are counted on GitHub alone and need polling enabled.
 
 **Refused hosts** shows destinations blocked by the egress gateway. Review why
-a host was blocked before adding it to [`egress.allow`](security.md#the-egress-gateway).
+a host was blocked before adding it to [`egress.allow`](/security/#the-egress-gateway).
 
 In **Usage & costs**, select a repository, model or review to inspect spending.
 **Unpriced** means a call has no known price and totals are incomplete. API
@@ -112,7 +117,7 @@ The Rules page lists configured rules and context files, their source and
 scope, and findings that cite each rule, with how many of those were
 addressed, dismissed, or drew a 👎. A rule whose findings are often
 dismissed may need rewording. Edit rules in the
-[configuration file](configuration.md) or [repository settings](repository-config.md#rules).
+[configuration file](/configuration/) or [repository settings](/repository-config/#rules).
 
 ### Your settings
 
@@ -121,39 +126,39 @@ Daily charts use UTC. If the top bar says **Reconnecting…**, live data may be
 out of date until the connection returns.
 
 Under **API tokens**, create a personal access token for an agent that reads
-through kritika's [MCP endpoint](mcp.md). Name it, choose whether it reads everything
-you can read or only some of those accounts, and choose when it expires: in
-7, 30 or 90 days, a year, or never. Its value is shown once. A token never
-changes anything, and stops reading once it expires, is revoked, or the
-sign-in it came from changes, when the list marks it **expired** or
-**stale**. See [personal access tokens](security.md#personal-access-tokens).
+through kritika's [MCP endpoint](/mcp/). Name it, and choose whether it
+reads everything you can read or only some of those accounts. Then choose
+when it expires: in 7, 30 or 90 days, a year, or never. Its value is shown
+once. A token never changes anything. It stops reading once it expires, is
+revoked, or the sign-in it came from changes; the list then marks it
+**expired** or **stale**. See
+[personal access tokens](/security/#personal-access-tokens).
 
 ## Repositories
 
 Admins can enable or disable repositories individually or in bulk, and request
 reindexing. Enablement changes are saved and audited.
 
-Use **Resync**, which names the account's forge, such as **Resync from
-Forgejo**, after changing the App's or the bot's access or unarchiving a
-repository.
-Then enable the repository if it is still off. The next poll can pick up open
-pull requests created while it was disabled.
+Use **Resync** after changing the App's or the bot's access, or after
+unarchiving a repository. It names the account's forge, such as
+**Resync from Forgejo**. Then enable the repository if it is still off. The
+next poll can pick up open pull requests created while it was disabled.
 
 Expand **Repository settings** to inspect effective settings, or **Index runs**
-to investigate indexing failures. See [which repositories run](configuration.md#which-repositories-run)
+to investigate indexing failures. See [which repositories run](/configuration/#which-repositories-run)
 for how dashboard choices and configured defaults interact.
 
 ## Administration
 
 Admins run the instance from **All accounts**, under **Configuration**:
 
-| Page | Use it to… |
-| --- | --- |
-| Accounts | Follow the setup checklist while something is missing, and see the accounts the instance serves. |
-| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves. |
-| Users | See everyone who has signed in, how they sign in, what their newest session reads and when they last signed in; sign someone out everywhere, and revoke anyone's API token. |
-| Settings | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs. |
-| Audit log | Inspect management actions across accounts. |
+| Page        | Use it to…                                                                                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accounts    | Follow the setup checklist while something is missing, and see the accounts the instance serves.                                                                            |
+| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves.                                                             |
+| Users       | See everyone who has signed in, how they sign in, what their newest session reads and when they last signed in; sign someone out everywhere, and revoke anyone's API token. |
+| Settings    | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs.                               |
+| Audit log   | Inspect management actions across accounts.                                                                                                                                 |
 
 These pages do not edit the configuration file. Change the file and roll out
 the deployment. External ConfigMap changes and secret rotations require a
@@ -182,4 +187,4 @@ A configuration that fails validation prevents startup. If the leader cannot
 apply it to the database, kritika keeps the last applied configuration and
 sets `kritika_config_error`. Fix the problem and restart to try again.
 
-See [monitoring](metrics.md) for alerts and [security](security.md) for access controls.
+See [monitoring](/metrics/) for alerts and [security](/security/) for access controls.

@@ -14,7 +14,7 @@ kritika reviews pull requests on GitHub, Forgejo, GitLab and Gitea using the cod
 an updated summary, inline findings and suggested fixes. Mention the bot to ask
 a follow-up question or request another review.
 
-**[Get started](docs/setup.md)** · [Documentation](https://kritika.home-operations.com/)
+**[Get started](https://kritika.home-operations.com/setup/)** · [Documentation](https://kritika.home-operations.com/)
 
 > [!WARNING]
 > kritika is under active development. Check the [changelog](CHANGELOG.md)
@@ -36,19 +36,19 @@ a follow-up question or request another review.
 - A GitHub App, a Forgejo or Gitea bot account or a GitLab service account, and a model provider credential.
 - An HTTPS address for the dashboard and the forge's webhooks.
 
-The [setup guide](docs/setup.md) walks through installation and the first review.
+The [setup guide](https://kritika.home-operations.com/setup/) walks through installation and the first review.
 No repository configuration file is required.
 
 ## Learn more
 
-| I want to…               | Read                                             |
-| ------------------------ | ------------------------------------------------ |
-| Use the bot              | [Reviews and commands](docs/reviews.md)          |
-| Add review rules         | [Repository settings](docs/repository-config.md) |
-| Manage reviews and costs | [Dashboard](docs/dashboard.md)                   |
-| Configure the service    | [Configuration reference](docs/configuration.md) |
-| Secure a deployment      | [Security](docs/security.md)                     |
-| Work on kritika          | [Development](docs/development.md)               |
+| I want to…               | Read                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| Use the bot              | [Reviews and commands](https://kritika.home-operations.com/reviews/)          |
+| Add review rules         | [Repository settings](https://kritika.home-operations.com/repository-config/) |
+| Manage reviews and costs | [Dashboard](https://kritika.home-operations.com/dashboard/)                   |
+| Configure the service    | [Configuration reference](https://kritika.home-operations.com/configuration/) |
+| Secure a deployment      | [Security](https://kritika.home-operations.com/security/)                     |
+| Work on kritika          | [Development](https://kritika.home-operations.com/development/)               |
 
 ## License
 

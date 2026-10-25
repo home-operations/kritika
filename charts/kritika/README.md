@@ -95,11 +95,11 @@ entries into `env` with references in the file. Move
 `runner.jobTemplate.spec.activeDeadlineSeconds`. Move automatic auth, app, provider
 and policy env configuration into the file, keeping secret values in env with
 explicit file references. See the
-[configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)
+[configuration reference](https://kritika.home-operations.com/configuration/)
 for the complete migration and external ConfigMap rules.
 
 The
-[setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
+[setup guide](https://kritika.home-operations.com/setup/)
 covers creating the GitHub App, and the dashboard's setup checklist shows
 what a fresh instance still lacks.
 

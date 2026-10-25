@@ -16,7 +16,7 @@ import (
 // TestSchemaMatchesFile keeps the published JSON Schema's keys in step
 // with the types .kritika.yaml decodes into, object by object.
 func TestSchemaMatchesFile(t *testing.T) {
-	raw, err := os.ReadFile("../../docs/kritika.schema.json")
+	raw, err := os.ReadFile("../../docs/public/kritika.schema.json")
 	if err != nil {
 		t.Fatal(err)
 	}

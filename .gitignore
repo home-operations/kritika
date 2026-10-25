@@ -13,6 +13,5 @@
 # Editor / OS
 .DS_Store
 
-# MkDocs build output and uv-managed venv (docs toolchain)
+# Docs site build output
 /site/
-/.venv/
