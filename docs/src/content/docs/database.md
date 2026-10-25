@@ -101,7 +101,7 @@ spec:
   and blocks commits without enough standbys. Neither replaces backups or
   protects against losing all copies. Choose this policy based on recovery
   objectives; see
-  [CNPG's durability tradeoff](https://cloudnative-pg.io/docs/devel/replication/).
+  [CNPG's durability tradeoff](https://cloudnative-pg.io/docs/1.30/replication/).
 - `primaryUpdateMethod: switchover` rejects an update that changes the image
   and the Postgres parameters at once; apply them one at a time.
 - `podAntiAffinityType: required` keeps the two instances on different nodes.
@@ -391,7 +391,7 @@ Before claiming recoverability:
    independent failure domain, with retention sufficient for the intended
    recovery window. Check actual objects, recent backup results and archive
    failures, not just the presence of an archive hook. See
-   [CNPG backup requirements](https://cloudnative-pg.io/docs/devel/backup/).
+   [CNPG backup requirements](https://cloudnative-pg.io/docs/1.30/backup/).
 3. Restore a selected recovery point into an isolated cluster and record the
    last recovered transaction and measured recovery time. Verify reviews,
    findings/dismissals, usage and queue rows; test application-role access and
@@ -401,7 +401,7 @@ Before claiming recoverability:
 4. Record the tested backup, recovery target, WAL coverage, result and remaining
    gaps. Rebuild vector indexes when appropriate, but do not substitute an index
    rebuild for recovery of durable application records. See
-   [CNPG recovery procedures](https://cloudnative-pg.io/docs/devel/recovery/).
+   [CNPG recovery procedures](https://cloudnative-pg.io/docs/1.30/recovery/).
 
 The inspection did not perform failover, restore, or replication-policy changes.
 Those are separate operational work after recovery objectives are agreed.

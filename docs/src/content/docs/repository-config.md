@@ -339,7 +339,8 @@ A specialist takes:
   comment, one commit status and one confidence score. Each inline finding
   names the agent that raised it, as in `P1 · Open redirect · security ·
   security`. The summary's **Review context** block lists the agents that
-  ran. A review by the default pass alone reads exactly as before.
+  ran. A review by the default pass alone names no agent, in that block or
+  on its findings.
 - **Duplicates merge.** When two agents raise the same thing (one path,
   overlapping lines, the same category or title), one comment is posted:
   the more severe finding, crediting both.
@@ -411,14 +412,14 @@ pull request's head. Directory-specific files must be listed explicitly;
 actual text: `@AGENTS.md` imports and symlinks are not automatically
 followed, and tool paths are relative to the repository root.
 
-If your repository relied on automatic agent-file loading, add the
-references it needs before upgrading. Move requirements every applicable
-review must enforce into [rules](#rules), and review procedures into
+Context is reference material, not instructions. Put requirements every
+applicable review must enforce into [rules](#rules), and review procedures into
 [skills](#skills). A rule can name a file containing review requirements;
 keep coding-agent workflows such as committing and opening pull requests
 out of that file. Skills are available to reviews only, not follow-up
-answers; put requirements shared by both in rules. Unlisted agent files
-are not discovered or reported, so there is no per-review migration warning.
+answers; put requirements shared by both in rules. An agent file that is
+not listed is not offered as context, and no review warns that it is
+missing.
 
 ### Comment templates
 

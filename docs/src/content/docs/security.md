@@ -571,10 +571,10 @@ pulling it:
 
 - what a tag resolves to
 - the platforms of an index
-- the config of its first image, whose labels and annotations name the
-  repository and revision the image was built from and the version it
-  carries, with the user, entrypoint, command, ports, environment,
-  created time, layer count and size
+- the config of its first image: the user, entrypoint, command, ports,
+  environment, created time, layer count and size
+- that image's labels and annotations, which name the repository and
+  revision it was built from and the version it carries
 - for a Helm chart or another artifact, its config document, cut to 8 KiB
 
 With `tags`, it lists a repository's tags. kritika makes the reads
@@ -683,17 +683,18 @@ config:
   by naming the proxy's user `locked` or `uncached`. What the gateway
   keeps is served only to a request named the same way, which a locked
   install checks against its lock.
-- **Filesystem size.** `gatewayCacheMaxSize`, 2Gi unless set, bounds what
-  each replica keeps, and the least recently used entries go first.
-  Separately, it bounds what the fetches under way may write, with at most
-  eight fetches at once. A fetch past either bound is forwarded, not kept.
-  So the directory holds at most twice the bound, apart from evicted
-  files still being served. Those files retain disk space until their
-  readers finish, for at most two minutes per response, and their total
-  size is not bounded by `gatewayCacheMaxSize`. Allow ephemeral storage
-  for twice the bound plus those files and the pod's other storage
-  use. Twice the bound is not a hard limit on disk usage. Each
-  replica keeps its own cache, which lasts as long as its pod.
+- **Filesystem size.** `gatewayCache.storage.maxSize`, which the chart
+  renders as the configuration's `gatewayCacheMaxSize`, bounds what each
+  replica keeps. It is 2Gi unless set, and the least recently used entries
+  go first. Separately, it bounds what the fetches under way may write,
+  with at most eight fetches at once. A fetch past either bound is
+  forwarded, not kept. So the directory holds at most twice the bound,
+  apart from evicted files still being served. Those files retain disk
+  space until their readers finish, for at most two minutes per response.
+  The bound does not cover them. Allow ephemeral storage for twice the
+  bound plus those files and the pod's other storage use. Twice the bound
+  is not a hard limit on disk usage. Each replica keeps its own cache,
+  which lasts as long as its pod.
 
 #### Shared S3 storage
 
@@ -848,9 +849,7 @@ can write to the bucket chooses what a locked install is offered, which
 its lock then has to refuse. Use the provider's signing region, `auto`
 for R2; the chart's network policy already allows serve's egress on 443.
 
-For the filesystem backend, the Helm capacity setting is now
-`gatewayCache.storage.maxSize`; migrate the former `gatewayCache.maxSize` value.
-`storage.type` defaults to `filesystem`, retaining the per-replica emptyDir.
+`storage.type` is `filesystem`, the per-replica emptyDir, unless set.
 `maxEntrySize` applies to either backend; larger downloads are forwarded.
 
 ### Migrating from egress.cache and gatewayCacheRefreshAfter
@@ -960,7 +959,7 @@ kernel and container runtime support user namespaces, `hostUsers: false`
 maps the runner's users to unprivileged IDs on the node. That is a
 further layer where there is no sandbox RuntimeClass. An API server with
 user namespaces turned off drops the field, and the pod runs in the
-node's user namespace as before.
+node's user namespace.
 
 ## What people can read
 

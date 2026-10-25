@@ -445,15 +445,8 @@ A repository adds tools of its own through the
 [`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`.
 It cannot supply mise `[settings]`, which stay the admin's.
 
-`trigger.settle` and `repositories` are no longer keys. A file that still
-sets either does not load, so remove them before upgrading. A new head is
-reviewed as soon as a slot is free, and a review that starts cancels the
-pull request's older active reviews
-([overlapping reviews](/reviews/#overlapping-reviews)). What `owner/*`
-and `owner/name` entries once set moves to each repository's
-`.kritika.yaml`, where that file takes the key. The keys
-[only the admin sets](#what-only-the-admin-sets) stay at the root, since a
-`.kritika.yaml` naming one does not parse.
+The keys in the table above stay at the root: a `.kritika.yaml` that
+names one does not parse.
 
 ### Precedence
 
