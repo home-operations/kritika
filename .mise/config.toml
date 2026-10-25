@@ -266,9 +266,9 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD"
 postinstall = "lefthook install"
 
 [tasks.docs]
-description = "Build the docs site (Astro Starlight) into site/, failing on a broken internal link"
+description = "Test the docs link plugin and build the docs site (Astro Starlight) into site/, failing on a broken internal link"
 dir = "docs"
-run = ["pnpm install --frozen-lockfile", "pnpm run build"]
+run = ["pnpm install --frozen-lockfile", "pnpm test", "pnpm run build"]
 
 [tasks.docs-serve]
 description = "Serve the docs locally with live reload"
