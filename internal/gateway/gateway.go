@@ -407,7 +407,9 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if err := call.Begin(sctx); err != nil {
 		if errors.Is(err, store.ErrModelBudget) {
-			refuse(w, http.StatusTooManyRequests, model.BudgetCode, fmt.Sprintf("the run's budget of %d tokens is spent", c.grant.Budget))
+			reason := fmt.Sprintf("the run's budget of %d tokens is spent", c.grant.Budget)
+			c.logger.Info("gateway: call refused", "reason", reason)
+			refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
 		} else {
 			c.logger.Error("gateway: call not reserved", "error", err)
 			refuse(w, http.StatusInternalServerError, "server_error", "the run's budget could not be checked")
