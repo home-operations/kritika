@@ -56,8 +56,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
 
-# A runner's kritika, which links none of serve's packages: it runs
-# "kritika run" alone.
+# The runner links none of serve's packages: it runs
+# "kritika-runner run" alone.
 FROM source AS runner-builder
 ARG TARGETOS
 ARG TARGETARCH
@@ -68,7 +68,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
-    -o kritika ./cmd/kritika-runner
+    -o kritika-runner ./cmd/kritika-runner
 
 # ---- Runner tools root ------------------------------------------------------
 # The runner's root: Red Hat Hardened Images' core runtime, its bash,
@@ -102,7 +102,7 @@ RUN dnf install -y --setopt=install_weak_deps=False gawk gzip tar \
  && tar -xzf "${asset}" -C /rootfs/usr/local/bin --strip-components=2 "gh_${version}_linux_${TARGETARCH}/bin/gh"
 
 # ---- Runtime with runner tools ----------------------------------------------
-# A runner's kritika with the commands the agent's run tool offers: the
+# kritika-runner with the commands the agent's run tool offers: the
 # chart's runner image. Built with --target tools, published as the -tools
 # tag.
 FROM mirror.gcr.io/jdxcode/mise:${MISE_VERSION} AS mise
@@ -113,8 +113,8 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # runs it by path, and a command the agent runs must not find it.
 COPY --from=mise /usr/local/bin/mise /opt/mise/bin/mise
 USER 65532:65532
-COPY --from=runner-builder /workspace/kritika /kritika
-ENTRYPOINT ["/kritika"]
+COPY --from=runner-builder /workspace/kritika-runner /kritika-runner
+ENTRYPOINT ["/kritika-runner"]
 
 # ---- Runtime --------------------------------------------------------------
 # The default target, last so a build without --target produces it.
