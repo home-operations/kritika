@@ -184,29 +184,16 @@ func TestConfigurationSnapshot(t *testing.T) {
 }
 
 func TestChatGPTLoginRequiresConfigFile(t *testing.T) {
-	if _, err := validate(config.CommandChatGPTLogin, &config.Config{}); err == nil || !strings.Contains(err.Error(), "KRITIKA_CONFIG_FILE") {
+	if err := validate(config.CommandChatGPTLogin, &config.Config{}); err == nil || !strings.Contains(err.Error(), "KRITIKA_CONFIG_FILE") {
 		t.Fatalf("validate = %v", err)
 	}
 }
 
 func TestStoreOptionsOwnerDSN(t *testing.T) {
 	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner", DatabaseRunnerRole: "custom_runner"}
-	for _, tt := range []struct {
-		command config.Command
-		owner   string
-	}{
-		{config.CommandServe, "postgres://owner"},
-		{config.CommandRun, ""},
-	} {
-		t.Run(string(tt.command), func(t *testing.T) {
-			opts := storeOptions(tt.command, cfg, slog.New(slog.DiscardHandler))
-			if tt.command == config.CommandRun && opts.ExpectedRole != "custom_runner" {
-				t.Fatalf("runner role = %q", opts.ExpectedRole)
-			}
-			if opts.OwnerURL != tt.owner || opts.AppURL != "postgres://app" {
-				t.Errorf("owner = %q, app = %q; want owner %q", opts.OwnerURL, opts.AppURL, tt.owner)
-			}
-		})
+	opts := storeOptions(cfg, slog.New(slog.DiscardHandler))
+	if opts.OwnerURL != "postgres://owner" || opts.AppURL != "postgres://app" || opts.ExpectedRole != "" {
+		t.Errorf("owner = %q, app = %q, role = %q; want the owner and app DSNs, no role", opts.OwnerURL, opts.AppURL, opts.ExpectedRole)
 	}
 }
 

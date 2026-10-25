@@ -15,8 +15,9 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-// Command selects what a kritika process runs: the service, or one review or
-// index run in a runner Job.
+// Command selects what a kritika process runs: the service, or the
+// connection of a provider to a ChatGPT plan. A runner Job runs
+// cmd/kritika-runner instead.
 type Command string
 
 // Commands a kritika process can run.
@@ -25,8 +26,6 @@ const (
 	// queues, runner Jobs, the gateway and, on the leader, the leader
 	// duties.
 	CommandServe Command = "serve"
-	// CommandRun is one run in a runner Job, which the service creates.
-	CommandRun Command = "run"
 	// CommandChatGPTLogin connects a configured provider to a ChatGPT plan.
 	CommandChatGPTLogin Command = "chatgpt login"
 )
@@ -40,13 +39,10 @@ func ParseCommand(args []string) (Command, error) {
 	if (len(args) == 3 || len(args) == 4) && args[0] == "chatgpt" && args[1] == "login" {
 		return CommandChatGPTLogin, nil
 	}
-	if len(args) == 1 {
-		switch c := Command(args[0]); c {
-		case CommandServe, CommandRun:
-			return c, nil
-		}
+	if len(args) == 1 && Command(args[0]) == CommandServe {
+		return CommandServe, nil
 	}
-	return "", fmt.Errorf("config: unknown arguments %q: usage: kritika [serve | run | chatgpt login [<forge/account>] <provider>]", args)
+	return "", fmt.Errorf("config: unknown arguments %q: usage: kritika [serve | chatgpt login [<forge/account>] <provider>]", args)
 }
 
 // Executor selects how runners run.

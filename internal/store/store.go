@@ -239,6 +239,30 @@ func assertOwnerRole(ctx context.Context, owner *pgxpool.Pool) error {
 	return nil
 }
 
+// OpenWhenReady opens the store once the database answers, retrying until
+// it does, because in a fresh deployment Postgres is usually still
+// bootstrapping when the pod starts. A configuration error (a DSN that
+// would bypass row-level security, no vector extension) is returned at
+// once: waiting would not change it.
+func OpenWhenReady(ctx context.Context, opts Options) (*Store, error) {
+	const retry = 5 * time.Second
+	for {
+		st, err := Open(ctx, opts)
+		if err == nil {
+			return st, nil
+		}
+		if IsConfigurationError(err) || ctx.Err() != nil {
+			return nil, err
+		}
+		opts.Logger.Warn("database not ready, retrying", "error", err, "after", retry)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(retry):
+		}
+	}
+}
+
 // IsConfigurationError reports whether err is one of the startup assertions,
 // which no amount of retrying will fix, as opposed to a database that is
 // not reachable yet.

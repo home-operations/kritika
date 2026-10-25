@@ -193,7 +193,7 @@ func TestParseCommand(t *testing.T) {
 	}{
 		{args: nil, want: CommandServe},
 		{args: []string{"serve"}, want: CommandServe},
-		{args: []string{"run"}, want: CommandRun},
+		{args: []string{"run"}, wantErr: true},
 		{args: []string{"chatgpt", "login", "plan"}, want: CommandChatGPTLogin},
 		{args: []string{"chatgpt", "login", "github/acme", "plan"}, want: CommandChatGPTLogin},
 		{args: []string{"chatgpt", "login"}, wantErr: true},

@@ -1,6 +1,6 @@
 // Command kritika reviews GitHub pull requests against an index of the
-// repository. "kritika serve" runs the service, and "kritika run" one review
-// or index run in a runner Job the service creates.
+// repository. "kritika serve" runs the service; each review, follow-up and
+// index run it makes runs in a runner Job of cmd/kritika-runner's.
 package main
 
 import (
@@ -40,8 +40,6 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/poller"
-	"github.com/home-operations/kritika/internal/runner"
-	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/server"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/web"
@@ -77,8 +75,7 @@ func run() (err error) {
 	if err != nil {
 		return err
 	}
-	runSpec, err := validate(command, cfg)
-	if err != nil {
+	if err := validate(command, cfg); err != nil {
 		return err
 	}
 
@@ -166,20 +163,14 @@ func run() (err error) {
 		})
 	}
 
-	// Both commands connect with the application DSN and refuse to start if
-	// it could bypass row-level security or the vector extension is
-	// missing; serve also opens the owner DSN, to lead.
-	st, err = openStore(ctx, storeOptions(command, cfg, logger), logger)
+	// serve connects with the application DSN and refuses to start if it
+	// could bypass row-level security or the vector extension is missing;
+	// it also opens the owner DSN, to lead.
+	st, err = store.OpenWhenReady(ctx, storeOptions(cfg, logger))
 	if err != nil {
 		return err
 	}
 
-	if command == config.CommandRun {
-		// A runner does one thing and exits; it never becomes ready.
-		return runner.Run(ctx, st, runSpec, runspec.Secrets{
-			GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken, DatabaseToken: cfg.DatabaseToken,
-		}, logger)
-	}
 	if err := serve(ctx, g, st, cfg, file, public, mgmt.Registry(), logger); err != nil {
 		return err
 	}
@@ -430,36 +421,21 @@ const (
 	eventsDrain       = 5 * time.Second
 )
 
-// validate checks what command needs of cfg beyond the common set, and
-// reads a runner's spec.
-func validate(command config.Command, cfg *config.Config) (runspec.Spec, error) {
+// validate checks what command needs of cfg beyond the common set.
+func validate(command config.Command, cfg *config.Config) error {
 	if command == config.CommandChatGPTLogin {
 		if cfg.ConfigFile == "" {
-			return runspec.Spec{}, errors.New("config: KRITIKA_CONFIG_FILE is required for chatgpt login")
+			return errors.New("config: KRITIKA_CONFIG_FILE is required for chatgpt login")
 		}
-		return runspec.Spec{}, nil
+		return nil
 	}
-	if command == config.CommandServe {
-		return runspec.Spec{}, cfg.ValidateServe()
-	}
-	if err := cfg.ValidateRunner(); err != nil {
-		return runspec.Spec{}, err
-	}
-	return runspec.Read(cfg.RunSpecFile)
+	return cfg.ValidateServe()
 }
 
-// storeOptions is how command connects to the database: serve with the
-// owner DSN too, which leading needs, a runner never.
-func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logger) store.Options {
-	opts := store.Options{
-		AppURL: cfg.DatabaseURL, Logger: logger,
-	}
-	if command == config.CommandServe {
-		opts.OwnerURL = cfg.DatabaseOwnerURL
-	} else {
-		opts.ExpectedRole = cfg.DatabaseRunnerRole
-	}
-	return opts
+// storeOptions is how serve connects to the database: with the owner DSN
+// too, which leading needs.
+func storeOptions(cfg *config.Config, logger *slog.Logger) store.Options {
+	return store.Options{AppURL: cfg.DatabaseURL, OwnerURL: cfg.DatabaseOwnerURL, Logger: logger}
 }
 
 // linger is how long the public listener and the gateway keep accepting
@@ -602,29 +578,6 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 		return nil, err
 	}
 	return kube, nil
-}
-
-// openStore retries until the database answers, because in a fresh
-// deployment Postgres is usually still bootstrapping when the pod starts.
-// A configuration error (a DSN that would bypass row-level security, no
-// vector extension) is returned at once: waiting would not change it.
-func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*store.Store, error) {
-	const retry = 5 * time.Second
-	for {
-		st, err := store.Open(ctx, opts)
-		if err == nil {
-			return st, nil
-		}
-		if store.IsConfigurationError(err) || ctx.Err() != nil {
-			return nil, err
-		}
-		logger.Warn("database not ready, retrying", "error", err, "after", retry)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(retry):
-		}
-	}
 }
 
 // lead runs for as long as this replica holds the leader lock: migrate,

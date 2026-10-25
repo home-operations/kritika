@@ -31,7 +31,9 @@ Dockerfile's `tools-root` stage, the builder variant of `core-runtime`,
 installs `curl`, `find`, `grep`, `jq`, libstdc++ and the timezone database
 with dnf into a copy of `core-runtime`, so the image has its bash and
 coreutils but no package manager, and fetches `gh` from its release,
-checked against the release's checksums. Grype reads the root's rpm
+checked against the release's checksums. Its `kritika` is built from
+`cmd/kritika-runner`, which runs `kritika run` alone; its test fails when
+it would link one of serve's packages. Grype reads the root's rpm
 database; Trivy does not recognize Hardened Images yet. Renovate bumps the
 two images' digests and `gh`, through the annotation above its version. A repository's `.kritika.yaml` `tools` add to the runner
 image's commands. `mise run

@@ -31,12 +31,7 @@ COPY internal/web/ ./
 RUN pnpm run build
 
 # ---- Go build -------------------------------------------------------------
-FROM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS builder
-ARG TARGETOS
-ARG TARGETARCH
-ARG VERSION=dev
-ARG REVISION=dev
-
+FROM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS source
 WORKDIR /workspace
 # Cache module downloads before copying source.
 COPY go.mod go.sum ./
@@ -44,6 +39,13 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY cmd/ cmd/
 COPY internal/ internal/
+
+# kritika serve, with the dashboard it serves.
+FROM source AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG REVISION=dev
 COPY --from=ui /ui/dist/ internal/web/dist/
 
 # Static, stripped, reproducible binary. GOARCH is left to the platform.
@@ -53,6 +55,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
+
+# A runner's kritika, which links none of serve's packages: it runs
+# "kritika run" alone.
+FROM source AS runner-builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG REVISION=dev
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
+    -o kritika ./cmd/kritika-runner
 
 # ---- Runner tools root ------------------------------------------------------
 # The runner's root: Red Hat Hardened Images' core runtime, its bash,
@@ -86,8 +102,9 @@ RUN dnf install -y --setopt=install_weak_deps=False gawk gzip tar \
  && tar -xzf "${asset}" -C /rootfs/usr/local/bin --strip-components=2 "gh_${version}_linux_${TARGETARCH}/bin/gh"
 
 # ---- Runtime with runner tools ----------------------------------------------
-# kritika with the commands the agent's run tool offers: the chart's runner
-# image. Built with --target tools, published as the -tools tag.
+# A runner's kritika with the commands the agent's run tool offers: the
+# chart's runner image. Built with --target tools, published as the -tools
+# tag.
 FROM mirror.gcr.io/jdxcode/mise:${MISE_VERSION} AS mise
 FROM scratch AS tools
 COPY --from=tools-root /rootfs /
@@ -96,7 +113,7 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # runs it by path, and a command the agent runs must not find it.
 COPY --from=mise /usr/local/bin/mise /opt/mise/bin/mise
 USER 65532:65532
-COPY --from=builder /workspace/kritika /kritika
+COPY --from=runner-builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]
 
 # ---- Runtime --------------------------------------------------------------
