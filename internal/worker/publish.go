@@ -27,7 +27,7 @@ import (
 // database. It returns the final review status and, for a failure the
 // caller should surface, the error.
 type publishPhase struct {
-	w        *Review
+	w        *publicationWorker
 	file     *configfile.File
 	account  *configfile.Account
 	settings configfile.Settings
@@ -49,6 +49,7 @@ type publishPhase struct {
 	// parse and templates are the repository's contract settings; the zero
 	// values are kritika's defaults.
 	parse     review.ParseOptions
+	reviewers []string
 	templates review.Templates
 	// repoNotes are what the summary states about the repository's
 	// configuration files.
@@ -163,6 +164,7 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 		return nil, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
 	}
 	p.parse.Reviewers = ranReviewers(run.Parts)
+	p.reviewers = p.parse.Reviewers
 	res, dropped, err := review.Parse(string(run.Result), review.Anchors(diff), p.parse)
 	if err != nil {
 		p.invalidAnswer = true
@@ -451,7 +453,7 @@ func (p *publishPhase) writeBack(
 		Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
 		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
-		Agents:      p.parse.Reviewers,
+		Agents:      p.reviewers,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}

@@ -1691,8 +1691,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	}
 	river.AddWorker(workers, reviewer)
-	river.AddWorker(workers, &Prepare{Review: reviewer})
-	river.AddWorker(workers, &Publish{Review: reviewer})
+	river.AddWorker(workers, &Prepare{Base: reviewer.Base, Steppers: reviewer.Steppers, WebURL: reviewer.WebURL})
+	river.AddWorker(workers, &Publish{Base: reviewer.Base, WebURL: reviewer.WebURL})
 	river.AddWorker(workers, &FollowUp{
 		Base: wb, Executor: exec, Steppers: steppers, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 		awaitEvery: 100 * time.Millisecond,

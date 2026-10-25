@@ -15,7 +15,7 @@ func TestStartedAt(t *testing.T) {
 	t.Parallel()
 	started := time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC)
 	fallback := started.Add(time.Hour)
-	carried, err := json.Marshal(publicationSnapshot{Version: 2, Started: started})
+	carried, err := json.Marshal(preparationInput{Version: 2, Started: started})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestRestoreDashboard(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			payload, err := json.Marshal(publicationSnapshot{Version: 1, Review: configfile.Review{InlineComments: true, Dashboard: tt.saved}})
+			payload, err := json.Marshal(publicationInput{Version: 1, Review: configfile.Review{InlineComments: true, Dashboard: tt.saved}})
 			if err != nil {
 				t.Fatal(err)
 			}

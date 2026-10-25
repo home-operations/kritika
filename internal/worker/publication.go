@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"slices"
 	"time"
@@ -15,187 +14,13 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// publicationAnswer is the finalized model output passed to delivery. Delivery
-// can use it without another merge or confidence call.
-type publicationAnswer struct {
-	Result     review.Result
-	Unanchored []review.Finding
-	Notes      []string
-	Model      string
-}
-
-type publicationPreparation struct {
-	Agent                  store.AgentRunRow
-	RunID                  string
-	Parse                  review.ParseOptions
-	Models                 configfile.Models
-	Limits                 configfile.Limits
-	MaxPromptTokens        int
-	Title, Author, BaseRef string
-}
-
-// publicationSnapshot freezes the inputs to preparation and delivery.
-// Credentials and model clients are resolved separately.
-type publicationSnapshot struct {
-	Agent           *store.AgentRunRow      `json:",omitempty"`
-	RunID           string                  `json:",omitempty"`
-	Preparation     *publicationPreparation `json:",omitempty"`
-	PriorConfidence *review.Confidence
-	Version         int
-	Answer          publicationAnswer
-	Review          configfile.Review
-	ConfidenceRule  configfile.Confidence
-	Effort          model.Effort
-	Route           string `json:",omitempty"`
-	MaxAutoReviews  int
-	Templates       review.Templates
-	Scope           review.Scope
-	Trigger         string
-	Closed          string
-	RepoNotes       []string
-	Sources         []string
-	PriorID         string
-	PriorHead       string
-	PriorDiagram    string
-	Prior           []publicationFinding
-	Dismissed       []store.Dismissal
-	Resolved        []publicationFinding
-	HeldBack        []review.Finding
-	Confidence      *review.Confidence
-	Unscored        bool
-	Unfinished      int
-	Started         time.Time
-}
-
-type publicationFinding struct {
-	Finding review.Finding
-	Posted  bool
-	Comment int64
-}
-
-func snapshotFindings(prior []priorFinding) []publicationFinding {
-	out := make([]publicationFinding, len(prior))
-	for i, f := range prior {
-		out[i] = publicationFinding{Finding: f.Finding, Posted: f.postedInline, Comment: f.commentID}
-	}
-	return out
-}
-
-func restoreFindings(prior []publicationFinding) []priorFinding {
-	out := make([]priorFinding, len(prior))
-	for i, f := range prior {
-		out[i] = priorFinding{Finding: f.Finding, postedInline: f.Posted, commentID: f.Comment}
-	}
-	return out
-}
-
-func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer) error {
-	defer p.timeStage("checkpoint")()
-	snapshot := publicationSnapshot{
-		Version: 1, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
-		Effort: p.settings.Models.Effort, Route: p.settings.Models.Route, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
-		Scope: p.scope, Trigger: p.trigger, Closed: p.pr.closed, RepoNotes: p.repoNotes,
-		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
-		Prior:     snapshotFindings(p.prior.findings),
-		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
-		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished, Started: p.started,
-	}
-	if p.agent != nil {
-		snapshot.Sources = p.agent.Sources
-	}
-	if answer == nil {
-		if p.agent == nil {
-			return errors.New("worker: the runner wrote no agent run")
-		}
-		snapshot.Version = 2
-		snapshot.Preparation = &publicationPreparation{Agent: *p.agent, RunID: p.runID, Parse: p.parse,
-			Models: p.settings.Models, Limits: p.settings.Limits, MaxPromptTokens: p.settings.Agent.MaxPromptTokens,
-			Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef}
-	} else {
-		snapshot.Answer = *answer
-		snapshot.RunID = p.runID
-		if p.agent != nil {
-			snapshot.Agent = &store.AgentRunRow{
-				CreatedAt: p.agent.CreatedAt,
-				Sources:   p.agent.Sources, SkillsOffered: p.agent.SkillsOffered, SkillsOpened: p.agent.SkillsOpened,
-				CommandsOffered: p.agent.CommandsOffered, CommandsRun: p.agent.CommandsRun,
-			}
-		}
-	}
-	payload, err := json.Marshal(snapshot)
-	if err != nil {
-		return fmt.Errorf("worker: encode publication: %w", err)
-	}
-	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		var err error
-		if p.pending != nil {
-			err = store.ReplacePublication(ctx, tx, p.reviewID, p.pending, payload)
-		} else {
-			err = store.SavePublication(ctx, tx, p.reviewID, payload)
-		}
-		if err == nil && p.handoff != nil {
-			err = p.handoff(ctx, tx)
-		}
-		return err
-	})
-	if err == nil {
-		p.pending = nil
-		if answer == nil {
-			p.pending = payload
-		}
-	}
-	return err
-}
-
-func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, error) {
-	var s publicationSnapshot
-	if err := json.Unmarshal(payload, &s); err != nil {
-		return nil, fmt.Errorf("worker: decode publication: %w", err)
-	}
-	if s.Version != 1 && s.Version != 2 {
-		return nil, fmt.Errorf("worker: unsupported publication version %d", s.Version)
-	}
-	p.settings = configfile.Settings{Review: s.Review, Confidence: s.ConfidenceRule,
-		Models: configfile.Models{Effort: s.Effort, Route: s.Route}, MaxAutoReviews: s.MaxAutoReviews}
-	// Whether the comments carry the dashboard's URL follows the
-	// configuration the publication resumes under, not the one it was saved
-	// with: the restart that turned comments.dashboard off may be what
-	// interrupted it.
-	p.settings.Review.Dashboard = p.file.Settings(p.account).Review.Dashboard
-	p.templates, p.scope, p.trigger = s.Templates, s.Scope, s.Trigger
-	p.pr.closed = s.Closed
-	p.repoNotes = s.RepoNotes
-	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,
-		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
-	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
-	p.confidence, p.unscored, p.unfinished = s.Confidence, s.Unscored, s.Unfinished
-	p.agent = &store.AgentRunRow{Sources: s.Sources}
-	if s.Agent != nil {
-		p.agent, p.runID = s.Agent, s.RunID
-	}
-	if s.Version == 2 {
-		if s.Preparation == nil {
-			return nil, errors.New("worker: publication preparation missing")
-		}
-		prep := s.Preparation
-		p.agent, p.runID, p.parse = &prep.Agent, prep.RunID, prep.Parse
-		p.settings.Models, p.settings.Limits = prep.Models, prep.Limits
-		p.settings.Agent.MaxPromptTokens = prep.MaxPromptTokens
-		p.pr.title, p.pr.author, p.pr.baseRef = prep.Title, prep.Author, prep.BaseRef
-		p.pending = payload
-		return nil, nil
-	}
-	return &s.Answer, nil
-}
-
 // resumePublication runs before admission. A saved runner answer may still
 // need merge and confidence calls; a finalized answer only needs delivery.
-func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File,
+func (w *publicationWorker) resumePublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File,
 	logger *slog.Logger,
 ) (resumed bool, err error) {
 	pickedUp := time.Now()
@@ -295,7 +120,7 @@ func startedAt(payload json.RawMessage, fallback time.Time) time.Time {
 	return s.Started
 }
 
-func (w *Review) settlePublication(ctx context.Context, accountID string, p *publishPhase) {
+func (w *publicationWorker) settlePublication(ctx context.Context, accountID string, p *publishPhase) {
 	mctx, cancel := detach(ctx)
 	defer cancel()
 	owner, repo := p.pr.ownerRepo()
@@ -306,7 +131,7 @@ func (w *Review) settlePublication(ctx context.Context, accountID string, p *pub
 	marks.settle(mctx, w.reviewOutcome(mctx, p.logger, accountID, p.reviewID, nil, false))
 }
 
-func (w *Review) finishPublication(
+func (w *publicationWorker) finishPublication(
 	ctx context.Context, accountID string, p *publishPhase, decision reviewDecision,
 ) error {
 	fctx, cancel := detach(ctx)
@@ -334,7 +159,7 @@ func (w *Review) finishPublication(
 	return decision.jobError()
 }
 
-func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase) error {
+func (w *publicationWorker) cancelPublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase) error {
 	cctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	cancel(river.ErrJobCancelledRemotely)
 	return w.publicationEnded(cctx, job, p, store.ReviewCanceled, river.ErrJobCancelledRemotely)
@@ -342,7 +167,7 @@ func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.Revi
 
 // publicationEnded leaves retryable delivery failures prepared. The job's
 // final attempt and explicit cancellation still produce terminal reviews.
-func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase,
+func (w *publicationWorker) publicationEnded(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase,
 	status store.ReviewStatus, err error,
 ) error {
 	decision := decidePublication(context.Cause(ctx), status, err, true, job.Attempt >= job.MaxAttempts)

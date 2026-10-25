@@ -4,8 +4,10 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,9 +37,9 @@ func (h *agenticHarness) workStages(t *testing.T, ctx context.Context, w *Review
 		var err error
 		switch job.Kind {
 		case jobs.QueuePrepare:
-			err = (&Prepare{Review: w}).Work(ctx, &river.Job[jobs.PrepareArgs]{JobRow: job.JobRow, Args: jobs.PrepareArgs{ReviewArgs: job.Args}})
+			err = (&Prepare{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL}).Work(ctx, &river.Job[jobs.PrepareArgs]{JobRow: job.JobRow, Args: jobs.PrepareArgs{ReviewArgs: job.Args}})
 		case jobs.QueuePublish:
-			err = (&Publish{Review: w}).Work(ctx, &river.Job[jobs.PublishArgs]{JobRow: job.JobRow, Args: jobs.PublishArgs{ReviewArgs: job.Args}})
+			err = (&Publish{Base: w.Base, WebURL: w.WebURL}).Work(ctx, &river.Job[jobs.PublishArgs]{JobRow: job.JobRow, Args: jobs.PublishArgs{ReviewArgs: job.Args}})
 		default:
 			err = w.Work(ctx, job)
 		}
@@ -79,7 +81,7 @@ func (h *agenticHarness) workStages(t *testing.T, ctx context.Context, w *Review
 func TestReviewStageHandoff(t *testing.T) {
 	h := newAgenticHarness(t, 1100)
 	reg := prometheus.NewRegistry()
-	h.review.Metrics = metrics.New(reg)
+	h.setMetrics(metrics.New(reg))
 	job := queuedOutcomeReview(t, h)
 	h.sm.reset(scriptSubmit)
 	// The runner's time is the review job's, which the duration the publish
@@ -130,7 +132,7 @@ func TestReviewStageHandoff(t *testing.T) {
 	}
 	stale := *job.JobRow
 	stale.Attempt = 2
-	if err := (&Prepare{Review: h.review}).Work(ctx,
+	if err := (&Prepare{Base: h.review.Base, Steppers: h.review.Steppers, WebURL: h.review.WebURL}).Work(ctx,
 		&river.Job[jobs.PrepareArgs]{JobRow: &stale, Args: jobs.PrepareArgs{ReviewArgs: job.Args}}); err == nil {
 		t.Fatal("stale attempt handed off publication")
 	}
@@ -166,6 +168,51 @@ func TestReviewStageHandoff(t *testing.T) {
 	// clock restarted by the publish job would not; one restarted from zero
 	// would pass the test's own time.
 	checkReviewDuration(t, reg, held+stagesStarted.Sub(runnerDone), time.Since(before))
+}
+
+func TestPublicationReviewerContext(t *testing.T) {
+	h := newAgenticHarness(t, 1190)
+	job := queuedOutcomeReview(t, h)
+	h.sm.reset(scriptSubmit)
+	ctx := rivertest.WorkContext(h.ctx, h.insertOnly)
+	job.State = rivertype.JobStateRunning
+	if _, err := h.st.App().Exec(ctx, `UPDATE river_job SET state = 'running', attempt = $2 WHERE id = $1`, job.ID, job.Attempt); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.review.Work(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.WithAccount(ctx, h.account.ID(), func(tx pgx.Tx) error {
+		saved, err := store.ReadPublication(ctx, tx, job.ID)
+		if err != nil {
+			return err
+		}
+		var input preparationInput
+		if err := json.Unmarshal(saved.Payload, &input); err != nil {
+			return err
+		}
+		input.Preparation.Agent.Parts = []store.AgentPart{{Reviewer: "security", Stop: "submitted"}}
+		input.Preparation.Agent.Result = json.RawMessage(`{"summary":{"take":"Looks good","praise":[]},"findings":[]}`)
+		payload, err := json.Marshal(input)
+		if err != nil {
+			return err
+		}
+		return store.ReplacePublication(ctx, tx, saved.ReviewID, saved.Payload, payload)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.review.Executor = nil
+	if err := h.workStages(t, ctx, h.review, job); err != nil {
+		t.Fatal(err)
+	}
+	h.lf.mu.Lock()
+	defer h.lf.mu.Unlock()
+	for _, body := range h.lf.comments {
+		if strings.Contains(body, "- **Agents:** `security`") {
+			return
+		}
+	}
+	t.Fatal("publication lost the named reviewer after checkpoint restoration")
 }
 
 // checkReviewDuration: the review's duration was observed once, from the

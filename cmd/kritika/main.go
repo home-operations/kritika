@@ -358,8 +358,8 @@ func startWorker(
 		GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL, WebURL: cfg.WebURLParsed(),
 	}
 	river.AddWorker(workers, reviewer)
-	river.AddWorker(workers, &worker.Prepare{Review: reviewer})
-	river.AddWorker(workers, &worker.Publish{Review: reviewer})
+	river.AddWorker(workers, &worker.Prepare{Base: reviewer.Base, Steppers: reviewer.Steppers, WebURL: reviewer.WebURL})
+	river.AddWorker(workers, &worker.Publish{Base: reviewer.Base, WebURL: reviewer.WebURL})
 	river.AddWorker(workers, &worker.FollowUp{
 		Base: base, Executor: exec, Steppers: steppers, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})

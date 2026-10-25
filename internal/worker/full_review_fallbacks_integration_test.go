@@ -125,7 +125,7 @@ func TestFullReviewFallbacksKeepFindings(t *testing.T) {
 
 	t.Run("confidence sees the carried P1 and enforces its ceiling", func(t *testing.T) {
 		fc := &fakeCompleter{}
-		h.review.Steppers = &adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }}
+		h.setSteppers(&adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }})
 		scored := configured
 		scored.Defaults.Confidence.Model = new(configfile.ModelRef("gateway/judge"))
 		scored.Defaults.Confidence.Threshold = new(4)

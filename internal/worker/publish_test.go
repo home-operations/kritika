@@ -323,7 +323,7 @@ func TestDashboard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &publishPhase{
-				w: &Review{WebURL: tt.web}, account: &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme"},
+				w: &publicationWorker{WebURL: tt.web}, account: &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme"},
 				pr: &pullRequest{repository: "acme/x", number: 7},
 			}
 			p.settings.Review.Dashboard = tt.dashboard

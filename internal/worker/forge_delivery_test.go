@@ -81,7 +81,7 @@ func TestInlineAndStatusOverlap(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &deliveryForge{inline: make(chan struct{}), status: make(chan struct{}), inlineErr: tt.inlineErr, statusErr: tt.statusErr}
-			p := &publishPhase{w: &Review{}, pr: &pullRequest{repository: "owner/repo"}, client: f, logger: slog.Default()}
+			p := &publishPhase{w: &publicationWorker{}, pr: &pullRequest{repository: "owner/repo"}, client: f, logger: slog.Default()}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			ids, err := p.postInlineAndStatus(ctx, nil, 0)

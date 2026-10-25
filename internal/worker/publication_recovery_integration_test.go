@@ -34,7 +34,7 @@ func (f *cancelPublicationForge) CreateComment(ctx context.Context, _, _ string,
 
 func TestPublicationCancelRacesDeliveryError(t *testing.T) {
 	h := newAgenticHarness(t, 973)
-	h.review.Forges = &forges{f: &cancelPublicationForge{localForge: h.lf, cancel: func(ctx context.Context) error {
+	h.setForges(&forges{f: &cancelPublicationForge{localForge: h.lf, cancel: func(ctx context.Context) error {
 		return h.st.WithAccount(ctx, h.account.ID(), func(tx pgx.Tx) error {
 			var id string
 			if err := tx.QueryRow(ctx, `SELECT id FROM reviews WHERE head_sha = $1 AND status = 'prepared'`, h.head).Scan(&id); err != nil {
@@ -52,7 +52,7 @@ func TestPublicationCancelRacesDeliveryError(t *testing.T) {
 			}
 			return nil
 		})
-	}}}
+	}}})
 	h.sm.reset(scriptSubmit)
 	h.dispatch(t, h.head)
 	id, status, why := h.waitReview(t, h.head)
@@ -175,7 +175,7 @@ func TestPublicationCheckpointFailureDoesNotRetryModels(t *testing.T) {
 	h := newAgenticHarness(t, 976)
 	owner := publicationTestOwner(t)
 	if _, err := owner.Exec(h.ctx, `ALTER TABLE reviews ADD CONSTRAINT reject_publication_test
-  CHECK (publication IS NULL OR NOT (publication ? 'Answer')) NOT VALID`); err != nil {
+  CHECK (publication IS NULL) NOT VALID`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -256,7 +256,7 @@ func TestPublicationDoesNotReportConcurrentTerminationAsCompleted(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p := &publishPhase{w: worker, account: h.account, pr: pr, reviewID: id, jobID: job.ID, logger: worker.Logger,
+	p := &publishPhase{w: worker.publication(), account: h.account, pr: pr, reviewID: id, jobID: job.ID, logger: worker.Logger,
 		trigger: jobs.TriggerManual, client: &endedDuringDelivery{localForge: h.lf, end: func(ctx context.Context) error {
 			_, err := worker.endReview(ctx, h.account.ID(), id, store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true})
 			return err

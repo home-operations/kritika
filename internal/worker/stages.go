@@ -3,25 +3,41 @@ package worker
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/store"
 )
 
+// publicationWorker owns preparation and delivery without runner admission or execution.
+type publicationWorker struct {
+	Base
+	Steppers *adapter.Steppers
+	WebURL   *url.URL
+}
+
+func (w *Review) publication() *publicationWorker {
+	return &publicationWorker{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL}
+}
+
 // Prepare consumes saved runner answers independently of runner admission.
 type Prepare struct {
 	river.WorkerDefaults[jobs.PrepareArgs]
-	Review *Review
+	Base
+	Steppers *adapter.Steppers
+	WebURL   *url.URL
 }
 
 func (w *Prepare) Work(ctx context.Context, job *river.Job[jobs.PrepareArgs]) error {
-	_, err := w.Review.resumePublication(ctx, &river.Job[jobs.ReviewArgs]{JobRow: job.JobRow, Args: job.Args.ReviewArgs},
-		w.Review.Current.Get(), w.Review.Logger)
+	worker := &publicationWorker{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL}
+	_, err := worker.resumePublication(ctx, &river.Job[jobs.ReviewArgs]{JobRow: job.JobRow, Args: job.Args.ReviewArgs},
+		w.Current.Get(), w.Logger)
 	return err
 }
 
@@ -32,12 +48,14 @@ func (*Prepare) Timeout(*river.Job[jobs.PrepareArgs]) time.Duration {
 // Publish consumes finalized answers independently of model capacity.
 type Publish struct {
 	river.WorkerDefaults[jobs.PublishArgs]
-	Review *Review
+	Base
+	WebURL *url.URL
 }
 
 func (w *Publish) Work(ctx context.Context, job *river.Job[jobs.PublishArgs]) error {
-	_, err := w.Review.resumePublication(ctx, &river.Job[jobs.ReviewArgs]{JobRow: job.JobRow, Args: job.Args.ReviewArgs},
-		w.Review.Current.Get(), w.Review.Logger)
+	worker := &publicationWorker{Base: w.Base, WebURL: w.WebURL}
+	_, err := worker.resumePublication(ctx, &river.Job[jobs.ReviewArgs]{JobRow: job.JobRow, Args: job.Args.ReviewArgs},
+		w.Current.Get(), w.Logger)
 	return err
 }
 
