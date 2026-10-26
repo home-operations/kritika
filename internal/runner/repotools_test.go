@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -276,6 +277,41 @@ func TestRepoToolsBroken(t *testing.T) {
 	}
 }
 
+// TestRepoToolsBrokenAfterAnInstall: home that an install leaves unable to
+// be made read-only again leaves no command to run.
+func TestRepoToolsBrokenAfterAnInstall(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	useTestRegistry(t)
+	home := t.TempDir()
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, nil, false, nil, "",
+		slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed := filepath.Join(home, "sealed")
+	t.Cleanup(func() {
+		_ = os.Chmod(sealed, 0o755)
+		_ = lockTree(context.Background(), home, false)
+	})
+	r.locked = true
+	ran := false
+	// A directory the walk cannot read, made while home is writable, fails
+	// the relock after it.
+	err = r.unlocked(t.Context(), func() error {
+		ran = true
+		return os.Mkdir(sealed, 0)
+	})
+	if !ran || err == nil || r.broken == nil {
+		t.Fatalf("unlocked ran the install: %v, = %v, broken %v; want the relock's failure", ran, err, r.broken)
+	}
+	resolve := r.resolveWith(map[string]string{"grep": "/usr/bin/grep"}, nil)
+	if _, _, err := resolve(t.Context(), "grep"); err == nil || !strings.Contains(err.Error(), "commands are not run") {
+		t.Fatalf("resolve after a failed relock = %v", err)
+	}
+}
+
 func TestLockTree(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "d")
@@ -415,7 +451,11 @@ func TestRepoToolsLinkFailure(t *testing.T) {
 func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 	useTestRegistry(t)
 	payload := []byte("#!/bin/sh\necho upstream\n")
-	env := standInGateway(t, payload, func(_ string, w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) })
+	var downloads atomic.Int32
+	env := standInGateway(t, payload, func(_ string, w http.ResponseWriter, _ *http.Request) {
+		downloads.Add(1)
+		_, _ = w.Write(payload)
+	})
 	home := t.TempDir()
 	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, true, nil, "", slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -427,12 +467,22 @@ func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 	r.downloads[0].client = &http.Client{Transport: cancelOnClose{cached.Transport, cancel}}
 	resolve := r.resolveWith(nil, env)
 	_, _, _ = resolve(ctx, "repo-tool")
+	if ctx.Err() == nil || r.byCommand["repo-tool"].commands == nil {
+		t.Fatalf("the first call: canceled %v, installed %v", ctx.Err(), r.byCommand["repo-tool"].commands)
+	}
+	if _, err := os.Stat(filepath.Join(r.bin, "repo-tool")); err != nil {
+		t.Fatalf("the canceled call left repo-tool unlinked: %v", err)
+	}
+	before := downloads.Load()
 	path, _, err := resolve(t.Context(), "repo-tool")
 	if err != nil {
 		t.Fatalf("resolve after a call canceled as it installed: %v", err)
 	}
 	if out, err := exec.Command(path).Output(); err != nil || string(out) != "upstream\n" {
 		t.Fatalf("installed tool printed %q, %v", out, err)
+	}
+	if downloads.Load() != before {
+		t.Fatalf("the second call downloaded repo-tool again")
 	}
 }
 

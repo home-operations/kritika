@@ -27,6 +27,9 @@ func (t *Tools) UnmarshalYAML(node *yaml.Node) error {
 	}
 	*t = make(Tools, len(raw))
 	for name, v := range raw {
+		if v.Kind == yaml.AliasNode && v.Alias != nil {
+			v = *v.Alias
+		}
 		if v.Kind != yaml.ScalarNode {
 			return fmt.Errorf("tools: %s: the version is a release's tag, not a table or a list", name)
 		}

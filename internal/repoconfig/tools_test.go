@@ -13,6 +13,7 @@ func TestParseTools_Invalid(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
 		{"no version", "tools:\n  aqua:cli/cli:\n", "a version is required"},
 		{"a table", "tools:\n  aqua:cli/cli: { version: v2.83.0 }\n", "not a table or a list"},
+		{"an alias of a table", "tools:\n  aqua:acme/one: &t { version: v2.83.0 }\n  aqua:acme/two: *t\n", "not a table or a list"},
 		{"a short name", "tools:\n  helm: 4.3.1\n", "only aqua registry packages are offered"},
 		{"another source", "tools:\n  \"github:home-operations/flate\": v0.6.5\n", "only aqua registry packages are offered"},
 		{"no repository", "tools:\n  aqua:flate: v0.6.5\n", "not an aqua registry package's name"},
@@ -57,6 +58,19 @@ func TestParseTools_Valid(t *testing.T) {
 	}
 	if !reflect.DeepEqual(f.Tools, want) {
 		t.Fatalf("tools = %#v", f.Tools)
+	}
+}
+
+// TestParseToolsAlias: tools that share a tag through a YAML anchor each
+// take the tag.
+func TestParseToolsAlias(t *testing.T) {
+	t.Parallel()
+	f, err := Parse([]byte("tools:\n  aqua:acme/one: &version v1.0.0\n  aqua:acme/two: *version\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Tools{"aqua:acme/one": "v1.0.0", "aqua:acme/two": "v1.0.0"}); !reflect.DeepEqual(f.Tools, want) {
+		t.Fatalf("tools = %#v, want %#v", f.Tools, want)
 	}
 }
 
