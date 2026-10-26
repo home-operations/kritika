@@ -131,22 +131,23 @@ the replicas. The admin UI's Download cache card only reports the responding
 replica's configuration. It does not probe storage or claim that storage is
 healthy.
 
-| Metric                               | Labels             | Meaning                                                                                                                                                                                                 |
-| ------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kritika_cache_requests_total`       | outcome            | One decision per admitted HTTP request while caching is enabled: `local_hit`, `s3_hit`, `miss`, `refill` for a locked install's retry fetched from origin in place of the entry it refused, or `bypass` |
-| `kritika_cache_bypasses_total`       | reason             | Why a request was forwarded without the cache                                                                                                                                                           |
-| `kritika_cache_operation_seconds`    | operation, outcome | Duration histogram for `origin_fetch`, `s3_lookup`, `s3_read`, and `s3_upload`                                                                                                                          |
-| `kritika_cache_transfer_bytes_total` | operation          | Actual body bytes consumed by cache fills, S3 reads/uploads, or accepted by response writers (`response_local`, `response_s3`)                                                                          |
-| `kritika_cache_responses_total`      | source, outcome    | Responses after serving, by `local`/`s3` source and `ok`/`error`/`canceled` result                                                                                                                      |
-| `kritika_cache_active_fills`         |                    | Current origin fills, excluding background S3 uploads                                                                                                                                                   |
-| `kritika_cache_local_bytes`          |                    | Retained files at the latest directory scan                                                                                                                                                             |
-| `kritika_cache_local_limit_bytes`    |                    | Retained-entry budget, not a hard disk limit                                                                                                                                                            |
-| `kritika_cache_evictions_total`      |                    | Local entries evicted to meet the budget                                                                                                                                                                |
-| `kritika_cache_upload_skips_total`   | reason             | Publications skipped for `queue_full`, `circuit_open`, `entry_unavailable`, or `superseded` by a newer object another replica published                                                                 |
+| Metric                               | Labels             | Meaning                                                                                                                                |
+| ------------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `kritika_cache_requests_total`       | outcome            | One decision per admitted HTTP request while caching is enabled: `local_hit`, `s3_hit`, `miss`, or `bypass`                            |
+| `kritika_cache_bypasses_total`       | reason             | Why a request was forwarded without the cache                                                                                          |
+| `kritika_cache_operation_seconds`    | operation, outcome | Duration histogram for `origin_fetch`, `s3_lookup`, `s3_read`, and `s3_upload`                                                         |
+| `kritika_cache_transfer_bytes_total` | operation          | Actual body bytes consumed by cache fills, S3 reads/uploads, or accepted by response writers (`response_local`, `response_s3`)         |
+| `kritika_cache_responses_total`      | source, outcome    | Responses after serving, by `local`/`s3` source and `ok`/`error`/`canceled` result                                                     |
+| `kritika_cache_active_fills`         |                    | Current origin fills, excluding background S3 uploads                                                                                  |
+| `kritika_cache_local_bytes`          |                    | Retained files at the latest directory scan                                                                                            |
+| `kritika_cache_local_limit_bytes`    |                    | Retained-entry budget, not a hard disk limit                                                                                           |
+| `kritika_cache_evictions_total`      |                    | Local entries evicted to meet the budget                                                                                               |
+| `kritika_cache_upload_skips_total`   | reason             | Publications skipped for `queue_full`, `circuit_open`, `entry_unavailable`, or `present`, the digest's entry another replica published |
 
 Bypass reasons are bounded: `ineligible`, `fill_error`,
 `entry_unavailable`, `canceled`, `fill_busy`, `fill_capacity`, `too_large`,
-`private`, `encoded`, and `unknown_length`. URLs, object keys, run IDs and
+`private`, `encoded`, `unknown_length`, and `digest_mismatch` for an
+origin's body without the digest the request named. URLs, object keys, run IDs and
 arbitrary errors are not metric labels. CONNECT tunnels are excluded.
 
 A miss is a request served after waiting for a fill, including requests sharing
@@ -154,11 +155,9 @@ one in-process fill. Failed fills instead report a bypass. The hit ratio is
 hits divided by hits plus misses; inspect bypasses alongside it. Operation
 outcomes are `ok`, `error`, and `canceled`, plus these:
 
-- `miss` for an absent, expired or invalid S3 entry, or for one replaced or
-  removed while it was being read.
+- `miss` for an absent or invalid S3 entry, or for one replaced or removed
+  while it was being read.
 - `skipped` for an origin response that cannot be stored.
-- `not_modified` for an origin that confirmed an expired entry unchanged. The
-  entry is then kept without a download.
 
 Cache availability does not affect readiness. A failed or circuit-open S3
 lookup is a miss that fills locally, not a bypass. Circuit-open lookups and
@@ -186,7 +185,7 @@ At debug level, `egress cache download` records a completed serving attempt with
 Storage failures produce `egress cache storage error` at warning level, limited
 to one warning per minute per replica. Every failed operation still appears in
 metrics. The runner's `gateway_cache` install field indicates the route used.
-It is not proof of a cache hit. An uncached retry has its own warning.
+It is not proof of a cache hit. A retry around the cache has its own warning.
 
 ## Most used tools
 

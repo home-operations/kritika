@@ -99,9 +99,9 @@ type grantKey struct{}
 // admitProxy authenticates a proxy request by the run token a runner is
 // handed as the password of its proxy URL, which git, gh and curl send as
 // Proxy-Authorization, and returns the request with its run's grant in
-// the context, marked egress.ForRefill or egress.ForLockedInstall when
-// the proxy URL's username asks, or refuses the request and reports
-// false. Only a live run reaches the outside through the gateway, and the
+// the context, marked egress.ForDigest when it names the digest of the
+// body it asks for in runspec.DigestHeader, or refuses the request and
+// reports false. Only a live run reaches the outside through the gateway, and the
 // credentials it adds, so the port is no relay for whatever else can
 // reach it.
 func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
@@ -109,8 +109,10 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 	if r.Method == http.MethodConnect {
 		kind = "connect"
 	}
-	user, token := proxyCredentials(r.Header.Get("Proxy-Authorization"))
+	token := proxyToken(r.Header.Get("Proxy-Authorization"))
 	r.Header.Del("Proxy-Authorization")
+	digest, named := egress.ParseDigest(r.Header.Get(runspec.DigestHeader))
+	r.Header.Del(runspec.DigestHeader)
 	grant, err := g.Store.LookupGatewayToken(r.Context(), token)
 	switch {
 	case errors.Is(err, store.ErrGatewayToken):
@@ -126,11 +128,8 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 		return r, false
 	}
 	ctx := context.WithValue(r.Context(), grantKey{}, grant)
-	switch user {
-	case runspec.UncachedProxyUser:
-		ctx = egress.ForRefill(ctx)
-	case runspec.LockedProxyUser:
-		ctx = egress.ForLockedInstall(ctx)
+	if named {
+		ctx = egress.ForDigest(ctx, digest)
 	}
 	return r.WithContext(ctx), true
 }
@@ -183,21 +182,20 @@ func refusedHost(dest string) string {
 	return textcut.Prefix(host, refusedHostBytes)
 }
 
-// proxyCredentials are the username and password of a Proxy-Authorization
-// header's Basic credentials, "" for anything else: the password is the
-// run token, and the username asks for no more than runspec.UncachedProxyUser
-// or runspec.LockedProxyUser says.
-func proxyCredentials(header string) (user, token string) {
+// proxyToken is the password of a Proxy-Authorization header's Basic
+// credentials, the run token, "" for anything else. The username means
+// nothing.
+func proxyToken(header string) string {
 	scheme, encoded, _ := strings.Cut(header, " ")
 	if !strings.EqualFold(scheme, "Basic") {
-		return "", ""
+		return ""
 	}
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
-		return "", ""
+		return ""
 	}
-	user, token, _ = strings.Cut(string(decoded), ":")
-	return user, token
+	_, token, _ := strings.Cut(string(decoded), ":")
+	return token
 }
 
 // stepPart is the part of a split review a step is for, as its runner

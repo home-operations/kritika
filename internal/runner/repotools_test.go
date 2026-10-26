@@ -106,7 +106,8 @@ func TestPlainHTTP(t *testing.T) {
 		"https://dl.example.com:8443/tool":                       "https://dl.example.com:8443/tool",
 		"https://dl.example.com/tool?sig=x":                      "https://dl.example.com/tool?sig=x",
 		"https://user@dl.example.com/tool":                       "https://user@dl.example.com/tool",
-		"https://raw.githubusercontent.com/acme/tool/v1/tool":    "https://raw.githubusercontent.com/acme/tool/v1/tool",
+		"https://raw.githubusercontent.com/acme/tool/v1/tool":    "http://raw.githubusercontent.com/acme/tool/v1/tool",
+		"https://api.github.com/repos/acme/tool":                 "https://api.github.com/repos/acme/tool",
 		"https://dl.example.com./tool":                           "https://dl.example.com./tool",
 		"https://[::1]/tool":                                     "https://[::1]/tool",
 		"http://dl.example.com/tool":                             "http://dl.example.com/tool",
@@ -121,70 +122,40 @@ func TestPlainHTTP(t *testing.T) {
 	}
 }
 
-func TestWithUser(t *testing.T) {
-	if got := withUser("http://:krk_token@gateway:8082", runspec.LockedProxyUser); got != "http://locked:krk_token@gateway:8082" {
-		t.Errorf("withUser = %s", got)
-	}
-	if got := withUser("http://gateway:8082", runspec.LockedProxyUser); got != "http://gateway:8082" {
-		t.Errorf("withUser without credentials = %s", got)
-	}
-}
-
 // TestRepoToolsInstallThroughCache: a repository's tool, its download
 // checked against the digest the GitHub API keeps of it, reaches the
-// gateway as a plain HTTP request whose proxy username says it is a
-// locked install's; should the install fail there, it is made once more
-// over the same plain HTTP request, its proxy username asking the gateway
-// to fetch again, and last over HTTPS around the cache. Without a cache,
-// the tool installs over HTTPS alone. Home is read-only again after.
+// gateway as a plain HTTP request naming that digest; should the install
+// fail there, it is made once more over HTTPS around the cache. Without a
+// cache, the tool installs over HTTPS alone. Home is read-only again after.
 func TestRepoToolsInstallThroughCache(t *testing.T) {
 	useTestRegistry(t)
 	payload := []byte("#!/bin/sh\necho upstream\n")
-	const stale = "#!/bin/sh\necho stale\n"
-	release := map[string]any{"assets": []any{map[string]any{"name": "repo-tool", "digest": fmt.Sprintf("sha256:%x", sha256.Sum256(payload))}}}
+	digest := fmt.Sprintf("sha256:%x", sha256.Sum256(payload))
 	for _, tt := range []struct {
 		name string
-		// cacheLocked is whether the gateway keeps checked downloads;
-		// served is what it answers a locked install's plain HTTP request
-		// with, and refilled what it answers the retry's.
-		cacheLocked      bool
-		served, refilled string
+		// cacheLocked is whether the gateway keeps checked downloads, and
+		// served what it answers a request naming the digest with.
+		cacheLocked bool
+		served      string
 	}{
-		{"from the cache", true, string(payload), ""},
-		{"around a stale entry", true, stale, string(payload)},
-		{"stale from upstream too", true, stale, stale},
-		{"without a cache", false, "", ""},
+		{"from the cache", true, string(payload)},
+		{"around a stale entry", true, "#!/bin/sh\necho stale\n"},
+		{"without a cache", false, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var mu sync.Mutex
 			var seen []string
-			// The gateway answers the API and a plain HTTP request for the
-			// tool, from upstream when the proxy's username asks it to
-			// fetch again, and refuses every CONNECT; it notes how each
-			// request for the tool came, and as which user.
-			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				r.Header.Set("Authorization", r.Header.Get("Proxy-Authorization"))
-				user, _, _ := r.BasicAuth()
-				if r.URL.Host == "api.example.invalid" {
-					_ = json.NewEncoder(w).Encode(release)
+			env := standInGateway(t, payload, func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				seen = append(seen, r.Method+" "+r.Header.Get(runspec.DigestHeader))
+				mu.Unlock()
+				if r.Method == http.MethodConnect {
+					http.Error(w, "refused", http.StatusForbidden)
 					return
 				}
-				mu.Lock()
-				seen = append(seen, r.Method+" "+user)
-				mu.Unlock()
-				switch {
-				case r.Method == http.MethodConnect || r.URL.Host != "github.com":
-					http.Error(w, "refused", http.StatusForbidden)
-				case user == runspec.UncachedProxyUser:
-					_, _ = io.WriteString(w, tt.refilled)
-				default:
-					_, _ = io.WriteString(w, tt.served)
-				}
-			}))
-			defer gateway.Close()
+				_, _ = io.WriteString(w, tt.served)
+			})
 			home := t.TempDir()
-			proxy := strings.Replace(gateway.URL, "://", "://:krk_token@", 1)
-			env := []string{"PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy}
 			var logs strings.Builder
 			r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, tt.cacheLocked, nil, "",
 				slog.New(slog.NewTextHandler(&logs, nil)))
@@ -202,42 +173,27 @@ func TestRepoToolsInstallThroughCache(t *testing.T) {
 			if info, serr := os.Stat(r.bin); serr != nil || info.Mode().Perm()&0o222 != 0 {
 				t.Errorf("home is not read-only after the install: %v, %v", info.Mode(), serr)
 			}
-			if !tt.cacheLocked {
+			switch tt.name {
+			case "without a cache":
 				if err == nil || !slices.Equal(seen, []string{"CONNECT "}) {
 					t.Fatalf("resolve = %s, %v; the gateway was asked %q: want one CONNECT, refused", path, err, seen)
 				}
-				return
-			}
-			if len(seen) == 0 || seen[0] != "GET locked" {
-				t.Fatalf("the gateway was asked %q: want a locked install's plain HTTP request first\nlog:\n%s", seen, logs.String())
-			}
-			if tt.refilled == stale {
-				if err == nil || !slices.Equal(seen, []string{"GET locked", "GET uncached", "CONNECT "}) {
-					t.Fatalf("resolve = %s, %v; the gateway was asked %q: want a refill, then a CONNECT around the cache", path, err, seen)
+			case "around a stale entry":
+				if err == nil || !slices.Equal(seen, []string{"GET " + digest, "CONNECT "}) {
+					t.Fatalf("resolve = %s, %v; the gateway was asked %q: want the cache, then a CONNECT around it", path, err, seen)
 				}
 				if !strings.Contains(logs.String(), "installing it without the cache") {
-					t.Errorf("log lacks the last retry:\n%s", logs.String())
+					t.Errorf("log lacks the retry:\n%s", logs.String())
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("resolve: %v\nlog:\n%s", err, logs.String())
-			}
-			if out, err := exec.Command(path).Output(); err != nil || string(out) != "upstream\n" {
-				t.Fatalf("installed tool printed %q, %v", out, err)
-			}
-			if tt.refilled == "" {
-				if !slices.Equal(seen, []string{"GET locked"}) || !strings.Contains(logs.String(), "gateway_cache=true") {
-					t.Errorf("a sound entry was retried: asked %q\nlog:\n%s", seen, logs.String())
+			default:
+				if err != nil {
+					t.Fatalf("resolve: %v\nlog:\n%s", err, logs.String())
 				}
-				return
-			}
-			if !slices.Equal(seen, []string{"GET locked", "GET uncached"}) {
-				t.Fatalf("the gateway was asked %q: want the retry as a plain HTTP request asking it to fetch again", seen)
-			}
-			for _, want := range []string{"installing it again from upstream", "gateway_cache=false"} {
-				if !strings.Contains(logs.String(), want) {
-					t.Errorf("log lacks %q:\n%s", want, logs.String())
+				if out, err := exec.Command(path).Output(); err != nil || string(out) != "upstream\n" {
+					t.Fatalf("installed tool printed %q, %v", out, err)
+				}
+				if !slices.Equal(seen, []string{"GET " + digest}) || !strings.Contains(logs.String(), "gateway_cache=true") {
+					t.Errorf("the gateway was asked %q\nlog:\n%s", seen, logs.String())
 				}
 			}
 		})
@@ -354,22 +310,20 @@ func TestLockTree(t *testing.T) {
 
 // standInGateway is the gateway for a repository tool's install: it
 // answers the GitHub API for acme/repo-tool's release, whose asset has
-// payload's digest, and the tool's download as serve says by the proxy's
-// username, and refuses every CONNECT. env is the commands' environment
+// payload's digest, hands serve a request for the tool's download and
+// every CONNECT, and refuses the rest. env is the commands' environment
 // with it as both proxies.
-func standInGateway(t *testing.T, payload []byte, serve func(user string, w http.ResponseWriter, r *http.Request)) (env []string) {
+func standInGateway(t *testing.T, payload []byte, serve func(w http.ResponseWriter, r *http.Request)) (env []string) {
 	t.Helper()
 	release := map[string]any{"assets": []any{map[string]any{"name": "repo-tool", "digest": fmt.Sprintf("sha256:%x", sha256.Sum256(payload))}}}
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("Authorization", r.Header.Get("Proxy-Authorization"))
-		user, _, _ := r.BasicAuth()
 		switch {
 		case r.URL.Host == "api.example.invalid":
 			_ = json.NewEncoder(w).Encode(release)
-		case r.Method == http.MethodConnect || r.URL.Host != "github.com":
-			http.Error(w, "refused", http.StatusForbidden)
+		case r.Method == http.MethodConnect || r.URL.Host == "github.com":
+			serve(w, r)
 		default:
-			serve(user, w, r)
+			http.Error(w, "refused", http.StatusForbidden)
 		}
 	}))
 	t.Cleanup(gateway.Close)
@@ -378,31 +332,36 @@ func standInGateway(t *testing.T, payload []byte, serve func(user string, w http
 }
 
 // TestRepoToolsInstallAfterAStall: an attempt at the download that stalls
-// takes its own installTimeout, and leaves the next attempt its own.
+// takes its own installTimeout, and leaves the next attempt its own: here
+// one around the cache, which the stand-in gateway refuses at once.
 func TestRepoToolsInstallAfterAStall(t *testing.T) {
 	useTestRegistry(t)
 	was := installTimeout
 	t.Cleanup(func() { installTimeout = was })
 	installTimeout = 300 * time.Millisecond
 	payload := []byte("#!/bin/sh\necho upstream\n")
-	env := standInGateway(t, payload, func(user string, w http.ResponseWriter, r *http.Request) {
-		if user == runspec.LockedProxyUser {
-			<-r.Context().Done()
+	connected := make(chan struct{}, 1)
+	env := standInGateway(t, payload, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			connected <- struct{}{}
+			http.Error(w, "refused", http.StatusForbidden)
 			return
 		}
-		_, _ = w.Write(payload)
+		<-r.Context().Done()
 	})
 	home := t.TempDir()
 	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, true, nil, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, _, err := r.resolveWith(nil, env)(t.Context(), "repo-tool")
-	if err != nil {
-		t.Fatalf("resolve after a stalled attempt: %v", err)
+	_, _, err = r.resolveWith(nil, env)(t.Context(), "repo-tool")
+	select {
+	case <-connected:
+	default:
+		t.Fatalf("no attempt around the cache after the stalled one: %v", err)
 	}
-	if out, err := exec.Command(path).Output(); err != nil || string(out) != "upstream\n" {
-		t.Fatalf("installed tool printed %q, %v", out, err)
+	if err == nil || strings.Contains(err.Error(), "stopped after") {
+		t.Fatalf("resolve = %v; want the attempt around the cache's own failure", err)
 	}
 }
 
@@ -411,7 +370,7 @@ func TestRepoToolsInstallAfterAStall(t *testing.T) {
 func TestRepoToolsLinkFailure(t *testing.T) {
 	useTestRegistry(t)
 	payload := []byte("#!/bin/sh\necho upstream\n")
-	env := standInGateway(t, payload, func(_ string, w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) })
+	env := standInGateway(t, payload, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) })
 	home := t.TempDir()
 	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, true, nil, "", slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -452,7 +411,7 @@ func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 	useTestRegistry(t)
 	payload := []byte("#!/bin/sh\necho upstream\n")
 	var downloads atomic.Int32
-	env := standInGateway(t, payload, func(_ string, w http.ResponseWriter, _ *http.Request) {
+	env := standInGateway(t, payload, func(w http.ResponseWriter, _ *http.Request) {
 		downloads.Add(1)
 		_, _ = w.Write(payload)
 	})
@@ -463,8 +422,10 @@ func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	cached := r.downloads[0].client
-	r.downloads[0].client = &http.Client{Transport: cancelOnClose{cached.Transport, cancel}}
+	// The download alone goes through a client that ends ctx once read,
+	// sent as the plain HTTP request the stand-in gateway answers.
+	plain := cachedClient(r.cache, aqua.Sum{})
+	r.cache, r.direct = nil, &http.Client{Transport: cancelOnClose{plain.Transport, cancel}}
 	resolve := r.resolveWith(nil, env)
 	_, _, _ = resolve(ctx, "repo-tool")
 	if ctx.Err() == nil || r.byCommand["repo-tool"].commands == nil {
@@ -509,4 +470,30 @@ type closeCanceling struct {
 func (c closeCanceling) Close() error {
 	defer c.cancel()
 	return c.ReadCloser.Close()
+}
+
+// TestRepoToolsRegistryAfterAStall: a fetch of the registry through the
+// gateway's cache that stalls takes its own installTimeout, and leaves the
+// fetch around the cache its own.
+func TestRepoToolsRegistryAfterAStall(t *testing.T) {
+	useTestRegistry(t)
+	was := installTimeout
+	t.Cleanup(func() { installTimeout = was })
+	installTimeout = 300 * time.Millisecond
+	var calls atomic.Int32
+	fetchRegistry = func(ctx context.Context, _ *http.Client) (*aqua.Registry, error) {
+		if calls.Add(1) == 1 {
+			<-ctx.Done()
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return aqua.Parse([]byte(testRegistry))
+	}
+	env := []string{"PATH=/usr/bin:/bin", "HTTP_PROXY=http://gateway.invalid", "HTTPS_PROXY=http://gateway.invalid"}
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, t.TempDir(), env, true, nil, "",
+		slog.New(slog.DiscardHandler))
+	if err != nil || r == nil || calls.Load() != 2 {
+		t.Fatalf("newRepoTools after a stalled fetch = %v, %v after %d fetches; want the second to serve", r, err, calls.Load())
+	}
 }

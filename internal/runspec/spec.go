@@ -102,7 +102,7 @@ type AgentLimits struct {
 	// CacheLocked says the gateway keeps downloads, as
 	// configfile.GatewayCaches reports, so a repository's tool, whose
 	// download the run checks against a checksum fetched apart from it, is
-	// installed through the cache.
+	// installed through the cache, naming that checksum in DigestHeader.
 	CacheLocked bool `json:"cacheLocked,omitempty"`
 	// Env names the variables of the runner's own environment that the
 	// run tool's commands get, the admin's.
@@ -486,18 +486,14 @@ func (s Secrets) Mask(text string) string {
 	return text
 }
 
-// UncachedProxyUser is the proxy username a runner gives the gateway for
-// the retry of a locked install that failed through the cache: the entry
-// it was served did not match its checksum, so the cache answers from the
-// origin and keeps that in the entry's place. The gateway marks such a
-// request egress.ForRefill.
-const UncachedProxyUser = "uncached"
-
-// LockedProxyUser is the proxy username a runner gives the gateway for a
-// repository's locked install, whose download the runner checks against a
-// checksum fetched apart from it: the cache keeps and answers such a
-// request from any host the rules allow. The gateway marks it egress.ForLockedInstall. A command can
-// claim the name too; it then gets what the host serves any run, and what
-// it has the cache keep is served only to a request that claims the name
-// as well.
-const LockedProxyUser = "locked"
+// DigestHeader names, on a plain HTTP request a runner makes of the
+// gateway, the digest its body must have, as "sha256:<hex>" or
+// "sha512:<hex>": the checksum the runner fetched apart from a download
+// and checks it against. The gateway's cache keeps such a download by that
+// digest, from any host the rules allow, and only a body that has it; the
+// gateway marks the request egress.ForDigest and sends the header no
+// further. A command can name a digest too, and gets a cached body only if
+// it has it; a request the cache passes over, a body without the digest
+// among them, gets the origin's answer as is, which the caller still
+// checks, as the runner does.
+const DigestHeader = "Kritika-Digest"

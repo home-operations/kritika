@@ -60,6 +60,9 @@ type Registry struct {
 	config *registry.Config
 }
 
+// RegistrySum is the checksum RegistryVersion's registry.yaml must have.
+func RegistrySum() Sum { return Sum{Algorithm: algorithmSHA256, Hex: registrySum} }
+
 // FetchRegistry fetches RegistryVersion's registry with client, checked
 // against the SHA-256 recorded with the release.
 func FetchRegistry(ctx context.Context, client *http.Client) (*Registry, error) {

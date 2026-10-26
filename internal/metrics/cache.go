@@ -26,7 +26,7 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		}, []string{"reason"}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_requests_total",
-			Help: "Cache decisions for admitted HTTP requests, by outcome (local_hit, s3_hit, miss, refill, bypass).",
+			Help: "Cache decisions for admitted HTTP requests, by outcome (local_hit, s3_hit, miss, bypass).",
 		}, []string{lblOutcome}),
 		bypasses: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_bypasses_total", Help: "Requests forwarded without the cache, by bounded reason.",
@@ -57,10 +57,10 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 	}
 	reg.MustRegister(c.requests, c.bypasses, c.transfers, c.responses, c.operations,
 		c.active, c.localBytes, c.localLimit, c.evictions, c.uploadSkips)
-	for _, reason := range []string{"queue_full", "circuit_open", "entry_unavailable", "superseded"} {
+	for _, reason := range []string{"queue_full", "circuit_open", "entry_unavailable", "present"} {
 		c.uploadSkips.WithLabelValues(reason)
 	}
-	for _, outcome := range []string{"local_hit", "s3_hit", "miss", "refill", "bypass"} {
+	for _, outcome := range []string{"local_hit", "s3_hit", "miss", "bypass"} {
 		c.requests.WithLabelValues(outcome)
 	}
 	for _, op := range []string{"origin_fetch", "s3_lookup", "s3_read", "s3_upload"} {
@@ -70,7 +70,7 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		c.transfers.WithLabelValues(op)
 	}
 	for _, reason := range []string{"ineligible", "fill_error", "entry_unavailable",
-		outcomeCanceled, "fill_busy", "fill_capacity", "too_large", "private", "encoded", "unknown_length"} {
+		outcomeCanceled, "fill_busy", "fill_capacity", "too_large", "private", "encoded", "unknown_length", "digest_mismatch"} {
 		c.bypasses.WithLabelValues(reason)
 	}
 	for _, source := range []string{"local", "s3"} {
@@ -82,7 +82,6 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 	c.operations.WithLabelValues("s3_lookup", "miss")
 	c.operations.WithLabelValues("s3_read", "miss")
 	c.operations.WithLabelValues("origin_fetch", "skipped")
-	c.operations.WithLabelValues("origin_fetch", "not_modified")
 	return c
 }
 

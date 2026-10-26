@@ -581,18 +581,16 @@ source or needs a runtime is refused.
 A run installs the tools its repository declares, so each run downloads
 them again. The gateway can keep those downloads instead. With
 `gatewayCacheDir` set (under Helm, a private emptyDir), each replica keeps
-what a repository's tools download once the run knows the checksum each
-download must match. It serves those downloads to the next run that asks
-for the same URL.
+what a repository's tools download, by the digest the run checks each
+download against, and serves it to the next request that names that
+digest. The runner reads the aqua registry through it the same way.
 
 Fetching that checksum, from the GitHub API or a checksum file, goes
 around the cache, so the checksum an install is checked against is never
-one the cache chose. Only a request named as a locked install's is kept.
-What any other request fetches through the gateway is verified against
-nothing, so it is not shared between runs. A command can claim the name
-too, but what it has the gateway keep is served only to requests that
-claim the name as well, and the runner checks each of those against its
-download's checksum.
+one the cache chose. Only a request that names the digest its body must
+have is kept, and only a body that has it. What any other request fetches
+through the gateway is verified against nothing, so it is not shared
+between runs.
 
 ```yaml
 gatewayCache:
@@ -603,46 +601,33 @@ config:
 ```
 
 - **What is kept.** A repository's tool reaches its download's host over
-  plain HTTP, with `https://github.com/` rewritten to `http://github.com/`
-  and `locked` as the proxy URL's username. The gateway fetches such a request over HTTPS, as it does any
-  plain HTTP request. It follows redirects itself, each through the
-  egress rules. A GitHub release download that redirects to
-  `release-assets.githubusercontent.com` needs that host allowed, as it
-  does without the cache. A host that `egress.allow` and `egress.deny`
-  refuse is refused with the cache too.
+  plain HTTP, with `https://github.com/` rewritten to `http://github.com/`,
+  and names the download's digest in the `Kritika-Digest` header, which
+  goes no further than the gateway. The gateway fetches such a request
+  over HTTPS, as it does any plain HTTP request. It follows redirects
+  itself, each through the egress rules. A GitHub release download that
+  redirects to `release-assets.githubusercontent.com` needs that host
+  allowed, as it does without the cache. A host that `egress.allow` and
+  `egress.deny` refuse is refused with the cache too.
   The gateway keeps only what any run could fetch for itself. That is a
   GET or HEAD with no query and no credential, answered without a cookie
   or a `Cache-Control` of `private` or `no-store`, and through no redirect
   to a URL with credentials. A host with an `egress.credentials` entry is
   never cached. Neither is `api.github.com`, which the runner sends the
-  run's token. A download from it, or from `raw.githubusercontent.com`,
-  stays on HTTPS. A download's URL must not carry a credential in its
-  path. The fetch is the gateway's own, with
-  its own User-Agent. Runs that ask the same replica for the same URL at
-  once share it.
-- **Integrity.** The runner checks every download against its checksum
-  before unpacking it, so a stale or damaged copy fails the install rather
-  than changing a tool. The runner then installs the tool
-  once more, with `uncached` as the proxy URL's username. That asks the
-  gateway to fetch each download from its origin again and keep it in the
-  entry's place. A cached copy that stops matching its checksum is
-  replaced the first time it fails, at the cost of one extra download for
-  that run. Should that install fail too, the runner makes it once more
-  over HTTPS, as it would without the cache.
-  The gateway takes the runner's word for that username, and treats only a
-  GET as a retry. An entry that a retry replaced within the last minute is
-  served to the next retry as it is, so a run cannot have a URL fetched
-  and published again and again.
-  Once a week, the gateway also asks the origin about a kept download,
-  with the ETag and Last-Modified it kept. An unchanged download is kept
-  for another week, at the cost of that one small request. A changed one
-  is fetched again. The validators are offered only to the resource the
-  body came from, a redirect's signature parameters aside, and not to
-  wherever a changed redirect now points.
-  No run can write the cache. A run can only have the gateway fetch a URL,
-  by naming the proxy's user `locked` or `uncached`. What the gateway
-  keeps is served only to a request named the same way, which the runner
-  checks against the download's checksum.
+  run's token; a download from it stays on HTTPS. A download's URL must not
+  carry a credential in its path. The fetch is the gateway's own, with its
+  own User-Agent. Requests that ask the same replica for the same digest at
+  once share it, whichever URL each names.
+- **Integrity.** The gateway hashes what it fetches and keeps it only if it
+  has the digest asked for, so an entry is the very body the runner checks
+  for, and never goes stale. A body that does not have the digest, such as
+  a release asset replaced upstream, is not kept, and the request is
+  forwarded as it would be without the cache. The runner still checks
+  every download before unpacking it; should one fail through the cache,
+  it installs the tool once more over HTTPS, around the cache.
+  No run can write the cache. A run can only have the gateway fetch a URL
+  for a digest it names, and what the gateway keeps under a digest is
+  served only to a request that names it.
 - **Filesystem size.** `gatewayCache.storage.maxSize`, which the chart
   renders as the configuration's `gatewayCacheMaxSize`, bounds what each
   replica keeps. It is 2Gi unless set, and the least recently used entries
@@ -709,19 +694,19 @@ networkPolicy:
           protocol: TCP
 ```
 
-Entries are complete objects under `<prefix>/v1/<hash-of-original-HTTPS-URL>`.
-The object's metadata records the fetch time, body size and origin response
-headers. Its key identifies a URL, not a content checksum. The gateway retains
-its checks for credentials, privacy and redirect destinations. Bucket writers
+Entries are complete objects under `<prefix>/v1/<algorithm>-<hex>`, the
+digest of the body, such as `sha256-<hex>`. The object's metadata records the
+URL the body was fetched from, its digest, its size and its content type. The
+gateway retains its checks for credentials, privacy and redirect destinations. Bucket writers
 are trusted: protect the bucket from runner pods and unrelated workloads.
 
 Each replica first checks its bounded local cache, then the bucket. A cold fill
 is staged locally and queued for a background single-request upload.
 `maxEntrySize` cannot exceed 5Gi. No conditional writes, shared locks,
 bucket versioning, tagging or multipart operations are required.
-Concurrent misses on different replicas can fetch and upload the same URL
-twice. Completed objects are reused thereafter; there is no promise of
-exactly one upstream download.
+Concurrent misses on different replicas can fetch the same digest twice.
+Completed objects are reused thereafter; there is no promise of exactly one
+upstream download.
 
 The local emptyDir remains private to each pod. In S3 mode its retained-entry
 budget and, separately, its aggregate fill budget are each eight times
@@ -731,12 +716,9 @@ up to another 512Mi of evicted files open; queued uploads retain only keys.
 `storage.maxSize` applies only to the filesystem backend. Hits read from S3 are
 streamed, not added to local storage.
 
-Uploads use two workers and a queue of at most 16 keys per replica, and
-one entry's uploads run one at a time. An upload that finds a newer entry
-in the bucket, published by another replica, is skipped rather than made.
-Publication is still best effort. If another replica publishes between
-that check and the upload, the older entry overwrites it. A locked
-install then refuses the older entry and has it refilled once more. A
+Uploads use two workers and a queue of at most 16 keys per replica. An
+upload that finds the digest's entry in the bucket already, published by
+another replica, is skipped rather than made: it holds the same body. A
 full queue, a failed upload or an entry evicted before upload leaves the
 download usable locally when it is still present. The requesting install
 never waits for publication. Each upload has a deadline of 30 seconds
@@ -762,20 +744,16 @@ suppress healthy S3 reads.
 A failed or circuit-open lookup is a miss. The replica fills its own
 directory and serves that copy to later requests, as the filesystem
 backend does. An outage therefore costs each replica one origin fetch per
-URL rather than one per run. The fill's upload is skipped while the write
-circuit is open. A failure reading an
-opened S3 object can cost the runner its existing uncached retry. Startup does
+digest rather than one per run. The fill's upload is skipped while the write
+circuit is open. A failure reading an opened S3 object costs the runner its
+retry around the cache. Startup does
 not contact S3 and never creates the bucket. Missing buckets, unavailable hosts
 and denied credentials recover through subsequent requests once the storage
 problem is corrected.
 
-Freshness is checked by kritika, independently of physical object deletion.
-An entry a week old is revalidated with the origin. On 304, the replica
-copies the body it has, or the bucket's, under a new fetch time and
-uploads that copy. This rewrites the object rather than downloading it
-from origin again. A locked install's retry replaces an entry that
-stopped matching its checksum the same way. Neither is a bucket size or
-retention limit. Provision retention outside the chart,
+An object is kept by the digest of its body, so it never goes stale, and
+kritika never rewrites one. Nothing bounds the bucket's size or retention.
+Provision retention outside the chart,
 using lifecycle expiration where supported or an external cleanup job. Include
 noncurrent versions if bucket versioning is enabled. Without cleanup, unused
 entries remain in the bucket. Use a dedicated prefix per instance, shared only
@@ -800,14 +778,13 @@ against the servers it names.
 Costs follow the request pattern: a HEAD per eligible request, a GET per cold
 replica hit, a PUT per fill, plus egress for the GETs. Providers with a minimum
 storage duration bill an object for that period however soon lifecycle
-expiration or a weekly revalidation's overwrite removes it. Set the
-lifecycle expiry at or above the minimum.
+expiration removes it. Set the lifecycle expiry at or above the minimum.
 
 Give an `https://` endpoint, so credentials and bodies are encrypted in
 transit. Scope the key to this bucket alone and keep the bucket private.
 A key that works from anywhere widens what a leak exposes, and whoever
-can write to the bucket chooses what a locked install is offered, which
-its checksum then has to refuse. Use the provider's signing region, `auto`
+can write to the bucket chooses what a request for a digest is offered,
+which the runner's check of that digest then has to refuse. Use the provider's signing region, `auto`
 for R2; the chart's network policy already allows serve's egress on 443.
 
 `storage.type` is `filesystem`, the per-replica emptyDir, unless set.

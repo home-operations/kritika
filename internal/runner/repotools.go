@@ -53,11 +53,13 @@ type repoTool struct {
 type repoTools struct {
 	home, bin string
 	installer *aqua.Installer
-	// downloads are the clients a download is fetched with, one attempt
-	// after another while it fails, each with what the log says of it;
-	// cached says the first goes through the gateway's cache.
-	downloads []download
-	cached    bool
+	// cache reaches the gateway's plain HTTP proxy, which a checked
+	// download goes through first, nil when the gateway keeps none: one
+	// transport each download's digest is named over, so their connections
+	// are reused rather than left open. direct fetches around it, the
+	// checksums always.
+	cache     http.RoundTripper
+	direct    *http.Client
 	byCommand map[string]*repoTool
 	logger    *slog.Logger
 	// locked says home is read-only, as it is once the run tool is built,
@@ -68,7 +70,8 @@ type repoTools struct {
 	broken           error
 }
 
-// download is one way to fetch a tool's download.
+// download is one way to fetch a tool's download, and what the log says
+// of a retry that takes it.
 type download struct {
 	client *http.Client
 	note   string
@@ -88,24 +91,18 @@ func newRepoTools(
 	ctx context.Context, tools repoconfig.Tools, home string, env []string, cacheLocked bool, credentialed []string, token string,
 	logger *slog.Logger,
 ) (r *repoTools, notes []string, err error) {
-	direct := proxiedClient(envValue(env, httpsProxyEnv), nil)
-	fctx, cancel := context.WithTimeout(ctx, installTimeout)
-	defer cancel()
-	registry, err := fetchRegistry(fctx, direct)
+	r = &repoTools{
+		home: home, bin: filepath.Join(home, "tools", "bin"), byCommand: map[string]*repoTool{}, logger: logger,
+		direct: proxiedClient(envValue(env, httpsProxyEnv)),
+	}
+	if plain := envValue(env, "HTTP_PROXY"); cacheLocked && plain != "" {
+		r.cache = proxiedClient(plain).Transport
+	}
+	r.installer = &aqua.Installer{Client: r.direct, APIURL: githubAPI, Token: token}
+	registry, err := r.registry(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: %w", err)
 	}
-	r = &repoTools{
-		home: home, bin: filepath.Join(home, "tools", "bin"), byCommand: map[string]*repoTool{}, logger: logger,
-	}
-	r.installer = &aqua.Installer{Client: direct, APIURL: githubAPI, Token: token}
-	if plain := envValue(env, "HTTP_PROXY"); cacheLocked && plain != "" {
-		r.cached = true
-		r.downloads = append(r.downloads,
-			download{proxiedClient(withUser(plain, runspec.LockedProxyUser), plainHTTP), ""},
-			download{proxiedClient(withUser(plain, runspec.UncachedProxyUser), plainHTTP), "installing it again from upstream"})
-	}
-	r.downloads = append(r.downloads, download{direct, "installing it without the cache"})
 	platform := aqua.Platform{OS: runtime.GOOS, Arch: runtime.GOARCH, LibC: libc()}
 	for i, name := range slices.Sorted(maps.Keys(tools)) {
 		pkg, err := registry.Resolve(strings.TrimPrefix(name, repoconfig.ToolPrefix), tools[name], platform)
@@ -149,6 +146,22 @@ func libc() string {
 	return "glibc"
 }
 
+// registry fetches the aqua registry, through the gateway's cache while
+// it keeps checked downloads, else, or should that fail, around it, each
+// attempt within installTimeout of its own.
+func (r *repoTools) registry(ctx context.Context) (*aqua.Registry, error) {
+	if r.cache != nil {
+		registry, err := within(ctx, func(ctx context.Context) (*aqua.Registry, error) {
+			return fetchRegistry(ctx, cachedClient(r.cache, aqua.RegistrySum()))
+		})
+		if err == nil || ctx.Err() != nil {
+			return registry, err
+		}
+		r.logger.Warn("aqua registry not fetched through the gateway's cache, fetching it without the cache", "error", err)
+	}
+	return within(ctx, func(ctx context.Context) (*aqua.Registry, error) { return fetchRegistry(ctx, r.direct) })
+}
+
 // envValue is the value of name in env, under either spelling.
 func envValue(env []string, name string) string {
 	for _, kv := range env {
@@ -159,49 +172,42 @@ func envValue(env []string, name string) string {
 	return ""
 }
 
-// withUser is proxy, a proxy URL, with its username set to user and its
-// password, the run token, kept; proxy as given when it carries none.
-func withUser(proxy, user string) string {
-	u, err := url.Parse(proxy)
-	if err != nil || u.User == nil {
-		return proxy
-	}
-	password, _ := u.User.Password()
-	u.User = url.UserPassword(user, password)
-	return u.String()
-}
-
-// proxiedClient is a client whose requests go through proxy, when set, and
-// rewrite, when set, rewrites first.
-func proxiedClient(proxy string, rewrite func(*url.URL) *url.URL) *http.Client {
-	t := &http.Transport{Proxy: nil, ForceAttemptHTTP2: true}
+// proxiedClient is a client whose requests go through proxy, when set.
+func proxiedClient(proxy string) *http.Client {
+	t := &http.Transport{ForceAttemptHTTP2: true}
 	if u, err := url.Parse(proxy); err == nil && proxy != "" {
 		t.Proxy = http.ProxyURL(u)
 	}
-	if rewrite == nil {
-		return &http.Client{Transport: t}
-	}
-	return &http.Client{Transport: rewriting{t, rewrite}}
+	return &http.Client{Transport: t}
 }
 
-// rewriting sends each request to the URL rewrite makes of it.
-type rewriting struct {
-	base    http.RoundTripper
-	rewrite func(*url.URL) *url.URL
+// cachedClient is a client for a download with sum that goes through the
+// gateway's cache over proxy, the transport to it: as the plain HTTP
+// request the gateway upgrades, naming sum as the digest the cache keeps
+// the download by, for a URL plainHTTP rewrites, and as is for any other.
+func cachedClient(proxy http.RoundTripper, sum aqua.Sum) *http.Client {
+	return &http.Client{Transport: digestNaming{proxy, sum.Algorithm + ":" + sum.Hex}}
 }
 
-func (rt rewriting) RoundTrip(req *http.Request) (*http.Response, error) {
-	if u := rt.rewrite(req.URL); u != req.URL {
+// digestNaming sends each request plainHTTP rewrites as that plain HTTP
+// request, naming digest.
+type digestNaming struct {
+	base   http.RoundTripper
+	digest string
+}
+
+func (rt digestNaming) RoundTrip(req *http.Request) (*http.Response, error) {
+	if u := plainHTTP(req.URL); u != req.URL {
 		req = req.Clone(req.Context())
 		req.URL, req.Host = u, u.Host
+		req.Header.Set(runspec.DigestHeader, rt.digest)
 	}
 	return rt.base.RoundTrip(req)
 }
 
 // keptOutHosts are hosts whose downloads the gateway's cache does not
-// keep: the GitHub API and raw content, which a request with a token
-// reaches.
-var keptOutHosts = []string{configfile.GitHubAPIHost, "raw.githubusercontent.com"}
+// keep: the GitHub API, which a request with the run's token reaches.
+var keptOutHosts = []string{configfile.GitHubAPIHost}
 
 // plainHTTP is u as the plain HTTP request the gateway upgrades, so it can
 // keep what it fetches: an https:// URL on the default port, with no
@@ -268,31 +274,34 @@ func (r *repoTools) resolveWith(onPath map[string]string, env []string) func(con
 // install installs t and links the commands it offers from bin. The
 // download is checked against a checksum fetched apart from it, around
 // the cache: first as it comes through the gateway's cache, while the
-// gateway keeps checked downloads, then, should that fail, once more with
-// the proxy's username asking the gateway to fetch it again, since what
-// the cache served may be stale or damaged, and last around the cache, in
-// case the gateway's own fetch is what the origin refuses. The lookup and
-// each attempt have installTimeout of their own, so one that stalls leaves
-// the next its time. Whatever an earlier call left of t's directory goes
-// first, and a tool whose commands could not all be linked is removed
-// again, links and all, so the next call installs it anew; one installed
-// is linked even if ctx ended meanwhile.
+// gateway keeps checked downloads, then, should that fail, around the
+// cache, in case the gateway's own fetch is what the origin refuses. The
+// lookup and each attempt have installTimeout of their own, so one that
+// stalls leaves the next its time. Whatever an earlier call left of t's
+// directory goes first, and a tool whose commands could not all be linked
+// is removed again, links and all, so the next call installs it anew; one
+// installed is linked even if ctx ended meanwhile.
 func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	started := time.Now()
 	if err := os.RemoveAll(t.dir); err != nil {
 		return fmt.Errorf("%s could not be installed: %w", t.name, err)
 	}
 	sum, err := within(ctx, func(ctx context.Context) (aqua.Sum, error) { return r.installer.Checksum(ctx, t.pkg) })
+	var downloads []download
+	if r.cache != nil {
+		downloads = append(downloads, download{cachedClient(r.cache, sum), ""})
+	}
+	downloads = append(downloads, download{r.direct, "installing it without the cache"})
 	var commands map[string]string
 	attempt := 0
 	for ; err == nil; attempt++ {
 		in := *r.installer
-		in.Downloads = r.downloads[attempt].client
+		in.Downloads = downloads[attempt].client
 		commands, err = within(ctx, func(ctx context.Context) (map[string]string, error) { return in.Install(ctx, t.pkg, sum, t.dir) })
-		if err == nil || attempt == len(r.downloads)-1 || !errors.Is(err, aqua.ErrDownload) || ctx.Err() != nil {
+		if err == nil || attempt == len(downloads)-1 || !errors.Is(err, aqua.ErrDownload) || ctx.Err() != nil {
 			break
 		}
-		r.logger.Warn("tool not installed from the gateway's cache, "+r.downloads[attempt+1].note,
+		r.logger.Warn("tool not installed from the gateway's cache, "+downloads[attempt+1].note,
 			"tool", t.name, "version", t.pkg.Version, "error", err)
 		err = nil
 	}
@@ -313,7 +322,7 @@ func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	}
 	t.commands = commands
 	r.logger.Info("tool installed", "tool", t.name, "version", t.pkg.Version, "asset", t.pkg.Asset,
-		"gateway_cache", r.cached && attempt == 0, "elapsed", time.Since(started).Round(time.Millisecond))
+		"gateway_cache", r.cache != nil && attempt == 0, "elapsed", time.Since(started).Round(time.Millisecond))
 	return nil
 }
 
