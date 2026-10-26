@@ -472,7 +472,6 @@ paused. `@<app slug> review` and `resume` still work
 
 A repository adds tools of its own through the
 [`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`.
-It cannot supply mise `[settings]`, which stay the admin's.
 
 The keys in the table above stay at the root: a `.kritika.yaml` that
 names one does not parse.
@@ -712,13 +711,12 @@ be back under a new title.
 
 - **Commands:** the runner's `-tools` image offers `curl`, `find`, `gh`,
   `grep` and `jq`. The [`tools`](/repository-config/#repository-tools) of
-  a repository's `.kritika.yaml`, read from the merge base, add any other
-  tool mise installs for that repository, such as `helm` or `rg`. Every
-  command those tools provide is offered; `mise` itself never is. On a
-  custom image, the five default commands are offered when found on
-  `PATH`. On a custom image without mise, a repository's tools are not
-  offered, and the review summary says so. Tool install and command
-  resolution failures also appear in the summary.
+  a repository's `.kritika.yaml`, read from the merge base, add packages
+  of the aqua registry for that repository, such as `helm` or `rg`, each
+  offering the commands the registry names for it. On a custom image, the
+  five default commands are offered when found on `PATH`, and a
+  repository's tools as on any image. Tool install and command resolution
+  failures also appear in the summary.
 
   The agent is told to use `gh` for GitHub. `gh` signs in with a token
   minted for the run, which can only read the repository under review and
@@ -883,7 +881,7 @@ in the file. The chart's `runner.jobTemplate` renders it.
 - `spec.containers`: one container named `runner`, with its `image`
   (required), `imagePullPolicy` and `env`. `env` holds the admin's
   variables for the run tool's commands, each a `value` or a Secret's key
-  (`valueFrom.secretKeyRef`), over the image config's `[env]`.
+  (`valueFrom.secretKeyRef`).
 
 kritika refuses any other field, its own labels and AppArmor annotations
 at startup. Set it as JSON in the environment variable or as a YAML

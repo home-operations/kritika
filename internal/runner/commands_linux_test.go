@@ -18,6 +18,8 @@ import (
 	"github.com/go-git/go-git/v6"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/aqua"
+	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
 )
 
@@ -80,9 +82,6 @@ func TestCommandTool(t *testing.T) {
 	t.Setenv("PATH", bin)
 	t.Setenv("HTTPS_PROXY", "http://gateway:8082")
 	t.Setenv("TMPDIR", t.TempDir())
-	was := miseBin
-	miseBin = filepath.Join(t.TempDir(), "no-mise")
-	t.Cleanup(func() { miseBin = was })
 	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
@@ -175,9 +174,6 @@ func TestCommandToolCheckoutLock(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 	t.Setenv("TMPDIR", t.TempDir())
-	was := miseBin
-	miseBin = filepath.Join(t.TempDir(), "no-mise")
-	t.Cleanup(func() { miseBin = was })
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
@@ -258,9 +254,6 @@ func TestCommandToolAdminEnv(t *testing.T) {
 	t.Setenv(runspec.CommandEnvPrefix+"API_TOKEN", "admin-secret-token")
 	t.Setenv("KONFLATE_URL", "the runner's own")
 	t.Setenv("RUNNER_ONLY", "not the commands'")
-	was := miseBin
-	miseBin = filepath.Join(t.TempDir(), "no-mise")
-	t.Cleanup(func() { miseBin = was })
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
@@ -310,9 +303,6 @@ func TestCommandToolCache(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 	t.Setenv("TMPDIR", t.TempDir())
-	was := miseBin
-	miseBin = filepath.Join(t.TempDir(), "no-mise")
-	t.Cleanup(func() { miseBin = was })
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
@@ -348,8 +338,9 @@ func TestCommandToolCache(t *testing.T) {
 }
 
 // TestCommandToolNothingToOffer: a PATH without a default command offers
-// no run tool, and a repository config needs mise to be read.
+// no run tool, nor does a repository tool the registry does not have.
 func TestCommandToolNothingToOffer(t *testing.T) {
+	useTestRegistry(t)
 	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
 	self, err := os.Executable()
 	if err != nil {
@@ -360,16 +351,14 @@ func TestCommandToolNothingToOffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	was := miseBin
-	miseBin = filepath.Join(t.TempDir(), "no-mise")
-	t.Cleanup(func() { miseBin = was })
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 5
-	s.Tools = "[tools]\n"
+	s.Tools = repoconfig.Tools{"aqua:acme/missing": "v1.0.0"}
 	run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	cleanup()
-	if run != nil || fetch != nil || !slices.Equal(notes, []string{"tools not offered: the runner image has no mise"}) {
+	want := "tools: aqua:acme/missing not offered: it is not in aqua-registry " + aqua.RegistryVersion + ", the release this kritika reads"
+	if run != nil || fetch != nil || !slices.Equal(notes, []string{want}) {
 		t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
 	}
 }

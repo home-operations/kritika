@@ -32,10 +32,10 @@ import (
 // HEAD, with no query, to a host the rules do not keep out, that carries
 // no credential and gets none from the proxy, answered by a response that
 // does not ask to stay private, so an entry can be handed to every runner
-// that asks for its URL. What it serves is checked downstream, mise
-// checking each download against the run's lock, so a stale or damaged
-// entry fails an install instead of changing one, and the install's
-// retry has the entry fetched again.
+// that asks for its URL. What it serves is checked downstream, the runner
+// checking each download against a checksum fetched apart from it, so a
+// stale or damaged entry fails an install instead of changing one, and the
+// install's retry has the entry fetched again.
 type Cache struct {
 	// Dir holds one file per URL, named by the URL's hash. It is the
 	// cache's alone.

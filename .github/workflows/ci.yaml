@@ -81,46 +81,11 @@ jobs:
       - name: Run linter
         run: mise run lint
 
-  # The runner's tests run the mise on PATH. go-test and go-integration,
-  # whose suite takes in the runner's package, install the -tools image's,
-  # so a bump of it is tested on its pull request.
-  mise-version:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Mise Version
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: read
-    outputs:
-      version: ${{ steps.mise.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Mise
-        uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
-        with:
-          cache: false
-          experimental: true
-          install: false
-
-      # An empty version would leave mise-action on its newest release;
-      # the assignment fails the step when mise cannot read it.
-      - name: Resolve the image's mise version
-        id: mise
-        run: |
-          version=$(mise config get -f .mise/config.toml min_version)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
   go-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Go Test
-    needs: mise-version
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -133,7 +98,6 @@ jobs:
       - name: Setup Mise
         uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
         with:
-          version: ${{ needs.mise-version.outputs.version }}
           experimental: true
           install_args: --locked
 
@@ -157,7 +121,6 @@ jobs:
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Go Integration
-    needs: mise-version
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -170,7 +133,6 @@ jobs:
       - name: Setup Mise
         uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
         with:
-          version: ${{ needs.mise-version.outputs.version }}
           experimental: true
           install_args: --locked
 
@@ -420,7 +382,6 @@ jobs:
     needs:
       - docs
       - go-lint
-      - mise-version
       - go-test
       - go-integration
       - go-vulncheck

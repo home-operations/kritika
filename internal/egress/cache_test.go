@@ -81,7 +81,7 @@ func TestCacheServesRepeatDownloads(t *testing.T) {
 	})
 	const target = "http://example.com/releases/tool.tar.gz"
 	for i, method := range []string{http.MethodGet, http.MethodGet, http.MethodHead} {
-		w := proxied(p, method, target, http.Header{"User-Agent": {"mise/1"}})
+		w := proxied(p, method, target, http.Header{"User-Agent": {"Go-http-client/1.1"}})
 		want := "tool archive"
 		if method == http.MethodHead {
 			want = ""

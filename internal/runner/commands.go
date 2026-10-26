@@ -30,32 +30,19 @@ var defaultCommands = []string{"curl", "find", "gh", "grep", "jq"}
 // commandTool is the run tool for the commands a run offers over a
 // checkout of tree written to scratch space, and fetch_repo, which writes
 // beside the checkout, when one of the commands already reaches the
-// network. The commands are the defaultCommands on PATH and, on an image
-// with mise, over them those of the tools the merged mise config declares:
-// the image's system config, and the repository's own tools, p.Tools, over
-// it, each installed on first use.
+// network. The commands are the defaultCommands on PATH and, over them,
+// those of the repository's own tools, p.Tools, each installed on first
+// use.
 // head, when not nil, is the lock the parts of a split review share for
 // reading the head (partLocks), which the checkout holds while it is
 // written. Both tools are nil, with a no-op cleanup, when there is nothing to
 // offer or the commands cannot be kept from the runner's secrets; the
 // review then goes on with the read-only tools alone. notes say what was
-// not offered, for the review's summary, and the values a mise config
-// marks for redaction join secrets. cleanup removes the scratch space.
+// not offered, for the review's summary. cleanup removes the scratch space.
 func commandTool(
 	ctx context.Context, p runspec.Spec, tree *agent.Tree, head chan struct{}, secrets runspec.Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
-	_, err := os.Stat(miseBin)
-	withMise := err == nil
-	var repo *repoMiseConfig
-	if withMise {
-		if repo, err = newRepoMiseConfig(p.Tools); err != nil {
-			logger.Warn("repository tools not offered", "error", err)
-			notes = append(notes, "tools not offered: "+err.Error())
-		}
-	} else if p.Tools != "" {
-		notes = append(notes, "tools not offered: the runner image has no mise")
-	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
 		return nil, nil, notes, cleanup
@@ -68,7 +55,7 @@ func commandTool(
 	// HOME is apart from the checkout, or a repository could plant the
 	// ~/.curlrc curl reads before its arguments; the runner writes its own,
 	// and keeps HOME read-only once the tool is built, so a command cannot
-	// rewrite it, or the binaries and config mise keeps there. The cache
+	// rewrite it, or the binaries the repository's tools install there. The cache
 	// directory is the commands' XDG_CACHE_HOME, so a tool that keeps a
 	// cache there, as flate does, has somewhere to write it that is not
 	// HOME.
@@ -92,26 +79,27 @@ func commandTool(
 	}
 	env, proxied := commandEnv(home, cache)
 	admin := adminEnv(p.Agent.Env, secrets)
-	commandEnvs, miseSecrets := commandCredentials(p, secrets)
+	commandEnvs, token := commandCredentials(p, secrets)
 	found := map[string]string{}
 	for _, name := range defaultCommands {
 		if path, err := exec.LookPath(name); err == nil {
 			found[name] = path
 		}
 	}
-	var mise *miseTools
-	if withMise {
-		var miseNotes []string
-		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, admin, p.Agent.CacheLocked, repo,
-			slices.Sorted(maps.Keys(commandEnvs)), miseSecrets, logger)
-		notes = append(notes, miseNotes...)
-		if err != nil {
-			logger.Warn("mise tools not offered", "error", err)
-			notes = append(notes, "mise tools not offered: "+err.Error())
-		} else {
-			// A mise tool replaces a command of its name on PATH, as a
-			// repository's tool replaces the image's.
-			maps.Copy(found, mise.offered())
+	var tools *repoTools
+	if len(p.Tools) > 0 {
+		var toolNotes []string
+		var err error
+		tools, toolNotes, err = newRepoTools(ctx, p.Tools, home, env, p.Agent.CacheLocked, slices.Sorted(maps.Keys(commandEnvs)), token, logger)
+		notes = append(notes, toolNotes...)
+		switch {
+		case err != nil:
+			logger.Warn("repository tools not offered", "error", err)
+			notes = append(notes, "tools not offered: "+err.Error())
+		case tools != nil:
+			// A repository's tool replaces a command of its name on PATH.
+			maps.Copy(found, tools.offered())
+			env = tools.withPath(env)
 		}
 	}
 	found = offered(p, found)
@@ -136,8 +124,8 @@ func commandTool(
 		logger.Warn("commands not offered: scratch cannot be made read-only", "error", err)
 		return nil, nil, notes, cleanup
 	}
-	if mise != nil {
-		mise.locked = true
+	if tools != nil {
+		tools.locked = true
 	}
 	// The checkout is written on the first command, so a review that reads
 	// the head through its tools alone never writes one; it reads the head
@@ -178,9 +166,9 @@ func commandTool(
 		"files over %d MiB; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
 		agent.MaxBlobBytes>>20)
 	var resolve func(context.Context, string) (string, []string, error)
-	if mise != nil {
-		resolve = mise.resolveWith(found)
-		if mise.pending() {
+	if tools != nil {
+		resolve = tools.resolveWith(found, append(slices.Clone(env), admin...))
+		if tools.pending() {
 			note += " A command whose tool is not installed yet is installed on first use, which can take a moment."
 		}
 	}
@@ -207,17 +195,17 @@ func commandTool(
 }
 
 // commandCredentials are the variables the commands that carry a
-// credential get, by command, and the secrets mise is given. gh reaches
-// GitHub over HTTPS, which the gateway cannot add a credential to, so it
-// carries the run's read-only token; a command that carries a credential
-// is never a binary the repository chose. On another forge the token is
-// that forge's: gh and mise get none.
-func commandCredentials(p runspec.Spec, secrets runspec.Secrets) (map[string][]string, runspec.Secrets) {
+// credential get, by command, and the token the repository's tools are
+// looked up in the GitHub API with. gh reaches GitHub over HTTPS, which
+// the gateway cannot add a credential to, so it carries the run's
+// read-only token; a command that carries a credential is never a binary
+// the repository chose. On another forge the token is that forge's: gh
+// and the lookups get none.
+func commandCredentials(p runspec.Spec, secrets runspec.Secrets) (map[string][]string, string) {
 	if !onGitHub(p) {
-		secrets.GitToken = ""
-		return map[string][]string{}, secrets
+		return map[string][]string{}, ""
 	}
-	return map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}, secrets
+	return map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}, secrets.GitToken
 }
 
 // offered is found less gh on another forge than GitHub, where gh,
@@ -281,6 +269,27 @@ func markRepository(dir, cloneURL string) error {
 	}
 	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{cloneURL}})
 	return err
+}
+
+// The admin's variables for the commands may not set a name the runner
+// sets for a command, one that carries a credential, or one that points a
+// tool at a config file or the loader at a library: CURL_HOME would trade
+// the .curlrc the runner writes for another, and LD_PRELOAD would load a
+// library into every command, gh with the run's token among them.
+var (
+	reservedEnv = []string{
+		"HOME", "PATH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GITHUB_TOKEN",
+		"CURL_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "RIPGREP_CONFIG_PATH", "DOCKER_CONFIG", "PAGER", "BROWSER", "EDITOR", "VISUAL",
+	}
+	reservedEnvPrefixes = []string{"GH_", "GIT_", "LD_"}
+)
+
+// ReservedEnvName reports whether a variable the admin gives the commands
+// may not be named name.
+func ReservedEnvName(name string) bool {
+	upper := strings.ToUpper(name)
+	return slices.Contains(reservedEnv, upper) ||
+		slices.ContainsFunc(reservedEnvPrefixes, func(p string) bool { return strings.HasPrefix(upper, p) })
 }
 
 // adminEnv is the admin's variables for the commands, read from the

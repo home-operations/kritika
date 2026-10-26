@@ -509,117 +509,74 @@ A repository adds tools for its own reviews under `tools`. The key is read
 from the merge base like the rest of the file, so a pull request that
 changes it uses the previously merged version for its own review.
 
-The key is mise's `[tools]` table. Each entry is a tool, named by its
-[registry](https://mise.jdx.dev/registry.html) short name or by a backend
-such as `github:owner/repo`. Its value is the version to run, or a table of
-the version and the options that select, verify and extract its download.
+Each entry is a package of the
+[aqua registry](https://github.com/aquaproj/aqua-registry), named `aqua:`
+and the package's name, with the tag of the release to run. A package's
+name is its repository's owner and name, with a path for one of several
+tools a repository releases, such as `aqua:apple/pkl-go/pkl-gen-go`. The
+commands a tool offers are the ones the registry names for it.
 
 The repository's tools add to the image's commands: `curl`, `find`, `gh`,
 `grep` and `jq`. A tool that provides one of those commands replaces it,
-`gh` excepted, while the others remain available. Reading the tools needs
-a runner image with mise. On an image without it, the review summary says
-the tools were not offered.
+`gh` excepted, while the others remain available.
 
 ```yaml
 tools:
-  helm: "4.3.1"
-  "github:home-operations/flate":
-    version: "0.6.5"
-    filter_bins: flate
+  aqua:home-operations/flate: v0.6.5
+  aqua:BurntSushi/ripgrep: 15.1.0
+  aqua:kubernetes-sigs/kustomize: kustomize/v5.8.3
 ```
+
+Give each tool its release's tag as the release names it, a `v` or any
+other prefix included. A version with no digit in it, such as `latest`,
+fails the file: a download URL that takes it reads as whatever is newest.
+A tag the release does not have fails the install, which names it.
 
 A tool installs at the version given, on the first call that needs it,
 which can take a moment. A failed install fails that tool call without
-stopping the review. Release hosts need the admin's `egress.allow`
-permission, and so do the hosts a backend verifies against
+stopping the review. The runner reads the registry at the release this
+kritika pins, so a package added to the registry is offered once a
+kritika release reads a registry release that has it. Release hosts and
+`raw.githubusercontent.com`, where the registry is read from, need the
+admin's `egress.allow` permission
 ([runner tools](/security/#runner-tools)). Once the admin gives the
-gateway a download cache, later runs reuse what a run locked
+gateway a download cache, later runs reuse a checked download
 ([the gateway's cache](/security/#the-gateways-download-cache)).
 
-An entry may take these options: `os`, `filter_bins`, `asset_pattern`,
-`additional_asset_patterns`, `matching`, `matching_regex`, `no_app`,
-`version_prefix`, `url`, `format`, `strip_components`, `bin_path`, `bin`,
-`rename_exe`, `exe`, `extract_all`, `symlink_bins`, `checksum`, `size`
-and `platforms`. The per-platform tables of `platforms` (`linux-x64`,
-`linux-arm64`) take the same options. Each option is typed as mise reads
-it: a string, a list of strings, a boolean or a whole number, as the
-[schema](https://kritika.home-operations.com/kritika.schema.json) spells
-out. `url` is an `https://` URL.
+No lock is committed. Before a download, the runner fetches what it must
+match: the digest GitHub keeps of a release's asset, which also confirms
+the version is one of the release's tags, else the checksum file the
+registry names for the package. A tool with neither is not installed. The
+download is checked before anything of it is unpacked, and an install
+only downloads and unpacks.
 
-An install only downloads and unpacks, so these fail the file:
+These are not offered, and the review's summary says why:
 
-- every other option, among them `postinstall`, `install_env`, `depends`,
-  `api_url` and `headers`
-- a value holding a template
-- a name carrying options or a version (`tool[exe=x]`, `tool@4`)
-
-For the same reason, only the `aqua`, `github`, `gitlab`, `http` and `ubi`
-backends and the core tools are offered. A backend that builds or runs a
-package manager or plugin (`go:`, `cargo:`, `npm:`, `pipx:`, `gem:`,
-`dotnet:`, `spm:`, `asdf:`, `vfox:`) fails the file by name. A registry
-short name that mise resolves to such a backend (`yarn`, for example) is
-not offered, and a summary note says so.
-
-The `http` backend is offered only by a registry short name whose commands
-the registry names, such as `nomad-pack`. An `http:` name fails the file.
-A tool declared by its backend names its commands with `filter_bins`, and
-mise refuses `filter_bins` on `http`.
-
-A core tool that would build from source when no prebuilt release fits
-(`node`, `python`, `ruby` or `erlang`) fails to install instead.
-
-mise `[settings]`, `[env]`, tasks and hooks have no place in the file. The
-settings are the admin's, and the runner container's `env` in the chart's
-`runner.podTemplate` sets the commands' variables.
-
-Give each tool the number of the version to run, after an optional `v`.
-Every other request is refused, since mise would resolve it anew on each
-install and a review's tool would change without a commit. That includes
-`latest`, `system`, `lts` and `lts/iron`, and the `prefix:`, `sub-`,
-`path:`, `ref:`, `tag:`, `branch:` and `rev:` forms. A version such as
-`"4"` is accepted but resolves to the newest match, so pin the full
-version.
-
-No lock is committed. Each run locks the tool itself before installing it,
-then installs against that lock. The checksum comes from what the backend
-publishes (a GitHub release's API digest or checksum asset, or an aqua
-recipe's checksum file), or else from hashing the asset. Installing against
-the lock also lets the gateway's download cache serve the next run. Pin a
-download yourself with `checksum`, per platform where the asset differs.
-mise refuses a download that does not match:
-
-```yaml
-tools:
-  "github:home-operations/flate":
-    version: "0.6.5"
-    filter_bins: flate
-    platforms:
-      linux-x64: { checksum: "sha256:…" }
-      linux-arm64: { checksum: "sha256:…" }
-```
+- a package the registry does not have
+- one that builds from source (`go_install`, `go_build`, `cargo`) or
+  takes a repository's files rather than a release's (`github_content`,
+  `github_archive`)
+- one with no download for the version or the runner's platform
+- one whose download is packed in a way the runner does not unpack, such
+  as `dmg`, `pkg`, `rar` or `7z`, or whose commands the registry lays out
+  as links
+- a command another tool offers already, its tools taken in the order of
+  their names
 
 ### Updating tools with Renovate
 
-Renovate's [mise manager](https://docs.renovatebot.com/modules/manager/mise/)
-reads mise's own files, not `.kritika.yaml`, so a
-[custom regex manager](https://docs.renovatebot.com/modules/manager/regex/)
-offers the updates instead. On the line above each tool, annotate the
-datasource and package Renovate should follow. Do this for the plain form
-and the table form alike:
+A [custom regex manager](https://docs.renovatebot.com/modules/manager/regex/)
+offers the updates. On the line above each tool, annotate the datasource
+and the GitHub repository Renovate should follow:
 
 ```yaml
 tools:
-  # renovate: datasource=github-releases depName=helm/helm
-  helm: "4.3.1"
   # renovate: datasource=github-releases depName=home-operations/flate
-  "github:home-operations/flate":
-    version: "0.6.5"
-    filter_bins: flate
+  aqua:home-operations/flate: v0.6.5
 ```
 
-Then give Renovate the manager. It takes the version from the plain form,
-a table's `version` line and an inline table alike, and compares it with
-the release tag less its `v`:
+Then give Renovate the manager. It takes the tag as the version, so the
+`v` stays:
 
 ```json
 {
@@ -628,20 +585,16 @@ the release tag less its `v`:
       "customType": "regex",
       "managerFilePatterns": ["/^\\.kritika\\.yaml$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s*\"?[^\"\\n]+\"?:[ \\t]*(?:\\{[ \\t]*)?(?:\\n\\s+version:[ \\t]*)?\"?(?<currentValue>[^\"\\s,}]+)\"?"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s*\"?aqua:[^\"\\s]+\"?:[ \\t]*\"?(?<currentValue>[^\"\\s]+)\"?"
       ],
-      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
-      "extractVersionTemplate": "^v?(?<version>.+)$"
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
     }
   ]
 }
 ```
 
-A registry short name's package is the one the
-[registry](https://mise.jdx.dev/registry.html) lists for it, and `mise
-registry <name>` prints it. A tool pinned with `checksum` needs the
-checksum updated with the version, which the manager does not do. Keep
-such tools few, or update them by hand.
+A tag with a prefix other than `v`, such as `kustomize/v5.8.3`, needs a
+`versioning=` of its own on the annotation.
 
 ## Include and exclude recipes
 

@@ -61,12 +61,12 @@ func TestAgentRecordCommandErrors(t *testing.T) {
 	}
 	// A follow-up's notes on what was not offered come first, run tool or
 	// none.
-	rec.useTools(agentTools{run: run, notes: []string{"mise tools not offered: x"}})
-	if !slices.Equal(rec.commandErrors, []string{"mise tools not offered: x", "Command tool unavailable: install failed"}) {
+	rec.useTools(agentTools{run: run, notes: []string{"tools not offered: x"}})
+	if !slices.Equal(rec.commandErrors, []string{"tools not offered: x", "Command tool unavailable: install failed"}) {
 		t.Fatalf("command errors with notes = %v", rec.commandErrors)
 	}
-	rec.useTools(agentTools{notes: []string{"mise tools not offered: x"}})
-	if !slices.Equal(rec.commandErrors, []string{"mise tools not offered: x"}) {
+	rec.useTools(agentTools{notes: []string{"tools not offered: x"}})
+	if !slices.Equal(rec.commandErrors, []string{"tools not offered: x"}) {
 		t.Fatalf("notes without a run tool = %v", rec.commandErrors)
 	}
 }
