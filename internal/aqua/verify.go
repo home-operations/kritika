@@ -245,13 +245,18 @@ func (in *Installer) bundle(ctx context.Context, p *Package, d *registry.Downloa
 }
 
 // parseBundle reads data as a Sigstore bundle, and whether it is one, by
-// its media type: one that is but does not parse fails, so a corrupted
+// the media type of the JSON value it starts with, so provenance of
+// several JSON lines reads as a form the runner passes over. Data that is
+// no JSON at all, or a bundle that does not parse, fails: a corrupted
 // bundle is never taken for a form the runner passes over.
 func parseBundle(data []byte) (*bundle.Bundle, bool, error) {
 	var probe struct {
 		MediaType string `json:"mediaType"`
 	}
-	if json.Unmarshal(data, &probe) != nil || !strings.HasPrefix(probe.MediaType, bundleMediaType) {
+	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&probe); err != nil {
+		return nil, false, fmt.Errorf("%w: not JSON: %v", ErrSignature, err)
+	}
+	if !strings.HasPrefix(probe.MediaType, bundleMediaType) {
 		return nil, false, nil
 	}
 	b := &bundle.Bundle{}
@@ -418,8 +423,11 @@ func (in *Installer) attestations(ctx context.Context, p *Package, a *registry.G
 // which GitHub keeps snappy-compressed. The URL carries its own grant, so
 // the request carries no token.
 func (in *Installer) attestationBundle(ctx context.Context, inline json.RawMessage, url string) (*bundle.Bundle, bool, error) {
-	if b, ok, err := parseBundle(inline); ok || err != nil || url == "" {
-		return b, ok, err
+	if inline := bytes.TrimSpace(inline); len(inline) > 0 && !bytes.Equal(inline, []byte("null")) {
+		return parseBundle(inline)
+	}
+	if url == "" {
+		return nil, false, nil
 	}
 	if _, err := httpsURL(url); err != nil {
 		return nil, false, err
@@ -458,8 +466,11 @@ func githubInstance(b *bundle.Bundle) bool {
 // over.
 func (in *Installer) slsa(ctx context.Context, p *Package, s *registry.SLSAProvenance, f subject) (string, error) {
 	file := s.ToDownloadedFile()
-	if file.RepoOwner == "" && file.RepoName == "" {
-		file.RepoOwner, file.RepoName = p.Owner, p.Repo
+	if file.RepoOwner == "" {
+		file.RepoOwner = p.Owner
+	}
+	if file.RepoName == "" {
+		file.RepoName = p.Repo
 	}
 	b, ok, err := in.bundle(ctx, p, file)
 	switch {

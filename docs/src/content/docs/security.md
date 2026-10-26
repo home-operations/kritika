@@ -314,8 +314,8 @@ does not verify fails:
 A Sigstore bundle is checked offline, against Sigstore's public-good trusted
 root, which kritika carries as Sigstore's TUF repository publishes it, so a
 runner needs no Sigstore host. A file with a Sigstore bundle's media type
-that does not parse as one fails the install, as does a cosign bundle that
-is not a Sigstore bundle. A signed checksum file is read in place of
+that does not parse as one fails the install, as do a signature file that
+is no JSON at all and a cosign bundle that is not a Sigstore bundle. A signed checksum file is read in place of
 GitHub's digest. A cosign signature and certificate apart from a bundle, a
 key-signed one, provenance outside a Sigstore bundle and an attestation by
 GitHub's own Sigstore instance are not checked; the runner's log names

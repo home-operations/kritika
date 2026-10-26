@@ -1,6 +1,7 @@
 package aqua
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -118,6 +120,22 @@ const signedFixture = `packages:
       - name: flux
     slsa_provenance:
       type: github_release
+      asset: provenance.intoto.jsonl
+  - type: github_release
+    repo_owner: acme
+    repo_name: flux2
+    asset: flux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    slsa_provenance:
+      type: github_release
+      repo_owner: fluxcd
+      asset: provenance.intoto.jsonl
+  - type: github_release
+    repo_owner: fluxcd
+    repo_name: flux-cli
+    asset: flux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    slsa_provenance:
+      type: github_release
+      repo_name: flux2
       asset: provenance.intoto.jsonl
   - type: github_release
     repo_owner: bufbuild
@@ -229,6 +247,8 @@ func TestVerifySignatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	notABundle := []byte(`{"payloadType":"application/vnd.in-toto+json","payload":"e30=","signatures":[]}`)
+	flux := fixtureFile(t, "flux2-v2.9.6-provenance.intoto.jsonl")
+	truncated := flux[:bytes.Index(flux, []byte(`"mediaType"`))+80]
 	tests := []struct {
 		name, pkg, version string
 		platform           Platform
@@ -313,6 +333,23 @@ func TestVerifySignatures(t *testing.T) {
 			name: "SLSA provenance outside a bundle, passed over", pkg: "fluxcd/flux2", version: "v2.9.4",
 			platform: Platform{OS: "linux", Arch: "arm", LibC: "glibc"}, digest: fluxDigest,
 			files: map[string][]byte{"/fluxcd/flux2/releases/download/v2.9.4/provenance.intoto.jsonl": notABundle},
+		},
+		{
+			name: "SLSA provenance, its owner named alone", pkg: "acme/flux2", version: "v2.9.6",
+			platform: Platform{OS: "linux", Arch: "arm", LibC: "glibc"}, digest: fluxDigest,
+		},
+		{
+			name: "SLSA provenance, its repository named alone", pkg: "fluxcd/flux-cli", version: "v2.9.6",
+			platform: Platform{OS: "linux", Arch: "arm", LibC: "glibc"}, digest: fluxDigest,
+		},
+		{
+			name: "SLSA provenance in several lines, passed over", pkg: "fluxcd/flux2", version: "v2.9.4",
+			platform: Platform{OS: "linux", Arch: "arm", LibC: "glibc"}, digest: fluxDigest,
+			files: map[string][]byte{"/fluxcd/flux2/releases/download/v2.9.4/provenance.intoto.jsonl": slices.Concat(notABundle, []byte("\n"), notABundle)},
+		},
+		{
+			name: "truncated SLSA provenance", pkg: "fluxcd/flux2", version: "v2.9.6", platform: Platform{OS: "linux", Arch: "arm", LibC: "glibc"},
+			digest: fluxDigest, files: map[string][]byte{fluxBundle: truncated}, want: ErrSignature,
 		},
 		{
 			name: "corrupted SLSA provenance", pkg: "fluxcd/flux2", version: "v2.9.6", platform: Platform{OS: "linux", Arch: "arm", LibC: "glibc"},
