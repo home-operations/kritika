@@ -48,10 +48,6 @@ func TestSchemaMatchesFile(t *testing.T) {
 			yamlKeys[configfile.Filter]()},
 		{"reviewer agent", []string{"properties", "review", "properties", "agents", "items", "properties", "agent"},
 			yamlKeys[configfile.ReviewerAgent]()},
-		{"tool", []string{"properties", "tools", "additionalProperties", "anyOf", "1"},
-			append(slices.Collect(maps.Keys(toolOptions)), versionOption, platformsOption)},
-		{"tool platform", []string{"properties", "tools", "additionalProperties", "anyOf", "1", "properties", "platforms", "additionalProperties"},
-			slices.Collect(maps.Keys(toolOptions))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

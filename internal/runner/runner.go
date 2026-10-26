@@ -38,7 +38,7 @@ func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspe
 		return err
 	}
 	// Every copy of the secrets taken from here on shares the redactions
-	// a mise config adds mid-run.
+	// the run tool adds as it is built.
 	secrets.Redacted = &runspec.Redactions{}
 	st = st.ForRunner(secrets.DatabaseToken)
 	if err := st.AuthorizeRunner(ctx, spec.RunID); err != nil {

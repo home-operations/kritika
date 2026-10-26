@@ -114,7 +114,8 @@ func checkHost(h string) error {
 // since runners fetch from the one and gh reads the other, and a Forgejo
 // instance's host for a bot, the denied entries, plus the credentials as
 // Authorization header values, and what its cache never keeps: the GitHub
-// API, which mise sends the run's token, not even for a locked install.
+// API, which the runner and gh send the run's token, not even for a locked
+// install.
 // Provider endpoints are not among them: a runner reaches its model
 // through the gateway's model endpoint, and the worker calls the provider.
 func (f *File) EgressRules() egresspolicy.Rules {

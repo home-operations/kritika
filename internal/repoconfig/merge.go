@@ -24,10 +24,9 @@ type Merged struct {
 	// Dropped says which of the file's values fell outside the admin's
 	// bounds; the admin's value applies for each.
 	Dropped []string
-	// Tools are the file's tools as a mise config, the [tools] table the
-	// runner lays over the image's; "" when the file declares none. They
-	// have no admin counterpart: the image's tools are the admin's.
-	Tools string
+	// Tools are the file's tools, nil when it declares none. They have no
+	// admin counterpart: the image's commands are the admin's.
+	Tools Tools
 }
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
@@ -56,9 +55,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if err != nil {
 		return m, err
 	}
-	if m.Tools, err = f.Tools.TOML(); err != nil {
-		return m, err
-	}
+	m.Tools = maps.Clone(f.Tools)
 	if f.Enabled != nil && !*f.Enabled {
 		m.Enabled = false
 	}

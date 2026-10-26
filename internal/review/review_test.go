@@ -512,8 +512,8 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 		!strings.Contains(FollowUpBody(reply, "m", "low", nil), "kritika follow-up with m/low.") {
 		t.Fatal("FollowUpBody")
 	}
-	noted := FollowUpBody(reply, "m", "", []string{"Command curl unavailable: x", "mise tools not offered: y"})
-	if want := reply + "\n\n_Command curl unavailable: x._\n\n_mise tools not offered: y._\n\n<sub>kritika follow-up with m.</sub>\n"; noted != want {
+	noted := FollowUpBody(reply, "m", "", []string{"Command curl unavailable: x", "tools not offered: y"})
+	if want := reply + "\n\n_Command curl unavailable: x._\n\n_tools not offered: y._\n\n<sub>kritika follow-up with m.</sub>\n"; noted != want {
 		t.Fatalf("FollowUpBody with notes = %q, want %q", noted, want)
 	}
 }

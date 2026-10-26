@@ -212,7 +212,7 @@ Runner pods resolve with `ndots: 3`, so the gateway's name, such as
 `kritika-gateway.kritika.svc.local` with a single-label `clusterDomain`,
 is looked up as written rather than first through the search list.
 Cilium would refuse the search list's expansions of that name, and musl's
-resolver, which mise uses, gives up at a refusal.
+resolver, which statically linked tools carry, gives up at a refusal.
 
 ### The model endpoint
 
@@ -255,80 +255,61 @@ and coreutils but no package manager. It also holds:
 - `curl`, `find`, `grep` and `jq`, as its packages build them, with glibc,
   libstdc++ and the timezone database
 - `gh`, as its release builds it, checked against the release's checksums
-- [mise](https://mise.jdx.dev/)
 
 Every other tool is the repository's: the
-[`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`.
-That is mise's `[tools]` table, which the runner writes as the run's mise
-config. A tool from it replaces an image command of the same name, except
-`gh`. That lets a repository add a tool without an image build, such as
-`flate` for a chart's rendered output, or `rg` where it prefers it to
-`grep`:
+[`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`,
+packages of the [aqua registry](https://github.com/aquaproj/aqua-registry).
+A tool from it replaces an image command of the same name, except `gh`.
+That lets a repository add a tool without an image build, such as `flate`
+for a chart's rendered output, or `rg` where it prefers it to `grep`:
 
 ```yaml
 tools:
-  "github:home-operations/flate": "0.6.5"
+  aqua:home-operations/flate: v0.6.5
 ```
 
 The file is read from the merge base, so a pull request cannot change
 the tools used to review itself. A tool downloads on the first run that
 uses it, at the declared version, into the run's own scratch space.
 
-The run locks the tool first. It runs `mise lock` for its platform, into
-a lock of its own beside the config. mise resolves the download through
-the tool's backend. It takes the checksum from what the backend publishes
-(the GitHub API's asset digest or a checksum asset of the release), or
-from the `checksum` the entry pins. Otherwise, it fetches the asset and
-hashes it. The install is then a locked one, `mise install --locked`,
-which mise checks against that lock.
+The runner reads the registry at the release this kritika pins. It
+fetches that release's `registry.yaml` and checks it against the SHA-256
+recorded with the release, then resolves each tool's download, its
+packing and its commands as aqua does for the runner's platform. Nothing
+of aqua's or the tool's runs to install it.
 
-A tool the run cannot lock, for example because no asset matched,
-installs unlocked with a warning in the log. It is verified as its
-backend verifies a download. No committed lock pins a download across
-runs, so a release asset replaced upstream under the same tag installs,
-unless the entry pins its checksum.
+Before it downloads a tool, the runner fetches what the download must
+match, around the gateway's cache: the digest GitHub keeps of a release's
+asset, which also confirms the version is one of the release's tags, else
+the checksum file the registry names for the package. A tool with neither
+is not installed. The download is checked before anything of it is
+unpacked, unpacked beside the tool's directory and moved into it whole.
+Unpacking never writes through a link or out of that directory, and is
+bounded in what it decompresses. No committed lock pins a download across
+runs, so a release asset replaced upstream under the same tag, its digest
+or checksum file with it, installs.
 
 The run tool offers the image's commands that it finds on `PATH`, and
-every command the merged config's tools provide, except `mise` itself. An
-image set as the runner container's image in `runner.podTemplate` offers
-whichever of `curl`, `find`, `gh`, `grep` and `jq` its builder put on its
-`PATH`. Without mise, such an image offers no repository tool, and the
-review summary says so. A follow-up posts no summary, so its reply
-carries such notes instead, along with a command's setup failure.
+the commands the registry names for the repository's tools. An image set
+as the runner container's image in `runner.podTemplate` offers whichever
+of `curl`, `find`, `gh`, `grep` and `jq` its builder put on its `PATH`,
+and the repository's tools as any image does. A tool that is not offered,
+and why, goes in the review's summary. A follow-up posts no summary, so
+its reply carries such notes instead, along with a command's setup
+failure.
 
-A tool every repository should have belongs in the runner image. Build
-that image on the `-tools` image:
+From an image's `PATH`, the run tool offers only the five commands above,
+so a tool every repository should have is declared in each repository's
+`tools`.
 
-1. Declare the tool in a mise system config, `/etc/mise/config.toml`.
-2. Lock it in `/etc/mise/mise.lock`. The runner's user must be able to
-   read that file (`mise lock` writes it mode 0600).
-3. Install it with `mise install --system --locked`.
-4. Set the image as the runner container's image in `runner.podTemplate`.
-
-The run tool offers a system config's tools as it does a repository's. From
-`PATH`, it offers only the five commands above.
-
-A `tools` entry takes its version and the options that select, verify
-and extract its download, and nothing else. These fail the file:
-
-- the options that run a command or set its environment (`postinstall`,
-  `install_env`, `depends`)
-- the options that would send mise's token to another host (`api_url`,
-  `headers`)
-- any value holding a template
-
-They fail because mise renders templates, `exec()` among them, when it
-reads the config, and runs install hooks with the run's GitHub token in
-their environment. A backend whose install builds or runs a package
-manager or a plugin's scripts fails the file too (`go:`, `cargo:`,
-`npm:`, `pipx:`, `gem:`, `dotnet:`, `spm:`, `asdf:`, `vfox:`). An install
-only downloads and unpacks. The file has no mise `[env]`, `[tasks]`,
-`[settings]` or hooks.
+A `tools` entry is a package's name and a release's tag, and nothing
+else. A package that builds from source, or takes a repository's files
+rather than a release's, is not offered: an install only downloads and
+unpacks.
 
 Egress permissions remain the admin's, and so do the variables that the
 runner container's `env` in `runner.podTemplate` sets. The commands get
-these variables over the image config's `[env]`, each from a literal value
-or a Secret's key:
+these variables, each from a literal value or a Secret's key:
 
 ```yaml
 runner:
@@ -355,20 +336,16 @@ own names. They configure the commands and never the runner itself: a
 `GODEBUG` or `TMPDIR` meant for a tool does not change how the runner
 fetches, logs or connects.
 
-The rendered config lives outside the checkout, in the run's read-only
-`HOME`, and is trusted only for the runner's own mise calls. Installs
-stay within the existing install timeout and gateway restrictions. An
-install that resolves a version or verifies a download reaches the GitHub
-API, with the run's token on GitHub and without one on another forge. An
-aqua package's verification reaches sigstore. Those hosts need
-`egress.allow` too.
+Installs stay within the install timeout and the gateway's restrictions.
+Reading the registry reaches `raw.githubusercontent.com`, and looking a
+release's digest up reaches the GitHub API, with the run's token on
+GitHub and without one on another forge. Those hosts need `egress.allow`
+too.
 
-Enabling repository tools trusts the repository's tool definitions.
-kritika does not vet arbitrary binaries. A tool with an interpreter,
-plugin loader or subprocess feature can run code from the pull request
-despite the checkout's missing execute bits. Such a tool can also invoke
-mise by its absolute path; keeping mise out of the offered commands does
-not prevent subprocess execution.
+Enabling repository tools trusts the repository's tool choices. kritika
+does not vet arbitrary binaries. A tool with an interpreter, plugin
+loader or subprocess feature can run code from the pull request despite
+the checkout's missing execute bits.
 
 The run tool chooses which programs run, never how. It passes the model's
 arguments as given, and those follow what the model reads, including the
@@ -408,10 +385,6 @@ the run ends, or `config.gatewayTokenTtl` past the Job's deadline at the latest.
 The GitHub token reads what the run may read and nothing more. It expires
 an hour after it is minted, whether the run has ended or not.
 
-An instance that reviews repositories whose tool choices it does not
-trust should run them on a runner image without mise, which reads no
-repository config.
-
 `gh` signs in with the run's own GitHub token. That token reads the
 repository under review and public repositories, and no other private
 one. The run tool's description says so, so the agent does not try
@@ -439,17 +412,15 @@ What bounds a command:
   `setsid`, is still stopped when the run's pod ends. Where the runtime
   refuses the wait this relies on, the run's log says so. A timeout then
   stops the command alone, since its group's id may no longer be its own.
-- **A bare environment:** a command gets `PATH`, with the tools'
-  directories first, its own `HOME`, `XDG_CACHE_HOME`, the gateway, the
-  mise config's `[env]` and the admin's variables. `gh` also gets the
+- **A bare environment:** a command gets `PATH`, with the repository's
+  tools first, its own `HOME`, `XDG_CACHE_HOME`, the gateway and the
+  admin's variables. `gh` also gets the
   run's token as `GH_TOKEN`. The pod's `NO_PROXY` is not passed on, so
   `curl` reaches even `localhost` and the gateway's own host through the
   gateway. Its `--connect-to` or an `--alt-svc` cache only changes what it
   asks the gateway for.
   The runner first makes itself unreadable to the command, so the command
-  cannot read the runner's credentials from `/proc`. The runner also runs
-  mise with the same bare environment, so neither a tool's install hooks
-  nor a config's templates see those credentials.
+  cannot read the runner's credentials from `/proc`.
   `HOME` is apart from the checkout, so a pull request cannot plant a
   `.curlrc`. The runner writes one that turns off `curl`'s progress meter,
   which would otherwise land in the result. It also makes `curl` follow
@@ -461,41 +432,33 @@ What bounds a command:
   to, fails rather than trying a connection without the gateway. An
   argument can lift that limit; the NetworkPolicy then refuses such a
   connection anywhere but the cluster's DNS and the database's port.
-  Neither a config's `[env]` nor the admin's variables may set what the
-  runner sets, or what would change every call of a tool rather than the
-  one the model makes. These are `HOME`, `PATH`, the proxy variables,
-  `GH_*`, `GIT_*`, `MISE_*`, `LD_*`, `GITHUB_TOKEN`, `CURL_HOME`,
-  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `RIPGREP_CONFIG_PATH`,
-  `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and `VISUAL`. They are
-  dropped from a config, and the review's summary says so. kritika serve
-  refuses to start with any of them among the admin's variables.
-- **Few writable places:** `HOME`, with the binaries and config mise keeps
+  The admin's variables may not set what the runner sets, or what would
+  change every call of a tool rather than the one the model makes. These
+  are `HOME`, `PATH`, the proxy variables, `GH_*`, `GIT_*`, `LD_*`,
+  `GITHUB_TOKEN`, `CURL_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`,
+  `RIPGREP_CONFIG_PATH`, `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and
+  `VISUAL`. kritika serve refuses to start with any of them among the
+  admin's variables.
+- **Few writable places:** `HOME`, with the repository's tools installed
   there, is read-only once the commands are offered. So is the scratch
   directory that holds it. A command writes to the checkout, to the
   `../upstream/` directory beside it, and to `XDG_CACHE_HOME`.
   `XDG_CACHE_HOME` is a directory in the same scratch space, where a tool
-  that keeps a cache, such as flate, puts it. mise's own cache stays under
-  `HOME`. These are permissions, not a mount. The commands run as the
+  that keeps a cache, such as flate, puts it. These are permissions, not a
+  mount. The commands run as the
   runner's user, so a program that changes permissions, such as an
   interpreter a repository adds, can make `HOME` writable again. It can
-  then change what the run's later commands find there: the `.curlrc`,
-  the mise config or a tool installed in it. The image's own tools, `gh`
-  among them, are in its read-only root.
-- **mise is never a command:** the runner runs it by its path outside
-  `PATH`, and a tool that would provide a `mise` command is not offered.
-  Every install goes through the runner, with a two-minute timeout. A
-  tool that cannot be installed, or that does not provide the command it
-  was offered as, fails that call with the reason. The summary records
-  these failures even if the model omits them, as well as tools that
-  could not be offered.
+  then change what the run's later commands find there: the `.curlrc` or
+  a tool installed there. The image's own tools, `gh` among them, are in
+  its read-only root.
+- **Installs:** every install goes through the runner, with a two-minute
+  timeout. A tool that cannot be installed fails that call with the
+  reason. The summary records these failures even if the model omits
+  them, as well as tools that could not be offered.
   Installs reach the tool's release host through the gateway, so
   `egress.allow` must name it. For a GitHub release, that host is
   `release-assets.githubusercontent.com`, which the download is
-  redirected to from `github.com`; an app already allows `github.com`. A
-  tool whose aqua recipe verifies an attestation also needs
-  `tuf-repo-cdn.sigstore.dev`. mise also asks `mise-versions.jdx.dev` for
-  a tool's versions, and falls back to the GitHub API when the gateway
-  refuses it.
+  redirected to from `github.com`; an app already allows `github.com`.
 - **Masked output:** the run's tokens, the proxy credential as `curl -v`
   prints it, and the values of the admin's variables from a Secret are
   all masked. They are masked out of a command's output, the files a cut
@@ -603,38 +566,33 @@ never a registry request.
 
 ### More tools
 
-Declare a tool under `tools` in `.kritika.yaml` in the first of these
-forms that applies:
-
-1. By its registry short name, where it has one (`helm`, `crane`). A
-   short name names the tool's commands before it installs.
-2. Otherwise as `aqua:owner/repo`, whose recipe names the release asset
-   and what mise verifies.
-3. As a last resort, as `github:owner/repo`, with `filter_bins` naming
-   its commands unless the repository's name is the command.
+Declare a tool under `tools` in `.kritika.yaml` by its aqua registry
+package, `aqua:owner/repo`. A tool the registry does not have yet can be
+added to it upstream ([adding a package](https://github.com/aquaproj/aqua-registry/blob/main/docs/add_package.md)),
+and is offered once a kritika release reads a registry release that has
+it.
 
 The binaries must be static or link only against glibc, libgcc and
-libstdc++, which is all the image carries. A backend that builds or needs
-a runtime (`npm:`, `pipx:`, `cargo:`, `go:`) is refused. So is a short
-name that the registry resolves to a plugin backend (`asdf:`, `vfox:`);
-the runner checks this with mise before offering the tool.
+libstdc++, which is all the image carries. A package that builds from
+source or needs a runtime is refused.
 
 ### The gateway's download cache
 
 A run installs the tools its repository declares, so each run downloads
 them again. The gateway can keep those downloads instead. With
 `gatewayCacheDir` set (under Helm, a private emptyDir), each replica keeps
-what a repository's locked installs download from the hosts the run's
-lock pins. It serves those downloads to the next run that asks for the
-same URL.
+what a repository's tools download once the run knows the checksum each
+download must match. It serves those downloads to the next run that asks
+for the same URL.
 
-The lock step itself, meaning the API calls and any asset it hashes,
-goes around the cache, so the checksum an install is checked against is
-never one the cache chose. Only a request named as a locked
-install's is kept. What any other request fetches through the gateway is
-verified against nothing, so it is not shared between runs. A command can
-claim the name too, but what it has the gateway keep is served only to
-requests that claim the name as well, and a lock checks each of those.
+Fetching that checksum, from the GitHub API or a checksum file, goes
+around the cache, so the checksum an install is checked against is never
+one the cache chose. Only a request named as a locked install's is kept.
+What any other request fetches through the gateway is verified against
+nothing, so it is not shared between runs. A command can claim the name
+too, but what it has the gateway keep is served only to requests that
+claim the name as well, and the runner checks each of those against its
+download's checksum.
 
 ```yaml
 gatewayCache:
@@ -644,10 +602,9 @@ config:
     allow: [get.helm.sh, "*.githubusercontent.com"]
 ```
 
-- **What is kept.** A repository's locked install reaches each host its
-  lock pins a download on over plain HTTP, with `https://github.com/`
-  rewritten to `http://github.com/` and `locked` as the proxy URL's
-  username. The gateway fetches such a request over HTTPS, as it does any
+- **What is kept.** A repository's tool reaches its download's host over
+  plain HTTP, with `https://github.com/` rewritten to `http://github.com/`
+  and `locked` as the proxy URL's username. The gateway fetches such a request over HTTPS, as it does any
   plain HTTP request. It follows redirects itself, each through the
   egress rules. A GitHub release download that redirects to
   `release-assets.githubusercontent.com` needs that host allowed, as it
@@ -657,18 +614,18 @@ config:
   GET or HEAD with no query and no credential, answered without a cookie
   or a `Cache-Control` of `private` or `no-store`, and through no redirect
   to a URL with credentials. A host with an `egress.credentials` entry is
-  never cached. Neither is `api.github.com`, which mise sends the run's
-  token. A lock's downloads from it, or from `raw.githubusercontent.com`,
-  which mise sends the token too, stay on HTTPS. A lock's URLs must not
-  carry a credential in their path. The fetch is the gateway's own, with
+  never cached. Neither is `api.github.com`, which the runner sends the
+  run's token. A download from it, or from `raw.githubusercontent.com`,
+  stays on HTTPS. A download's URL must not carry a credential in its
+  path. The fetch is the gateway's own, with
   its own User-Agent. Runs that ask the same replica for the same URL at
   once share it.
-- **Integrity.** mise checks every download against the checksum the
-  repository's lock pins, so a stale or damaged copy fails the install
-  rather than changing a tool. The runner then installs the tool
+- **Integrity.** The runner checks every download against its checksum
+  before unpacking it, so a stale or damaged copy fails the install rather
+  than changing a tool. The runner then installs the tool
   once more, with `uncached` as the proxy URL's username. That asks the
   gateway to fetch each download from its origin again and keep it in the
-  entry's place. A cached copy that stops matching the lock is
+  entry's place. A cached copy that stops matching its checksum is
   replaced the first time it fails, at the cost of one extra download for
   that run. Should that install fail too, the runner makes it once more
   over HTTPS, as it would without the cache.
@@ -684,8 +641,8 @@ config:
   wherever a changed redirect now points.
   No run can write the cache. A run can only have the gateway fetch a URL,
   by naming the proxy's user `locked` or `uncached`. What the gateway
-  keeps is served only to a request named the same way, which a locked
-  install checks against its lock.
+  keeps is served only to a request named the same way, which the runner
+  checks against the download's checksum.
 - **Filesystem size.** `gatewayCache.storage.maxSize`, which the chart
   renders as the configuration's `gatewayCacheMaxSize`, bounds what each
   replica keeps. It is 2Gi unless set, and the least recently used entries
@@ -702,8 +659,9 @@ config:
 #### Shared S3 storage
 
 Use an existing S3-compatible bucket to reuse completed downloads across
-replicas and rollouts. mise still downloads through the gateway and verifies
-locked tools; only kritika serve receives bucket credentials. The initial
+replicas and rollouts. The runner still downloads through the gateway and
+checks each download against its checksum; only kritika serve receives bucket
+credentials. The initial
 targets are MinIO, Ceph RGW, Garage and VersityGW. Use the same configuration
 for each, with its endpoint and signing region:
 
@@ -816,7 +774,7 @@ An entry a week old is revalidated with the origin. On 304, the replica
 copies the body it has, or the bucket's, under a new fetch time and
 uploads that copy. This rewrites the object rather than downloading it
 from origin again. A locked install's retry replaces an entry that
-stopped matching its lock the same way. Neither is a bucket size or
+stopped matching its checksum the same way. Neither is a bucket size or
 retention limit. Provision retention outside the chart,
 using lifecycle expiration where supported or an external cleanup job. Include
 noncurrent versions if bucket versioning is enabled. Without cleanup, unused
@@ -849,7 +807,7 @@ Give an `https://` endpoint, so credentials and bodies are encrypted in
 transit. Scope the key to this bucket alone and keep the bucket private.
 A key that works from anywhere widens what a leak exposes, and whoever
 can write to the bucket chooses what a locked install is offered, which
-its lock then has to refuse. Use the provider's signing region, `auto`
+its checksum then has to refuse. Use the provider's signing region, `auto`
 for R2; the chart's network policy already allows serve's egress on 443.
 
 `storage.type` is `filesystem`, the per-replica emptyDir, unless set.

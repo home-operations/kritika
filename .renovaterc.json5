@@ -6,7 +6,7 @@
   packageRules: [
     {
       description: "Group the -tools image's Hardened Images and gh and merge them by hand",
-      matchDepNames: ["cli/cli", "jdxcode/mise", "registry.access.redhat.com/hi/core-runtime"],
+      matchDepNames: ["cli/cli", "registry.access.redhat.com/hi/core-runtime"],
       groupName: "image tools",
       groupSlug: "image-tools",
       automerge: false,

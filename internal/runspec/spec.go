@@ -29,7 +29,7 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 39
+const Version = 40
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -100,11 +100,12 @@ type AgentLimits struct {
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
 	// CacheLocked says the gateway keeps downloads, as
-	// configfile.GatewayCaches reports, so a repository's tool, once the
-	// run has locked it, is installed through the cache.
+	// configfile.GatewayCaches reports, so a repository's tool, whose
+	// download the run checks against a checksum fetched apart from it, is
+	// installed through the cache.
 	CacheLocked bool `json:"cacheLocked,omitempty"`
 	// Env names the variables of the runner's own environment that the
-	// run tool's commands get, the admin's, over a repository's [env].
+	// run tool's commands get, the admin's.
 	Env []CommandEnvVar `json:"env,omitempty"`
 }
 
@@ -244,8 +245,8 @@ type Spec struct {
 	// CloneURL is fetched with Secrets.GitToken.
 	CloneURL string `json:"cloneUrl"`
 	// Forge is the repository's forge, github, forgejo, gitlab or gitea; empty is github.
-	// Secrets.GitToken is a GitHub token only on GitHub, where gh and mise
-	// are given it.
+	// Secrets.GitToken is a GitHub token only on GitHub, where gh and the
+	// repository tools' lookups in the GitHub API are given it.
 	Forge string `json:"forge,omitempty"`
 	// Head is the commit under review or to index. Base is the merge-base
 	// for a review and the previously indexed commit for an incremental
@@ -266,13 +267,13 @@ type Spec struct {
 	// RepoFiles are repository paths read from the merge base: the files
 	// the review settings name, and .kritika.yaml itself when there is one.
 	RepoFiles []string `json:"repoFiles,omitempty"`
-	// Tools is the repository's tools as a mise config, the [tools] table
-	// the merge-base .kritika.yaml declares, which the run's mise reads
-	// over the image's; empty offers the image's tools alone.
-	Tools  string         `json:"tools,omitempty"`
-	Agent  *AgentLimits   `json:"agent,omitempty"`
-	Model  *ModelEndpoint `json:"model,omitempty"`
-	Prompt *Prompt        `json:"prompt,omitempty"`
+	// Tools are the repository's tools the merge-base .kritika.yaml
+	// declares, each at its version; none offers the image's commands
+	// alone.
+	Tools  repoconfig.Tools `json:"tools,omitempty"`
+	Agent  *AgentLimits     `json:"agent,omitempty"`
+	Model  *ModelEndpoint   `json:"model,omitempty"`
+	Prompt *Prompt          `json:"prompt,omitempty"`
 	// Thread is the comments a follow-up answers, oldest first, the last
 	// of them the one to answer.
 	Thread []review.Message `json:"thread,omitempty"`
@@ -432,9 +433,9 @@ type Secrets struct {
 	GitToken      string
 	GatewayToken  string
 	DatabaseToken string
-	// Redacted are the values a mise config marks for redaction, masked
-	// as the tokens are: shared by every copy of the secrets, since a
-	// tool installed mid-run may add to them.
+	// Redacted are further values masked as the tokens are, the admin's
+	// secret variables for the commands among them: shared by every copy
+	// of the secrets, since the run tool adds them as it is built.
 	Redacted *Redactions
 }
 
@@ -487,15 +488,15 @@ func (s Secrets) Mask(text string) string {
 
 // UncachedProxyUser is the proxy username a runner gives the gateway for
 // the retry of a locked install that failed through the cache: the entry
-// it was served did not match the lock, so the cache answers from the
+// it was served did not match its checksum, so the cache answers from the
 // origin and keeps that in the entry's place. The gateway marks such a
 // request egress.ForRefill.
 const UncachedProxyUser = "uncached"
 
 // LockedProxyUser is the proxy username a runner gives the gateway for a
-// repository's locked install, whose downloads mise checks against the
-// lock: the cache keeps and answers such a request from any host the
-// rules allow. The gateway marks it egress.ForLockedInstall. A command can
+// repository's locked install, whose download the runner checks against a
+// checksum fetched apart from it: the cache keeps and answers such a
+// request from any host the rules allow. The gateway marks it egress.ForLockedInstall. A command can
 // claim the name too; it then gets what the host serves any run, and what
 // it has the cache keep is served only to a request that claims the name
 // as well.

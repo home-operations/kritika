@@ -245,8 +245,7 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		reason string
 		model  configfile.ModelRef
 		// read are the files the follow-up's runner reads from the merge
-		// base, sorted, the repository's mise config and lock always among
-		// them.
+		// base, sorted.
 		read []string
 	}{
 		{name: "no file", files: files, model: "p/big", read: []string{"ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"}},
