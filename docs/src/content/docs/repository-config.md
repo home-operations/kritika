@@ -536,9 +536,10 @@ A tool installs at the version given, on the first call that needs it,
 which can take a moment. A failed install fails that tool call without
 stopping the review. The runner reads the registry at the release this
 kritika pins, so a package added to the registry is offered once a
-kritika release reads a registry release that has it. Release hosts and
-`raw.githubusercontent.com`, where the registry is read from, need the
-admin's `egress.allow` permission
+kritika release reads a registry release that has it. Release hosts,
+`raw.githubusercontent.com`, where the registry is read from, and, for a
+tool with GitHub artifact attestations, the host GitHub keeps their
+bundles on need the admin's `egress.allow` permission
 ([runner tools](/security/#runner-tools)). Once the admin gives the
 gateway a download cache, later runs reuse a checked download
 ([the gateway's cache](/security/#the-gateways-download-cache)).
@@ -549,6 +550,16 @@ the version is one of the release's tags, else the checksum file the
 registry names for the package. A tool with neither is not installed. The
 download is checked before anything of it is unpacked, and an install
 only downloads and unpacks.
+
+Where the registry declares a signature of the download or of its checksum
+file, the runner checks that too: a cosign bundle, a GitHub artifact
+attestation, SLSA provenance in a Sigstore bundle, or a minisign
+signature. A checksum file with a signature is read in place of GitHub's
+digest, as aqua reads it. A signature that does not verify fails the
+install. A cosign signature and certificate apart from a bundle, a
+key-signed one, provenance outside a Sigstore bundle, or an attestation
+by GitHub's own Sigstore instance is not checked, the runner's log says
+so, and the tool installs on its checksum alone.
 
 These are not offered, and the review's summary says why:
 

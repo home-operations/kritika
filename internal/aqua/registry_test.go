@@ -218,7 +218,7 @@ func TestResolve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got.checksum = nil
+			got.checksum, got.tmpl = nil, templater{}
 			if !reflect.DeepEqual(*got, tt.want) {
 				t.Errorf("Resolve =\n%+v\nwant\n%+v", *got, tt.want)
 			}

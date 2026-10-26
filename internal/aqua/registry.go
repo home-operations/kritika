@@ -120,6 +120,9 @@ type Package struct {
 	// the registry names none the runner reads.
 	ChecksumURL, ChecksumAlgorithm string
 	checksum                       *registry.Checksum
+	// tmpl renders the registry's templates for the package, its
+	// signatures' among them.
+	tmpl templater
 }
 
 // File is one of a package's commands.
@@ -168,8 +171,10 @@ func (r *Registry) Resolve(name, version string, p Platform) (*Package, error) {
 	if err := info.Validate(); err != nil {
 		return nil, unsupported("%v", err)
 	}
-	pkg := &Package{Name: name, Version: version, Type: info.Type, Owner: info.RepoOwner, Repo: info.RepoName, checksum: info.Checksum}
 	t := templater{info: info, rt: rt, version: version}
+	pkg := &Package{
+		Name: name, Version: version, Type: info.Type, Owner: info.RepoOwner, Repo: info.RepoName, checksum: info.Checksum, tmpl: t,
+	}
 	if pkg.Asset, pkg.URL, err = t.download(); err != nil {
 		return nil, unsupported("%v", err)
 	}

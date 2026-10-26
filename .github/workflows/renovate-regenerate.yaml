@@ -37,6 +37,7 @@ jobs:
             charts/kritika/README.md
             charts/kritika/values.schema.json
             internal/aqua/release.go
+            internal/aqua/trusted_root.json
 
   push:
     if: ${{ needs.regenerate.outputs.changed == 'true' }}
@@ -56,3 +57,4 @@ jobs:
             charts/kritika/README.md
             charts/kritika/values.schema.json
             internal/aqua/release.go
+            internal/aqua/trusted_root.json

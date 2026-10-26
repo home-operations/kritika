@@ -23,7 +23,9 @@ func TestRunnerLinksNoServePackage(t *testing.T) {
 		t.Fatalf("go list: %v", err)
 	}
 	for pkg := range strings.FieldsSeq(string(out)) {
-		if strings.HasPrefix(pkg, "k8s.io/") {
+		// klog comes with the certificate transparency checks of Sigstore's
+		// verifier, which logs through it; client-go is what stays out.
+		if strings.HasPrefix(pkg, "k8s.io/") && !strings.HasPrefix(pkg, "k8s.io/klog/") {
 			t.Errorf("the runner links %s", pkg)
 		}
 		name, ok := strings.CutPrefix(pkg, "github.com/home-operations/kritika/internal/")
