@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.0.107](https://github.com/home-operations/kritika/compare/0.0.106...0.0.107) (2026-10-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **gateway:** key the download cache by the runner's checksum ([#1258](https://github.com/home-operations/kritika/issues/1258))
+* **runner:** install repository tools from the aqua registry ([#1257](https://github.com/home-operations/kritika/issues/1257))
+
+### Features
+
+* **aqua:** resolve and install packages from the aqua registry ([#1256](https://github.com/home-operations/kritika/issues/1256)) ([ec5d7d2](https://github.com/home-operations/kritika/commit/ec5d7d2aa5af173eb0565c945e3ff80423fee999))
+* **aqua:** verify the signatures the registry declares ([#1259](https://github.com/home-operations/kritika/issues/1259)) ([e78afb9](https://github.com/home-operations/kritika/commit/e78afb921a55836b24c25018a7f5ad8b25898324))
+* **gateway:** key the download cache by the runner's checksum ([#1258](https://github.com/home-operations/kritika/issues/1258)) ([ebe967d](https://github.com/home-operations/kritika/commit/ebe967d6b82f5d1064c83d47df4f7f94b84f9e86))
+* **gateway:** serve runners the aqua registry from its main branch ([#1261](https://github.com/home-operations/kritika/issues/1261)) ([4fd1b95](https://github.com/home-operations/kritika/commit/4fd1b95acd40d28392738d6fc23a0a026d877117))
+* **runner:** install repository tools from the aqua registry ([#1257](https://github.com/home-operations/kritika/issues/1257)) ([3eff5aa](https://github.com/home-operations/kritika/commit/3eff5aa70987936b9c71a10fcb487a600a36866b))
+
+
+### Bug Fixes
+
+* **go:** update module github.com/klauspost/compress (v1.20.1 → v1.20.3) ([#1262](https://github.com/home-operations/kritika/issues/1262)) ([c01aca0](https://github.com/home-operations/kritika/commit/c01aca0da42d17e243e251a5302be1645ebccd69))
+* **npm:** update dependency bits-ui (2.20.1 → 2.20.2) ([#1252](https://github.com/home-operations/kritika/issues/1252)) ([a57f5cd](https://github.com/home-operations/kritika/commit/a57f5cd9b2f49f4877cf9625e2cc9ec3cb3dad4a))
+
+
+### Miscellaneous Chores
+
+* do not bump min version in mise config ([7f636b0](https://github.com/home-operations/kritika/commit/7f636b0ca97190ccee008185271c5b51217ab762))
+* **github-action:** update github-actions ([#1255](https://github.com/home-operations/kritika/issues/1255)) ([d7d5f23](https://github.com/home-operations/kritika/commit/d7d5f233c652acf286fe353dd3aab8509185ac84))
+* **github-release:** update release cli/cli (v2.103.0 → v2.103.2) ([#1254](https://github.com/home-operations/kritika/issues/1254)) ([4d26fad](https://github.com/home-operations/kritika/commit/4d26fadb7403e388507122ee81996a71222dac85))
+
 ## [0.0.106](https://github.com/home-operations/kritika/compare/0.0.105...0.0.106) (2026-10-26)
 
 
