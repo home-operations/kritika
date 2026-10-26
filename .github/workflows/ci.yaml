@@ -265,7 +265,7 @@ jobs:
       - name: Lint the Grafana dashboards
         run: mise run dashboard-lint
 
-      - name: Check generated chart files are current
+      - name: Check generated files are current
         run: mise run generate-check
 
   helm-unittest:

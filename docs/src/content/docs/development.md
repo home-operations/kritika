@@ -49,7 +49,9 @@ and it bumps `gh` through the annotation above its version. The `tools` in
 a repository's `.kritika.yaml` add to the runner image's commands.
 
 `mise run generate` rebuilds the chart's README and schema from
-`values.yaml`; the Renovate regeneration workflow commits both.
+`values.yaml`, and records in `internal/aqua/release.go` the SHA-256 of
+the aqua registry release `scripts/aqua-registry.sh` names; the Renovate
+regeneration workflow commits all three.
 
 `mise run ui-lint` lints the dashboard with oxlint, and `mise run
 ui-typecheck` type-checks it with svelte-check on TypeScript 7.

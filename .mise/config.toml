@@ -139,14 +139,14 @@ description = "Render the Helm chart with the lint values"
 run = "helm template kritika charts/kritika --values charts/kritika/ci/lint-values.yaml"
 
 [tasks.generate]
-description = "Regenerate the chart's README and values.schema.json"
-run = "scripts/generate-chart.sh"
+description = "Regenerate the chart's README and values.schema.json, and pin the aqua registry's checksum"
+run = ["scripts/generate-chart.sh", "scripts/aqua-registry.sh"]
 
 [tasks.generate-check]
-description = "Fail if the generated chart README or schema is stale (CI gate)"
+description = "Fail if the generated chart README or schema, or the aqua registry's pinned checksum, is stale (CI gate)"
 run = """
 mise run generate
-git diff --exit-code charts/kritika/README.md charts/kritika/values.schema.json
+git diff --exit-code charts/kritika/README.md charts/kritika/values.schema.json internal/aqua/release.go
 """
 
 [tasks.dev]
