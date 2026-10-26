@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.106](https://github.com/home-operations/kritika/compare/0.0.105...0.0.106) (2026-10-26)
+
+
+### Features
+
+* add clusterDomain chart value and kritika config check ([#1248](https://github.com/home-operations/kritika/issues/1248)) ([324acca](https://github.com/home-operations/kritika/commit/324acca1605c151332e4b67dc9e1c074ad6d4ab5))
+* **dashboard:** show the index queue and contents, sort tables, filter the queue by kind ([#1249](https://github.com/home-operations/kritika/issues/1249)) ([1a0039c](https://github.com/home-operations/kritika/commit/1a0039c63f16e23bcf0b4717706ac1438f622676))
+
 ## [0.0.105](https://github.com/home-operations/kritika/compare/0.0.104...0.0.105) (2026-10-25)
 
 
