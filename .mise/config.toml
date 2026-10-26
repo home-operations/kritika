@@ -10,7 +10,7 @@
 # The mise the -tools image ships, read the same way as `tools.go`, and the
 # one CI's Go tests run, so working here takes at least that mise. Renovate
 # bumps it with the image.
-min_version = "2026.10.13"
+min_version = "2026.10.17"
 
 [tools]
 actionlint = "1.7.12"
