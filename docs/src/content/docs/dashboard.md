@@ -98,6 +98,10 @@ error. An overdue heartbeat can recover; it does not always mean a failed job.
 Retryable jobs resume automatically. Admins can cancel active reviews, re-run
 canceled or discarded reviews, and reindex after a failed index job.
 
+The job kind menu narrows the queue to **Index jobs**, or to **Reviews and
+follow-ups**, the runs. Click a column header to sort the jobs by it, and
+again to reverse the order.
+
 ### Analytics
 
 Choose a period to compare reviews, findings, duration, tokens and API spending.
@@ -144,8 +148,26 @@ unarchiving a repository. It names the account's forge, such as
 **Resync from Forgejo**. Then enable the repository if it is still off. The
 next poll can pick up open pull requests created while it was disabled.
 
-Expand **Repository settings** to inspect effective settings, or **Index runs**
-to investigate indexing failures. See [which repositories run](/configuration/#which-repositories-run)
+Click a column header to sort the repositories loaded so far by it, and again
+to reverse the order. The **Index** column sorts what is indexing first, then
+what is queued or waiting.
+
+A repository's first index is queued by the leader a few at a time,
+[`onboardWindow`](/configuration/#how-kritika-runs) of them queued or running
+at once, and index jobs run one at a time on each replica unless
+`indexWorkers` says otherwise. So after you turn on many repositories, most
+of them wait: the **Index** column shows each one's place in line, such as
+**Waiting · #3**, and the leader queues the next as each first index ends. A
+reindex goes ahead of the first indexes still waiting.
+
+A repository's page shows its index jobs queued or running, and keeps them
+current while there are any. **Reindex** reads **Reindex queued** while one
+is. Expand **Repository settings** to inspect effective settings, **Index
+runs** to investigate indexing failures, or **Index contents** to see what
+the similar-code index holds: the commit and embedder it was built at, and
+its files and their chunks. Only admins see a chunk's text. The paths the
+indexer skipped, such as those an ignore rule matches, are not recorded, so
+they are not listed. See [which repositories run](/configuration/#which-repositories-run)
 for how dashboard choices and configured defaults interact.
 
 ## Administration

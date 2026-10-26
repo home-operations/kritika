@@ -45,6 +45,8 @@ const RULES: { path: RegExp; kinds: readonly EventKind[]; review?: boolean }[] =
   { path: new RegExp(`^${ACCOUNT}/queue$`), kinds: EVERY },
   { path: new RegExp(`^${ACCOUNT}/repos$`), kinds: ['review', 'index_run'] },
   { path: new RegExp(`^${ACCOUNT}/repos/[^/]+/[^/]+$`), kinds: RUNS },
+  // What a repository's index holds changes as an index run publishes.
+  { path: new RegExp(`^${ACCOUNT}/repos/[^/]+/[^/]+/index(/files|/chunks)?$`), kinds: ['index_run'] },
   { path: new RegExp(`^${ACCOUNT}/pulls$`), kinds: RUNS },
   // A follow-up can dismiss a finding.
   { path: new RegExp(`^${ACCOUNT}/findings$`), kinds: ['review', 'followup'] },

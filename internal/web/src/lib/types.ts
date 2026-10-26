@@ -275,6 +275,62 @@ export interface IndexState {
   activeAt: string | null;
   lastRunStatus: IndexRunStatus | '';
   lastRunAt: string | null;
+  // job is the repository's index job queued or running, the running one
+  // when there are several.
+  job: IndexJob | null;
+  // backlog is the repository's place, from 1, among the account's
+  // repositories waiting for the onboarding feeder to queue their first
+  // index; absent when it is not waiting.
+  backlog?: number;
+}
+
+// An index job queued or running.
+export interface IndexJob {
+  id: number;
+  state: JobState;
+  trigger: string;
+  full: boolean;
+  attempt: number;
+  createdAt: string;
+  attemptedAt: string | null;
+}
+
+// What a repository's active index generation holds; indexed is false,
+// with zero counts, when it has none. current is false when another
+// embedder than the applied one built it.
+export interface IndexContents {
+  indexed: boolean;
+  commit: string;
+  embedModel: string;
+  embedDims: number;
+  builtAt: string | null;
+  finishedAt: string | null;
+  chunks: number;
+  files: number;
+  current: boolean;
+}
+
+export interface IndexFile {
+  path: string;
+  language: string;
+  chunks: number;
+}
+
+// text is served to admins only.
+export interface IndexChunk {
+  startLine: number;
+  endLine: number;
+  language: string;
+  symbol: string;
+  kind: string;
+  scope: string;
+  text?: string;
+}
+
+export interface IndexChunks {
+  path: string;
+  items: IndexChunk[];
+  truncated: boolean;
 }
 
 export interface ReviewRef {
@@ -419,6 +475,8 @@ export interface RepoDetail extends Repository {
   sources: Record<string, ConfigSource>;
   repoConfig: RepoConfig | null;
   indexRuns: IndexRun[];
+  // The repository's index jobs queued or running, the running ones first.
+  indexJobs: IndexJob[];
 }
 
 export interface Label {

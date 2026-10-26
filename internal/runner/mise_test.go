@@ -530,10 +530,16 @@ func TestMiseExecRelock(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
+	// By its path: the run's PATH is the image's, which a host such as
+	// NixOS keeps no mkdir on.
+	mkdir, err := exec.LookPath("mkdir")
+	if err != nil {
+		t.Skip(err)
+	}
 	home := t.TempDir()
 	// A mise that leaves an unreadable directory in home.
 	bin := filepath.Join(t.TempDir(), "mise")
-	if err := os.WriteFile(bin, []byte("#!"+sh+"\nmkdir -m 0 \"$HOME/sealed\"\n"), 0o755); err != nil {
+	if err := os.WriteFile(bin, []byte("#!"+sh+"\n"+mkdir+" -m 0 \"$HOME/sealed\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

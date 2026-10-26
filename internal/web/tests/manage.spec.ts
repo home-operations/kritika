@@ -187,7 +187,8 @@ test.describe('actions', () => {
     await page.goto(`/#/a/${S}/repos/alpha/one`);
     await page.getByRole('button', { name: 'Reindex' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Reindex' }).click();
-    await expect(page.getByRole('status')).toContainText('already queued or running');
+    // The same reindex already queued is news, not a failure.
+    await expect(page.getByRole('status')).toContainText('A reindex of this repository is already queued');
   });
 
   test('offer a re-run of a merged or closed pull request on its page alone, and say what it does', async ({ page }) => {

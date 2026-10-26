@@ -164,11 +164,15 @@ export function usageFilter(f: Record<string, string | undefined>, instance = fa
 
 export interface QueueFilter {
   state?: 'attention' | 'running' | 'waiting' | 'finished';
+  // kind narrows the queue to index jobs, or to the runs: reviews,
+  // follow-ups and thread changes.
+  kind?: 'index' | 'runs';
   q?: string;
 }
 export function queueFilter(f: Record<string, string | undefined>): QueueFilter | undefined {
   const out: QueueFilter = {};
   if (f.state === 'attention' || f.state === 'running' || f.state === 'waiting' || f.state === 'finished') out.state = f.state;
+  if (f.kind === 'index' || f.kind === 'runs') out.kind = f.kind;
   if (f.q) out.q = f.q;
   return Object.keys(out).length ? out : undefined;
 }

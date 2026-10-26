@@ -2,8 +2,8 @@
   import Collapsible from '../components/Collapsible.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import { href } from '../router.svelte';
-  import { Resource } from '../resource.svelte';
-  import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
+  import { Resource, pollJobs } from '../resource.svelte';
+  import { duration, indexJobText, indexTone, jobTone, shortSha, bytes, wholeNumber } from '../format';
   import type { Condition, ConfigSource, ModelRoute, Page, Pull, RepoDetail, RepoSettings, Risk, SkillScope } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
@@ -11,6 +11,7 @@
   import PullTable from '../components/PullTable.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import RepoTraits from '../components/RepoTraits.svelte';
+  import IndexContents from '../components/IndexContents.svelte';
   import { reindexPath, accountApi } from '../links';
   import { isAdmin } from '../session.svelte';
 
@@ -18,7 +19,8 @@
   const fullName = $derived(`${owner}/${repo}`);
   const account = $derived(`${accountApi(slug)}`);
 
-  const res = Resource.live<RepoDetail>(() => `${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+  const repoApi = $derived(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+  const res = Resource.live<RepoDetail>(() => repoApi);
   const pulls = Resource.live<Page<Pull>>(() => `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`);
 
   $effect(() => {
@@ -27,6 +29,13 @@
   $effect(() => {
     void pulls.load();
   });
+  // A queued index job raises no event until its run starts, so the page
+  // polls while the repository has one, or waits its turn for one.
+  const indexPending = $derived(!!res.data && (res.data.indexJobs.length > 0 || !!res.data.index.backlog));
+  $effect(() => (indexPending ? pollJobs(() => void res.load()) : undefined));
+  // reindexing is the forced rebuild queued or running, which a second
+  // reindex would only meet as already queued.
+  const reindexing = $derived(res.data?.indexJobs.find((j) => j.full));
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
   const tests = (c: Condition) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
@@ -176,17 +185,40 @@
     <PageHeader title={fullName} {slug} parents={[{ label: 'Repositories', route: { name: 'repos', slug } }]}>
       {#snippet actions()}
         {#if isAdmin() && res.data?.enabled}
-          <ActionButton
-            label="Reindex"
-            title="Reindex the repository?"
-            body={`Rebuild the code index of ${fullName} from scratch at its default branch.`}
-            path={reindexPath(slug, fullName)}
-            done="Reindex queued"
-            ondone={() => res.load()}
-          />
+          {#if reindexing}
+            <button class="btn" disabled title={`Index job #${reindexing.id}`}>{reindexing.state === 'running' ? 'Reindexing…' : 'Reindex queued'}</button>
+          {:else}
+            <ActionButton
+              label="Reindex"
+              title="Reindex the repository?"
+              body={`Rebuild the code index of ${fullName} from scratch at its default branch.`}
+              path={reindexPath(slug, fullName)}
+              done="Reindex queued"
+              already="A reindex of this repository is already queued"
+              ondone={() => res.load()}
+            />
+          {/if}
         {/if}
       {/snippet}
     </PageHeader>
+    <div aria-live="polite">
+      {#if res.data && (res.data.indexJobs.length || res.data.index.backlog)}
+        <section class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md flex flex-col gap-1.5" aria-label="Index queue">
+          {#each res.data.indexJobs as j (j.id)}
+            <p class="m-0 flex flex-wrap items-center gap-2">
+              <Pill tone={jobTone[j.state]} label={indexJobText(j)} />
+              <span class="text-ui-sm text-muted">job #{j.id}, {j.state === 'running' && j.attemptedAt ? 'started' : 'queued'} <Time iso={j.state === 'running' && j.attemptedAt ? j.attemptedAt : j.createdAt} />{j.attempt > 1 ? `, attempt ${j.attempt}` : ''}</span>
+            </p>
+          {:else}
+            <p class="m-0 flex flex-wrap items-center gap-2">
+              <Pill label={`Waiting · #${res.data.index.backlog}`} />
+              <span class="text-ui-sm text-muted">Onboarding queues a few first indexes at a time; this repository is number {res.data.index.backlog} in line.</span>
+            </p>
+          {/each}
+          <a class="small text-ui-sm" href={href({ name: 'queue', slug, filter: { kind: 'index' } })}>See the index queue</a>
+        </section>
+      {/if}
+    </div>
     {#if res.data?.fork || res.data?.archived || res.data?.visibility === 'public' || res.data?.visibility === 'internal'}<p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm"><RepoTraits r={res.data} /></p>{/if}
     <section class="panel" aria-labelledby="repo-pulls">
       <header class="panel-head">
@@ -300,6 +332,11 @@
               </div>
             {/if}
           </section>
+        </Collapsible>
+
+        <Collapsible title="Index contents">
+          {#snippet meta()}{#if d.index.activeCommit}<span class="text-ui-sm text-muted">at <span class="mono">{shortSha(d.index.activeCommit)}</span></span>{/if}{/snippet}
+          <IndexContents base={repoApi} />
         </Collapsible>
       {/snippet}
     </StateView>

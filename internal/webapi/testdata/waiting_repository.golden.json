@@ -1,0 +1,23 @@
+{
+  "id": "repo-1",
+  "fullName": "alpha/one",
+  "enabled": true,
+  "defaultBranch": "main",
+  "archived": false,
+  "fork": false,
+  "visibility": "private",
+  "turnedOn": null,
+  "index": {
+    "activeCommit": "",
+    "activeAt": null,
+    "lastRunStatus": "",
+    "lastRunAt": null,
+    "job": null,
+    "backlog": 3
+  },
+  "lastReview": {
+    "id": "rev-1",
+    "status": "completed",
+    "createdAt": "2026-09-01T12:00:00Z"
+  }
+}

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
@@ -35,6 +37,26 @@ apps:
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
 `
+
+// checkBacklog reads account's onboarding backlog under its own policy and
+// checks it names want, in order; names maps a repository ID to its name.
+func checkBacklog(t *testing.T, s *Store, account string, names map[string]string, want []string) {
+	t.Helper()
+	ctx := t.Context()
+	var backlog []string
+	if err := s.WithAccount(ctx, accountID(t, s, account), func(tx pgx.Tx) error {
+		waiting, err := OnboardBacklog(ctx, tx, time.Hour)
+		for _, r := range waiting {
+			backlog = append(backlog, names[r.ID])
+		}
+		return err
+	}); err != nil {
+		t.Fatalf("OnboardBacklog: %v", err)
+	}
+	if !slices.Equal(backlog, want) {
+		t.Fatalf("OnboardBacklog(%s) = %v, want %v", account, backlog, want)
+	}
+}
 
 // TestOnboardCandidates checks which repositories the onboarding feeder is
 // offered and in what order: accounts take turns, and an account's repositories
@@ -149,6 +171,9 @@ func TestOnboardCandidates(t *testing.T) {
 	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, all); err != nil || len(limited) != 1 {
 		t.Fatalf("OnboardCandidates(1) = %v, %v", limited, err)
 	}
+	// The dashboard's backlog of one account is the feeder's order, less
+	// the other accounts' turns.
+	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/stale"})
 	// A repository its settings leave off is passed over, and takes none
 	// of the limit: here, every one of east's.
 	west := accountID(t, s, "west")

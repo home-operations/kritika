@@ -166,11 +166,25 @@ var goldens = map[string]any{
 			Dropped: []string{`.kritika.yaml: review.model "q/big" was dropped; allowed: a model of openrouter`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},
+		IndexJobs: []IndexJob{{ID: 42, State: "available", Trigger: "push", CreatedAt: t0}},
 	},
+	"waiting_repository": func() Repository {
+		r := goldenRepo
+		r.Index = IndexState{Backlog: 3}
+		return r
+	}(),
 	"index_run": goldenIndexRun,
-	"pull":      goldenPull,
-	"review":    goldenReview,
-	"followup":  goldenFollowup,
+	"index_contents": IndexContents{
+		Indexed: true, Commit: "def456", EmbedModel: "embed", EmbedDims: 1024, BuiltAt: &t0, FinishedAt: &t1,
+		Chunks: 12, Files: 3, Current: true,
+	},
+	"index_file": IndexFile{Path: "cmd/app/main.go", Language: "go", Chunks: 4},
+	"index_chunks": IndexChunks{Path: "cmd/app/main.go", Items: []IndexChunk{
+		{StartLine: 1, EndLine: 20, Language: "go", Symbol: "main", Kind: "function", Text: "func main() {}"},
+	}},
+	"pull":     goldenPull,
+	"review":   goldenReview,
+	"followup": goldenFollowup,
 	"pull_detail": PullDetail{
 		Pull: goldenPull, Reviews: []Review{goldenReview}, Followups: []Followup{goldenFollowup}, Job: &goldenJob,
 	},

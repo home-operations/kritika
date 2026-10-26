@@ -11,7 +11,8 @@
     "activeCommit": "def456",
     "activeAt": "2026-09-01T12:00:00Z",
     "lastRunStatus": "completed",
-    "lastRunAt": "2026-09-01T12:01:30Z"
+    "lastRunAt": "2026-09-01T12:01:30Z",
+    "job": null
   },
   "lastReview": {
     "id": "rev-1",
@@ -245,6 +246,17 @@
       "error": "",
       "createdAt": "2026-09-01T12:00:00Z",
       "finishedAt": "2026-09-01T12:01:30Z"
+    }
+  ],
+  "indexJobs": [
+    {
+      "id": 42,
+      "state": "available",
+      "trigger": "push",
+      "full": false,
+      "attempt": 0,
+      "createdAt": "2026-09-01T12:00:00Z",
+      "attemptedAt": null
     }
   ]
 }

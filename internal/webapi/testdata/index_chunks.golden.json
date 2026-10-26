@@ -1,0 +1,15 @@
+{
+  "path": "cmd/app/main.go",
+  "items": [
+    {
+      "startLine": 1,
+      "endLine": 20,
+      "language": "go",
+      "symbol": "main",
+      "kind": "function",
+      "scope": "",
+      "text": "func main() {}"
+    }
+  ],
+  "truncated": false
+}
