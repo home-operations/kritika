@@ -257,6 +257,7 @@ func TestInstall(t *testing.T) {
 
 func TestInstallRefused(t *testing.T) {
 	tgz := gzipped(t, tarball(t, file("tool", "tool")))
+	sums := fmt.Appendf(nil, "%s  tool.tar.gz\n", sha256Hex(tgz))
 	tests := []struct {
 		name  string
 		forge forge
@@ -287,6 +288,21 @@ func TestInstallRefused(t *testing.T) {
 			says: "has no asset tool.tar.gz",
 		},
 		{
+			name:  "a version with no release, a checksum file named",
+			forge: forge{files: map[string][]byte{"tool.tar.gz": tgz, "checksums.txt": sums}},
+			pkg:   Package{ChecksumAlgorithm: "sha256"},
+			says:  "has no release tagged v1.0.0",
+		},
+		{
+			name: "an asset the release does not have, a checksum file named",
+			forge: forge{
+				releases: map[string]any{"/repos/acme/tool/releases/tags/v1.0.0": release([2]string{"other.tar.gz", "sha256:" + sha256Hex(tgz)})},
+				files:    map[string][]byte{"tool.tar.gz": tgz, "checksums.txt": sums},
+			},
+			pkg:  Package{ChecksumAlgorithm: "sha256"},
+			says: "has no asset tool.tar.gz",
+		},
+		{
 			name: "no checksum anywhere",
 			forge: forge{
 				releases: map[string]any{"/repos/acme/tool/releases/tags/v1.0.0": release([2]string{"tool.tar.gz", ""})},
@@ -313,6 +329,10 @@ func TestInstallRefused(t *testing.T) {
 			}
 			if tt.pkg.Files != nil {
 				p.Files = tt.pkg.Files
+			}
+			if tt.pkg.ChecksumAlgorithm != "" {
+				p.ChecksumAlgorithm, p.checksum = tt.pkg.ChecksumAlgorithm, &registry.Checksum{Algorithm: tt.pkg.ChecksumAlgorithm}
+				p.ChecksumURL = srv.URL + "/dl/checksums.txt"
 			}
 			dir := filepath.Join(t.TempDir(), "pkg")
 			_, err := install(t.Context(), installer(srv), &p, dir)
@@ -489,26 +509,34 @@ func TestCommandOutOfDownload(t *testing.T) {
 // TestUnpackBounded: what an archive decompresses to is bounded, the
 // bodies of the entries it leaves out included.
 func TestUnpackBounded(t *testing.T) {
-	limit := maxUnpackedBytes
-	t.Cleanup(func() { maxUnpackedBytes = limit })
-	maxUnpackedBytes = 1 << 10
+	limit, most := maxUnpackedBytes, maxEntries
+	t.Cleanup(func() { maxUnpackedBytes, maxEntries = limit, most })
 	body := strings.Repeat("x", 4<<10)
-	for name, entries := range map[string][]entry{
-		"a file":            {file("big", body)},
-		"an entry left out": {{name: "contiguous", body: body, typ: tar.TypeCont, mode: 0o644}},
+	root := entry{name: "./", typ: tar.TypeDir, mode: 0o755}
+	for _, tt := range []struct {
+		name    string
+		bytes   int64
+		entries int
+		archive []entry
+		says    string
+	}{
+		{"a file", 1 << 10, most, []entry{file("big", body)}, "over 1024 bytes"},
+		{"an entry left out", 1 << 10, most, []entry{{name: "contiguous", body: body, typ: tar.TypeCont, mode: 0o644}}, "over 1024 bytes"},
+		{"the root, again", limit, 3, []entry{root, root, root, root}, "over 3 entries"},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
+			maxUnpackedBytes, maxEntries = tt.bytes, tt.entries
 			dir := t.TempDir()
 			download := filepath.Join(dir, "download")
-			if err := os.WriteFile(download, gzipped(t, tarball(t, entries...)), 0o644); err != nil {
+			if err := os.WriteFile(download, gzipped(t, tarball(t, tt.archive...)), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			root := filepath.Join(dir, "root")
 			if err := os.Mkdir(root, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := unpack(t.Context(), download, "tar.gz", "x.tar.gz", root); err == nil || !strings.Contains(err.Error(), "over") {
-				t.Errorf("unpack error = %v, want the bound", err)
+			if err := unpack(t.Context(), download, "tar.gz", "x.tar.gz", root); err == nil || !strings.Contains(err.Error(), tt.says) {
+				t.Errorf("unpack error = %v, want %q", err, tt.says)
 			}
 		})
 	}

@@ -107,15 +107,19 @@ func (in *Installer) Install(ctx context.Context, p *Package, sum Sum, dir strin
 // Checksum is what p's download must match: the digest GitHub keeps of a
 // release's asset, else the one in the checksum file the registry names.
 // Looking the release up also checks the version is one of its tags,
-// which the registry cannot tell: it resolves any version.
+// which the registry cannot tell: it resolves any version. A release
+// GitHub says it does not have, or one without the asset, fails though a
+// checksum file is named; one that keeps no digest, or that GitHub could
+// not be asked about, leaves the file to stand in.
 func (in *Installer) Checksum(ctx context.Context, p *Package) (Sum, error) {
 	var releaseErr error
 	if p.Type == TypeGitHubRelease {
 		sum, err := in.releaseDigest(ctx, p)
+		_, missing := errors.AsType[unreleased](err)
 		switch {
 		case err == nil && sum.Hex != "":
 			return sum, nil
-		case err != nil && p.ChecksumURL == "":
+		case missing || err != nil && p.ChecksumURL == "":
 			return Sum{}, fmt.Errorf("aqua: %s: %w", p.Name, err)
 		}
 		releaseErr = err
@@ -145,7 +149,7 @@ func (in *Installer) releaseDigest(ctx context.Context, p *Package) (Sum, error)
 	}
 	body, err := get(ctx, in.Client, url, header, maxReleaseBytes)
 	if errors.Is(err, errNotFound) {
-		return Sum{}, fmt.Errorf("%s/%s has no release tagged %s", p.Owner, p.Repo, p.Version)
+		return Sum{}, unreleased(fmt.Sprintf("%s/%s has no release tagged %s", p.Owner, p.Repo, p.Version))
 	}
 	if err != nil {
 		return Sum{}, fmt.Errorf("release %s: %w", p.Version, err)
@@ -168,8 +172,14 @@ func (in *Installer) releaseDigest(ctx context.Context, p *Package) (Sum, error)
 		}
 		return Sum{}, nil
 	}
-	return Sum{}, fmt.Errorf("release %s of %s/%s has no asset %s", p.Version, p.Owner, p.Repo, p.Asset)
+	return Sum{}, unreleased(fmt.Sprintf("release %s of %s/%s has no asset %s", p.Version, p.Owner, p.Repo, p.Asset))
 }
+
+// unreleased is a version GitHub has no release of, or a release without
+// the asset: GitHub's word on it, which no checksum file overrules.
+type unreleased string
+
+func (e unreleased) Error() string { return string(e) }
 
 // errNotFound is a 404 from get.
 var errNotFound = errors.New("not found")

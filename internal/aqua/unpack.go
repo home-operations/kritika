@@ -165,16 +165,16 @@ func (u *unpacker) clean(name string) (string, error) {
 	if err := u.ctx.Err(); err != nil {
 		return "", err
 	}
+	u.entries++
+	if u.entries > maxEntries {
+		return "", fmt.Errorf("over %d entries", maxEntries)
+	}
 	name = path.Clean(strings.TrimPrefix(name, "./"))
 	if name == "." || name == "/" {
 		return ".", nil
 	}
 	if err := u.check(name); err != nil {
 		return "", err
-	}
-	u.entries++
-	if u.entries > maxEntries {
-		return "", fmt.Errorf("over %d entries", maxEntries)
 	}
 	return name, nil
 }
