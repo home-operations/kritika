@@ -534,12 +534,14 @@ A tag the release does not have fails the install, which names it.
 
 A tool installs at the version given, on the first call that needs it,
 which can take a moment. A failed install fails that tool call without
-stopping the review. The runner reads the registry at the release this
-kritika pins, so a package added to the registry is offered once a
-kritika release reads a registry release that has it. Release hosts,
-`raw.githubusercontent.com`, where the registry is read from, and, for a
-tool with GitHub artifact attestations, the host GitHub keeps their
-bundles on need the admin's `egress.allow` permission
+stopping the review. The runner reads the registry from the gateway,
+which keeps aqua-registry's main branch, unless the admin's
+`aquaRegistryUrl` names another source, and asks for it again every hour
+([how kritika runs](/configuration/#how-kritika-runs)). A package added
+to the registry, or a definition fixed in it, is offered within that,
+with no change to this file or to kritika. Release hosts and, for a tool
+with GitHub artifact attestations, the host GitHub keeps their bundles on
+need the admin's `egress.allow` permission
 ([runner tools](/security/#runner-tools)). Once the admin gives the
 gateway a download cache, later runs reuse a checked download
 ([the gateway's cache](/security/#the-gateways-download-cache)).

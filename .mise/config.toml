@@ -140,18 +140,17 @@ run = "helm template kritika charts/kritika --values charts/kritika/ci/lint-valu
 # generate-check leaves it out: it changes when Sigstore's keys do, and the
 # Renovate regeneration workflow refreshes it with every bump.
 [tasks.generate]
-description = "Regenerate the chart's README and values.schema.json, pin the aqua registry's checksum and fetch Sigstore's trusted root"
+description = "Regenerate the chart's README and values.schema.json, and fetch Sigstore's trusted root"
 run = [
   "scripts/generate-chart.sh",
-  "scripts/aqua-registry.sh",
   "go run ./scripts/trustedroot internal/aqua/trusted_root.json",
 ]
 
 [tasks.generate-check]
-description = "Fail if the generated chart README or schema, or the aqua registry's pinned checksum, is stale (CI gate)"
+description = "Fail if the generated chart README or schema is stale (CI gate)"
 run = """
 mise run generate
-git diff --exit-code charts/kritika/README.md charts/kritika/values.schema.json internal/aqua/release.go
+git diff --exit-code charts/kritika/README.md charts/kritika/values.schema.json
 """
 
 [tasks.dev]

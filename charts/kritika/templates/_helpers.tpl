@@ -266,7 +266,7 @@ an `env` key that would duplicate one of them.
 {{/* Environment names corresponding to operational settings present in the file. */}}
 {{- define "kritika.configEnv" -}}
 {{- $names := dict -}}
-{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxEntrySize" "gatewayCacheStorage" "gatewayCacheS3Endpoint" "gatewayCacheS3Region" "gatewayCacheS3Bucket" "gatewayCacheS3Prefix" "gatewayCacheS3ForcePathStyle" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
+{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxEntrySize" "gatewayCacheStorage" "gatewayCacheS3Endpoint" "gatewayCacheS3Region" "gatewayCacheS3Bucket" "gatewayCacheS3Prefix" "gatewayCacheS3ForcePathStyle" "aquaRegistryUrl" "aquaRegistryRefresh" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
 {{- if and (hasKey $ $key) (ne (get $ $key) nil) -}}
 {{- $_ := set $names (printf "KRITIKA_%s" ($key | snakecase | upper)) $key -}}
 {{- end -}}

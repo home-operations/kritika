@@ -25,12 +25,16 @@ import (
 
 // installTimeout bounds each step of installing a tool, the registry's
 // fetch, a checksum's lookup and each attempt at the download, as
-// fetchTimeout bounds a fetch; fetchRegistry fetches the aqua registry,
-// and githubAPI is where the GitHub REST API is. Variables for the tests.
+// fetchTimeout bounds a fetch; fetchRegistry fetches the aqua registry the
+// run's gateway keeps, and githubAPI is where the GitHub REST API is.
+// Variables for the tests.
 var (
 	installTimeout = 2 * time.Minute
-	fetchRegistry  = aqua.FetchRegistry
-	githubAPI      = "https://" + configfile.GitHubAPIHost
+	fetchRegistry  = func(ctx context.Context, gatewayURL, gatewayToken string) (*aqua.Registry, error) {
+		return aqua.FetchRegistry(ctx, http.DefaultClient, strings.TrimSuffix(gatewayURL, "/")+runspec.AquaRegistryPath,
+			http.Header{"Authorization": {"Bearer " + gatewayToken}})
+	}
+	githubAPI = "https://" + configfile.GitHubAPIHost
 )
 
 // repoTool is one of the repository's tools.
@@ -77,19 +81,19 @@ type download struct {
 	note   string
 }
 
-// newRepoTools resolves tools, the repository's, in the aqua registry,
-// fetched and checked against its recorded checksum, to install under
-// home. env is the commands' environment, whose proxies, the gateway, the
-// registry and a download reach their hosts through.
-// cacheLocked says the gateway keeps a checked download, which a tool's
-// then goes through first. credentialed names the commands that run with
+// newRepoTools resolves tools, the repository's, in the aqua registry the
+// run's gateway at gatewayURL keeps, read with the run's gatewayToken, to
+// install under home. env is the commands' environment, through whose
+// proxy, the gateway, a tool's download reaches its host. cacheLocked says
+// the gateway keeps a checked download, which a tool's then goes through
+// first. credentialed names the commands that run with
 // one of the run's credentials, which a repository's tool may not offer;
 // token is the run's GitHub token, for the GitHub API's account of a
 // release, "" off GitHub. notes say what was not offered and why, for the
 // review's summary.
 func newRepoTools(
-	ctx context.Context, tools repoconfig.Tools, home string, env []string, cacheLocked bool, credentialed []string, token string,
-	logger *slog.Logger,
+	ctx context.Context, tools repoconfig.Tools, gatewayURL, gatewayToken, home string, env []string, cacheLocked bool,
+	credentialed []string, token string, logger *slog.Logger,
 ) (r *repoTools, notes []string, err error) {
 	r = &repoTools{
 		home: home, bin: filepath.Join(home, "tools", "bin"), byCommand: map[string]*repoTool{}, logger: logger,
@@ -99,7 +103,9 @@ func newRepoTools(
 		r.cache = proxiedClient(plain).Transport
 	}
 	r.installer = &aqua.Installer{Client: r.direct, APIURL: githubAPI, Token: token, Logger: logger}
-	registry, err := r.registry(ctx)
+	registry, err := within(ctx, func(ctx context.Context) (*aqua.Registry, error) {
+		return fetchRegistry(ctx, gatewayURL, gatewayToken)
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: %w", err)
 	}
@@ -108,8 +114,7 @@ func newRepoTools(
 		pkg, err := registry.Resolve(strings.TrimPrefix(name, repoconfig.ToolPrefix), tools[name], platform)
 		switch {
 		case errors.Is(err, aqua.ErrNotFound):
-			notes = append(notes, fmt.Sprintf("tools: %s not offered: it is not in aqua-registry %s, the release this kritika reads",
-				name, aqua.RegistryVersion))
+			notes = append(notes, fmt.Sprintf("tools: %s not offered: it is not in the aqua registry", name))
 			continue
 		case err != nil:
 			notes = append(notes, fmt.Sprintf("tools: %s not offered: %v", name, err))
@@ -144,22 +149,6 @@ func libc() string {
 		return "musl"
 	}
 	return "glibc"
-}
-
-// registry fetches the aqua registry, through the gateway's cache while
-// it keeps checked downloads, else, or should that fail, around it, each
-// attempt within installTimeout of its own.
-func (r *repoTools) registry(ctx context.Context) (*aqua.Registry, error) {
-	if r.cache != nil {
-		registry, err := within(ctx, func(ctx context.Context) (*aqua.Registry, error) {
-			return fetchRegistry(ctx, cachedClient(r.cache, aqua.RegistrySum()))
-		})
-		if err == nil || ctx.Err() != nil {
-			return registry, err
-		}
-		r.logger.Warn("aqua registry not fetched through the gateway's cache, fetching it without the cache", "error", err)
-	}
-	return within(ctx, func(ctx context.Context) (*aqua.Registry, error) { return fetchRegistry(ctx, r.direct) })
 }
 
 // envValue is the value of name in env, under either spelling.

@@ -1,8 +1,6 @@
 package aqua
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -299,31 +297,22 @@ func TestResolveLeavesRegistry(t *testing.T) {
 }
 
 func TestFetchRegistry(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer run-token" {
+			http.Error(w, "the run token is not valid", http.StatusUnauthorized)
+			return
+		}
 		_, _ = w.Write([]byte(fixture))
 	}))
 	t.Cleanup(srv.Close)
-	sum := sha256.Sum256([]byte(fixture))
-	for _, tt := range []struct {
-		name, sum string
-		want      error
-	}{
-		{"the recorded checksum", hex.EncodeToString(sum[:]), nil},
-		{"another", strings.Repeat("0", 64), ErrChecksum},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			url, recorded := registryURL, registrySum
-			t.Cleanup(func() { registryURL, registrySum = url, recorded })
-			registryURL, registrySum = srv.URL, tt.sum
-			r, err := FetchRegistry(t.Context(), srv.Client())
-			if !errors.Is(err, tt.want) {
-				t.Fatalf("FetchRegistry error = %v, want %v", err, tt.want)
-			}
-			if err == nil {
-				if _, err := r.Resolve("acme/rawtool", "v1.0.0", linuxAMD64); err != nil {
-					t.Error(err)
-				}
-			}
-		})
+	r, err := FetchRegistry(t.Context(), srv.Client(), srv.URL, http.Header{"Authorization": {"Bearer run-token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Resolve("acme/rawtool", "v1.0.0", linuxAMD64); err != nil {
+		t.Error(err)
+	}
+	if _, err := FetchRegistry(t.Context(), srv.Client(), srv.URL, nil); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("FetchRegistry without the token = %v, want the 401", err)
 	}
 }

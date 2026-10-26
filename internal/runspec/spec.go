@@ -497,3 +497,7 @@ func (s Secrets) Mask(text string) string {
 // among them, gets the origin's answer as is, which the caller still
 // checks, as the runner does.
 const DigestHeader = "Kritika-Digest"
+
+// AquaRegistryPath is where a runner reads, with its run token, the aqua
+// registry the gateway keeps.
+const AquaRegistryPath = "/v1/aqua/registry.yaml"

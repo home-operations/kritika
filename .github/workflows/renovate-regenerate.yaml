@@ -36,7 +36,6 @@ jobs:
           paths: |
             charts/kritika/README.md
             charts/kritika/values.schema.json
-            internal/aqua/release.go
             internal/aqua/trusted_root.json
 
   push:
@@ -56,5 +55,4 @@ jobs:
           paths: |
             charts/kritika/README.md
             charts/kritika/values.schema.json
-            internal/aqua/release.go
             internal/aqua/trusted_root.json

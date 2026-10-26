@@ -272,11 +272,19 @@ The file is read from the merge base, so a pull request cannot change
 the tools used to review itself. A tool downloads on the first run that
 uses it, at the declared version, into the run's own scratch space.
 
-The runner reads the registry at the release this kritika pins. It
-fetches that release's `registry.yaml` and checks it against the SHA-256
-recorded with the release, then resolves each tool's download, its
-packing and its commands as aqua does for the runner's platform. Nothing
-of aqua's or the tool's runs to install it.
+The runner reads the registry from the gateway, with its run token, and
+resolves each tool's download, its packing and its commands as aqua does
+for the runner's platform. Nothing of aqua's or the tool's runs to
+install it. The gateway keeps the registry at `aquaRegistryUrl`,
+aqua-registry's `registry.yaml` on its main branch unless the admin names
+another, and asks for it again every `aquaRegistryRefresh`, an hour
+unless set. The file is taken as its source serves it, with no checksum
+to match, as aqua and atmos read theirs, and only once it parses as a
+registry: a fetch that fails, or answers with something else, leaves the
+last one served. Following the main branch, a change to a package's
+definition reaches every review within the hour, a broken one among them;
+a release's tag in `aquaRegistryUrl` holds the registry still until the
+admin moves it.
 
 Before it downloads a tool, the runner fetches what the download must
 match, around the gateway's cache: the digest GitHub keeps of a release's
@@ -369,10 +377,10 @@ own names. They configure the commands and never the runner itself: a
 fetches, logs or connects.
 
 Installs stay within the install timeout and the gateway's restrictions.
-Reading the registry reaches `raw.githubusercontent.com`, and looking a
-release's digest up reaches the GitHub API, with the run's token on
-GitHub and without one on another forge. Those hosts need `egress.allow`
-too.
+Looking a release's digest up reaches the GitHub API, with the run's
+token on GitHub and without one on another forge, which needs
+`egress.allow` too. The registry comes from the gateway itself, so a
+runner needs no egress for it.
 
 Enabling repository tools trusts the repository's tool choices. kritika
 does not vet arbitrary binaries. A tool with an interpreter, plugin
@@ -601,8 +609,9 @@ never a registry request.
 Declare a tool under `tools` in `.kritika.yaml` by its aqua registry
 package, `aqua:owner/repo`. A tool the registry does not have yet can be
 added to it upstream ([adding a package](https://github.com/aquaproj/aqua-registry/blob/main/docs/add_package.md)),
-and is offered once a kritika release reads a registry release that has
-it.
+and is offered once the gateway's next fetch of `aquaRegistryUrl` finds
+it: within the hour on the main branch, or once the admin moves a URL
+that names a release's tag.
 
 The binaries must be static or link only against glibc, libgcc and
 libstdc++, which is all the image carries. A package that builds from
@@ -615,7 +624,8 @@ them again. The gateway can keep those downloads instead. With
 `gatewayCacheDir` set (under Helm, a private emptyDir), each replica keeps
 what a repository's tools download, by the digest the run checks each
 download against, and serves it to the next request that names that
-digest. The runner reads the aqua registry through it the same way.
+digest. The aqua registry is not among them: the gateway keeps that
+itself.
 
 Fetching that checksum, from the GitHub API or a checksum file, goes
 around the cache, so the checksum an install is checked against is never
