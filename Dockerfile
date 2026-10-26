@@ -92,7 +92,7 @@ RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak
 # release's checksums.
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=cli/cli
-ARG GH_VERSION=v2.103.0
+ARG GH_VERSION=v2.103.2
 RUN dnf install -y --setopt=install_weak_deps=False gawk gzip tar \
  && version="${GH_VERSION#v}" && asset="gh_${version}_linux_${TARGETARCH}.tar.gz" \
  && release="https://github.com/cli/cli/releases/download/${GH_VERSION}" \
