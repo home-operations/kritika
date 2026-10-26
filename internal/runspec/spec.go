@@ -492,6 +492,8 @@ func (s Secrets) Mask(text string) string {
 // and checks it against. The gateway's cache keeps such a download by that
 // digest, from any host the rules allow, and only a body that has it; the
 // gateway marks the request egress.ForDigest and sends the header no
-// further. A command can name a digest too, and gets only a body that has
-// it.
+// further. A command can name a digest too, and gets a cached body only if
+// it has it; a request the cache passes over, a body without the digest
+// among them, gets the origin's answer as is, which the caller still
+// checks, as the runner does.
 const DigestHeader = "Kritika-Digest"

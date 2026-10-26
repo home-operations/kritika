@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -258,35 +259,40 @@ func TestCacheKeepsNamedDigests(t *testing.T) {
 }
 
 func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
+	var gz bytes.Buffer
+	z := gzip.NewWriter(&gz)
+	_, _ = io.WriteString(z, "zipped")
+	_ = z.Close()
+	over := strings.Repeat("x", 2048)
+	// Each names the digest of the very body it answers with, so what
+	// keeps it out of the cache is the case and not a digest mismatch.
 	for _, tt := range []struct {
-		name    string
-		respond func(http.ResponseWriter)
-		status  int
+		name, body string
+		respond    func(http.ResponseWriter)
+		status     int
 	}{
-		{"not found", func(w http.ResponseWriter) { http.Error(w, "missing", http.StatusNotFound) }, http.StatusNotFound},
-		{"encoded", func(w http.ResponseWriter) {
+		{"not found", "missing\n", func(w http.ResponseWriter) { http.Error(w, "missing", http.StatusNotFound) }, http.StatusNotFound},
+		{"encoded", gz.String(), func(w http.ResponseWriter) {
 			w.Header().Set("Content-Encoding", "gzip")
-			z := gzip.NewWriter(w)
-			_, _ = io.WriteString(z, "zipped")
-			_ = z.Close()
+			_, _ = w.Write(gz.Bytes())
 		}, http.StatusOK},
-		{"no length", func(w http.ResponseWriter) {
+		{"no length", "streamed", func(w http.ResponseWriter) {
 			_, _ = io.WriteString(w, "streamed")
 			w.(http.Flusher).Flush()
 		}, http.StatusOK},
-		{"over the bound", func(w http.ResponseWriter) {
+		{"over the bound", over, func(w http.ResponseWriter) {
 			w.Header().Set("Content-Length", "2048")
-			_, _ = io.WriteString(w, strings.Repeat("x", 2048))
+			_, _ = io.WriteString(w, over)
 		}, http.StatusOK},
-		{"sets a cookie", func(w http.ResponseWriter) {
+		{"sets a cookie", "personal", func(w http.ResponseWriter) {
 			w.Header().Set("Set-Cookie", "session=1")
 			_, _ = io.WriteString(w, "personal")
 		}, http.StatusOK},
-		{"private", func(w http.ResponseWriter) {
+		{"private", "personal", func(w http.ResponseWriter) {
 			w.Header().Set("Cache-Control", "max-age=60, Private")
 			_, _ = io.WriteString(w, "personal")
 		}, http.StatusOK},
-		{"no-store", func(w http.ResponseWriter) {
+		{"no-store", "personal", func(w http.ResponseWriter) {
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = io.WriteString(w, "personal")
 		}, http.StatusOK},
@@ -299,7 +305,7 @@ func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
 			})
 			for i := range 2 {
 				before := calls.Load()
-				if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", "personal", nil); w.Code != tt.status {
+				if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", tt.body, nil); w.Code != tt.status {
 					t.Fatalf("request %d: status %d, want %d", i, w.Code, tt.status)
 				}
 				if calls.Load() == before {

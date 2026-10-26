@@ -53,10 +53,12 @@ type repoTool struct {
 type repoTools struct {
 	home, bin string
 	installer *aqua.Installer
-	// cache is the gateway's plain HTTP proxy, which a checked download
-	// goes through first, "" when the gateway keeps none; direct fetches
-	// around it, the checksums always.
-	cache     string
+	// cache reaches the gateway's plain HTTP proxy, which a checked
+	// download goes through first, nil when the gateway keeps none: one
+	// transport each download's digest is named over, so their connections
+	// are reused rather than left open. direct fetches around it, the
+	// checksums always.
+	cache     http.RoundTripper
 	direct    *http.Client
 	byCommand map[string]*repoTool
 	logger    *slog.Logger
@@ -94,7 +96,7 @@ func newRepoTools(
 		direct: proxiedClient(envValue(env, httpsProxyEnv)),
 	}
 	if plain := envValue(env, "HTTP_PROXY"); cacheLocked && plain != "" {
-		r.cache = plain
+		r.cache = proxiedClient(plain).Transport
 	}
 	r.installer = &aqua.Installer{Client: r.direct, APIURL: githubAPI, Token: token}
 	registry, err := r.registry(ctx)
@@ -148,7 +150,7 @@ func libc() string {
 // it keeps checked downloads, else, or should that fail, around it, each
 // attempt within installTimeout of its own.
 func (r *repoTools) registry(ctx context.Context) (*aqua.Registry, error) {
-	if r.cache != "" {
+	if r.cache != nil {
 		registry, err := within(ctx, func(ctx context.Context) (*aqua.Registry, error) {
 			return fetchRegistry(ctx, cachedClient(r.cache, aqua.RegistrySum()))
 		})
@@ -180,13 +182,11 @@ func proxiedClient(proxy string) *http.Client {
 }
 
 // cachedClient is a client for a download with sum that goes through the
-// gateway's cache, proxy: as the plain HTTP request the gateway upgrades,
-// naming sum as the digest the cache keeps the download by, for a URL
-// plainHTTP rewrites, and through proxy as is for any other.
-func cachedClient(proxy string, sum aqua.Sum) *http.Client {
-	c := proxiedClient(proxy)
-	c.Transport = digestNaming{c.Transport, sum.Algorithm + ":" + sum.Hex}
-	return c
+// gateway's cache over proxy, the transport to it: as the plain HTTP
+// request the gateway upgrades, naming sum as the digest the cache keeps
+// the download by, for a URL plainHTTP rewrites, and as is for any other.
+func cachedClient(proxy http.RoundTripper, sum aqua.Sum) *http.Client {
+	return &http.Client{Transport: digestNaming{proxy, sum.Algorithm + ":" + sum.Hex}}
 }
 
 // digestNaming sends each request plainHTTP rewrites as that plain HTTP
@@ -288,7 +288,7 @@ func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	}
 	sum, err := within(ctx, func(ctx context.Context) (aqua.Sum, error) { return r.installer.Checksum(ctx, t.pkg) })
 	var downloads []download
-	if r.cache != "" {
+	if r.cache != nil {
 		downloads = append(downloads, download{cachedClient(r.cache, sum), ""})
 	}
 	downloads = append(downloads, download{r.direct, "installing it without the cache"})
@@ -322,7 +322,7 @@ func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	}
 	t.commands = commands
 	r.logger.Info("tool installed", "tool", t.name, "version", t.pkg.Version, "asset", t.pkg.Asset,
-		"gateway_cache", r.cache != "" && attempt == 0, "elapsed", time.Since(started).Round(time.Millisecond))
+		"gateway_cache", r.cache != nil && attempt == 0, "elapsed", time.Since(started).Round(time.Millisecond))
 	return nil
 }
 

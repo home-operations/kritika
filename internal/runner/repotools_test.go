@@ -425,7 +425,7 @@ func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 	// The download alone goes through a client that ends ctx once read,
 	// sent as the plain HTTP request the stand-in gateway answers.
 	plain := cachedClient(r.cache, aqua.Sum{})
-	r.cache, r.direct = "", &http.Client{Transport: cancelOnClose{plain.Transport, cancel}}
+	r.cache, r.direct = nil, &http.Client{Transport: cancelOnClose{plain.Transport, cancel}}
 	resolve := r.resolveWith(nil, env)
 	_, _, _ = resolve(ctx, "repo-tool")
 	if ctx.Err() == nil || r.byCommand["repo-tool"].commands == nil {
