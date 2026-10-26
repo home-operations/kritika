@@ -19,7 +19,7 @@ export const CONSOLE_SECTIONS: readonly SettingEntry[] = [
   { label: 'Users', page: 'users', target: '#op-users', keywords: 'people members sign-ins sign out sessions' },
   { label: 'API tokens', page: 'users', target: '#op-tokens', keywords: 'personal access tokens revoke mcp agents' },
   { label: 'Download cache', page: 'settings', target: '#op-download-cache', keywords: 'gateway s3 storage bucket retention downloads' },
-  { label: 'Most used tools', page: 'settings', target: '#op-tools', keywords: 'commands executions usage graph mise' },
+  { label: 'Most used tools', page: 'settings', target: '#op-tools', keywords: 'commands executions usage graph aqua' },
   { label: 'Instance configuration', page: 'settings', target: '#op-instance', keywords: 'environment sources instance providers embedding' },
   { label: 'Admin audit log', page: 'audit', target: '#op-audit', keywords: 'history' },
 ];
