@@ -4,15 +4,14 @@
   // A chunk's text comes to an admin alone; the server leaves it out for
   // anyone else.
   import { Paged, Resource } from '../resource.svelte';
-  import { getJSON } from '../api.svelte';
-  import { describe } from '../manage';
   import { shortSha, wholeNumber } from '../format';
-  import type { IndexChunks, IndexContents, IndexFile } from '../types';
+  import type { IndexContents, IndexFile } from '../types';
   import StateView from './StateView.svelte';
   import LoadMore from './LoadMore.svelte';
   import RowToggle from './RowToggle.svelte';
   import Time from './Time.svelte';
   import Pill from './Pill.svelte';
+  import IndexFileChunks from './IndexFileChunks.svelte';
 
   let { base }: { base: string } = $props();
   const tableId = $props.id();
@@ -40,18 +39,6 @@
   });
 
   let open = $state<Record<string, boolean>>({});
-  let chunks = $state<Record<string, IndexChunks | string>>({});
-  // show opens or closes a file's chunks, fetching them the first time.
-  async function show(path: string, on: boolean): Promise<void> {
-    open[path] = on;
-    if (!on || chunks[path]) return;
-    try {
-      chunks[path] = await getJSON<IndexChunks>(`${base}/index/chunks?path=${encodeURIComponent(path)}`);
-    } catch (err) {
-      chunks[path] = describe(err);
-    }
-  }
-  const lines = (s: number, e: number): string => (s === e ? `line ${s}` : `lines ${s}–${e}`);
 </script>
 
 <StateView res={summary} retry={() => summary.load()}>
@@ -89,28 +76,12 @@
                   <td class="mono small text-ui-sm">{f.path}</td>
                   <td>{f.language || '—'}</td>
                   <td class="num">{wholeNumber(f.chunks)}</td>
-                  <td class="row-toggle-cell"><RowToggle bind:open={() => !!open[f.path], (on) => void show(f.path, !!on)} label={`Chunks of ${f.path}`} controls={panelId} /></td>
+                  <td class="row-toggle-cell"><RowToggle bind:open={open[f.path]} label={`Chunks of ${f.path}`} controls={panelId} /></td>
                 </tr>
                 {#if open[f.path]}
-                  {@const got = chunks[f.path]}
                   <tr class="row-preview"><td colspan="4">
                     <div class="row-preview-body" id={panelId} role="region" aria-label={`Chunks of ${f.path}`}>
-                      {#if got === undefined}
-                        <p class="state-msg m-0 py-2 text-muted">Loading…</p>
-                      {:else if typeof got === 'string'}
-                        <p class="state-msg m-0 py-2 text-danger" role="alert">Loading the chunks failed: {got}</p>
-                      {:else}
-                        <ol class="plain-list m-0 p-0 flex flex-col gap-2">
-                          {#each got.items as ch (`${ch.startLine}-${ch.endLine}-${ch.symbol}`)}
-                            <li class="min-w-0">
-                              <span class="small text-ui-sm">{lines(ch.startLine, ch.endLine)}</span>
-                              {#if ch.symbol}<span class="mono small text-ui-sm">{ch.kind ? `${ch.kind} ` : ''}{ch.scope ? `${ch.scope}.` : ''}{ch.symbol}</span>{/if}
-                              {#if ch.text}<pre class="mono text-ui-xs m-0 mt-1 p-2 bg-surface border border-solid border-line rounded-md overflow-x-auto max-h-60">{ch.text}</pre>{/if}
-                            </li>
-                          {/each}
-                        </ol>
-                        {#if got.truncated}<p class="small muted text-ui-sm m-0 mt-2">Only the first {got.items.length} chunks are shown.</p>{/if}
-                      {/if}
+                      <IndexFileChunks {base} path={f.path} />
                     </div>
                   </td></tr>
                 {/if}

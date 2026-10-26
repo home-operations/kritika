@@ -39,7 +39,10 @@
     account: (j) => account(j),
     job: (j) => j.id,
     status: (j) => j.state,
-    activity,
+    activity: (j) => {
+      const time = activity(j);
+      return time ? Date.parse(time) : undefined;
+    },
   });
   const visible = $derived(sorter.sort(ofKind.filter((j) => {
     const matches = queueState === 'all' || (queueState === 'attention' ? attention(j) : queueState === 'running' ? j.state === 'running' : queueState === 'waiting' ? waiting(j) : !!j.finalizedAt);

@@ -102,7 +102,7 @@
     name: (r) => r.fullName,
     enabled: (r) => (isOn(r) ? 0 : 1),
     index: indexRank,
-    review: (r) => r.lastReview?.createdAt,
+    review: (r) => r.lastReview ? Date.parse(r.lastReview.createdAt) : undefined,
   });
 
   function pick(fullName: string, on: boolean): void {

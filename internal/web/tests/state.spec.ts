@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import type { Page, Route } from '@playwright/test';
-import type { AccountDetail, EventKind, UserSettings } from '../src/lib/types';
+import type { AccountDetail, EventKind, IndexChunks, IndexContents, UserSettings } from '../src/lib/types';
 import * as g from './golden';
 
 const account = `/#/a/${g.SLUG}`;
@@ -909,4 +909,36 @@ test('the repository page refreshes on an index run and ignores model calls', as
   await emit(page, 'index_run');
   await expect.poll(() => repoReads).toBe(2);
   await expect.poll(() => pullReads).toBe(2);
+});
+
+test('indexed chunks refresh in open rows and rows reopened after publication', async ({ page }) => {
+  let generation = 1;
+  const summary = g.golden<IndexContents>('index_contents');
+  const chunks = g.golden<IndexChunks>('index_chunks');
+  const paths = ['main.go', 'other.go'];
+  const base = `**/accounts/${g.SLUG}/repos/alpha/one/index`;
+  await page.route('**/api/v1/me', (route) => json(route, { ...g.me, admin: true }));
+  await page.route(base, (route) => json(route, { ...summary, commit: generation === 1 ? 'aaaaaaa' : 'bbbbbbb' }));
+  await page.route(`${base}/files?*`, (route) => json(route, g.pageOf(paths.map((path) => ({ path, language: 'go', chunks: 1 })))));
+  await page.route(`${base}/chunks?*`, (route) => json(route, {
+    ...chunks,
+    path: new URL(route.request().url()).searchParams.get('path'),
+    items: chunks.items.map((chunk) => ({ ...chunk, text: `generation ${generation}` })),
+  }));
+  await page.goto(`${account}/repos/alpha/one`);
+  await page.getByRole('button', { name: 'Index contents', exact: true }).click();
+  for (const path of paths) {
+    await page.getByRole('button', { name: `Chunks of ${path}`, exact: true }).click();
+    await expect(page.getByRole('region', { name: `Chunks of ${path}`, exact: true }).locator('pre')).toHaveText('generation 1');
+  }
+  await page.getByRole('button', { name: 'Chunks of other.go', exact: true }).click();
+  // The second publication rebuilds the same commit; commit alone cannot identify a generation.
+  for (generation = 2; generation <= 3; generation++) {
+    await emit(page, 'index_run');
+    await expect(page.getByText('bbbbbbb', { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Chunks of main.go', exact: true }).locator('pre')).toHaveText(`generation ${generation}`);
+    await page.getByRole('button', { name: 'Chunks of other.go', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Chunks of other.go', exact: true }).locator('pre')).toHaveText(`generation ${generation}`);
+    await page.getByRole('button', { name: 'Chunks of other.go', exact: true }).click();
+  }
 });

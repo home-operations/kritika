@@ -216,3 +216,33 @@ test("a repository's index lists its files and their chunks, the text for an adm
   await expect(region).toContainText('function main');
   await expect(region.locator('pre')).toHaveText('func main() {}');
 });
+
+test('last review sorts chronologically with missing reviews last in both directions', async ({ page }) => {
+  const times = ['2026-10-25T12:00:00.1Z', '2026-10-25T12:00:00.09Z', '2026-10-25T12:00:00Z'];
+  const rows: Repository[] = times.map((createdAt, i) => ({
+    ...repo(`alpha/repo-${i}`, {}),
+    lastReview: { id: `review-${i}`, status: 'completed', createdAt },
+  }));
+  rows.unshift({ ...repo('alpha/never', {}), lastReview: null });
+  await g.mockApi(page, [[new RegExp(`${api}/repos$`), g.pageOf(rows)], ...g.defaultApi()]);
+  await page.goto(`${account}/repos`);
+  const header = page.getByRole('columnheader', { name: 'Last review', exact: true });
+  const names = page.locator('tbody td.mono a');
+  await header.getByRole('button').click();
+  await expect(names).toHaveText(['alpha/repo-2', 'alpha/repo-1', 'alpha/repo-0', 'alpha/never']);
+  await header.getByRole('button').click();
+  await expect(names).toHaveText(['alpha/repo-0', 'alpha/repo-1', 'alpha/repo-2', 'alpha/never']);
+});
+
+test('queue activity sorts timestamps chronologically', async ({ page }) => {
+  const times = ['2026-10-25T12:00:00.1Z', '2026-10-25T12:00:00.09Z', '2026-10-25T12:00:00Z'];
+  const jobs: Job[] = times.map((scheduledAt, i) => ({ ...g.job, id: i + 1, state: 'available', scheduledAt }));
+  await g.mockApi(page, [[new RegExp(`${api}/queue$`), jobs], ...g.defaultApi()]);
+  await page.goto(`${account}/queue`);
+  const header = page.getByRole('columnheader', { name: 'Activity', exact: true });
+  const names = page.locator('tbody tr strong');
+  await header.getByRole('button').click();
+  await expect(names).toHaveText(['#3 · review', '#2 · review', '#1 · review']);
+  await header.getByRole('button').click();
+  await expect(names).toHaveText(['#1 · review', '#2 · review', '#3 · review']);
+});
