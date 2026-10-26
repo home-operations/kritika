@@ -31,9 +31,6 @@ type s3Cache struct {
 	prefix        string
 	uploads       chan string
 	reads, writes s3Circuit
-	// publishing serializes the uploads of one key, so an upload that read
-	// an entry before a retry replaced it cannot overwrite the replacement's.
-	publishing keyLocks
 }
 
 // UseS3 shares completed downloads through S3. Local fills remain usable if an
@@ -72,24 +69,12 @@ func (c *Cache) UseS3(o S3Options) error {
 }
 
 // load is the entry under key to serve, this replica's copy before the
-// bucket's. With errExpired the entry returned is the stale one, whose
-// validators a fill offers the origin.
-func (c *Cache) load(ctx context.Context, key string) (*cacheBody, cacheEntry, error) {
-	return c.lookup(ctx, key, false)
-}
-
-// lookup is load, and with stale set returns an entry past RefreshAfter as
-// any other: the copy a refresh keeps once the origin says it is unchanged.
-func (c *Cache) lookup(ctx context.Context, key string, stale bool) (_ *cacheBody, _ cacheEntry, loadErr error) {
+// bucket's.
+func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntry, loadErr error) {
 	f, entry, offset, err := c.open(key)
 	if err == nil && c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes {
 		_ = f.Close()
 		err = os.ErrNotExist
-	}
-	var expired cacheEntry
-	if err == nil && !stale && c.expired(entry) {
-		_ = f.Close()
-		err, expired = errExpired, entry
 	}
 	if err == nil {
 		reader := struct {
@@ -99,14 +84,7 @@ func (c *Cache) lookup(ctx context.Context, key string, stale bool) (_ *cacheBod
 		return &cacheBody{ReadSeekCloser: reader, source: "local"}, entry, nil
 	}
 	if c.s3 == nil {
-		return nil, expired, err
-	}
-	// A bucket without the entry leaves the stale local copy to validate.
-	notFound := func() (*cacheBody, cacheEntry, error) {
-		if expired.Stored != 0 {
-			return nil, expired, errExpired
-		}
-		return nil, cacheEntry{}, os.ErrNotExist
+		return nil, cacheEntry{}, err
 	}
 	attempt, allowed := c.s3.reads.allow(time.Now())
 	if !allowed {
@@ -117,7 +95,7 @@ func (c *Cache) lookup(ctx context.Context, key string, stale bool) (_ *cacheBod
 	defer func() {
 		result := operationResult(loadErr)
 		circuitErr := loadErr
-		if errors.Is(loadErr, os.ErrNotExist) || errors.Is(loadErr, errExpired) {
+		if errors.Is(loadErr, os.ErrNotExist) {
 			result, circuitErr = cacheMiss, nil
 		} else if loadErr != nil {
 			c.warn("s3_lookup", key, loadErr)
@@ -135,16 +113,13 @@ func (c *Cache) lookup(ctx context.Context, key string, stale bool) (_ *cacheBod
 	cancel()
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
-			return notFound()
+			return nil, cacheEntry{}, os.ErrNotExist
 		}
 		return nil, cacheEntry{}, err
 	}
 	entry, ok := c.s3Entry(info, key)
 	if !ok {
-		return notFound()
-	}
-	if !stale && c.expired(entry) {
-		return nil, entry, errExpired
+		return nil, cacheEntry{}, os.ErrNotExist
 	}
 	// The bounded metadata request cannot own the streaming body's context.
 	// Explicit If-Match preserves the revision across the SDK's lazy reads/seeks.
@@ -173,7 +148,8 @@ func (c *Cache) s3Entry(info minio.ObjectInfo, key string) (cacheEntry, bool) {
 	if err == nil {
 		err = json.Unmarshal(raw, &entry)
 	}
-	if err != nil || entry.Size < 0 || entry.Size != info.Size || entry.Stored <= 0 || cacheKey(entry.URL) != key ||
+	d, named := ParseDigest(entry.Digest)
+	if err != nil || entry.Size < 0 || entry.Size != info.Size || !named || d.key() != key ||
 		info.ETag == "" || (c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes) {
 		return cacheEntry{}, false
 	}
@@ -188,8 +164,6 @@ func s3Gone(err error) bool {
 }
 
 func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
-	lock := c.s3.publishing.lock(key)
-	defer c.s3.publishing.unlock(key, lock)
 	f, entry, offset, err := c.open(key)
 	if err != nil {
 		c.metrics.CacheUploadSkipped("entry_unavailable")
@@ -214,16 +188,16 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 	ctx, cancel := context.WithTimeout(ctx, uploadDeadline(entry.Size))
 	defer cancel()
 	started := time.Now()
-	// Another replica may have published a newer entry, after a retry or
-	// a fill of its own: the bucket's wins, and this upload is not made.
-	// The check spends from the upload's own budget, and failing it does
-	// not stop the upload, which the circuit bounds.
+	// Another replica may have published the entry already, the same body
+	// under the same digest: then this upload is not made. The check spends
+	// from the upload's own budget, and failing it does not stop the
+	// upload, which the circuit bounds.
 	statCtx, cancelStat := context.WithTimeout(ctx, s3LookupTimeout)
 	info, err := c.s3.client.StatObject(statCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
 	cancelStat()
 	if err == nil {
-		if remote, ok := c.s3Entry(info, key); ok && remote.Stored > entry.Stored {
-			c.metrics.CacheUploadSkipped("superseded")
+		if _, ok := c.s3Entry(info, key); ok {
+			c.metrics.CacheUploadSkipped("present")
 			c.s3.writes.complete(attempt, nil, time.Now())
 			return nil
 		}

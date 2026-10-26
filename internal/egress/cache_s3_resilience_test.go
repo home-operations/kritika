@@ -117,16 +117,18 @@ func TestS3OutageRecovery(t *testing.T) {
 				p := &Proxy{Cache: c, Logger: slog.New(slog.DiscardHandler), Rules: func() egresspolicy.Rules {
 					return egresspolicy.Rules{Allow: hosts("example.com")}
 				}, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					body := "origin " + r.URL.Path
 					resp := s3Reply(r, http.StatusOK, "")
-					resp.Body, resp.ContentLength = io.NopCloser(strings.NewReader("origin")), 6
+					resp.Body, resp.ContentLength = io.NopCloser(strings.NewReader(body)), int64(len(body))
 					return resp, nil
 				})}
-				// Distinct URLs: a failed lookup fills the local directory,
-				// so a repeated URL would be a local hit and not ask S3.
+				// Distinct bodies: a failed lookup fills the local directory,
+				// so a repeated digest would be a local hit and not ask S3.
 				for i := range s3Failures + 2 {
 					started := time.Now()
-					w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), nil)
-					if w.Code != http.StatusOK || w.Body.String() != "origin" {
+					body := fmt.Sprintf("origin /tool%d", i)
+					w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), body, nil)
+					if w.Code != http.StatusOK || w.Body.String() != body {
 						t.Fatalf("fallback: %d %q", w.Code, w.Body.String())
 					}
 					if elapsed := time.Since(started); elapsed > s3LookupTimeout || i >= s3Failures && elapsed != 0 {
@@ -136,8 +138,8 @@ func TestS3OutageRecovery(t *testing.T) {
 				if requests.Load() != s3Failures {
 					t.Fatalf("outage requests = %d, want %d", requests.Load(), s3Failures)
 				}
-				w := proxied(p, http.MethodGet, "http://example.com/tool0", nil)
-				if w.Code != http.StatusOK || w.Body.String() != "origin" || requests.Load() != s3Failures {
+				w := proxied(p, http.MethodGet, "http://example.com/tool0", "origin /tool0", nil)
+				if w.Code != http.StatusOK || w.Body.String() != "origin /tool0" || requests.Load() != s3Failures {
 					t.Fatalf("local fill during outage: %d %q after %d requests", w.Code, w.Body.String(), requests.Load())
 				}
 				healthy.Store(true)
@@ -203,7 +205,7 @@ func (stalledS3Body) Close() error               { return nil }
 
 func TestS3StalledBody(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		entry := cacheEntry{URL: "https://example.com/tool", Size: 3, Stored: time.Now().UnixMilli()}
+		entry := entryOf("https://example.com/tool", "abc")
 		raw, _ := json.Marshal(entry)
 		c := faultS3Cache(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			resp := s3Reply(r, http.StatusOK, "")
@@ -218,7 +220,7 @@ func TestS3StalledBody(t *testing.T) {
 			return resp, nil
 		}))
 		for range s3Failures {
-			f, _, err := c.load(t.Context(), cacheKey(entry.URL))
+			f, _, err := c.load(t.Context(), keyOf("abc"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -232,7 +234,7 @@ func TestS3StalledBody(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, _, err := c.load(t.Context(), cacheKey(entry.URL)); !errors.Is(err, errS3CircuitOpen) {
+		if _, _, err := c.load(t.Context(), keyOf("abc")); !errors.Is(err, errS3CircuitOpen) {
 			t.Fatalf("stalled reads did not open circuit: %v", err)
 		}
 	})
@@ -248,16 +250,16 @@ func TestS3BackgroundUploads(t *testing.T) {
 		}))
 		reg := prometheus.NewPedanticRegistry()
 		c.Observe(metrics.New(reg), slog.New(slog.DiscardHandler))
-		// One entry per worker: one entry's uploads go one at a time, and
-		// synctest cannot wait out a mutex.
-		key := cacheKey("https://example.com/tool")
-		keys := []string{key}
-		for i := 2; len(keys) < s3UploadWorkers; i++ {
-			keys = append(keys, cacheKey(fmt.Sprintf("https://example.com/tool%d", i)))
+		// One entry per worker.
+		bodies := []string{"abc"}
+		for i := 2; len(bodies) < s3UploadWorkers; i++ {
+			bodies = append(bodies, fmt.Sprintf("ab%d", i))
 		}
-		for i, k := range keys {
-			entry := cacheEntry{URL: fmt.Sprintf("https://example.com/tool%d", i), Size: 3, Stored: time.Now().UnixMilli()}
-			if err := c.store(k, entry, strings.NewReader("abc")); err != nil {
+		key := keyOf(bodies[0])
+		keys := make([]string, 0, len(bodies))
+		for i, body := range bodies {
+			keys = append(keys, keyOf(body))
+			if err := c.store(keyOf(body), entryOf(fmt.Sprintf("https://example.com/tool%d", i), body), strings.NewReader(body), nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -308,9 +310,8 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 			<-r.Context().Done()
 			return nil, r.Context().Err()
 		}))
-		key := cacheKey("https://example.com/tool")
-		entry := cacheEntry{URL: "https://example.com/tool", Size: 3, Stored: time.Now().UnixMilli()}
-		if err := c.store(key, entry, strings.NewReader("abc")); err != nil {
+		key := keyOf("abc")
+		if err := c.store(key, entryOf("https://example.com/tool", "abc"), strings.NewReader("abc"), nil); err != nil {
 			t.Fatal(err)
 		}
 		for range s3Failures {
@@ -332,12 +333,12 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 		}
 		// A large entry gets a deadline it can meet at s3UploadRate.
 		healthy.Store(false)
-		large := cacheEntry{URL: "https://example.com/large", Size: 3 << 20, Stored: time.Now().UnixMilli()}
-		if err := c.store(cacheKey(large.URL), large, strings.NewReader(strings.Repeat("x", int(large.Size)))); err != nil {
+		large := strings.Repeat("x", 3<<20)
+		if err := c.store(keyOf(large), entryOf("https://example.com/large", large), strings.NewReader(large), nil); err != nil {
 			t.Fatal(err)
 		}
 		started := time.Now()
-		if err := c.upload(t.Context(), cacheKey(large.URL)); err == nil || time.Since(started) != s3UploadTimeout+3*time.Second {
+		if err := c.upload(t.Context(), keyOf(large)); err == nil || time.Since(started) != s3UploadTimeout+3*time.Second {
 			t.Fatalf("large upload: %v after %s", err, time.Since(started))
 		}
 	})
@@ -365,7 +366,7 @@ func TestS3DownloadDoesNotWaitForUpload(t *testing.T) {
 	})
 	useS3(t, p.Cache, S3Options{Endpoint: srv.URL, Region: "test", Bucket: "cache", AccessKey: "key", SecretKey: "secret"})
 	done := make(chan *httptest.ResponseRecorder, 1)
-	go func() { done <- proxied(p, http.MethodGet, "http://example.com/tool", nil) }()
+	go func() { done <- proxied(p, http.MethodGet, "http://example.com/tool", "tool archive", nil) }()
 	select {
 	case w := <-done:
 		if w.Code != http.StatusOK || w.Body.String() != "tool archive" {

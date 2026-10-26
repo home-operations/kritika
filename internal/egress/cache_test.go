@@ -3,7 +3,8 @@ package egress
 import (
 	"compress/gzip"
 	"context"
-	"fmt"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"maps"
@@ -40,12 +41,27 @@ func cacheProxy(t *testing.T, rules egresspolicy.Rules, maxBytes int64, upstream
 	}
 }
 
-// proxied makes a locked install's request of p, the kind the cache keeps.
-func proxied(p *Proxy, method, target string, header http.Header) *httptest.ResponseRecorder {
+// digestOf is the digest of body, as a runner names it.
+func digestOf(body string) Digest {
+	sum := sha256.Sum256([]byte(body))
+	return Digest{Algorithm: "sha256", Hex: hex.EncodeToString(sum[:])}
+}
+
+// keyOf is the key of the entry that keeps body.
+func keyOf(body string) string { return digestOf(body).key() }
+
+// entryOf is the entry a fill of body from url keeps.
+func entryOf(url, body string) cacheEntry {
+	return cacheEntry{URL: url, Digest: digestOf(body).String(), Size: int64(len(body))}
+}
+
+// proxied makes a request of p for a body with body's digest, the kind
+// the cache keeps.
+func proxied(p *Proxy, method, target, body string, header http.Header) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, target, nil)
 	maps.Copy(r.Header, header)
 	w := httptest.NewRecorder()
-	p.ServeHTTP(w, r.WithContext(ForLockedInstall(r.Context())))
+	p.ServeHTTP(w, r.WithContext(ForDigest(r.Context(), digestOf(body))))
 	return w
 }
 
@@ -67,27 +83,25 @@ func entries(t *testing.T, c *Cache) int {
 
 func TestCacheServesRepeatDownloads(t *testing.T) {
 	var calls atomic.Int32
-	const modified = "Mon, 30 Mar 2026 17:49:19 GMT"
 	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		// The fetch is the gateway's own, whoever asked first.
 		if r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("User-Agent") != "kritika" || r.Header.Get("Accept") != "*/*" {
 			t.Errorf("upstream request headers = %v", r.Header)
 		}
-		w.Header().Set("Etag", `"v1"`)
 		w.Header().Set("Content-Type", "application/gzip")
-		w.Header().Set("Last-Modified", modified)
 		_, _ = io.WriteString(w, "tool archive")
 	})
 	const target = "http://example.com/releases/tool.tar.gz"
+	etag := `"` + digestOf("tool archive").String() + `"`
 	for i, method := range []string{http.MethodGet, http.MethodGet, http.MethodHead} {
-		w := proxied(p, method, target, http.Header{"User-Agent": {"Go-http-client/1.1"}})
+		w := proxied(p, method, target, "tool archive", http.Header{"User-Agent": {"Go-http-client/1.1"}})
 		want := "tool archive"
 		if method == http.MethodHead {
 			want = ""
 		}
-		if w.Code != http.StatusOK || w.Body.String() != want || w.Header().Get("Content-Length") != "12" || w.Header().Get("Etag") != `"v1"` ||
-			w.Header().Get("Content-Type") != "application/gzip" || w.Header().Get("Last-Modified") != modified {
+		if w.Code != http.StatusOK || w.Body.String() != want || w.Header().Get("Content-Length") != "12" || w.Header().Get("Etag") != etag ||
+			w.Header().Get("Content-Type") != "application/gzip" {
 			t.Errorf("request %d (%s): status %d, body %q, headers %v", i, method, w.Code, w.Body.String(), w.Header())
 		}
 	}
@@ -98,14 +112,12 @@ func TestCacheServesRepeatDownloads(t *testing.T) {
 		body   string
 	}{
 		{"range", http.Header{"Range": {"bytes=5-"}}, http.StatusPartialContent, "archive"},
-		{"etag", http.Header{"If-None-Match": {`"v1"`}}, http.StatusNotModified, ""},
-		{"modified since", http.Header{"If-Modified-Since": {modified}}, http.StatusNotModified, ""},
-		{"unmodified since", http.Header{"If-Unmodified-Since": {"Sun, 29 Mar 2026 00:00:00 GMT"}}, http.StatusPreconditionFailed, ""},
-		{"range if unchanged", http.Header{"Range": {"bytes=5-"}, "If-Range": {modified}}, http.StatusPartialContent, "archive"},
-		{"range if changed", http.Header{"Range": {"bytes=5-"}, "If-Range": {"Sun, 29 Mar 2026 00:00:00 GMT"}}, http.StatusOK, "tool archive"},
+		{"etag", http.Header{"If-None-Match": {etag}}, http.StatusNotModified, ""},
+		{"range if unchanged", http.Header{"Range": {"bytes=5-"}, "If-Range": {etag}}, http.StatusPartialContent, "archive"},
+		{"range if changed", http.Header{"Range": {"bytes=5-"}, "If-Range": {`"other"`}}, http.StatusOK, "tool archive"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if w := proxied(p, http.MethodGet, target, tt.header); w.Code != tt.status || w.Body.String() != tt.body {
+			if w := proxied(p, http.MethodGet, target, "tool archive", tt.header); w.Code != tt.status || w.Body.String() != tt.body {
 				t.Errorf("status %d, body %q; want %d, %q", w.Code, w.Body.String(), tt.status, tt.body)
 			}
 		})
@@ -131,7 +143,7 @@ func TestCacheSharesOneFill(t *testing.T) {
 	var done sync.WaitGroup
 	results := make([]*httptest.ResponseRecorder, n)
 	for i := range n {
-		done.Go(func() { results[i] = proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", nil) })
+		done.Go(func() { results[i] = proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", "tool archive", nil) })
 	}
 	<-arrived
 	close(release)
@@ -151,9 +163,9 @@ func TestCacheBypass(t *testing.T) {
 		name, method, target string
 		header               http.Header
 		credentials          map[string]string
-		unlocked             bool
+		unnamed              bool
 	}{
-		{"not a locked install", http.MethodGet, "http://example.com/tool.tar.gz", nil, nil, true},
+		{"no digest named", http.MethodGet, "http://example.com/tool.tar.gz", nil, nil, true},
 		{"credential added", http.MethodGet, "http://example.com/tool.tar.gz", nil, map[string]string{"example.com": "Bearer configured"}, false},
 		{"runner credential", http.MethodGet, "http://example.com/tool.tar.gz", http.Header{"Authorization": {"Bearer runner"}}, nil, false},
 		{"cookie", http.MethodGet, "http://example.com/tool.tar.gz", http.Header{"Cookie": {"session=1"}}, nil, false},
@@ -174,8 +186,8 @@ func TestCacheBypass(t *testing.T) {
 			for range 2 {
 				r := httptest.NewRequest(tt.method, tt.target, nil)
 				maps.Copy(r.Header, tt.header)
-				if !tt.unlocked {
-					r = r.WithContext(ForLockedInstall(r.Context()))
+				if !tt.unnamed {
+					r = r.WithContext(ForDigest(r.Context(), digestOf("response")))
 				}
 				w := httptest.NewRecorder()
 				p.ServeHTTP(w, r)
@@ -193,22 +205,21 @@ func TestCacheBypass(t *testing.T) {
 	}
 }
 
-// TestCacheKeepsLockedInstalls: a locked install's download is kept from
-// any host and served again to another locked install, but never kept
-// from a host the rules name as uncached or one with a credential, and
-// never for a request that is not a locked install's.
-func TestCacheKeepsLockedInstalls(t *testing.T) {
+// TestCacheKeepsNamedDigests: a download whose digest the request names
+// is kept from any host and served again to another request naming it,
+// but never kept from a host the rules name as uncached or one with a
+// credential, and never for a request that names no digest.
+func TestCacheKeepsNamedDigests(t *testing.T) {
 	for _, tt := range []struct {
 		name, host  string
 		credentials map[string]string
-		// locked says which of the requests, in turn, are a locked
-		// install's.
-		locked  []bool
+		// named says which of the requests, in turn, name the digest.
+		named   []bool
 		calls   int32
 		entries int
 	}{
 		{"from any host", "other.example.com", nil, []bool{true, true, false}, 2, 1},
-		{"not a locked install", "other.example.com", nil, []bool{false, false}, 2, 0},
+		{"no digest named", "other.example.com", nil, []bool{false, false}, 2, 0},
 		{"from an uncached host", "api.example.com", nil, []bool{true, true}, 2, 0},
 		{"from an uncached host with a trailing dot", "api.example.com.", nil, []bool{true, true}, 2, 0},
 		{"from a host with a credential", "other.example.com", map[string]string{"other.example.com": "Bearer configured"}, []bool{true, true}, 2, 0},
@@ -225,10 +236,10 @@ func TestCacheKeepsLockedInstalls(t *testing.T) {
 				calls.Add(1)
 				_, _ = io.WriteString(w, "tool archive")
 			})
-			for i, locked := range tt.locked {
+			for i, named := range tt.named {
 				r := httptest.NewRequest(http.MethodGet, "http://"+tt.host+"/tool.tar.gz", nil)
-				if locked {
-					r = r.WithContext(ForLockedInstall(r.Context()))
+				if named {
+					r = r.WithContext(ForDigest(r.Context(), digestOf("tool archive")))
 				}
 				w := httptest.NewRecorder()
 				p.ServeHTTP(w, r)
@@ -288,7 +299,7 @@ func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
 			})
 			for i := range 2 {
 				before := calls.Load()
-				if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", nil); w.Code != tt.status {
+				if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", "personal", nil); w.Code != tt.status {
 					t.Fatalf("request %d: status %d, want %d", i, w.Code, tt.status)
 				}
 				if calls.Load() == before {
@@ -335,7 +346,7 @@ func TestCacheFollowsRedirects(t *testing.T) {
 			})
 			for i := range 2 {
 				before := calls.Load()
-				w := proxied(p, http.MethodGet, "http://example.com/releases/download/tool.tar.gz", nil)
+				w := proxied(p, http.MethodGet, "http://example.com/releases/download/tool.tar.gz", "tool archive", nil)
 				switch {
 				case tt.kept && (w.Code != http.StatusOK || w.Body.String() != "tool archive"):
 					t.Fatalf("request %d: status %d, body %q", i, w.Code, w.Body.String())
@@ -375,7 +386,7 @@ func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 			for i := range 2 {
 				r := httptest.NewRequest(http.MethodGet, "http://example.com/releases/download/tool.tar.gz", nil)
 				w := httptest.NewRecorder()
-				p.ServeHTTP(w, r.WithContext(ForLockedInstall(r.Context())))
+				p.ServeHTTP(w, r.WithContext(ForDigest(r.Context(), digestOf("tool archive"))))
 				if w.Code != http.StatusFound || w.Header().Get("Location") != tt.location {
 					t.Fatalf("request %d: status %d, Location %q; want the redirect handed back", i, w.Code, w.Header().Get("Location"))
 				}
@@ -415,14 +426,15 @@ func TestCacheBoundsFills(t *testing.T) {
 	if !p.Cache.reserve(1000) {
 		t.Fatal("could not hold the bytes of fills under way")
 	}
-	if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", nil); w.Code != http.StatusOK || w.Body.Len() != 100 {
+	body := strings.Repeat("x", 100)
+	if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", body, nil); w.Code != http.StatusOK || w.Body.Len() != 100 {
 		t.Fatalf("status %d, %d bytes", w.Code, w.Body.Len())
 	}
 	if n := entries(t, p.Cache); n != 0 || calls.Load() != 2 {
 		t.Fatalf("with the fills under way holding the bound: %d entries, %d upstream requests; want none kept, forwarded", n, calls.Load())
 	}
 	p.Cache.end(1000)
-	proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", nil)
+	proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", body, nil)
 	if n := entries(t, p.Cache); n != 1 {
 		t.Fatalf("once they ended, the cache holds %d entries, want 1", n)
 	}
@@ -432,14 +444,15 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	calls := map[string]int{}
 	var mu sync.Mutex
 	// Room for two entries of 100 bytes and their first lines, not three.
-	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 500, func(w http.ResponseWriter, r *http.Request) {
+	bodyOf := func(path string) string { return path + strings.Repeat("x", 100-len(path)) }
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 550, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		calls[r.URL.Path]++
 		mu.Unlock()
-		_, _ = io.WriteString(w, strings.Repeat("x", 100))
+		_, _ = io.WriteString(w, bodyOf(r.URL.Path))
 	})
 	for _, path := range []string{"/a", "/b", "/a", "/c", "/a", "/b"} {
-		if w := proxied(p, http.MethodGet, "http://example.com"+path, nil); w.Code != http.StatusOK || w.Body.Len() != 100 {
+		if w := proxied(p, http.MethodGet, "http://example.com"+path, bodyOf(path), nil); w.Code != http.StatusOK || w.Body.Len() != 100 {
 			t.Fatalf("%s: status %d, %d bytes", path, w.Code, w.Body.Len())
 		}
 		// Use times a filesystem keeps apart.
@@ -458,8 +471,8 @@ func TestCacheRefetchesDamagedEntry(t *testing.T) {
 		_, _ = io.WriteString(w, "tool archive")
 	})
 	const target = "http://example.com/tool.tar.gz"
-	proxied(p, http.MethodGet, target, nil)
-	path := filepath.Join(p.Cache.Dir, cacheKey("https://example.com/tool.tar.gz"))
+	proxied(p, http.MethodGet, target, "tool archive", nil)
+	path := filepath.Join(p.Cache.Dir, keyOf("tool archive"))
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -467,7 +480,7 @@ func TestCacheRefetchesDamagedEntry(t *testing.T) {
 	if err := os.Truncate(path, info.Size()-4); err != nil {
 		t.Fatal(err)
 	}
-	if w := proxied(p, http.MethodGet, target, nil); w.Code != http.StatusOK || w.Body.String() != "tool archive" {
+	if w := proxied(p, http.MethodGet, target, "tool archive", nil); w.Code != http.StatusOK || w.Body.String() != "tool archive" {
 		t.Fatalf("status %d, body %q", w.Code, w.Body.String())
 	}
 	if got := calls.Load(); got != 2 {
@@ -475,102 +488,53 @@ func TestCacheRefetchesDamagedEntry(t *testing.T) {
 	}
 }
 
-func TestCacheRefetchesExpiredEntry(t *testing.T) {
+// TestCacheKeepsOnlyTheDigest: a body without the digest the request
+// names is not kept, and the request is forwarded, so the runner sees what
+// the origin serves and refuses it itself.
+func TestCacheKeepsOnlyTheDigest(t *testing.T) {
 	var calls atomic.Int32
 	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
+		calls.Add(1)
+		_, _ = io.WriteString(w, "replaced archive")
 	})
-	const target = "http://example.com/tool.tar.gz"
-	for i, want := range []string{"archive 1", "archive 1"} {
-		if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != want {
-			t.Fatalf("request %d: body %q, want %q", i, w.Body.String(), want)
+	for i := range 2 {
+		if w := proxied(p, http.MethodGet, "http://example.com/tool.tar.gz", "tool archive", nil); w.Code != http.StatusOK || w.Body.String() != "replaced archive" {
+			t.Fatalf("request %d: status %d, body %q; want the origin's answer forwarded", i, w.Code, w.Body.String())
 		}
 	}
-	// With no validators to offer, an expired entry is fetched again.
-	expireLocal(t, p.Cache, cacheKey("https://example.com/tool.tar.gz"))
-	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" {
-		t.Fatalf("after refreshAfter: body %q, want a fresh fetch", w.Body.String())
+	if n := entries(t, p.Cache); n != 0 || calls.Load() != 4 {
+		t.Fatalf("%d entries after %d upstream requests; want none kept, each fill and each forward asking", n, calls.Load())
 	}
 }
 
-// TestCacheRefills: a locked install's retry, which the proxy's username
-// marks, is answered from the origin, and what it fetched takes the
-// entry's place for the locked installs that follow.
-func TestCacheRefills(t *testing.T) {
+// TestCacheSharesADigestAcrossURLs: two URLs that serve a body with the
+// same digest share its entry, whichever was fetched first.
+func TestCacheSharesADigestAcrossURLs(t *testing.T) {
 	var calls atomic.Int32
 	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
+		calls.Add(1)
+		_, _ = io.WriteString(w, "tool archive")
 	})
-	const target = "http://example.com/tool.tar.gz"
-	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 1" {
-		t.Fatalf("fill: %q", w.Body.String())
-	}
-	r := httptest.NewRequest(http.MethodGet, target, nil)
-	w := httptest.NewRecorder()
-	p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
-	if w.Code != http.StatusOK || w.Body.String() != "archive 2" {
-		t.Fatalf("refill: %d %q, want the origin's answer", w.Code, w.Body.String())
-	}
-	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" || calls.Load() != 2 {
-		t.Fatalf("after the refill: %q after %d fetches, want the refilled entry", w.Body.String(), calls.Load())
-	}
-	if n := entries(t, p.Cache); n != 1 {
-		t.Errorf("cache holds %d entries, want 1", n)
-	}
-	// A retry for an entry replaced a moment ago is served the entry; a HEAD
-	// is never a retry, and is forwarded without touching the entry.
-	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		r := httptest.NewRequest(method, target, nil)
-		w := httptest.NewRecorder()
-		p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
-		if w.Code != http.StatusOK {
-			t.Fatalf("%s retry: %d", method, w.Code)
+	for _, target := range []string{"http://example.com/v1/tool.tar.gz", "http://example.com/mirror/tool.tar.gz"} {
+		if w := proxied(p, http.MethodGet, target, "tool archive", nil); w.Code != http.StatusOK || w.Body.String() != "tool archive" {
+			t.Fatalf("%s: status %d, body %q", target, w.Code, w.Body.String())
 		}
 	}
-	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" || calls.Load() != 3 {
-		t.Fatalf("after a second retry and a HEAD: %q after %d fetches, want one forwarded HEAD only", w.Body.String(), calls.Load())
+	if n := entries(t, p.Cache); n != 1 || calls.Load() != 1 {
+		t.Fatalf("%d entries after %d upstream requests; want one of each", n, calls.Load())
 	}
 }
 
-// TestCacheRefillDoesNotJoinRevalidation: a retry arriving while another
-// request has the stale entry revalidated does not wait for, or get, that
-// request's answer, which would be the body the retry refused.
-func TestCacheRefillDoesNotJoinRevalidation(t *testing.T) {
-	conditional, release := make(chan struct{}, 1), make(chan struct{})
-	defer close(release)
-	var unconditional atomic.Int32
-	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("If-None-Match") == `"v1"` {
-			conditional <- struct{}{}
-			<-release
-			w.WriteHeader(http.StatusNotModified)
-			return
+func TestParseDigest(t *testing.T) {
+	sha256Hex, sha512Hex := strings.Repeat("ab", 32), strings.Repeat("cd", 64)
+	for in, want := range map[string]bool{
+		"sha256:" + sha256Hex: true, "sha512:" + sha512Hex: true,
+		"sha256:" + strings.ToUpper(sha256Hex): false, "sha256:" + sha512Hex: false, "md5:" + strings.Repeat("ab", 16): false,
+		"sha256:" + strings.Repeat("zz", 32): false, sha256Hex: false, "": false,
+	} {
+		if _, ok := ParseDigest(in); ok != want {
+			t.Errorf("ParseDigest(%q) = %v, want %v", in, ok, want)
 		}
-		w.Header().Set("Etag", fmt.Sprintf(`"v%d"`, unconditional.Add(1)))
-		_, _ = fmt.Fprintf(w, "archive %d", unconditional.Load())
-	})
-	const target = "http://example.com/tool.tar.gz"
-	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 1" {
-		t.Fatalf("fill: %q", w.Body.String())
-	}
-	expireLocal(t, p.Cache, cacheKey("https://example.com/tool.tar.gz"))
-	revalidated, refilled := make(chan *httptest.ResponseRecorder, 1), make(chan *httptest.ResponseRecorder, 1)
-	go func() { revalidated <- proxied(p, http.MethodGet, target, nil) }()
-	<-conditional
-	go func() {
-		r := httptest.NewRequest(http.MethodGet, target, nil)
-		w := httptest.NewRecorder()
-		p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
-		refilled <- w
-	}()
-	// The retry waits its turn behind the revalidation rather than joining
-	// it, and then fetches without conditions.
-	release <- struct{}{}
-	if w := <-refilled; w.Code != http.StatusOK || w.Body.String() != "archive 2" || unconditional.Load() != 2 {
-		t.Fatalf("refill during a revalidation: %d %q after %d fetches, want the origin's new body", w.Code, w.Body.String(), unconditional.Load())
-	}
-	if w := <-revalidated; w.Code != http.StatusOK {
-		t.Fatalf("revalidating request: %d", w.Code)
 	}
 }
 
@@ -580,7 +544,7 @@ func TestOpenCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	leftover := filepath.Join(dir, ".fill-123")
-	kept := filepath.Join(dir, cacheKey("https://example.com/tool.tar.gz"))
+	kept := filepath.Join(dir, keyOf("tool archive"))
 	for _, path := range []string{leftover, kept} {
 		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)

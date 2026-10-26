@@ -58,18 +58,13 @@ func TestS3Integration(t *testing.T) {
 	t.Run("replicas", func(t *testing.T) { testS3CacheSharesDownloads(t, opts) })
 	t.Run("concurrent", func(t *testing.T) { testS3CacheConcurrentFills(t, opts) })
 	t.Run("revision", func(t *testing.T) {
-		entry := cacheEntry{URL: "https://example.com/revision", Stored: time.Now().UnixMilli(), Size: 3}
-		key := cacheKey(entry.URL)
-		put := func(body string) {
-			t.Helper()
-			if err := c.store(key, entry, strings.NewReader(body)); err != nil {
-				t.Fatal(err)
-			}
-			if err := c.upload(t.Context(), key); err != nil {
-				t.Fatal(err)
-			}
+		key := keyOf("old")
+		if err := c.store(key, entryOf("https://example.com/revision", "old"), strings.NewReader("old"), nil); err != nil {
+			t.Fatal(err)
 		}
-		put("old")
+		if err := c.upload(t.Context(), key); err != nil {
+			t.Fatal(err)
+		}
 		reader := &Cache{Dir: t.TempDir()}
 		useS3(t, reader, opts)
 		f, _, err := reader.load(t.Context(), key)
@@ -77,7 +72,11 @@ func TestS3Integration(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() { _ = f.Close() }()
-		put("new")
+		// Another revision of the object, as a bucket can be written apart
+		// from kritika.
+		if _, err := c.s3.client.PutObject(t.Context(), c.s3.bucket, c.s3.prefix+key, strings.NewReader("new"), 3, minio.PutObjectOptions{}); err != nil {
+			t.Fatal(err)
+		}
 		if b, err := io.ReadAll(f); err == nil || len(b) != 0 {
 			t.Fatalf("read a replacement revision: %q, %v", b, err)
 		}

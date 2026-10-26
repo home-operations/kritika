@@ -172,10 +172,10 @@ func (w *cacheResponse) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (p *Proxy) serveCached(w http.ResponseWriter, r *http.Request, key string, f *cacheBody, modified time.Time) {
+func (p *Proxy) serveCached(w http.ResponseWriter, r *http.Request, key string, f *cacheBody) {
 	started := time.Now()
 	out := &cacheResponse{ResponseWriter: w}
-	http.ServeContent(out, r, "", modified, f)
+	http.ServeContent(out, r, "", time.Time{}, f)
 	f.mu.Lock()
 	if r.Method != http.MethodHead && out.status != http.StatusNotModified && out.err == nil && r.Context().Err() == nil {
 		if expected, err := strconv.ParseInt(out.Header().Get("Content-Length"), 10, 64); err == nil && out.bytes < expected && f.err == nil {
@@ -248,7 +248,8 @@ func fillBypassReason(err error) string {
 		label string
 	}{
 		{errFillBusy, "fill_busy"}, {errFillCapacity, "fill_capacity"}, {errEntrySize, "too_large"},
-		{errPrivate, "private"}, {errEncoded, "encoded"}, {errLength, "unknown_length"}, {context.Canceled, cacheCanceled},
+		{errPrivate, "private"}, {errEncoded, "encoded"}, {errLength, "unknown_length"}, {errDigest, "digest_mismatch"},
+		{context.Canceled, cacheCanceled},
 	} {
 		if errors.Is(err, reason.err) {
 			return reason.label

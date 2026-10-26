@@ -67,13 +67,16 @@ apps:
 	}
 
 	reached := 0
-	var refill, locked []bool
+	var digests []string
 	proxy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached++
-		refill = append(refill, egress.Refill(r.Context()))
-		locked = append(locked, egress.LockedInstall(r.Context()))
+		d, _ := egress.DigestOf(r.Context())
+		digests = append(digests, d.String())
 		if r.Header.Get("Proxy-Authorization") != "" {
 			t.Error("the run token reached the proxy")
+		}
+		if r.Header.Get(runspec.DigestHeader) != "" {
+			t.Error("the digest header reached the proxy")
 		}
 		http.Error(w, "reached", http.StatusTeapot)
 	})
@@ -89,8 +92,15 @@ apps:
 		}
 		return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
 	}
-	get := func(client *http.Client, target string) (int, http.Header, error) {
-		resp, err := client.Get(target)
+	get := func(client *http.Client, target string, header ...string) (int, http.Header, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		for i := 0; i+1 < len(header); i += 2 {
+			req.Header.Set(header[i], header[i+1])
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -117,23 +127,23 @@ apps:
 			}
 		})
 	}
-	// The retry of an install around the gateway's cache names the
-	// proxy's user as runspec.UncachedProxyUser, and a repository's locked
-	// install as runspec.LockedProxyUser; the proxy gets each request
-	// marked so, and only that one.
+	// A download a runner checks names its digest in
+	// runspec.DigestHeader; the proxy gets the request marked with it, and
+	// one naming no sound digest unmarked, the header gone from both.
+	digest := "sha256:" + strings.Repeat("ab", 32)
 	for _, tt := range []struct {
-		name, user     string
-		refill, locked []bool
+		name, header string
+		digests      []string
 	}{
-		{"a retry around the gateway's cache", runspec.UncachedProxyUser, []bool{false, true}, []bool{false, false}},
-		{"a locked install", runspec.LockedProxyUser, []bool{false, true, false}, []bool{false, false, true}},
+		{"a digest", digest, []string{":", digest}},
+		{"no sound digest", "md5:abc", []string{":", digest, ":"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if code, _, err := get(via(tt.user, token), "http://example.com/"); err != nil || code != http.StatusTeapot {
+			if code, _, err := get(via("", token), "http://example.com/", runspec.DigestHeader, tt.header); err != nil || code != http.StatusTeapot {
 				t.Fatalf("status = %d, %v; want %d", code, err, http.StatusTeapot)
 			}
-			if !slices.Equal(refill, tt.refill) || !slices.Equal(locked, tt.locked) {
-				t.Fatalf("refill = %v, locked = %v; want %v, %v", refill, locked, tt.refill, tt.locked)
+			if !slices.Equal(digests, tt.digests) {
+				t.Fatalf("digests = %v; want %v", digests, tt.digests)
 			}
 		})
 	}

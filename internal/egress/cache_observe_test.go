@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -67,14 +66,14 @@ func TestCacheObservations(t *testing.T) {
 	}{
 		{http.MethodGet, nil}, {http.MethodHead, nil}, {http.MethodGet, http.Header{"Range": {"bytes=5-11"}}},
 	} {
-		proxied(p, tt.method, target, tt.headers)
+		proxied(p, tt.method, target, "tool archive", tt.headers)
 	}
-	waitS3Upload(t, p.Cache, cacheKey("https://example.com/tool"))
+	waitS3Upload(t, p.Cache, keyOf("tool archive"))
 	reader := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, reader.Cache, opts)
 	reader.Cache.Observe(m, reader.Logger)
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		proxied(reader, method, target, nil)
+		proxied(reader, method, target, "tool archive", nil)
 	}
 	for _, tt := range []struct {
 		name   string
@@ -148,7 +147,7 @@ func TestCacheStreamResults(t *testing.T) {
 				wantResult = "ok"
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
-			p.serveCached(w, r, "test", f, time.Time{})
+			p.serveCached(w, r, "test", f)
 			if err := f.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -175,11 +174,14 @@ func TestCacheStorageWarningsAndFallback(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	reg := prometheus.NewPedanticRegistry()
-	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "direct") })
+	p := cacheProxy(t, egresspolicy.Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "direct "+r.URL.Path)
+	})
 	useS3(t, p.Cache, opts)
 	p.Cache.Observe(metrics.New(reg), logger)
 	for i := range 3 {
-		if w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), nil); w.Body.String() != "direct" {
+		body := fmt.Sprintf("direct /tool%d", i)
+		if w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), body, nil); w.Body.String() != body {
 			t.Fatal(w.Body.String())
 		}
 	}
@@ -190,11 +192,11 @@ func TestCacheStorageWarningsAndFallback(t *testing.T) {
 		t.Fatalf("failed lookups = %v", got)
 	}
 	// Each failed lookup fills the replica's own directory, which serves
-	// the next request for the same URL without asking the bucket again.
+	// the next request for the same digest without asking the bucket again.
 	if got := cacheMetric(t, reg, "kritika_cache_requests_total", map[string]string{"outcome": "miss"}); got != 3 {
 		t.Fatalf("misses = %v", got)
 	}
-	if w := proxied(p, http.MethodGet, "http://example.com/tool0", nil); w.Body.String() != "direct" {
+	if w := proxied(p, http.MethodGet, "http://example.com/tool0", "direct /tool0", nil); w.Body.String() != "direct /tool0" {
 		t.Fatal(w.Body.String())
 	}
 	if got := cacheMetric(t, reg, "kritika_cache_requests_total", map[string]string{"outcome": "local_hit"}); got != 1 {
@@ -215,7 +217,10 @@ func TestCacheFillAndEvictionGauges(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	p.Cache.Observe(metrics.New(reg), p.Logger)
 	done := make(chan struct{})
-	go func() { proxied(p, http.MethodGet, "http://example.com/first", nil); close(done) }()
+	go func() {
+		proxied(p, http.MethodGet, "http://example.com/first", strings.Repeat("x", 256), nil)
+		close(done)
+	}()
 	<-started
 	active := cacheMetric(t, reg, "kritika_cache_active_fills", nil)
 	close(release)
@@ -223,8 +228,8 @@ func TestCacheFillAndEvictionGauges(t *testing.T) {
 	if active != 1 || cacheMetric(t, reg, "kritika_cache_active_fills", nil) != 0 {
 		t.Fatal("fill gauge did not track in-flight work")
 	}
-	e := cacheEntry{URL: "https://example.com/second", Size: 256, Stored: time.Now().UnixMilli()}
-	if err := p.Cache.store(cacheKey(e.URL), e, strings.NewReader(strings.Repeat("y", 256))); err != nil {
+	second := strings.Repeat("y", 256)
+	if err := p.Cache.store(keyOf(second), entryOf("https://example.com/second", second), strings.NewReader(second), nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := cacheMetric(t, reg, "kritika_cache_evictions_total", nil); got != 1 {

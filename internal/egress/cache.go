@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,19 +28,17 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
-// Cache keeps the bodies of upgraded downloads, so a tool every review
-// installs is fetched from upstream once rather than once a run. It keeps
-// only what any runner could fetch for itself: a locked install's GET or
-// HEAD, with no query, to a host the rules do not keep out, that carries
-// no credential and gets none from the proxy, answered by a response that
-// does not ask to stay private, so an entry can be handed to every runner
-// that asks for its URL. What it serves is checked downstream, the runner
-// checking each download against a checksum fetched apart from it, so a
-// stale or damaged entry fails an install instead of changing one, and the
-// install's retry has the entry fetched again.
+// Cache keeps the bodies of upgraded downloads a runner names the digest
+// of, by that digest, so a tool every review installs is fetched from
+// upstream once rather than once a run. A fill hashes what it fetches and
+// keeps it only when it has the digest asked for, so an entry is the body
+// any request naming that digest accepts, whichever request fetched it
+// first. It keeps only what any runner could fetch for itself: a GET or
+// HEAD, with no query, to a host the rules do not keep out, that carries no
+// credential and gets none from the proxy, answered by a response that does
+// not ask to stay private.
 type Cache struct {
-	// Dir holds one file per URL, named by the URL's hash. It is the
-	// cache's alone.
+	// Dir holds one file per digest. It is the cache's alone.
 	Dir string
 	// MaxBytes bounds what Dir keeps, the least recently used entries
 	// going first, and apart from that what the fills under way may write,
@@ -53,13 +53,9 @@ type Cache struct {
 
 	fills    singleflight.Group
 	evicting sync.Mutex
-	// entries serializes the fills of one entry, so a fill that started
-	// before a retry's cannot put an older body in the retry's place.
+	// entries serializes the fills of one entry, so a fill that finished
+	// between a request's miss and its own fill is not made again.
 	entries keyLocks
-	// refilled is when a retry last replaced each entry, guarded by
-	// refilling and pruned as it is read; it holds a minute of refills.
-	refilling sync.Mutex
-	refills   map[string]time.Time
 	// filling counts the fills under way and reserved the bytes they may
 	// write, guarded by underway.
 	underway sync.Mutex
@@ -67,31 +63,53 @@ type Cache struct {
 	reserved int64
 }
 
-type refillKey struct{}
-
-// ForRefill marks ctx's request as one the cache answers from the origin,
-// replacing its entry.
-func ForRefill(ctx context.Context) context.Context {
-	return context.WithValue(ctx, refillKey{}, true)
+// Digest is what a download's body must hash to: the algorithm, sha256
+// or sha512, and the hash in lowercase hex.
+type Digest struct {
+	Algorithm, Hex string
 }
 
-// Refill reports whether ctx's request was marked ForRefill.
-func Refill(ctx context.Context) bool {
-	refill, _ := ctx.Value(refillKey{}).(bool)
-	return refill
+// digestSizes are the algorithms a Digest may name, by their hash's size.
+var digestSizes = map[string]int{"sha256": sha256.Size, "sha512": sha512.Size}
+
+// ParseDigest reads s, "<algorithm>:<hex>", as a runner names the digest
+// a download must have; false for anything else.
+func ParseDigest(s string) (Digest, bool) {
+	algorithm, value, _ := strings.Cut(s, ":")
+	size := digestSizes[algorithm]
+	if size == 0 || len(value) != 2*size || strings.ToLower(value) != value {
+		return Digest{}, false
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		return Digest{}, false
+	}
+	return Digest{Algorithm: algorithm, Hex: value}, true
 }
 
-type lockedInstallKey struct{}
+func (d Digest) String() string { return d.Algorithm + ":" + d.Hex }
 
-// ForLockedInstall marks ctx's request as a locked install's.
-func ForLockedInstall(ctx context.Context) context.Context {
-	return context.WithValue(ctx, lockedInstallKey{}, true)
+// key names d's entry.
+func (d Digest) key() string { return d.Algorithm + "-" + d.Hex }
+
+func (d Digest) hash() hash.Hash {
+	if d.Algorithm == "sha512" {
+		return sha512.New()
+	}
+	return sha256.New()
 }
 
-// LockedInstall reports whether ctx's request was marked ForLockedInstall.
-func LockedInstall(ctx context.Context) bool {
-	locked, _ := ctx.Value(lockedInstallKey{}).(bool)
-	return locked
+type digestKey struct{}
+
+// ForDigest marks ctx's request as one for a body with d, which the cache
+// keeps under d.
+func ForDigest(ctx context.Context, d Digest) context.Context {
+	return context.WithValue(ctx, digestKey{}, d)
+}
+
+// DigestOf is the digest ctx's request was marked ForDigest with.
+func DigestOf(ctx context.Context) (Digest, bool) {
+	d, ok := ctx.Value(digestKey{}).(Digest)
+	return d, ok
 }
 
 // OpenCache is a cache in dir, which it creates, checks it can write and
@@ -121,74 +139,21 @@ func OpenCache(dir string, maxBytes int64) (*Cache, error) {
 
 // cacheEntry is the first line of an entry's file, before the body.
 type cacheEntry struct {
-	URL string `json:"url"`
-	// Stored is when the body was fetched, in Unix milliseconds.
-	Stored       int64  `json:"stored"`
-	Size         int64  `json:"size"`
-	ContentType  string `json:"contentType,omitempty"`
-	ETag         string `json:"etag,omitempty"`
-	LastModified string `json:"lastModified,omitempty"`
-	// Via is the resource the body came from, after redirects and without
-	// the query a signed redirect varies: validators belong to it alone.
-	Via string `json:"via,omitempty"`
+	// URL is where the body was fetched from, for the log.
+	URL         string `json:"url"`
+	Digest      string `json:"digest"`
+	Size        int64  `json:"size"`
+	ContentType string `json:"contentType,omitempty"`
 }
 
-// validators reports whether e can be offered to its origin as unchanged.
-func (e cacheEntry) validators() bool {
-	return e.Via != "" && (e.ETag != "" || e.LastModified != "")
-}
-
-// resource names what u's validators belong to: u without the query
-// parameters that sign a redirect, which change with every request and
-// would never let a redirected asset revalidate. Any other parameter may
-// select the resource and stays, so a redirect moved by query is a new
-// resource, fetched rather than asked about.
-func resource(u *url.URL) string {
-	r := *u
-	r.Fragment, r.RawFragment, r.ForceQuery = "", "", false
-	q := r.Query()
-	for name := range q {
-		if signing(r.Hostname(), name) {
-			q.Del(name)
-		}
-	}
-	r.RawQuery = q.Encode()
-	return r.String()
-}
-
-// signingParams are the query parameters that sign a redirect or name its
-// requester on the hosts release assets are served from, by host suffix.
-// SigV4's and GCS's prefixed parameters are unambiguous on any host.
-var signingParams = map[string][]string{
-	".githubusercontent.com": {"actor_id", "key_id"},
-	".cloudfront.net":        {"signature", "expires", "key-pair-id", "policy"},
-}
-
-// signing reports whether the query parameter name on host is a
-// signature or requester rather than part of the resource's name.
-func signing(host, name string) bool {
-	name = strings.ToLower(name)
-	if strings.HasPrefix(name, "x-amz-") || strings.HasPrefix(name, "x-goog-") {
-		return true
-	}
-	for suffix, names := range signingParams {
-		if strings.HasSuffix(host, suffix) && slices.Contains(names, name) {
-			return true
-		}
-	}
-	return false
-}
-
-// errExpired is an entry older than the cache's RefreshAfter.
 var (
-	errExpired      = errors.New("egress: cache entry: expired")
 	errFillBusy     = errors.New("egress: cache: all fill slots are occupied")
 	errFillCapacity = errors.New("egress: cache: the fills under way hold the cache's bound")
 	errEntrySize    = errors.New("egress: cache: body exceeds the entry limit")
 	errPrivate      = errors.New("egress: cache: the response asks not to be shared")
 	errEncoded      = errors.New("egress: cache: response is encoded")
 	errLength       = errors.New("egress: cache: response has no length")
-	errRefill       = errors.New("egress: cache: a retry has the entry fetched again")
+	errDigest       = errors.New("egress: cache: the body does not have the digest asked for")
 )
 
 const (
@@ -199,29 +164,16 @@ const (
 	// maxFills bounds the fills under way at once, each holding an
 	// upstream connection; a request past them is forwarded.
 	maxFills = 8
-	// refillCooldown is how long after a retry has an entry replaced a
-	// further retry for its URL is served the entry instead: a retry is a
-	// runner's word, and this bounds what one runner can have fetched and
-	// published again. maxRefills bounds what is remembered of them; past
-	// it the oldest is forgotten, which only lets its URL be refilled early.
-	refillCooldown = time.Minute
-	maxRefills     = 1024
-	// refreshAfter is how long an entry is served before its origin is
-	// asked whether it changed, with the validators the entry kept: one
-	// small request a week, since release assets rarely change and a
-	// retry has a stale entry replaced in between.
-	refreshAfter = 7 * 24 * time.Hour
 )
 
 // cacheable reports whether r, an upgraded request to host, may be
-// answered from the cache: a locked install's, or its retry's, to any
-// host the rules do not name as uncached. A URL with a query is not: a
-// signed URL's query is its credential, and a query would let one asset
-// be kept under any number of names.
+// answered from the cache: one marked ForDigest, to any host the rules do
+// not name as uncached. A URL with a query is not: a signed URL's query is
+// its credential.
 func cacheable(r *http.Request, host string, rules egresspolicy.Rules) bool {
-	locked := LockedInstall(r.Context()) || Refill(r.Context()) && r.Method == http.MethodGet
-	if r.Method != http.MethodGet && r.Method != http.MethodHead || r.URL.RawQuery != "" || r.URL.ForceQuery ||
-		keptOut(rules, host) || !locked {
+	_, named := DigestOf(r.Context())
+	if !named || r.Method != http.MethodGet && r.Method != http.MethodHead || r.URL.RawQuery != "" || r.URL.ForceQuery ||
+		keptOut(rules, host) {
 		return false
 	}
 	for _, h := range []string{"Authorization", "Cookie"} {
@@ -249,50 +201,27 @@ func upstreamURL(u *url.URL, host string) string {
 	return target.String()
 }
 
-// cacheKey names the entry for target.
-func cacheKey(target string) string {
-	sum := sha256.Sum256([]byte(target))
-	return hex.EncodeToString(sum[:])
-}
-
 // cached answers r, an upgraded request to host the cache may answer, from
-// the cache, filling the entry first when there is none. It returns false,
-// having written nothing, when the entry cannot be had, and r is then
-// forwarded as any other request is.
+// the entry for its digest, filling it first when there is none. It
+// returns false, having written nothing, when the entry cannot be had, and
+// r is then forwarded as any other request is.
 func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool {
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
 	defer cancel()
-	target := upstreamURL(r.URL, host)
-	key := cacheKey(target)
+	d, _ := DigestOf(r.Context())
+	key := d.key()
 	outcome, reason := "bypass", "fill_error"
 	defer func() { p.Cache.metrics.CacheRequest(outcome, reason) }()
 	// A failed or circuit-open S3 lookup is a miss too: the replica then
 	// fills its own directory, as the filesystem backend does, rather than
 	// forwarding every download for as long as the bucket is unreachable.
-	// A retry's request is not looked up at all: what the cache had did
-	// not match the lock, and the origin's answer takes its place, unless
-	// a retry had it replaced a moment ago.
-	var f *cacheBody
-	var entry cacheEntry
-	err := errRefill
-	refill := Refill(r.Context()) && !p.Cache.recentlyRefilled(key)
-	if !refill {
-		f, entry, err = p.Cache.load(ctx, key)
-	}
+	f, entry, err := p.Cache.load(ctx, key)
 	if err != nil {
-		var stale cacheEntry
-		if errors.Is(err, errExpired) {
-			stale = entry
-		}
-		// Retries share one fill of their own: joining another request's
-		// fill, or its revalidation, could hand a retry the very body it
-		// refused.
-		fillKey := key
-		if refill {
-			fillKey = "refill " + key
-		}
-		fill := p.Cache.fills.DoChan(fillKey, func() (any, error) {
-			return nil, p.fill(r.Context(), key, target, stale, refill)
+		// Requests for one digest share one fill, from whichever URL the
+		// first named: any body that has the digest is the one each asks for.
+		target := upstreamURL(r.URL, host)
+		fill := p.Cache.fills.DoChan(key, func() (any, error) {
+			return nil, p.fill(r.Context(), key, d, target)
 		})
 		select {
 		case <-r.Context().Done():
@@ -311,25 +240,15 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 			return false
 		}
 		outcome = "miss"
-		if refill {
-			outcome = "refill"
-		}
 	} else {
 		outcome = f.source + "_hit"
 	}
 	defer func() { _ = f.Close() }()
 	h := w.Header()
-	for name, value := range map[string]string{"Content-Type": entry.ContentType, "Etag": entry.ETag} {
-		if value != "" {
-			h.Set(name, value)
-		}
+	if entry.ContentType != "" {
+		h.Set("Content-Type", entry.ContentType)
 	}
-	// ServeContent answers date conditions by the modification time it
-	// is given, and writes it as Last-Modified.
-	modified, err := http.ParseTime(entry.LastModified)
-	if err != nil && entry.LastModified != "" {
-		h.Set("Last-Modified", entry.LastModified)
-	}
+	h.Set("Etag", `"`+d.String()+`"`)
 	// Bounded as a forwarded response is, so a client that stops reading
 	// cannot hold an entry's file, evicted or not, open for longer. The
 	// gateway's writer supports the deadline; one that does not leaves the
@@ -337,37 +256,30 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(upgradeTimeout))
 	p.observe("http", OutcomeAllowed)
 	p.Logger.Debug("egress cache", "outcome", outcome, "host", host, "method", r.Method, "path", r.URL.Path, "bytes", entry.Size)
-	p.serveCached(w, r, key, f, modified)
+	p.serveCached(w, r, key, f)
 	return true
 }
 
 // fill fetches target, following its redirects, and keeps its body under
-// key. Every request waiting on key waits on this one fetch, so it does
-// not end with the request that started it; it is bounded as one
-// upgraded request is, and is not made at all, leaving the request to be
-// forwarded, while maxFills are under way or their bytes hold MaxBytes.
-// The fetch is the gateway's own, with a User-Agent and Accept of its
-// own, so which representation an entry holds does not depend on the
-// request that happened to start it. A stale entry's validators go with
-// the fetch: an origin that answers 304 keeps the entry's body under a new
-// fetch time, and only a changed body is downloaded again.
-func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry, force bool) error {
+// key, d's, when it has d. Every request waiting on key waits on this one
+// fetch, so it does not end with the request that started it; it is
+// bounded as one upgraded request is, and is not made at all, leaving the
+// request to be forwarded, while maxFills are under way or their bytes hold
+// MaxBytes. The fetch is the gateway's own, with a User-Agent and Accept of
+// its own.
+func (p *Proxy) fill(ctx context.Context, key string, d Digest, target string) error {
 	lock := p.Cache.entries.lock(key)
 	defer p.Cache.entries.unlock(key, lock)
 	// A fill that finished between a request's miss and this one is not
-	// repeated, unless a retry forces it. Only this directory is checked:
-	// the bucket was asked a moment ago, and may be unreachable. An entry
-	// over the limit, kept from before it was lowered, does not count:
-	// load refuses it, so a fill must replace it.
+	// repeated. Only this directory is checked: the bucket was asked a
+	// moment ago, and may be unreachable. An entry over the limit, kept from
+	// before it was lowered, does not count: load refuses it, so a fill
+	// must replace it.
 	if f, entry, _, err := p.Cache.open(key); err == nil {
 		_ = f.Close()
-		if !force && !p.Cache.expired(entry) && (p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes) {
+		if p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes {
 			return nil
 		}
-	}
-	// A retry that waited for another's refill of this entry is done too.
-	if force && p.Cache.recentlyRefilled(key) {
-		return nil
 	}
 	if !p.Cache.begin() {
 		return errFillBusy
@@ -377,25 +289,9 @@ func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry, 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), upgradeTimeout)
 	defer cancel()
 	started := time.Now()
-	resp, err := p.fetch(ctx, target, stale)
+	resp, err := p.fetch(ctx, target)
 	if err != nil {
 		return err
-	}
-	if resp.StatusCode == http.StatusNotModified && stale.validators() && resource(resp.Request.URL) == stale.Via {
-		_ = resp.Body.Close()
-		p.Cache.metrics.CacheOperation("origin_fetch", "not_modified", time.Since(started), 0)
-		if private(resp.Header) {
-			return errPrivate
-		}
-		reserved, err = p.refresh(ctx, key, stale, resp.Header)
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		// The stale copy went while the origin was asked: fetch the body.
-		started = time.Now()
-		if resp, err = p.fetch(ctx, target, cacheEntry{}); err != nil {
-			return err
-		}
 	}
 	body := &countedReader{Reader: resp.Body}
 	originResult := "skipped"
@@ -427,17 +323,20 @@ func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry, 
 		return errFillCapacity
 	}
 	reserved = resp.ContentLength
-	entry := cacheEntry{URL: target, Stored: time.Now().UnixMilli(), Size: resp.ContentLength, ContentType: resp.Header.Get("Content-Type"),
-		ETag: resp.Header.Get("Etag"), LastModified: resp.Header.Get("Last-Modified"), Via: resource(resp.Request.URL)}
-	if err := p.Cache.store(key, entry, body); err != nil {
+	entry := cacheEntry{URL: target, Digest: d.String(), Size: resp.ContentLength, ContentType: resp.Header.Get("Content-Type")}
+	h := d.hash()
+	err = p.Cache.store(key, entry, io.TeeReader(body, h), func() error {
+		if hex.EncodeToString(h.Sum(nil)) != d.Hex {
+			return errDigest
+		}
+		return nil
+	})
+	if err != nil {
 		originResult = operationResult(err)
 		return err
 	}
 	originResult = "ok"
 	finishOrigin()
-	if force {
-		p.Cache.refilled(key)
-	}
 	if p.Cache.s3 != nil {
 		p.Cache.queueUpload(key)
 	}
@@ -446,9 +345,9 @@ func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry, 
 	return nil
 }
 
-// fetch asks the origin for target, conditionally on stale's validators
-// when it has any, and records a request that got no response.
-func (p *Proxy) fetch(ctx context.Context, target string, stale cacheEntry) (*http.Response, error) {
+// fetch asks the origin for target and records a request that got no
+// response.
+func (p *Proxy) fetch(ctx context.Context, target string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
@@ -457,29 +356,7 @@ func (p *Proxy) fetch(ctx context.Context, target string, stale cacheEntry) (*ht
 	req.Header.Set("Accept", "*/*")
 	// The body is kept as the server sends it, not as a transport decodes it.
 	req.Header.Set("Accept-Encoding", "identity")
-	// Validators name one resource, so they go only to the one the stale
-	// body came from, not to wherever a changed redirect now points.
-	conditional := func(r *http.Request) {
-		r.Header.Del("If-None-Match")
-		r.Header.Del("If-Modified-Since")
-		if !stale.validators() || resource(r.URL) != stale.Via {
-			return
-		}
-		if stale.ETag != "" {
-			r.Header.Set("If-None-Match", stale.ETag)
-		}
-		if stale.LastModified != "" {
-			r.Header.Set("If-Modified-Since", stale.LastModified)
-		}
-	}
-	conditional(req)
-	client := &http.Client{Transport: p.httpTransport(), CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		if err := p.checkRedirect(r, via); err != nil {
-			return err
-		}
-		conditional(r)
-		return nil
-	}}
+	client := &http.Client{Transport: p.httpTransport(), CheckRedirect: p.checkRedirect}
 	started := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
@@ -487,48 +364,6 @@ func (p *Proxy) fetch(ctx context.Context, target string, stale cacheEntry) (*ht
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
 	return resp, nil
-}
-
-// refresh keeps stale's body, from this replica's copy or the bucket's,
-// under a new fetch time and the headers the origin's 304 renewed, once
-// the origin has said it is unchanged. It returns what it holds of the
-// fill budget, and os.ErrNotExist when the copy the origin was asked
-// about is gone.
-func (p *Proxy) refresh(ctx context.Context, key string, stale cacheEntry, renewed http.Header) (int64, error) {
-	kept, entry, err := p.Cache.lookup(ctx, key, true)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = kept.Close() }()
-	if entry.Size != stale.Size || entry.ETag != stale.ETag || entry.LastModified != stale.LastModified || entry.Via != stale.Via {
-		return 0, os.ErrNotExist
-	}
-	switch {
-	case entry.Size > p.Cache.MaxBytes:
-		return 0, errEntrySize
-	case !p.Cache.reserve(entry.Size):
-		return 0, errFillCapacity
-	}
-	entry.Stored = time.Now().UnixMilli()
-	fields := map[string]*string{"Etag": &entry.ETag, "Last-Modified": &entry.LastModified, "Content-Type": &entry.ContentType}
-	for name, field := range fields {
-		if v := renewed.Get(name); v != "" {
-			*field = v
-		}
-	}
-	if err := p.Cache.store(key, entry, kept); err != nil {
-		p.Cache.release(entry.Size)
-		if s3Gone(err) {
-			// The object went, or was replaced, between the lookup and the read.
-			return 0, os.ErrNotExist
-		}
-		return 0, err
-	}
-	if p.Cache.s3 != nil {
-		p.Cache.queueUpload(key)
-	}
-	p.Logger.Debug("egress cache refresh", "url", entry.URL, "from", kept.source, "bytes", entry.Size)
-	return entry.Size, nil
 }
 
 // checkRedirect lets a fill follow a redirect only where the runner's own
@@ -603,13 +438,6 @@ func (c *Cache) reserve(size int64) bool {
 	return true
 }
 
-// release gives back bytes a fill reserved for a body it did not keep.
-func (c *Cache) release(size int64) {
-	c.underway.Lock()
-	defer c.underway.Unlock()
-	c.reserved -= size
-}
-
 // end gives back a fill's place and the bytes it reserved.
 func (c *Cache) end(reserved int64) {
 	c.underway.Lock()
@@ -619,16 +447,10 @@ func (c *Cache) end(reserved int64) {
 	c.reserved -= reserved
 }
 
-// expired reports whether entry is past refreshAfter, so its URL is asked
-// about before it is served again.
-func (c *Cache) expired(entry cacheEntry) bool {
-	return time.Since(time.UnixMilli(entry.Stored)) > refreshAfter
-}
-
 // open opens the entry under key and marks it used, returning its file,
-// what its first line records and where its body starts, however old it
-// is. An entry whose file does not hold what its first line says is
-// removed, to be fetched again.
+// what its first line records and where its body starts. An entry whose
+// file does not hold what its first line says is removed, to be fetched
+// again.
 func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 	path := filepath.Join(c.Dir, key)
 	f, err := os.Open(path)
@@ -674,8 +496,9 @@ func readEntry(f *os.File) (cacheEntry, int64, error) {
 }
 
 // store writes body, entry.Size bytes of it, as the entry under key, in
-// place of any entry there, then evicts what no longer fits.
-func (c *Cache) store(key string, entry cacheEntry, body io.Reader) error {
+// place of any entry there, then evicts what no longer fits. check, when
+// set, is why what body held may not be kept, asked once it is all read.
+func (c *Cache) store(key string, entry cacheEntry, body io.Reader, check func() error) error {
 	line, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("egress: cache: %w", err)
@@ -699,6 +522,11 @@ func (c *Cache) store(key string, entry cacheEntry, body io.Reader) error {
 		return fmt.Errorf("egress: cache: %w", err)
 	case n != entry.Size:
 		return fmt.Errorf("egress: cache: body is %d bytes, not %d", n, entry.Size)
+	}
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
 	}
 	if err := os.Rename(tmp.Name(), filepath.Join(c.Dir, key)); err != nil {
 		return fmt.Errorf("egress: cache: %w", err)
