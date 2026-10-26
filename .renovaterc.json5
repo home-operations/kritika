@@ -2,45 +2,14 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>home-operations/renovate-config"],
   postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
-  // The lockfile's version 9.0 alone would let Renovate update it with any
-  // pnpm >= 9; this keeps it on the major mise pins.
   constraints: { pnpm: "^12" },
-  customManagers: [
-    {
-      // The Dockerfile takes the -tools image's mise from min_version.
-      customType: "regex",
-      description: "Track mise's min_version as the -tools image's mise",
-      managerFilePatterns: ["/^\\.mise/config\\.toml$/"],
-      matchStrings: ['min_version = "(?<currentValue>[^"]+)"'],
-      datasourceTemplate: "docker",
-      depNameTemplate: "jdxcode/mise",
-    },
-  ],
   packageRules: [
     {
-      // The runner depends on how this mise behaves. CI runs the runner's
-      // tests on it, but pull requests do not build the -tools image, so a
-      // person merges each bump.
-      description: "Hold the -tools image's mise for 3 days, bump it weekly and merge it by hand",
-      matchDepNames: ["jdxcode/mise"],
-      minimumReleaseAge: "3 days",
-      schedule: ["* 0-3 * * 1"],
-      automerge: false,
-    },
-    {
-      // Only the -tools image build uses these, which pull requests do not
-      // run.
       description: "Group the -tools image's Hardened Images and gh and merge them by hand",
-      matchDepNames: ["cli/cli", "registry.access.redhat.com/hi/core-runtime"],
+      matchDepNames: ["cli/cli", "jdxcode/mise", "registry.access.redhat.com/hi/core-runtime"],
       groupName: "image tools",
       groupSlug: "image-tools",
       automerge: false,
-    },
-    {
-      // A fresh release can still be uploading its assets and checksums.
-      description: "Hold gh for 3 days",
-      matchDepNames: ["cli/cli"],
-      minimumReleaseAge: "3 days",
     },
   ],
 }
