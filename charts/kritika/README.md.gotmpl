@@ -146,9 +146,10 @@ chart confines them:
 - The review's run tool executes the five programs the runner image
   carries, `curl`, `find`, `gh`, `grep` and `jq`, in a root with bash but
   no package manager, and those the `tools` of a repository's
-  `.kritika.yaml` add, each download verified as its backend verifies it,
-  with whatever arguments the model gives: the pod's bounds confine a
-  command, not a check of its arguments.
+  `.kritika.yaml` add from the aqua registry, each download checked
+  against its digest or checksum and, where the runner verifies its form,
+  the signature the registry declares, with whatever arguments the model
+  gives: the pod's bounds confine a command, not a check of its arguments.
 - `runner.podTemplate` puts runner pods under a sandboxed runtime such as
   gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
   with `resources`, and keeps runner pods on nodes of their own, and in a
