@@ -105,6 +105,33 @@ go test -race -tags integration -count=1 -p 1 $pkgs "$@"
 description = "Run gateway cache compatibility tests against KRITIKA_TEST_S3_ENDPOINT (see the Development docs page)"
 run = "go test -race -tags integration -run '^TestS3Integration$' -count=1 -v ./internal/egress/"
 
+[tasks.test-forges]
+description = "Check the Gitea and Forgejo clients list every repository a bot reaches, against throwaway Gitea, Forgejo and page-capped Gitea containers"
+run = """
+set -e
+cids=""
+trap 'docker stop $cids >/dev/null' EXIT
+admin='root:Root-Passw0rd!'
+forges=""
+# start NAME IMAGE BINARY [ENV...]: one instance on SQLite with its admin
+# created, added to KRITIKA_TEST_FORGES.
+start() {
+  name=$1 image=$2 bin=$3; shift 3
+  cid=$(docker run -d --rm -e GITEA__security__INSTALL_LOCK=true -e GITEA__database__DB_TYPE=sqlite3 "$@" -p 127.0.0.1::3000 "$image")
+  cids="$cids $cid"
+  port=$(docker port "$cid" 3000/tcp | head -1 | sed 's/.*://')
+  for i in $(seq 1 60); do curl -fs "http://127.0.0.1:${port}/api/healthz" >/dev/null && break; sleep 1; done
+  docker exec -u git "$cid" "$bin" admin user create --admin --username "${admin%%:*}" --password "${admin#*:}" --email root@example.com --must-change-password=false >/dev/null
+  forges="${forges:+$forges,}${name}=http://127.0.0.1:${port}"
+}
+start gitea docker.io/gitea/gitea:28.2.0 gitea
+start forgejo codeberg.org/forgejo/forgejo:17.0.0 forgejo
+# A page cap under the client's page size of 50.
+start gitea-capped docker.io/gitea/gitea:28.2.0 gitea -e GITEA__api__MAX_RESPONSE_ITEMS=20 -e GITEA__api__DEFAULT_PAGING_NUM=10
+export KRITIKA_TEST_FORGES="$forges" KRITIKA_TEST_FORGE_ADMIN="$admin"
+go test -race -tags integration -run '^TestRepositoriesIntegration$' -count=1 -v ./internal/forge/forgejo/ "$@"
+"""
+
 [tasks.smoke]
 description = "Boot kritika serve with two replicas in a throwaway kind cluster against a CloudNativePG Postgres with VectorChord, as the chart deploys it, and check readiness, helm test, one leader and the applied configuration (needs docker, kind, kubectl and helm)"
 run = "scripts/smoke.sh"

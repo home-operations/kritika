@@ -109,6 +109,27 @@ The initial compatibility run passed against MinIO
 `RELEASE.2025-10-15T17-29-55Z` built from source, Ceph RGW 19.2.0,
 Garage 2.4.1 and VersityGW 1.9.0 with its POSIX backend.
 
+## Forge repository listing
+
+`mise run test-forges` starts throwaway Gitea, Forgejo and page-capped
+Gitea containers, builds accounts on each and checks that the client lists
+every repository the bot can reach, and only those:
+
+- an organization larger than one page;
+- private and limited organizations reached through teams;
+- an organization where most pages hold nothing the bot sees;
+- another user's repositories, including a fork and a private
+  collaboration;
+- an archived repository.
+
+The bot calls with an access token that has the scopes the
+[Gitea setup](/forges/#gitea) gives it. On Forgejo the same token stands in
+for the authorized integration, since Forgejo fetches an integration's
+issuer over HTTPS. The suite needs docker. To run it against instances of
+your own, set `KRITIKA_TEST_FORGES` to `name=URL` pairs separated by commas
+and `KRITIKA_TEST_FORGE_ADMIN` to a site admin's `user:password`. Each run
+creates its accounts under a fresh suffix and deletes nothing.
+
 ## Docs
 
 This site is Astro Starlight, a Node project in `docs/` pinned in
