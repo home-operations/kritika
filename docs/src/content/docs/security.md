@@ -289,6 +289,38 @@ bounded in what it decompresses. No committed lock pins a download across
 runs, so a release asset replaced upstream under the same tag, its digest
 or checksum file with it, installs.
 
+Where the registry declares a signature of the download or of its checksum
+file, the runner checks it before unpacking, and an install whose signature
+does not verify fails:
+
+- a cosign bundle, against the certificate identity and issuer the
+  registry's options name, and its GitHub workflow repository and ref; an
+  option the runner does not read fails the install rather than loosen the
+  identity
+- a GitHub artifact attestation, from the GitHub API, held to what
+  `gh attestation verify` holds it to: the signer workflow or repository
+  the registry names, else any workflow of the release's repository,
+  GitHub Actions' issuer, the source repository and the predicate type.
+  The runner reads the bundle the API returns inline, else the one at
+  the attestation's `bundle_url`, on a host `egress.allow` must name,
+  `tmaproduction.blob.core.windows.net` today; an attestation with
+  neither fails
+- SLSA provenance in a Sigstore bundle, held to slsa-github-generator's
+  generic, Go or container-based builder at a release's tag, the
+  builders slsa-verifier trusts by default, and to the source repository
+  and the release's tag
+- a minisign signature, against the public key the registry pins
+
+A Sigstore bundle is checked offline, against Sigstore's public-good trusted
+root, which kritika carries as Sigstore's TUF repository publishes it, so a
+runner needs no Sigstore host. A file with a Sigstore bundle's media type
+that does not parse as one fails the install, as does a cosign bundle that
+is not a Sigstore bundle. A signed checksum file is read in place of
+GitHub's digest. A cosign signature and certificate apart from a bundle, a
+key-signed one, provenance outside a Sigstore bundle and an attestation by
+GitHub's own Sigstore instance are not checked; the runner's log names
+each, and the tool installs on its checksum alone.
+
 The run tool offers the image's commands that it finds on `PATH`, and
 the commands the registry names for the repository's tools. An image set
 as the runner container's image in `runner.podTemplate` offers whichever

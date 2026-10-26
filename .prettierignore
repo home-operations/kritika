@@ -5,3 +5,5 @@ charts/kritika/README.md
 charts/kritika/values.schema.json
 # The docs site's build output.
 site/
+# Release files kept byte for byte as their publishers published them.
+internal/aqua/testdata/

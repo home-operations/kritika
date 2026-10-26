@@ -98,7 +98,7 @@ func newRepoTools(
 	if plain := envValue(env, "HTTP_PROXY"); cacheLocked && plain != "" {
 		r.cache = proxiedClient(plain).Transport
 	}
-	r.installer = &aqua.Installer{Client: r.direct, APIURL: githubAPI, Token: token}
+	r.installer = &aqua.Installer{Client: r.direct, APIURL: githubAPI, Token: token, Logger: logger}
 	registry, err := r.registry(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: %w", err)

@@ -1,6 +1,7 @@
 package aqua
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -10,10 +11,12 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	neturl "net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -46,13 +49,22 @@ var (
 // Installer installs resolved packages.
 type Installer struct {
 	// Client fetches what a download is checked against: the GitHub REST
-	// API's account of a release at APIURL, with Token as its credential
-	// when set, and a checksum file.
+	// API's account of a release and its attestations at APIURL, with
+	// Token as its credential when set, a checksum file and a signature.
 	Client *http.Client
 	APIURL string
 	Token  string
 	// Downloads fetches the download itself; nil takes Client.
 	Downloads *http.Client
+	// Logger, when set, logs the signatures checked and those passed over.
+	Logger *slog.Logger
+}
+
+func (in *Installer) logger() *slog.Logger {
+	if in.Logger == nil {
+		return discard
+	}
+	return in.Logger
 }
 
 // Sum is a checksum: its algorithm and value, in hex.
@@ -60,23 +72,28 @@ type Sum struct {
 	Algorithm, Hex string
 }
 
-// Install downloads p, checks the download against sum, its Checksum,
-// before anything of it is unpacked, and unpacks it into dir, which must
-// not exist. The download and the unpacking are kept beside dir until the
-// package is whole, so dir is the package or nothing. It returns where
-// the package's commands are, by name.
+// Install downloads p, checks the download against sum, its Checksum, and
+// the signatures the registry declares of it before anything of it is
+// unpacked, and unpacks it into dir, which must not exist. The download
+// and the unpacking are kept beside dir until the package is whole, so dir
+// is the package or nothing. It returns where the package's commands are,
+// by name.
 func (in *Installer) Install(ctx context.Context, p *Package, sum Sum, dir string) (map[string]string, error) {
 	download, err := os.CreateTemp(filepath.Dir(dir), ".download-*")
 	if err != nil {
 		return nil, fmt.Errorf("aqua: %s: %w", p.Name, err)
 	}
 	defer func() { _ = os.Remove(download.Name()) }()
-	err = in.download(ctx, p.URL, sum, download)
+	digest, err := in.download(ctx, p.URL, sum, download)
 	if cerr := download.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		return nil, fmt.Errorf("aqua: %s: %w: %w", p.Name, ErrDownload, err)
+	}
+	f := subject{name: p.Asset, sha256: digest, open: func() (io.ReadCloser, error) { return os.Open(download.Name()) }}
+	if err := in.verify(ctx, p, p.assetSignatures(), f); err != nil {
+		return nil, fmt.Errorf("aqua: %s: %w", p.Name, err)
 	}
 	staging, err := os.MkdirTemp(filepath.Dir(dir), ".unpack-*")
 	if err != nil {
@@ -110,26 +127,45 @@ func (in *Installer) Install(ctx context.Context, p *Package, sum Sum, dir strin
 // which the registry cannot tell: it resolves any version. A release
 // GitHub says it does not have, or one without the asset, fails though a
 // checksum file is named; one that keeps no digest, or that GitHub could
-// not be asked about, leaves the file to stand in.
+// not be asked about, leaves the file to stand in. A checksum file the
+// registry declares a signature of is read in place of the digest, as aqua
+// reads it, and its signature checked.
 func (in *Installer) Checksum(ctx context.Context, p *Package) (Sum, error) {
+	var released Sum
 	var releaseErr error
 	if p.Type == TypeGitHubRelease {
 		sum, err := in.releaseDigest(ctx, p)
-		_, missing := errors.AsType[unreleased](err)
-		switch {
-		case err == nil && sum.Hex != "":
-			return sum, nil
-		case missing || err != nil && p.ChecksumURL == "":
+		if _, missing := errors.AsType[unreleased](err); missing || err != nil && p.ChecksumURL == "" {
 			return Sum{}, fmt.Errorf("aqua: %s: %w", p.Name, err)
 		}
-		releaseErr = err
+		released, releaseErr = sum, err
 	}
-	if p.ChecksumURL == "" {
+	if s := p.checksumSignatures(); p.ChecksumURL != "" && s.declared() {
+		return in.checksumFile(ctx, p, s, nil)
+	}
+	switch {
+	case released.Hex != "":
+		return released, nil
+	case p.ChecksumURL == "":
 		return Sum{}, fmt.Errorf("aqua: %s: %w", p.Name, ErrNoChecksum)
 	}
+	return in.checksumFile(ctx, p, signatures{}, releaseErr)
+}
+
+// checksumFile is the checksum of p's download its checksum file holds,
+// once s, the signatures declared of the file, check; releaseErr is why the
+// release gave none, joined to the file's own failure.
+func (in *Installer) checksumFile(ctx context.Context, p *Package, s signatures, releaseErr error) (Sum, error) {
 	content, err := get(ctx, in.Client, p.ChecksumURL, nil, maxChecksumFileBytes)
 	if err != nil {
 		return Sum{}, fmt.Errorf("aqua: %s: checksum file: %w", p.Name, errors.Join(err, releaseErr))
+	}
+	digest := sha256.Sum256(content)
+	f := subject{name: path.Base(p.ChecksumURL), sha256: digest[:], open: func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(content)), nil
+	}}
+	if err := in.verify(ctx, p, s, f); err != nil {
+		return Sum{}, fmt.Errorf("aqua: %s: %w", p.Name, err)
 	}
 	hexSum, err := checksum.GetChecksum(discard, p.Asset, string(content), p.checksum)
 	if err != nil {
@@ -222,12 +258,12 @@ func request(ctx context.Context, client *http.Client, url string, header http.H
 	return resp, nil
 }
 
-// download writes url's body to w, at most maxDownloadBytes of it, and
-// checks it matches sum.
-func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Writer) error {
+// download writes url's body to w, at most maxDownloadBytes of it, checks
+// it matches sum, and returns its SHA-256, which a signature is of.
+func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Writer) ([]byte, error) {
 	h, err := hasher(sum.Algorithm)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	client := in.Downloads
 	if client == nil {
@@ -235,20 +271,21 @@ func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Wri
 	}
 	resp, err := request(ctx, client, url, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	n, err := io.Copy(io.MultiWriter(w, h), io.LimitReader(resp.Body, maxDownloadBytes+1))
+	digest := sha256.New()
+	n, err := io.Copy(io.MultiWriter(w, h, digest), io.LimitReader(resp.Body, maxDownloadBytes+1))
 	switch {
 	case err != nil:
-		return fmt.Errorf("%s: %w", url, err)
+		return nil, fmt.Errorf("%s: %w", url, err)
 	case n > maxDownloadBytes:
-		return fmt.Errorf("%s: over %d bytes", url, maxDownloadBytes)
+		return nil, fmt.Errorf("%s: over %d bytes", url, maxDownloadBytes)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != sum.Hex {
-		return fmt.Errorf("%s: %w: %s %s, want %s", url, ErrChecksum, sum.Algorithm, got, sum.Hex)
+		return nil, fmt.Errorf("%s: %w: %s %s, want %s", url, ErrChecksum, sum.Algorithm, got, sum.Hex)
 	}
-	return nil
+	return digest.Sum(nil), nil
 }
 
 func hasher(algorithm string) (hash.Hash, error) {

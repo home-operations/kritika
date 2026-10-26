@@ -389,12 +389,12 @@ func TestInstallRetry(t *testing.T) {
 	}
 }
 
-// redirectTo sends every request to base's host instead.
+// redirectTo sends every request to its URL, an httptest server's, instead.
 type redirectTo string
 
 func (r redirectTo) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
-	req.URL.Host = strings.TrimPrefix(string(r), "http://")
+	req.URL.Scheme, req.URL.Host = "http", strings.TrimPrefix(string(r), "http://")
 	return http.DefaultTransport.RoundTrip(req)
 }
 
