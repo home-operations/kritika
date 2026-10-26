@@ -33,6 +33,14 @@
           "required": [],
           "type": "object"
         },
+        "aquaRegistryRefresh": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "aquaRegistryUrl": {
+          "minLength": 1,
+          "type": "string"
+        },
         "auth": {
           "required": [],
           "type": "object"

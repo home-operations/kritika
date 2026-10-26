@@ -61,6 +61,8 @@ strategy:
 #   gatewayCacheS3Bucket: { type: string }
 #   gatewayCacheS3Prefix: { type: string }
 #   gatewayCacheS3ForcePathStyle: { type: boolean }
+#   aquaRegistryUrl: { type: string, minLength: 1 }
+#   aquaRegistryRefresh: { type: string, minLength: 1 }
 #   webUrl: { type: string }
 #   databaseAppRole: { type: string }
 #   databaseRunnerRole: { type: string }

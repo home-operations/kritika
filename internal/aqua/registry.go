@@ -1,15 +1,12 @@
 // Package aqua resolves packages of the aqua registry
-// (github.com/aquaproj/aqua-registry) at the release RegistryVersion
-// names, as aqua itself would for the platform the runner runs on, and
-// installs them: it downloads a package, checks the download against a
+// (github.com/aquaproj/aqua-registry), as aqua itself would for the
+// platform the runner runs on, and installs them: it downloads a package, checks the download against a
 // checksum published apart from it, and unpacks it, running nothing of
 // aqua's or the package's.
 package aqua
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,13 +23,6 @@ import (
 
 // maxRegistryBytes bounds the registry's fetch, many times its size.
 const maxRegistryBytes = 64 << 20
-
-// registryURL is where RegistryVersion's registry.yaml is, and
-// registrySum the SHA-256 it must have; variables for the tests.
-var (
-	registryURL = "https://raw.githubusercontent.com/aquaproj/aqua-registry/" + RegistryVersion + "/registry.yaml"
-	registrySum = registrySHA256
-)
 
 // discard takes aqua's own logging, which is for its CLI.
 var discard = slog.New(slog.DiscardHandler)
@@ -60,18 +50,11 @@ type Registry struct {
 	config *registry.Config
 }
 
-// RegistrySum is the checksum RegistryVersion's registry.yaml must have.
-func RegistrySum() Sum { return Sum{Algorithm: algorithmSHA256, Hex: registrySum} }
-
-// FetchRegistry fetches RegistryVersion's registry with client, checked
-// against the SHA-256 recorded with the release.
-func FetchRegistry(ctx context.Context, client *http.Client) (*Registry, error) {
-	data, err := get(ctx, client, registryURL, nil, maxRegistryBytes)
+// FetchRegistry fetches the registry at url with client, sending header.
+func FetchRegistry(ctx context.Context, client *http.Client, url string, header http.Header) (*Registry, error) {
+	data, err := get(ctx, client, url, header, maxRegistryBytes)
 	if err != nil {
-		return nil, fmt.Errorf("aqua: registry %s: %w", RegistryVersion, err)
-	}
-	if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != registrySum {
-		return nil, fmt.Errorf("aqua: registry %s: %w: sha256 %x, want %s", RegistryVersion, ErrChecksum, sum, registrySum)
+		return nil, fmt.Errorf("aqua: registry: %w", err)
 	}
 	return Parse(data)
 }
@@ -87,6 +70,9 @@ func Parse(data []byte) (*Registry, error) {
 	r.config.Packages(discard)
 	return r, nil
 }
+
+// Len is how many packages r has.
+func (r *Registry) Len() int { return len(r.config.PackageInfos) }
 
 // Platform is what a package is resolved for: GOOS and GOARCH, and the C
 // library on Linux, "glibc" or "musl" as aqua names them. Windows is not

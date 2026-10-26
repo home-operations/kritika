@@ -29,7 +29,7 @@ func (s Settings) Validate() error {
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
-	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxEntrySize,LeaderRetryInterval", "gt", 0)
+	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxEntrySize,LeaderRetryInterval,AquaRegistryRefresh", "gt", 0)
 	v.AddRule("ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
 	v.AddRule("GatewayCacheStorage", "enum", []string{"filesystem", "s3"})
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
@@ -66,6 +66,9 @@ func (s Settings) Validate() error {
 	var extra []string
 	if _, err := s.deadline(); err != nil {
 		extra = append(extra, err.Error())
+	}
+	if u, err := url.Parse(s.AquaRegistryURL); err != nil || u.Host == "" || (u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP) {
+		extra = append(extra, "aquaRegistryUrl: KRITIKA_AQUA_REGISTRY_URL must be an http(s) URL")
 	}
 	if s.GatewayCacheStorage == "s3" {
 		if s.GatewayCacheDir == "" {

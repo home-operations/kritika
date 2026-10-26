@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -373,6 +374,10 @@ func startWorker(
 	// a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
 	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
+	gw.AquaRegistry = &gateway.AquaRegistry{
+		URL: cfg.AquaRegistryURL, Refresh: cfg.AquaRegistryRefresh, Client: http.DefaultClient, Logger: gatewayLogger,
+	}
+	g.Go(func() error { return gw.AquaRegistry.Run(ctx) })
 	proxy := &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
 	if cfg.GatewayCacheDir != "" {
 		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize))

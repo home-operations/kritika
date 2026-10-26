@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -80,7 +81,10 @@ apps:
 		}
 		http.Error(w, "reached", http.StatusTeapot)
 	})
-	srv := httptest.NewServer(&Server{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Proxy: proxy})
+	registry := &AquaRegistry{body: []byte(aquaFixture)}
+	srv := httptest.NewServer(&Server{
+		Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Proxy: proxy, AquaRegistry: registry,
+	})
 	defer srv.Close()
 	via := func(user, password string) *http.Client {
 		pu, err := url.Parse(srv.URL)
@@ -159,6 +163,9 @@ apps:
 			t.Fatalf("err = %v, want the proxy's answer", err)
 		}
 	})
+	// The aqua registry the gateway keeps is the run token's to read, as a
+	// runner reads it: from the gateway, not through its proxy.
+	t.Run("the aqua registry", func(t *testing.T) { checkAquaRegistry(t, srv.URL, token, registry) })
 	t.Run("a revoked token", func(t *testing.T) {
 		if err := st.RevokeGatewayTokens(ctx, runID); err != nil {
 			t.Fatal(err)
@@ -169,6 +176,43 @@ apps:
 	})
 	if reached != 4 {
 		t.Fatalf("the proxy served %d requests, want the four with the run token", reached)
+	}
+}
+
+// checkAquaRegistry reads the registry the gateway at base keeps, as a
+// runner does, with no token, with the run token, and with it before the
+// gateway has fetched one.
+func checkAquaRegistry(t *testing.T, base, token string, registry *AquaRegistry) {
+	t.Helper()
+	for _, tt := range []struct {
+		name, authorization string
+		kept                bool
+		want                int
+	}{
+		{"no token", "", true, http.StatusUnauthorized},
+		{"the run token", "Bearer " + token, true, http.StatusOK},
+		{"none fetched yet", "Bearer " + token, false, http.StatusServiceUnavailable},
+	} {
+		registry.mu.Lock()
+		registry.body = nil
+		if tt.kept {
+			registry.body = []byte(aquaFixture)
+		}
+		registry.mu.Unlock()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+runspec.AquaRegistryPath, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", tt.authorization)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != tt.want || (tt.want == http.StatusOK && string(body) != aquaFixture) {
+			t.Fatalf("%s: status = %d, body %q; want %d", tt.name, resp.StatusCode, body, tt.want)
+		}
 	}
 }
 

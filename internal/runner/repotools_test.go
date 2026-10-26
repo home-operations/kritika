@@ -55,14 +55,22 @@ const testRegistry = `packages:
     path: example.com/acme/built
 `
 
-// useTestRegistry has newRepoTools read testRegistry, and look releases up
-// in the GitHub API at http://api.example.invalid, which a test's gateway
-// answers.
+// testGateway is the run's gateway in the tests' specs.
+const testGateway = "http://kritika-gateway:8082"
+
+// useTestRegistry has newRepoTools read testRegistry as the registry
+// testGateway keeps, and look releases up in the GitHub API at
+// http://api.example.invalid, which a test's gateway answers.
 func useTestRegistry(t *testing.T) {
 	t.Helper()
 	fetch, was := fetchRegistry, githubAPI
 	t.Cleanup(func() { fetchRegistry, githubAPI = fetch, was })
-	fetchRegistry = func(context.Context, *http.Client) (*aqua.Registry, error) { return aqua.Parse([]byte(testRegistry)) }
+	fetchRegistry = func(_ context.Context, gatewayURL, _ string) (*aqua.Registry, error) {
+		if gatewayURL != testGateway {
+			return nil, fmt.Errorf("the registry of %s, want %s's", gatewayURL, testGateway)
+		}
+		return aqua.Parse([]byte(testRegistry))
+	}
 	githubAPI = "http://api.example.invalid"
 }
 
@@ -72,7 +80,7 @@ func TestNewRepoTools(t *testing.T) {
 		"aqua:acme/repo-tool": "v1.0.0", "aqua:acme/other": "v1.0.0", "aqua:cli/cli": "v2.0.0",
 		"aqua:acme/built": "v1.0.0", "aqua:acme/missing": "v1.0.0",
 	}
-	r, notes, err := newRepoTools(t.Context(), tools, t.TempDir(), nil, false, []string{"gh"}, "", slog.New(slog.DiscardHandler))
+	r, notes, err := newRepoTools(t.Context(), tools, testGateway, "run-token", t.TempDir(), nil, false, []string{"gh"}, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +92,7 @@ func TestNewRepoTools(t *testing.T) {
 	}
 	for _, want := range []string{
 		"tools: aqua:acme/built not offered: aqua: acme/built@v1.0.0: not installable: its go_install type",
-		"tools: aqua:acme/missing not offered: it is not in aqua-registry " + aqua.RegistryVersion,
+		"tools: aqua:acme/missing not offered: it is not in the aqua registry",
 		"tools: aqua:acme/repo-tool does not offer repo-tool: aqua:acme/other offers it already",
 		"tools: aqua:cli/cli does not offer gh: it carries one of the run's credentials",
 	} {
@@ -92,7 +100,7 @@ func TestNewRepoTools(t *testing.T) {
 			t.Errorf("notes lack %q:\n%s", want, strings.Join(notes, "\n"))
 		}
 	}
-	none, notes, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/missing": "1.0.0"}, t.TempDir(), nil, false, nil, "",
+	none, notes, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/missing": "1.0.0"}, testGateway, "run-token", t.TempDir(), nil, false, nil, "",
 		slog.New(slog.DiscardHandler))
 	if none != nil || err != nil || len(notes) != 1 {
 		t.Errorf("tools that offer nothing = %v, %v, notes %v", none, err, notes)
@@ -157,7 +165,7 @@ func TestRepoToolsInstallThroughCache(t *testing.T) {
 			})
 			home := t.TempDir()
 			var logs strings.Builder
-			r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, tt.cacheLocked, nil, "",
+			r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, testGateway, "run-token", home, env, tt.cacheLocked, nil, "",
 				slog.New(slog.NewTextHandler(&logs, nil)))
 			if err != nil {
 				t.Fatal(err)
@@ -209,7 +217,7 @@ func TestRepoToolsBroken(t *testing.T) {
 	}
 	useTestRegistry(t)
 	home := t.TempDir()
-	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, nil, false, nil, "",
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, testGateway, "run-token", home, nil, false, nil, "",
 		slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +249,7 @@ func TestRepoToolsBrokenAfterAnInstall(t *testing.T) {
 	}
 	useTestRegistry(t)
 	home := t.TempDir()
-	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, nil, false, nil, "",
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, testGateway, "run-token", home, nil, false, nil, "",
 		slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +358,7 @@ func TestRepoToolsInstallAfterAStall(t *testing.T) {
 		<-r.Context().Done()
 	})
 	home := t.TempDir()
-	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, true, nil, "", slog.New(slog.DiscardHandler))
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, testGateway, "run-token", home, env, true, nil, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +380,7 @@ func TestRepoToolsLinkFailure(t *testing.T) {
 	payload := []byte("#!/bin/sh\necho upstream\n")
 	env := standInGateway(t, payload, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) })
 	home := t.TempDir()
-	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, true, nil, "", slog.New(slog.DiscardHandler))
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, testGateway, "run-token", home, env, true, nil, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +424,7 @@ func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 		_, _ = w.Write(payload)
 	})
 	home := t.TempDir()
-	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, home, env, true, nil, "", slog.New(slog.DiscardHandler))
+	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, testGateway, "run-token", home, env, true, nil, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,30 +478,4 @@ type closeCanceling struct {
 func (c closeCanceling) Close() error {
 	defer c.cancel()
 	return c.ReadCloser.Close()
-}
-
-// TestRepoToolsRegistryAfterAStall: a fetch of the registry through the
-// gateway's cache that stalls takes its own installTimeout, and leaves the
-// fetch around the cache its own.
-func TestRepoToolsRegistryAfterAStall(t *testing.T) {
-	useTestRegistry(t)
-	was := installTimeout
-	t.Cleanup(func() { installTimeout = was })
-	installTimeout = 300 * time.Millisecond
-	var calls atomic.Int32
-	fetchRegistry = func(ctx context.Context, _ *http.Client) (*aqua.Registry, error) {
-		if calls.Add(1) == 1 {
-			<-ctx.Done()
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		return aqua.Parse([]byte(testRegistry))
-	}
-	env := []string{"PATH=/usr/bin:/bin", "HTTP_PROXY=http://gateway.invalid", "HTTPS_PROXY=http://gateway.invalid"}
-	r, _, err := newRepoTools(t.Context(), repoconfig.Tools{"aqua:acme/repo-tool": "v1.0.0"}, t.TempDir(), env, true, nil, "",
-		slog.New(slog.DiscardHandler))
-	if err != nil || r == nil || calls.Load() != 2 {
-		t.Fatalf("newRepoTools after a stalled fetch = %v, %v after %d fetches; want the second to serve", r, err, calls.Load())
-	}
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/go-git/go-git/v6"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/aqua"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
 )
@@ -357,7 +356,7 @@ func TestCommandToolNothingToOffer(t *testing.T) {
 	s.Tools = repoconfig.Tools{"aqua:acme/missing": "v1.0.0"}
 	run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, runspec.Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	cleanup()
-	want := "tools: aqua:acme/missing not offered: it is not in aqua-registry " + aqua.RegistryVersion + ", the release this kritika reads"
+	want := "tools: aqua:acme/missing not offered: it is not in the aqua registry"
 	if run != nil || fetch != nil || !slices.Equal(notes, []string{want}) {
 		t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
 	}

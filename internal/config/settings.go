@@ -76,6 +76,17 @@ type Settings struct {
 	// which is uncommon for storage services inside a cluster.
 	GatewayCacheS3ForcePathStyle bool `env:"KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE" envDefault:"true" yaml:"gatewayCacheS3ForcePathStyle"`
 
+	// AquaRegistryURL is where the gateway fetches the aqua registry runners
+	// resolve a repository's tools against. aqua-registry's main branch by
+	// default, so a package or a definition it adds reaches the reviews
+	// without a kritika release; a release's tag holds the registry still,
+	// and a mirror serves a cluster that cannot reach GitHub.
+	AquaRegistryURL string `env:"KRITIKA_AQUA_REGISTRY_URL" envDefault:"https://raw.githubusercontent.com/aquaproj/aqua-registry/main/registry.yaml" yaml:"aquaRegistryUrl,omitempty"` //nolint:lll // a struct tag does not wrap
+	// AquaRegistryRefresh is how often the gateway asks for the registry
+	// again, with the last answer's validators, so an unchanged registry
+	// costs a 304. An hour keeps a new package a short wait away.
+	AquaRegistryRefresh time.Duration `env:"KRITIKA_AQUA_REGISTRY_REFRESH" envDefault:"1h" yaml:"aquaRegistryRefresh,omitempty"`
+
 	// WebURL is the dashboard's externally reachable origin: an absolute
 	// http(s) URL with a host and no query or fragment. It is how the
 	// dashboard builds absolute links (OIDC redirect URIs, session cookie

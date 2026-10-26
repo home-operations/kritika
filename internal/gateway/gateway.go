@@ -1,7 +1,7 @@
 // Package gateway is the worker's listener for runner pods: the egress
 // proxy they reach the outside through, each with its run token, and the
 // model, similar-code and conversation endpoints a review's runner calls
-// with the same token. No
+// with the same token, and the aqua registry it resolves tools against. No
 // provider key enters a runner pod: the gateway reserves each call
 // against the run's budget and checks the account's monthly cap, answers
 // it through the account's provider, and records what it spent where the
@@ -59,6 +59,9 @@ type Server struct {
 	// Embedders resolves the instance's embedder for similar code; nil
 	// serves none.
 	Embedders *adapter.Embedders
+	// AquaRegistry is the aqua registry runners read at
+	// runspec.AquaRegistryPath; nil serves none.
+	AquaRegistry *AquaRegistry
 }
 
 // maxBody bounds one step's request: the whole conversation so far, every
@@ -87,6 +90,8 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.similarCode(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/conversation":
 		g.conversation(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == runspec.AquaRegistryPath:
+		g.aquaRegistry(w, r)
 	default:
 		http.NotFound(w, r)
 	}
