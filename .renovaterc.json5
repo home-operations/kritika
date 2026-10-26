@@ -11,5 +11,10 @@
       groupSlug: "image-tools",
       automerge: false,
     },
+    {
+      description: "Bump the aqua registry's release weekly: it has one most days",
+      matchDepNames: ["aquaproj/aqua-registry"],
+      schedule: ["* 0-3 * * 1"],
+    },
   ],
 }

@@ -36,6 +36,7 @@ jobs:
           paths: |
             charts/kritika/README.md
             charts/kritika/values.schema.json
+            internal/aqua/release.go
 
   push:
     if: ${{ needs.regenerate.outputs.changed == 'true' }}
@@ -54,3 +55,4 @@ jobs:
           paths: |
             charts/kritika/README.md
             charts/kritika/values.schema.json
+            internal/aqua/release.go
