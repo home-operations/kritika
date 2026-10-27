@@ -129,8 +129,10 @@ tells the review to:
   repository works around its absence: a comment citing the dependency's
   issue or pull request, such as `google/go-github#1234`, that the notes
   close, or a usage the notes say the new version makes unnecessary. That
-  is a `p2` finding on the usage's line, naming the note. A feature that no
-  such code meets is no finding.
+  is a `p2` finding even though the code stays correct and unchanged,
+  anchored as a usage finding is above, naming the note and the removal or
+  replacement the code can take. A feature that no such code meets is no
+  finding.
 
 A version number alone never sets a severity. The
 [confidence scorer](/confidence/#risk) rates the step's risk separately.
