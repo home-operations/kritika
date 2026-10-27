@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.108](https://github.com/home-operations/kritika/compare/0.0.107...0.0.108) (2026-10-27)
+
+
+### Features
+
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.2.0 → v2.3.0) ([#1268](https://github.com/home-operations/kritika/issues/1268)) ([7f15140](https://github.com/home-operations/kritika/commit/7f15140e28e07d65a6e43ac7afccacdad8a69001))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.32.0 → v3.33.0) ([#1272](https://github.com/home-operations/kritika/issues/1272)) ([00ea165](https://github.com/home-operations/kritika/commit/00ea165ad7c9aecf5b978f038cb1e5d2845e14fe))
+
+
+### Bug Fixes
+
+* **container:** update image registry.access.redhat.com/hi/core-runtime (bd64a61 → ec42e5b) ([#1267](https://github.com/home-operations/kritika/issues/1267)) ([a12e549](https://github.com/home-operations/kritika/commit/a12e54989668b40b0b3df03ec062826cbc93b38d))
+* **gitfetch:** return an empty path list for an empty diff ([#1270](https://github.com/home-operations/kritika/issues/1270)) ([db31e91](https://github.com/home-operations/kritika/commit/db31e91927c346edcc8b483cacf48ecf230af686))
+* **github-release:** update image tools ([#1264](https://github.com/home-operations/kritika/issues/1264)) ([9095d91](https://github.com/home-operations/kritika/commit/9095d91d08f6c4289e97c7ec0e561b8c1870f59e))
+* **worker:** retry a runner that failed before the model ran ([#1271](https://github.com/home-operations/kritika/issues/1271)) ([acc661b](https://github.com/home-operations/kritika/commit/acc661b96804518bc0424a119b46524c22d0c611))
+
+
+### Documentation
+
+* replace mise wording left from the aqua switch ([#1263](https://github.com/home-operations/kritika/issues/1263)) ([b5a06ad](https://github.com/home-operations/kritika/commit/b5a06ad1dcd7676890b6787e280cd95db28dec96))
+
+
+### Tests
+
+* **forgejo:** check repository listing against real Gitea and Forgejo ([#1266](https://github.com/home-operations/kritika/issues/1266)) ([70c7f40](https://github.com/home-operations/kritika/commit/70c7f40b56c78c577d8aec7071cd9b0be1d37765))
+
 ## [0.0.107](https://github.com/home-operations/kritika/compare/0.0.106...0.0.107) (2026-10-26)
 
 
