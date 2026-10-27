@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.109](https://github.com/home-operations/kritika/compare/0.0.108...0.0.109) (2026-10-27)
+
+
+### Features
+
+* **review:** report a workaround a dependency update retires ([#1273](https://github.com/home-operations/kritika/issues/1273)) ([2639c9e](https://github.com/home-operations/kritika/commit/2639c9e8d4ca612e7bafa47709b7743301ae4d10))
+* **web:** play the brand review pass on the sign-in page ([#1275](https://github.com/home-operations/kritika/issues/1275)) ([4074e1e](https://github.com/home-operations/kritika/commit/4074e1e81a2966b342f521c6b9423672562a0e80))
+
 ## [0.0.108](https://github.com/home-operations/kritika/compare/0.0.107...0.0.108) (2026-10-27)
 
 
