@@ -201,7 +201,13 @@ finding: list what you searched under checked.
 under a tag that names a version, to the description. Notes of a major or minor step you could not read, or
 left unread, are not safe by their silence: say in the take which notes to read and for which of this
 repository's usages, and never say that nothing affects them.
-6. Do not propose adopting what the new version adds: the review is about what the update does to this code.`
+6. Do not propose adopting what the new version adds: the review is about what the update does to this code. The
+one exception is code this repository keeps to work around what the new version now does: the update makes it
+unnecessary, which is a p2 finding even though the code stays correct and unchanged. Find it either by a comment
+that cites the dependency's issue or pull request by number with its repository slug or module path, such as
+google/go-github#1234, or by a usage the notes say the new version makes unnecessary. Where the notes close the
+issue or ship the feature, name the note and the removal or replacement the code can take, anchored as a usage
+finding is. A feature the notes add that no such code meets is no finding.`
 
 // Rule is a check the configuration writes, by its id.
 type Rule struct {
