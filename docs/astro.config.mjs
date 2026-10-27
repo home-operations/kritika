@@ -4,7 +4,7 @@ import starlightLinksValidator from "starlight-links-validator";
 
 export default defineConfig({
   site: "https://kritika.home-operations.com",
-  // The repository's site/, which the shared docs-build action publishes.
+  // The repository's site/, which the Docs workflow publishes.
   outDir: "../site",
   integrations: [
     starlight({
