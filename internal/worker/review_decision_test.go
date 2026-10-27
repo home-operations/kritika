@@ -45,7 +45,7 @@ func TestDecideRunnerReview(t *testing.T) {
 		name                         string
 		jobCause, runCause, agentErr error
 		result                       executor.Result
-		final                        bool
+		unpaid, final                bool
 		want                         reviewDecision
 	}{
 		{name: "successful runner continues", want: reviewDecision{disposition: reviewContinue}},
@@ -85,11 +85,23 @@ func TestDecideRunnerReview(t *testing.T) {
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "runner heartbeat lost"}, disposition: reviewFinish, description: "kritika: review failed"}},
 		{name: "paid runner failure does not retry", result: executor.Result{Err: runErr},
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "runner failed"}, disposition: reviewFinish, description: "kritika: review failed"}},
+		{name: "a runner that failed before the model ran retries", unpaid: true, result: executor.Result{Err: runErr},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner failed before the model ran; retried", OnlyUnfinished: true}, disposition: reviewRetry, err: runErr}},
+		{name: "a runner that failed before the model ran cannot retry on final attempt", unpaid: true, final: true, result: executor.Result{Err: runErr},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "runner failed"}, disposition: reviewFinish, description: "kritika: review failed"}},
+		{name: "supervision prevents an unpaid retry", unpaid: true, runCause: errSuperseded, result: executor.Result{Err: runErr},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, OnlyUnfinished: true}, disposition: reviewFinish}},
+		{name: "a lost heartbeat is not an unpaid failure", unpaid: true, runCause: errHeartbeatLost, result: executor.Result{Err: runErr},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "runner heartbeat lost"}, disposition: reviewFinish, description: "kritika: review failed"}},
+		{name: "a disruption names itself before an unpaid retry", unpaid: true, result: executor.Result{Err: runErr, Disruption: "PreemptionByScheduler"},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner's pod was disrupted; retried", OnlyUnfinished: true}, disposition: reviewRetry, err: runErr}},
+		{name: "a cancel beats an unpaid failure", unpaid: true, jobCause: river.ErrJobCancelledRemotely, result: executor.Result{Err: runErr},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review canceled"}},
 		{name: "timeout does not retry a failed runner", jobCause: context.DeadlineExceeded, result: executor.Result{Err: runErr},
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "runner failed"}, disposition: reviewFinish, description: "kritika: review failed"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			checkReviewDecision(t, decideRunnerReview(tt.jobCause, tt.runCause, tt.result, tt.agentErr, tt.final), tt.want)
+			checkReviewDecision(t, decideRunnerReview(tt.jobCause, tt.runCause, tt.result, tt.agentErr, tt.unpaid, tt.final), tt.want)
 		})
 	}
 }

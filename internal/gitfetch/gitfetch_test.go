@@ -2,6 +2,9 @@ package gitfetch
 
 import (
 	"cmp"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +14,7 @@ import (
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/home-operations/kritika/internal/gittest"
 )
@@ -198,6 +202,18 @@ func TestRunEmptyDiffChangesNoPaths(t *testing.T) {
 func TestRunRejectsNonSHA(t *testing.T) {
 	if _, err := Run(t.Context(), Fetch{CloneURL: "x", Head: "main", Base: "HEAD~1"}); err == nil {
 		t.Fatal("branch names must be rejected: only SHAs can be fetched at depth one")
+	}
+}
+
+// TestRunNotFoundNamesTheToken: a remote that answers not found, as a forge
+// does for a repository the token cannot see, is reported with the token
+// as a possible cause, and go-git's sentinel stays in the chain.
+func TestRunNotFoundNamesTheToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
+	t.Cleanup(srv.Close)
+	_, err := Run(t.Context(), Fetch{CloneURL: srv.URL + "/acme/webapp.git", Token: "scoped", Head: strings.Repeat("a", 40)})
+	if !errors.Is(err, transport.ErrRepositoryNotFound) || !strings.Contains(err.Error(), "the token cannot see it") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

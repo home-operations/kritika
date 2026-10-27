@@ -172,6 +172,64 @@ func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta string) {
 	}
 }
 
+// TestModelStepsBegun: a run has a step begun once a reservation or a
+// model call, answered or not, names it, and other runs' do not count.
+func TestModelStepsBegun(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	alpha := accountID(t, s, "alpha")
+	reviewID := insertReview(t, ctx, s, alpha)
+	t.Cleanup(func() { deleteModelCalls(t, s, `review_id = $1`, reviewID) })
+	var runID, otherRunID string
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		for _, id := range []*string{&runID, &otherRunID} {
+			if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
+				alpha, reviewID).Scan(id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	begun := func(runID string) bool {
+		t.Helper()
+		var begun bool
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) (err error) {
+			begun, err = ModelStepsBegun(ctx, tx, runID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return begun
+	}
+	if begun(runID) || begun(otherRunID) {
+		t.Fatal("a run with no model call has a step begun")
+	}
+	// A step reserved and never recorded, as one in flight when the runner
+	// died is, counts.
+	if _, err := s.BeginModelInvocation(ctx, Usage{AccountID: alpha, RunnerRunID: otherRunID, Role: "review"}, "", 0, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if begun(runID) || !begun(otherRunID) {
+		t.Fatalf("begun: run %v, other run %v", begun(runID), begun(otherRunID))
+	}
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		r := transcript.Delta(transcript.State{}, model.StepRequest{Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}}, nil)
+		return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, ReviewID: reviewID, RunnerRunID: runID, Kind: ModelCallAgentStep,
+			Model: "m", Row: r.Encode(), Error: "provider: unreachable"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !begun(runID) {
+		t.Fatal("a run with a failed model call has no step begun")
+	}
+}
+
 func deleteModelCalls(t *testing.T, s *Store, where string, args ...any) {
 	t.Helper()
 	if _, err := s.owner.Exec(context.Background(), `DELETE FROM model_calls WHERE `+where, args...); err != nil {

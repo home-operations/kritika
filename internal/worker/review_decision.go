@@ -94,7 +94,7 @@ func decideInterruptedReview(cause, err error) reviewDecision {
 	return reviewDecision{end: end, disposition: reviewInterrupted, description: desc}
 }
 
-func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr error, finalAttempt bool) reviewDecision {
+func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr error, unpaid, finalAttempt bool) reviewDecision {
 	// River will not retry a remotely canceled job, so its review must end
 	// canceled even when the runner answered or its result is lost.
 	if errors.Is(jobCause, river.ErrJobCancelledRemotely) || (res.Err != nil && stoppingCause(jobCause)) {
@@ -112,6 +112,14 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 	if res.Err != nil && (runCause == nil || errors.Is(runCause, errHeartbeatLost)) && res.Disruption != "" && !finalAttempt {
 		end := store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner's pod was disrupted; retried", OnlyUnfinished: true}
 		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: runner pod disrupted: %w", res.Err)}
+	}
+	// A runner that failed before any model step was recorded, on its
+	// fetch or while packing the context, spent nothing on the model: its
+	// retry costs a pod. River's backoff spaces the attempts out, so a
+	// forge that refuses the fetch for a while gets that while.
+	if res.Err != nil && runCause == nil && unpaid && !finalAttempt {
+		end := store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner failed before the model ran; retried", OnlyUnfinished: true}
+		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: runner failed before the model ran: %w", res.Err)}
 	}
 	if agentErr != nil {
 		// Retrying a missing result would pay for the agent again.

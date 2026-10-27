@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 
 	"github.com/home-operations/kritika/internal/udiff"
@@ -151,6 +152,12 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 		RefSpecs:      refSpecs(f),
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		// A forge answers not found for a repository the token cannot
+		// see as it does for one that does not exist, and the run was
+		// started from the repository: the token is the usual cause.
+		if errors.Is(err, transport.ErrRepositoryNotFound) {
+			return nil, fmt.Errorf("gitfetch: fetch: the repository is missing or the token cannot see it: %w", err)
+		}
 		return nil, fmt.Errorf("gitfetch: fetch: %w", err)
 	}
 	head, err := repo.CommitObject(plumbing.NewHash(f.Head))

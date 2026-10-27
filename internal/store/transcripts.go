@@ -92,6 +92,19 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	return nil
 }
 
+// ModelStepsBegun reports whether any model step of runner run runnerRunID
+// was begun: reserved, which commits before the provider is called, or
+// recorded, answered or not. A run that failed with none spent nothing on
+// the model, so running it again costs a pod alone.
+func ModelStepsBegun(ctx context.Context, tx pgx.Tx, runnerRunID string) (bool, error) {
+	var begun bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM model_invocations WHERE runner_run_id = $1)
+		OR EXISTS (SELECT 1 FROM model_calls WHERE runner_run_id = $1)`, runnerRunID).Scan(&begun); err != nil {
+		return false, fmt.Errorf("store: read model steps: %w", err)
+	}
+	return begun, nil
+}
+
 // AgentState returns what part of the run has recorded so far and the
 // number of its next agent step, both zero before its first; the bytes are
 // the whole run's, which its cap bounds whatever its parts. It takes a
