@@ -481,6 +481,10 @@ func (f *followUp) runAgent(
 		return nil, fmt.Errorf("worker: runner pod disrupted: %w", res.Err)
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		return nil, finalError{errors.New("worker: runner heartbeat lost")}
+	// One that failed before any model step was recorded spent nothing on
+	// the model either: the job is retried.
+	case res.Err != nil && out.unpaid:
+		return nil, fmt.Errorf("worker: runner failed before the model ran: %w", res.Err)
 	case res.Err != nil:
 		return nil, finalError{fmt.Errorf("worker: runner failed: %w", res.Err)}
 	case agentErr != nil:

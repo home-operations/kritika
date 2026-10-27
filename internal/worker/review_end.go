@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
-	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
@@ -20,9 +19,10 @@ import (
 // reports whether it ended the review, and the error River retries on.
 // A run that finished is judged by afterRun.
 func (w *Review) judgeRun(
-	ctx, cctx context.Context, job *river.Job[jobs.ReviewArgs], e endedReview, res executor.Result, cause, agentErr error,
+	ctx, cctx context.Context, job *river.Job[jobs.ReviewArgs], e endedReview, out agentRun,
 ) (bool, error) {
-	decision := decideRunnerReview(context.Cause(ctx), cause, res, agentErr, job.Attempt >= job.MaxAttempts)
+	res, cause, agentErr := out.res, out.cause, out.agentErr
+	decision := decideRunnerReview(context.Cause(ctx), cause, res, agentErr, out.unpaid, job.Attempt >= job.MaxAttempts)
 	if decision.disposition == reviewContinue {
 		return false, nil
 	}

@@ -563,6 +563,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
 	t.Run("the marks say how a review of the pull request's head ended", func(t *testing.T) { checkReviewOutcome(t, h) })
 	t.Run("a runner whose pod never started is retried", func(t *testing.T) { checkRunnerNeverStarted(t, h) })
+	t.Run("a runner that failed before the model ran is retried", func(t *testing.T) { checkRunnerFailedBeforeModel(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("a review model on no configured provider fails before its runner", func(t *testing.T) { checkAgentProviderMissing(t, h) })
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
@@ -587,7 +588,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 21 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 22 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1421,6 +1422,10 @@ type hookExecutor struct {
 	// started does: with the error, the kubelet's start time and no
 	// runner run.
 	unstarted error
+	// failed, when set, ends the next run the way a pod that exited before
+	// its runner did anything does: with the error, started, and no
+	// runner run.
+	failed error
 	// st, when set, reads the last run's grant as it starts: its agent
 	// limits, Job deadline and token budget.
 	st       *store.Store
@@ -1431,8 +1436,8 @@ type hookExecutor struct {
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
 	e.mu.Lock()
-	hold, detach, unstarted := e.hold, e.detach, e.unstarted
-	e.hold, e.detach, e.unstarted = 0, false, nil
+	hold, detach, unstarted, failed := e.hold, e.detach, e.unstarted, e.failed
+	e.hold, e.detach, e.unstarted, e.failed = 0, false, nil, nil
 	e.agent, e.deadline, e.budget = spec.Job.Agent, spec.Deadline, 0
 	if e.st != nil {
 		if g, err := e.st.LookupGatewayToken(ctx, spec.Secrets.GatewayToken); err == nil {
@@ -1444,6 +1449,9 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 		return executor.Result{
 			JobName: "kritika-run-unstarted", StartedAt: time.Now(), TerminationReason: "ErrImagePull", NeverStarted: true, Err: unstarted,
 		}
+	}
+	if failed != nil {
+		return executor.Result{JobName: "kritika-run-failed", StartedAt: time.Now(), ExitCode: 1, TerminationReason: "Error", Err: failed}
 	}
 	if detach {
 		return e.runDetached(ctx, spec)
@@ -1901,6 +1909,38 @@ func checkReviewOutcome(t *testing.T, h *agenticHarness) {
 				t.Fatalf("outcome = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// checkRunnerFailedBeforeModel has the runner fail once before any model
+// step, as one whose fetch the forge refused does: the review ends
+// superseded and the job is retried, and the retry's review completes.
+func checkRunnerFailedBeforeModel(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v() {}\n")
+	h.exec.mu.Lock()
+	h.exec.failed = errors.New("gitfetch: fetch: the repository is missing or the token cannot see it: repository not found")
+	h.exec.mu.Unlock()
+	h.dispatch(t, next)
+	var statuses []string
+	waitFor(t, 30*time.Second, "the retried review to complete", func() bool {
+		statuses = nil
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			rows, err := tx.Query(h.ctx, `SELECT status || ': ' || coalesce(error, '') FROM reviews WHERE head_sha = $1
+				AND finished_at IS NOT NULL ORDER BY created_at`, next)
+			if err != nil {
+				return err
+			}
+			statuses, err = pgx.CollectRows(rows, pgx.RowTo[string])
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(statuses) == 2
+	})
+	if statuses[0] != "superseded: its runner failed before the model ran; retried" || statuses[1] != "completed: " {
+		t.Fatalf("reviews = %q", statuses)
 	}
 }
 
