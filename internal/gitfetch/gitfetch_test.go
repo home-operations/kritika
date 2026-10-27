@@ -33,6 +33,9 @@ type repo struct {
 	// start, merged the change brought up to date with it as it was, and
 	// moved the change brought up to date and extended.
 	long, prior, touched, merged, moved string
+	// On a fourth branch from base, a change and its revert: a head
+	// ahead of the base whose tree is the base's.
+	reverted string
 }
 
 func TestTrees(t *testing.T) {
@@ -130,6 +133,9 @@ func build(t *testing.T) repo {
 	out.touched = commit("base edits svc.go", map[string]string{"svc.go": touchedSvc})
 	out.merged = commit("change brought up to date", map[string]string{"svc.go": touchedSvc + "\nfunc b() {}\n"})
 	out.moved = commit("change brought up to date and extended", map[string]string{"svc.go": touchedSvc + "\nfunc b() {}\n\nfunc c() {}\n"})
+	branch("reverted", out.base)
+	commit("change", map[string]string{"main.go": "package main\n\nfunc a() {}\n\nfunc b() {}\n"})
+	out.reverted = commit("revert change", map[string]string{"main.go": "package main\n\nfunc a() {}\n"})
 	return out
 }
 
@@ -174,6 +180,22 @@ func TestRunDiffsTwoCommitsAndPatchIDIsStable(t *testing.T) {
 	}
 	if _, err := os.Stat(res.Dir); !os.IsNotExist(err) {
 		t.Fatal("Close should remove the bare repo")
+	}
+}
+
+func TestRunEmptyDiffChangesNoPaths(t *testing.T) {
+	r := build(t)
+
+	res, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: r.reverted, Base: r.base})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	defer func() { _ = res.Close() }()
+	if res.Diff != "" {
+		t.Fatalf("diff = %q", res.Diff)
+	}
+	if res.Changed == nil || len(res.Changed) != 0 {
+		t.Fatalf("changed = %#v, want empty and non-nil", res.Changed)
 	}
 }
 
