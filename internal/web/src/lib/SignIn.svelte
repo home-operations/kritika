@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Logo from './Logo.svelte';
+  import Wordmark from './Wordmark.svelte';
   import { basePath } from './base';
   import { getJSON, sendJSON, signinState, ApiError } from './api.svelte';
   import { session } from './session.svelte';
@@ -73,8 +74,10 @@
 
 <div class="signin flex items-center justify-center min-h-dvh bg-canvas">
   <div class="signin-card flex flex-col items-center gap-1.5 w-[min(320px,_90vw)] py-8 px-7 bg-panel border border-solid border-line rounded-[10px] text-center">
-    <Logo size={40} />
-    <h1>kritika</h1>
+    <div class="brand flex flex-col items-center gap-1.5">
+      <Logo size={40} />
+      <h1 aria-label="kritika"><Wordmark /></h1>
+    </div>
     <p class="signin-sub mt-0 mx-0 mb-3 text-muted text-ui-md">Sign in to continue</p>
 
     {#if loading}

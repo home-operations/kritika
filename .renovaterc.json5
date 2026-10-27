@@ -2,7 +2,6 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>home-operations/renovate-config"],
   postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
-  constraints: { pnpm: "^12" },
   packageRules: [
     {
       description: "Group the -tools image's Hardened Images and gh and merge them by hand",

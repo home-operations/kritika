@@ -480,7 +480,7 @@
     animation: live-blink 1s ease-in-out infinite;
   }
   .signin-card h1 {
-    @apply mt-1 mx-0 mb-0 text-[length:24px] font-extrabold tracking-[-0.01em];
+    @apply mt-1 mx-0 mb-0;
   }
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -1187,13 +1187,13 @@
     .topbar-row {
       @apply flex flex-wrap py-2.5 px-3 gap-2.5;
     }
-    .brand {
+    .topbar .brand {
       @apply m-0;
     }
-    .brand .logo {
+    .topbar .brand .logo {
       @apply w-[22px] h-[22px];
     }
-    .wordmark {
+    .topbar .wordmark {
       @apply hidden;
     }
     .account-button {
