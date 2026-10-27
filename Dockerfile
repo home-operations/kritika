@@ -79,7 +79,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # that adds none to /etc/passwd leaves a tool unable to look up, so the
 # root gets a nonroot user and group of that id.
 FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:4163796d8b7f28021178093d31cb97c05336fd3f3a4d7006603a7fef29e997e7 AS core-runtime
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:bd64a61c3f27fdb8e877c26762968d0d8acd03461de4e5f2e6ac958adbb08dfd AS tools-root
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:ec42e5bba671b73f6656e6f9bda14f7d400b55dd7cdce369b41870dfadd00262 AS tools-root
 USER 0
 COPY --from=core-runtime / /rootfs
 RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak_deps=False --nodocs \
