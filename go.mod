@@ -35,7 +35,7 @@ require (
 	github.com/riverqueue/river/rivertype v0.49.0
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/ulikunitz/xz v0.5.17
-	gitlab.com/gitlab-org/api/client-go/v3 v3.33.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.34.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0
