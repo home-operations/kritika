@@ -396,6 +396,36 @@ test('the wordmark takes a review pass on load and on hover, then rests, and hol
   await expect(mark).not.toHaveClass(/playing/);
 });
 
+test('the sign-in card carries the brand review pass, logo included, and keeps the name on phones', async ({ page, mockProviders }) => {
+  await mockProviders();
+  await page.route('**/api/v1/me', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'unauthorized', message: 'no session' }),
+    }),
+  );
+  await page.goto('/');
+  const mark = page.locator('.signin-card .brand .wordmark');
+  await expect(mark).toHaveText('kritika');
+  // One snapshot of the class and the animations it drives, so a slow runner
+  // cannot read the styles after the pass has already rested.
+  await expect
+    .poll(() =>
+      page.locator('.signin-card .brand').evaluate((brand) => ({
+        playing: brand.querySelector('.wordmark')?.classList.contains('playing'),
+        logo: getComputedStyle(brand.querySelector('.logo')!).animationName,
+        line: getComputedStyle(brand.querySelector('.logo .line')!).animationName,
+      })),
+    )
+    .toEqual({ playing: true, logo: 'logo-peek', line: 'line-read' });
+  await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
+  await expect(page.locator('.signin-card h1')).toHaveText('kritika');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(mark).toBeVisible();
+  expect(await page.locator('.signin-card .brand .logo').evaluate((el) => el.getBoundingClientRect().width)).toBe(40);
+});
+
 test('the wordmark stays idle on phones and recovers when hidden mid-animation', async ({ page, signIn }) => {
   await signIn();
   await page.setViewportSize({ width: 390, height: 844 });
