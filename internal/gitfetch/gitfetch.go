@@ -67,7 +67,9 @@ type Result struct {
 	// `git patch-id --stable`: a rebase that leaves the change untouched
 	// keeps its patch id.
 	PatchID string
-	// Changed lists the paths the diff touches, head-side names.
+	// Changed lists the paths the diff touches, head-side names, and is
+	// empty rather than nil when the diff is: the runner stores it in a
+	// NOT NULL column, and pgx writes a nil slice as NULL.
 	Changed []string
 	// Prior is the fetched prior head, nil when none was asked for or it
 	// could not be fetched, in which case PriorErr says why. DeltaDiff and
@@ -287,7 +289,7 @@ func treeChanges(ctx context.Context, from, to *object.Commit) (object.Changes, 
 func renderChanges(ctx context.Context, changes object.Changes, gained map[string]int) (string, []string, error) {
 	gained = maps.Clone(gained)
 	var b strings.Builder
-	var changed []string
+	changed := []string{}
 	for _, c := range changes {
 		patch, err := c.PatchContext(ctx)
 		if err != nil {
