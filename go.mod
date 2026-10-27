@@ -7,7 +7,7 @@ require (
 	github.com/KimMachineGun/automemlimit v1.0.1
 	github.com/anthropics/anthropic-sdk-go/v2 v2.3.0
 	github.com/aquaproj/aqua/v2 v2.65.2
-	github.com/bmatcuk/doublestar/v4 v4.10.3
+	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
