@@ -202,9 +202,10 @@ links canceled reviews to their replacements; money already spent still counts.
 
 If posting a completed review fails, kritika retries publication from the
 saved result without calling the model again. Infrastructure interruptions
-can restart a runner and repeat unfinished model work. Split reviews save each
-completed part and reuse it on retries of the same job when the review inputs,
-model policy and prompts still match. A manual re-review starts fresh. The
-dashboard marks reused parts; their usage remains charged to the original
-run. Check the dashboard's [Queue](/dashboard/#queue) for retries and
-errors.
+can restart a runner and repeat unfinished model work. A runner that fails
+before its first model call, on its fetch for instance, is retried with
+backoff and repeats none. Split reviews save each completed part and reuse
+it on retries of the same job when the review inputs, model policy and
+prompts still match. A manual re-review starts fresh. The dashboard marks
+reused parts; their usage remains charged to the original run. Check the
+dashboard's [Queue](/dashboard/#queue) for retries and errors.

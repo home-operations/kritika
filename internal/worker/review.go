@@ -216,7 +216,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	// The parts are done with the slots they ran in.
 	stopSlots()
 	slots.close(ctx)
-	res, cause, agentOutcome, agentErr := out.res, out.cause, out.agent, out.agentErr
+	res, agentOutcome := out.res, out.agent
 	cctx, cancel := detach(ctx)
 	defer cancel()
 	ended.jobName = res.JobName
@@ -224,7 +224,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		logger.Error("runner run not recorded", "error", err)
 		return w.finishEnded(ctx, ended, err)
 	}
-	if judged, err := w.judgeRun(ctx, cctx, job, ended, res, cause, agentErr); judged {
+	if judged, err := w.judgeRun(ctx, cctx, job, ended, out); judged {
 		return err
 	}
 	pctx, stopPreparation := preparationContext(ctx)

@@ -308,6 +308,9 @@ type agentRun struct {
 	cause    error
 	agent    *store.AgentRunRow
 	agentErr error
+	// unpaid is set when the run failed with no agent row and no model
+	// step recorded: it spent nothing on the model, so it may run again.
+	unpaid bool
 }
 
 // runRunner runs spec on exec, supervised as sup, until it ends, then
@@ -320,7 +323,7 @@ func (b *Base) runRunner(
 ) agentRun {
 	res, cause := supervise(ctx, sup, exec, spec)
 	returned := time.Now()
-	b.revokeGatewayTokens(ctx, logger, runID)
+	tokensRevoked := b.revokeGatewayTokens(ctx, logger, runID)
 	revoked := time.Now()
 	row, agentErr := b.readAgentRun(ctx, accountID, runID, ref, stopped(ctx, res, cause), rowWait)
 	logger.Info("runner completion handled", "run", runID, "job_name", res.JobName,
@@ -329,7 +332,31 @@ func (b *Base) runRunner(
 		logger.Info("agent completion observed", "run", runID, "job_name", res.JobName,
 			"agent_to_executor_return", max(0, returned.Sub(row.CreatedAt)), "elapsed", max(0, time.Since(row.CreatedAt)))
 	}
-	return agentRun{res: res, cause: cause, agent: row, agentErr: agentErr}
+	// With the run's tokens revoked, no step can begin after the read.
+	unpaid := res.Err != nil && tokensRevoked && row == nil && agentErr == nil && b.modelUntouched(ctx, accountID, runID, logger)
+	return agentRun{res: res, cause: cause, agent: row, agentErr: agentErr, unpaid: unpaid}
+}
+
+// modelUntouched reports whether no model step of the run was begun. A
+// step is reserved before the provider is called, so a step in flight
+// when the runner died counts, though its record may be on its way. A
+// read that fails counts as a step: a retry on a guess could pay for the
+// model twice. ctx's cancellation is not inherited, as readAgentRun's is
+// not.
+func (b *Base) modelUntouched(ctx context.Context, accountID, runID string, logger *slog.Logger) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var begun bool
+	err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		var err error
+		begun, err = store.ModelStepsBegun(ctx, tx, runID)
+		return err
+	})
+	if err != nil {
+		logger.Warn("model steps of the failed run not read; it counts as paid for", "run", runID, "error", err)
+		return false
+	}
+	return !begun
 }
 
 // readAgentRun reads the run's agent_runs row, nil when the runner wrote
@@ -475,12 +502,14 @@ func (s sizing) rounds() int { return (s.parts + s.slots - 1) / s.slots }
 // revokeGatewayTokens ends the run's token once its runner is done, on a
 // context of its own since the job's may have ended. A token not revoked
 // still expires on its own.
-func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) {
+func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) bool {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
 	if err := b.Store.RevokeGatewayTokens(rctx, runID); err != nil {
 		logger.Warn("gateway token not revoked", "error", err)
+		return false
 	}
+	return true
 }
 
 // stopped reports whether a run was stopped from outside, by supervision,
