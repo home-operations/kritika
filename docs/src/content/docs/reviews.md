@@ -125,7 +125,12 @@ tells the review to:
 - read major and minor steps first when a grouped update has many. In the
   [summary](#the-summary-comment), name the notes it could not read, or
   left unread, as a check to make, never as a finding and never as safe;
-- never propose adopting what the new version adds.
+- never propose adopting what the new version adds, except where this
+  repository works around its absence: a comment citing the dependency's
+  issue or pull request, such as `google/go-github#1234`, that the notes
+  close, or a usage the notes say the new version makes unnecessary. That
+  is a `p2` finding on the usage's line, naming the note. A feature that no
+  such code meets is no finding.
 
 A version number alone never sets a severity. The
 [confidence scorer](/confidence/#risk) rates the step's risk separately.

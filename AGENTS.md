@@ -18,7 +18,7 @@ applies to any AI coding agent working here.
 
 - PR titles follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
   `<type>[(scope)][!]: <description>` (e.g. `fix(config): reject a negative
-timeout`), which is what drives release-please's version bumps. Individual
+  timeout`), which is what drives release-please's version bumps. Individual
   commit messages don't have to follow the format, though matching it is
   fine. Sign off commits: `git commit -s`.
 - Never `git commit`, `git push`, or open a PR unless asked to. Ask before
@@ -48,7 +48,9 @@ timeout`), which is what drives release-please's version bumps. Individual
   exists, what would surprise a reader); don't narrate what good naming
   already says, and don't reference the current change or past behavior in
   a comment: that belongs in the PR description and rots as the code moves
-  on.
+  on. A workaround for an upstream limitation cites the upstream issue or
+  pull request by slug and number (`google/go-github#1234`), so the review
+  of the dependency update that resolves it can find the code to retire.
 - **Go version.** The language version is whatever `go.mod`'s `go`
   directive says; read it from there rather than assuming or hard-coding
   one. The directive is pinned to the lowest patch release of its minor
