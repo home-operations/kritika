@@ -609,6 +609,8 @@ func TestParseRejects(t *testing.T) {
 		{"negative limit", "limits:\n  reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative account limit", acmeAccount("    limits: { tokensPerMonth: -1 }\n"), "accounts.acme.limits: limits must not be negative"},
 		{"negative trigger limit", "trigger: { limit: -1 }\n" + minimal, "configfile: trigger.limit must not be negative"},
+		{"negative trigger settle", "trigger: { settle: -1s }\n" + minimal, "configfile: trigger.settle must be between 0s and 1h0m0s"},
+		{"trigger settle over an hour", "trigger: { settle: 61m }\n" + minimal, "configfile: trigger.settle must be between 0s and 1h0m0s"},
 		{"trigger.lines is not a key", "trigger: { lines: 500 }\n" + minimal, "field lines not found"},
 		{"trigger condition with a bad glob", "trigger: { include: [{ paths: ['['] }] }\n" + minimal, `include[0]: paths[0] "[" is not a valid glob`},
 		{"a feedback level", "review:\n  feedback: detailed\n" + minimal, "field feedback not found"},

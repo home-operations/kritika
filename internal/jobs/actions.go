@@ -100,6 +100,13 @@ func enqueueFresh(
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}
+	// A push's review still waiting its settle is not one to stand in for
+	// a review someone asks for now: the request takes its place.
+	if trigger == TriggerManual {
+		if err := cancelWaiting(ctx, tx, c, accountID, repositoryID, number, headSHA); err != nil {
+			return 0, err
+		}
+	}
 	// same is whether a live job of the head runs the reviewers this one
 	// would, with the focus it would, which then stands in for it; a
 	// review row with no live job is taken to.
@@ -133,6 +140,36 @@ func enqueueFresh(
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)
 	}
 	return res.Job.ID, nil
+}
+
+// cancelWaiting cancels the review jobs of the head that a push queued
+// and that are scheduled for later, waiting their trigger.settle. A job
+// River holds, about to start, is left to it: the live check then finds
+// it and the request stands behind it as it would behind any review in
+// flight. A review someone asked for that waits for a model slot is not
+// a push's, and is not touched.
+func cancelWaiting(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, headSHA string,
+) error {
+	rows, err := tx.Query(ctx, `SELECT id FROM river_job
+		WHERE kind = $5 AND state = 'scheduled' AND scheduled_at > now() AND args->>'trigger' = $6
+			AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+			AND args->>'head_sha' = $4
+		FOR UPDATE SKIP LOCKED`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind(), TriggerSynchronize)
+	if err != nil {
+		return fmt.Errorf("jobs: look up waiting reviews: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return fmt.Errorf("jobs: look up waiting reviews: %w", err)
+	}
+	for _, id := range ids {
+		if _, err := c.JobCancelTx(ctx, tx, id); err != nil {
+			return fmt.Errorf("jobs: cancel waiting review: %w", err)
+		}
+	}
+	return nil
 }
 
 // HeadQueued reports whether a review job for the pull request's head has

@@ -327,7 +327,16 @@ type TriggerSpec struct {
 	// Limit pauses a pull request's automatic reviews once that many have
 	// completed, until someone resumes them; zero never pauses.
 	Limit *int `yaml:"limit,omitempty"`
+	// Settle is how long the review of a push waits to start, so a burst
+	// of pushes gets one review, of the head that settles, rather than
+	// one of each head started and replaced in turn; zero starts it at
+	// once.
+	Settle *time.Duration `yaml:"settle,omitempty"`
 }
+
+// MaxPushSettle is the most a push's review may wait: longer would be a
+// manual review in all but name.
+const MaxPushSettle = time.Hour
 
 // Embedding is the instance's embedder, which builds the similar-code
 // index: a model of one of the instance's openrouter or openai providers,
@@ -763,11 +772,14 @@ type Settings struct {
 	// MaxAutoReviews pauses a pull request's automatic reviews once that
 	// many have completed; zero never pauses.
 	MaxAutoReviews int
-	Agent          AgentSettings
-	Incremental    IncrementalSettings
-	Review         Review
-	Confidence     Confidence
-	Skills         Skills
+	// PushSettle is how long the review of a push waits to start; zero
+	// starts it at once.
+	PushSettle  time.Duration
+	Agent       AgentSettings
+	Incremental IncrementalSettings
+	Review      Review
+	Confidence  Confidence
+	Skills      Skills
 	// Reviewers are the review's specialists, its agents with categories,
 	// by name; the agents that replace the default pass are Models.Routes.
 	Reviewers map[string]Reviewer

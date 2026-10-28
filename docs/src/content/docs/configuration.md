@@ -446,6 +446,7 @@ takes these keys, which are the admin's alone:
 | `comments.dashboard`      | `false` keeps the dashboard's URL out of the comments, which anyone can read on a public repository; on unless set                                                                                                                                             |
 | `review.incremental`      | how many files of the change may move since the last review before a re-review covers the whole pull request again; 25 unless set ([incremental reviews](#incremental-reviews))                                                                                |
 | `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them; unlimited unless set                                                                                                                                                                |
+| `trigger.settle`          | how long the review of a push waits to start, so a burst of pushes gets one review rather than one of each head; at once unless set, at most `1h` ([when a review runs](/reviews/#when-a-review-runs))                                                         |
 | `agent`                   | the bounds of a review's tool loop ([the agent](#the-agent))                                                                                                                                                                                                   |
 | `limits`                  | every account's limits, unless its entry sets its own ([`accounts`](#accounts))                                                                                                                                                                                |
 | `enabled`                 | the default for existing repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
@@ -469,6 +470,15 @@ the dashboard serves. `@<app slug> review` still re-runs a review
 push. The summary of the last automatic review says that reviews are
 paused. `@<app slug> review` and `resume` still work
 ([commands](/reviews/#commands)).
+
+`trigger.settle` holds the review a push starts for that long, such as
+`90s`. A push within the wait moves the review to the new head: the
+earlier head's job finds the head moved when its turn comes and starts
+nothing, so a burst of pushes costs one review instead of one started
+and replaced for each head. Opening a pull request is not held. A review
+someone asks for during the wait, with `@<app slug> review` or a re-run
+from the dashboard, takes the place of the one waiting and starts at
+once. A label change or a poll for the head leaves it waiting.
 
 A repository adds tools of its own through the
 [`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`.

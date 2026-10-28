@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -68,16 +69,16 @@ const (
 // change (store.LabelSettled): a filter that reads labels may now let
 // through the head it kept out.
 var pullRequestActions = map[string]bool{
-	"opened":             true,
-	"reopened":           true,
-	"ready_for_review":   true,
-	"synchronize":        true,
-	ActionPoll:           true,
-	ActionBaseline:       false,
-	"edited":             false,
-	"labeled":            true,
-	"unlabeled":          true,
-	"converted_to_draft": false,
+	"opened":                true,
+	"reopened":              true,
+	"ready_for_review":      true,
+	jobs.TriggerSynchronize: true,
+	ActionPoll:              true,
+	ActionBaseline:          false,
+	"edited":                false,
+	"labeled":               true,
+	"unlabeled":             true,
+	"converted_to_draft":    false,
 }
 
 // RecordDelivery implements DeliveryRecorder.
@@ -209,15 +210,20 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			out, err = s.labelChange(ctx, tx, req, rid, pr)
 			return err
 		}
-		out, err = s.review(ctx, tx, req, rid, pr)
+		out, err = s.review(ctx, tx, req, rid, pr, settings.PushSettle)
 		return err
 	})
 	return out, err
 }
 
 // review queues the review of the head a push, a poll or the pull request's
-// opening starts, unless the head has one already or one still to come.
-func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest) (Outcome, error) {
+// opening starts, unless the head has one already or one still to come. A
+// push's review waits settle to start: a burst of pushes then gets one
+// review, of the head that settles, since the earlier heads' jobs find the
+// head moved when their turn comes and start nothing.
+func (s *Service) review(
+	ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest, settle time.Duration,
+) (Outcome, error) {
 	// A job with a Request of its own, a re-run's or a label change's, is
 	// the head's review to come though the unique key does not span it. It
 	// is looked for before the head's reviews: a job that finished in
@@ -245,9 +251,13 @@ func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string
 	case queued:
 		return Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}, nil
 	}
+	var opts *river.InsertOpts
+	if settle > 0 && req.Event.Action == jobs.TriggerSynchronize {
+		opts = &river.InsertOpts{ScheduledAt: time.Now().Add(settle)}
+	}
 	res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 		AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: req.Event.Action,
-	}, nil)
+	}, opts)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("ingest: enqueue review: %w", err)
 	}

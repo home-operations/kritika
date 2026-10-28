@@ -83,6 +83,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
 		{keyConfidenceWhen, whenLabel(d.Confidence.When), d.Confidence.When != nil},
 		{keyLimit, strconv.Itoa(deref(d.Trigger.Limit)), d.Trigger.Limit != nil},
+		{keySettle, deref(d.Trigger.Settle).String(), d.Trigger.Settle != nil},
 	} {
 		if x.set {
 			out.Defaults = append(out.Defaults, FileDefault{Key: x.key, Value: x.value, Source: SourceFile})

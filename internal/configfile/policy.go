@@ -33,6 +33,7 @@ const (
 	keyFloors         = "confidence.floors"
 	keyConfidenceWhen = "confidence.when"
 	keyLimit          = "trigger.limit"
+	keySettle         = "trigger.settle"
 )
 
 // Policies are the repository settings an admin writes at the file's root,
@@ -63,6 +64,7 @@ var Policies = []string{
 	"trigger.include",
 	"trigger.exclude",
 	keyLimit,
+	keySettle,
 	"comments",
 	"comments.dashboard",
 	"rules",

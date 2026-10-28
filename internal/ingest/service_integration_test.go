@@ -5,7 +5,9 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 	"github.com/home-operations/kritika/internal/webhook"
@@ -553,12 +556,13 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	rid := repoID(request(f, webhook.Event{Repository: repo("onedr0p/at-once")}), "onedr0p/at-once")
 	scheduledAt := func(headSHA string) time.Time {
 		t.Helper()
 		var ts time.Time
 		err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx,
-				`SELECT scheduled_at FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, headSHA).Scan(&ts)
+				`SELECT scheduled_at FROM river_job WHERE kind = 'review' AND args->>'repository_id' = $1 AND args->>'head_sha' = $2`, rid, headSHA).Scan(&ts)
 		})
 		if err != nil {
 			t.Fatalf("scheduled_at for %s: %v", headSHA, err)
@@ -587,6 +591,67 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	}
 	if got := scheduledAt("s2"); got.Before(before.Add(-time.Second)) || got.After(after.Add(time.Second)) {
 		t.Fatalf("synchronize scheduled_at = %v, want within [%v, %v]", got, before, after)
+	}
+
+	// With trigger.settle, a push's review waits that long; an opening
+	// does not.
+	settled := withTrigger(t, "  settle: 90s\n")
+	synced.HeadSHA = "s3"
+	before = time.Now()
+	out, err = svc.Dispatch(ctx, request(settled, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/at-once"), PullRequest: &synced}))
+	after = time.Now()
+	if err != nil || out.Status != Enqueued {
+		t.Fatalf("settled synchronize dispatch = %+v, %v", out, err)
+	}
+	if got := scheduledAt("s3"); got.Before(before.Add(89*time.Second)) || got.After(after.Add(91*time.Second)) {
+		t.Fatalf("settled synchronize scheduled_at = %v, want 90s after [%v, %v]", got, before, after)
+	}
+	// A review someone asks for takes the place of the one waiting.
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := jobs.EnqueueRerun(ctx, tx, svc.queue, account.ID(), rid, 9)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("a re-run while a push's review waits = %v, want it to take the waiting one's place", err)
+	}
+	var states []string
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT state::text FROM river_job WHERE kind = 'review' AND args->>'repository_id' = $1 AND args->>'head_sha' = 's3' ORDER BY id`, rid)
+		if err != nil {
+			return err
+		}
+		states, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	})
+	if err != nil || !slices.Equal(states, []string{"cancelled", "available"}) {
+		t.Fatalf("jobs of s3 = %v, %v; want the waiting one cancelled and the re-run available", states, err)
+	}
+	// A review someone asked for that waits, for a slot, is not a push's:
+	// another request stands behind it.
+	synced.HeadSHA = "s5"
+	if out, err := svc.Dispatch(ctx, request(settled, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/at-once"), PullRequest: &synced})); err != nil || out.Status != Enqueued {
+		t.Fatalf("settled synchronize dispatch = %+v, %v", out, err)
+	}
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE river_job SET args = args || '{"trigger":"manual"}' WHERE kind = 'review' AND args->>'repository_id' = $1 AND args->>'head_sha' = 's5'`, rid); err != nil {
+			return err
+		}
+		_, err := jobs.EnqueueRerun(ctx, tx, svc.queue, account.ID(), rid, 9)
+		return err
+	})
+	if !errors.Is(err, jobs.ErrRerunQueued) {
+		t.Fatalf("a re-run while a requested review waits = %v, want ErrRerunQueued", err)
+	}
+	reopened := *opened
+	reopened.Number, reopened.HeadSHA = 10, "s4"
+	before = time.Now()
+	out, err = svc.Dispatch(ctx, request(settled, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/at-once"), PullRequest: &reopened}))
+	after = time.Now()
+	if err != nil || out.Status != Enqueued {
+		t.Fatalf("settled opened dispatch = %+v, %v", out, err)
+	}
+	if got := scheduledAt("s4"); got.Before(before.Add(-time.Second)) || got.After(after.Add(time.Second)) {
+		t.Fatalf("settled opened scheduled_at = %v, want at once", got)
 	}
 }
 
@@ -1039,34 +1104,34 @@ func TestDispatchRecordsEdits(t *testing.T) {
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/home-ops"), PullRequest: pr})); err != nil || out.Status != Enqueued {
 		t.Fatalf("synchronize = %+v, %v", out, err)
 	}
-	row := func() (title, body string, draft bool, labels string, jobs int) {
+	row := func() (title, body string, draft bool, labels string, queued int) {
 		t.Helper()
 		err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT title, body, draft, labels::text FROM pull_requests WHERE number = 77`).Scan(&title, &body, &draft, &labels); err != nil {
 				return err
 			}
-			return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND args->>'number' = '77'`).Scan(&jobs)
+			return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND args->>'number' = '77'`).Scan(&queued)
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return title, body, draft, labels, jobs
+		return title, body, draft, labels, queued
 	}
 	edited := *pr
 	edited.Title, edited.Body = "bump x (1.0 ➔ 1.2)", "new"
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "edited", Repository: repo("onedr0p/home-ops"), PullRequest: &edited})); err != nil || out != (Outcome{Status: Skipped, Reason: "edited"}) {
 		t.Fatalf("edited = %+v, %v; want skipped as edited", out, err)
 	}
-	if title, body, _, _, jobs := row(); title != edited.Title || body != "new" || jobs != 1 {
-		t.Fatalf("after edited: title %q body %q jobs %d; want the new title and body and the one job", title, body, jobs)
+	if title, body, _, _, queued := row(); title != edited.Title || body != "new" || queued != 1 {
+		t.Fatalf("after edited: title %q body %q queued %d; want the new title and body and the one job", title, body, queued)
 	}
 	labeled := edited
 	labeled.Labels = []webhook.Label{{Name: "skip-review", Color: "000000"}}
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "labeled", Repository: repo("onedr0p/home-ops"), PullRequest: &labeled})); err != nil || out.Status != Skipped || out.Reason != reasonDuplicate {
 		t.Fatalf("labeled = %+v, %v", out, err)
 	}
-	if _, _, _, labels, jobs := row(); !strings.Contains(labels, "skip-review") || jobs != 1 {
-		t.Fatalf("after labeled: labels %s jobs %d; want skip-review recorded and the one job", labels, jobs)
+	if _, _, _, labels, queued := row(); !strings.Contains(labels, "skip-review") || queued != 1 {
+		t.Fatalf("after labeled: labels %s queued %d; want skip-review recorded and the one job", labels, queued)
 	}
 	// The repository's filter skips drafts; the conversion is recorded
 	// all the same, so the filter has the draft state to judge next time.
@@ -1075,8 +1140,8 @@ func TestDispatchRecordsEdits(t *testing.T) {
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "converted_to_draft", Repository: repo("onedr0p/home-ops"), PullRequest: &draft})); err != nil || out.Status != Skipped || out.Reason != "converted_to_draft" {
 		t.Fatalf("converted_to_draft = %+v, %v", out, err)
 	}
-	if _, _, isDraft, _, jobs := row(); !isDraft || jobs != 1 {
-		t.Fatalf("after converted_to_draft: draft %v jobs %d; want the draft recorded and no new job", isDraft, jobs)
+	if _, _, isDraft, _, queued := row(); !isDraft || queued != 1 {
+		t.Fatalf("after converted_to_draft: draft %v queued %d; want the draft recorded and no new job", isDraft, queued)
 	}
 	// A disabled repository records nothing, edits included.
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "edited", Repository: repo("onedr0p/disabled"), PullRequest: &edited})); err != nil || out.Reason != reasonDisabled {
