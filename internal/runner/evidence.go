@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -23,16 +24,19 @@ var readTools = []string{"read_file", "read_diff"}
 // finding must be on: a finding on a file the agent never read was made
 // from the diff alone, or from nothing, and the review is told to read
 // the file or leave the finding out while it still can, and the finding
-// is withheld once it has submitted.
+// is withheld once it has submitted. A read counts once the model has
+// seen what it returned: the reads of a step are pending until the step
+// ends, so a submission in the same answer as a read is not credited
+// with it.
 type readLedger struct {
-	read map[string]bool
+	read, pending map[string]bool
 }
 
 // newReadLedger is a ledger that already holds the files read in c, the
 // conversation the run carries on, nil for none: the model keeps what it
 // read there.
 func newReadLedger(c *agent.Conversation) *readLedger {
-	l := &readLedger{read: map[string]bool{}}
+	l := &readLedger{read: map[string]bool{}, pending: map[string]bool{}}
 	if c == nil {
 		return l
 	}
@@ -49,22 +53,34 @@ func newReadLedger(c *agent.Conversation) *readLedger {
 			}
 		}
 	}
+	l.settle()
 	return l
 }
 
-// add records the file input, a read tool's, names.
+// add records the file input, a read tool's, names, pending the end of
+// the step.
 func (l *readLedger) add(input json.RawMessage) {
 	var req struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(input, &req); err == nil && req.Path != "" {
-		l.read[cleanPath(req.Path)] = true
+		l.pending[cleanPath(req.Path)] = true
 	}
 }
 
+// settle counts the pending reads: the step they were made in has ended,
+// and the model has seen what they returned.
+func (l *readLedger) settle() {
+	for p := range l.pending {
+		l.read[p] = true
+	}
+	clear(l.pending)
+}
+
 // cleanPath is p as the ledger keys it and a finding's path is looked
-// up: trimmed and cleaned, so "./a.go" and "a.go" are one file.
-func cleanPath(p string) string { return path.Clean(strings.TrimSpace(p)) }
+// up: cleaned as read_file cleans its path, so "./a.go" and "a.go" are
+// one file.
+func cleanPath(p string) string { return path.Clean(p) }
 
 // wrap returns tools with each read tool recording on l the files it
 // reads.
@@ -123,28 +139,82 @@ func (l *readLedger) check(raw json.RawMessage) error {
 		strings.Join(unread, ", "))
 }
 
-// mark is raw, the submission that ended the run, with each finding on
-// a file the agent never read marked as such, for the worker to withhold
-// it, and those findings named.
+// unreadKey is the finding key the worker reads a withheld finding by,
+// which the model is not allowed and the ledger alone sets.
+const unreadKey = "unread"
+
+// mark is raw, the submission that ended the run, with each finding on a
+// file the agent never read marked as such, for the worker to withhold
+// it, and those findings named. Only the findings' unread keys change:
+// the rest of the submission, the summary with it, is kept as the model
+// wrote it, an empty diagram an incremental review answers with
+// included, and any unread the model wrote itself is dropped. A finding
+// that is not an object is left as it is, for Parse to drop. A
+// submission that needs no change is returned as it is.
 func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error) {
-	var res review.Result
-	if err := json.Unmarshal(raw, &res); err != nil {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
 		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
 	}
-	var unread []string
-	for i := range res.Findings {
-		f := &res.Findings[i]
-		f.Unread = !l.read[cleanPath(f.Path)]
-		if f.Unread {
-			unread = append(unread, fmt.Sprintf("%s:%d", strings.TrimSpace(f.Path), f.Line))
-		}
-	}
-	if len(unread) == 0 {
+	var findings []json.RawMessage
+	if len(top[keyFindings]) == 0 || json.Unmarshal(top[keyFindings], &findings) != nil {
 		return raw, nil, nil
 	}
-	marked, err := json.Marshal(res)
+	var unread []string
+	changed := false
+	for i, f := range findings {
+		marked, where, err := l.markFinding(f)
+		if err != nil {
+			return nil, nil, err
+		}
+		if where != "" {
+			unread = append(unread, where)
+		}
+		changed = changed || marked != nil
+		if marked != nil {
+			findings[i] = marked
+		}
+	}
+	if !changed {
+		return raw, nil, nil
+	}
+	marked, err := json.Marshal(findings)
 	if err != nil {
+		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
+	}
+	top[keyFindings] = marked
+	if marked, err = json.Marshal(top); err != nil {
 		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
 	}
 	return marked, unread, nil
 }
+
+// markFinding is f, one finding of a submission, with its unread key set
+// when its file was never read and dropped otherwise, nil when f needs
+// no change or is not an object; where names an unread finding.
+func (l *readLedger) markFinding(f json.RawMessage) (marked json.RawMessage, where string, err error) {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(f, &obj) != nil || obj == nil {
+		return nil, "", nil
+	}
+	var at struct {
+		Path string `json:"path"`
+		Line int    `json:"line"`
+	}
+	_ = json.Unmarshal(f, &at)
+	had := len(obj)
+	maps.DeleteFunc(obj, func(k string, _ json.RawMessage) bool { return strings.EqualFold(k, unreadKey) })
+	if !l.read[cleanPath(at.Path)] {
+		obj[unreadKey] = json.RawMessage("true")
+		where = fmt.Sprintf("%s:%d", strings.TrimSpace(at.Path), at.Line)
+	} else if len(obj) == had {
+		return nil, "", nil
+	}
+	if marked, err = json.Marshal(obj); err != nil {
+		return nil, "", fmt.Errorf("runner: evidence: %w", err)
+	}
+	return marked, where, nil
+}
+
+// keyFindings is the submission's findings key, as the contract names it.
+const keyFindings = "findings"

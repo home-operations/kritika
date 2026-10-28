@@ -312,6 +312,9 @@ func agentLoop(
 		Evidence: evidence,
 		Limits:   limits,
 		OnStep: func(e agent.StepEvent) {
+			if ledger != nil {
+				ledger.settle()
+			}
 			tools, outputBytes := make([]string, len(e.Calls)), 0
 			for i, c := range e.Calls {
 				tools[i], outputBytes = c.Name, outputBytes+c.OutputBytes
@@ -346,11 +349,12 @@ func agentLoop(
 	}
 	if ledger != nil && res.Stop == agent.StopSubmitted {
 		marked, unread, err := ledger.mark(res.Submitted)
-		switch {
-		case err != nil:
+		if err != nil {
 			logger.Warn("findings on files never read not marked", "error", err)
-		case len(unread) > 0:
+		} else {
 			res.Submitted = marked
+		}
+		if len(unread) > 0 {
 			logger.Info("findings on files the agent never read withheld", "findings", unread)
 		}
 	}
