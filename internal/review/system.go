@@ -184,6 +184,15 @@ The change moves versions: the user message lists each, with the line it is on. 
 dependency, such as an address or this repository's own version, needs none of this. Review each dependency
 update as what the new version does to this repository, never as a version number:
 
+On a re-review, classify the whole range from the pull request's merge base to its current head. The
+"since your last review" annotation and delta identify new work within that review; they do not replace its
+range. Reuse earlier checked notes only for the portions they actually cover and whose relevant repository
+usages have not changed. Read upstream for uncovered portions, including gaps before the last reviewed
+version, following the priorities and budget fallback below. A missing annotation does not establish that
+a version is unchanged. For a rollback, assess the range the pull request now moves and whether earlier
+evidence still applies. The summary describes that whole range and distinguishes what was checked now,
+what rests on earlier evidence, and what remains unread.
+
 1. Classify the step: major, minor, patch, or a digest alone. A version under 1.0 moves its first non-zero
 component for routine releases, so 0.3 to 0.4 is a minor step, and 0.0.1 to 0.0.2 too, unless the notes show more.
 A new digest under a tag that names no version, such as latest, can hide any step: read it as a minor one unless

@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -97,8 +98,7 @@ func TestCleanFocus(t *testing.T) {
 }
 
 // TestBuildListsBumps: the versions the change moves follow the changed
-// files, each on its line, as many as maxBumpsBytes holds; a carried-on
-// turn lists the ones the delta moves.
+// files, each on its line, as many as maxBumpsBytes holds.
 func TestBuildListsBumps(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Changed: []string{"go.mod"}, Bumps: []Bump{{Path: "go.mod", Line: 7, Old: "v1.2.3", New: "v1.3.0"}}}
 	msg, _, _, _ := Build(in)
@@ -115,8 +115,79 @@ func TestBuildListsBumps(t *testing.T) {
 		t.Fatalf("a long list is not cut at %d items:\n%s", fits, msg)
 	}
 	turn, _, _ := BuildContinuation(ContinueInput{PriorHeadSHA: "old", HeadSHA: "new", Bumps: in.Bumps[:1]})
-	if want := "Versions moved since your last review (1):\n" + item + "Changed since your last review"; !strings.Contains(turn, want) {
+	if want := "Versions the change moves (1):\n" + item + "Changed since your last review"; !strings.Contains(turn, want) {
 		t.Fatalf("continuation lacks\n%s\nin:\n%s", want, turn)
+	}
+}
+
+func TestBuildBumpRanges(t *testing.T) {
+	diff := func(path, old, now string, line int) string {
+		return fmt.Sprintf("diff --git a/%s b/%s\n--- a/%s\n+++ b/%s\n@@ -%d +%d @@\n-%s\n+%s\n",
+			path, path, path, path, line, line, old, now)
+	}
+	full := diff("hr.yaml", "tag: 0.52.562", "tag: 0.52.568", 14)
+	delta := diff("hr.yaml", "tag: 0.52.567", "tag: 0.52.568", 14)
+	for _, tc := range []struct {
+		name, full, delta, want string
+	}{
+		{name: "repush", full: full, delta: delta,
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568 (0.52.567 to 0.52.568 since your last review)\n"},
+		{name: "unchanged bump", full: full, delta: deltaDiff,
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568\n"},
+		{name: "new bump", full: full, delta: full,
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568 (0.52.562 to 0.52.568 since your last review)\n"},
+		{name: "rollback", full: full, delta: diff("hr.yaml", "tag: 0.52.569", "tag: 0.52.568", 14),
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568 (0.52.569 to 0.52.568 since your last review)\n"},
+		{name: "reverted bump", delta: diff("hr.yaml", "tag: 0.52.567", "tag: 0.52.562", 14)},
+		{name: "another path", full: full, delta: diff("other.yaml", "tag: 0.52.567", "tag: 0.52.568", 14),
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568\n"},
+		{name: "another line", full: full, delta: diff("hr.yaml", "tag: 0.52.567", "tag: 0.52.568", 15),
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568\n"},
+		{name: "different changed tokens", full: diff("ci.yaml", "uses: actions/checkout@abc1234 # v4.1.0", "uses: actions/checkout@def5678 # v4.2.0", 7),
+			delta: diff("ci.yaml", "uses: actions/checkout@fed4321 # v4.2.0", "uses: actions/checkout@def5678 # v4.2.0", 7),
+			want:  "- ci.yaml:7: actions/checkout@abc1234 v4.1.0 to actions/checkout@def5678 v4.2.0\n"},
+		{name: "both changed and unchanged bumps", full: full + diff("go.mod", "require x/y v1.0.0", "require x/y v2.0.0", 3), delta: delta,
+			want: "- hr.yaml:14: 0.52.562 to 0.52.568 (0.52.567 to 0.52.568 since your last review)\n- go.mod:3: v1.0.0 to v2.0.0\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bumps := Bumps(tc.full)
+			fresh, _, _, _ := Build(Input{Diff: tc.full, Bumps: bumps, Incremental: &IncrementalInput{DeltaDiff: tc.delta}})
+			continued, _, _ := BuildContinuation(ContinueInput{DeltaDiff: tc.delta, Bumps: bumps})
+			for name, msg := range map[string]string{"fresh": fresh, "continued": continued} {
+				t.Run(name, func(t *testing.T) {
+					_, section, found := strings.Cut(msg, "Versions the change moves")
+					if tc.want == "" {
+						if found {
+							t.Fatalf("a reverted bump is listed:\n%s", msg)
+						}
+						return
+					}
+					want := fmt.Sprintf(" (%d):\n%s", len(bumps), tc.want)
+					if !found || !strings.HasPrefix(section, want) || strings.HasPrefix(strings.TrimPrefix(section, want), "- ") {
+						t.Fatalf("want version list %q in:\n%s", want, msg)
+					}
+					if !strings.Contains(msg, "The summary describes the whole change at head") {
+						t.Fatalf("summary scope missing:\n%s", msg)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestBuildBumpAnnotationsFitBudget(t *testing.T) {
+	const delta = "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -7 +7 @@\n-require x/y v1.2.9\n+require x/y v1.3.0\n"
+	const item = "- go.mod:7: v1.2.3 to v1.3.0 (v1.2.9 to v1.3.0 since your last review)\n"
+	fits := maxBumpsBytes / len(item)
+	bumps := slices.Repeat([]Bump{{Path: "go.mod", Line: 7, Old: "v1.2.3", New: "v1.3.0"}}, fits+3)
+	fresh, _, _, _ := Build(Input{Bumps: bumps, Incremental: &IncrementalInput{DeltaDiff: delta}})
+	continued, _, _ := BuildContinuation(ContinueInput{Bumps: bumps, DeltaDiff: delta})
+	for name, msg := range map[string]string{"fresh": fresh, "continued": continued} {
+		t.Run(name, func(t *testing.T) {
+			if strings.Count(msg, item) != fits || !strings.Contains(msg, "- and 3 more\n") {
+				t.Fatalf("annotated list is not cut at %d items:\n%s", fits, msg)
+			}
+		})
 	}
 }
 
