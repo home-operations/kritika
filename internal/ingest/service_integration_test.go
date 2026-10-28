@@ -556,12 +556,13 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	rid := repoID(request(f, webhook.Event{Repository: repo("onedr0p/at-once")}), "onedr0p/at-once")
 	scheduledAt := func(headSHA string) time.Time {
 		t.Helper()
 		var ts time.Time
 		err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx,
-				`SELECT scheduled_at FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, headSHA).Scan(&ts)
+				`SELECT scheduled_at FROM river_job WHERE kind = 'review' AND args->>'repository_id' = $1 AND args->>'head_sha' = $2`, rid, headSHA).Scan(&ts)
 		})
 		if err != nil {
 			t.Fatalf("scheduled_at for %s: %v", headSHA, err)
@@ -607,7 +608,7 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	}
 	// A review someone asks for takes the place of the one waiting.
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		_, err := jobs.EnqueueRerun(ctx, tx, svc.queue, account.ID(), repoID(request(settled, webhook.Event{Repository: repo("onedr0p/at-once")}), "onedr0p/at-once"), 9)
+		_, err := jobs.EnqueueRerun(ctx, tx, svc.queue, account.ID(), rid, 9)
 		return err
 	})
 	if err != nil {
@@ -615,7 +616,7 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	}
 	var states []string
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT state::text FROM river_job WHERE kind = 'review' AND args->>'head_sha' = 's3' ORDER BY id`)
+		rows, err := tx.Query(ctx, `SELECT state::text FROM river_job WHERE kind = 'review' AND args->>'repository_id' = $1 AND args->>'head_sha' = 's3' ORDER BY id`, rid)
 		if err != nil {
 			return err
 		}
@@ -632,10 +633,10 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 		t.Fatalf("settled synchronize dispatch = %+v, %v", out, err)
 	}
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE river_job SET args = args || '{"trigger":"manual"}' WHERE kind = 'review' AND args->>'head_sha' = 's5'`); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE river_job SET args = args || '{"trigger":"manual"}' WHERE kind = 'review' AND args->>'repository_id' = $1 AND args->>'head_sha' = 's5'`, rid); err != nil {
 			return err
 		}
-		_, err := jobs.EnqueueRerun(ctx, tx, svc.queue, account.ID(), repoID(request(settled, webhook.Event{Repository: repo("onedr0p/at-once")}), "onedr0p/at-once"), 9)
+		_, err := jobs.EnqueueRerun(ctx, tx, svc.queue, account.ID(), rid, 9)
 		return err
 	})
 	if !errors.Is(err, jobs.ErrRerunQueued) {
