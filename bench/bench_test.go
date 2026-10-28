@@ -3,6 +3,7 @@
 package bench
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -42,54 +45,6 @@ func keep(cs []contextpack.Chunk, stage string) []contextpack.Chunk {
 	return out
 }
 
-// caseResult is one case under one mode.
-type caseResult struct {
-	Steps       int              `json:"steps"`
-	ToolCalls   map[string]int   `json:"tool_calls,omitempty"`
-	ID          string           `json:"id"`
-	Mode        string           `json:"mode"`
-	Findings    []review.Finding `json:"findings"`
-	Dropped     int              `json:"dropped"`
-	MustTotal   int              `json:"must_total"`
-	MustHit     int              `json:"must_hit"`
-	NiceTotal   int              `json:"nice_total"`
-	NiceHit     int              `json:"nice_hit"`
-	Matched     int              `json:"matched_findings"`
-	Context     map[string]int   `json:"context_chunks"`
-	PromptChars int              `json:"prompt_chars"`
-	Input       int64            `json:"input_tokens"`
-	Cached      int64            `json:"cached_tokens"`
-	Output      int64            `json:"output_tokens"`
-	CostUSD     float64          `json:"cost_usd"`
-	Latency     time.Duration    `json:"latency_ns"`
-	Error       string           `json:"error,omitempty"`
-}
-
-// report is what a run writes.
-type report struct {
-	Options benchOptions          `json:"options"`
-	Model   string                `json:"model"`
-	When    time.Time             `json:"when"`
-	Dry     bool                  `json:"dry"`
-	Cases   int                   `json:"cases"`
-	Modes   map[string]modeTotals `json:"modes"`
-	Results []caseResult          `json:"results"`
-}
-
-type modeTotals struct {
-	Cases        int     `json:"cases"`
-	Errors       int     `json:"errors"`
-	MustRecall   float64 `json:"must_recall"`
-	NiceRecall   float64 `json:"nice_recall"`
-	Findings     int     `json:"findings"`
-	Matched      int     `json:"matched_findings"`
-	MatchRate    float64 `json:"match_rate"`
-	CostUSD      float64 `json:"cost_usd"`
-	MeanLatency  float64 `json:"mean_latency_s"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-}
-
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -106,6 +61,11 @@ func envOr(key, def string) string {
 //	KRITIKA_BENCH_LIMIT     at most this many cases (default all)
 //	KRITIKA_BENCH_ONLY      run one case id
 //	KRITIKA_BENCH_DRY       1: fetch, build context and prompts, call no model
+//	KRITIKA_BENCH_SCRIPT    1: answer every model call from the corpus itself, with no key (the wiring smoke)
+//	KRITIKA_BENCH_JUDGE     model id on OpenRouter that judges whether a finding off an expected range
+//	                        identifies its defect (default none: lines alone match)
+//	KRITIKA_BENCH_JUDGE_EFFORT  the judge's reasoning effort
+//	KRITIKA_BENCH_FLOORS    floors file (default bench/floors.json; absent: no floor); a run under one fails
 //	KRITIKA_BENCH_OUT       results directory (default bench/results)
 func TestBench(t *testing.T) {
 	ctx := t.Context()
@@ -114,9 +74,10 @@ func TestBench(t *testing.T) {
 		t.Fatal(err)
 	}
 	dry := os.Getenv("KRITIKA_BENCH_DRY") == "1"
+	script := os.Getenv("KRITIKA_BENCH_SCRIPT") == "1"
 	key := os.Getenv("OPENROUTER_API_KEY")
-	if key == "" && !dry {
-		t.Skip("OPENROUTER_API_KEY not set (use KRITIKA_BENCH_DRY=1 to run without a model)")
+	if key == "" && !dry && !script {
+		t.Skip("OPENROUTER_API_KEY not set (use KRITIKA_BENCH_DRY=1 to run without a model, or KRITIKA_BENCH_SCRIPT=1 for the wiring smoke)")
 	}
 	cases, err := Load(envOr("KRITIKA_BENCH_CASES", "cases/*.yaml"))
 	if err != nil {
@@ -144,17 +105,19 @@ func TestBench(t *testing.T) {
 		}
 	}
 	modelID := envOr("KRITIKA_BENCH_MODEL", "openai/gpt-6-sol")
-	var stepper model.Stepper
-	if !dry {
-		var err error
-		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, nil); err != nil {
-			t.Fatal(err)
-		}
-		stepper = effortStepper{Stepper: stepper, effort: opts.Effort}
+	stepper, scripts, modelID := benchStepper(t, opts, key, modelID, dry, script)
+	j := newJudge(stepper, opts.Judge, opts.JudgeEffort)
+	floors, gated, err := LoadFloors(envOr("KRITIKA_BENCH_FLOORS", "floors.json"))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	rep := report{Options: opts, Model: modelID, When: time.Now().UTC(), Dry: dry, Cases: len(cases), Modes: map[string]modeTotals{}}
+	rep := report{Options: opts, Model: modelID, Judge: j.Name(), When: time.Now().UTC(), Dry: dry, Scripted: script, Cases: len(cases),
+		Modes: map[string]modeTotals{}}
 	for _, c := range cases {
+		if scripts != nil {
+			scripts.use(c)
+		}
 		t.Logf("%s: fetching %s..%s", c.ID, c.Base[:7], c.Head[:7])
 		res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: c.CloneURL, Token: os.Getenv("GITHUB_TOKEN"), Head: c.Head, Base: c.Base})
 		if err != nil {
@@ -192,39 +155,11 @@ func TestBench(t *testing.T) {
 				}
 			}
 			if !dry {
-				tree := agent.NewTree(headTree, nil)
-				limits := opts.limits()
-				started := time.Now()
-				out := agent.Run{
-					Stepper: stepper, Model: modelID, System: system, User: msg,
-					Tools: []agent.Tool{
-						agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
-						agent.GrepTool(tree, limits.MaxToolOutputBytes),
-						agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
-					},
-					Submit: runner.SubmitTool(false, false), Limits: limits,
-				}.Do(ctx)
-				cr.Latency = time.Since(started)
-				cr.Steps, cr.ToolCalls = out.Steps, out.ToolCalls
-				cr.Input, cr.Cached, cr.Output, cr.CostUSD = out.Usage.Prompt(), out.Usage.CacheRead, out.Usage.Output, out.CostUSD
-				switch {
-				case out.Stop == agent.StopError:
-					cr.Error = out.Err
-					t.Logf("%s [%s]: model error: %s", c.ID, m, out.Err)
-				case out.Stop != agent.StopSubmitted:
-					cr.Error = "agent stopped: " + string(out.Stop)
-				default:
-					parsed, dropped, err := review.Parse(string(out.Submitted), anchors, review.ParseOptions{})
-					if err != nil {
-						cr.Error = err.Error()
-					} else {
-						cr.Findings, cr.Dropped = parsed.Findings, len(dropped)
-						score(&cr, c)
-					}
-				}
+				runCase(ctx, t, &cr, c, opts, run{stepper: stepper, model: modelID, system: system, user: msg, head: headTree, anchors: anchors, judge: j})
 			}
-			t.Logf("%s [%s]: must %d/%d nice %d/%d findings %d matched %d cost $%.4f context %v %s",
-				c.ID, m, cr.MustHit, cr.MustTotal, cr.NiceHit, cr.NiceTotal, len(cr.Findings), cr.Matched, cr.CostUSD, cr.Context, errText(cr.Error))
+			t.Logf("%s [%s]: must %d/%d nice %d/%d (%d by the judge) findings %d matched %d cost $%.4f context %v %s",
+				c.ID, m, cr.MustHit, cr.MustTotal, cr.NiceHit, cr.NiceTotal, cr.JudgeHit, len(cr.Findings), cr.Matched, cr.CostUSD, cr.Context,
+				errText(cr.Error))
 			rep.Results = append(rep.Results, cr)
 		}
 		_ = res.Close()
@@ -235,15 +170,114 @@ func TestBench(t *testing.T) {
 	}
 	printSummary(t, rep)
 	writeReport(t, rep)
+	if gated && !dry {
+		gate(t, floors, rep)
+	}
 }
 
-func score(cr *caseResult, c Case) {
+// benchStepper is the model a run answers with: the corpus's own script,
+// none for a dry run, else the OpenRouter model at opts's effort; and the
+// model's name for the report.
+func benchStepper(t *testing.T, opts benchOptions, key, modelID string, dry, script bool) (model.Stepper, *scripted, string) {
+	t.Helper()
+	switch {
+	case script:
+		s := &scripted{}
+		return s, s, "scripted"
+	case dry:
+		return nil, nil, modelID
+	}
+	stepper, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return effortStepper{Stepper: stepper, effort: opts.Effort}, nil, modelID
+}
+
+// gate fails the test for what rep measures under floors, when they
+// apply to a run scored as rep was.
+func gate(t *testing.T, floors Floors, rep report) {
+	t.Helper()
+	under, held := floors.Check(rep)
+	if !held {
+		t.Logf("floors not applied: they were set with judge %q and this run was scored by %q", floors.Judge, rep.Judge)
+		return
+	}
+	for _, u := range under {
+		t.Error(u)
+	}
+}
+
+// run is what a case's agent runs on: the model, the prompt, the head
+// tree its tools read, the diff's anchors and the judge.
+type run struct {
+	stepper      model.Stepper
+	model        string
+	system, user string
+	head         *object.Tree
+	anchors      map[string]map[int]string
+	judge        *judge
+}
+
+// runCase runs the agent on c under one mode and records on cr what it
+// spent, what it submitted and what of c it found.
+func runCase(ctx context.Context, t *testing.T, cr *caseResult, c Case, opts benchOptions, r run) {
+	t.Helper()
+	tree := agent.NewTree(r.head, nil)
+	limits := opts.limits()
+	started := time.Now()
+	out := agent.Run{
+		Stepper: r.stepper, Model: r.model, System: r.system, User: r.user,
+		Tools: []agent.Tool{
+			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
+			agent.GrepTool(tree, limits.MaxToolOutputBytes),
+			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
+		},
+		Submit: runner.SubmitTool(false, false), Limits: limits,
+	}.Do(ctx)
+	cr.Latency = time.Since(started)
+	cr.Steps, cr.ToolCalls = out.Steps, out.ToolCalls
+	cr.Input, cr.Cached, cr.Output, cr.CostUSD = out.Usage.Prompt(), out.Usage.CacheRead, out.Usage.Output, out.CostUSD
+	switch {
+	case out.Stop == agent.StopError:
+		cr.Error = out.Err
+		t.Logf("%s [%s]: model error: %s", c.ID, cr.Mode, out.Err)
+	case out.Stop != agent.StopSubmitted:
+		cr.Error = "agent stopped: " + string(out.Stop)
+	default:
+		parsed, dropped, err := review.Parse(string(out.Submitted), r.anchors, review.ParseOptions{})
+		if err != nil {
+			cr.Error = err.Error()
+		} else {
+			cr.Findings, cr.Dropped = parsed.Findings, len(dropped)
+			score(ctx, cr, c, r.judge)
+		}
+	}
+}
+
+// score counts the expected ranges cr's findings hit, on their lines or,
+// when j is set, by its verdict on each finding in the file that landed
+// on no range, since a finding identifies one defect; and the findings
+// that land on one.
+func score(ctx context.Context, cr *caseResult, c Case, j *judge) {
+	landed := func(f review.Finding) bool {
+		return slices.ContainsFunc(c.Expected, func(e Expected) bool { return e.Matches(f.Path, f.Line) })
+	}
 	for _, e := range c.Expected {
-		hit := false
-		for _, f := range cr.Findings {
-			if e.Matches(f.Path, f.Line) {
-				hit = true
-				break
+		hit := slices.ContainsFunc(cr.Findings, func(f review.Finding) bool { return e.Matches(f.Path, f.Line) })
+		if !hit && j != nil {
+			for _, f := range cr.Findings {
+				if f.Path != e.Path || landed(f) {
+					continue
+				}
+				v := j.Matches(ctx, e, f)
+				cr.Judged = append(cr.Judged, v)
+				cr.JudgeCost += v.CostUSD
+				if v.Match {
+					hit = true
+					cr.JudgeHit++
+					break
+				}
 			}
 		}
 		if hit && e.Must {
@@ -264,7 +298,7 @@ func score(cr *caseResult, c Case) {
 
 func totals(results []caseResult, mode string) modeTotals {
 	var tot modeTotals
-	var must, mustHit, nice, niceHit int
+	var must, mustHit, nice, niceHit, calls int
 	var latency time.Duration
 	for _, r := range results {
 		if r.Mode != mode {
@@ -274,6 +308,7 @@ func totals(results []caseResult, mode string) modeTotals {
 		// A failed case spent its tokens all the same: a budget that cuts
 		// off a submission must not look cheaper for it.
 		tot.CostUSD += r.CostUSD
+		tot.JudgeCost += r.JudgeCost
 		tot.InputTokens += r.Input
 		tot.OutputTokens += r.Output
 		if r.Error != "" {
@@ -286,6 +321,12 @@ func totals(results []caseResult, mode string) modeTotals {
 		niceHit += r.NiceHit
 		tot.Findings += len(r.Findings)
 		tot.Matched += r.Matched
+		tot.JudgeHit += r.JudgeHit
+		for name, n := range r.ToolCalls {
+			if name != "submit_review" {
+				calls += n
+			}
+		}
 		latency += r.Latency
 	}
 	if must > 0 {
@@ -299,6 +340,8 @@ func totals(results []caseResult, mode string) modeTotals {
 	}
 	if n := tot.Cases - tot.Errors; n > 0 {
 		tot.MeanLatency = latency.Seconds() / float64(n)
+		tot.MeanFindings = float64(tot.Findings) / float64(n)
+		tot.MeanToolCalls = float64(calls) / float64(n)
 	}
 	return tot
 }
@@ -307,14 +350,18 @@ func printSummary(t *testing.T, rep report) {
 	t.Helper()
 	names := slices.Sorted(maps.Keys(rep.Modes))
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nmodel %s, %d cases%s\n", rep.Model, rep.Cases, map[bool]string{true: " (dry: no model calls)", false: ""}[rep.Dry])
-	fmt.Fprintf(&b, "%-8s %6s %6s %11s %11s %9s %9s %9s %8s\n", "mode", "cases", "errors", "must recall", "nice recall", "findings", "matched", "cost usd", "mean s")
+	fmt.Fprintf(&b, "\nmodel %s, %d cases%s%s\n", rep.Model, rep.Cases, map[bool]string{true: " (dry: no model calls)", false: ""}[rep.Dry],
+		map[bool]string{true: ", judge " + rep.Judge, false: ", lines alone match"}[rep.Judge != ""])
+	fmt.Fprintf(&b, "%-8s %6s %6s %11s %11s %9s %9s %9s %9s %8s\n", "mode", "cases", "errors", "must recall", "nice recall", "findings",
+		"matched", "judged", "cost usd", "mean s")
 	for _, m := range names {
 		x := rep.Modes[m]
-		fmt.Fprintf(&b, "%-8s %6d %6d %10.0f%% %10.0f%% %9d %9d %9.4f %8.1f\n",
-			m, x.Cases, x.Errors, x.MustRecall*100, x.NiceRecall*100, x.Findings, x.Matched, x.CostUSD, x.MeanLatency)
+		fmt.Fprintf(&b, "%-8s %6d %6d %10.0f%% %10.0f%% %9d %9d %9d %9.4f %8.1f\n",
+			m, x.Cases, x.Errors, x.MustRecall*100, x.NiceRecall*100, x.Findings, x.Matched, x.JudgeHit, x.CostUSD+x.JudgeCost, x.MeanLatency)
+		fmt.Fprintf(&b, "%-8s mean findings %.2f, mean tool calls %.2f per case\n", "", x.MeanFindings, x.MeanToolCalls)
 	}
-	b.WriteString("matched = findings that land on an expected range; the rest need a human label for precision.\n")
+	b.WriteString("matched = findings that land on an expected range; judged = expected ranges the judge alone credited; " +
+		"the rest need a human label for precision.\n")
 	t.Log(b.String())
 }
 

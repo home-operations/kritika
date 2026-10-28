@@ -116,6 +116,9 @@ jobs:
       - name: Run unit tests
         run: mise run test
 
+      - name: Run the bench wiring smoke
+        run: mise run bench-smoke
+
   go-integration:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
