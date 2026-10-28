@@ -40,6 +40,10 @@ func TestSplitDropped(t *testing.T) {
 		{name: "unanchored and counted reasons both come back",
 			dropped:        []review.Dropped{drop(review.DropBadSeverity, other), drop(review.DropUnanchored, loose)},
 			wantUnanchored: []review.Finding{loose}, wantNotes: []string{"1 finding(s) were dropped (bad_severity: 1)"}},
+		{name: "findings on files never read are named in a note of their own, before the count",
+			dropped: []review.Dropped{drop(review.DropUnread, loose), drop(review.DropNoFix, other), drop(review.DropUnread, other)},
+			wantNotes: []string{"2 finding(s) on files the review never read were withheld: a.go:3 off the diff; b.go:9 also off",
+				"1 finding(s) were dropped (no_suggested_fix: 1)"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

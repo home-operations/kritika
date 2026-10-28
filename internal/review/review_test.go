@@ -278,6 +278,14 @@ func TestParse(t *testing.T) {
 			opts: ParseOptions{Rules: []string{"no-tokens", "wrap-errors"}},
 			take: "t", kept: []string{"main.go:11:cites", "main.go:12:cites none"}, dropped: map[string]DropReason{"unquoted": DropNoQuote},
 		},
+		{
+			name: "a finding on a file the review never read is dropped before anything else is judged",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "p2", "category": "correctness", "title": "unread", "explanation": "e", "unread": true},
+			  {"path": "nope.go", "line": 1, "severity": "p2", "category": "correctness", "title": "unread and off", "explanation": "e", "unread": true}
+			]}`,
+			take: "t", dropped: map[string]DropReason{"unread": DropUnread, "unread and off": DropUnread},
+		},
 		{name: "garbage errors", raw: "not json", wantErr: true},
 	}
 	for _, tt := range tests {

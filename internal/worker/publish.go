@@ -340,27 +340,36 @@ func (p *publishPhase) countFindings(res review.Result) {
 
 // splitDropped sorts what Parse dropped into the findings on lines the
 // diff does not show, which the summary lists since no inline comment can
-// carry them, and a note counting the rest.
+// carry them, a note naming the findings on files the review never read,
+// which it withheld, and a note counting the rest.
 func splitDropped(dropped []review.Dropped) (unanchored []review.Finding, notes []string) {
 	byReason := map[review.DropReason]int{}
+	var unread []string
 	total := 0
 	for _, d := range dropped {
-		if d.Reason == review.DropUnanchored {
+		switch d.Reason {
+		case review.DropUnanchored:
 			unanchored = append(unanchored, d.Finding)
-			continue
+		case review.DropUnread:
+			unread = append(unread, fmt.Sprintf("%s:%d %s", d.Finding.Path, d.Finding.Line, d.Finding.Title))
+		default:
+			byReason[d.Reason]++
+			total++
 		}
-		byReason[d.Reason]++
-		total++
+	}
+	if len(unread) > 0 {
+		notes = append(notes, fmt.Sprintf("%d finding(s) on files the review never read were withheld: %s", len(unread),
+			strings.Join(unread, "; ")))
 	}
 	if total == 0 {
-		return unanchored, nil
+		return unanchored, notes
 	}
 	reasons := make([]string, 0, len(byReason))
 	for r, n := range byReason {
 		reasons = append(reasons, fmt.Sprintf("%s: %d", r, n))
 	}
 	slices.Sort(reasons)
-	return unanchored, []string{fmt.Sprintf("%d finding(s) were dropped (%s)", total, strings.Join(reasons, ", "))}
+	return unanchored, append(notes, fmt.Sprintf("%d finding(s) were dropped (%s)", total, strings.Join(reasons, ", ")))
 }
 
 // splitHeld splits off the findings held reports held back.

@@ -294,13 +294,23 @@ func agentLoop(
 	}
 	defer cancel()
 	timeline := []store.TimelineStep{}
+	limits := agentLimits(p.Agent)
+	// A review of one step reads nothing: its findings come from the
+	// prompt alone, and are not held to a file it could not read.
+	var ledger *readLedger
+	var evidence func(json.RawMessage) error
+	if p.Kind == runspec.KindReview && limits.MaxSteps > 1 {
+		ledger = newReadLedger(prompt.carried)
+		tools, evidence = ledger.wrap(tools), ledger.check
+	}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user, Carried: prompt.carried,
 		Tools:    tools,
 		Submit:   prompt.submit,
 		Validate: prompt.validate,
 		Fallback: prompt.fallback,
-		Limits:   agentLimits(p.Agent),
+		Evidence: evidence,
+		Limits:   limits,
 		OnStep: func(e agent.StepEvent) {
 			tools, outputBytes := make([]string, len(e.Calls)), 0
 			for i, c := range e.Calls {
@@ -332,6 +342,16 @@ func agentLoop(
 		case len(why) > 0:
 			res.Submitted = dropped
 			logger.Info("findings citing a rule they do not quote dropped", "findings", why)
+		}
+	}
+	if ledger != nil && res.Stop == agent.StopSubmitted {
+		marked, unread, err := ledger.mark(res.Submitted)
+		switch {
+		case err != nil:
+			logger.Warn("findings on files never read not marked", "error", err)
+		case len(unread) > 0:
+			res.Submitted = marked
+			logger.Info("findings on files the agent never read withheld", "findings", unread)
 		}
 	}
 	return res, timeline

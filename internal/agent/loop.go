@@ -151,6 +151,12 @@ type Run struct {
 	// by cancellation, ends with the last such input instead, so a slip the
 	// model never corrects does not cost the whole answer.
 	Fallback func(input json.RawMessage) bool
+	// Evidence, if set, checks a Submit input Validate accepted on a step
+	// the model was not told to submit on. A refusal goes back as the
+	// tool's error, like Validate's, and asks for what the model can still
+	// do, such as read a file; on a step it must submit on, where it can
+	// call no tool, the input is taken as it is.
+	Evidence func(input json.RawMessage) error
 	Limits   Limits
 	// OnStep, if set, is called after each step completes.
 	OnStep func(StepEvent)
@@ -545,21 +551,15 @@ func (r Run) Do(ctx context.Context) (result Result) {
 			result.ToolCalls[call.Name]++
 
 			if call.Name == r.Submit.Name {
-				if err := r.checkSubmit(call.Input); err != nil {
-					// A submission the output cap cut off is not sent back
-					// as an error: the model would re-emit it whole and be
-					// cut off again, step after step.
-					if resp.Stop == model.StopMaxTokens {
-						truncated = true
-						break
-					}
-					if r.holds(call.Input) {
-						fb = fallback{input: call.Input, conv: r.endedWith(toolDefs, messages, resp), refused: err.Error()}
-					}
-					toolResults = append(toolResults, model.ToolResult{
-						CallID: call.ID, IsError: true,
-						Content: textcut.Truncate(fmt.Sprintf("agent: %s: %s", r.Submit.Name, err), limits.MaxToolOutputBytes),
-					})
+				refusal, cutOff := r.takeSubmission(call, resp, forced, limits, &fb, func() *Conversation {
+					return r.endedWith(toolDefs, messages, resp)
+				})
+				if cutOff {
+					truncated = true
+					break
+				}
+				if refusal != nil {
+					toolResults = append(toolResults, *refusal)
 					continue
 				}
 				submitted = call.Input
@@ -598,6 +598,36 @@ func (r Run) Do(ctx context.Context) (result Result) {
 		messages = append(messages, assistant)
 		messages = append(messages, model.Message{Role: model.RoleUser, ToolResults: toolResults})
 	}
+}
+
+// takeSubmission judges call, a call of Submit on a step answered by resp:
+// an input Validate, and Evidence on a step not forced, accept is the
+// Run's answer, and neither is returned; one refused goes back to the
+// model as the refusal, held as the fallback when Fallback holds it, with
+// ended the conversation the step ends; one the output cap cut off is
+// neither, since sent back as an error the model would re-emit it whole
+// and be cut off again, step after step.
+func (r Run) takeSubmission(
+	call model.ToolCall, resp model.StepResponse, forced bool, limits Limits, fb *fallback, ended func() *Conversation,
+) (refusal *model.ToolResult, cutOff bool) {
+	err := r.checkSubmit(call.Input)
+	switch {
+	case err != nil && resp.Stop == model.StopMaxTokens:
+		return nil, true
+	case err != nil:
+		if r.holds(call.Input) {
+			*fb = fallback{input: call.Input, conv: ended(), refused: err.Error()}
+		}
+	case !forced && r.Evidence != nil:
+		err = r.Evidence(call.Input)
+	}
+	if err == nil {
+		return nil, false
+	}
+	return &model.ToolResult{
+		CallID: call.ID, IsError: true,
+		Content: textcut.Truncate(fmt.Sprintf("agent: %s: %s", r.Submit.Name, err), limits.MaxToolOutputBytes),
+	}, false
 }
 
 // step sends req, again after each of stepRetryWaits while the failure is
