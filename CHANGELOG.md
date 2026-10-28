@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.0.110](https://github.com/home-operations/kritika/compare/0.0.109...0.0.110) (2026-10-28)
+
+
+### Features
+
+* **bench:** judge findings off their lines, hold runs to floors, and smoke the wiring ([#1301](https://github.com/home-operations/kritika/issues/1301)) ([bf06692](https://github.com/home-operations/kritika/commit/bf0669213bb9c408548ef6c136947f08741a5ffe))
+* **dashboard:** filter findings by how their pull request stands ([#1303](https://github.com/home-operations/kritika/issues/1303)) ([1b37096](https://github.com/home-operations/kritika/commit/1b370962bf383a5c19d8a706000f275b9e33d8dc))
+* **go:** update module cel.dev/cel-go (v0.32.0 → v0.33.1) ([#1290](https://github.com/home-operations/kritika/issues/1290)) ([2c6910e](https://github.com/home-operations/kritika/commit/2c6910ec602e26fa4df2c9a69614dd092f8283b7))
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.3.0 → v2.4.0) ([#1291](https://github.com/home-operations/kritika/issues/1291)) ([d1b34c3](https://github.com/home-operations/kritika/commit/d1b34c335591a022c892e1282bea48956dd96280))
+* **go:** update module github.com/openai/openai-go/v3 (v3.86.0 → v3.89.0) ([#1292](https://github.com/home-operations/kritika/issues/1292)) ([eded69b](https://github.com/home-operations/kritika/commit/eded69b5df844f0d3ecc3f262b8e5461fa20b8db))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.33.0 → v3.34.0) ([#1279](https://github.com/home-operations/kritika/issues/1279)) ([6bddb53](https://github.com/home-operations/kritika/commit/6bddb53f820ce40d96529ee823b688ef4fa10c24))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.34.0 → v3.39.1) ([#1293](https://github.com/home-operations/kritika/issues/1293)) ([c96d08e](https://github.com/home-operations/kritika/commit/c96d08ec8a683286fb2be6c14709d14d7f19ceb3))
+* **go:** update module golang.org/x/net (v0.61.0 → v0.62.0) ([#1289](https://github.com/home-operations/kritika/issues/1289)) ([378c84b](https://github.com/home-operations/kritika/commit/378c84b6cf12dd7aa504e98eac91a78e0e6eb974))
+* **go:** update river monorepo (v0.49.0 → v0.50.0) ([#1294](https://github.com/home-operations/kritika/issues/1294)) ([c9d029e](https://github.com/home-operations/kritika/commit/c9d029e7ef6fe50b3321e91062f0bbcea1ea876a))
+* **npm:** update dependency oxlint (1.89.0 → 1.90.0) ([#1288](https://github.com/home-operations/kritika/issues/1288)) ([581f27a](https://github.com/home-operations/kritika/commit/581f27aa7124877e443a15528cd200ca53a602ff))
+* **review:** quote the rule a finding enforces ([#1297](https://github.com/home-operations/kritika/issues/1297)) ([aa7c528](https://github.com/home-operations/kritika/commit/aa7c528ab8c7aec4078675ed5c123bde647f8405))
+* **review:** take a focus after the review command ([#1300](https://github.com/home-operations/kritika/issues/1300)) ([c49b277](https://github.com/home-operations/kritika/commit/c49b277e31e9d180420337d6e9dcbc0f8fa16af5))
+* **runner:** withhold findings on files the review never read ([#1298](https://github.com/home-operations/kritika/issues/1298)) ([629131d](https://github.com/home-operations/kritika/commit/629131da4553b57652455152dc14bc139f999733))
+* **trigger:** settle a push's review before it starts ([#1302](https://github.com/home-operations/kritika/issues/1302)) ([78f50e8](https://github.com/home-operations/kritika/commit/78f50e8a3b9cbb0f8fe0e2df7e386b1f205d318f))
+
+
+### Bug Fixes
+
+* **go:** update module github.com/bmatcuk/doublestar/v4 (v4.10.3 → v4.10.4) ([#1278](https://github.com/home-operations/kritika/issues/1278)) ([1537191](https://github.com/home-operations/kritika/commit/153719147640dcb9e4027b3e84df3f2c308be498))
+* **npm:** update dependency marked (18.1.1 → 18.1.2) ([#1285](https://github.com/home-operations/kritika/issues/1285)) ([1a01d8e](https://github.com/home-operations/kritika/commit/1a01d8ea18536779e086d634530500b8f41562ad))
+* **npm:** update dependency svelte (5.57.2 → 5.57.3) ([#1286](https://github.com/home-operations/kritika/issues/1286)) ([642996c](https://github.com/home-operations/kritika/commit/642996c3b0c88ecd83f11abec421743a2cdb4027))
+* **npm:** update tanstack-query monorepo (6.3.5 → 6.3.6) ([#1287](https://github.com/home-operations/kritika/issues/1287)) ([108e487](https://github.com/home-operations/kritika/commit/108e48794c7b98c9f4f54b76a2a6bdb78bc6719c))
+* **review:** keep dependency re-reviews scoped to the full PR range ([#1304](https://github.com/home-operations/kritika/issues/1304)) ([db72f4e](https://github.com/home-operations/kritika/commit/db72f4e7e0b19657ba4379cfcd86722cdb925bbc))
+* **store:** number the lookup-indexes migration after the one it merged beside ([#1282](https://github.com/home-operations/kritika/issues/1282)) ([de6fd0f](https://github.com/home-operations/kritika/commit/de6fd0f13b96ceb17a1a54f2ebc6947bd8cccd06))
+
+
+### Performance Improvements
+
+* **store:** index the job lookups and sweep settled model invocations ([#1281](https://github.com/home-operations/kritika/issues/1281)) ([bad86d5](https://github.com/home-operations/kritika/commit/bad86d5051b61ad556307f15a9a8fa61e7bc78b9))
+
+
+### Documentation
+
+* **mcp:** explain what to ask the endpoint and why not the forge's CLI ([#1276](https://github.com/home-operations/kritika/issues/1276)) ([671e553](https://github.com/home-operations/kritika/commit/671e5531638ad2097741a6f564c4c8cf887c4d5c))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action jdx/mise-action (v5.2.3 → v5.2.4) ([#1283](https://github.com/home-operations/kritika/issues/1283)) ([c5e6d48](https://github.com/home-operations/kritika/commit/c5e6d487ba5ee742f58e1aac5db6cf9495a444d9))
+* **mise:** update tool oxfmt (0.74.0 → 0.75.0) ([#1284](https://github.com/home-operations/kritika/issues/1284)) ([17aeccb](https://github.com/home-operations/kritika/commit/17aeccb0b15d4030cdbb6cd3bdda50094b6f0ae8))
+
 ## [0.0.109](https://github.com/home-operations/kritika/compare/0.0.108...0.0.109) (2026-10-27)
 
 
