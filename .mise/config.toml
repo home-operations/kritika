@@ -141,8 +141,8 @@ description = "Run the evaluation harness against a live model (OPENROUTER_API_K
 run = "go test -tags bench -run TestBench -v -count=1 -timeout 60m ./bench/"
 
 [tasks.bench-smoke]
-description = "Run the bench's wiring smoke: one corpus case through fetch, context, prompt, loop, parse, scoring and floors, answered by the corpus's own script, with no model key"
-run = "KRITIKA_BENCH_SCRIPT=1 KRITIKA_BENCH_LIMIT=1 go test -tags bench -run '^TestBench$' -count=1 -timeout 10m ./bench/"
+description = "Run the bench's own tests and its wiring smoke: one corpus case through fetch, context, prompt, loop, parse and scoring, answered by the corpus's own script, with no model key"
+run = "KRITIKA_BENCH_SCRIPT=1 KRITIKA_BENCH_LIMIT=1 go test -tags bench -count=1 -timeout 10m ./bench/"
 
 [tasks.bench-mine]
 description = "Rebuild the corpus from the sibling flate and konflate checkouts' history"

@@ -112,9 +112,9 @@ func FloorsFrom(runs ...report) (Floors, error) {
 		}
 		mean, sigma := meanSigma(recall)
 		f.Modes[m] = ModeFloors{
-			MustRecall:    round3(max(0, mean-floorSigmas*sigma)),
-			MeanFindings:  round3(collapseShare * meanOf(findings)),
-			MeanToolCalls: round3(collapseShare * meanOf(calls)),
+			MustRecall:    down3(max(0, mean-floorSigmas*sigma)),
+			MeanFindings:  down3(collapseShare * meanOf(findings)),
+			MeanToolCalls: down3(collapseShare * meanOf(calls)),
 		}
 	}
 	return f, nil
@@ -138,4 +138,7 @@ func meanSigma(xs []float64) (mean, sigma float64) {
 	return mean, math.Sqrt(sq / float64(len(xs)))
 }
 
-func round3(x float64) float64 { return math.Round(x*1000) / 1000 }
+// down3 is x to the thousandth under it, so a floor written out is never
+// over the measure it was set from, as rounding to the nearest could put
+// 0.667 over a recall of two thirds.
+func down3(x float64) float64 { return math.Floor(x*1000) / 1000 }

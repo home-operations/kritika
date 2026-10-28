@@ -222,18 +222,24 @@ go run -tags bench ./bench/cmd/floors -out bench/floors.json bench/results/<a>.j
 ```
 
 The recall floor is the mean over the runs less 2.2 standard deviations,
-and each collapse floor half the measured mean, as Kodus sets its own.
+and each collapse floor half the measured mean, as Kodus sets its own,
+each written to the thousandth under it. A mode more than 5% of whose
+cases did not run fails too: its measures are of too few cases to judge.
 `KRITIKA_BENCH_FLOORS` names another file.
 
 ### The wiring smoke
 
-`mise run bench-smoke` runs one corpus case with the model answered by the
-corpus's own script, which submits a finding on every expected range and
-matches every judged pair: no key, no cost, and every other line of the
-harness and of the review code it calls, fetch to report, exercised. CI
-runs it on every pull request, so a change that breaks the harness fails
-there rather than at the next live run. `KRITIKA_BENCH_SCRIPT=1` runs the
-whole corpus that way.
+`mise run bench-smoke` runs the bench's own tests, then one corpus case
+with the model answered by the corpus's own script, which submits a
+finding on every expected range and matches every judged pair: no key, no
+cost, and every other line of the harness and of the review code it
+calls, fetch to report, exercised. The run fails when a case errors or
+the script's findings miss a range, since that is the harness broken,
+and is not held to the floors, which are a live model's. The split-summary
+and confidence comparisons are a live model's too, and are skipped.
+CI runs it on every pull request, so a change that breaks the harness
+fails there rather than at the next live run. `KRITIKA_BENCH_SCRIPT=1`
+runs the whole corpus that way.
 
 The repository `grep` tool accepts `context_lines` (default 0, capped at 10)
 to return nearby source lines with each match. Overlapping windows appear once,

@@ -105,8 +105,8 @@ func TestBench(t *testing.T) {
 		}
 	}
 	modelID := envOr("KRITIKA_BENCH_MODEL", "openai/gpt-6-sol")
-	stepper, scripts, modelID := benchStepper(t, opts, key, modelID, dry, script)
-	j := newJudge(stepper, opts.Judge, opts.JudgeEffort)
+	stepper, raw, scripts, modelID := benchStepper(t, opts, key, modelID, dry, script)
+	j := newJudge(raw, opts.Judge, opts.JudgeEffort)
 	floors, gated, err := LoadFloors(envOr("KRITIKA_BENCH_FLOORS", "floors.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -170,32 +170,59 @@ func TestBench(t *testing.T) {
 	}
 	printSummary(t, rep)
 	writeReport(t, rep)
-	if gated && !dry {
+	switch {
+	case script:
+		checkScripted(t, rep)
+	case gated && !dry:
 		gate(t, floors, rep)
 	}
 }
 
 // benchStepper is the model a run answers with: the corpus's own script,
-// none for a dry run, else the OpenRouter model at opts's effort; and the
-// model's name for the report.
-func benchStepper(t *testing.T, opts benchOptions, key, modelID string, dry, script bool) (model.Stepper, *scripted, string) {
+// none for a dry run, else the OpenRouter model at opts's effort; the
+// same model with no effort of its own, for the judge to set its; the
+// script, when it is the model; and the model's name for the report.
+func benchStepper(t *testing.T, opts benchOptions, key, modelID string, dry, script bool) (stepper, raw model.Stepper, scripts *scripted, name string) {
 	t.Helper()
 	switch {
 	case script:
 		s := &scripted{}
-		return s, s, "scripted"
+		return s, s, s, "scripted"
 	case dry:
-		return nil, nil, modelID
+		return nil, nil, nil, modelID
 	}
 	stepper, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return effortStepper{Stepper: stepper, effort: opts.Effort}, nil, modelID
+	return effortStepper{Stepper: stepper, effort: opts.Effort}, stepper, nil, modelID
 }
 
+// checkScripted fails a scripted run that did not go through: the script
+// lands a finding on every expected range, so any case that errored or
+// missed one is the harness broken, not the model.
+func checkScripted(t *testing.T, rep report) {
+	t.Helper()
+	for _, r := range rep.Results {
+		switch {
+		case r.Error != "":
+			t.Errorf("%s [%s]: %s", r.ID, r.Mode, r.Error)
+		case r.MustHit != r.MustTotal || r.NiceHit != r.NiceTotal:
+			t.Errorf("%s [%s]: the script's findings hit %d of %d must and %d of %d nice ranges", r.ID, r.Mode, r.MustHit, r.MustTotal,
+				r.NiceHit, r.NiceTotal)
+		}
+	}
+}
+
+// maxErrorShare is the share of a mode's cases that may fail to run and
+// the mode still be judged against its floors: past it the measures are
+// of too few cases to mean anything, as Kodus leaves such a run
+// unmeasured rather than passed.
+const maxErrorShare = 0.05
+
 // gate fails the test for what rep measures under floors, when they
-// apply to a run scored as rep was.
+// apply to a run scored as rep was, and for a mode too many of whose
+// cases did not run to be measured.
 func gate(t *testing.T, floors Floors, rep report) {
 	t.Helper()
 	under, held := floors.Check(rep)
@@ -205,6 +232,11 @@ func gate(t *testing.T, floors Floors, rep report) {
 	}
 	for _, u := range under {
 		t.Error(u)
+	}
+	for _, m := range slices.Sorted(maps.Keys(floors.Modes)) {
+		if x, ran := rep.Modes[m]; ran && float64(x.Errors) > maxErrorShare*float64(x.Cases) {
+			t.Errorf("%s: %d of %d cases did not run, too many for the floors to judge the rest", m, x.Errors, x.Cases)
+		}
 	}
 }
 

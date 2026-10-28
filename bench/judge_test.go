@@ -42,6 +42,8 @@ func TestJudge(t *testing.T) {
 		{name: "a match under the threshold", raw: `{"reasoning":"unsure","match":true,"confidence":0.4}`},
 		{name: "no match", raw: `{"reasoning":"another problem","match":false,"confidence":0.9}`},
 		{name: "an answer that is not a verdict", raw: `{"verdict":`},
+		{name: "a confidence outside its range", raw: `{"reasoning":"sure","match":true,"confidence":50}`},
+		{name: "no reasoning", raw: `{"reasoning":" ","match":true,"confidence":1}`},
 		{name: "a provider error", err: errors.New("provider unavailable")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -51,7 +53,7 @@ func TestJudge(t *testing.T) {
 			if v.Match != tt.match || v.Expected != "a.go:10-12" || v.Finding != "a.go:30 response body leaks" {
 				t.Fatalf("verdict = %+v, want match %v", v, tt.match)
 			}
-			if (v.Error == "") != (tt.err == nil && strings.HasSuffix(tt.raw, "}")) {
+			if (v.Error == "") != (tt.err == nil && strings.HasSuffix(tt.raw, "}") && !strings.Contains(tt.raw, "50") && !strings.Contains(tt.raw, `" "`)) {
 				t.Fatalf("verdict error = %q", v.Error)
 			}
 			if last.Model != "vendor/judge" || last.Effort != "low" || len(last.Tools) != 1 || last.Tools[0].Name != judgeSchemaName {

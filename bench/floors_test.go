@@ -40,6 +40,15 @@ func TestFloorsFrom(t *testing.T) {
 		f.Modes["diff"].MustRecall != 0 {
 		t.Errorf("a floor under zero = %+v, %v; want 0", f, err)
 	}
+	// Two runs at two thirds set a floor two thirds meets again.
+	third := report{Judge: "j", Modes: map[string]modeTotals{"diff": {MustRecall: 2.0 / 3}}}
+	f, err = FloorsFrom(third, third)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if under, gated := f.Check(third); !gated || under != nil {
+		t.Errorf("a run at its own baseline is under its floor: %q", under)
+	}
 }
 
 func TestFloorsCheck(t *testing.T) {

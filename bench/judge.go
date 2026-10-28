@@ -110,6 +110,10 @@ func (j *judge) Matches(ctx context.Context, e Expected, f review.Finding) verdi
 		v.Error = "verdict: " + err.Error()
 		return v
 	}
+	if answer.Confidence < 0 || answer.Confidence > 1 || strings.TrimSpace(answer.Reasoning) == "" {
+		v.Error = fmt.Sprintf("verdict: confidence %v outside 0 to 1, or no reasoning", answer.Confidence)
+		return v
+	}
 	v.Reasoning, v.Confidence = answer.Reasoning, answer.Confidence
 	v.Match = answer.Match && answer.Confidence >= MatchConfidence
 	return v
