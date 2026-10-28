@@ -89,15 +89,18 @@ func (f Floors) Check(rep report) (under []string, gated bool) {
 // FloorsFrom sets floors from runs scored by one judge: a mode's recall
 // floor is the mean over the runs less floorSigmas standard deviations,
 // at least 0, and its collapse floors are collapseShare of the means.
-// Every run must have been scored by the same judge, and a mode is set
-// from the runs that ran it.
+// Every run must be live and have been scored by the same judge, and a
+// mode is set from the runs that ran it.
 func FloorsFrom(runs ...report) (Floors, error) {
 	if len(runs) == 0 {
 		return Floors{}, errors.New("bench: no runs to set floors from")
 	}
 	f := Floors{Judge: runs[0].Judge, Modes: map[string]ModeFloors{}}
 	byMode := map[string][]modeTotals{}
-	for _, r := range runs {
+	for i, r := range runs {
+		if r.Dry || r.Scripted {
+			return Floors{}, fmt.Errorf("bench: run %d is dry or scripted; floors require live measurements", i+1)
+		}
 		if r.Judge != f.Judge {
 			return Floors{}, fmt.Errorf("bench: runs scored by different judges: %q and %q", f.Judge, r.Judge)
 		}

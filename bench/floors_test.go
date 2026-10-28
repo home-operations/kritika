@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -48,6 +49,31 @@ func TestFloorsFrom(t *testing.T) {
 	}
 	if under, gated := f.Check(third); !gated || under != nil {
 		t.Errorf("a run at its own baseline is under its floor: %q", under)
+	}
+}
+
+func TestFloorsFromRejectsNonLive(t *testing.T) {
+	live := report{Judge: "judge", Modes: map[string]modeTotals{"diff": {MustRecall: 0.8}}}
+	dry, scripted := live, live
+	dry.Dry, scripted.Scripted = true, true
+	for _, tt := range []struct {
+		name string
+		runs []report
+		want string
+	}{
+		{"dry", []report{dry, dry}, "run 1 is dry or scripted"},
+		{"scripted", []report{scripted, scripted}, "run 1 is dry or scripted"},
+		{"live then dry", []report{live, dry}, "run 2 is dry or scripted"},
+		{"live then scripted", []report{live, scripted}, "run 2 is dry or scripted"},
+		{"dry then live", []report{dry, live}, "run 1 is dry or scripted"},
+		{"scripted then live", []report{scripted, live}, "run 1 is dry or scripted"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := FloorsFrom(tt.runs...)
+			if err == nil || !strings.Contains(err.Error(), tt.want) || f.Modes != nil {
+				t.Fatalf("FloorsFrom = %+v, %v; want no floors and %q", f, err, tt.want)
+			}
+		})
 	}
 }
 

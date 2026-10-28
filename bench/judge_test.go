@@ -81,6 +81,32 @@ func TestJudge(t *testing.T) {
 	}
 }
 
+func TestJudgeReplacement(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		end  int
+		want string
+	}{
+		{"one line", 0, "Replacement at lines 30-30:"},
+		{"range", 32, "Replacement at lines 30-32:"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stepper, last := answering(`{"reasoning":"same leak","match":true,"confidence":0.9}`, nil)
+			j := newJudge(stepper, "vendor/judge", "")
+			f := review.Finding{Path: "a.go", Line: 30, EndLine: tt.end, Title: "body leaks", Replacement: "defer resp.Body.Close()"}
+			v := j.Matches(t.Context(), Expected{Path: "a.go", Lines: [2]int{10, 12}}, f)
+			if !v.Match {
+				t.Fatalf("verdict = %+v", v)
+			}
+			for _, want := range []string{tt.want, f.Replacement} {
+				if !strings.Contains(last.Messages[0].Text, want) {
+					t.Errorf("the judge was not shown %q:\n%s", want, last.Messages[0].Text)
+				}
+			}
+		})
+	}
+}
+
 // TestScoreJudged: a judge is asked only about an expected range no
 // finding landed on, and only about the findings in its file; its match
 // counts, once, and is told apart from a hit by line.

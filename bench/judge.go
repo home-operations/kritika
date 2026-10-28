@@ -91,6 +91,9 @@ func (j *judge) Matches(ctx context.Context, e Expected, f review.Finding) verdi
 	if f.SuggestedFix != "" {
 		fmt.Fprintf(&b, "\nSuggested fix: %s\n", f.SuggestedFix)
 	}
+	if f.Replacement != "" {
+		fmt.Fprintf(&b, "\nReplacement at lines %d-%d:\n%s\n", f.Line, max(f.Line, f.EndLine), f.Replacement)
+	}
 	b.WriteString("\nDoes the candidate identify the same underlying defect the fix addressed?")
 	resp, err := j.completer.Complete(ctx, model.CompletionRequest{
 		System: judgeSystem, User: b.String(), Model: j.model, Schema: judgeSchema, SchemaName: judgeSchemaName,
