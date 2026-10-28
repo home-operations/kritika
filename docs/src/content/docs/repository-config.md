@@ -197,9 +197,10 @@ source maps and logs.
   of the rules it cites, markdown, case and spacing aside, and at least 12
   characters of it unless the rule is shorter. A submission with a finding
   that cites a rule it does not quote is sent back to the review to
-  correct, naming every such finding, as a malformed one is, and a
-  finding that still cites a rule without a quote is dropped and counted
-  in the summary's notes. A finding that cites no rule carries no quote.
+  correct, naming every such finding, as a malformed one is, twice at
+  most: a review that does not correct them by then keeps the rest of
+  its submission and loses those findings, which never post. A finding
+  that cites no rule carries no quote.
 
 ### Context
 

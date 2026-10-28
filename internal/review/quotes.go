@@ -152,52 +152,133 @@ func quotes(text, quote string) bool {
 	return q != "" && (utf8.RuneCountInString(q) >= minQuoteChars || q == t) && strings.Contains(t, q)
 }
 
-// CheckQuotes wraps check with what a finding that cites one of rules
-// must carry: a quote that is a passage of a rule it cites, as quotes
-// says. It is checked where the model can still correct it, so a finding
-// that enforces a rule the model made up, or misread, goes back to it
-// rather than to the author. One refusal names every such finding, so a
-// run told to submit can correct them all in the steps it has left.
-func CheckQuotes(check func(json.RawMessage) error, rules []Rule) func(json.RawMessage) error {
+// MaxQuoteRefusals is how many times a run's submission is sent back for
+// its quotes before one is taken as it is, its misquoted findings
+// dropped: a model that does not correct a quote twice over will not,
+// and the rest of its review is worth more than the citations.
+const MaxQuoteRefusals = 2
+
+// QuoteGate holds a run's submissions to what a finding that cites one
+// of its rules must carry: a quote that is a passage of a rule it cites,
+// as quotes says. Check refuses a submission with such a finding, naming
+// every one so a run told to submit can correct them all in the steps it
+// has left, up to MaxQuoteRefusals times; Drop then removes them from
+// the submission the run ends with. A finding that enforces a rule the
+// model made up, or misread, so goes back to the model rather than to
+// the author, and never posts.
+type QuoteGate struct {
+	rules   []Rule
+	refused int
+}
+
+// NewQuoteGate is a gate on rules, nil for none, which Check and Drop
+// take as nothing to hold to.
+func NewQuoteGate(rules []Rule) *QuoteGate {
 	if len(rules) == 0 {
-		return check
+		return nil
 	}
-	ids := make([]string, len(rules))
-	for i, r := range rules {
+	return &QuoteGate{rules: rules}
+}
+
+// misquoted is the index of each finding of raw that cites one of the
+// gate's rules without quoting it, with why.
+func (g *QuoteGate) misquoted(raw json.RawMessage) (at []int, why []string) {
+	ids := make([]string, len(g.rules))
+	for i, r := range g.rules {
 		ids[i] = r.ID
 	}
 	text := func(id string) string {
-		i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == id })
-		return rules[i].Text
+		i := slices.IndexFunc(g.rules, func(r Rule) bool { return r.ID == id })
+		return g.rules[i].Text
+	}
+	var res Result
+	if json.Unmarshal(raw, &res) != nil {
+		return nil, nil
+	}
+	for i, f := range res.Findings {
+		cited := citedRules(f.Rules, ids)
+		if len(cited) == 0 {
+			continue
+		}
+		where := fmt.Sprintf("%s:%d", strings.TrimSpace(f.Path), f.Line)
+		switch {
+		case strings.TrimSpace(f.Quote) == "":
+			at, why = append(at, i), append(why, fmt.Sprintf("%s cites %s but has no quote", where, nameRules(cited)))
+		case !slices.ContainsFunc(cited, func(id string) bool { return quotes(text(id), f.Quote) }):
+			at, why = append(at, i), append(why, fmt.Sprintf("%s's quote is not in %s", where, nameRules(cited)))
+		}
+	}
+	return at, why
+}
+
+// Check wraps check with the gate: a submission check accepts is refused
+// while it has a misquoted finding and the gate has refusals left.
+func (g *QuoteGate) Check(check func(json.RawMessage) error) func(json.RawMessage) error {
+	if g == nil {
+		return check
 	}
 	return func(raw json.RawMessage) error {
 		if err := check(raw); err != nil {
 			return err
 		}
-		var res Result
-		// check has decoded the same input.
-		_ = json.Unmarshal(raw, &res)
-		var refused []string
-		for _, f := range res.Findings {
-			cited := citedRules(f.Rules, ids)
-			if len(cited) == 0 {
-				continue
-			}
-			where := fmt.Sprintf("%s:%d", strings.TrimSpace(f.Path), f.Line)
-			switch {
-			case strings.TrimSpace(f.Quote) == "":
-				refused = append(refused, fmt.Sprintf("%s cites %s but has no quote", where, nameRules(cited)))
-			case !slices.ContainsFunc(cited, func(id string) bool { return quotes(text(id), f.Quote) }):
-				refused = append(refused, fmt.Sprintf("%s's quote is not in %s", where, nameRules(cited)))
-			}
-		}
-		if len(refused) == 0 {
+		_, why := g.misquoted(raw)
+		if len(why) == 0 || g.refused >= MaxQuoteRefusals {
 			return nil
 		}
+		g.refused++
 		return fmt.Errorf("review: %s. Copy the passage of the rule each finding enforces into its quote, verbatim, as the "+
 			"Review rules section has it, at least %d characters of it or the whole rule when it is shorter; leave rules out "+
-			"of a finding that enforces none", strings.Join(refused, "; "), minQuoteChars)
+			"of a finding that enforces none", strings.Join(why, "; "), minQuoteChars)
 	}
+}
+
+// Drop is raw, the submission a run ended with, without its misquoted
+// findings, which are named; raw itself when there are none.
+func (g *QuoteGate) Drop(raw json.RawMessage) (json.RawMessage, []string, error) {
+	if g == nil {
+		return raw, nil, nil
+	}
+	at, why := g.misquoted(raw)
+	if len(at) == 0 {
+		return raw, nil, nil
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil, nil, fmt.Errorf("review: drop misquoted: %w", err)
+	}
+	var chosen struct {
+		Findings []json.RawMessage `json:"findings"`
+	}
+	if err := json.Unmarshal(raw, &chosen); err != nil {
+		return nil, nil, fmt.Errorf("review: drop misquoted: %w", err)
+	}
+	kept := make([]json.RawMessage, 0, len(chosen.Findings))
+	for i, f := range chosen.Findings {
+		if !slices.Contains(at, i) {
+			kept = append(kept, f)
+		}
+	}
+	findings, err := json.Marshal(kept)
+	if err != nil {
+		return nil, nil, fmt.Errorf("review: drop misquoted: %w", err)
+	}
+	for k := range top {
+		if strings.EqualFold(k, keyFindings) {
+			delete(top, k)
+		}
+	}
+	top[keyFindings] = findings
+	out, err := json.Marshal(top)
+	if err != nil {
+		return nil, nil, fmt.Errorf("review: drop misquoted: %w", err)
+	}
+	return out, why, nil
+}
+
+// CheckQuotes is a fresh QuoteGate's Check on rules, for a check that
+// holds one submission.
+func CheckQuotes(check func(json.RawMessage) error, rules []Rule) func(json.RawMessage) error {
+	return NewQuoteGate(rules).Check(check)
 }
 
 // nameRules names rules for an error: "rule a" or "rules a, b".

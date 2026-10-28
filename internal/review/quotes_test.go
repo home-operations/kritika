@@ -88,7 +88,6 @@ func TestCheckQuotes(t *testing.T) {
 		return json.RawMessage(`{"summary":{"headline":"H","take":"T.","praise":[]},"findings":[{"path":"a.go","line":1,` +
 			`"severity":"p2","category":"correctness","title":"t","explanation":"e"` + finding + `}]}`)
 	}
-	check := CheckQuotes(Check, rules)
 	for _, tt := range []struct {
 		name, finding, wantErr string
 	}{
@@ -112,7 +111,7 @@ func TestCheckQuotes(t *testing.T) {
 		{name: "the shape still checked first", finding: `,"rules":["wrap-errors"],"mood":"ok"`, wantErr: "unknown keys"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := check(sub(tt.finding))
+			err := CheckQuotes(Check, rules)(sub(tt.finding))
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("refused: %v", err)
@@ -127,10 +126,49 @@ func TestCheckQuotes(t *testing.T) {
 	if err := CheckQuotes(Check, nil)(sub(`,"rules":["wrap-errors"]`)); err != nil {
 		t.Errorf("no rules refused a finding: %v", err)
 	}
-	if !Lenient(check)(sub(`,"rules":["wrap-errors"],"quote":"fmt.Errorf and the package name","mood":"ok"`)) {
+	if !Lenient(CheckQuotes(Check, rules))(sub(`,"rules":["wrap-errors"],"quote":"fmt.Errorf and the package name","mood":"ok"`)) {
 		t.Error("a quoted finding with an unknown key is a lenient answer")
 	}
-	if Lenient(check)(sub(`,"rules":["wrap-errors"],"mood":"ok"`)) {
+	if Lenient(CheckQuotes(Check, rules))(sub(`,"rules":["wrap-errors"],"mood":"ok"`)) {
 		t.Error("an unquoted citation is not a lenient answer")
+	}
+}
+
+// TestQuoteGate: a gate refuses a misquoted submission MaxQuoteRefusals
+// times and takes the next; Drop then removes the misquoted findings and
+// nothing else, and leaves a clean submission as it is.
+func TestQuoteGate(t *testing.T) {
+	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors with fmt.Errorf and the package name."}}
+	quoted := `{"path":"a.go","line":1,"severity":"p2","category":"correctness","title":"t","explanation":"e","rules":["wrap-errors"],"quote":"fmt.Errorf and the package name"}`
+	unquoted := `{"path":"b.go","line":2,"severity":"p2","category":"correctness","title":"u","explanation":"e","rules":["wrap-errors"]}`
+	raw := json.RawMessage(`{"summary":{"take":"T.","praise":[]},"findings":[` + quoted + `,` + unquoted + `]}`)
+	g := NewQuoteGate(rules)
+	check := g.Check(Check)
+	for i := range MaxQuoteRefusals {
+		if err := check(raw); err == nil || !strings.Contains(err.Error(), "b.go:2 cites rule wrap-errors but has no quote") {
+			t.Fatalf("refusal %d = %v", i+1, err)
+		}
+	}
+	if err := check(raw); err != nil {
+		t.Fatalf("the submission after %d refusals = %v, want it taken", MaxQuoteRefusals, err)
+	}
+	// Drop reads the findings as the worker does, and keeps the rest of
+	// the submission, a key the contract does not define included.
+	raw = json.RawMessage(`{"summary":{"take":"T.","praise":[]},"verdict":"x","Findings":[` + quoted + `,` + unquoted + `]}`)
+	dropped, why, err := g.Drop(raw)
+	if err != nil || len(why) != 1 || !strings.Contains(why[0], "b.go:2") {
+		t.Fatalf("Drop = %s, %q, %v", dropped, why, err)
+	}
+	var res Result
+	if err := json.Unmarshal(dropped, &res); err != nil || len(res.Findings) != 1 || res.Findings[0].Title != "t" ||
+		!strings.Contains(string(dropped), `"verdict":"x"`) || strings.Contains(string(dropped), `"Findings"`) {
+		t.Fatalf("dropped = %s, %v; want the quoted finding alone under findings, the rest kept", dropped, err)
+	}
+	clean := json.RawMessage(`{"summary":{"take":"T.","praise":[]},"findings":[` + quoted + `]}`)
+	if same, why, err := g.Drop(clean); err != nil || why != nil || string(same) != string(clean) {
+		t.Fatalf("a clean submission = %s, %q, %v; want it as it is", same, why, err)
+	}
+	if same, why, err := NewQuoteGate(nil).Drop(raw); err != nil || why != nil || string(same) != string(raw) || NewQuoteGate(nil) != nil {
+		t.Fatalf("no rules = %s, %q, %v", same, why, err)
 	}
 }
