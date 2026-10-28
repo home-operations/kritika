@@ -32,10 +32,11 @@ func TestSpecValue(t *testing.T) {
 func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, "trigger: { limit: 2, exclude: [{ name: forks, expr: pr.fork }] }\nagent: { steps: 9 }\ncomments: { dashboard: false }\n"+minimal)
+	f := mustLoad(t, "trigger: { limit: 2, settle: 90s, exclude: [{ name: forks, expr: pr.fork }] }\nagent: { steps: 9 }\ncomments: { dashboard: false }\n"+minimal)
 	s := f.Sources(&f.Accounts[0])
 	for key, want := range map[string]Source{
-		"trigger.limit": SourceDefaults, "trigger.exclude": SourceDefaults, "agent.steps": SourceDefaults, "comments": SourceDefaults, "comments.dashboard": SourceDefaults,
+		"trigger.limit": SourceDefaults, "trigger.settle": SourceDefaults, "trigger.exclude": SourceDefaults, "agent.steps": SourceDefaults,
+		"comments": SourceDefaults, "comments.dashboard": SourceDefaults,
 		"enabled": SourceDefault, "trigger.include": SourceDefault, "agent.tokens": SourceDefault, "agent.prompt": SourceDefault, "review.model": SourceDefault,
 		"ignore": SourceDefault, "limits": SourceDefault,
 	} {
@@ -43,7 +44,8 @@ func TestSources(t *testing.T) {
 			t.Errorf("%s from %s, want %s", key, s[key], want)
 		}
 	}
-	if s := mustLoad(t, minimal).Sources(&Account{}); s["trigger.limit"] != SourceDefault || s["trigger.exclude"] != SourceDefault {
+	if s := mustLoad(t, minimal).Sources(&Account{}); s["trigger.limit"] != SourceDefault || s["trigger.settle"] != SourceDefault ||
+		s["trigger.exclude"] != SourceDefault {
 		t.Fatalf("a file writing nothing = %v", s)
 	}
 	root := mustLoad(t, "limits: { concurrency: 2 }\n"+minimal)

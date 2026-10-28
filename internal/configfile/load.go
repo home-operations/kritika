@@ -406,6 +406,9 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: trigger.limit must not be negative")
 	}
+	if r.Trigger.Settle != nil && (*r.Trigger.Settle < 0 || *r.Trigger.Settle > MaxPushSettle) {
+		return fmt.Errorf("configfile: trigger.settle must be between 0s and %s", MaxPushSettle)
+	}
 	for gi, g := range r.Ignore {
 		if !ValidGlob(g) {
 			return fmt.Errorf("configfile: ignore[%d] %q is not a valid glob", gi, g)

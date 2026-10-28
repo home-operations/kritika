@@ -33,6 +33,10 @@ func ReviewKind(kind string) bool {
 	return kind == QueueReview || kind == QueuePrepare || kind == QueuePublish
 }
 
+// TriggerSynchronize is the Trigger a push to the pull request's branch
+// carries, the one trigger.settle holds.
+const TriggerSynchronize = "synchronize"
+
 // TriggerManual is the Trigger a human-requested re-run carries. It is the
 // only trigger the worker lets bypass the bot-author patch-id skip; a
 // review that replaces an undelivered manual one stands in for it (see

@@ -199,13 +199,13 @@ it passes the gate.
 
 ## When a review runs
 
-| Event                      | Behavior                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------- |
-| Open, reopen or mark ready | Reviews the current commit unless already reviewed.                                     |
-| Push                       | Reviews changes since the previous review, or the full pull request for larger updates. |
-| Add or remove a label      | Can trigger a first review or retry a failed one.                                       |
-| Poll                       | Catches updates missed by webhooks.                                                     |
-| Manual review              | Reviews the whole pull request again.                                                   |
+| Event                      | Behavior                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Open, reopen or mark ready | Reviews the current commit unless already reviewed.                                                                      |
+| Push                       | Reviews changes since the previous review, or the full pull request for larger updates, after `trigger.settle` when set. |
+| Add or remove a label      | Can trigger a first review or retry a failed one.                                                                        |
+| Poll                       | Catches updates missed by webhooks.                                                                                      |
+| Manual review              | Reviews the whole pull request again.                                                                                    |
 
 Drafts, forks and bot pull requests are included unless
 [trigger rules](/configuration/#which-pull-requests-are-reviewed) exclude them.
