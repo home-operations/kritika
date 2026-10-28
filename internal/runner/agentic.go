@@ -197,11 +197,12 @@ func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []s
 	if in.role != nil {
 		categories = in.role.Categories
 	}
-	quotes := review.NewQuoteGate(in.rules)
-	validate := quotes.Check(review.CheckCategories(review.Check, categories))
+	// The fallback judges a refused submission again; it must not spend
+	// the gate's refusals doing so.
+	quotes, check := review.NewQuoteGate(in.rules), review.CheckCategories(review.Check, categories)
 	return agentPrompt{
 		system: system, user: user, submit: submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories), quotes: quotes,
-		validate: validate, fallback: review.Lenient(validate),
+		validate: quotes.Check(check), fallback: review.Lenient(quotes.Peek(check)),
 		omitted: omitted, contextOmitted: contextOmitted,
 		context: pack.Context[:len(pack.Context)-contextOmitted], references: in.references, referencesOmitted: referencesOmitted,
 	}

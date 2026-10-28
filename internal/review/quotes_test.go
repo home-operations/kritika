@@ -152,6 +152,20 @@ func TestQuoteGate(t *testing.T) {
 	if err := check(raw); err != nil {
 		t.Fatalf("the submission after %d refusals = %v, want it taken", MaxQuoteRefusals, err)
 	}
+	// Peek refuses as Check would, spending nothing: the fallback judges a
+	// submission Check refused once more without costing a refusal.
+	fresh := NewQuoteGate(rules)
+	for range MaxQuoteRefusals + 1 {
+		if err := fresh.Peek(Check)(raw); err == nil {
+			t.Fatal("Peek took a misquoted submission")
+		}
+	}
+	if fresh.refused != 0 || Lenient(fresh.Peek(Check))(raw) {
+		t.Fatalf("Peek spent %d refusals, or held a misquoted submission", fresh.refused)
+	}
+	if err := fresh.Check(Check)(raw); err == nil || fresh.refused != 1 {
+		t.Fatalf("Check after Peek = %v, refused %d; want one refusal", err, fresh.refused)
+	}
 	// Drop reads the findings as the worker does, and keeps the rest of
 	// the submission, a key the contract does not define included.
 	raw = json.RawMessage(`{"summary":{"take":"T.","praise":[]},"verdict":"x","Findings":[` + quoted + `,` + unquoted + `]}`)

@@ -212,8 +212,20 @@ func (g *QuoteGate) misquoted(raw json.RawMessage) (at []int, why []string) {
 }
 
 // Check wraps check with the gate: a submission check accepts is refused
-// while it has a misquoted finding and the gate has refusals left.
+// while it has a misquoted finding and the gate has refusals left, each
+// refusal counting one. It is the loop's Validate; Peek is for what else
+// judges a submission, such as the fallback, which must not spend them.
 func (g *QuoteGate) Check(check func(json.RawMessage) error) func(json.RawMessage) error {
+	return g.wrap(check, true)
+}
+
+// Peek is Check without the count: it refuses what Check would refuse
+// now, and spends no refusal doing so.
+func (g *QuoteGate) Peek(check func(json.RawMessage) error) func(json.RawMessage) error {
+	return g.wrap(check, false)
+}
+
+func (g *QuoteGate) wrap(check func(json.RawMessage) error, count bool) func(json.RawMessage) error {
 	if g == nil {
 		return check
 	}
@@ -225,7 +237,9 @@ func (g *QuoteGate) Check(check func(json.RawMessage) error) func(json.RawMessag
 		if len(why) == 0 || g.refused >= MaxQuoteRefusals {
 			return nil
 		}
-		g.refused++
+		if count {
+			g.refused++
+		}
 		return fmt.Errorf("review: %s. Copy the passage of the rule each finding enforces into its quote, verbatim, as the "+
 			"Review rules section has it, at least %d characters of it or the whole rule when it is shorter; leave rules out "+
 			"of a finding that enforces none", strings.Join(why, "; "), minQuoteChars)
