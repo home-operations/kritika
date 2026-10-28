@@ -301,7 +301,7 @@ func agentLoop(
 	var evidence func(json.RawMessage) error
 	if p.Kind == runspec.KindReview && limits.MaxSteps > 1 {
 		ledger = newReadLedger(prompt.carried)
-		tools, evidence = ledger.wrap(tools), ledger.check
+		tools, evidence, stepper = ledger.wrap(tools), ledger.check, ledger.settling(stepper)
 	}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user, Carried: prompt.carried,
@@ -312,9 +312,6 @@ func agentLoop(
 		Evidence: evidence,
 		Limits:   limits,
 		OnStep: func(e agent.StepEvent) {
-			if ledger != nil {
-				ledger.settle()
-			}
 			tools, outputBytes := make([]string, len(e.Calls)), 0
 			for i, c := range e.Calls {
 				tools[i], outputBytes = c.Name, outputBytes+c.OutputBytes

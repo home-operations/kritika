@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/home-operations/kritika/internal/agent"
@@ -25,9 +26,10 @@ var readTools = []string{"read_file", "read_diff"}
 // from the diff alone, or from nothing, and the review is told to read
 // the file or leave the finding out while it still can, and the finding
 // is withheld once it has submitted. A read counts once the model has
-// seen what it returned: the reads of a step are pending until the step
-// ends, so a submission in the same answer as a read is not credited
-// with it.
+// seen what it returned: the reads of a step are pending until the next
+// request carries their results (see settling), so a submission in the
+// same answer as a read is not credited with it, whether the loop asks
+// the model again or ends on that answer.
 type readLedger struct {
 	read, pending map[string]bool
 }
@@ -68,8 +70,8 @@ func (l *readLedger) add(input json.RawMessage) {
 	}
 }
 
-// settle counts the pending reads: the step they were made in has ended,
-// and the model has seen what they returned.
+// settle counts the pending reads: a request carrying their results is
+// being sent, so the model sees what they returned.
 func (l *readLedger) settle() {
 	for p := range l.pending {
 		l.read[p] = true
@@ -77,10 +79,19 @@ func (l *readLedger) settle() {
 	clear(l.pending)
 }
 
+// settling is stepper with l's pending reads settled as each request is
+// sent: the results of the last step's reads go to the model with it.
+func (l *readLedger) settling(stepper model.Stepper) model.Stepper {
+	return model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+		l.settle()
+		return stepper.Step(ctx, req)
+	})
+}
+
 // cleanPath is p as the ledger keys it and a finding's path is looked
-// up: cleaned as read_file cleans its path, so "./a.go" and "a.go" are
-// one file.
-func cleanPath(p string) string { return path.Clean(p) }
+// up: trimmed and cleaned, as read_diff reads its path and Parse a
+// finding's, so "./a.go", " a.go" and "a.go" are one file.
+func cleanPath(p string) string { return path.Clean(strings.TrimSpace(p)) }
 
 // wrap returns tools with each read tool recording on l the files it
 // reads.
@@ -156,8 +167,15 @@ func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error
 	if err := json.Unmarshal(raw, &top); err != nil {
 		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
 	}
+	// The findings are the ones encoding/json reads, whatever case their
+	// key is in and however often it repeats; they are written back under
+	// the one key, the others dropped.
+	var chosen struct {
+		Findings json.RawMessage `json:"findings"`
+	}
+	_ = json.Unmarshal(raw, &chosen)
 	var findings []json.RawMessage
-	if len(top[keyFindings]) == 0 || json.Unmarshal(top[keyFindings], &findings) != nil {
+	if len(chosen.Findings) == 0 || json.Unmarshal(chosen.Findings, &findings) != nil {
 		return raw, nil, nil
 	}
 	var unread []string
@@ -182,6 +200,7 @@ func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
 	}
+	maps.DeleteFunc(top, func(k string, _ json.RawMessage) bool { return strings.EqualFold(k, keyFindings) })
 	top[keyFindings] = marked
 	if marked, err = json.Marshal(top); err != nil {
 		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
@@ -191,7 +210,11 @@ func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error
 
 // markFinding is f, one finding of a submission, with its unread key set
 // when its file was never read and dropped otherwise, nil when f needs
-// no change or is not an object; where names an unread finding.
+// no change or is not an object; where names an unread finding. A
+// finding that is re-encoded keeps the path and line encoding/json read
+// from it, under those keys alone: the keys of an object encode sorted,
+// and a key repeated in another case would otherwise be read the other
+// way round.
 func (l *readLedger) markFinding(f json.RawMessage) (marked json.RawMessage, where string, err error) {
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(f, &obj) != nil || obj == nil {
@@ -210,6 +233,13 @@ func (l *readLedger) markFinding(f json.RawMessage) (marked json.RawMessage, whe
 	} else if len(obj) == had {
 		return nil, "", nil
 	}
+	maps.DeleteFunc(obj, func(k string, _ json.RawMessage) bool {
+		return strings.EqualFold(k, "path") || strings.EqualFold(k, "line")
+	})
+	if obj["path"], err = json.Marshal(at.Path); err != nil {
+		return nil, "", fmt.Errorf("runner: evidence: %w", err)
+	}
+	obj["line"] = json.RawMessage(strconv.Itoa(at.Line))
 	if marked, err = json.Marshal(obj); err != nil {
 		return nil, "", fmt.Errorf("runner: evidence: %w", err)
 	}

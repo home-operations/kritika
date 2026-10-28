@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -42,16 +43,22 @@ func TestReadLedger(t *testing.T) {
 	if err := run("read_file", `{"path":"nope.go"}`); err == nil {
 		t.Fatal("a missing file read")
 	}
-	if err := run("read_diff", `{"path":"main.go"}`); err != nil {
+	if err := run("read_diff", `{"path":" main.go "}`); err != nil {
 		t.Fatal(err)
 	}
 	if err := run("grep", `{"pattern":"package","path_glob":"util.go"}`); err != nil {
 		t.Fatal(err)
 	}
 	if l.read["main.go"] || !l.pending["main.go"] {
-		t.Fatalf("reads = %v, pending %v; a read counts once its step has ended", l.read, l.pending)
+		t.Fatalf("reads = %v, pending %v; a read counts once its result has been sent", l.read, l.pending)
 	}
-	l.settle()
+	sent := false
+	if _, err := l.settling(model.StepperFunc(func(context.Context, model.StepRequest) (model.StepResponse, error) {
+		sent = true
+		return model.StepResponse{}, nil
+	})).Step(t.Context(), model.StepRequest{}); err != nil || !sent {
+		t.Fatalf("settling stepper: sent %v, %v", sent, err)
+	}
 	if !l.read["main.go"] || l.read["nope.go"] || len(l.read) != 2 || len(l.pending) != 0 {
 		t.Fatalf("reads = %v, want main.go and util.go: a failed read and a grep hit are not reads", l.read)
 	}
@@ -118,6 +125,18 @@ func TestReadLedgerMark(t *testing.T) {
 	if strings.Contains(string(marked), `"Unread"`) || strings.Count(string(marked), "unread") != 1 {
 		t.Errorf("the model's own unread survived:\n%s", marked)
 	}
+	// The findings key and a repeated path are read as encoding/json
+	// reads them, and written back under one key each.
+	raw = json.RawMessage(`{"summary":{"take":"ok","praise":[]},"Findings":[` +
+		`{"path":"other.go","Path":"main.go","line":1,"Line":2,"severity":"p2","category":"correctness","title":"t","explanation":"e","unread":true}]}`)
+	if marked, unread, err = l.mark(raw); err != nil || len(unread) != 0 {
+		t.Fatalf("mark = %s, %v, %v", marked, unread, err)
+	}
+	if err := json.Unmarshal(marked, &res); err != nil || len(res.Findings) != 1 || res.Findings[0].Path != "main.go" ||
+		res.Findings[0].Line != 2 || res.Findings[0].Unread || strings.Contains(string(marked), `"Findings"`) ||
+		strings.Contains(string(marked), `"Path"`) {
+		t.Fatalf("marked = %s, %v; want main.go:2 under findings alone", marked, err)
+	}
 	for _, raw := range []string{`{"summary":{"take":"ok","praise":[]}}`, string(sub("main.go", "./util.go"))} {
 		if marked, unread, err := l.mark(json.RawMessage(raw)); err != nil || unread != nil || string(marked) != raw {
 			t.Fatalf("a submission that needs no change is returned as it is: %s, %v, %v", marked, unread, err)
@@ -173,6 +192,21 @@ func TestReviewAgentEvidence(t *testing.T) {
 		results := st.reqs[1].Messages[len(st.reqs[1].Messages)-1].ToolResults
 		if len(results) != 2 || results[0].IsError || !results[1].IsError || !strings.Contains(results[1].Content, "main.go:3") {
 			t.Fatalf("the first step's results = %+v, want the read answered and the submission refused", results)
+		}
+	})
+	t.Run("a read in the step a fallback was held on does not count", func(t *testing.T) {
+		held := strings.Replace(finding, `"findings"`, `"verdict":"x","findings"`, 1)
+		st := &scriptedStepper{steps: []model.StepResponse{
+			{ToolCalls: []model.ToolCall{call("1", "read_file", `{"path":"main.go"}`), call("2", "submit_review", held)},
+				Usage: model.Usage{Input: 1000}},
+		}}
+		s := agentPromptSpec()
+		s.Agent.MaxTokens = 500
+		prompt := loopPrompt(s, false)
+		prompt.fallback = review.Lenient(prompt.validate)
+		res, _ := agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), prompt, time.Minute, logger)
+		if res.Stop != agent.StopSubmitted || res.Refused == "" || !sameFinding(t, res.Submitted, true) {
+			t.Fatalf("result = %+v; want the held input taken with its finding marked unread", res)
 		}
 	})
 	t.Run("forced, taken and marked", func(t *testing.T) {
