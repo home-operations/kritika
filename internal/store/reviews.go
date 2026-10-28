@@ -396,7 +396,7 @@ type ReviewResult struct {
 // comment's id for the pull request, and the review's model, summary and
 // confidence.
 func RecordReviewResult(ctx context.Context, tx pgx.Tx, r ReviewResult) error {
-	// One round trip for every finding, however many the review found.
+	// One round trip for all findings, however many the review found.
 	findings := &pgx.Batch{}
 	for i, f := range r.Result.Findings {
 		findings.Queue(`INSERT INTO findings
