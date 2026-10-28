@@ -125,7 +125,7 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 	f := store.FindingFilter{
 		Severity: review.Severity(q.Get("severity")), Category: review.Category(q.Get("category")),
 		Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Reviewer: q.Get("agent"), Path: q.Get("path"),
-		DismissedBy: store.DismissalSource(q.Get("dismissed")), Query: q.Get("q"),
+		DismissedBy: store.DismissalSource(q.Get("dismissed")), Pull: store.FindingPull(q.Get("pr")), Query: q.Get("q"),
 	}
 	if err := checkFindingFilter(f); err != nil {
 		return f, err
@@ -140,8 +140,8 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 	return f, nil
 }
 
-// checkFindingFilter refuses a severity, category, status or dismissal
-// source that is none of them.
+// checkFindingFilter refuses a severity, category, status, dismissal
+// source or pull request state that is none of them.
 func checkFindingFilter(f store.FindingFilter) error {
 	switch {
 	case f.Severity != "" && !f.Severity.Valid():
@@ -152,6 +152,8 @@ func checkFindingFilter(f store.FindingFilter) error {
 		return errBadRequest(CodeBadRequest, "status must be open, addressed or dismissed")
 	case f.DismissedBy != "" && !f.DismissedBy.Valid():
 		return errBadRequest(CodeBadRequest, "dismissed must be command, resolved or conceded")
+	case f.Pull != "" && !f.Pull.Valid():
+		return errBadRequest(CodeBadRequest, "pr must be open, merged or closed")
 	}
 	return nil
 }
@@ -181,7 +183,7 @@ func findingGroups(groups []store.FindingGroup) []FindingGroup {
 
 // filterKeys are the findings filters in the order the dashboard's search
 // box writes them.
-var filterKeys = []string{"repo", "severity", "category", "status", "dismissed", "rule", "agent", "path", "is"}
+var filterKeys = []string{"repo", "severity", "category", "status", "dismissed", "rule", "agent", "path", "pr", "is"}
 
 // filterText is the filters of an export's query as the dashboard's search
 // box shows them, its free text last.

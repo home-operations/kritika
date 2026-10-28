@@ -4,7 +4,7 @@
   // or a maintainer dismissed it.
   import { tick, untrack } from 'svelte';
   import { href, replace } from '../router.svelte';
-  import { DISMISS_SOURCES, FINDING_IS, FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
+  import { DISMISS_SOURCES, FINDING_IS, FINDING_PULLS, FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
   import { Paged, Resource, errorMessage } from '../resource.svelte';
   import { basePath } from '../base';
   import { accountApi, pullRoute, threadUrl, forgeName } from '../links';
@@ -43,7 +43,7 @@
   // filterParams is the filter as the findings API reads it, after extra.
   function filterParams(extra: Record<string, string> = {}): URLSearchParams {
     const p = new URLSearchParams(extra);
-    for (const k of ['severity', 'category', 'status', 'dismissed', 'repo', 'rule', 'agent', 'path', 'is', 'q'] as const) {
+    for (const k of ['severity', 'category', 'status', 'dismissed', 'repo', 'rule', 'agent', 'path', 'pr', 'is', 'q'] as const) {
       const v = filter?.[k];
       if (v) p.set(k, v);
     }
@@ -89,12 +89,13 @@
       : []),
     // No suggestions: a suggestion would replace a path typed in another case, which names another path.
     { key: 'path', hint: 'a path the findings are under', values: [], open: true },
+    { key: 'pr', hint: 'open, merged, or closed without merging', values: FINDING_PULLS },
     { key: 'is', hint: 'downvoted: its comment drew a thumbs down', values: FINDING_IS },
   ]);
   const boxText = (f: FindingFilter | undefined) =>
     formatTokens(
       specs,
-      { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, dismissed: f?.dismissed, rule: f?.rule, agent: f?.agent, path: f?.path, is: f?.is },
+      { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, dismissed: f?.dismissed, rule: f?.rule, agent: f?.agent, path: f?.path, pr: f?.pr, is: f?.is },
       f?.q,
     );
 

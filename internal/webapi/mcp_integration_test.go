@@ -259,9 +259,14 @@ func testMCPLists(t *testing.T, e *apiEnv, cs *mcp.ClientSession) {
 		t.Errorf("second page = %+v, want the other finding and no cursor", second)
 	}
 	var p0 Page[AccountFinding]
-	callTool(t, cs, "list_findings", map[string]any{"repository": "wa/one", "severity": "p0", "status": "open"}, &p0)
+	callTool(t, cs, "list_findings", map[string]any{"repository": "wa/one", "severity": "p0", "status": "open", "pr": "open"}, &p0)
 	if len(p0.Items) != 1 || p0.Items[0].Title != "nil deref" || p0.Items[0].ReviewID != e.a.reviewID {
 		t.Errorf("p0 findings = %+v", p0.Items)
+	}
+	var merged Page[AccountFinding]
+	callTool(t, cs, "list_findings", map[string]any{"repository": "wa/one", "pr": "merged"}, &merged)
+	if len(merged.Items) != 0 {
+		t.Errorf("findings of merged pull requests = %+v, want none: every pull request is open", merged.Items)
 	}
 	var sum FindingSummary
 	e.noLeaks(t, callTool(t, cs, "common_findings", map[string]any{"repository": "wa/one"}, &sum))
