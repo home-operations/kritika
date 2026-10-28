@@ -174,6 +174,9 @@ type Prompt struct {
 	// review would send it the same system prompt and tools; nil starts
 	// afresh.
 	Continue *Continuation `json:"continue,omitempty"`
+	// Focus is what the review someone asked for is to look hardest at,
+	// in their words; "" for nothing in particular.
+	Focus string `json:"focus,omitempty"`
 	// Reviewers are the reviewers to run, the default one, when it is
 	// among them, by its name alone, the rules, skills and the rest of the
 	// prompt being its own; each other one whose when conditions the

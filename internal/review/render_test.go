@@ -220,6 +220,20 @@ func TestRenderSummaryCost(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryFocus: the review context names the focus the review
+// was asked for, and opens for it alone.
+func TestRenderSummaryFocus(t *testing.T) {
+	d := sampleData()
+	d.Focus = FooterText("the `retry` loop")
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "<summary>Review context</summary>\n\n- **Focus:** the \\`retry\\` loop\n") {
+		t.Fatalf("focus in the review context:\n%s", body)
+	}
+	if body, _ := RenderSummary(t.Context(), Templates{}, sampleData()); strings.Contains(body, "Review context") {
+		t.Fatalf("a review with nothing to say has a context block:\n%s", body)
+	}
+}
+
 // TestRenderSummaryRoute: the footer names the route that picked the
 // model after it, escaped, since a glob's * would read as emphasis.
 func TestRenderSummaryRoute(t *testing.T) {

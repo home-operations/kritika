@@ -41,6 +41,9 @@ type publishPhase struct {
 	// trigger is why the review ran; one a human asked for does not
 	// count towards the pull request's automatic reviews.
 	trigger string
+	// focus is what the review was asked to look hardest at, "" for
+	// nothing in particular; the summary's context names it.
+	focus string
 	// started is when the review's first job was picked up, which the
 	// duration the metric observes counts from; a checkpoint carries it
 	// to the stage that ends the review.
@@ -459,7 +462,7 @@ func (p *publishPhase) writeBack(
 	counts := review.Result{Findings: reported}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-		Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
+		Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route), Focus: review.FooterText(p.focus),
 		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
 		Agents:      p.reviewers,

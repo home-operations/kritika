@@ -121,6 +121,10 @@ type ReviewArgs struct {
 	// names no reviewer, which the review states it ran every reviewer in
 	// place of; it leaves the request one of every reviewer.
 	Requested string `json:"requested,omitempty"`
+	// Focus is what a re-run's request asks the review to look hardest
+	// at, the text written after review and the reviewer's name, as
+	// review.CleanFocus keeps it; "" asks for nothing in particular.
+	Focus string `json:"focus,omitempty"`
 }
 
 // Kind implements river.JobArgs.

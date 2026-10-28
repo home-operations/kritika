@@ -102,6 +102,7 @@ func TestRequestsReview(t *testing.T) {
 		{"Looks fine to me. @Kritika Review please", true},
 		{"@kritika review?", true},
 		{"@kritika  review\nthe auth change", true},
+		{"@other review security @kritika review", true},
 		{"@kritika reviewed this already?", false},
 		{"@kritika why is b here? a review would help", false},
 		{"@kritikabot review", false},

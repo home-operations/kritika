@@ -51,6 +51,9 @@ type RenderData struct {
 	// Route names the review.model route that picked Model and the
 	// condition that held, as FooterText escapes it, "" for the default.
 	Route string
+	// Focus is what the review was asked to look hardest at, as FooterText
+	// escapes it, "" for nothing in particular.
+	Focus string
 	// Cost is what the pull request's reviews have cost together, as
 	// FormatCost writes it, "" where the repository does not show it.
 	Cost string

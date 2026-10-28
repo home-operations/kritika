@@ -55,16 +55,18 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, "", "")
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, "", "", "")
 }
 
 // EnqueueReviewerRerun is EnqueueRerun for a re-run of reviewer alone, the
 // one whose name someone wrote after "@<bot> review", or of every reviewer
-// with requested, a word written there that names none.
+// with requested, a word written there that names none, and with focus,
+// what the request asks the review to look hardest at.
 func EnqueueReviewerRerun(
-	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, reviewer, requested string,
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
+	reviewer, requested, focus string,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, reviewer, requested)
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, reviewer, requested, focus)
 }
 
 // EnqueueLabelChange queues a review of number's current head for trigger,
@@ -75,12 +77,12 @@ func EnqueueReviewerRerun(
 func EnqueueLabelChange(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger, "", "")
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger, "", "", "")
 }
 
 func enqueueFresh(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
-	trigger, reviewer, requested string,
+	trigger, reviewer, requested, focus string,
 ) (int64, error) {
 	var headSHA string
 	err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests
@@ -99,11 +101,11 @@ func enqueueFresh(
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}
 	// same is whether a live job of the head runs the reviewers this one
-	// would, which then stands in for it; a review row with no live job
-	// is taken to.
+	// would, with the focus it would, which then stands in for it; a
+	// review row with no live job is taken to.
 	var busy, same bool
 	err = tx.QueryRow(ctx, `WITH live AS (
-			SELECT coalesce(args->>'reviewer', '') AS reviewer FROM river_job
+			SELECT coalesce(args->>'reviewer', '') AS reviewer, coalesce(args->>'focus', '') AS focus FROM river_job
 			WHERE kind IN ($5, 'review_prepare', 'review_publish') AND state IN (`+LiveStatesSQL()+`)
 				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
 				AND args->>'head_sha' = $4)
@@ -112,8 +114,8 @@ func enqueueFresh(
 			WHERE p.account_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
 				AND r.status IN ('running', 'prepared'))
 			OR EXISTS (SELECT 1 FROM live),
-			NOT EXISTS (SELECT 1 FROM live) OR EXISTS (SELECT 1 FROM live WHERE reviewer = $6)`,
-		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind(), reviewer).Scan(&busy, &same)
+			NOT EXISTS (SELECT 1 FROM live) OR EXISTS (SELECT 1 FROM live WHERE reviewer = $6 AND focus = $7)`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind(), reviewer, focus).Scan(&busy, &same)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: look up running reviews: %w", err)
 	}
@@ -125,7 +127,7 @@ func enqueueFresh(
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		AccountID: accountID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,
-		Trigger: trigger, Request: uuid.NewString(), Reviewer: reviewer, Requested: requested,
+		Trigger: trigger, Request: uuid.NewString(), Reviewer: reviewer, Requested: requested, Focus: focus,
 	}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)

@@ -16,6 +16,7 @@ repository, and webhooks must be working.
 | `@<bot> <question>`       | Reads the code and answers in the thread.                                              |
 | `@<bot> review`           | Requests a full review of the current commit.                                          |
 | `@<bot> review <name>`    | Runs the [agent](/repository-config/#agents) of that name alone on the current commit. |
+| `@<bot> review <focus>`   | Requests a review that looks hardest at what the rest of the line names.               |
 | `@<bot> pause`            | Stops automatic reviews for this pull request.                                         |
 | `@<bot> resume`           | Resumes automatic reviews.                                                             |
 | `@<bot> dismiss <reason>` | Dismisses a finding when posted in its thread.                                         |
@@ -26,6 +27,20 @@ it. If the word names no agent that is on, every agent runs. If the
 comment also asks for a plain review, it gets one. While a review of the
 commit by other agents is queued or running, kritika says so and runs
 nothing; ask again once it has finished.
+
+Anything else on the line after `review`, or after the agent's name, is
+a focus: `@<bot> review the retry loop in the webhook parser` or
+`@<bot> review security the token refresh`. The review is told to look
+hardest at what it names, in the requester's own words, and the
+summary's review context repeats it. It is a priority, not a filter: a
+concrete problem elsewhere in the diff is still reported, and nothing
+outside the focus is taken as checked. The focus ends at the end of the
+line or at the next mention, and is cut to 500 characters. A single word
+that names no agent is not a focus; it asks for every agent, with a
+note. A plain `@<bot> review` anywhere in the comment asks for every
+agent with no focus, whatever another line of it names. While a review
+of the commit with another focus, or another agent, is queued or
+running, kritika says so and runs nothing.
 
 A manual review also works on paused, filtered, merged or closed pull requests.
 It does not start a duplicate review if the current commit is already queued

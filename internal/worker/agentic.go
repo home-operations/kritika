@@ -416,7 +416,7 @@ func pinModels(
 // revokes it once the run ends. It returns the runner Job's deadline,
 // which the agent's timeout may lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
-	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, models configfile.Models,
+	ctx context.Context, accountID, reviewID, runID, trigger, focus string, pr *pullRequest, eff Effective, models configfile.Models,
 	prior priorReview, cont *runspec.Continuation, admitted admission, size sizing, spec *runspec.Spec, secrets *runspec.Secrets,
 	deadline time.Duration, client forge.Client, logger *slog.Logger, pull repoconfig.PullRequest, chosen reviewers,
 	grants map[string]store.ReviewerGrant,
@@ -426,7 +426,7 @@ func (w *Review) agentSpec(
 	if err != nil {
 		return deadline, nil, err
 	}
-	prompt.Reviewers = chosen.specs
+	prompt.Reviewers, prompt.Focus = chosen.specs, focus
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
