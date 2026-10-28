@@ -467,13 +467,16 @@ type RepoFileRow struct {
 
 // LastRepoFiles reads, for each of the account's repositories that has one,
 // the .kritika.yaml its last review with a context pack read, keyed by
-// repository id.
+// repository id. The pack is chosen before its files are read, so only one
+// pack per repository is unpacked, not every pack of the account.
 func LastRepoFiles(ctx context.Context, tx pgx.Tx) (map[string]RepoFileRow, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT DISTINCT ON (p.repository_id) p.repository_id, r.id, c.base_sha, c.repo_files ->> '.kritika.yaml'
-		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-		JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
-		ORDER BY p.repository_id, c.created_at DESC`)
+		SELECT x.repository_id, x.review_id, c.base_sha, c.repo_files ->> '.kritika.yaml'
+		FROM (SELECT DISTINCT ON (p.repository_id) p.repository_id, r.id AS review_id, c.runner_run_id
+			FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+			JOIN reviews r ON r.id = rr.review_id JOIN pull_requests p ON p.id = r.pull_request_id
+			ORDER BY p.repository_id, c.created_at DESC) x
+		JOIN context_packs c ON c.runner_run_id = x.runner_run_id`)
 	if err != nil {
 		return nil, fmt.Errorf("store: last repository files: %w", err)
 	}
@@ -502,9 +505,11 @@ func LastRepoFile(ctx context.Context, tx pgx.Tx, repositoryID string) (RepoFile
 	var row RepoFileRow
 	err := tx.QueryRow(ctx, `
 		SELECT r.id, c.base_sha, c.repo_files ->> '.kritika.yaml'
-		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-		JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
-		WHERE p.repository_id = $1 ORDER BY c.created_at DESC LIMIT 1`, repositoryID).Scan(&row.ReviewID, &row.Commit, &row.Doc)
+		FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id JOIN reviews r ON r.id = rr.review_id
+		WHERE c.runner_run_id = (SELECT c.runner_run_id
+			FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+			JOIN reviews r ON r.id = rr.review_id JOIN pull_requests p ON p.id = r.pull_request_id
+			WHERE p.repository_id = $1 ORDER BY c.created_at DESC LIMIT 1)`, repositoryID).Scan(&row.ReviewID, &row.Commit, &row.Doc)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RepoFileRow{}, ErrNotFound
 	}

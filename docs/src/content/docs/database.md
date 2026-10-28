@@ -265,7 +265,8 @@ holds. Runner Jobs connect as `kritika-app` too, so that name counts their
 connections together with the replicas' application pools.
 
 The leader runs hourly retention sweeps of transcripts, egress refusals,
-stored diffs and agent conversations. The sweeps work in batches, and each
+settled model invocations, stored diffs and agent conversations. The sweeps
+work in batches, and each
 batch is its own statement. A backlog larger than one statement could clear
 is worked off over the sweep rather than rolled back.
 
@@ -445,7 +446,9 @@ the same invocation twice.
 The leader's rescuer retries completed, unsettled outcomes. An expired call
 without a saved outcome becomes `uncertain` and retains its reservation: the
 provider may have charged for it. A late outcome can still settle that call.
-Operators can inspect pending records with an owner connection:
+A settled record is swept once its settlement is older than the transcript
+retention; its usage row stays. Operators can inspect pending records with an
+owner connection:
 
 ```sql
 SELECT id, account_id, runner_run_id, state, reserved_tokens, created_at

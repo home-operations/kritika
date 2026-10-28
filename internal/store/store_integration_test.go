@@ -1178,3 +1178,74 @@ func TestLeaderDutiesAreRetried(t *testing.T) {
 		t.Fatalf("RunAsLeader = %v, want nil once ctx ends", err)
 	}
 }
+
+// TestSweepStoppedIndexesSeesARepositoryResume: a repository reported
+// running again between the sweep's first, unlocked read and its locked
+// one keeps its index, however long its clock had run, and its clock is
+// cleared. Unarchiving leaves the clock as it was, so the locked read
+// alone can tell the repository runs.
+func TestSweepStoppedIndexesSeesARepositoryResume(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	f := parse(t, twoAccounts)
+	if err := s.ApplyConfig(ctx, f); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/resumes")
+	alpha := accountID(t, s, "alpha")
+	repo := configfile.RepositoryID(alpha, "alpha/resumes")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	// Indexed, archived, and stopped for longer than the grace.
+	var run string
+	if err := s.owner.QueryRow(ctx, `WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id
+		), c AS (
+			INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			SELECT $1, $2, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
+		)
+		UPDATE repositories r SET active_index_run_id = g.id, archived = true, stopped_at = now() - interval '2 hours'
+		FROM g WHERE r.id = $2 RETURNING g.id`, alpha, repo).Scan(&run); err != nil {
+		t.Fatal(err)
+	}
+	// The first time the sweep asks whether the repository runs, the forge
+	// reports it unarchived through another connection: the unlocked read
+	// saw it archived, the locked one must see it running.
+	resumed := false
+	n, err := s.SweepStoppedIndexes(ctx, time.Hour, func(accountID string, traits configfile.RepoTraits) bool {
+		if accountID == alpha && !resumed {
+			resumed = true
+			if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+				_, err := RepositoryTraits(ctx, tx, repo, &configfile.RepoTraits{})
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		a, ok := f.AccountByID(accountID)
+		return ok && f.Runs(a, traits)
+	})
+	if err != nil || n != 0 {
+		t.Fatalf("SweepStoppedIndexes = %d, %v; want 0 dropped", n, err)
+	}
+	var active, clock bool
+	var status string
+	var chunks int
+	if err := s.owner.QueryRow(ctx, `SELECT
+			(SELECT active_index_run_id = $2 FROM repositories WHERE id = $1),
+			(SELECT stopped_at IS NOT NULL FROM repositories WHERE id = $1),
+			(SELECT status FROM index_runs WHERE id = $2),
+			(SELECT count(*) FROM index_chunks WHERE index_run_id = $2)`, repo, run).Scan(&active, &clock, &status, &chunks); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed || !active || clock || status != "completed" || chunks != 1 {
+		t.Fatalf("resumed=%v active=%v clock=%v status=%s chunks=%d; want the index kept and the clock cleared",
+			resumed, active, clock, status, chunks)
+	}
+}

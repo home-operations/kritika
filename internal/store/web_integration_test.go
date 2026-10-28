@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // insertReview creates a pull_requests row (with a randomised, collision-safe
@@ -210,5 +212,85 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 				t.Fatalf("runner querying %s: err = %v, want a 42501 permission-denied error", table, err)
 			}
 		})
+	}
+}
+
+// TestLastRepoFiles: a repository's file is the one its newest context pack
+// read, nil where that pack read none, and only the account's own
+// repositories are read.
+func TestLastRepoFiles(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	// The suites share one database: repositories of this test's own, so
+	// no other test's packs are read.
+	listRepos(t, s, "alpha", "alpha/files-one", "alpha/files-two")
+	listRepos(t, s, "beta", "beta/files")
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	// pack records a review of the repository whose context pack, written
+	// age ago, read doc as the repository's file, or none for nil, and
+	// returns the review's id.
+	pack := func(account, repo string, doc *string, age time.Duration) string {
+		t.Helper()
+		var reviewID string
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var prID, runID string
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
+				VALUES ($1, $2, (random() * 1e6)::int, 'abc') RETURNING id`, account, configfile.RepositoryID(account, repo)).Scan(&prID); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
+				VALUES ($1, $2, 'abc', 'completed') RETURNING id`, account, prID).Scan(&reviewID); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
+				account, reviewID).Scan(&runID); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, created_at, repo_files)
+				VALUES ($1, $2, 'h', 'b', 'p', '', now() - make_interval(secs => $3),
+					CASE WHEN $4::text IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('.kritika.yaml', $4::text) END)`,
+				runID, account, age.Seconds(), doc)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return reviewID
+	}
+	old, newer, other := "one: old", "one: new", "beta: file"
+	pack(alpha, "alpha/files-one", &old, 2*time.Hour)
+	newest := pack(alpha, "alpha/files-one", &newer, time.Hour)
+	// The newest pack read no file: no older pack's stands in for it.
+	pack(alpha, "alpha/files-two", &old, 2*time.Hour)
+	bare := pack(alpha, "alpha/files-two", nil, time.Hour)
+	pack(beta, "beta/files", &other, time.Minute)
+	one, two := configfile.RepositoryID(alpha, "alpha/files-one"), configfile.RepositoryID(alpha, "alpha/files-two")
+	betas := configfile.RepositoryID(beta, "beta/files")
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		files, err := LastRepoFiles(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if _, ok := files[betas]; ok || files[one].ReviewID != newest || files[one].Doc == nil || *files[one].Doc != newer ||
+			files[two].ReviewID != bare || files[two].Doc != nil {
+			t.Fatalf("files = %+v, want alpha/files-one's newest and alpha/files-two's with no file", files)
+		}
+		for _, tt := range []struct {
+			repo, review string
+			doc          *string
+		}{{one, newest, &newer}, {two, bare, nil}} {
+			f, err := LastRepoFile(ctx, tx, tt.repo)
+			if err != nil || f.ReviewID != tt.review || f.Commit != "b" || (f.Doc == nil) != (tt.doc == nil) || f.Doc != nil && *f.Doc != *tt.doc {
+				t.Fatalf("file of %s = %+v, %v; want review %s", tt.repo, f, err, tt.review)
+			}
+		}
+		if _, err := LastRepoFile(ctx, tx, betas); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("another account's file = %v, want not found", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
