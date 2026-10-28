@@ -148,6 +148,12 @@ type Finding struct {
 	// line numbers it uses, on one a re-review carried on unchecked; ""
 	// otherwise. kritika sets it; Parse clears any the model sent.
 	CarriedFrom string `json:"carried_from,omitempty"`
+	// Unread marks a finding on a file the review never read with
+	// read_file or read_diff: the runner sets it once the review has
+	// submitted, and Parse drops the finding as DropUnread. The model
+	// cannot set it: Check refuses the key, which the contract does not
+	// define.
+	Unread bool `json:"unread,omitempty"`
 	// Agents name the reviewers that raised the finding, the first the
 	// one whose finding was kept when several raised it; none is
 	// DefaultReviewer alone. The runner sets them on a part's findings;
@@ -246,6 +252,8 @@ const (
 	DropBadCategory DropReason = "bad_category"
 	// DropNoQuote is a finding that cites a rule without quoting it.
 	DropNoQuote DropReason = "no_quote"
+	// DropUnread is a finding on a file the review never read.
+	DropUnread DropReason = "unread"
 )
 
 // Dropped is a finding Parse discarded, with the reason.
@@ -592,7 +600,8 @@ func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
 // Parse decodes the model's JSON and drops findings kritika cannot post: an
 // unknown severity or category, a category none of the finding's reviewers
 // may report, a missing field, a missing fix when opts
-// require one, a cited rule with no quote, or a line the diff
+// require one, a cited rule with no quote, a file the review never read
+// (see Finding.Unread), or a line the diff
 // does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
 // anchors maps a path to the head-side lines the diff covers, each with
@@ -630,6 +639,8 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		f.Agents = opts.reviewers(f)
 		var reason DropReason
 		switch {
+		case f.Unread:
+			reason = DropUnread
 		case !f.Severity.Valid():
 			reason = DropBadSeverity
 		case !f.Category.Valid() || !opts.allows(f):
@@ -685,35 +696,6 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	})
 	res.Findings = kept
 	return res, dropped, nil
-}
-
-// normalizeSummary applies the contract to a summary's text: one-line
-// headline and checked notes, prose with its references redirected,
-// praise and notes to their caps, and the diagram only where opts ask for
-// one and it is one diagram allows.
-func normalizeSummary(s Summary, opts ParseOptions) Summary {
-	s.Headline = oneLine(prose(s.Headline, opts.Repository))
-	s.Take = prose(s.Take, opts.Repository)
-	praise := make([]string, 0, maxPraise)
-	for _, p := range s.Praise {
-		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
-			praise = append(praise, p)
-		}
-	}
-	s.Praise = praise
-	var checked []string
-	for _, c := range s.Checked {
-		if c = oneLine(c); c != "" && len(checked) < maxChecked {
-			checked = append(checked, c)
-		}
-	}
-	s.Checked = checked
-	if opts.Diagram {
-		s.Diagram = diagram(s.Diagram)
-	} else {
-		s.Diagram = ""
-	}
-	return s
 }
 
 // prose is a text field the model wrote for a human, trimmed, with its

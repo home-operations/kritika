@@ -106,6 +106,7 @@ type runCase struct {
 	limits    Limits
 	validate  func(json.RawMessage) error
 	fallback  func(json.RawMessage) bool
+	evidence  func(json.RawMessage) error
 	setup     func(t *testing.T) (stepper model.Stepper, ctx context.Context, scripted *scriptedStepper)
 	wantStop  StopReason
 	wantSteps int
@@ -230,6 +231,35 @@ func checkForcedRejectedSubmitRetried(t *testing.T, result Result, _ []StepEvent
 	}
 	if result.ForcedBy != "" {
 		t.Fatalf("ForcedBy = %q for a run of one step", result.ForcedBy)
+	}
+}
+
+// requireEvidence is an Evidence that refuses the submit inputs without an
+// "evidence" key.
+func requireEvidence(input json.RawMessage) error {
+	if !strings.Contains(string(input), "evidence") {
+		return errors.New("read the file first")
+	}
+	return nil
+}
+
+const evidencedSubmitInput = `{"verdict":"approve","evidence":true}`
+
+func setupEvidenceRefusedThenSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", validSubmitInput)}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", evidencedSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkEvidenceRefusedThenSubmit(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	if string(result.Submitted) != evidencedSubmitInput || result.Refused != "" {
+		t.Fatalf("Submitted = %s, Refused = %q; want the evidenced input and no refusal", result.Submitted, result.Refused)
+	}
+	last := scripted.calls[1].Messages[len(scripted.calls[1].Messages)-1]
+	if len(last.ToolResults) != 1 || !last.ToolResults[0].IsError || !strings.Contains(last.ToolResults[0].Content, "read the file first") {
+		t.Fatalf("the refused submit's result = %+v, want Evidence's message as the tool's error", last.ToolResults)
 	}
 }
 
@@ -1038,6 +1068,29 @@ func TestRun(t *testing.T) {
 			check:     checkForcedRejectedSubmitRetried,
 		},
 		{
+			// Evidence refuses a valid submission while the model can still
+			// act on the refusal, which goes back as the tool's error.
+			name:      "evidence_refused_then_submit",
+			validate:  rejectVerdict,
+			evidence:  requireEvidence,
+			setup:     setupEvidenceRefusedThenSubmit,
+			wantStop:  StopSubmitted,
+			wantSteps: 2,
+			check:     checkEvidenceRefusedThenSubmit,
+		},
+		{
+			// On a step told to submit, where no tool can be called, the
+			// input is taken whatever Evidence would say of it.
+			name:      "forced_step_skips_evidence",
+			limits:    Limits{MaxSteps: 1},
+			validate:  rejectVerdict,
+			evidence:  requireEvidence,
+			setup:     setupRejectedSubmitThenValid,
+			wantStop:  StopSubmitted,
+			wantSteps: 2,
+			check:     checkForcedRejectedSubmitRetried,
+		},
+		{
 			// The forced retries run out, and the Run ends with the last
 			// refused input Fallback held rather than with none.
 			name:      "forced_retries_spent_takes_fallback",
@@ -1314,6 +1367,7 @@ func TestRun(t *testing.T) {
 				Submit:   testSubmitDef,
 				Validate: tt.validate,
 				Fallback: tt.fallback,
+				Evidence: tt.evidence,
 				Limits:   tt.limits,
 				OnStep:   func(e StepEvent) { events = append(events, e) },
 			}

@@ -51,6 +51,10 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("a prompt without a diagram asks for one:\n%s", bare)
 	}
 	withDiagram := SystemPrompt(nil, nil, nil, false, false, true, false)
+	const gate = "A finding must be on a file you have read with read_file or read_diff"
+	if !strings.Contains(withDiagram, gate) || strings.Contains(FollowUpSystemPrompt(nil, nil, false, false), gate) {
+		t.Fatal("a review is told of the evidence gate, a follow-up is not")
+	}
 	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools + reviewTools; withDiagram != want {
 		t.Fatalf("system prompt with a diagram:\n%s", withDiagram)
 	}
