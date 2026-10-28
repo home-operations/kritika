@@ -62,14 +62,32 @@ type PullRef struct {
 	URL        string
 }
 
+// FindingPull is how a finding's pull request stands: open, merged, or
+// closed without merging. With FindingOpen, FindingPullMerged lists what a
+// pull request was merged with still open: the findings its author left
+// for later, or never saw.
+type FindingPull string
+
+// The states a finding's pull request may be filtered by.
+const (
+	FindingPullOpen   FindingPull = "open"
+	FindingPullMerged FindingPull = "merged"
+	FindingPullClosed FindingPull = "closed"
+)
+
+// Valid reports whether s is one of the states.
+func (s FindingPull) Valid() bool {
+	return s == FindingPullOpen || s == FindingPullMerged || s == FindingPullClosed
+}
+
 // FindingFilter narrows ListAccountFindings. Zero fields match everything;
 // Category matches a finding of that kind; Rule matches a finding that
 // cites that rule id; Reviewer matches a finding that reviewer raised,
 // review.DefaultReviewer one that names no other; Path matches a path it
 // starts; DismissedBy matches a finding that source dismissed; Downvoted
-// matches a finding whose comment drew a 👎; Query matches a title,
-// explanation, path or pull request title substring, or a pull request
-// number.
+// matches a finding whose comment drew a 👎; Pull matches a finding whose
+// pull request stands so; Query matches a title, explanation, path or
+// pull request title substring, or a pull request number.
 type FindingFilter struct {
 	RepositoryID string
 	Severity     review.Severity
@@ -80,6 +98,7 @@ type FindingFilter struct {
 	Path         string
 	DismissedBy  DismissalSource
 	Downvoted    bool
+	Pull         FindingPull
 	Query        string
 }
 
@@ -87,7 +106,7 @@ type FindingFilter struct {
 // p, to, with its arguments.
 func (f FindingFilter) where() (string, pgx.StrictNamedArgs, error) {
 	if (f.Severity != "" && !f.Severity.Valid()) || (f.Category != "" && !f.Category.Valid()) || (f.Status != "" && !f.Status.Valid()) ||
-		(f.DismissedBy != "" && !f.DismissedBy.Valid()) {
+		(f.DismissedBy != "" && !f.DismissedBy.Valid()) || (f.Pull != "" && !f.Pull.Valid()) {
 		return "", nil, ErrFilter
 	}
 	number := -1
@@ -106,11 +125,13 @@ func (f FindingFilter) where() (string, pgx.StrictNamedArgs, error) {
 			AND (@category = '' OR l.category = @category)
 			AND starts_with(l.path, @path)
 			AND (@dismissed_by = '' OR l.dismiss_source = @dismissed_by)
-			AND (NOT @downvoted OR l.reactions_down > 0)`, pgx.StrictNamedArgs{
+			AND (NOT @downvoted OR l.reactions_down > 0)
+			AND (@pull = '' OR CASE @pull WHEN 'open' THEN p.state = 'open' WHEN 'merged' THEN p.merged
+				ELSE p.state = 'closed' AND NOT p.merged END)`, pgx.StrictNamedArgs{
 		"repository_id": uuidParam(f.RepositoryID), "severity": string(f.Severity), "status": string(f.Status),
 		"query": f.Query, "like": like, "number": number,
 		"rule": f.Rule, "category": string(f.Category), "agent": f.Reviewer, "default": review.DefaultReviewer,
-		"path": f.Path, "dismissed_by": string(f.DismissedBy), "downvoted": f.Downvoted,
+		"path": f.Path, "dismissed_by": string(f.DismissedBy), "downvoted": f.Downvoted, "pull": string(f.Pull),
 	}, nil
 }
 

@@ -21,13 +21,14 @@ func TestFindingFilter(t *testing.T) {
 		{name: "none", query: "", want: store.FindingFilter{}},
 		{
 			name:  "every filter",
-			query: "severity=p1&category=tests&status=dismissed&dismissed=conceded&rule=wrap-errors&agent=security&path=internal%2F&is=downvoted&q=nil",
+			query: "severity=p1&category=tests&status=dismissed&dismissed=conceded&rule=wrap-errors&agent=security&path=internal%2F&pr=merged&is=downvoted&q=nil",
 			want: store.FindingFilter{
 				Severity: review.SeverityP1, Category: review.CategoryTests, Status: store.FindingDismissed,
 				DismissedBy: store.DismissedByConcession, Rule: "wrap-errors", Reviewer: "security", Path: "internal/", Downvoted: true,
-				Query: "nil",
+				Pull: store.FindingPullMerged, Query: "nil",
 			},
 		},
+		{name: "unknown pull request state", query: "pr=draft", wantErr: "pr must be open, merged or closed"},
 		{name: "unknown severity", query: "severity=p3", wantErr: "severity must be p0, p1 or p2"},
 		{name: "unknown status", query: "status=fixed", wantErr: "status must be open, addressed or dismissed"},
 		{name: "unknown dismissal", query: "dismissed=ignored", wantErr: "dismissed must be command, resolved or conceded"},

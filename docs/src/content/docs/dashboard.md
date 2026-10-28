@@ -54,10 +54,10 @@ agent. The default pass is listed as `default`.
 
 Search accepts plain text and filters:
 
-| List          | Example filters                                                                                                                                                    |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0`                                                                                           |
-| Findings      | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `is:downvoted` |
+| List          | Example filters                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0`                                                                                                        |
+| Findings      | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `pr:merged`, `is:downvoted` |
 
 Filters are suggested as you type. `agent:` is offered once a finding on the
 page names an agent; `agent:default` finds the default pass's. Expand a list row to preview its latest
@@ -76,7 +76,11 @@ telling reviews what not to report. Like the analytics, 👎 counts come
 from GitHub alone and need polling enabled.
 
 `path:` keeps the findings under a path, and `is:downvoted` keeps those
-that drew a 👎. `dismissed:` keeps those dismissed one way:
+that drew a 👎. `pr:` keeps those whose pull request is `open`, `merged`,
+or `closed` without merging: `pr:merged status:open` lists what pull
+requests were merged with still open, the findings their authors left
+for later or never saw, which is where a rule or an instruction pays off
+most. `dismissed:` keeps those dismissed one way:
 
 - `command`, with `@<bot> dismiss`;
 - `resolved`, by resolving the thread;

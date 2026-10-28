@@ -89,7 +89,8 @@ export function pullFilter(f: { state?: string; outcome?: string; is?: string; r
 // FindingFilter is the findings list's filters, in the hash's query like a
 // PullFilter's; a field is present only when it narrows the list.
 // dismissed narrows to the findings that source dismissed, path to those
-// under a path, and is to those whose comment drew a 👎.
+// under a path, pr to those whose pull request stands so, and is to those
+// whose comment drew a 👎.
 export interface FindingFilter {
   severity?: Severity;
   category?: Category;
@@ -99,12 +100,18 @@ export interface FindingFilter {
   rule?: string;
   agent?: string;
   path?: string;
+  pr?: FindingPull;
   is?: 'downvoted';
   q?: string;
 }
 
+// FindingPull is how a finding's pull request stands: open, merged, or
+// closed without merging.
+export type FindingPull = 'open' | 'merged' | 'closed';
+
 export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed', 'dismissed'];
 export const DISMISS_SOURCES: readonly DismissSource[] = ['command', 'resolved', 'conceded'];
+export const FINDING_PULLS: readonly FindingPull[] = ['open', 'merged', 'closed'];
 export const FINDING_IS = ['downvoted'] as const;
 
 // findingFilter drops the fields of f that match everything; undefined when
@@ -118,6 +125,7 @@ export function findingFilter(f: {
   rule?: string;
   agent?: string;
   path?: string;
+  pr?: string;
   is?: string;
   q?: string;
 }): FindingFilter | undefined {
@@ -134,6 +142,8 @@ export function findingFilter(f: {
   if (f.rule) out.rule = f.rule;
   if (f.agent) out.agent = f.agent;
   if (f.path) out.path = f.path;
+  const pr = FINDING_PULLS.find((p) => p === f.pr);
+  if (pr) out.pr = pr;
   const is = FINDING_IS.find((i) => i === f.is);
   if (is) out.is = is;
   if (f.q) out.q = f.q;

@@ -176,6 +176,7 @@ func TestListAccountFindings(t *testing.T) {
 		t.Fatalf("RuleCitations = %+v, want %+v", cited, want)
 	}
 	checkNarrowed(t, s, account)
+	checkClosedUnmerged(t, s, account)
 	checkSummary(t, s, account)
 
 	page1, next := list(FindingFilter{}, Page{Limit: 2})
@@ -188,17 +189,31 @@ func TestListAccountFindings(t *testing.T) {
 
 // checkNarrowed checks that TestListAccountFindings's findings narrow to
 // the one whose comment drew a 👎, to the one under a directory or at a
-// path, and to the one an agent raised.
+// path, to the one an agent raised, and by how their pull request
+// stands: pull 8 is closed here, merged first, then without merging.
 func checkNarrowed(t *testing.T, s *Store, account string) {
+	close := func(merged bool) {
+		t.Helper()
+		if err := s.WithAccount(t.Context(), account, func(tx pgx.Tx) error {
+			_, err := tx.Exec(t.Context(), `UPDATE pull_requests SET state = 'closed', merged = $1, closed_at = now() WHERE number = 8`, merged)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(true)
 	for _, tc := range []struct {
 		name string
 		f    FindingFilter
-		want string
+		want []string
 	}{
-		{"downvoted", FindingFilter{Downvoted: true}, "7 naming"},
-		{"directory", FindingFilter{Path: "internal/"}, "8 nil deref"},
-		{"file", FindingFilter{Path: "internal/store/x.go"}, "8 nil deref"},
-		{"agent", FindingFilter{Reviewer: "security"}, "7 Nil deref"},
+		{"downvoted", FindingFilter{Downvoted: true}, []string{"7 naming"}},
+		{"directory", FindingFilter{Path: "internal/"}, []string{"8 nil deref"}},
+		{"file", FindingFilter{Path: "internal/store/x.go"}, []string{"8 nil deref"}},
+		{"agent", FindingFilter{Reviewer: "security"}, []string{"7 Nil deref"}},
+		{"left open at merge", FindingFilter{Pull: FindingPullMerged, Status: FindingOpen}, []string{"8 nil deref"}},
+		{"open pull requests", FindingFilter{Pull: FindingPullOpen}, []string{"7 Nil deref", "7 naming"}},
+		{"closed without merging, none", FindingFilter{Pull: FindingPullClosed}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
@@ -211,10 +226,32 @@ func checkNarrowed(t *testing.T, s *Store, account string) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(got, []string{tc.want}) {
+			if !slices.Equal(got, tc.want) {
 				t.Errorf("ListAccountFindings(%+v) = %q, want %q", tc.f, got, tc.want)
 			}
 		})
+	}
+}
+
+// checkClosedUnmerged checks that pull 8, closed without merging, is
+// closed and not merged to the filter.
+func checkClosedUnmerged(t *testing.T, s *Store, account string) {
+	if err := s.WithAccount(t.Context(), account, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(t.Context(), `UPDATE pull_requests SET merged = false WHERE number = 8`); err != nil {
+			return err
+		}
+		for f, want := range map[*FindingFilter]int{{Pull: FindingPullClosed}: 1, {Pull: FindingPullMerged}: 0} {
+			items, _, err := ListAccountFindings(t.Context(), tx, *f, Page{Limit: 10})
+			if err != nil {
+				return err
+			}
+			if len(items) != want {
+				t.Errorf("ListAccountFindings(%+v) = %d findings, want %d", *f, len(items), want)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

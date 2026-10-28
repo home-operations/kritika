@@ -211,13 +211,15 @@ type findingFilterArgs struct {
 	Agent     string `json:"agent,omitempty" jsonschema:"the reviewer that raised it, default for the default reviewer"`
 	Path      string `json:"path,omitempty" jsonschema:"what its path starts with: a file, or a directory with a trailing slash"`
 	Downvoted bool   `json:"downvoted,omitempty" jsonschema:"only findings whose comment drew a 👎"`
+	Pull      string `json:"pr,omitempty" jsonschema:"how its pull request stands: open, merged, or closed without merging"`
 	Query     string `json:"query,omitempty" jsonschema:"text in its title, explanation or path, or its pull request's title or #number"`
 }
 
 func (a findingFilterArgs) filter() (store.FindingFilter, error) {
 	f := store.FindingFilter{
 		Severity: review.Severity(a.Severity), Category: review.Category(a.Category), Status: store.FindingStatus(a.Status),
-		DismissedBy: store.DismissalSource(a.Dismissed), Rule: a.Rule, Reviewer: a.Agent, Path: a.Path, Downvoted: a.Downvoted, Query: a.Query,
+		DismissedBy: store.DismissalSource(a.Dismissed), Rule: a.Rule, Reviewer: a.Agent, Path: a.Path, Downvoted: a.Downvoted,
+		Pull: store.FindingPull(a.Pull), Query: a.Query,
 	}
 	return f, checkFindingFilter(f)
 }
