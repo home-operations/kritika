@@ -41,6 +41,7 @@ type publicationContext struct {
 	ConfidenceRule  configfile.Confidence
 	Effort          model.Effort
 	Route           string `json:",omitempty"`
+	Focus           string `json:",omitempty"`
 	MaxAutoReviews  int
 	Templates       review.Templates
 	Scope           review.Scope
@@ -112,7 +113,7 @@ func (p *publishPhase) snapshotContext() publicationContext {
 	snapshot := publicationContext{
 		Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
 		Effort: p.settings.Models.Effort, Route: p.settings.Models.Route, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
-		Scope: p.scope, Trigger: p.trigger, Closed: p.pr.closed, RepoNotes: p.repoNotes,
+		Scope: p.scope, Trigger: p.trigger, Focus: p.focus, Closed: p.pr.closed, RepoNotes: p.repoNotes,
 		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
 		Prior:     snapshotFindings(p.prior.findings),
 		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
@@ -197,7 +198,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	// with: the restart that turned comments.dashboard off may be what
 	// interrupted it.
 	p.settings.Review.Dashboard = p.file.Settings(p.account).Review.Dashboard
-	p.templates, p.scope, p.trigger = s.Templates, s.Scope, s.Trigger
+	p.templates, p.scope, p.trigger, p.focus = s.Templates, s.Scope, s.Trigger, s.Focus
 	p.pr.closed = s.Closed
 	p.repoNotes = s.RepoNotes
 	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,

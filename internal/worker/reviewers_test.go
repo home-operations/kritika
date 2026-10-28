@@ -147,19 +147,50 @@ func TestRanReviewers(t *testing.T) {
 	}
 }
 
-func TestRequestedReviewer(t *testing.T) {
-	for body, want := range map[string]string{
-		"@kritika review":                                "",
-		"@kritika review security":                       "security",
-		"@Kritika Review Security please":                "security",
-		"@kritika review\nsecurity":                      "",
-		"@kritika review gha-security now":               "gha-security",
-		"@kritika review?":                               "",
-		"@kritika review\n@kritika review security":      "",
-		"@kritika review docs\n@kritika review security": "docs",
+func TestRequestedReview(t *testing.T) {
+	for body, want := range map[string][2]string{
+		"@kritika review":                                      {"", ""},
+		"@kritika review security":                             {"security", ""},
+		"@Kritika Review Security please":                      {"security", "please"},
+		"@kritika review\nsecurity":                            {"", ""},
+		"@kritika review gha-security now":                     {"gha-security", "now"},
+		"@kritika review?":                                     {"", ""},
+		"@kritika review\n@kritika review security":            {"", ""},
+		"@kritika review docs\n@kritika review security":       {"docs", ""},
+		"@kritika review the retry loop in the parser":         {"the", "retry loop in the parser"},
+		"@kritika review  Focus on 'auth'!  ":                  {"focus", "on 'auth'!"},
+		"@kritika review ☃ and the snow":                       {"", "☃ and the snow"},
+		"@kritika review -deep":                                {"", "-deep"},
+		"@kritika review security\n@kritika review":            {"", ""},
+		"@other review security @kritika review":               {"", ""},
+		"@kritika review security\tthe token refresh":          {"security", "the token refresh"},
+		"@kritika review security, please":                     {"security", "please"},
+		"@kritika review the parser @bob can you look":         {"the", "parser"},
+		"@kritika review security user@example.com validation": {"security", "user@example.com validation"},
 	} {
-		if got := requestedReviewer(body, "kritika"); got != want {
-			t.Errorf("requestedReviewer(%q) = %q, want %q", body, got, want)
+		if word, rest := requestedReview(body, "kritika"); word != want[0] || rest != want[1] {
+			t.Errorf("requestedReview(%q) = %q, %q; want %q, %q", body, word, rest, want[0], want[1])
+		}
+	}
+}
+
+// TestResolveRequest: the first word names a reviewer only when one that
+// is on; otherwise everything on the line is the focus, and a word alone
+// that names none is what the review states it ran every agent for.
+func TestResolveRequest(t *testing.T) {
+	settings := configfile.Settings{Reviewers: map[string]configfile.Reviewer{"security": {}}}
+	for _, tt := range []struct{ word, rest, reviewer, requested, focus string }{
+		{"", "", "", "", ""},
+		{"security", "", "security", "", ""},
+		{"security", "the token refresh", "security", "", "the token refresh"},
+		{"please", "", "", "please", ""},
+		{"the", "retry loop  in\tthe parser", "", "", "the retry loop in the parser"},
+		{"", "☃ and the snow", "", "", "☃ and the snow"},
+	} {
+		reviewer, requested, focus := resolveRequest(tt.word, tt.rest, settings)
+		if reviewer != tt.reviewer || requested != tt.requested || focus != tt.focus {
+			t.Errorf("resolveRequest(%q, %q) = %q, %q, %q; want %q, %q, %q", tt.word, tt.rest, reviewer, requested, focus,
+				tt.reviewer, tt.requested, tt.focus)
 		}
 	}
 }

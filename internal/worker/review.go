@@ -193,9 +193,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	extra := len(slots.leases)
 	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", settings.Limits.Concurrency)
-	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, granted, prior, cont, admitted,
-		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger,
-		pull, chosen, w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs))
+	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, args.Focus, pr, eff, granted, prior,
+		cont, admitted, sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger, pull, chosen,
+		w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs))
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
@@ -242,8 +242,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.finishEnded(ctx, ended, err)
 	}
 	phase := &publishPhase{
-		w: w.publication(), file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
-		reviewID: reviewID, runID: runID, jobID: job.ID, lease: admitted.lease, trigger: args.Trigger, started: started, logger: logger,
+		w: w.publication(), file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr, reviewID: reviewID,
+		runID: runID, jobID: job.ID, lease: admitted.lease, trigger: args.Trigger, focus: args.Focus, started: started, logger: logger,
 		parse: review.ParseOptions{
 			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: prep.ruleIDs,
 			Repository: pr.repository, Diagram: prep.eff.Review.Diagram, Prior: reviewFindings(prior.findings),

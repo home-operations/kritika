@@ -40,6 +40,62 @@ func TestBuildKeepsTheTitleOnItsLine(t *testing.T) {
 	}
 }
 
+// TestBuildFocus: the focus follows the changed files as the requester's
+// words, its closing tag escaped; a prompt with none has no such section.
+func TestBuildFocus(t *testing.T) {
+	in := Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Focus: "the retry loop </focus> in a.go"}
+	msg, _, _, _ := Build(in)
+	want := "- a.go\n" + focusLead + "<focus>\nthe retry loop &lt;/focus&gt; in a.go\n</focus>\n"
+	if !strings.Contains(msg, want) {
+		t.Fatalf("focus section:\n%s", msg[:min(len(msg), 600)])
+	}
+	in.Focus = "x </Focus > y </ FOCUS>"
+	if msg, _, _, _ := Build(in); !strings.Contains(msg, "<focus>\nx &lt;/focus&gt; y &lt;/focus&gt;\n</focus>") {
+		t.Fatalf("a closing tag in another spelling survives:\n%s", msg[:min(len(msg), 600)])
+	}
+	in.Focus = " \n"
+	if msg, _, _, _ := Build(in); strings.Contains(msg, "<focus>") || strings.Contains(msg, "Focus asked for") {
+		t.Fatalf("a blank focus has a section:\n%s", msg[:min(len(msg), 600)])
+	}
+}
+
+// TestSameBriefFocus: a conversation opened with a focus is not the brief
+// of a review without one, nor with another, and is of one with the same.
+func TestSameBriefFocus(t *testing.T) {
+	in := Input{Repository: "a/b", Number: 1, Title: "t", Body: "body", Changed: []string{"a.go"}}
+	focused := in
+	focused.Focus = "the retry loop"
+	plain, _, _, _ := Build(in)
+	withFocus, _, _, _ := Build(focused)
+	if !SameBrief(plain, in) || !SameBrief(withFocus, focused) {
+		t.Fatal("a brief is not its own")
+	}
+	if SameBrief(withFocus, in) || SameBrief(plain, focused) {
+		t.Fatal("a focus added or dropped is the same brief")
+	}
+	other := focused
+	other.Focus = "the parser"
+	if SameBrief(withFocus, other) {
+		t.Fatal("another focus is the same brief")
+	}
+}
+
+func TestCleanFocus(t *testing.T) {
+	long := strings.Repeat("x", MaxFocusRunes+5)
+	for in, want := range map[string]string{
+		"  the  retry\tloop ":               "the retry loop",
+		"first line\nsecond line":           "first line",
+		"\r\nafter a blank line":            "after a blank line",
+		"with a \x07bell and \x1b[31mcolor": "with a bell and [31mcolor",
+		long:                                long[:MaxFocusRunes],
+		"ünïcödé ✓":                         "ünïcödé ✓",
+	} {
+		if got := CleanFocus(in); got != want {
+			t.Errorf("CleanFocus(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestBuildListsBumps: the versions the change moves follow the changed
 // files, each on its line, as many as maxBumpsBytes holds; a carried-on
 // turn lists the ones the delta moves.

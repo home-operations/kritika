@@ -24,39 +24,67 @@ import (
 
 var (
 	mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
-	reviewPattern  = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+review\b(?:[ \t]+([a-z0-9][a-z0-9-]{0,63})\b)?`)
+	// reviewAfter is a review request as it follows a mention: the word
+	// review, then what the request says, up to the line's end; a mention
+	// in it is a request of its own, and cut from it.
+	reviewAfter    = regexp.MustCompile(`(?i)^\s+review\b(?:[ \t]+([^\r\n]*))?`)
+	reviewerWord   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 	dismissPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+dismiss(?:ed)?\b`)
 	pausePattern   = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+(pause|resume)\b`)
 )
 
-// requestsReview reports whether body asks slug for a review: "@<slug>
-// review", the word review right after the mention.
-func requestsReview(body, slug string) bool {
-	for _, m := range reviewPattern.FindAllStringSubmatch(body, -1) {
-		if strings.EqualFold(m[2], slug) {
-			return true
+// reviewRequests is what each "@<slug> review" in body says after the
+// word review, trimmed, in order: "" for one that says nothing. body asks
+// for a review when there is one.
+func reviewRequests(body, slug string) []string {
+	var out []string
+	for _, m := range mentionPattern.FindAllStringSubmatchIndex(body, -1) {
+		if !strings.EqualFold(body[m[4]:m[5]], slug) {
+			continue
+		}
+		if r := reviewAfter.FindStringSubmatch(body[m[1]:]); r != nil {
+			text := r[1]
+			// The next mention is where a request ends: "@" in a word,
+			// as in an address, is the request's.
+			if next := mentionPattern.FindStringIndex(text); next != nil {
+				text = text[:next[0]]
+			}
+			out = append(out, strings.TrimSpace(text))
 		}
 	}
-	return false
+	return out
 }
 
-// requestedReviewer is the word that follows "@<slug> review" on its line
-// in body, lowercased, which names the reviewer to run when it is one: the
-// first such word, or "" when a request in body has none, which asks for
-// every reviewer.
-func requestedReviewer(body, slug string) string {
-	named := ""
-	for _, m := range reviewPattern.FindAllStringSubmatch(body, -1) {
-		switch {
-		case !strings.EqualFold(m[2], slug):
-		case m[3] == "":
-			// A review of every reviewer covers any one named beside it.
-			return ""
-		case named == "":
-			named = strings.ToLower(m[3])
+// requestsReview reports whether body asks slug for a review: "@<slug>
+// review", the word review right after the mention.
+func requestsReview(body, slug string) bool { return len(reviewRequests(body, slug)) > 0 }
+
+// requestedReview is what follows "@<slug> review" on its line in body,
+// up to the next mention, for the first request in body: word, its first
+// word lowercased and without the punctuation that ends it, when that is
+// shaped like a reviewer's name, and rest, what follows the word,
+// trimmed. A request with nothing after review, anywhere in body, asks
+// for every reviewer with nothing in particular to look at, whatever
+// another request names.
+func requestedReview(body, slug string) (word, rest string) {
+	first := true
+	for _, text := range reviewRequests(body, slug) {
+		if text == "" {
+			return "", ""
 		}
+		if !first {
+			continue
+		}
+		first = false
+		fields := strings.Fields(text)
+		w := strings.TrimRight(strings.ToLower(fields[0]), ",.;:!?")
+		if !reviewerWord.MatchString(w) {
+			word, rest = "", text
+			continue
+		}
+		word, rest = w, strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
 	}
-	return named
+	return word, rest
 }
 
 // requestsDismiss reports whether body asks slug to dismiss the finding it
@@ -249,7 +277,7 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 			return f.answer(ctx, review.NothingToReviewBody(f.pr.headSHA, f.pr.baseRef), nothingToReview(f.pr))
 		}
 	}
-	reviewer, requested, err := f.namedReviewer(ctx)
+	reviewer, requested, focus, err := f.namedReviewer(ctx)
 	if err != nil {
 		return store.FollowupFailed, err
 	}
@@ -257,7 +285,7 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	already := false
 	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		_, err := jobs.EnqueueReviewerRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number,
-			reviewer, requested)
+			reviewer, requested, focus)
 		if errors.Is(err, jobs.ErrRerunOther) {
 			return err
 		}
@@ -280,27 +308,47 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	if err != nil {
 		return store.FollowupFailed, fmt.Errorf("worker: queue the requested review: %w", err)
 	}
-	f.logger.Info("review requested", "already_queued", already, "reviewer", reviewer)
+	f.logger.Info("review requested", "already_queued", already, "reviewer", reviewer, "focus", focus)
 	return store.FollowupAnswered, f.awaitReview(ctx)
 }
 
 // namedReviewer is the reviewer "@<bot> review <name>" asks to run alone:
 // the default one, or one the repository's settings, its .kritika.yaml
 // applied, name, while it is on; "" when nothing follows review, for a
-// review of every reviewer that applies. requested is a word that names no
-// reviewer that is on, which the review states it ran every reviewer in
-// place of.
-func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested string, err error) {
+// review of every reviewer that applies. requested is a word alone that
+// names no reviewer that is on, which the review states it ran every
+// reviewer in place of. focus is the rest of the line, what the request
+// asks the review to look hardest at: the whole of it when its first
+// word names no reviewer, since a word that opens a sentence names none.
+func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested, focus string, err error) {
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
-	name := requestedReviewer(f.comment.Body, slug)
-	if name == "" {
-		return "", "", nil
+	word, rest := requestedReview(f.comment.Body, slug)
+	if word == "" && rest == "" {
+		return "", "", "", nil
 	}
 	if _, err := f.repoConfig(ctx); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	reviewer, requested = splitRequested(name, f.eff.Settings)
-	return reviewer, requested, nil
+	reviewer, requested, focus = resolveRequest(word, rest, f.eff.Settings)
+	return reviewer, requested, focus, nil
+}
+
+// resolveRequest is what a request's word and rest, as requestedReview
+// splits them, ask for, settings being the repository's: the reviewer the
+// word names, when it names one that is on, with the rest as the focus;
+// else the word alone as requested, or the whole line as the focus when
+// there is more than the word.
+func resolveRequest(word, rest string, settings configfile.Settings) (reviewer, requested, focus string) {
+	if word != "" {
+		reviewer, requested = splitRequested(word, settings)
+	}
+	switch {
+	case reviewer != "":
+		focus = rest
+	case rest != "":
+		focus, requested = strings.TrimSpace(word+" "+rest), ""
+	}
+	return reviewer, requested, review.CleanFocus(focus)
 }
 
 // splitRequested is name as a review request carries it, settings being

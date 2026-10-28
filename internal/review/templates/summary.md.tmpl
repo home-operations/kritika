@@ -79,10 +79,13 @@
 {{ end -}}
 {{ end -}}
 {{ end -}}
-{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents }}
+{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents .Focus }}
 <details>
 <summary>Review context{{ if .NamedAgents }} · {{ len .Agents }} {{ plural "agent" "agents" (len .Agents) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
 
+{{ if .Focus -}}
+- **Focus:** {{ .Focus }}
+{{ end -}}
 {{ if .NamedAgents -}}
 - **Agents:** `{{ join "` `" .Agents }}`
 {{ end -}}
