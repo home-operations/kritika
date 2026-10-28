@@ -16,12 +16,20 @@ type benchOptions struct {
 	Steps        int          `json:"steps"`
 	OutputTokens int64        `json:"output_tokens"`
 	ToolBytes    int          `json:"tool_bytes"`
+	// Judge is the model that judges a finding off an expected range,
+	// "" for none, and JudgeEffort how hard it reasons.
+	Judge       string       `json:"judge,omitempty"`
+	JudgeEffort model.Effort `json:"judge_effort,omitempty"`
 }
 
 func readOptions(getenv func(string) string) (benchOptions, error) {
-	o := benchOptions{Effort: model.Effort(getenv("KRITIKA_BENCH_EFFORT"))}
+	o := benchOptions{Effort: model.Effort(getenv("KRITIKA_BENCH_EFFORT")), Judge: getenv("KRITIKA_BENCH_JUDGE"),
+		JudgeEffort: model.Effort(getenv("KRITIKA_BENCH_JUDGE_EFFORT"))}
 	if o.Effort != "" && !o.Effort.Valid() {
 		return o, fmt.Errorf("bench: effort must be %s", model.EffortLevels)
+	}
+	if o.JudgeEffort != "" && !o.JudgeEffort.Valid() {
+		return o, fmt.Errorf("bench: judge effort must be %s", model.EffortLevels)
 	}
 	values := []struct {
 		name     string

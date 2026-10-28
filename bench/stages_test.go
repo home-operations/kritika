@@ -113,6 +113,9 @@ func runStageBench(t *testing.T, stage string, cases []stageCase, outputTokens i
 	if os.Getenv("KRITIKA_BENCH_OUTPUT_TOKENS") == "" {
 		opts.OutputTokens = outputTokens
 	}
+	if os.Getenv("KRITIKA_BENCH_SCRIPT") == "1" {
+		t.Skip("the corpus's script answers reviews alone; a stage bench is a live model's")
+	}
 	dry := os.Getenv("KRITIKA_BENCH_DRY") == "1"
 	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" && !dry {

@@ -168,12 +168,16 @@ To compare model effort and output limits, repeat the same selected cases and
 modes with these environment variables. Every report records the settings,
 per-case step/tool counts and input/output tokens, alongside quality and latency.
 
-| Variable                      | Default          | Purpose                                                                                                                          |
-| ----------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIKA_BENCH_EFFORT`        | Provider default | Reasoning effort supported by the chosen model                                                                                   |
-| `KRITIKA_BENCH_STEPS`         | `1`              | Step the agent is told to submit on, with up to two more steps for a missing submission; use multiple steps to evaluate tool use |
-| `KRITIKA_BENCH_OUTPUT_TOKENS` | Agent default    | Output limit per step, including reasoning where the provider counts it                                                          |
-| `KRITIKA_BENCH_TOOL_BYTES`    | Agent default    | Maximum bytes returned by each tool                                                                                              |
+| Variable                      | Default             | Purpose                                                                                                                          |
+| ----------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `KRITIKA_BENCH_EFFORT`        | Provider default    | Reasoning effort supported by the chosen model                                                                                   |
+| `KRITIKA_BENCH_STEPS`         | `1`                 | Step the agent is told to submit on, with up to two more steps for a missing submission; use multiple steps to evaluate tool use |
+| `KRITIKA_BENCH_OUTPUT_TOKENS` | Agent default       | Output limit per step, including reasoning where the provider counts it                                                          |
+| `KRITIKA_BENCH_TOOL_BYTES`    | Agent default       | Maximum bytes returned by each tool                                                                                              |
+| `KRITIKA_BENCH_JUDGE`         | None                | Model id on OpenRouter that judges a finding off an expected range ([the judge](#the-judge))                                     |
+| `KRITIKA_BENCH_JUDGE_EFFORT`  | Provider default    | The judge's reasoning effort                                                                                                     |
+| `KRITIKA_BENCH_FLOORS`        | `bench/floors.json` | The floors a run is held to ([floors](#floors)); none when the file is absent                                                    |
+| `KRITIKA_BENCH_SCRIPT`        | Off                 | `1` answers every model call from the corpus itself ([the wiring smoke](#the-wiring-smoke))                                      |
 
 For example, run the same small corpus selection at two efforts:
 
@@ -188,6 +192,54 @@ findings before changing production defaults. Expected line matches are a
 recall proxy, not a complete quality judgment. Dry runs validate input
 construction but cannot establish quality or model latency. This harness uses
 repository read tools; it does not reproduce the production command environment.
+
+### The judge
+
+A finding that identifies an expected defect but anchors it a few lines
+away, or on its cause, misses the 3-line match. With `KRITIKA_BENCH_JUDGE`
+set to a model id on OpenRouter, a second model judges each expected range
+no finding landed on against each finding in its file that landed on no
+range, from the defect's description and the finding's title, explanation
+and fix, and a match at confidence 0.5 or more counts as a hit. The
+report records every verdict, its reasoning and its cost, and how many
+hits the judge alone gave, so a judged run reads apart from one matched on
+lines. `KRITIKA_BENCH_JUDGE_EFFORT` sets how hard it reasons. Change the
+judge, or its effort, and the numbers are not comparable: the report names
+the judge, and the floors are pinned to it.
+
+### Floors
+
+`bench/floors.json`, when present, is the least a run may measure before
+it fails: per mode, the must-find recall, and two collapse floors that
+trip when the engine breaks rather than on noise, the mean findings and
+the mean tool calls per case. A run under a floor fails the test and says
+which. The floors name the judge that scored the runs they were set from,
+and a run scored otherwise is not held to them, with a note. Set them
+from two or more runs on the same commit:
+
+```sh
+go run -tags bench ./bench/cmd/floors -out bench/floors.json bench/results/<a>.json bench/results/<b>.json
+```
+
+The recall floor is the mean over the runs less 2.2 standard deviations,
+and each collapse floor half the measured mean, as Kodus sets its own,
+each written to the thousandth under it. A mode more than 5% of whose
+cases did not run fails too: its measures are of too few cases to judge.
+`KRITIKA_BENCH_FLOORS` names another file.
+
+### The wiring smoke
+
+`mise run bench-smoke` runs the bench's own tests, then one corpus case
+with the model answered by the corpus's own script, which submits a
+finding on every expected range and matches every judged pair: no key, no
+cost, and every other line of the harness and of the review code it
+calls, fetch to report, exercised. The run fails when a case errors or
+the script's findings miss a range, since that is the harness broken,
+and is not held to the floors, which are a live model's. The split-summary
+and confidence comparisons are a live model's too, and are skipped.
+CI runs it on every pull request, so a change that breaks the harness
+fails there rather than at the next live run. `KRITIKA_BENCH_SCRIPT=1`
+runs the whole corpus that way.
 
 The repository `grep` tool accepts `context_lines` (default 0, capped at 10)
 to return nearby source lines with each match. Overlapping windows appear once,
