@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
@@ -81,6 +82,7 @@ func TestRateLimitTransport(t *testing.T) {
 	tests := []struct {
 		name       string
 		server     *limitedServer
+		resetAfter time.Duration
 		body       string
 		noGetBody  bool
 		cancel     bool
@@ -98,7 +100,8 @@ func TestRateLimitTransport(t *testing.T) {
 		},
 		{
 			name:       "a primary limit resetting soon is waited out",
-			server:     &limitedServer{refuse: 1, status: 429, headers: map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": strconv.FormatInt(time.Now().Add(3*time.Second).Unix(), 10)}},
+			server:     &limitedServer{refuse: 1, status: 429, headers: map[string]string{"X-RateLimit-Remaining": "0"}},
+			resetAfter: 3 * time.Second,
 			wantStatus: 200, wantCalls: 2, wantWait: 4 * time.Second, wantWaited: true,
 		},
 		{
@@ -129,70 +132,75 @@ func TestRateLimitTransport(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(tt.server)
-			defer srv.Close()
-			var observed []time.Duration
-			var waited []bool
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			tr := &rateLimitTransport{
-				base: http.DefaultTransport, maxWait: rateLimitMaxWait,
-				observe: func(wait time.Duration, w bool) {
-					observed = append(observed, wait)
-					waited = append(waited, w)
-				},
-				sleep: func(ctx context.Context, _ time.Duration) error {
-					if tt.cancel {
-						cancel()
+			synctest.Test(t, func(t *testing.T) {
+				if tt.resetAfter > 0 {
+					tt.server.headers["X-RateLimit-Reset"] = strconv.FormatInt(time.Now().Add(tt.resetAfter).Unix(), 10)
+				}
+				var observed []time.Duration
+				var waited []bool
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				tr := &rateLimitTransport{
+					// Network I/O is outside synctest's fake clock.
+					base: authRoundTripper(func(req *http.Request) (*http.Response, error) {
+						rec := httptest.NewRecorder()
+						tt.server.ServeHTTP(rec, req)
+						return rec.Result(), nil
+					}),
+					maxWait: rateLimitMaxWait,
+					observe: func(wait time.Duration, w bool) {
+						observed = append(observed, wait)
+						waited = append(waited, w)
+					},
+					sleep: func(ctx context.Context, _ time.Duration) error {
+						if tt.cancel {
+							cancel()
+						}
+						return ctx.Err()
+					},
+				}
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.github.com/test", strings.NewReader(tt.body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tt.noGetBody {
+					req.GetBody = nil
+				}
+				resp, err := tr.RoundTrip(req)
+				if (err != nil) != tt.wantErr {
+					t.Fatalf("RoundTrip() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				if err == nil {
+					defer func() { _ = resp.Body.Close() }()
+					if resp.StatusCode != tt.wantStatus {
+						t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
 					}
-					return ctx.Err()
-				},
-			}
-			var body io.Reader
-			if tt.body != "" {
-				body = strings.NewReader(tt.body)
-			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL, body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if tt.noGetBody {
-				req.GetBody = nil
-			}
-			resp, err := tr.RoundTrip(req)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("RoundTrip() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if err == nil {
-				defer func() { _ = resp.Body.Close() }()
-				if resp.StatusCode != tt.wantStatus {
-					t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
+					if got, _ := io.ReadAll(resp.Body); tt.wantStatus == 200 && string(got) != tt.body {
+						t.Errorf("body = %q, want %q echoed from the resent request", got, tt.body)
+					}
 				}
-				if got, _ := io.ReadAll(resp.Body); tt.wantStatus == 200 && string(got) != tt.body {
-					t.Errorf("body = %q, want %q echoed from the resent request", got, tt.body)
+				tt.server.mu.Lock()
+				calls := len(tt.server.bodies)
+				bodies := tt.server.bodies
+				tt.server.mu.Unlock()
+				if calls != tt.wantCalls {
+					t.Errorf("requests = %d, want %d", calls, tt.wantCalls)
 				}
-			}
-			tt.server.mu.Lock()
-			calls := len(tt.server.bodies)
-			bodies := tt.server.bodies
-			tt.server.mu.Unlock()
-			if calls != tt.wantCalls {
-				t.Errorf("requests = %d, want %d", calls, tt.wantCalls)
-			}
-			for _, b := range bodies {
-				if b != tt.body {
-					t.Errorf("the server saw body %q, want %q every time", b, tt.body)
+				for _, b := range bodies {
+					if b != tt.body {
+						t.Errorf("the server saw body %q, want %q every time", b, tt.body)
+					}
 				}
-			}
-			switch {
-			case tt.wantNoObs && len(observed) != 0:
-				t.Errorf("observed %v, want nothing", observed)
-			case !tt.wantNoObs && (len(observed) == 0 || observed[0] < tt.wantWait-time.Second || observed[0] > tt.wantWait || waited[0] != tt.wantWaited):
-				t.Errorf("observed %v %v, want about %s, waited=%v", observed, waited, tt.wantWait, tt.wantWaited)
-			}
-			if tt.wantErr && !errors.Is(err, context.Canceled) {
-				t.Errorf("error = %v, want context.Canceled", err)
-			}
+				switch {
+				case tt.wantNoObs && len(observed) != 0:
+					t.Errorf("observed %v, want nothing", observed)
+				case !tt.wantNoObs && (len(observed) == 0 || observed[0] != tt.wantWait || waited[0] != tt.wantWaited):
+					t.Errorf("observed %v %v, want %s, waited=%v", observed, waited, tt.wantWait, tt.wantWaited)
+				}
+				if tt.wantErr && !errors.Is(err, context.Canceled) {
+					t.Errorf("error = %v, want context.Canceled", err)
+				}
+			})
 		})
 	}
 }
