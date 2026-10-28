@@ -115,7 +115,7 @@ func writeBumps(b *strings.Builder, bumps, delta []Bump) {
 	for i, bump := range bumps {
 		item := fmt.Sprintf("- %s:%d: %s to %s", bump.Path, bump.Line, bump.Old, bump.New)
 		if j := slices.IndexFunc(delta, func(d Bump) bool {
-			return d.Path == bump.Path && d.Line == bump.Line && d.New == bump.New
+			return d.Path == bump.Path && d.Line == bump.Line && d.New == bump.New && d.positions == bump.positions
 		}); j >= 0 {
 			item += fmt.Sprintf(" (%s to %s since your last review)", delta[j].Old, delta[j].New)
 		}

@@ -143,6 +143,9 @@ func TestBuildBumpRanges(t *testing.T) {
 			want: "- hr.yaml:14: 0.52.562 to 0.52.568\n"},
 		{name: "another line", full: full, delta: diff("hr.yaml", "tag: 0.52.567", "tag: 0.52.568", 15),
 			want: "- hr.yaml:14: 0.52.562 to 0.52.568\n"},
+		{name: "different tokens with the same value", full: diff("config.yaml", "a: 1.0 b: 2.0", "a: 2.0 b: 2.0", 1),
+			delta: diff("config.yaml", "a: 2.0 b: 1.5", "a: 2.0 b: 2.0", 1),
+			want:  "- config.yaml:1: 1.0 to 2.0\n"},
 		{name: "different changed tokens", full: diff("ci.yaml", "uses: actions/checkout@abc1234 # v4.1.0", "uses: actions/checkout@def5678 # v4.2.0", 7),
 			delta: diff("ci.yaml", "uses: actions/checkout@fed4321 # v4.2.0", "uses: actions/checkout@def5678 # v4.2.0", 7),
 			want:  "- ci.yaml:7: actions/checkout@abc1234 v4.1.0 to actions/checkout@def5678 v4.2.0\n"},
@@ -179,7 +182,7 @@ func TestBuildBumpAnnotationsFitBudget(t *testing.T) {
 	const delta = "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -7 +7 @@\n-require x/y v1.2.9\n+require x/y v1.3.0\n"
 	const item = "- go.mod:7: v1.2.3 to v1.3.0 (v1.2.9 to v1.3.0 since your last review)\n"
 	fits := maxBumpsBytes / len(item)
-	bumps := slices.Repeat([]Bump{{Path: "go.mod", Line: 7, Old: "v1.2.3", New: "v1.3.0"}}, fits+3)
+	bumps := slices.Repeat(Bumps(strings.Replace(delta, "v1.2.9", "v1.2.3", 1)), fits+3)
 	fresh, _, _, _ := Build(Input{Bumps: bumps, Incremental: &IncrementalInput{DeltaDiff: delta}})
 	continued, _, _ := BuildContinuation(ContinueInput{Bumps: bumps, DeltaDiff: delta})
 	for name, msg := range map[string]string{"fresh": fresh, "continued": continued} {
