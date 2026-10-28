@@ -151,20 +151,20 @@ func TestRequestedReview(t *testing.T) {
 	for body, want := range map[string][2]string{
 		"@kritika review":                                      {"", ""},
 		"@kritika review security":                             {"security", ""},
-		"@Kritika Review Security please":                      {"security", "please"},
+		"@Kritika Review Security please":                      {"Security", "please"},
 		"@kritika review\nsecurity":                            {"", ""},
 		"@kritika review gha-security now":                     {"gha-security", "now"},
 		"@kritika review?":                                     {"", ""},
 		"@kritika review\n@kritika review security":            {"", ""},
 		"@kritika review docs\n@kritika review security":       {"docs", ""},
 		"@kritika review the retry loop in the parser":         {"the", "retry loop in the parser"},
-		"@kritika review  Focus on 'auth'!  ":                  {"focus", "on 'auth'!"},
+		"@kritika review  Focus on 'auth'!  ":                  {"Focus", "on 'auth'!"},
 		"@kritika review ☃ and the snow":                       {"", "☃ and the snow"},
 		"@kritika review -deep":                                {"", "-deep"},
 		"@kritika review security\n@kritika review":            {"", ""},
 		"@other review security @kritika review":               {"", ""},
 		"@kritika review security\tthe token refresh":          {"security", "the token refresh"},
-		"@kritika review security, please":                     {"security", "please"},
+		"@kritika review security, please":                     {"security,", "please"},
 		"@kritika review the parser @bob can you look":         {"the", "parser"},
 		"@kritika review security user@example.com validation": {"security", "user@example.com validation"},
 	} {
@@ -192,6 +192,31 @@ func TestResolveRequest(t *testing.T) {
 			t.Errorf("resolveRequest(%q, %q) = %q, %q, %q; want %q, %q, %q", tt.word, tt.rest, reviewer, requested, focus,
 				tt.reviewer, tt.requested, tt.focus)
 		}
+	}
+}
+
+func TestReviewRequestFocus(t *testing.T) {
+	settings := configfile.Settings{Reviewers: map[string]configfile.Reviewer{"security": {}}}
+	for _, tt := range []struct{ body, reviewer, requested, focus string }{
+		{"@kritika review SRC migration handling", "", "", "SRC migration handling"},
+		{"@kritika review Auth: token refresh", "", "", "Auth: token refresh"},
+		{"@kritika review ParseToken and its callers", "", "", "ParseToken and its callers"},
+		{"@kritika review SECURITY, token refresh", "security", "", "token refresh"},
+		{"@kritika review SECURITY\ttoken refresh", "security", "", "token refresh"},
+		{"@kritika review Unknown!", "", "unknown", ""},
+		{"@other review please; @kritika review security", "security", "", ""},
+	} {
+		t.Run(tt.body, func(t *testing.T) {
+			if !requestsReview(tt.body, "kritika") {
+				t.Fatal("review command was not recognized")
+			}
+			word, rest := requestedReview(tt.body, "kritika")
+			reviewer, requested, focus := resolveRequest(word, rest, settings)
+			if reviewer != tt.reviewer || requested != tt.requested || focus != tt.focus {
+				t.Errorf("request = %q, %q, %q; want %q, %q, %q", reviewer, requested, focus,
+					tt.reviewer, tt.requested, tt.focus)
+			}
+		})
 	}
 }
 

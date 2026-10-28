@@ -61,7 +61,7 @@ func requestsReview(body, slug string) bool { return len(reviewRequests(body, sl
 
 // requestedReview is what follows "@<slug> review" on its line in body,
 // up to the next mention, for the first request in body: word, its first
-// word lowercased and without the punctuation that ends it, when that is
+// word as written, when its lowercased, punctuation-trimmed form is
 // shaped like a reviewer's name, and rest, what follows the word,
 // trimmed. A request with nothing after review, anywhere in body, asks
 // for every reviewer with nothing in particular to look at, whatever
@@ -82,7 +82,7 @@ func requestedReview(body, slug string) (word, rest string) {
 			word, rest = "", text
 			continue
 		}
-		word, rest = w, strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
+		word, rest = fields[0], strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
 	}
 	return word, rest
 }
@@ -340,7 +340,7 @@ func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested, focu
 // there is more than the word.
 func resolveRequest(word, rest string, settings configfile.Settings) (reviewer, requested, focus string) {
 	if word != "" {
-		reviewer, requested = splitRequested(word, settings)
+		reviewer, requested = splitRequested(strings.TrimRight(strings.ToLower(word), ",.;:!?"), settings)
 	}
 	switch {
 	case reviewer != "":
