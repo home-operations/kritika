@@ -91,6 +91,23 @@ func TestReadLedgerCheck(t *testing.T) {
 	if err := l.check(json.RawMessage(`not json`)); err != nil {
 		t.Fatalf("what does not decode is Validate's to refuse, got %v", err)
 	}
+	// Refused once, a submission is refused again until the model has seen
+	// the refusal, then only once more was read.
+	if err := l.check(sub("main.go", "other.go")); err == nil {
+		t.Fatal("not refused again before the refusal was delivered")
+	}
+	answered := model.StepperFunc(func(context.Context, model.StepRequest) (model.StepResponse, error) { return model.StepResponse{}, nil })
+	if _, err := l.settling(answered).Step(t.Context(), model.StepRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.check(sub("main.go", "other.go")); err != nil {
+		t.Fatal("refused again with nothing more read")
+	}
+	l.add(json.RawMessage(`{"path":"other.go"}`))
+	l.settle()
+	if err := l.check(sub("main.go", "other.go", "sub/x.go")); err == nil || !strings.Contains(err.Error(), "sub/x.go:3") {
+		t.Fatalf("not refused again after more was read: %v", err)
+	}
 }
 
 // TestReadLedgerMark: marking sets unread on the findings of files never
@@ -224,6 +241,33 @@ func TestReviewAgentEvidence(t *testing.T) {
 			t.Fatalf("the first submit's result = %+v, want the unread finding refused", refused)
 		}
 	})
+	t.Run("refused once, then taken and marked when nothing more is read", func(t *testing.T) {
+		st := &scriptedStepper{steps: []model.StepResponse{
+			{ToolCalls: []model.ToolCall{call("1", "submit_review", finding)}},
+			{ToolCalls: []model.ToolCall{call("2", "submit_review", finding)}},
+		}}
+		s := agentPromptSpec()
+		res, _ := agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), loopPrompt(s, false), time.Minute, logger)
+		if res.Stop != agent.StopSubmitted || res.Steps != 2 || !sameFinding(t, res.Submitted, true) {
+			t.Fatalf("result = %+v; want the second submission taken with its finding marked unread", res)
+		}
+	})
+	t.Run("two submissions in one answer are both refused", func(t *testing.T) {
+		st := &scriptedStepper{steps: []model.StepResponse{
+			{ToolCalls: []model.ToolCall{call("1", "submit_review", finding), call("2", "submit_review", finding)}},
+			{ToolCalls: []model.ToolCall{call("3", "read_file", `{"path":"main.go"}`)}},
+			{ToolCalls: []model.ToolCall{call("4", "submit_review", finding)}},
+		}}
+		s := agentPromptSpec()
+		res, _ := agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), loopPrompt(s, false), time.Minute, logger)
+		if res.Stop != agent.StopSubmitted || res.Steps != 3 || !sameFinding(t, res.Submitted, false) {
+			t.Fatalf("result = %+v; want the read then the third submission taken", res)
+		}
+		results := st.reqs[1].Messages[len(st.reqs[1].Messages)-1].ToolResults
+		if len(results) != 2 || !results[0].IsError || !results[1].IsError {
+			t.Fatalf("the first step's results = %+v, want both submissions refused", results)
+		}
+	})
 	t.Run("a read in the submission's own step does not count", func(t *testing.T) {
 		st := &scriptedStepper{steps: []model.StepResponse{
 			{ToolCalls: []model.ToolCall{call("1", "read_file", `{"path":"main.go"}`), call("2", "submit_review", finding)}},
@@ -254,6 +298,15 @@ func TestReviewAgentEvidence(t *testing.T) {
 			t.Fatalf("result = %+v; want the held input taken with its finding marked unread", res)
 		}
 	})
+}
+
+// TestReviewAgentEvidenceTaken: a submission the agent can no longer be
+// refused on, forced or held as a fallback, is taken and marked; a review
+// of one step is not held to the gate.
+func TestReviewAgentEvidenceTaken(t *testing.T) {
+	head := tree(t, map[string]string{"main.go": "package main\n\nfunc b() {}\n"})
+	finding := `{"summary":{"take":"ok","praise":[]},"findings":[{"path":"main.go","line":3,"severity":"p2","category":"correctness","title":"t","explanation":"e"}]}`
+	logger := slog.New(slog.DiscardHandler)
 	t.Run("forced, taken and marked", func(t *testing.T) {
 		st := &scriptedStepper{steps: []model.StepResponse{
 			{ToolCalls: []model.ToolCall{call("1", "submit_review", finding)}},

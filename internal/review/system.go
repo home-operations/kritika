@@ -134,7 +134,14 @@ when it leaves a changed file out, read_diff has that file's part of the diff.`
 Findings anchor only to lines of the pull request's diff, the lines it adds and the unchanged
 lines its hunks show around them, never to other lines you read through a tool. A file the prompt leaves out is as
 much a part of that diff as one it shows: read_diff numbers each line as a finding anchors to it, so report on it
-as on the rest. Every line of a file the changed-files list marks new is an added line.`
+as on the rest. Every line of a file the changed-files list marks new is an added line.
+
+A finding must be on a file you have read with read_file or read_diff, in this review or in the conversation it
+carries on, before you submit: the diff in this message and a grep match are not reads, and a defect the diff alone
+shows still needs the file read around its lines. A submission with a finding on a file you have not read is sent
+back once, naming the files, while you can still read; submitted again with nothing more read, or on the step you
+are told to submit on, it is taken and those findings are withheld. A review of one step, which cannot read, is not
+held to this.`
 )
 
 // agenticSearch follows the tools when the search_code tool is offered:

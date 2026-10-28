@@ -668,8 +668,11 @@ be back under a new title.
   review reads each around the finding's lines and confirms it or leaves
   it out. On a step told to submit, where it can read nothing more, the
   submission is taken, and such findings are withheld: not posted, counted
-  or scored, but named in the summary's notes. A review of one step, which
-  reads nothing, is not held to this.
+  or scored, but named in the summary's notes. A submission is sent back
+  once per set of files read: one submitted again with nothing more read
+  is taken as a step told to submit would be. The system prompt tells the
+  review all this. A review of one step, which reads nothing, is not held
+  to this.
 - **Output per step:** a step may produce 16384 tokens, and a model
   reasoning at a high [`review.effort`](/models/#effort) can spend them
   all before it calls a tool. Such a step is told to go on rather than to

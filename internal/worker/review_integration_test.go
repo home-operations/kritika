@@ -70,6 +70,10 @@ providers:
     apiKey: { env: TEST_SECRET }
 review:
   model: test/reviewer
+# The scripted model submits at once and reads nothing: a review of one
+# step, which the evidence gate does not hold to a file it never read.
+agent:
+  steps: 1
 limits:
   concurrency: 1
 embedding: { model: test/fake-embed, dims: 8 }

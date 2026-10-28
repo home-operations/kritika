@@ -35,13 +35,23 @@ type readLedger struct {
 	// reads nothing, is not held to the gate, and its submission is still
 	// cleared of any unread the model wrote.
 	exempt bool
+	// refusedAt is how many files were read when check last refused a
+	// submission, -1 before it has, and delivered whether the model has
+	// seen that refusal, which it has once the next request is answered:
+	// a submission refused once is refused again only once the model has
+	// read more, so one that reads nothing is taken, and its findings
+	// withheld, rather than refused until the run's steps are spent. A
+	// second submission in the answer that was refused is refused too,
+	// since the model has not seen the refusal yet.
+	refusedAt int
+	delivered bool
 }
 
 // newReadLedger is a ledger that already holds the files read in c, the
 // conversation the run carries on, nil for none: the model keeps what it
 // read there.
 func newReadLedger(c *agent.Conversation) *readLedger {
-	l := &readLedger{read: map[string]bool{}, pending: map[string]bool{}}
+	l := &readLedger{read: map[string]bool{}, pending: map[string]bool{}, refusedAt: -1}
 	if c == nil {
 		return l
 	}
@@ -75,7 +85,7 @@ func (l *readLedger) add(input json.RawMessage) {
 
 // exemptLedger is a ledger that counts every file as read.
 func exemptLedger() *readLedger {
-	return &readLedger{read: map[string]bool{}, pending: map[string]bool{}, exempt: true}
+	return &readLedger{read: map[string]bool{}, pending: map[string]bool{}, exempt: true, refusedAt: -1}
 }
 
 // has reports whether the file p names counts as read.
@@ -99,6 +109,7 @@ func (l *readLedger) settling(stepper model.Stepper) model.Stepper {
 		resp, err := stepper.Step(ctx, req)
 		if err == nil {
 			l.settle()
+			l.delivered = true
 		}
 		return resp, err
 	})
@@ -155,12 +166,15 @@ func (l *readLedger) unread(raw json.RawMessage) ([]string, error) {
 // check refuses a submission with findings on files the agent has not
 // read, naming them, as agent.Run.Evidence: the model reads each file
 // around the finding's lines and confirms it, or leaves the finding out.
+// It refuses once per set of reads: a model that reads nothing more
+// before it submits again is not asked again.
 func (l *readLedger) check(raw json.RawMessage) error {
 	unread, err := l.unread(raw)
-	if err != nil || len(unread) == 0 {
+	if err != nil || len(unread) == 0 || (l.refusedAt == len(l.read) && l.delivered) {
 		// Validate has refused what does not decode.
 		return nil
 	}
+	l.refusedAt, l.delivered = len(l.read), false
 	return fmt.Errorf("review: findings on files you have not read: %s. Read each file with read_file around the finding's "+
 		"lines and confirm the finding from what the code does, or leave it out; a finding on a file you never read is withheld",
 		strings.Join(unread, ", "))
