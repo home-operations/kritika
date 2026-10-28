@@ -112,6 +112,28 @@ func (s *Store) SettleModelInvocation(ctx context.Context, accountID, id string)
 	return settled && err == nil, err
 }
 
+// SweepModelInvocations deletes every account's model invocations settled
+// more than olderThan ago, a batch at a time, and returns how many it
+// deleted. A settled call's accounting is its usage row, and its record
+// has only to keep a late outcome from settling it twice, which none that
+// old can; reserved, completed and uncertain calls stay for the rescuer.
+// Owner connection, leader only, like SweepModelCalls.
+func (s *Store) SweepModelInvocations(ctx context.Context, olderThan time.Duration) (int64, error) {
+	if s.owner == nil {
+		return 0, errors.New("store: SweepModelInvocations needs the owner connection")
+	}
+	if olderThan <= 0 {
+		return 0, fmt.Errorf("store: model invocation retention %s is not positive", olderThan)
+	}
+	n, err := s.sweepBatches(ctx, `DELETE FROM model_invocations WHERE id IN (
+		SELECT id FROM model_invocations WHERE state = 'settled' AND settled_at < now() - make_interval(secs => $1) LIMIT $2)`,
+		olderThan, modelCallSweepBatch)
+	if err != nil {
+		return n, fmt.Errorf("store: sweep model invocations: %w", err)
+	}
+	return n, nil
+}
+
 // InvocationRecovery describes one bounded leader pass over unfinished calls.
 type InvocationRecovery struct {
 	Settled, Uncertain int

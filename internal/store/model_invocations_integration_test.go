@@ -197,3 +197,58 @@ func assertInvocationAdmission(t *testing.T, s *Store, u Usage, token, id, other
 	}
 
 }
+
+// TestSweepModelInvocations: a settled invocation is swept once its
+// settlement is older than the retention; one settled later, and one not
+// settled however old, stay.
+func TestSweepModelInvocations(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one")
+	account := accountID(t, s, "alpha")
+	begin := func() string {
+		t.Helper()
+		u, token := invocationFixture(t, s, account)
+		id, err := s.BeginModelInvocation(ctx, u, token, 50, time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	settle := func(id string, ago time.Duration) {
+		t.Helper()
+		if _, err := s.owner.Exec(ctx, `UPDATE model_invocations SET state = 'settled', answered = true,
+			settled_at = now() - make_interval(secs => $2) WHERE id = $1`, id, ago.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, recent, reserved := begin(), begin(), begin()
+	settle(old, 2*time.Hour)
+	settle(recent, time.Minute)
+	if _, err := s.owner.Exec(ctx, `UPDATE model_invocations SET created_at = now() - interval '3 hours' WHERE id = $1`,
+		reserved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SweepModelInvocations(ctx, 0); err == nil {
+		t.Fatal("a retention of zero swept")
+	}
+	n, err := s.SweepModelInvocations(ctx, time.Hour)
+	if err != nil || n != 1 {
+		t.Fatalf("SweepModelInvocations = %d, %v; want 1", n, err)
+	}
+	rows, err := s.owner.Query(ctx, `SELECT id::text FROM model_invocations WHERE id = ANY($1::uuid[]) ORDER BY created_at`,
+		[]string{old, recent, reserved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 2 || left[0] != recent && left[1] != recent || left[0] != reserved && left[1] != reserved {
+		t.Fatalf("invocations left = %v, want the recent and the reserved", left)
+	}
+}

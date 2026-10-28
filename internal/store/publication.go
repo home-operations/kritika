@@ -54,7 +54,9 @@ func ReplacePublication(ctx context.Context, tx pgx.Tx, reviewID string, previou
 // or ErrNotFound before either is recorded. Closed is set only for a review
 // that began after its pull request was merged or closed, a look back that
 // sets no commit status: one the pull request closed under keeps the
-// pending status it set, which its outcome has to replace.
+// pending status it set, which its outcome has to replace. The job is
+// matched through a semi-join rather than an OR of the two columns, which
+// the planner cannot turn into index lookups.
 func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, error) {
 	var p Publication
 	err := tx.QueryRow(ctx, `SELECT r.river_job_id, r.id, r.pull_request_id, r.head_sha, r.publication, r.status,
@@ -62,7 +64,8 @@ func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, 
 		CASE WHEN p.state = 'open' OR r.created_at < p.closed_at THEN ''
 			WHEN p.merged THEN 'the pull request was merged' ELSE 'the pull request is closed' END
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
-		WHERE (r.river_job_id = $1 OR EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = r.id AND rr.river_job_id = $1))
+		WHERE r.id IN (SELECT id FROM reviews WHERE river_job_id = $1
+			UNION SELECT review_id FROM runner_runs WHERE river_job_id = $1 AND review_id IS NOT NULL)
 		AND (r.publication IS NOT NULL OR (r.status = 'prepared' AND r.cancel_requested_at IS NOT NULL))
 		ORDER BY r.created_at DESC LIMIT 1`, jobID).
 		Scan(&p.JobID, &p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status, &p.CancelRequested,

@@ -129,6 +129,10 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 // generation, which is marked superseded, so running it again onboards a
 // fresh index. It runs on the owner connection, which row-level security
 // does not restrict. Leader only.
+//
+// Only the repositories whose index is dropped are locked, and read again
+// under the lock, so no webhook or index job waits on a repository the
+// sweep merely looked at while the chunks, which may be many, are deleted.
 func (s *Store) SweepStoppedIndexes(
 	ctx context.Context, grace time.Duration, runs func(accountID string, t configfile.RepoTraits) bool,
 ) (int64, error) {
@@ -145,12 +149,9 @@ func (s *Store) SweepStoppedIndexes(
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
 			return err
 		}
-		// Locked, so a repository turned on meanwhile is either seen running
-		// or waits until its index is gone, never swept halfway.
 		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on,
 				active_index_run_id IS NOT NULL
-			FROM repositories WHERE active_index_run_id IS NOT NULL OR stopped_at IS NOT NULL
-			FOR UPDATE`)
+			FROM repositories WHERE active_index_run_id IS NOT NULL OR stopped_at IS NOT NULL`)
 		if err != nil {
 			return err
 		}
@@ -173,17 +174,42 @@ func (s *Store) SweepStoppedIndexes(
 			others); err != nil {
 			return err
 		}
+		// The stopped ones are locked and read again under the lock, so one
+		// turned on or reported running since the first read is seen so:
+		// its clock is cleared, not started, and its index kept.
+		rows, err = tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on, active_index_run_id::text,
+				stopped_at <= now() - make_interval(secs => $2)
+			FROM repositories WHERE id = ANY($1::uuid[]) AND active_index_run_id IS NOT NULL FOR UPDATE`, stopped, grace.Seconds())
+		if err != nil {
+			return err
+		}
+		var resumed []string
+		var run string
+		var expired *bool
+		stopped = stopped[:0]
+		_, err = pgx.ForEachRow(rows, []any{&id, &accountID, &enabled, &t.Archived, &t.Fork, &t.TurnedOn, &run, &expired}, func() error {
+			switch {
+			case enabled && runs(accountID, t):
+				resumed = append(resumed, id)
+			case expired != nil && *expired:
+				dropped = append(dropped, run)
+			default:
+				stopped = append(stopped, id)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET stopped_at = NULL WHERE id = ANY($1::uuid[])`, resumed); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `UPDATE repositories SET stopped_at = now() WHERE id = ANY($1::uuid[]) AND stopped_at IS NULL`,
 			stopped); err != nil {
 			return err
 		}
-		rows, err = tx.Query(ctx, `SELECT active_index_run_id::text FROM repositories
-			WHERE id = ANY($1::uuid[]) AND stopped_at <= now() - make_interval(secs => $2)`, stopped, grace.Seconds())
-		if err != nil {
-			return err
-		}
-		if dropped, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(dropped) == 0 {
-			return err
+		if len(dropped) == 0 {
+			return nil
 		}
 		for _, stmt := range []string{
 			`UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,

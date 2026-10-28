@@ -94,6 +94,14 @@ func (s *fakeRetentionStore) SweepEgressRefusals(_ context.Context, olderThan ti
 	return 1, nil
 }
 
+func (s *fakeRetentionStore) SweepModelInvocations(_ context.Context, olderThan time.Duration) (int64, error) {
+	s.calls <- sweepCall{name: "modelInvocations", swept: olderThan}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	return 1, nil
+}
+
 // warnCounter counts warn-level (or higher) records.
 type warnCounter struct{ n atomic.Int32 }
 
@@ -159,12 +167,16 @@ func TestRetentionSweep(t *testing.T) {
 	if fifth := next(); fifth.name != "conversations" || fifth.swept != conversationRetention {
 		t.Fatalf("fifth call = %q older than %s, want conversations older than %s", fifth.name, fifth.swept, conversationRetention)
 	}
-	// A second pass proves the loop actually re-runs after the interval.
 	if sixth := next(); sixth.name != "egressRefusals" || sixth.swept != current.Get().TranscriptRetention() {
 		t.Fatalf("sixth call = %q older than %s, want egressRefusals older than the transcript retention", sixth.name, sixth.swept)
 	}
+	// A second pass proves the loop actually re-runs after the interval.
+	if seventh := next(); seventh.name != "modelInvocations" || seventh.swept != current.Get().TranscriptRetention() {
+		t.Fatalf("seventh call = %q older than %s, want modelInvocations older than the transcript retention",
+			seventh.name, seventh.swept)
+	}
 	if got := next(); got.name != "modelCalls" {
-		t.Fatalf("seventh call = %q, want modelCalls", got.name)
+		t.Fatalf("eighth call = %q, want modelCalls", got.name)
 	}
 
 	cancel()
@@ -186,10 +198,10 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		close(done)
 	}()
 
-	// Every sweep fails on every pass; wait for two full passes (12 calls)
+	// Every sweep fails on every pass; wait for two full passes (14 calls)
 	// to prove a failure doesn't stop the loop, and one call more, which
-	// the twelfth call's warning is logged before.
-	for range 13 {
+	// the fourteenth call's warning is logged before.
+	for range 15 {
 		select {
 		case <-st.calls:
 		case <-time.After(5 * time.Second):
@@ -203,7 +215,7 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Retention did not return once ctx ended")
 	}
-	if n := logs.n.Load(); n < 12 {
-		t.Fatalf("logged %d warnings for two failed passes, want >= 12", n)
+	if n := logs.n.Load(); n < 14 {
+		t.Fatalf("logged %d warnings for two failed passes, want >= 14", n)
 	}
 }
