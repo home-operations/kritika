@@ -48,6 +48,23 @@ func TestQuotes(t *testing.T) {
 			t.Errorf("quotes(code, %q) = %v, want %v", quote, got, want)
 		}
 	}
+	spans := "Validate with `[a-z](foo)`; write `` `*User*` `` in docs, and never a lone ` backtick."
+	for quote, want := range map[string]bool{
+		"Validate with `[a-z](foo)`":   true,
+		"Validate with `a-z`":          false,
+		"write `*User*` in docs":       true,
+		"write User in docs":           false,
+		"never a lone ` backtick":      true,
+		"never a lone backtick":        true,
+		"never a lone \uE000 backtick": true,
+	} {
+		if got := quotes(spans, quote); got != want {
+			t.Errorf("quotes(spans, %q) = %v, want %v", quote, got, want)
+		}
+	}
+	if !quotes("x \uE000 y and more words here", "x \uE000 y and more words") {
+		t.Error("a stand-in rune in the text is dropped, never a span")
+	}
 	if !quotes("Use `rg`.", "use rg") {
 		t.Error("a short rule is quoted whole")
 	}

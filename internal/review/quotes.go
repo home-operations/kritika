@@ -20,21 +20,75 @@ const minQuoteChars = 12
 // Markdown a quote may carry or leave out and still be the rule's text:
 // links, which keep their text, heading, quote and list markers at the
 // start of a line, nested or not, emphasis marks in pairs around a span,
-// and the backticks of a code span, whose content stays as it is: a mark
-// in code, such as the star of a pointer type or the underscores of a
-// dunder, is part of the text, and so is a mark on its own.
+// and backticks, whose content stays as it is: a mark in code, such as
+// the star of a pointer type or the underscores of a dunder, is part of
+// the text, and so is a mark on its own.
 var (
 	quoteLinks    = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 	quoteMarkers  = regexp.MustCompile(`(?m)^[ \t]{0,3}(?:(?:#{1,6}|>|[-*+]|\d+[.)])[ \t]+)+`)
-	quoteCode     = regexp.MustCompile("`+[^`]*`+")
 	quoteEmphasis = emphasisPatterns("**", "__", "~~", "*", "_")
-	quoteMarks    = strings.NewReplacer("“", `"`, "”", `"`, "‘", "'", "’", "'")
+	quoteMarks    = strings.NewReplacer("`", "", "“", `"`, "”", `"`, "‘", "'", "’", "'")
 )
 
-// codeStandIn stands for a code span while the emphasis pass runs, so
-// its content is neither a mark nor an emphasized span, and an emphasized
-// span may hold it.
-const codeStandIn = '\uE000'
+// codeStandIn stands for a code span while the link, marker and emphasis
+// passes run, so its content is none of theirs, and an emphasized span may
+// hold it. A literal one in the text is dropped first, so every one left
+// stands for a span.
+const codeStandIn = "\uE000"
+
+// setAsideCode is s with each code span, a run of backticks to the next
+// run of the same length as CommonMark reads them, replaced by
+// codeStandIn, and the spans' contents in order. A run with no closing
+// run is text.
+func setAsideCode(s string) (string, []string) {
+	var b strings.Builder
+	var code []string
+	s = strings.ReplaceAll(s, codeStandIn, "")
+	for {
+		open := strings.IndexByte(s, '`')
+		if open < 0 {
+			break
+		}
+		n := len(s[open:]) - len(strings.TrimLeft(s[open:], "`"))
+		rest := s[open+n:]
+		closing := -1
+		for at := 0; at < len(rest); {
+			i := strings.Index(rest[at:], strings.Repeat("`", n))
+			if i < 0 {
+				break
+			}
+			if run := len(rest[at+i:]) - len(strings.TrimLeft(rest[at+i:], "`")); run == n {
+				closing = at + i
+				break
+			} else {
+				at += i + run
+			}
+		}
+		if closing < 0 {
+			b.WriteString(s[:open+n])
+			s = rest
+			continue
+		}
+		b.WriteString(s[:open])
+		b.WriteString(codeStandIn)
+		code = append(code, rest[:closing])
+		s = rest[closing+n:]
+	}
+	b.WriteString(s)
+	return b.String(), code
+}
+
+// restoreCode is s with each codeStandIn replaced by the next of code.
+func restoreCode(s string, code []string) string {
+	var b strings.Builder
+	for i, part := range strings.Split(s, codeStandIn) {
+		if i > 0 {
+			b.WriteString(code[i-1])
+		}
+		b.WriteString(part)
+	}
+	return b.String()
+}
 
 // emphasisPatterns matches each mark in pairs around a span that starts
 // and ends on something other than space or the mark, holds no mark, and
@@ -77,13 +131,9 @@ func (f Finding) BlockQuote() string {
 // dropped, so a passage copied without the rule's formatting, or its
 // final stop, still matches it.
 func normalizeQuote(s string) string {
+	s, code := setAsideCode(s)
 	s = quoteLinks.ReplaceAllString(s, "$1")
 	s = quoteMarkers.ReplaceAllString(s, "")
-	var code []string
-	s = quoteCode.ReplaceAllStringFunc(s, func(span string) string {
-		code = append(code, strings.Trim(span, "`"))
-		return string(codeStandIn)
-	})
 	for _, re := range quoteEmphasis {
 		// A match takes the bound after its span, which the next span may
 		// need before its own: the pass goes again until nothing changes.
@@ -91,14 +141,7 @@ func normalizeQuote(s string) string {
 			prev, s = s, re.ReplaceAllString(s, "$1$2$3")
 		}
 	}
-	var b strings.Builder
-	for i, part := range strings.Split(s, string(codeStandIn)) {
-		if i > 0 {
-			b.WriteString(code[i-1])
-		}
-		b.WriteString(part)
-	}
-	s = quoteMarks.Replace(b.String())
+	s = quoteMarks.Replace(restoreCode(s, code))
 	return strings.Trim(strings.ToLower(strings.Join(strings.Fields(s), " ")), " .,;:!?")
 }
 
