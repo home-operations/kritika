@@ -7,7 +7,6 @@ import (
 	"maps"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/home-operations/kritika/internal/agent"
@@ -32,6 +31,10 @@ var readTools = []string{"read_file", "read_diff"}
 // the model again or ends on that answer.
 type readLedger struct {
 	read, pending map[string]bool
+	// exempt says every file counts as read: a review of one step, which
+	// reads nothing, is not held to the gate, and its submission is still
+	// cleared of any unread the model wrote.
+	exempt bool
 }
 
 // newReadLedger is a ledger that already holds the files read in c, the
@@ -70,6 +73,14 @@ func (l *readLedger) add(input json.RawMessage) {
 	}
 }
 
+// exemptLedger is a ledger that counts every file as read.
+func exemptLedger() *readLedger {
+	return &readLedger{read: map[string]bool{}, pending: map[string]bool{}, exempt: true}
+}
+
+// has reports whether the file p names counts as read.
+func (l *readLedger) has(p string) bool { return l.exempt || l.read[cleanPath(p)] }
+
 // settle counts the pending reads: a request carrying their results is
 // being sent, so the model sees what they returned.
 func (l *readLedger) settle() {
@@ -80,11 +91,16 @@ func (l *readLedger) settle() {
 }
 
 // settling is stepper with l's pending reads settled as each request is
-// sent: the results of the last step's reads go to the model with it.
+// answered: the results of the last step's reads went to the model with
+// it, and a request refused before it reached the model, by a budget or
+// an outage, delivered nothing.
 func (l *readLedger) settling(stepper model.Stepper) model.Stepper {
 	return model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
-		l.settle()
-		return stepper.Step(ctx, req)
+		resp, err := stepper.Step(ctx, req)
+		if err == nil {
+			l.settle()
+		}
+		return resp, err
 	})
 }
 
@@ -129,7 +145,7 @@ func (l *readLedger) unread(raw json.RawMessage) ([]string, error) {
 	}
 	var out []string
 	for _, f := range res.Findings {
-		if !l.read[cleanPath(f.Path)] {
+		if !l.has(f.Path) {
 			out = append(out, fmt.Sprintf("%s:%d", strings.TrimSpace(f.Path), f.Line))
 		}
 	}
@@ -211,36 +227,27 @@ func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error
 // markFinding is f, one finding of a submission, with its unread key set
 // when its file was never read and dropped otherwise, nil when f needs
 // no change or is not an object; where names an unread finding. A
-// finding that is re-encoded keeps the path and line encoding/json read
-// from it, under those keys alone: the keys of an object encode sorted,
-// and a key repeated in another case would otherwise be read the other
-// way round.
+// finding that is re-encoded is written as review.Finding reads it: the
+// keys of an object encode sorted, so one repeated in another case would
+// otherwise be read the other way round by the worker, and a key the
+// contract does not define is dropped as Parse drops it.
 func (l *readLedger) markFinding(f json.RawMessage) (marked json.RawMessage, where string, err error) {
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(f, &obj) != nil || obj == nil {
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(f, &keys) != nil || keys == nil {
 		return nil, "", nil
 	}
-	var at struct {
-		Path string `json:"path"`
-		Line int    `json:"line"`
-	}
-	_ = json.Unmarshal(f, &at)
-	had := len(obj)
-	maps.DeleteFunc(obj, func(k string, _ json.RawMessage) bool { return strings.EqualFold(k, unreadKey) })
-	if !l.read[cleanPath(at.Path)] {
-		obj[unreadKey] = json.RawMessage("true")
-		where = fmt.Sprintf("%s:%d", strings.TrimSpace(at.Path), at.Line)
-	} else if len(obj) == had {
+	var finding review.Finding
+	if err := json.Unmarshal(f, &finding); err != nil {
 		return nil, "", nil
 	}
-	maps.DeleteFunc(obj, func(k string, _ json.RawMessage) bool {
-		return strings.EqualFold(k, "path") || strings.EqualFold(k, "line")
-	})
-	if obj["path"], err = json.Marshal(at.Path); err != nil {
-		return nil, "", fmt.Errorf("runner: evidence: %w", err)
+	wrote := slices.ContainsFunc(slices.Collect(maps.Keys(keys)), func(k string) bool { return strings.EqualFold(k, unreadKey) })
+	finding.Unread = !l.has(finding.Path)
+	if finding.Unread {
+		where = fmt.Sprintf("%s:%d", strings.TrimSpace(finding.Path), finding.Line)
+	} else if !wrote {
+		return nil, "", nil
 	}
-	obj["line"] = json.RawMessage(strconv.Itoa(at.Line))
-	if marked, err = json.Marshal(obj); err != nil {
+	if marked, err = json.Marshal(finding); err != nil {
 		return nil, "", fmt.Errorf("runner: evidence: %w", err)
 	}
 	return marked, where, nil

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -52,16 +53,27 @@ func TestReadLedger(t *testing.T) {
 	if l.read["main.go"] || !l.pending["main.go"] {
 		t.Fatalf("reads = %v, pending %v; a read counts once its result has been sent", l.read, l.pending)
 	}
-	sent := false
-	if _, err := l.settling(model.StepperFunc(func(context.Context, model.StepRequest) (model.StepResponse, error) {
-		sent = true
-		return model.StepResponse{}, nil
-	})).Step(t.Context(), model.StepRequest{}); err != nil || !sent {
-		t.Fatalf("settling stepper: sent %v, %v", sent, err)
+	answered := func(err error) model.Stepper {
+		return model.StepperFunc(func(context.Context, model.StepRequest) (model.StepResponse, error) { return model.StepResponse{}, err })
+	}
+	if _, err := l.settling(answered(errors.New("refused"))).Step(t.Context(), model.StepRequest{}); err == nil || l.read["main.go"] {
+		t.Fatalf("a request refused settled the reads: %v, %v", err, l.read)
+	}
+	if _, err := l.settling(answered(nil)).Step(t.Context(), model.StepRequest{}); err != nil || !l.read["main.go"] {
+		t.Fatalf("a request answered did not settle the reads: %v, %v", err, l.read)
 	}
 	if !l.read["main.go"] || l.read["nope.go"] || len(l.read) != 2 || len(l.pending) != 0 {
 		t.Fatalf("reads = %v, want main.go and util.go: a failed read and a grep hit are not reads", l.read)
 	}
+}
+
+// TestReadLedgerCheck: a submission with findings on files never read is
+// refused naming them, and what does not decode is left to Validate.
+func TestReadLedgerCheck(t *testing.T) {
+	l := newReadLedger(nil)
+	l.add(json.RawMessage(`{"path":"main.go"}`))
+	l.add(json.RawMessage(`{"path":"util.go"}`))
+	l.settle()
 	sub := func(paths ...string) json.RawMessage {
 		findings := make([]string, 0, len(paths))
 		for i, p := range paths {
@@ -117,19 +129,29 @@ func TestReadLedgerMark(t *testing.T) {
 	if err != nil || len(unread) != 1 || unread[0] != "other.go:2" {
 		t.Fatalf("mark = %s, %v, %v", marked, unread, err)
 	}
-	for _, want := range []string{`"diagram":""`, `"verdict":"x"`, `"mood":"ok"`, `null`, `"unread":true`} {
+	for _, want := range []string{`"diagram":""`, `"verdict":"x"`, `null`, `"unread":true`} {
 		if !strings.Contains(string(marked), want) {
 			t.Errorf("marked lacks %s:\n%s", want, marked)
 		}
 	}
-	if strings.Contains(string(marked), `"Unread"`) || strings.Count(string(marked), "unread") != 1 {
-		t.Errorf("the model's own unread survived:\n%s", marked)
+	if strings.Contains(string(marked), `"Unread"`) || strings.Count(string(marked), "unread") != 1 || strings.Contains(string(marked), "mood") {
+		t.Errorf("the model's own unread, or a key the contract does not define, survived:\n%s", marked)
 	}
+}
+
+// TestReadLedgerMarkCanonical: a finding re-encoded is written as the
+// worker reads it, and an exempt ledger clears the model's own unread.
+func TestReadLedgerMarkCanonical(t *testing.T) {
+	l := newReadLedger(nil)
+	l.add(json.RawMessage(`{"path":"main.go"}`))
+	l.settle()
+	var res review.Result
 	// The findings key and a repeated path are read as encoding/json
 	// reads them, and written back under one key each.
-	raw = json.RawMessage(`{"summary":{"take":"ok","praise":[]},"Findings":[` +
+	raw := json.RawMessage(`{"summary":{"take":"ok","praise":[]},"Findings":[` +
 		`{"path":"other.go","Path":"main.go","line":1,"Line":2,"severity":"p2","category":"correctness","title":"t","explanation":"e","unread":true}]}`)
-	if marked, unread, err = l.mark(raw); err != nil || len(unread) != 0 {
+	marked, unread, err := l.mark(raw)
+	if err != nil || len(unread) != 0 {
 		t.Fatalf("mark = %s, %v, %v", marked, unread, err)
 	}
 	if err := json.Unmarshal(marked, &res); err != nil || len(res.Findings) != 1 || res.Findings[0].Path != "main.go" ||
@@ -137,7 +159,30 @@ func TestReadLedgerMark(t *testing.T) {
 		strings.Contains(string(marked), `"Path"`) {
 		t.Fatalf("marked = %s, %v; want main.go:2 under findings alone", marked, err)
 	}
-	for _, raw := range []string{`{"summary":{"take":"ok","praise":[]}}`, string(sub("main.go", "./util.go"))} {
+	// A finding re-encoded is written as the worker reads it: a key
+	// repeated in another case resolves as encoding/json resolves it, for
+	// every field, and one the contract does not define goes.
+	raw = json.RawMessage(`{"summary":{"take":"ok","praise":[]},"findings":[` +
+		`{"path":"main.go","line":1,"severity":"p0","Severity":"p2","category":"correctness","title":"t","explanation":"e","mood":"ok","unread":true}]}`)
+	if marked, unread, err = l.mark(raw); err != nil || len(unread) != 0 {
+		t.Fatalf("mark = %s, %v, %v", marked, unread, err)
+	}
+	if err := json.Unmarshal(marked, &res); err != nil || len(res.Findings) != 1 || res.Findings[0].Severity != review.SeverityP2 ||
+		strings.Contains(string(marked), `"Severity"`) || strings.Contains(string(marked), "mood") {
+		t.Fatalf("marked = %s, %v; want p2 under severity alone, without mood", marked, err)
+	}
+	exempt := exemptLedger()
+	never := json.RawMessage(`{"summary":{"take":"ok","praise":[]},"findings":[{"path":"never.go","line":1,"severity":"p2",` +
+		`"category":"correctness","title":"t","explanation":"e"}]}`)
+	if marked, unread, err := exempt.mark(never); err != nil || unread != nil || string(marked) != string(never) {
+		t.Fatalf("an exempt ledger marks nothing: %s, %v, %v", marked, unread, err)
+	}
+	if marked, unread, err := exempt.mark(raw); err != nil || unread != nil || strings.Contains(string(marked), "unread") {
+		t.Fatalf("an exempt ledger still clears the model's own unread: %s, %v, %v", marked, unread, err)
+	}
+	read := `{"summary":{"take":"ok","praise":[]},"findings":[{"path":"./main.go","line":1,"severity":"p2","category":"correctness",` +
+		`"title":"t","explanation":"e"}]}`
+	for _, raw := range []string{`{"summary":{"take":"ok","praise":[]}}`, read} {
 		if marked, unread, err := l.mark(json.RawMessage(raw)); err != nil || unread != nil || string(marked) != raw {
 			t.Fatalf("a submission that needs no change is returned as it is: %s, %v, %v", marked, unread, err)
 		}
@@ -231,6 +276,19 @@ func TestReviewAgentEvidence(t *testing.T) {
 		res, _ := agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), loopPrompt(s, false), time.Minute, logger)
 		if res.Stop != agent.StopSubmitted || res.Steps != 1 || string(res.Submitted) != finding {
 			t.Fatalf("result = %+v", res)
+		}
+		// A held fallback of one step is cleared of the model's own unread.
+		held := strings.Replace(finding, `"explanation":"e"`, `"explanation":"e","unread":true,"verdict":"x"`, 1)
+		st = &scriptedStepper{steps: []model.StepResponse{
+			{ToolCalls: []model.ToolCall{call("1", "submit_review", held)}},
+			{ToolCalls: []model.ToolCall{call("2", "submit_review", held)}},
+			{ToolCalls: []model.ToolCall{call("3", "submit_review", held)}},
+		}}
+		prompt := loopPrompt(s, false)
+		prompt.fallback = review.Lenient(prompt.validate)
+		res, _ = agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), prompt, time.Minute, logger)
+		if res.Stop != agent.StopSubmitted || res.Refused == "" || !sameFinding(t, res.Submitted, false) {
+			t.Fatalf("result = %+v; want the held input taken with the model's unread cleared", res)
 		}
 	})
 }

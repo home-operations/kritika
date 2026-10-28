@@ -296,12 +296,17 @@ func agentLoop(
 	timeline := []store.TimelineStep{}
 	limits := agentLimits(p.Agent)
 	// A review of one step reads nothing: its findings come from the
-	// prompt alone, and are not held to a file it could not read.
+	// prompt alone, and are not held to a file it could not read, though
+	// its submission is cleared of any unread the model wrote.
 	var ledger *readLedger
 	var evidence func(json.RawMessage) error
-	if p.Kind == runspec.KindReview && limits.MaxSteps > 1 {
+	switch {
+	case p.Kind != runspec.KindReview:
+	case limits.MaxSteps > 1:
 		ledger = newReadLedger(prompt.carried)
 		tools, evidence, stepper = ledger.wrap(tools), ledger.check, ledger.settling(stepper)
+	default:
+		ledger = exemptLedger()
 	}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user, Carried: prompt.carried,
