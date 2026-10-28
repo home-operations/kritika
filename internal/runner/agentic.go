@@ -194,9 +194,10 @@ func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []s
 	if in.role != nil {
 		categories = in.role.Categories
 	}
+	validate := review.CheckQuotes(review.CheckCategories(review.Check, categories), in.rules)
 	return agentPrompt{
 		system: system, user: user, submit: submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories),
-		validate: review.CheckCategories(review.Check, categories), fallback: review.Lenient(review.CheckCategories(review.Check, categories)),
+		validate: validate, fallback: review.Lenient(validate),
 		omitted: omitted, contextOmitted: contextOmitted,
 		context: pack.Context[:len(pack.Context)-contextOmitted], references: in.references, referencesOmitted: referencesOmitted,
 	}

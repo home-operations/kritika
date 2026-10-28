@@ -192,6 +192,14 @@ source maps and logs.
   in a follow-up's, within the [limits](#limits). A file rule goes under a
   heading of its own. A finding lists the ids of the rules it enforces,
   keeping only the ones its review was given.
+- A finding that cites a rule also quotes the passage of it that the
+  change breaks, which its inline comment shows. The quote must be in one
+  of the rules it cites, markdown, case and spacing aside, and at least 12
+  characters of it unless the rule is shorter. A submission with a finding
+  that cites a rule it does not quote is sent back to the review to
+  correct, naming every such finding, as a malformed one is, and a
+  finding that still cites a rule without a quote is dropped and counted
+  in the summary's notes. A finding that cites no rule carries no quote.
 
 ### Context
 
@@ -500,6 +508,7 @@ beside it:
 | `.AgentPrompt`               | a prompt a coding agent can apply the fix from                                                                                                                                              |
 | `.AgentPromptFence`          | a code fence longer than any in the prompt                                                                                                                                                  |
 | `.Rules`                     | the ids of the rules it enforces                                                                                                                                                            |
+| `.Quote`, `.BlockQuote`      | the passage of a cited rule it enforces, "" when it cites none, and that passage as a Markdown block quote                                                                                  |
 | `.URL`                       | a link to the lines at the head commit                                                                                                                                                      |
 | `.ThreadURL`                 | a link to its inline comment thread, once one is posted                                                                                                                                     |
 

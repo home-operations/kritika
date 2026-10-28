@@ -541,12 +541,18 @@ func TestRenderInline(t *testing.T) {
 		"\n<img alt=\"P0\" src=\"https://kritika.example/k/badges/p0.svg\"> **nil map write** · correctness\n") {
 		t.Fatalf("with a dashboard the severity is its badge image:\n%s", body)
 	}
+	quoted := f
+	quoted.Rules, quoted.Quote = []string{"nil-maps"}, "Make a map before\nwriting to it."
+	if body, _ := RenderInline(t.Context(), Templates{}, quoted); !strings.Contains(body,
+		"m is nil here.\n\n> Make a map before\n> writing to it.\n\n**Suggested fix**") {
+		t.Fatalf("a quote renders as a block quote after the explanation:\n%s", body)
+	}
 	noFix := f
 	noFix.SuggestedFix = ""
 	if body, _ := RenderInline(t.Context(), Templates{}, noFix); strings.Contains(body, "Suggested fix") {
 		t.Fatalf("no fix should render no fix section:\n%s", body)
 	}
-	for _, unwanted := range []string{"```suggestion", "<details>"} {
+	for _, unwanted := range []string{"```suggestion", "<details>", "> "} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("no replacement or agent prompt should render %q:\n%s", unwanted, body)
 		}
