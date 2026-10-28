@@ -72,7 +72,7 @@ func TestSystemPromptRules(t *testing.T) {
 		return "\n\n## Review rules\n\nChecks the maintainers set, each by its id. " + lead + "\n\n" +
 			"- wrap-errors: Wrap errors.\n  With the package name.\n- no-tokens: Never log a token."
 	}
-	review, followUp := section("A change that breaks one is a finding, and the finding lists the id in rules."),
+	review, followUp := section("A change that breaks one is a finding, and the finding lists the id in rules and copies the passage it enforces into quote, verbatim."),
 		section("A change that breaks one is a finding.")
 	for name, c := range map[string]struct{ got, want string }{
 		"review":    {SystemPrompt(rules, nil, nil, false, false, false, false), review},
@@ -236,11 +236,11 @@ func TestSystemRules(t *testing.T) {
 // rules alone has no empty list.
 func TestSystemPromptFileRules(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}, {ID: "house-style", Text: " Short names.\n", File: ".kritika/style.md"}}
-	want := "finding, and the finding lists the id in rules.\n\n- wrap-errors: Wrap errors.\n\n### house-style (.kritika/style.md)\n\nShort names."
+	want := "into quote, verbatim.\n\n- wrap-errors: Wrap errors.\n\n### house-style (.kritika/style.md)\n\nShort names."
 	if got := SystemPrompt(rules, nil, nil, false, false, false, false); !strings.HasSuffix(got, want) {
 		t.Fatalf("system prompt:\n%s", got)
 	}
-	if got := SystemPrompt(rules[1:], nil, nil, false, false, false, false); !strings.HasSuffix(got, "in rules.\n\n### house-style (.kritika/style.md)\n\nShort names.") {
+	if got := SystemPrompt(rules[1:], nil, nil, false, false, false, false); !strings.HasSuffix(got, "verbatim.\n\n### house-style (.kritika/style.md)\n\nShort names.") {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 }

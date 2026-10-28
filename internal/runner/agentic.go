@@ -120,10 +120,13 @@ func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.
 // when set, is the conversation the agent carries on, and user then its
 // next turn, which holds no context.
 type agentPrompt struct {
-	system, user      string
-	submit            model.ToolDef
-	validate          func(json.RawMessage) error
-	fallback          func(json.RawMessage) bool
+	system, user string
+	submit       model.ToolDef
+	validate     func(json.RawMessage) error
+	fallback     func(json.RawMessage) bool
+	// quotes holds the run's submissions to the quotes their findings
+	// cite rules with; nil holds them to nothing.
+	quotes            *review.QuoteGate
 	omitted           []string
 	contextOmitted    int
 	context           []contextpack.Chunk
@@ -194,9 +197,12 @@ func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []s
 	if in.role != nil {
 		categories = in.role.Categories
 	}
+	// The fallback judges a refused submission again; it must not spend
+	// the gate's refusals doing so.
+	quotes, check := review.NewQuoteGate(in.rules), review.CheckCategories(review.Check, categories)
 	return agentPrompt{
-		system: system, user: user, submit: submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories),
-		validate: review.CheckCategories(review.Check, categories), fallback: review.Lenient(review.CheckCategories(review.Check, categories)),
+		system: system, user: user, submit: submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories), quotes: quotes,
+		validate: quotes.Check(check), fallback: review.Lenient(quotes.Peek(check)),
 		omitted: omitted, contextOmitted: contextOmitted,
 		context: pack.Context[:len(pack.Context)-contextOmitted], references: in.references, referencesOmitted: referencesOmitted,
 	}
@@ -317,6 +323,16 @@ func agentLoop(
 	}
 	if res.Refused != "" {
 		logger.Warn("agent ended without a valid submission; taking its last refused one", "refusal", res.Refused)
+	}
+	if res.Stop == agent.StopSubmitted {
+		dropped, why, err := prompt.quotes.Drop(res.Submitted)
+		switch {
+		case err != nil:
+			logger.Warn("misquoted findings not dropped", "error", err)
+		case len(why) > 0:
+			res.Submitted = dropped
+			logger.Info("findings citing a rule they do not quote dropped", "findings", why)
+		}
 	}
 	return res, timeline
 }

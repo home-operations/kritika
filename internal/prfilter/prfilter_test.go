@@ -1,10 +1,50 @@
 package prfilter
 
 import (
+	"fmt"
 	"maps"
 	"testing"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
+
+func TestCompileConcurrent(t *testing.T) {
+	if _, err := Compile("true"); err != nil {
+		t.Fatal(err)
+	}
+	var group errgroup.Group
+	start := make(chan struct{})
+	for range 32 {
+		for _, tc := range []struct {
+			expr    string
+			wantErr bool
+		}{
+			{expr: `pr.labels.exists(l, l.name == "area/storage")`},
+			{expr: "frobnicate(pr)", wantErr: true},
+		} {
+			group.Go(func() error {
+				<-start
+				p, err := Compile(tc.expr)
+				if (err != nil) != tc.wantErr {
+					return fmt.Errorf("Compile(%q) = %v, wantErr %v", tc.expr, err, tc.wantErr)
+				}
+				if tc.wantErr {
+					return nil
+				}
+				got, err := p.Eval(sampleVars(nil))
+				if err != nil || !got {
+					return fmt.Errorf("Eval(%q) = %v, %v; want true", tc.expr, got, err)
+				}
+				return nil
+			})
+		}
+	}
+	close(start)
+	if err := group.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestCompile_Invalid(t *testing.T) {
 	t.Parallel()

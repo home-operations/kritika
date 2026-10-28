@@ -283,7 +283,7 @@ func withSkills(system string, skills []Skill) string {
 
 // ruleCitation is how a review's findings name the rules they enforce;
 // a follow-up, which has no findings, is not told.
-const ruleCitation = ", and the finding lists the id in rules"
+const ruleCitation = ", and the finding lists the id in rules and copies the passage it enforces into quote, verbatim"
 
 func withRules(system string, rules []Rule, cite string) string {
 	if len(rules) > 0 {

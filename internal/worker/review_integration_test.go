@@ -646,7 +646,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
 		  {"path":"main.go",`+first+`,"severity":"p1","category":"correctness","explanation":"look here","suggested_fix":"do this",
-		   "rules":["no-panics","sql-placeholders"]},
+		   "rules":["no-panics","sql-placeholders"],"quote":"Return an error rather than panic."},
 		  {"path":"main.go","line":500,"severity":"p0","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]`+
 		resolved+`}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil

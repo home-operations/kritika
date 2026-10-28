@@ -80,12 +80,12 @@ func TestCheck(t *testing.T) {
 		{name: "empty summary", raw: `{"summary":{},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "every key the contract defines", raw: `{"summary":{"headline":"h","take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B","checked":["c"]},
 			"findings":[{"path":"a","line":1,"severity":"p2","category":"tests","title":"t","explanation":"e","suggested_fix":"f",
-			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"],"prior":"0a1b2c3d"}]}`},
+			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"],"quote":"q","prior":"0a1b2c3d"}]}`},
 		{name: "a misspelled fix key and checked key", raw: `{"summary":{"headline":"h","take":"t","praise":[],"checked>":["x"]},
 			"findings":[{"path":"a.yaml","line":1,"severity":"p1","category":"correctness","title":"t","explanation":"e","suggested_fix.":"the fix"}]}`,
 			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes findings, resolved, summary, ` +
 				`the summary takes checked, diagram, headline, praise, take and a finding takes agent_prompt, category, ` +
-				`end_line, explanation, insert_after, line, path, prior, replacement, rules, severity, suggested_fix, title`},
+				`end_line, explanation, insert_after, line, path, prior, quote, replacement, rules, severity, suggested_fix, title`},
 		{name: "broken keys across findings, each named", raw: `{"summary":{"take":"t","praise":[]},
 			"findings":[{"path":"a","line":1,"severity":"p0","severity_":"p1","title":"t","explanation":"e","suggested_fix` + "`" + `: ":"f"},
 			{": ":", ","path":"a","line":1,"severity":"p1","title":"t","explanation":"e"}]}`,
@@ -271,11 +271,12 @@ func TestParse(t *testing.T) {
 			name: "a finding cites only the rules the review was given, once each",
 			raw: `{"summary": {"take": "t"}, "findings": [
 			  {"path": "main.go", "line": 11, "severity": "p2", "category": "correctness", "title": "cites", "explanation": "e",
-			   "rules": ["wrap-errors", " no-tokens ", "made-up", "wrap-errors"]},
-			  {"path": "main.go", "line": 12, "severity": "p2", "category": "correctness", "title": "cites none", "explanation": "e", "rules": ["made-up"]}
+			   "rules": ["wrap-errors", " no-tokens ", "made-up", "wrap-errors"], "quote": " Wrap errors. "},
+			  {"path": "main.go", "line": 12, "severity": "p2", "category": "correctness", "title": "cites none", "explanation": "e", "rules": ["made-up"], "quote": "Made up."},
+			  {"path": "main.go", "line": 13, "severity": "p2", "category": "correctness", "title": "unquoted", "explanation": "e", "rules": ["no-tokens"], "quote": " "}
 			]}`,
 			opts: ParseOptions{Rules: []string{"no-tokens", "wrap-errors"}},
-			take: "t", kept: []string{"main.go:11:cites", "main.go:12:cites none"},
+			take: "t", kept: []string{"main.go:11:cites", "main.go:12:cites none"}, dropped: map[string]DropReason{"unquoted": DropNoQuote},
 		},
 		{name: "garbage errors", raw: "not json", wantErr: true},
 	}
@@ -316,7 +317,7 @@ func TestParse(t *testing.T) {
 				"inserted":   {Replacement: "\ty := 3\n\tw := 5"},
 				"both":       {EndLine: 12, Replacement: "a\nb"},
 				"appended":   {Replacement: "tail\nmore"},
-				"cites":      {Rules: []string{"wrap-errors", "no-tokens"}},
+				"cites":      {Rules: []string{"wrap-errors", "no-tokens"}, Quote: "Wrap errors."},
 				"cites none": {},
 				"see [a/b#5](https://redirect.github.com/a/b/issues/5)": {Replacement: "a/b#8", AgentPrompt: "a/b#9"},
 			}
@@ -325,9 +326,9 @@ func TestParse(t *testing.T) {
 				if !ok {
 					continue
 				}
-				got := Finding{EndLine: f.EndLine, Replacement: f.Replacement, InsertAfter: f.InsertAfter, AgentPrompt: f.AgentPrompt, Rules: f.Rules}
+				got := Finding{EndLine: f.EndLine, Replacement: f.Replacement, InsertAfter: f.InsertAfter, AgentPrompt: f.AgentPrompt, Rules: f.Rules, Quote: f.Quote}
 				if got.EndLine != want.EndLine || got.Replacement != want.Replacement || got.InsertAfter != want.InsertAfter ||
-					got.AgentPrompt != want.AgentPrompt || !slices.Equal(got.Rules, want.Rules) {
+					got.AgentPrompt != want.AgentPrompt || !slices.Equal(got.Rules, want.Rules) || got.Quote != want.Quote {
 					t.Errorf("%s fix fields = %+v, want %+v", f.Title, got, want)
 				}
 			}
@@ -719,7 +720,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
 		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d", Checked: []string{"c"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityP2, Title: "t", Explanation: "e", SuggestedFix: "f",
-			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, Prior: "p", URL: "ignored"}},
+			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, Quote: "q", Prior: "p", URL: "ignored"}},
 		Resolved: []string{"0a1b2c3d"},
 	})
 	if err != nil {

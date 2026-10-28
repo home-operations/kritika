@@ -133,8 +133,9 @@ func partPrompts(
 		if in.role != nil {
 			categories = in.role.Categories
 		}
-		prompt.validate = review.CheckCategories(review.CheckPart(sh.paths, others(shares, i, res.Changed)), categories)
-		prompt.fallback = review.Lenient(prompt.validate)
+		prompt.quotes = review.NewQuoteGate(in.rules)
+		check := review.CheckCategories(review.CheckPart(sh.paths, others(shares, i, res.Changed)), categories)
+		prompt.validate, prompt.fallback = prompt.quotes.Check(check), review.Lenient(prompt.quotes.Peek(check))
 		parts[i] = reviewPart{
 			paths: sh.paths, prompt: prompt, reviewer: sh.name(), full: sh.full(p), agent: sh.limits(p.Agent),
 		}

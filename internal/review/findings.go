@@ -129,6 +129,11 @@ type Finding struct {
 	// Rules are the ids of the review rules the finding enforces; Parse
 	// keeps only those the review was given.
 	Rules []string `json:"rules,omitempty"`
+	// Quote is the passage of a cited rule the finding enforces, copied
+	// from the rule: CheckQuotes holds it to be one, and Parse drops a
+	// finding that cites a rule without one, and the quote of one that
+	// cites none.
+	Quote string `json:"quote,omitempty"`
 	// Prior is the id of the last review's finding this one reports again,
 	// as the prompt listed it; Parse resolves it into Fingerprint and
 	// clears it.
@@ -239,6 +244,8 @@ const (
 	DropNoFix       DropReason = "no_suggested_fix"
 	DropBadSeverity DropReason = "bad_severity"
 	DropBadCategory DropReason = "bad_category"
+	// DropNoQuote is a finding that cites a rule without quoting it.
+	DropNoQuote DropReason = "no_quote"
 )
 
 // Dropped is a finding Parse discarded, with the reason.
@@ -295,6 +302,7 @@ const (
 	keyInsertAfter  = "insert_after"
 	keyAgentPrompt  = "agent_prompt"
 	keyRules        = "rules"
+	keyQuote        = "quote"
 	keyPrior        = "prior"
 	keyResolved     = "resolved"
 )
@@ -406,6 +414,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 						keyInsertAfter:  {Type: schemaString, Description: describeInsertAfter},
 						keyAgentPrompt:  {Type: schemaString, Description: describeAgentPrompt},
 						keyRules:        {Type: schemaArray, Description: describeRules, Items: &jsonSchema{Type: schemaString}},
+						keyQuote:        {Type: schemaString, Description: describeQuote},
 						keyPrior:        {Type: schemaString, Description: describePrior},
 					},
 					Required:             required,
@@ -583,7 +592,7 @@ func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
 // Parse decodes the model's JSON and drops findings kritika cannot post: an
 // unknown severity or category, a category none of the finding's reviewers
 // may report, a missing field, a missing fix when opts
-// require one, or a line the diff
+// require one, a cited rule with no quote, or a line the diff
 // does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
 // anchors maps a path to the head-side lines the diff covers, each with
@@ -613,6 +622,10 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		f.InsertAfter = stripFences(f.InsertAfter)
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
+		f.Quote = strings.TrimSpace(f.Quote)
+		if len(f.Rules) == 0 {
+			f.Quote = ""
+		}
 		f.Prior = strings.TrimSpace(f.Prior)
 		f.Agents = opts.reviewers(f)
 		var reason DropReason
@@ -625,6 +638,8 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 			reason = DropIncomplete
 		case opts.RequireSuggestedFix && f.SuggestedFix == "" && f.Replacement == "" && f.InsertAfter == "":
 			reason = DropNoFix
+		case len(f.Rules) > 0 && f.Quote == "":
+			reason = DropNoQuote
 		}
 		text, anchored := anchors[f.Path][f.Line]
 		if reason == "" && !anchored {
@@ -699,18 +714,6 @@ func normalizeSummary(s Summary, opts ParseOptions) Summary {
 		s.Diagram = ""
 	}
 	return s
-}
-
-// citedRules is the ids of cited that given lists, once each, in the
-// order cited; nil for none.
-func citedRules(cited, given []string) []string {
-	var out []string
-	for _, id := range cited {
-		if id = strings.TrimSpace(id); slices.Contains(given, id) && !slices.Contains(out, id) {
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // prose is a text field the model wrote for a human, trimmed, with its

@@ -1,6 +1,9 @@
 {{ .Severity.Badge .WebURL }} **{{ .Title }}**{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
 
 {{ .Explanation }}
+{{ if .Quote }}
+{{ .BlockQuote }}
+{{ end -}}
 {{ if .SuggestedFix }}
 **Suggested fix**
 
