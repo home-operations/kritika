@@ -310,7 +310,7 @@ func wholePrompt(
 		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
 	}, tools.commands(), tools.fetch != nil, tools.search != nil)
 	if p.Prompt.Continue != nil && scope == review.ScopeIncremental {
-		prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, head, ignore, tools.extra()), res.DeltaDiff, logger)
+		prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, head, ignore, tools.extra()), res.Diff, res.DeltaDiff, logger)
 	}
 	return prompt, prompt.context
 }

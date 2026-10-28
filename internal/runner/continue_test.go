@@ -28,11 +28,17 @@ func TestCarryOn(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	tools := offeredTools(s, head, nil, nil)
 	s.Prompt.Context = []configfile.ContextFile{{Path: "web/AGENTS.md", Description: "frontend conventions", Paths: []string{"web/**"}}}
-	pack := packView{Diff: agentDiff, Changed: []string{"main.go", "web/app.ts"}, Scope: review.ScopeIncremental,
+	const bumpDiff = "diff --git a/hr.yaml b/hr.yaml\n--- a/hr.yaml\n+++ b/hr.yaml\n@@ -14 +14 @@\n-tag: 0.52.562\n+tag: 0.52.568\n"
+	delta := agentDiff + strings.Replace(bumpDiff, "0.52.562", "0.52.567", 1)
+	pack := packView{Diff: agentDiff + bumpDiff, DeltaDiff: delta, Changed: []string{"main.go", "web/app.ts", "hr.yaml"}, Scope: review.ScopeIncremental,
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 1, Text: "func u() {}"}}}
 	fresh := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
 	if len(fresh.context) != 1 {
 		t.Fatalf("a fresh prompt's context = %+v", fresh.context)
+	}
+	const bumpList = "Versions the change moves (1):\n- hr.yaml:14: 0.52.562 to 0.52.568 (0.52.567 to 0.52.568 since your last review)\n"
+	if !strings.Contains(fresh.user, bumpList) {
+		t.Fatalf("fresh prompt lacks the full range and delta:\n%s", fresh.user)
 	}
 	pr := s.Prompt.PullRequest
 	opening := func(body string) string {
@@ -84,7 +90,7 @@ func TestCarryOn(t *testing.T) {
 			defer srv.Close()
 			s := s
 			s.Model = &runspec.ModelEndpoint{GatewayURL: srv.URL, Model: "review"}
-			got := carryOn(t.Context(), s, runspec.Secrets{GatewayToken: "krk_run"}, fresh, tools, agentDiff, slog.New(slog.DiscardHandler))
+			got := carryOn(t.Context(), s, runspec.Secrets{GatewayToken: "krk_run"}, fresh, tools, pack.Diff, delta, slog.New(slog.DiscardHandler))
 			if path != "GET /v1/conversation" || auth != "Bearer krk_run" {
 				t.Fatalf("request = %s with %q", path, auth)
 			}
@@ -98,7 +104,7 @@ func TestCarryOn(t *testing.T) {
 				len(got.context) != 0 || strings.Contains(got.user, "### definition: util.go") {
 				t.Fatalf("prompt = %+v", got)
 			}
-			for _, want := range []string{"### web/AGENTS.md: frontend conventions", "moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
+			for _, want := range []string{bumpList, "### web/AGENTS.md: frontend conventions", "moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
 				if !strings.Contains(got.user, want) {
 					t.Fatalf("missing %q in the next turn:\n%s", want, got.user)
 				}

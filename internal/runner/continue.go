@@ -73,7 +73,8 @@ const carryShare = 4
 // prompt, which starts afresh with the last review's findings and notes.
 // tools are every tool the agent is offered.
 func carryOn(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, prompt agentPrompt, tools []agent.Tool, delta string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, prompt agentPrompt, tools []agent.Tool,
+	diff, delta string, logger *slog.Logger,
 ) agentPrompt {
 	c, err := conversationOf(ctx, p.Model.GatewayURL, secrets.GatewayToken)
 	if err != nil {
@@ -100,7 +101,7 @@ func carryOn(
 		return slices.ContainsFunc(m.ToolCalls, func(tc model.ToolCall) bool { return tc.Name == "fetch_repo" })
 	})
 	user, omitted, referencesOmitted := review.BuildContinuation(review.ContinueInput{
-		PriorHeadSHA: p.PriorHead, HeadSHA: p.Head, DeltaDiff: delta, Bumps: review.Bumps(delta), Prior: p.Prompt.Prior,
+		PriorHeadSHA: p.PriorHead, HeadSHA: p.Head, DeltaDiff: delta, Bumps: review.Bumps(diff), Prior: p.Prompt.Prior,
 		Dismissed: p.Prompt.Dismissed, Diagram: p.Prompt.Diagram, Fetched: fetched, BudgetTokens: budget,
 		References: prompt.references,
 	})

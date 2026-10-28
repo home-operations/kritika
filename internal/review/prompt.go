@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -103,16 +104,22 @@ type Reference struct {
 // takes a line of its own, and the diff shows the rest.
 const maxBumpsBytes = 2_000
 
-// writeBumps lists the versions a change moves under lead, each on the
+// writeBumps lists the versions a change moves, each on the
 // line that moves it, as many as maxBumpsBytes holds, and counts the rest.
-func writeBumps(b *strings.Builder, lead string, bumps []Bump) {
+func writeBumps(b *strings.Builder, bumps, delta []Bump) {
 	if len(bumps) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "%s (%d):\n", lead, len(bumps))
+	fmt.Fprintf(b, "Versions the change moves (%d):\n", len(bumps))
 	room := maxBumpsBytes
 	for i, bump := range bumps {
-		item := fmt.Sprintf("- %s:%d: %s to %s\n", bump.Path, bump.Line, bump.Old, bump.New)
+		item := fmt.Sprintf("- %s:%d: %s to %s", bump.Path, bump.Line, bump.Old, bump.New)
+		if j := slices.IndexFunc(delta, func(d Bump) bool {
+			return d.Path == bump.Path && d.Line == bump.Line && d.New == bump.New && d.positions == bump.positions
+		}); j >= 0 {
+			item += fmt.Sprintf(" (%s to %s since your last review)", delta[j].Old, delta[j].New)
+		}
+		item += "\n"
 		if room -= len(item); room < 0 {
 			fmt.Fprintf(b, "- and %d more\n", len(bumps)-i)
 			return
@@ -174,7 +181,11 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 		b.WriteString(in.Part.lead())
 	}
 	writeFocus(&b, in.Focus)
-	writeBumps(&b, "Versions the change moves", in.Bumps)
+	var deltaBumps []Bump
+	if in.Incremental != nil {
+		deltaBumps = Bumps(in.Incremental.DeltaDiff)
+	}
+	writeBumps(&b, in.Bumps, deltaBumps)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	writeDescription(&b, in.Body, budget/bodyShare)
 	writeIssues(&b, in.Issues, budget/bodyShare)
@@ -272,7 +283,8 @@ const (
 const reReviewLead = "\n\nThis is a re-review: the last review set the bar, so raise as new only P0 or P1 " +
 	"findings that the lines changed since it show. P2s and anything not worth flagging then are not wanted as new " +
 	"findings. The bar is not for the last review's findings: report again each that still holds, whatever its " +
-	"severity and wherever it is. Zero new findings is the expected outcome when the new commits are sound.\n\n"
+	"severity and wherever it is. Zero new findings is the expected outcome when the new commits are sound. " +
+	"The summary describes the whole change at head, including the full dependency version ranges the pull request moves.\n\n"
 
 // anchorsAbove reminds a re-review, beside the diff since the last
 // review, which diff its findings anchor to.
@@ -377,10 +389,11 @@ type ContinueInput struct {
 	// PriorHeadSHA is the head the last review saw, HeadSHA this review's;
 	// the two share their merge base.
 	PriorHeadSHA, HeadSHA string
-	// DeltaDiff is the unified diff from PriorHeadSHA to HeadSHA, and
-	// Bumps the versions it moves.
+	// DeltaDiff is the unified diff from PriorHeadSHA to HeadSHA.
 	DeltaDiff string
-	Bumps     []Bump
+	// Bumps are the versions the pull request moves from its merge base
+	// to HeadSHA, including those unchanged since the last review.
+	Bumps []Bump
 	// Prior are the last review's findings, those it carried on unchecked
 	// included, which its submission may not hold: the turn lists them with
 	// their ids.
@@ -425,7 +438,7 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 		b.WriteString(" The repositories fetch_repo fetched then are no longer on disk: fetch again any you need to read.")
 	}
 	b.WriteString(reReviewLead)
-	writeBumps(&b, "Versions moved since your last review", in.Bumps)
+	writeBumps(&b, in.Bumps, Bumps(in.DeltaDiff))
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	references, referencesOmitted := referenceSection(in.References, min(budget/bodyShare, budget-b.Len()-len(closing)))

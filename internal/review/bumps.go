@@ -15,6 +15,9 @@ type Bump struct {
 	Path     string
 	Line     int
 	Old, New string
+	// positions identifies the changed tokens by their one-based offsets;
+	// distinct tokens on one line can have the same version. Zero is unused.
+	positions [maxBumpTokens]int
 }
 
 // maxBumpTokens is how many tokens of one line may move for the line to be
@@ -45,8 +48,9 @@ func Bumps(diff string) []Bump {
 					continue
 				}
 				for j := range removed {
-					if old, now, ok := movedTokens(removed[j].Text, added[j].Text); ok {
-						bumps = append(bumps, Bump{Path: p, Line: added[j].NewLine, Old: old, New: now})
+					if bump, ok := movedTokens(removed[j].Text, added[j].Text); ok {
+						bump.Path, bump.Line = p, added[j].NewLine
+						bumps = append(bumps, bump)
 					}
 				}
 			}
@@ -82,10 +86,10 @@ func changeBlock(lines []udiff.Line, i int) (removed, added []udiff.Line, next i
 // each side's joined by spaces, when the two lines split into the same
 // tokens except for at most maxBumpTokens of them and every one that
 // differs is version-like on both sides.
-func movedTokens(old, now string) (from, to string, ok bool) {
+func movedTokens(old, now string) (bump Bump, ok bool) {
 	a, b := bumpTokens(old), bumpTokens(now)
 	if len(a) != len(b) {
-		return "", "", false
+		return Bump{}, false
 	}
 	var was, is []string
 	for i := range a {
@@ -93,14 +97,16 @@ func movedTokens(old, now string) (from, to string, ok bool) {
 			continue
 		}
 		if !versionLike(a[i]) || !versionLike(b[i]) || len(was) == maxBumpTokens {
-			return "", "", false
+			return Bump{}, false
 		}
+		bump.positions[len(was)] = i + 1
 		was, is = append(was, a[i]), append(is, b[i])
 	}
 	if len(was) == 0 {
-		return "", "", false
+		return Bump{}, false
 	}
-	return strings.Join(was, " "), strings.Join(is, " "), true
+	bump.Old, bump.New = strings.Join(was, " "), strings.Join(is, " ")
+	return bump, true
 }
 
 // bumpTokens splits a line on whitespace, a carriage return included, and
