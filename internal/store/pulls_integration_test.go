@@ -548,6 +548,12 @@ func TestOverlappingPullRequests(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A completed review's run has ended; one left unfinished would be
+		// an orphan to TestOrphanedRuns, which counts them over the whole
+		// database.
+		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done', finished_at = now() WHERE id = $1`, runID); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, created_at)
 			VALUES ($1, $2, $3, 'base', 'patch', '', $4, now() - make_interval(secs => $5))`, runID, account, head, paths, age); err != nil {
 			t.Fatal(err)
@@ -594,7 +600,10 @@ func TestOverlappingPullRequests(t *testing.T) {
 		addPack(tx, gone, "old", []string{"a.go"}, 60)
 		addPack(tx, gone, "head", []string{"z.go"}, 0)
 		var err error
-		indexRun, err = InsertRunnerRun(ctx, tx, account, RunnerKindIndex, "", 0)
+		if indexRun, err = InsertRunnerRun(ctx, tx, account, RunnerKindIndex, "", 0); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done', finished_at = now() WHERE id = $1`, indexRun)
 		return err
 	})
 	if err != nil {
