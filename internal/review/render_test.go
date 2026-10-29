@@ -757,3 +757,45 @@ func TestDeprecatedFunctionLogsNothing(t *testing.T) {
 		t.Fatalf("helper logged:\n%s", out)
 	}
 }
+
+func TestRenderSummaryOverlaps(t *testing.T) {
+	d := sampleData()
+	d.Overlaps = []Overlap{
+		{Number: 12, URL: "https://forge.example/o/r/pull/12", Shared: []string{"a.go", "b.go", "c.go", "d.go"}, Stale: true},
+		{Number: 9, Shared: []string{"a.go"}},
+	}
+	body, notes := RenderSummary(t.Context(), Templates{}, d)
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v", notes)
+	}
+	want := "<details>\n<summary>Review context · 2 overlapping pull requests</summary>\n\n- **Also open:**\n" +
+		"  - [#12](https://forge.example/o/r/pull/12) changes `a.go` `b.go` `c.go` and 1 more (as of an earlier head)\n" +
+		"  - #9 changes `a.go`\n\n</details>\n"
+	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+
+	// The commands line and the overlaps share the block.
+	d.Commands = Offered{Names: []string{"gh"}, Used: []string{"gh"}}
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "· 1/1 commands · 2 overlapping pull requests</summary>\n\n- **Commands run:** `gh`\n- **Also open:**\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+
+	// Past five, the rest are counted; one is singular.
+	d.Commands = Offered{}
+	d.Overlaps = nil
+	for i := range 7 {
+		d.Overlaps = append(d.Overlaps, Overlap{Number: i + 1, Shared: []string{"a.go"}})
+	}
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "· 7 overlapping pull requests</summary>") || !strings.Contains(body, "  - #5 changes `a.go`\n  - and 2 more\n\n</details>\n") ||
+		strings.Contains(body, "#6") {
+		t.Fatalf("body:\n%s", body)
+	}
+	d.Overlaps = d.Overlaps[:1]
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "<summary>Review context · 1 overlapping pull request</summary>\n\n- **Also open:**\n  - #1 changes `a.go`\n\n</details>\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+}

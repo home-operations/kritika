@@ -3,12 +3,15 @@
 package store
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // TestPausePullRequest checks that automatic reviews pause on request or
@@ -503,4 +506,138 @@ func TestReviewOwed(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOverlappingPullRequests(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	account := accountID(t, s, "alpha")
+	var one, two string
+	for name, id := range map[string]*string{"alpha/one": &one, "alpha/two": &two} {
+		if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = $2`, account, name).Scan(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type pull struct {
+		repo, headRef, baseRef, state string
+		bot, fork                     bool
+	}
+	addPull := func(tx pgx.Tx, number int, p pull) string {
+		t.Helper()
+		var id string
+		if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha, head_ref, base_ref, state,
+			author_is_bot, fork, url) VALUES ($1, $2, $3, 'head', $4, $5, $6, $7, $8, $9) RETURNING id`,
+			account, p.repo, number, p.headRef, p.baseRef, p.state, p.bot, p.fork, fmt.Sprintf("https://forge.example/pull/%d", number)).
+			Scan(&id); err != nil {
+			t.Fatalf("pull %d: %v", number, err)
+		}
+		return id
+	}
+	addPack := func(tx pgx.Tx, prID, head string, paths []string, age int) string {
+		t.Helper()
+		var reviewID string
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status) VALUES ($1, $2, $3, 'completed') RETURNING id`,
+			account, prID, head).Scan(&reviewID); err != nil {
+			t.Fatal(err)
+		}
+		runID, err := InsertRunnerRun(ctx, tx, account, RunnerKindReview, reviewID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, created_at)
+			VALUES ($1, $2, $3, 'base', 'patch', '', $4, now() - make_interval(secs => $5))`, runID, account, head, paths, age); err != nil {
+			t.Fatal(err)
+		}
+		return runID
+	}
+	var mine, indexRun string
+	err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		me := addPull(tx, 1, pull{repo: one, headRef: "feat", baseRef: "main", state: "open"})
+		mine = addPack(tx, me, "head", []string{"a.go", "b.go", "docs/x.md"}, 0)
+		// Most shared paths first, by the latest pack: the older one shared
+		// nothing.
+		human := addPull(tx, 2, pull{repo: one, headRef: "fix", baseRef: "main", state: "open"})
+		addPack(tx, human, "old", []string{"z.go"}, 60)
+		addPack(tx, human, "head", []string{"b.go", "a.go", "c.go"}, 0)
+		// A head that moved since its review is listed as stale.
+		moved := addPull(tx, 3, pull{repo: one, headRef: "other", baseRef: "main", state: "open"})
+		addPack(tx, moved, "earlier", []string{"docs/x.md"}, 0)
+		// Left out: a bot's, one stacked on mine, the one mine is stacked
+		// on, a closed one, one sharing nothing, one in another repository
+		// and one never reviewed.
+		bot := addPull(tx, 4, pull{repo: one, headRef: "renovate/x", baseRef: "main", state: "open", bot: true})
+		addPack(tx, bot, "head", []string{"a.go"}, 0)
+		above := addPull(tx, 5, pull{repo: one, headRef: "feat-2", baseRef: "feat", state: "open"})
+		addPack(tx, above, "head", []string{"a.go"}, 0)
+		below := addPull(tx, 6, pull{repo: one, headRef: "main", baseRef: "dev", state: "open"})
+		addPack(tx, below, "head", []string{"a.go"}, 0)
+		closed := addPull(tx, 7, pull{repo: one, headRef: "done", baseRef: "main", state: "closed"})
+		addPack(tx, closed, "head", []string{"a.go"}, 0)
+		apart := addPull(tx, 8, pull{repo: one, headRef: "apart", baseRef: "main", state: "open"})
+		addPack(tx, apart, "head", []string{"z.go"}, 0)
+		elsewhere := addPull(tx, 1, pull{repo: two, headRef: "fix", baseRef: "main", state: "open"})
+		addPack(tx, elsewhere, "head", []string{"a.go"}, 0)
+		addPull(tx, 9, pull{repo: one, headRef: "new", baseRef: "main", state: "open"})
+		// A fork's branch may be called main without being the one mine is
+		// stacked on, while a fork's pull request into my branch is stacked
+		// on mine.
+		forked := addPull(tx, 10, pull{repo: one, headRef: "main", baseRef: "main", state: "open", fork: true})
+		addPack(tx, forked, "head", []string{"b.go"}, 0)
+		forkAbove := addPull(tx, 11, pull{repo: one, headRef: "main", baseRef: "feat", state: "open", fork: true})
+		addPack(tx, forkAbove, "head", []string{"a.go"}, 0)
+		// The latest pack decides, even when it no longer shares anything.
+		gone := addPull(tx, 12, pull{repo: one, headRef: "gone", baseRef: "main", state: "open"})
+		addPack(tx, gone, "old", []string{"a.go"}, 60)
+		addPack(tx, gone, "head", []string{"z.go"}, 0)
+		var err error
+		indexRun, err = InsertRunnerRun(ctx, tx, account, RunnerKindIndex, "", 0)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(t *testing.T, runID string, want []review.Overlap) {
+		t.Helper()
+		var got []review.Overlap
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var err error
+			got, err = OverlappingPullRequests(ctx, tx, runID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("overlaps = %+v, want %+v", got, want)
+		}
+		for i := range want {
+			g, w := got[i], want[i]
+			if g.Number != w.Number || g.URL != w.URL || g.Stale != w.Stale || !slices.Equal(g.Shared, w.Shared) {
+				t.Fatalf("overlap %d = %+v, want %+v", i, g, w)
+			}
+		}
+	}
+	check(t, mine, []review.Overlap{
+		{Number: 2, URL: "https://forge.example/pull/2", Shared: []string{"a.go", "b.go"}},
+		{Number: 3, URL: "https://forge.example/pull/3", Shared: []string{"docs/x.md"}, Stale: true},
+		{Number: 10, URL: "https://forge.example/pull/10", Shared: []string{"b.go"}},
+	})
+	t.Run("index run", func(t *testing.T) { check(t, indexRun, nil) })
+	t.Run("unknown run", func(t *testing.T) { check(t, "00000000-0000-0000-0000-000000000000", nil) })
+	t.Run("another account", func(t *testing.T) {
+		var got []review.Overlap
+		if err := s.WithAccount(ctx, accountID(t, s, "beta"), func(tx pgx.Tx) error {
+			var err error
+			got, err = OverlappingPullRequests(ctx, tx, mine)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("overlaps = %+v", got)
+		}
+	})
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // PullRequestRow is a pull request as a webhook or a poll reports it.
@@ -347,4 +348,58 @@ func RecordReactions(ctx context.Context, tx pgx.Tx, pullRequestID string, react
 		return fmt.Errorf("store: record reactions: %w", err)
 	}
 	return nil
+}
+
+// OverlappingPullRequests lists the repository's other open pull requests
+// that change a path the review of runner run runnerRunID's pull request
+// changes, by their own last context pack, most shared paths first and
+// then lowest number first. A pull request a bot opened is left out, since
+// it rebases itself, and so is one stacked with the reviewed one, a branch
+// built on the other's, which shares files by design: a base is always a
+// branch of the repository, so only a head that is not a fork's names one.
+// A pull request kritika never fetched has no pack and is absent. The run
+// of no review lists nothing.
+func OverlappingPullRequests(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]review.Overlap, error) {
+	rows, err := tx.Query(ctx, `
+		WITH me AS (
+			SELECT p.id, p.repository_id, p.fork, p.head_ref, p.base_ref, c.changed_paths
+			FROM context_packs c
+			JOIN runner_runs rr ON rr.id = c.runner_run_id
+			JOIN reviews r ON r.id = rr.review_id
+			JOIN pull_requests p ON p.id = r.pull_request_id
+			WHERE c.runner_run_id = $1
+		)
+		SELECT o.number, o.url, o.head_sha <> last.head_sha, shared.paths
+		FROM me
+		JOIN pull_requests o ON o.repository_id = me.repository_id AND o.id <> me.id
+		JOIN LATERAL (
+			SELECT c.head_sha, c.changed_paths
+			FROM reviews r
+			JOIN runner_runs rr ON rr.review_id = r.id
+			JOIN context_packs c ON c.runner_run_id = rr.id
+			WHERE r.pull_request_id = o.id
+			ORDER BY c.created_at DESC, c.runner_run_id DESC
+			LIMIT 1
+		) last ON true
+		CROSS JOIN LATERAL (
+			SELECT coalesce(array_agg(path ORDER BY path), '{}') AS paths
+			FROM unnest(last.changed_paths) AS path
+			WHERE path = ANY (me.changed_paths)
+		) shared
+		WHERE o.state = 'open' AND NOT o.author_is_bot AND cardinality(shared.paths) > 0
+			AND NOT (NOT me.fork AND me.head_ref <> '' AND o.base_ref = me.head_ref)
+			AND NOT (NOT o.fork AND o.head_ref <> '' AND o.head_ref = me.base_ref)
+		ORDER BY cardinality(shared.paths) DESC, o.number`, runnerRunID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list overlapping pull requests: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (review.Overlap, error) {
+		var o review.Overlap
+		err := row.Scan(&o.Number, &o.URL, &o.Stale, &o.Shared)
+		return o, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: list overlapping pull requests: %w", err)
+	}
+	return out, nil
 }

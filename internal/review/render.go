@@ -105,6 +105,54 @@ type RenderData struct {
 	// the review; both "" when the dashboard has no public URL. The
 	// default template then leaves the re-run badge out.
 	WebURL, PullURL string
+	// Overlaps are the repository's other open pull requests that change
+	// a path this change does, most shared paths first; the default
+	// template lists them in the review context.
+	Overlaps []Overlap
+}
+
+// Overlap is another open pull request of the repository that changes a
+// path the reviewed change does, as its last review saw it.
+type Overlap struct {
+	Number int
+	// URL is the pull request's page on the forge, "" when unknown.
+	URL string
+	// Shared are the paths both change, sorted.
+	Shared []string
+	// Stale is whether the pull request's head has moved since the review
+	// whose paths Shared are.
+	Stale bool
+}
+
+// How many overlapping pull requests, and shared paths of each, the
+// default template names before it counts the rest: a monorepo can have
+// many open pull requests on one directory, and a comment is not where to
+// list them.
+const (
+	maxNamedOverlaps = 5
+	maxNamedShared   = 3
+)
+
+// NamedOverlaps are the overlaps the default template writes: at most
+// maxNamedOverlaps of them.
+func (d RenderData) NamedOverlaps() []Overlap {
+	return d.Overlaps[:min(len(d.Overlaps), maxNamedOverlaps)]
+}
+
+// MoreOverlaps is how many overlaps NamedOverlaps leaves out.
+func (d RenderData) MoreOverlaps() int {
+	return max(len(d.Overlaps)-maxNamedOverlaps, 0)
+}
+
+// NamedShared are the shared paths the default template writes: at most
+// maxNamedShared of them.
+func (o Overlap) NamedShared() []string {
+	return o.Shared[:min(len(o.Shared), maxNamedShared)]
+}
+
+// MoreShared is how many shared paths NamedShared leaves out.
+func (o Overlap) MoreShared() int {
+	return max(len(o.Shared)-maxNamedShared, 0)
 }
 
 // NamedAgents reports whether the review ran a reviewer other than the
