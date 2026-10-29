@@ -169,7 +169,9 @@ func (o Overlap) Spans() []string {
 
 // codeSpan is s as a CommonMark code span: between runs of backticks
 // longer than any in s, line breaks made spaces, and a space inside each
-// end when s starts or ends with a backtick, which the span strips again.
+// end when s starts or ends with a backtick, or starts and ends with a
+// space without being all spaces: a reader strips one space from each
+// end of such content, so the padding goes and s stays.
 func codeSpan(s string) string {
 	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
 	longest, run := 0, 0
@@ -181,7 +183,8 @@ func codeSpan(s string) string {
 			run = 0
 		}
 	}
-	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
+	spaced := strings.HasPrefix(s, " ") && strings.HasSuffix(s, " ") && strings.Trim(s, " ") != ""
+	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") || spaced {
 		s = " " + s + " "
 	}
 	fence := strings.Repeat("`", longest+1)

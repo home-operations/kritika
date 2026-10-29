@@ -814,6 +814,11 @@ func TestCodeSpan(t *testing.T) {
 		"x``y`":           "``` x``y` ```",
 		"`":               "`` ` ``",
 		"a\r\nb\rc\nd.go": "`a b c d.go`",
+		" a.go ":          "`  a.go  `",
+		"\na.go\n":        "`  a.go  `",
+		" a.go":           "` a.go`",
+		"a.go ":           "`a.go `",
+		"  ":              "`  `",
 	} {
 		if got := codeSpan(in); got != want {
 			t.Errorf("codeSpan(%q) = %q, want %q", in, got, want)
