@@ -798,4 +798,25 @@ func TestRenderSummaryOverlaps(t *testing.T) {
 	if !strings.Contains(body, "<summary>Review context · 1 overlapping pull request</summary>\n\n- **Also open:**\n  - #1 changes `a.go`\n\n</details>\n") {
 		t.Fatalf("body:\n%s", body)
 	}
+
+	// A path is read back whatever it holds.
+	d.Overlaps = []Overlap{{Number: 1, Shared: []string{"x` **bold** `y.go", "`lead.go", "trail`", "a\nb.go"}}}
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "  - #1 changes ``x` **bold** `y.go`` `` `lead.go `` `` trail` `` and 1 more\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+}
+
+func TestCodeSpan(t *testing.T) {
+	for in, want := range map[string]string{
+		"a.go":            "`a.go`",
+		"x`y":             "``x`y``",
+		"x``y`":           "``` x``y` ```",
+		"`":               "`` ` ``",
+		"a\r\nb\rc\nd.go": "`a b c d.go`",
+	} {
+		if got := codeSpan(in); got != want {
+			t.Errorf("codeSpan(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

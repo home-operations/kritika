@@ -155,6 +155,39 @@ func (o Overlap) MoreShared() int {
 	return max(len(o.Shared)-maxNamedShared, 0)
 }
 
+// Spans are NamedShared as Markdown code spans, each read back as the
+// path whatever it holds: a Git path may contain backticks or line
+// breaks, which a single backtick on each side would not survive.
+func (o Overlap) Spans() []string {
+	named := o.NamedShared()
+	spans := make([]string, len(named))
+	for i, path := range named {
+		spans[i] = codeSpan(path)
+	}
+	return spans
+}
+
+// codeSpan is s as a CommonMark code span: between runs of backticks
+// longer than any in s, line breaks made spaces, and a space inside each
+// end when s starts or ends with a backtick, which the span strips again.
+func codeSpan(s string) string {
+	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
+	longest, run := 0, 0
+	for _, r := range s {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
+		s = " " + s + " "
+	}
+	fence := strings.Repeat("`", longest+1)
+	return fence + s + fence
+}
+
 // NamedAgents reports whether the review ran a reviewer other than the
 // default one, alone or beside it, which the default template names.
 func (d RenderData) NamedAgents() bool {

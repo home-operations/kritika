@@ -102,7 +102,7 @@
 {{ end -}}
 {{ if .Overlaps -}}
 - **Also open:**
-{{ range .NamedOverlaps }}  - {{ if .URL }}[#{{ .Number }}]({{ .URL }}){{ else }}#{{ .Number }}{{ end }} changes `{{ join "` `" .NamedShared }}`{{ if .MoreShared }} and {{ .MoreShared }} more{{ end }}{{ if .Stale }} (as of an earlier head){{ end }}
+{{ range .NamedOverlaps }}  - {{ if .URL }}[#{{ .Number }}]({{ .URL }}){{ else }}#{{ .Number }}{{ end }} changes {{ join " " .Spans }}{{ if .MoreShared }} and {{ .MoreShared }} more{{ end }}{{ if .Stale }} (as of an earlier head){{ end }}
 {{ end -}}
 {{ if .MoreOverlaps }}  - and {{ .MoreOverlaps }} more
 {{ end -}}

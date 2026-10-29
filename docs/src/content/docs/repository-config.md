@@ -473,6 +473,7 @@ The summary template's dot is the review:
 | `.Sources`                                                                   | links to what the review's commands fetched                                                                                                                                                                   |
 | `.Agents`, `.NamedAgents`                                                    | the [agents](#agents) the review ran, in order, and whether a specialist ran, alone or beside the default pass                                                                                                |
 | `.Skills`, `.Commands`                                                       | the repository's skills and the run tool's commands the review was offered                                                                                                                                    |
+| `.Overlaps`, `.NamedOverlaps`, `.MoreOverlaps`                               | the repository's other open pull requests that change a file this one changes, most shared files first; the first 5; how many that leaves out                                                                 |
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                                                                                                             |
 | `.Confidence`                                                                | nil unless the review was scored                                                                                                                                                                              |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                                                                                                          |
@@ -484,6 +485,15 @@ The summary template's dot is the review:
 - `.Used`: the ones the review read or ran
 - `.Named`: `.Used` sorted and cut to the first 10
 - `.More`: how many `.Named` leaves out
+
+Each of `.Overlaps` has:
+
+- `.Number` and `.URL`: the pull request, its URL "" when unknown
+- `.Shared`: the paths both change, sorted
+- `.NamedShared`, `.Spans` and `.MoreShared`: the first 3, the same as
+  Markdown code spans, and how many that leaves out
+- `.Stale`: whether its head has moved since the review whose paths these
+  are
 
 `.Confidence` has:
 
