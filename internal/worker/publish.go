@@ -467,7 +467,7 @@ func (p *publishPhase) writeBack(
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
 		Agents:      p.reviewers,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
-		WebURL: web, PullURL: pull, Confidence: p.confidence,
+		WebURL: web, PullURL: pull, Confidence: p.confidence, Overlaps: p.overlaps(ctx),
 	}
 	if p.prior.id != "" {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)

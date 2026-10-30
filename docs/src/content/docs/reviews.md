@@ -164,7 +164,8 @@ summary of the change. The comment also includes:
 - findings an incremental re-review held back, folded away;
 - what the change does well, left out when a bot opened the pull request;
 - expandable review context, including the agents that ran, sources, skills
-  and commands used;
+  and commands used, and the repository's other open pull requests that
+  change a file this one changes;
 - a footer with the number of reviews, the last reviewed commit, the model
   and its effort, the agent that picked the model when one replaced the
   default pass, and the reviews' cost when `review.cost` is on;
@@ -175,7 +176,17 @@ The summary says what the change does and how. Where the evidence the
 review read shows it, the summary also says what merging sets off: what
 takes effect and when, what restarts, what a revert cannot undo, or a
 check to make afterwards. It does not repeat the findings. A suggested check
-is not evidence that it passed. Optional
+is not evidence that it passed.
+
+The other open pull requests the review context lists are the ones whose
+last review changed a file this change changes, most shared files first.
+They are a warning of merge conflicts and of work done twice, read from
+kritika's own record of those reviews: a pull request kritika has not
+reviewed is not listed, and one whose head moved since its last review is
+marked so. Pull requests a bot opened are left out, since a bot rebases
+its own, and so are pull requests stacked with this one, a branch built on
+the other's, which share files by design. The review itself is told
+nothing of them. Optional
 [flow diagrams](/repository-config/#flow-diagrams) and
 [comment templates](/repository-config/#comment-templates) change
 presentation.

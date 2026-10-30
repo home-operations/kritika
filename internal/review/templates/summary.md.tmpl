@@ -79,9 +79,9 @@
 {{ end -}}
 {{ end -}}
 {{ end -}}
-{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents .Focus }}
+{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents .Focus .Overlaps }}
 <details>
-<summary>Review context{{ if .NamedAgents }} · {{ len .Agents }} {{ plural "agent" "agents" (len .Agents) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
+<summary>Review context{{ if .NamedAgents }} · {{ len .Agents }} {{ plural "agent" "agents" (len .Agents) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}{{ if .Overlaps }} · {{ len .Overlaps }} overlapping {{ plural "pull request" "pull requests" (len .Overlaps) }}{{ end }}</summary>
 
 {{ if .Focus -}}
 - **Focus:** {{ .Focus }}
@@ -99,6 +99,13 @@
 {{ end -}}
 {{ if .Commands.Names -}}
 - **Commands run:** {{ if .Commands.Used }}`{{ join "` `" .Commands.Named }}`{{ if .Commands.More }} and {{ .Commands.More }} more{{ end }}{{ else }}none{{ end }}
+{{ end -}}
+{{ if .Overlaps -}}
+- **Also open:**
+{{ range .NamedOverlaps }}  - {{ if .URL }}[#{{ .Number }}]({{ .URL }}){{ else }}#{{ .Number }}{{ end }} changes {{ join " " .Spans }}{{ if .MoreShared }} and {{ .MoreShared }} more{{ end }}{{ if .Stale }} (as of an earlier head){{ end }}
+{{ end -}}
+{{ if .MoreOverlaps }}  - and {{ .MoreOverlaps }} more
+{{ end -}}
 {{ end }}
 </details>
 {{ end -}}
