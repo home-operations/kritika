@@ -156,6 +156,29 @@ func (s *Store) JobHead(ctx context.Context, jobID int64) (JobHead, bool, error)
 	return h, true, nil
 }
 
+// JobOwnsStatus reports whether a review River job jobID started on its
+// pull request set the pending status on the head and still owns it: it
+// began on an open pull request (see JobHead.Statusless) and no newer
+// review has taken the head over (JobHead.Ceded). False when the job
+// started none. Account connection, for a worker without the owner's.
+func JobOwnsStatus(ctx context.Context, tx pgx.Tx, jobID int64) (bool, error) {
+	var owns bool
+	err := tx.QueryRow(ctx, `SELECT COALESCE(p.state = 'open' OR r.created_at < p.closed_at, true)
+			AND r.replaced_by_review_id IS NULL AND NOT EXISTS (
+				SELECT 1 FROM reviews n JOIN runner_runs rr ON rr.review_id = n.id
+				WHERE n.pull_request_id = r.pull_request_id AND (n.created_at, n.id) > (r.created_at, r.id))
+		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+		WHERE r.river_job_id = $1 AND EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = r.id)
+		ORDER BY r.created_at DESC LIMIT 1`, jobID).Scan(&owns)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: status of job %d: %w", jobID, err)
+	}
+	return owns, nil
+}
+
 // OrphanedRun is a runner run that never ended although the River job that
 // started it is no longer running: its worker died, and its Kubernetes Job,
 // if one was created, runs on with nobody watching it.

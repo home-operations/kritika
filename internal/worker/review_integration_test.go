@@ -3073,6 +3073,9 @@ func checkActions(
 	t.Run("EnqueueReindex reports the sentinels it branches on", func(t *testing.T) {
 		checkEnqueueReindexSentinels(ctx, t, appStore, insertOnly, accountID, repoID)
 	})
+	t.Run("a retried review asks the forge whether the pull request is still open", func(t *testing.T) {
+		checkRetryClosedOnForge(ctx, t, appStore, insertOnly, accountID, repoID, dir, base, lf)
+	})
 	t.Run("a closed pull request is reviewed only when someone asks", func(t *testing.T) {
 		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, accountID, repoID, head, lf)
 	})
@@ -3338,6 +3341,110 @@ func checkRequestCancelRunning(
 	}
 	if phase != "failed" || !strings.Contains(runErr, "cancelled remotely") {
 		t.Fatalf("runner_runs phase=%q error=%q, want phase=failed and error containing %q", phase, runErr, "cancelled remotely")
+	}
+}
+
+// checkRetryClosedOnForge asserts what a retried automatic review takes
+// when the store holds its pull request open and the forge has it merged,
+// as it is once a replica died with the review running and the closed
+// event came while none was up: the retry records the merge and ends
+// skipped with no runner, and the pending status its earlier attempt set
+// on the head, and the eyes it left, go with it. Like
+// checkEnqueueRerunClosed, it leaves the row closed. The head is its own,
+// so what it records is not taken for another check's.
+func checkRetryClosedOnForge(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, dir, base string,
+	lf *localForge,
+) {
+	t.Helper()
+	head := commitOnBase(t, dir, base, "closed on the forge", "package main\n\nfunc closedOnForge() {}\n")
+	var prID string
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `UPDATE pull_requests SET state = 'open', merged = false, closed_at = NULL, head_sha = $3
+			WHERE account_id = $1 AND repository_id = $2 AND number = 1 RETURNING id`, accountID, repoID, head).Scan(&prID)
+	})
+	if err != nil {
+		t.Fatalf("reopen pull request: %v", err)
+	}
+	lf.setSize(forge.OpenPullRequest{
+		Number: 1, State: "closed", Merged: true, HeadSHA: head, BaseRef: "main",
+		ChangedFiles: 1,
+	})
+	t.Cleanup(func() { lf.setSize(forge.OpenPullRequest{}) })
+	if _, err := lf.ReactToPullRequest(ctx, "onedr0p", "home-ops", 1, forge.ReactionEyes); err != nil {
+		t.Fatal(err)
+	}
+	lf.mu.Lock()
+	lf.status = "untouched"
+	lf.mu.Unlock()
+	// The job is scheduled out of reach while its earlier attempt is made
+	// up: a review it started, which the rescuer failed when the replica
+	// died, with the run it had.
+	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
+		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: head, Trigger: "synchronize", Request: uuid.NewString(),
+	}, &river.InsertOpts{ScheduledAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatalf("insert review job: %v", err)
+	}
+	jobID := res.Job.ID
+	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		var reviewID string
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, error, finished_at, river_job_id)
+			VALUES ($1, $2, $3, 'failed', 'synchronize', 'its worker died', now(), $4) RETURNING id`, accountID, prID, head, jobID).Scan(&reviewID); err != nil {
+			return err
+		}
+		runID, err := store.InsertRunnerRun(ctx, tx, accountID, store.RunnerKindReview, reviewID, jobID)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET finished_at = now() WHERE id = $1`, runID)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("make up the earlier attempt: %v", err)
+	}
+	// Claimed, the job is on its second attempt.
+	if _, err := appStore.App().Exec(ctx, `UPDATE river_job SET attempt = 1, state = 'available', scheduled_at = now() WHERE id = $1`, jobID); err != nil {
+		t.Fatalf("release the job: %v", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var status, reason string
+		var runs int
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status, error, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
+				FROM reviews r WHERE river_job_id = $1 AND status <> 'failed'`, jobID).Scan(&status, &reason, &runs)
+		})
+		if err == nil {
+			if status != "skipped" || reason != "the pull request was merged" || runs != 0 {
+				t.Fatalf("retried review of a pull request merged on the forge: %s (%s) with %d runner runs, want skipped as merged with none",
+					status, reason, runs)
+			}
+			break
+		}
+		if !errors.Is(err, pgx.ErrNoRows) || time.Now().After(deadline) {
+			t.Fatalf("no skipped review from the retry: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	var state string
+	var merged bool
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT state, merged FROM pull_requests WHERE id = $1`, prID).Scan(&state, &merged)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if state != "closed" || !merged {
+		t.Fatalf("pull request held %s (merged %v) after the retry, want closed and merged as the forge has it", state, merged)
+	}
+	lf.mu.Lock()
+	status, eyes := lf.status, lf.pullReactions[1][forge.ReactionEyes]
+	lf.mu.Unlock()
+	if want := "success: kritika: skipped (the pull request was merged)"; status != want {
+		t.Fatalf("status on the head = %q, want %q", status, want)
+	}
+	if eyes {
+		t.Fatal("the eyes the earlier attempt left are still on the pull request")
 	}
 }
 

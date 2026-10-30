@@ -77,6 +77,13 @@ func (w *publicationWorker) resumePublication(ctx context.Context, job *river.Jo
 		handled = true
 		return true, w.cancelPublication(ctx, job, p)
 	}
+	// The forge is asked whether the pull request is still open before
+	// anything is delivered: the approval reads the row. Whether the
+	// review began on an open pull request, which is what decides the
+	// status, the checkpoint knows, below.
+	if _, err := w.refreshPullRequest(ctx, client, job.Args.AccountID, p.pr, logger); err != nil {
+		return true, err
+	}
 	answer, err := p.restore(saved.Payload)
 	if err != nil {
 		return true, river.JobCancel(err)

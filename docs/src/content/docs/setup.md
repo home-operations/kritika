@@ -190,6 +190,8 @@ For everyday use, see [reviews and commands](/reviews/).
 Polling catches missed pull request updates every 10 minutes by default.
 Set `config.pollInterval` to change the interval, or `0s` to disable it.
 Polling also catches up the code index when webhooks stop arriving.
+A newly elected leader polls at once, so a restart catches up on the
+pull requests opened, pushed to or closed while kritika was down.
 
 Reviews must wait for a poll, and mentions are never answered without webhooks.
 Shorter intervals use more GitHub API requests.

@@ -654,11 +654,12 @@ func lead(
 	var duties sync.WaitGroup
 	defer duties.Wait()
 	defer stopPoll()
-	// The backstop poll is a leader duty: one lister per connection.
+	// The backstop poll is a leader duty: one lister per connection. It
+	// starts once the configuration is applied, below: it polls at once,
+	// and before then the store knows no account to poll.
 	poll := &poller.Poller{
 		Store: st, Current: current, Forges: forges, Reach: apps.Reach, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
-	duties.Go(func() { poll.Run(pollCtx) })
 	plans := &worker.ChatGPTRefresher{Store: st, Current: current, LeaderInterval: cfg.LeaderRetryInterval, Logger: logger}
 	duties.Go(func() { plans.Run(pollCtx) })
 	// So is feeding the index queue its onboarding jobs, a few at a time.
@@ -691,6 +692,7 @@ func lead(
 	}, onboarder.Offer, configErrors, events, logger); err != nil {
 		return err
 	}
+	duties.Go(func() { poll.Run(pollCtx) })
 	<-ctx.Done()
 	return nil
 }

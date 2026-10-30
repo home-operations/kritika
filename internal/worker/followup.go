@@ -97,6 +97,9 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if awaiting {
 		return f.awaitReview(ctx)
 	}
+	if pr.closed, err = w.refreshPullRequest(ctx, client, args.AccountID, pr, logger); err != nil {
+		return err
+	}
 	if f.comment, err = client.GetComment(ctx, owner, repo, args.Number, args.CommentID, args.Inline); err != nil {
 		return err
 	}

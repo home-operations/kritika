@@ -27,15 +27,15 @@ const (
 	approvalClosed
 )
 
-// judgeApproval reads whether review.approve's conditions hold for the
-// pull request as it stands, from its stored row, as trigger started the
-// review.
+// judgeApproval reads whether the pull request as it stands, from its
+// stored row, is one kritika approves: open, and one review.approve's
+// conditions hold for, as trigger started the review. The row is read
+// whether or not there are conditions: the review may have begun on an
+// open pull request that merged or closed since, and a head that merges
+// no more is neither approved nor its approval withdrawn.
 func judgeApproval(
 	ctx context.Context, st *store.Store, accountID, prID, trigger string, r configfile.Review, logger *slog.Logger,
 ) approvalScope {
-	if len(r.ApproveWhen) == 0 && len(r.ApproveWhenInRepo) == 0 {
-		return approvalInScope
-	}
 	var vars map[string]any
 	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
@@ -47,6 +47,9 @@ func judgeApproval(
 	}
 	if open, _ := vars["open"].(bool); !open {
 		return approvalClosed
+	}
+	if len(r.ApproveWhen) == 0 && len(r.ApproveWhenInRepo) == 0 {
+		return approvalInScope
 	}
 	if r.ApprovesFor(vars) {
 		return approvalInScope
