@@ -3076,6 +3076,9 @@ func checkActions(
 	t.Run("a retried review asks the forge whether the pull request is still open", func(t *testing.T) {
 		checkRetryClosedOnForge(ctx, t, appStore, insertOnly, accountID, repoID, dir, base, lf)
 	})
+	t.Run("a retried review's closed skip leaves a newer review's status alone", func(t *testing.T) {
+		checkRetryClosedCeded(ctx, t, appStore, insertOnly, accountID, repoID, dir, base, lf)
+	})
 	t.Run("a closed pull request is reviewed only when someone asks", func(t *testing.T) {
 		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, accountID, repoID, head, lf)
 	})
@@ -3344,30 +3347,33 @@ func checkRequestCancelRunning(
 	}
 }
 
-// checkRetryClosedOnForge asserts what a retried automatic review takes
-// when the store holds its pull request open and the forge has it merged,
-// as it is once a replica died with the review running and the closed
-// event came while none was up: the retry records the merge and ends
-// skipped with no runner, and the pending status its earlier attempt set
-// on the head, and the eyes it left, go with it. Like
-// checkEnqueueRerunClosed, it leaves the row closed. The head is its own,
-// so what it records is not taken for another check's.
-func checkRetryClosedOnForge(
+// closedRetry is a review job of PR #1 at a head of its own, with the pull
+// request held open by the store and merged on the forge, as it is once a
+// replica died with the review running and the closed event came while none
+// was up. Its earlier attempt is made up: a review it started, which the
+// rescuer failed when the replica died, with the run it had. The job is
+// scheduled out of reach until release puts it on its second attempt. The
+// head is its own, so what it records is not taken for another check's.
+type closedRetry struct {
+	head, prID string
+	jobID      int64
+}
+
+func setupClosedRetry(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, dir, base string,
 	lf *localForge,
-) {
+) closedRetry {
 	t.Helper()
-	head := commitOnBase(t, dir, base, "closed on the forge", "package main\n\nfunc closedOnForge() {}\n")
-	var prID string
+	r := closedRetry{head: commitOnBase(t, dir, base, "closed on the forge", "package main\n\nfunc closedOnForge() {}\n")}
 	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `UPDATE pull_requests SET state = 'open', merged = false, closed_at = NULL, head_sha = $3
-			WHERE account_id = $1 AND repository_id = $2 AND number = 1 RETURNING id`, accountID, repoID, head).Scan(&prID)
+			WHERE account_id = $1 AND repository_id = $2 AND number = 1 RETURNING id`, accountID, repoID, r.head).Scan(&r.prID)
 	})
 	if err != nil {
 		t.Fatalf("reopen pull request: %v", err)
 	}
 	lf.setSize(forge.OpenPullRequest{
-		Number: 1, State: "closed", Merged: true, HeadSHA: head, BaseRef: "main",
+		Number: 1, State: "closed", Merged: true, HeadSHA: r.head, BaseRef: "main",
 		ChangedFiles: 1,
 	})
 	t.Cleanup(func() { lf.setSize(forge.OpenPullRequest{}) })
@@ -3377,23 +3383,20 @@ func checkRetryClosedOnForge(
 	lf.mu.Lock()
 	lf.status = "untouched"
 	lf.mu.Unlock()
-	// The job is scheduled out of reach while its earlier attempt is made
-	// up: a review it started, which the rescuer failed when the replica
-	// died, with the run it had.
 	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
-		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: head, Trigger: "synchronize", Request: uuid.NewString(),
+		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: r.head, Trigger: "synchronize", Request: uuid.NewString(),
 	}, &river.InsertOpts{ScheduledAt: time.Now().Add(time.Hour)})
 	if err != nil {
 		t.Fatalf("insert review job: %v", err)
 	}
-	jobID := res.Job.ID
+	r.jobID = res.Job.ID
 	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var reviewID string
 		if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, error, finished_at, river_job_id)
-			VALUES ($1, $2, $3, 'failed', 'synchronize', 'its worker died', now(), $4) RETURNING id`, accountID, prID, head, jobID).Scan(&reviewID); err != nil {
+			VALUES ($1, $2, $3, 'failed', 'synchronize', 'its worker died', now(), $4) RETURNING id`, accountID, r.prID, r.head, r.jobID).Scan(&reviewID); err != nil {
 			return err
 		}
-		runID, err := store.InsertRunnerRun(ctx, tx, accountID, store.RunnerKindReview, reviewID, jobID)
+		runID, err := store.InsertRunnerRun(ctx, tx, accountID, store.RunnerKindReview, reviewID, r.jobID)
 		if err != nil {
 			return err
 		}
@@ -3403,17 +3406,71 @@ func checkRetryClosedOnForge(
 	if err != nil {
 		t.Fatalf("make up the earlier attempt: %v", err)
 	}
-	// Claimed, the job is on its second attempt.
-	if _, err := appStore.App().Exec(ctx, `UPDATE river_job SET attempt = 1, state = 'available', scheduled_at = now() WHERE id = $1`, jobID); err != nil {
+	return r
+}
+
+// release lets the job run, claimed on its second attempt.
+func (r closedRetry) release(ctx context.Context, t *testing.T, appStore *store.Store) {
+	t.Helper()
+	if _, err := appStore.App().Exec(ctx, `UPDATE river_job SET attempt = 1, state = 'available', scheduled_at = now() WHERE id = $1`, r.jobID); err != nil {
 		t.Fatalf("release the job: %v", err)
 	}
+}
+
+// closedOnStore waits for the retry to record the merge the forge reports,
+// which it does right before it takes the publication lock to end.
+func (r closedRetry) closedOnStore(ctx context.Context, t *testing.T, appStore *store.Store, accountID string) {
+	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var state string
+		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT state FROM pull_requests WHERE id = $1`, r.prID).Scan(&state)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if state == "closed" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the retry did not record the merge the forge reports")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// completed waits for the retry's job to complete, so everything its end
+// writes to the forge has landed.
+func (r closedRetry) completed(ctx context.Context, t *testing.T, insertOnly *river.Client[pgx.Tx]) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		row, err := insertOnly.JobGet(ctx, r.jobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.State == rivertype.JobStateCompleted {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the retry's job is %s, want completed", row.State)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// skipped waits for the retry's review to end skipped as merged, with no
+// runner, and the pull request to be held closed and merged as the forge
+// has it; wait bounds the wait.
+func (r closedRetry) skipped(ctx context.Context, t *testing.T, appStore *store.Store, accountID string, wait time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(wait)
 	for {
 		var status, reason string
 		var runs int
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT status, error, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
-				FROM reviews r WHERE river_job_id = $1 AND status <> 'failed'`, jobID).Scan(&status, &reason, &runs)
+				FROM reviews r WHERE river_job_id = $1 AND status <> 'failed'`, r.jobID).Scan(&status, &reason, &runs)
 		})
 		if err == nil {
 			if status != "skipped" || reason != "the pull request was merged" || runs != 0 {
@@ -3430,13 +3487,29 @@ func checkRetryClosedOnForge(
 	var state string
 	var merged bool
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT state, merged FROM pull_requests WHERE id = $1`, prID).Scan(&state, &merged)
+		return tx.QueryRow(ctx, `SELECT state, merged FROM pull_requests WHERE id = $1`, r.prID).Scan(&state, &merged)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if state != "closed" || !merged {
 		t.Fatalf("pull request held %s (merged %v) after the retry, want closed and merged as the forge has it", state, merged)
 	}
+}
+
+// checkRetryClosedOnForge asserts what a retried automatic review takes
+// when the store holds its pull request open and the forge has it merged:
+// the retry records the merge and ends skipped with no runner, and the
+// pending status its earlier attempt set on the head, and the eyes it
+// left, go with it. Like checkEnqueueRerunClosed, it leaves the row closed.
+func checkRetryClosedOnForge(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, dir, base string,
+	lf *localForge,
+) {
+	t.Helper()
+	r := setupClosedRetry(ctx, t, appStore, insertOnly, accountID, repoID, dir, base, lf)
+	r.release(ctx, t, appStore)
+	r.skipped(ctx, t, appStore, accountID, 30*time.Second)
+	r.completed(ctx, t, insertOnly)
 	lf.mu.Lock()
 	status, eyes := lf.status, lf.pullReactions[1][forge.ReactionEyes]
 	lf.mu.Unlock()
@@ -3445,6 +3518,98 @@ func checkRetryClosedOnForge(
 	}
 	if eyes {
 		t.Fatal("the eyes the earlier attempt left are still on the pull request")
+	}
+}
+
+// checkRetryClosedCeded asserts that the retry's skip waits for the pull
+// request's publication lock and checks under it that the status is still
+// its job's to set: a newer review that started meanwhile, as one does on
+// a pull request reopened since, keeps the pending status it set, and the
+// eyes, while the skip is still recorded.
+func checkRetryClosedCeded(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, dir, base string,
+	lf *localForge,
+) {
+	t.Helper()
+	r := setupClosedRetry(ctx, t, appStore, insertOnly, accountID, repoID, dir, base, lf)
+	// The lock is held as a newer review's start holds it, and let go
+	// however the check ends.
+	held, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unlock := func() { once.Do(func() { close(release) }) }
+	var lockErr error
+	go func() {
+		defer close(done)
+		lockErr = appStore.WithPublicationLock(ctx, r.prID, func(context.Context) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	t.Cleanup(func() { unlock(); <-done })
+	select {
+	case <-held:
+	case <-done:
+		t.Fatalf("publication lock not taken: %v", lockErr)
+	}
+	r.release(ctx, t, appStore)
+	// The retry records the merge, then waits for the lock: nothing of its
+	// end lands meanwhile.
+	r.closedOnStore(ctx, t, appStore, accountID)
+	time.Sleep(time.Second)
+	var ended int
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE river_job_id = $1 AND status <> 'failed'`, r.jobID).Scan(&ended)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lf.mu.Lock()
+	status := lf.status
+	lf.mu.Unlock()
+	if ended != 0 || status != "untouched" {
+		t.Fatalf("the skip did not wait for the publication lock: %d reviews ended, status %q", ended, status)
+	}
+	// The newer review starts under the lock, with its run and its status.
+	var newer string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, river_job_id)
+			VALUES ($1, $2, $3, 'running', 'reopened', $4) RETURNING id`, accountID, r.prID, r.head, r.jobID+1000).Scan(&newer); err != nil {
+			return err
+		}
+		_, err := store.InsertRunnerRun(ctx, tx, accountID, store.RunnerKindReview, newer, r.jobID+1000)
+		return err
+	}); err != nil {
+		t.Fatalf("start the newer review: %v", err)
+	}
+	lf.mu.Lock()
+	lf.status = "pending: kritika: review running"
+	lf.mu.Unlock()
+	unlock()
+	<-done
+	if lockErr != nil {
+		t.Fatalf("release the lock: %v", lockErr)
+	}
+	r.skipped(ctx, t, appStore, accountID, 30*time.Second)
+	r.completed(ctx, t, insertOnly)
+	lf.mu.Lock()
+	status, eyes := lf.status, lf.pullReactions[1][forge.ReactionEyes]
+	lf.mu.Unlock()
+	if status != "pending: kritika: review running" {
+		t.Fatalf("status on the head = %q after the skip, want the newer review's pending status kept", status)
+	}
+	if !eyes {
+		t.Fatal("the eyes came off the pull request while the newer review runs")
+	}
+	// The newer review is made up; it ends here so nothing waits on it.
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE reviews SET status = 'canceled', finished_at = now() WHERE id = $1`, newer)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET finished_at = now() WHERE review_id = $1`, newer)
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

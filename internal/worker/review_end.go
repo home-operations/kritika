@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -81,6 +82,8 @@ const lockRetry = 500 * time.Millisecond
 // lockedWrite runs write under the publication lock of pull request prID,
 // taken with lock, waiting out a holder for as long as ctx allows: the
 // holder is a review's start or another review's publication, each brief.
+// A wait ctx ends carries ctx's cause, so a job stopped while it waited
+// returns what River refunds the attempt for.
 func lockedWrite(
 	ctx context.Context, lock func(context.Context, string, func(context.Context) error) error, prID string,
 	write func(context.Context) error,
@@ -92,7 +95,7 @@ func lockedWrite(
 		}
 		select {
 		case <-ctx.Done():
-			return err
+			return fmt.Errorf("%w: %w", err, context.Cause(ctx))
 		case <-time.After(lockRetry):
 		}
 	}

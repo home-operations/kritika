@@ -126,15 +126,21 @@ func (b *Base) refreshPullRequest(
 // event that queued it, as skipped: an automatic review has nothing left to
 // do, and no status is set on a head that merges no more, unless an earlier
 // attempt of the job set one (see closedUnderJob). client is the forge
-// client the caller has, nil before one is built.
+// client the caller has, nil before one is built. The end is written under
+// the pull request's publication lock, which a review's start holds while
+// it sets its own pending status, with the job's ownership of the status
+// checked inside it: a newer review that starts meanwhile, on a pull
+// request reopened since, keeps the status it set.
 func (w *Review) skipClosed(
 	ctx context.Context, e earlyEnd, jobID int64, client forge.Client, file *configfile.File, account *configfile.Account,
 ) error {
 	e.logger.Info("review skipped before start", "reason", e.pr.closed)
-	if err := w.closedUnderJob(ctx, &e, jobID, client, file, account); err != nil {
-		return err
-	}
-	return w.end(ctx, e, store.ReviewSkipped, e.pr.closed)
+	return lockedWrite(ctx, w.Store.WithPublicationLock, e.pr.id, func(ctx context.Context) error {
+		if err := w.closedUnderJob(ctx, &e, jobID, client, file, account); err != nil {
+			return err
+		}
+		return w.end(ctx, e, store.ReviewSkipped, e.pr.closed)
+	})
 }
 
 // closedUnderJob gives e the client to report its end on the head when an
