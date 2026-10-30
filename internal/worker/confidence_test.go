@@ -120,7 +120,7 @@ func TestCarryApproval(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &approvalForge{}
-			carryApproval(t.Context(), slog.New(slog.DiscardHandler), nil, "a", "synchronize", f,
+			carryApproval(t.Context(), slog.New(slog.DiscardHandler), approvalInScope, f,
 				&pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, tt.settings, tt.carried)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {
 				t.Fatalf("approved %q dismissed %q, want %q and %q", f.approved, f.dismissed, tt.approved, tt.dismissed)

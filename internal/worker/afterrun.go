@@ -81,7 +81,10 @@ func (w *Review) afterRun(
 			if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
 				logger.Warn("commit status not set", "error", err)
 			}
-			carryApproval(ctx, logger, w.Store, args.AccountID, args.Trigger, client, pr, eff.Settings, pack.carried)
+			if eff.Review.Approve {
+				scope := judgeApproval(ctx, w.Store, args.AccountID, pr.id, args.Trigger, eff.Review, logger)
+				carryApproval(ctx, logger, scope, client, pr, eff.Settings, pack.carried)
+			}
 			return nil
 		})
 		if decision.disposition == reviewSnooze {

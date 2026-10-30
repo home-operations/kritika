@@ -60,29 +60,40 @@ const pollOffRecheck = time.Minute
 const reachTimeout = time.Minute
 
 // Run polls until ctx ends, every polling.interval of the file current at
-// the time. The first poll happens after one interval, so a freshly
-// elected leader does not hammer the forge while ingest is already serving
-// webhooks. A poll is given the interval: one that outlasts it, on a forge
-// that answers slowly for every repository of a large account, is cut
-// there, and its accounts' poll state is left where it was for the next.
+// the time, and once as it starts: a leader is elected when the last one
+// died or on a restart, so the events of that gap, a pull request's close
+// among them, are what the first poll is for, and the jobs the rescuer
+// hands back shortly after read what it records. The caller has the
+// repositories listed already, so the first poll does not list them again.
+// A poll is given the interval: one that outlasts it, on a forge that
+// answers slowly for every repository of a large account, is cut there,
+// and its accounts' poll state is left where it was for the next.
 func (p *Poller) Run(ctx context.Context) {
+	p.poll(ctx, p.pollAccounts)
 	for {
-		interval := p.Current.Get().PollInterval()
-		t := time.NewTimer(cmp.Or(interval, pollOffRecheck))
+		t := time.NewTimer(cmp.Or(p.Current.Get().PollInterval(), pollOffRecheck))
 		select {
 		case <-ctx.Done():
 			t.Stop()
 			return
 		case <-t.C:
-			if interval > 0 {
-				pctx, cancel := context.WithTimeout(ctx, interval)
-				p.PollAll(pctx)
-				if pctx.Err() != nil && ctx.Err() == nil {
-					p.Logger.Warn("poll cut at its interval", "interval", interval)
-				}
-				cancel()
-			}
+			p.poll(ctx, p.PollAll)
 		}
+	}
+}
+
+// poll runs one poll, cut at the interval current as it starts; none while
+// polling is off.
+func (p *Poller) poll(ctx context.Context, poll func(context.Context)) {
+	interval := p.Current.Get().PollInterval()
+	if interval <= 0 {
+		return
+	}
+	pctx, cancel := context.WithTimeout(ctx, interval)
+	defer cancel()
+	poll(pctx)
+	if pctx.Err() != nil && ctx.Err() == nil {
+		p.Logger.Warn("poll cut at its interval", "interval", interval)
 	}
 }
 
@@ -147,6 +158,12 @@ func (p *Poller) SyncRepositories(ctx context.Context) {
 // account in the current configuration through the connection serving it.
 func (p *Poller) PollAll(ctx context.Context) {
 	p.SyncRepositories(ctx)
+	p.pollAccounts(ctx)
+}
+
+// pollAccounts polls every account of the current file through the
+// connection serving it.
+func (p *Poller) pollAccounts(ctx context.Context) {
 	file := p.Current.Get()
 	for i := range file.Accounts {
 		account := &file.Accounts[i]

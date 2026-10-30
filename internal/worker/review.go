@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -49,31 +48,6 @@ type Review struct {
 	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
 	superviseEvery time.Duration
 	rowWait        time.Duration
-}
-
-// pullRequest is what the worker reads back before starting.
-type pullRequest struct {
-	id, repositoryID string
-	repository       string
-	number           int
-	headSHA, baseRef string
-	title, author    string
-	authorIsBot      bool
-	// closed is why it takes no more reviews, "" while it is open.
-	closed string
-}
-
-// dedupesBotPatch says whether an unchanged patch from a bot author skips
-// the review. A manual re-run bypasses the skip: the human asked for it, so
-// an identical bot patch is reviewed again rather than deduped away.
-func (pr *pullRequest) dedupesBotPatch(trigger string) bool {
-	return pr.authorIsBot && trigger != jobs.TriggerManual
-}
-
-// ownerRepo splits the repository's full name as the forge client takes it.
-func (pr *pullRequest) ownerRepo() (owner, repo string) {
-	owner, repo, _ = strings.Cut(pr.repository, "/")
-	return owner, repo
 }
 
 // Work implements river.Worker.
@@ -271,33 +245,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	return nil
 }
 
-// loadPullRequest reads a job's pull request. One the store does not know
-// cancels the job: it will not appear by retrying.
-func loadPullRequest(ctx context.Context, st *store.Store, accountID, repositoryID string, number int) (*pullRequest, error) {
-	var row store.ReviewPullRequest
-	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		var err error
-		row, err = store.FindReviewPullRequest(ctx, tx, repositoryID, number)
-		return err
-	})
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, river.JobCancel(fmt.Errorf("worker: pull request %d of %s is unknown", number, repositoryID))
-	}
-	if err != nil {
-		return nil, fmt.Errorf("worker: load pull request: %w", err)
-	}
-	var closed string
-	switch {
-	case row.Merged:
-		closed = "the pull request was merged"
-	case row.State != "open":
-		closed = "the pull request is closed"
-	}
-	return &pullRequest{id: row.ID, repositoryID: row.RepositoryID, repository: row.Repository, number: row.Number,
-		headSHA: row.HeadSHA, baseRef: row.BaseRef, title: row.Title, author: row.Author,
-		authorIsBot: row.AuthorIsBot, closed: closed}, nil
-}
-
 // reviewBase is the commit a review of pr diffs its head against: the
 // merge base with its base branch. A merge commit or a fast-forward puts
 // the head in the base branch, where the merge base is the head itself and
@@ -457,7 +404,10 @@ func (w *Review) skipUnchangedBot(
 	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
 		return patch, true, err
 	}
-	carryApproval(ctx, e.logger, w.Store, e.args.AccountID, e.args.Trigger, e.client, e.pr, settings, e.carried)
+	if settings.Review.Approve {
+		scope := judgeApproval(ctx, w.Store, e.args.AccountID, e.pr.id, e.args.Trigger, settings.Review, e.logger)
+		carryApproval(ctx, e.logger, scope, e.client, e.pr, settings, e.carried)
+	}
 	return patch, true, nil
 }
 
@@ -506,12 +456,11 @@ func (w *Review) begin(
 		return begun{}, true, err
 	}
 	// A job queued while the pull request was open may only run, after a
-	// retry or a wait for a slot, once it is merged or closed: an automatic
-	// review has nothing left to do then, and no status is set on its head.
-	// Only a review someone asked for runs.
+	// retry or a wait for a slot, once it is merged or closed. Only a
+	// review someone asked for runs; the store's word is taken before the
+	// forge's, which costs a slot wait nothing.
 	if pr.closed != "" && args.Trigger != jobs.TriggerManual {
-		logger.Info("review skipped before start", "reason", pr.closed)
-		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, pr.closed)
+		return begun{}, true, w.skipClosed(ctx, e, job.ID, nil, file, account)
 	}
 	settings := file.Settings(account)
 	// With routes the review's model is known only once they are judged,
@@ -525,6 +474,12 @@ func (w *Review) begin(
 	client, err := w.client(ctx, file, account, pr.repository)
 	if err != nil {
 		return begun{}, true, err
+	}
+	if pr.closed, err = w.refreshPullRequest(ctx, client, args.AccountID, pr, logger); err != nil {
+		return begun{}, true, err
+	}
+	if pr.closed != "" && args.Trigger != jobs.TriggerManual {
+		return begun{}, true, w.skipClosed(ctx, e, job.ID, client, file, account)
 	}
 	if pr.closed != "" {
 		// A look back at a merged or closed pull request someone asked

@@ -925,3 +925,48 @@ func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
 		}
 	}
 }
+
+// TestPollerRunPollsOnStart: a leader polls as it starts, before its first
+// interval, so what it missed while there was none is caught up at once.
+func TestPollerRunPollsOnStart(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	t.Setenv("KRITIKA_POLL_INTERVAL", "1h")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
+	lf := &listForge{}
+	p := &Poller{
+		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: ingest.NewService(st, queue),
+		Logger: slog.New(slog.DiscardHandler),
+	}
+	rctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.Run(rctx)
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lf.mu.Lock()
+		listed := len(lf.sinces)
+		lf.mu.Unlock()
+		if listed > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the forge was not listed within 10s of the poller starting at a 1h interval")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	<-done
+}

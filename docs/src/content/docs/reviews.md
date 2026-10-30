@@ -45,7 +45,11 @@ running, kritika says so and runs nothing.
 A manual review also works on paused, filtered, merged or closed pull requests.
 It does not start a duplicate review if the current commit is already queued
 or running. Reviews of merged or closed pull requests post comments but do not
-set a commit status or approve the pull request.
+set a commit status or approve the pull request. Before a review starts,
+kritika asks the forge whether the pull request is still open. An automatic
+review of one merged or closed since the event that queued it is skipped, and
+a pending status an earlier attempt of the same job left on its commit says so
+while that status is still the job's to set. A manual request still runs.
 
 kritika handles at most five mentions per pull request per hour, including commands.
 
