@@ -131,7 +131,9 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.account-button')).toHaveText('All accounts');
     await page.locator('.account-button').click();
     const scopes = page.getByRole('navigation', { name: 'Scope' });
-    await expect(scopes.getByRole('link')).toHaveText(['All accounts', 'github/acme']);
+    await expect(scopes.getByRole('link')).toHaveText(['All accounts', /^\s*github\/acme\s+github\.com$/]);
+    // The forge's host tells accounts of one name on two forges apart.
+    await expect(scopes.locator('.account-host')).toHaveText(['github.com']);
     await expect(scopes.getByRole('link', { name: 'All accounts' })).toHaveAttribute('aria-current', 'true');
     await page.keyboard.press('Escape');
     await expect(scopes).toBeHidden();

@@ -14,11 +14,14 @@ export interface User {
 }
 
 // admin administers the instance and every account. accounts are the slugs
-// ("<forge>/<name>") of the accounts the viewer can read.
+// ("<forge>/<name>") of the accounts the viewer can read. accountHosts is the
+// host of the forge each one is on, by slug: accounts of one name on two
+// instances of a forge differ by it alone.
 export interface Me {
   user: User;
   admin: boolean;
   accounts: string[];
+  accountHosts: Record<string, string>;
   settings: UserSettings;
 }
 

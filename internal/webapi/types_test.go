@@ -117,7 +117,7 @@ var goldens = map[string]any{
 	"page": Page[Repository]{Items: []Repository{goldenRepo}, NextCursor: new("opaque")},
 	"me": Me{
 		User:  User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
-		Admin: true, Accounts: []string{"github/alpha"},
+		Admin: true, Accounts: []string{"github/alpha"}, AccountHosts: map[string]string{"github/alpha": "github.com"},
 		Settings: UserSettings{TimeZone: "Europe/Amsterdam", Clock: "24", Theme: "dark"},
 	},
 	"account_summary": goldenSummary,

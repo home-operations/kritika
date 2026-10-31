@@ -68,9 +68,16 @@ func toUser(a store.User) User {
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
-	me := Me{User: toUser(p.User), Admin: p.Admin, Accounts: []string{}, Settings: UserSettings(p.User.Settings)}
-	for _, t := range readable(s.current.Get(), p) {
+	me := Me{
+		User: toUser(p.User), Admin: p.Admin, Accounts: []string{}, AccountHosts: map[string]string{},
+		Settings: UserSettings(p.User.Settings),
+	}
+	file := s.current.Get()
+	for _, t := range readable(file, p) {
 		me.Accounts = append(me.Accounts, t.Slug())
+		if c := file.ConnectionFor(t); c != nil {
+			me.AccountHosts[t.Slug()] = c.ForgeHosts()[0]
+		}
 	}
 	writeJSON(w, http.StatusOK, me)
 	return nil
