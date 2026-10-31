@@ -216,6 +216,23 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 	return min(agentMax, left), ""
 }
 
+// ruleFiles is where a review discovers rule files, with every rule of
+// rules, its when conditions holding or not, to leave a file to. It is nil
+// for none, when dirs has no paths.
+func ruleFiles(dirs configfile.RuleFiles, rules []configfile.Rule) *runspec.RuleFiles {
+	if len(dirs.Paths) == 0 {
+		return nil
+	}
+	out := &runspec.RuleFiles{Paths: dirs.Paths}
+	for _, r := range rules {
+		out.IDs = append(out.IDs, r.ID)
+		if r.File != "" {
+			out.Files = append(out.Files, r.File)
+		}
+	}
+	return out
+}
+
 // agentPrompt reads what the runner needs to write the prompt and to
 // recognize a review that the worker will skip. The runner needs the pull
 // request as the repository filter sees it: that is pull, read once for the
@@ -250,6 +267,7 @@ func (w *Review) agentPrompt(
 		if sk := eff.Skills; len(sk.Paths) > 0 {
 			p.Skills = &runspec.Skills{Paths: sk.Paths, Scope: sk.Scope, Off: repoconfig.SkillsOff(sk.Scope, vars)}
 		}
+		p.RuleFiles = ruleFiles(eff.RuleFiles, eff.Review.Rules)
 		// The runner owns the conditions that only the diff can judge. It
 		// judges them with the review's trigger as the event. A review that
 		// someone asked for passes the admin's lists, whatever they say.

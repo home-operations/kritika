@@ -199,6 +199,9 @@ type Overrides struct {
 	Rules      []Rule         `yaml:"rules,omitempty"`
 	Context    []ContextFile  `yaml:"context,omitempty"`
 	Skills     SkillsSpec     `yaml:"skills,omitempty"`
+	// RuleFiles sets the directories whose markdown files are discovered as
+	// rules, at the merge base.
+	RuleFiles RuleFilesSpec `yaml:"ruleFiles,omitempty"`
 	// Ignore are globs of the paths kritika leaves out of a review's
 	// context and of the index. A pull request that changes nothing else
 	// is skipped. They add to kritika's own.
@@ -785,6 +788,7 @@ type Settings struct {
 	Review      Review
 	Confidence  Confidence
 	Skills      Skills
+	RuleFiles   RuleFiles
 	// Reviewers are the review's specialists, its agents with categories,
 	// by name. The agents that replace the default pass are Models.Routes.
 	Reviewers map[string]Reviewer

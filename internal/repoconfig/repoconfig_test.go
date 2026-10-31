@@ -123,7 +123,7 @@ func TestActiveContext(t *testing.T) {
 // TestActiveRules: a rule applies to a change that its paths match, or to
 // any change when it has none. A file rule carries its file's content, and
 // one whose file is missing or blank is left out. The rules past each cap
-// are counted, not listed.
+// are named by id.
 func TestActiveRules(t *testing.T) {
 	t.Parallel()
 	rules := []configfile.Rule{
@@ -135,8 +135,8 @@ func TestActiveRules(t *testing.T) {
 	files := Files{"docs/style.md": " Short names. \n", "docs/blank.md": "\n", "docs/huge.md": strings.Repeat("y", MaxRuleFileBytes)}
 	got, left := ActiveRules(rules, files, []string{"main.go"})
 	want := []review.Rule{{ID: "any", Text: "Check errors."}, {ID: "style", Text: "Short names.", File: "docs/style.md"}, {ID: "last", Text: "Name things."}}
-	if !reflect.DeepEqual(got, want) || left != 2 {
-		t.Fatalf("ActiveRules = %+v, %d left", got, left)
+	if !reflect.DeepEqual(got, want) || !slices.Equal(left, []string{"big", "huge"}) {
+		t.Fatalf("ActiveRules = %+v, %q left", got, left)
 	}
 	if got, _ := ActiveRules(rules[:2], files, []string{"db/0001.sql"}); len(got) != 2 {
 		t.Fatalf("ActiveRules = %+v", got)

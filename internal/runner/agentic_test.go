@@ -244,7 +244,7 @@ func TestPromptInputsNotes(t *testing.T) {
 	s.Agent.MaxPromptTokens = 24_000
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
 	in := newPromptInputs(s, nil, nil, []string{"main.go"})
-	if want := []string{"1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
+	if want := []string{"1 review rule(s) left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given: big"}; !slices.Equal(in.notes, want) {
 		t.Fatalf("notes = %q, want %q", in.notes, want)
 	}
 	const lines = 60_000

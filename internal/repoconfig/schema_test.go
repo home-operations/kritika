@@ -40,6 +40,7 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"rules", []string{"properties", "rules", "items"}, yamlKeys[configfile.Rule]()},
 		{"rule when", []string{"properties", "rules", "items", "properties", "when", "items"}, yamlKeys[configfile.When]()},
 		{"skills", []string{"properties", "skills"}, yamlKeys[configfile.SkillsSpec]()},
+		{"rule files", []string{"properties", "ruleFiles"}, yamlKeys[configfile.RuleFilesSpec]()},
 		{"skill scope", []string{"properties", "skills", "properties", "scope", "additionalProperties"}, yamlKeys[configfile.SkillScope]()},
 		{"skill scope when", []string{"properties", "skills", "properties", "scope", "additionalProperties", "properties", "when", "items"},
 			yamlKeys[configfile.When]()},

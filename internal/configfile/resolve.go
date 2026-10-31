@@ -66,6 +66,7 @@ func (f *File) Settings(a *Account) Settings {
 		Review:      Review{InlineComments: true, Dashboard: true},
 		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow},
 		Skills:      Skills{Paths: slices.Clone(DefaultSkillPaths)},
+		RuleFiles:   RuleFiles{Paths: slices.Clone(DefaultRuleFilePaths)},
 		Providers:   f.providerNames(a),
 	}
 	s.apply(&f.Defaults.Overrides)
@@ -174,6 +175,7 @@ func (s *Settings) apply(o *Overrides) {
 	}
 	s.Ignore = append(s.Ignore, o.Ignore...)
 	s.Skills = s.Skills.overlay(o.Skills)
+	s.RuleFiles = s.RuleFiles.overlay(o.RuleFiles)
 	s.Reviewers, s.Models.Routes = SplitAgents(o.Review.Agents)
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)

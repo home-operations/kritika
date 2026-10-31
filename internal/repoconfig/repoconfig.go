@@ -133,6 +133,9 @@ type File struct {
 	// Skills replace the directories the admin has skills looked for in,
 	// and add to the admin's scopes.
 	Skills configfile.SkillsSpec `yaml:"skills,omitempty"`
+	// RuleFiles replace the directories the admin has rule files discovered
+	// in.
+	RuleFiles configfile.RuleFilesSpec `yaml:"ruleFiles,omitempty"`
 	// Tools are the tools the repository's reviews can run, over the
 	// image's.
 	Tools Tools `yaml:"tools,omitempty"`
@@ -190,6 +193,11 @@ func Parse(data []byte) (File, error) {
 	}
 	if err := configfile.CheckSkills(skillPaths, f.Skills.Scope); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
+	if f.RuleFiles.Paths != nil {
+		if err := configfile.CheckRuleFiles(*f.RuleFiles.Paths); err != nil {
+			return File{}, fmt.Errorf("repoconfig: %w", err)
+		}
 	}
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
@@ -339,10 +347,10 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 // ActiveRules is the rules that apply to a change of the changed paths, in
 // order: each without paths, and each with them when a changed path
 // matches one. A rule's text counts against MaxRulesBytes and a file
-// rule's content, read from files, against MaxRuleFileBytes. left is how
-// many applied but did not fit. A file rule whose file files lacks or
-// holds nothing is left out, since reading it was already noted.
-func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left int) {
+// rule's content, read from files, against MaxRuleFileBytes. left names
+// the ones that applied but did not fit, by id. A file rule whose file
+// files lacks or holds nothing is left out, since reading it was already noted.
+func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left []string) {
 	room, fileRoom := MaxRulesBytes, MaxRuleFileBytes
 	for _, r := range rules {
 		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(r.Paths, c) }) {
@@ -358,7 +366,7 @@ func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []
 			*budget -= size
 			out = append(out, review.Rule{ID: r.ID, Text: text, File: r.File})
 		} else {
-			left++
+			left = append(left, r.ID)
 		}
 	}
 	return out, left

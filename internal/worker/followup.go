@@ -375,14 +375,14 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 	}
 	prompt := &runspec.Prompt{
 		Repository: f.pr.repository, Context: f.eff.Review.Context, Rules: repoconfig.RulesFor(f.eff.Review.Rules, rec.vars),
-		Prior: rec.findings,
+		RuleFiles: ruleFiles(f.eff.RuleFiles, f.eff.Review.Rules), Prior: rec.findings,
 	}
 	var answering *store.ReviewerGrant
 	name := f.findingReviewer(ctx, rec)
 	if r, ok := f.eff.Reviewers[name]; ok && name != "" && r.On() {
 		// The finding's reviewer answers for it, by its own instructions,
 		// rules and models, while it is on.
-		prompt.Rules = repoconfig.RulesFor(r.Rules, rec.vars)
+		prompt.Rules, prompt.RuleFiles = repoconfig.RulesFor(r.Rules, rec.vars), nil
 		prompt.Reviewers = []runspec.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
 		models := r.Models(f.settings.Models)
 		ref = models.Review

@@ -164,6 +164,9 @@ type Prompt struct {
 	// are looked for in, with the scope of those that have one. nil offers
 	// none.
 	Skills *Skills `json:"skills,omitempty"`
+	// RuleFiles are the directories of the merge base whose markdown files
+	// are discovered as rules, after Rules. nil discovers none.
+	RuleFiles *RuleFiles `json:"ruleFiles,omitempty"`
 	// Filters are the include and exclude lists with a condition only the
 	// diff can judge, each of which the pull request must pass: the
 	// admin's, which the worker leaves out for a review someone asked
@@ -235,6 +238,16 @@ type Skills struct {
 	Paths []string                         `json:"paths"`
 	Scope map[string]configfile.SkillScope `json:"scope,omitempty"`
 	Off   []string                         `json:"off,omitempty"`
+}
+
+// RuleFiles is where a review's rule files are discovered. IDs and Files
+// are the ids and files of every rule the configuration has, its when
+// conditions holding or not: a discovered file that one of them names, or
+// whose id one of them has, is left to that rule.
+type RuleFiles struct {
+	Paths []string `json:"paths"`
+	IDs   []string `json:"ids,omitempty"`
+	Files []string `json:"files,omitempty"`
 }
 
 // Spec is the job document a worker hands a runner: everything the run

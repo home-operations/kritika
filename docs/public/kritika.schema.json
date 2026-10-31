@@ -352,6 +352,18 @@
         }
       }
     },
+    "ruleFiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Markdown rule files, such as the ones in .claude/rules, discovered as rules and read from the merge base. Each file is a rule whose id is its path below the directory, and its paths frontmatter, when it has one, limits the changes it applies to.",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "description": "The directories whose markdown files, at any depth, are each a rule. They replace the admin's. They are .agents/rules and .claude/rules when no one sets them, and an empty list turns rule files off.",
+          "items": { "$ref": "#/$defs/path" }
+        }
+      }
+    },
     "tools": {
       "type": "object",
       "description": "The tools that the repository's reviews can run, over the image's commands. These are packages of the aqua registry (https://github.com/aquaproj/aqua-registry), each named aqua:<package>, such as aqua:home-operations/flate, with the tag of the release to run. A tool installs on its first use. The runner first makes sure that the download matches the digest GitHub keeps of the release's asset, else the checksum file that the registry names. Only packages that download a release's asset or a file at a URL are offered. A package that builds from source is not offered. A package is also not offered when nothing published apart from its download gives a checksum for that download.",

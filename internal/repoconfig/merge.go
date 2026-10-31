@@ -121,6 +121,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		m.drop("confidence.risk", strconv.Quote(string(risk)), string(op.Confidence.Risk)+" or lower")
 	}
 	m.Skills = configfile.WithSkills(m.Skills, f.Skills)
+	m.RuleFiles = configfile.WithRuleFiles(m.RuleFiles, f.RuleFiles)
 	m.choose(&f, op.Providers)
 	m.agents(f.Review.Agents, op)
 	for _, e := range []struct {
