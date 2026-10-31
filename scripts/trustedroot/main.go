@@ -1,8 +1,9 @@
-// Command trustedroot writes Sigstore's public-good trusted root, the keys
-// of its certificate authorities, transparency logs and timestamp
-// authorities, to the file it is given, as Sigstore's TUF repository
-// publishes it: fetched and checked from the root of trust sigstore-go
-// carries, so the file is only ever what that repository signed.
+// Command trustedroot writes Sigstore's public-good trusted root to the
+// file it is given, as Sigstore's TUF repository publishes it. The trusted
+// root is the keys of its certificate authorities, transparency logs, and
+// timestamp authorities. The command fetches it and makes sure that it is
+// valid against the root of trust that sigstore-go carries. The file is
+// therefore only ever what that repository signed.
 package main
 
 import (

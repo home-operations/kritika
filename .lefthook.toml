@@ -26,6 +26,6 @@ stage_fixed = true
 run = "mise run test"
 
 # The bench harness sits behind the `bench` tag, so `mise run test` never
-# compiles it; `-run=^$` builds it without starting the live-model eval.
+# compiles it. `-run=^$` builds it without starting the live-model eval.
 [pre-push.commands.bench-compile]
 run = "mise exec -- go test -tags bench -run=^$ ./bench/"

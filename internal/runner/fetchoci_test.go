@@ -119,8 +119,9 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 			http.Error(w, `{"errors":[{"code":"MANIFEST_UNKNOWN"}]}`, http.StatusNotFound)
 			return
 		}
-		// A registry sizes a manifest in the header, which a HEAD, and the
-		// refusal of a large one, read; Go would send a large body chunked.
+		// A registry sizes a manifest in the header, which a HEAD and the
+		// refusal of a large manifest read. Otherwise, Go sends a large body
+		// chunked.
 		w.Header().Set("Content-Type", m.mediaType)
 		w.Header().Set("Content-Length", strconv.Itoa(len(m.body)))
 		w.Header().Set("Docker-Content-Digest", digestOf(m.body))
@@ -160,10 +161,10 @@ func (r *fakeRegistry) tool() *fetchOCITool {
 }
 
 // TestFetchOCIInspect: an index is described by its platforms, the
-// attestation's unknown platform left out, and by the config of its first
-// image manifest, a nested index passed over, read through the registry's
-// redirect; the token the registry grants anyone is fetched once and
-// reused; the image is a source.
+// attestation's unknown platform left out. It is also described by the config
+// of its first image manifest, a nested index passed over, read through the
+// registry's redirect. The token that the registry grants anyone is fetched
+// once and reused. The image is a source.
 func TestFetchOCIInspect(t *testing.T) {
 	reg := newFakeRegistry(t)
 	tool := reg.tool()
@@ -214,9 +215,9 @@ func TestFetchOCIArtifact(t *testing.T) {
 }
 
 // TestFetchOCIErrors: a missing tag, a reference without one, a reference
-// that is none, and the review's inspections spent, a failed one counted
-// among them, each in a readable error; a Docker Hub name without a
-// registry is filled in.
+// that is none, and the review's inspections spent each give a readable
+// error. A failed inspection counts among those spent. A Docker Hub name
+// without a registry is filled in.
 func TestFetchOCIErrors(t *testing.T) {
 	reg := newFakeRegistry(t)
 	tool := reg.tool()
@@ -250,9 +251,8 @@ func TestFetchOCIErrors(t *testing.T) {
 }
 
 // TestFetchOCITags: tags are listed as the registry orders them, the ones
-// with the text, and the listings are counted apart from the inspections;
-// an empty tags beside a tag asks for nothing, a text beside one is
-// refused.
+// with the text. The listings are counted apart from the inspections. An
+// empty tags beside a tag asks for nothing, and a text beside one is refused.
 func TestFetchOCITags(t *testing.T) {
 	reg := newFakeRegistry(t)
 	tool := reg.tool()
@@ -276,8 +276,8 @@ func TestFetchOCITags(t *testing.T) {
 	}
 }
 
-// TestFetchOCILimits: a manifest the registry sizes over the read is
-// refused unread, and a manifest of a kind the tool does not read is
+// TestFetchOCILimits: a manifest that the registry sizes over the read is
+// refused unread. A manifest of a kind that the tool does not read is
 // described by its digest and media type alone.
 func TestFetchOCILimits(t *testing.T) {
 	reg := newFakeRegistry(t)
@@ -305,7 +305,7 @@ func TestFetchOCILimits(t *testing.T) {
 	}
 }
 
-// TestFetchOCIDef: the description counts what a review may do and names
+// TestFetchOCIDef: the description counts what a review can do and names
 // the hosts the gateway allows.
 func TestFetchOCIDef(t *testing.T) {
 	def := (&fetchOCITool{fetchMax: 8, hosts: []string{"ghcr.io"}}).Def()

@@ -20,29 +20,30 @@ import (
 // runs around them.
 var readTools = []string{"read_file", "read_diff"}
 
-// readLedger records the repository files the agent has read, which a
-// finding must be on: a finding on a file the agent never read was made
-// from the diff alone, or from nothing, and the review is told to read
-// the file or leave the finding out while it still can, and the finding
-// is withheld once it has submitted. A read counts once the model has
-// seen what it returned: the reads of a step are pending until the next
-// request carries their results (see settling), so a submission in the
-// same answer as a read is not credited with it, whether the loop asks
-// the model again or ends on that answer.
+// readLedger records the repository files that the agent read, which a
+// finding must be on. A finding on a file that the agent never read was made
+// from the diff alone, or from nothing. The review is told to read the file
+// or leave the finding out while it still can. The finding is withheld once
+// the review submits. A read counts once the model sees what it returned.
+//
+// The reads of a step are pending until the next request carries their
+// results (see settling). So a submission in the same answer as a read is
+// not credited with it. That holds whether the loop asks the model again or
+// ends on that answer.
 type readLedger struct {
 	read, pending map[string]bool
 	// exempt says every file counts as read: a review of one step, which
-	// reads nothing, is not held to the gate, and its submission is still
+	// reads nothing, is not held to the gate. Its submission is still
 	// cleared of any unread the model wrote.
 	exempt bool
 	// refusedAt is how many files were read when check last refused a
-	// submission, -1 before it has, and delivered whether the model has
-	// seen that refusal, which it has once the next request is answered:
-	// a submission refused once is refused again only once the model has
-	// read more, so one that reads nothing is taken, and its findings
-	// withheld, rather than refused until the run's steps are spent. A
-	// second submission in the answer that was refused is refused too,
-	// since the model has not seen the refusal yet.
+	// submission, -1 before it refuses one. delivered is whether the model
+	// saw that refusal. The model sees it once the next request is answered.
+	// A submission refused once is refused again only after the model reads
+	// more. So a submission that reads nothing is taken, and its findings
+	// withheld, rather than refused until the run's steps are spent. A second
+	// submission in the answer that was refused is refused too, since the
+	// model did not see the refusal yet.
 	refusedAt int
 	delivered bool
 }
@@ -72,8 +73,8 @@ func newReadLedger(c *agent.Conversation) *readLedger {
 	return l
 }
 
-// add records the file input, a read tool's, names, pending the end of
-// the step.
+// add records the file that input, a read tool's, names. The file stays
+// pending until the end of the step.
 func (l *readLedger) add(input json.RawMessage) {
 	var req struct {
 		Path string `json:"path"`
@@ -101,9 +102,9 @@ func (l *readLedger) settle() {
 }
 
 // settling is stepper with l's pending reads settled as each request is
-// answered: the results of the last step's reads went to the model with
-// it, and a request refused before it reached the model, by a budget or
-// an outage, delivered nothing.
+// answered. The results of the last step's reads went to the model with
+// that request. A request refused before it reached the model, by a budget
+// or an outage, delivered nothing.
 func (l *readLedger) settling(stepper model.Stepper) model.Stepper {
 	return model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
 		resp, err := stepper.Step(ctx, req)
@@ -163,15 +164,15 @@ func (l *readLedger) unread(raw json.RawMessage) ([]string, error) {
 	return out, nil
 }
 
-// check refuses a submission with findings on files the agent has not
-// read, naming them, as agent.Run.Evidence: the model reads each file
-// around the finding's lines and confirms it, or leaves the finding out.
-// It refuses once per set of reads: a model that reads nothing more
-// before it submits again is not asked again.
+// check refuses a submission with findings on files the agent did not
+// read, and names those files, as agent.Run.Evidence. The model reads each
+// file around the finding's lines and makes sure that the finding holds, or
+// leaves the finding out. It refuses once per set of reads: a model that
+// reads nothing more before it submits again is not asked again.
 func (l *readLedger) check(raw json.RawMessage) error {
 	unread, err := l.unread(raw)
 	if err != nil || len(unread) == 0 || (l.refusedAt == len(l.read) && l.delivered) {
-		// Validate has refused what does not decode.
+		// Validate refused what does not decode.
 		return nil
 	}
 	l.refusedAt, l.delivered = len(l.read), false
@@ -184,21 +185,22 @@ func (l *readLedger) check(raw json.RawMessage) error {
 // which the model is not allowed and the ledger alone sets.
 const unreadKey = "unread"
 
-// mark is raw, the submission that ended the run, with each finding on a
-// file the agent never read marked as such, for the worker to withhold
-// it, and those findings named. Only the findings' unread keys change:
-// the rest of the submission, the summary with it, is kept as the model
-// wrote it, an empty diagram an incremental review answers with
-// included, and any unread the model wrote itself is dropped. A finding
-// that is not an object is left as it is, for Parse to drop. A
-// submission that needs no change is returned as it is.
+// mark is raw, the submission that ended the run. Each finding on a file
+// that the agent never read is marked as such, for the worker to withhold
+// it. mark also names those findings.
+//
+// Only the findings' unread keys change. The rest of the submission, the
+// summary with it, is kept as the model wrote it, an empty diagram an
+// incremental review answers with included. Any unread that the model wrote
+// itself is dropped. A finding that is not an object is left as it is, for
+// Parse to drop. A submission that needs no change is returned as it is.
 func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error) {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &top); err != nil {
 		return nil, nil, fmt.Errorf("runner: evidence: %w", err)
 	}
 	// The findings are the ones encoding/json reads, whatever case their
-	// key is in and however often it repeats; they are written back under
+	// key is in and however often it repeats. They are written back under
 	// the one key, the others dropped.
 	var chosen struct {
 		Findings json.RawMessage `json:"findings"`
@@ -239,12 +241,12 @@ func (l *readLedger) mark(raw json.RawMessage) (json.RawMessage, []string, error
 }
 
 // markFinding is f, one finding of a submission, with its unread key set
-// when its file was never read and dropped otherwise, nil when f needs
-// no change or is not an object; where names an unread finding. A
-// finding that is re-encoded is written as review.Finding reads it: the
-// keys of an object encode sorted, so one repeated in another case would
-// otherwise be read the other way round by the worker, and a key the
-// contract does not define is dropped as Parse drops it.
+// when its file was never read and dropped otherwise. It is nil when f needs
+// no change or is not an object. where names an unread finding. A finding
+// that is re-encoded is written as review.Finding reads it. The keys of an
+// object encode sorted, so the worker otherwise reads a key repeated in
+// another case the other way round. A key that the contract does not define
+// is dropped as Parse drops it.
 func (l *readLedger) markFinding(f json.RawMessage) (marked json.RawMessage, where string, err error) {
 	var keys map[string]json.RawMessage
 	if json.Unmarshal(f, &keys) != nil || keys == nil {

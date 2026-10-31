@@ -17,11 +17,12 @@ import (
 )
 
 // TestRepositoriesIntegration lists, against real Gitea and Forgejo
-// instances, every kind of account a connection serves and checks the
-// bot is given every repository it can reach there, and only those.
-// KRITIKA_TEST_FORGES names the instances, as name=URL pairs separated
-// by commas, each with a site admin KRITIKA_TEST_FORGE_ADMIN (user:password)
-// signs in as to build the fixtures; mise run test-forges starts them.
+// instances, every kind of account that a connection serves. It makes sure
+// that the bot is given every repository it can reach there, and only those.
+// KRITIKA_TEST_FORGES names the instances, as name=URL pairs separated by
+// commas. Each instance has a site admin that KRITIKA_TEST_FORGE_ADMIN
+// (user:password) signs in as to build the fixtures. mise run test-forges
+// starts them.
 func TestRepositoriesIntegration(t *testing.T) {
 	forges := os.Getenv("KRITIKA_TEST_FORGES")
 	if forges == "" {
@@ -178,8 +179,8 @@ type forgeAdmin struct {
 	user, password string
 }
 
-// call sends body to path as user, authenticated by password, and decodes
-// the answer into out, failing the test on any status but 2xx.
+// call sends body to path as user, authenticated by password, and decodes the
+// answer into out. It fails the test on any status but 2xx.
 func (a *forgeAdmin) call(user, password, method, path string, body, out any) {
 	a.t.Helper()
 	var r io.Reader
@@ -226,8 +227,8 @@ func (a *forgeAdmin) createUser(name string) {
 	}, nil)
 }
 
-// token is an access token of user with scopes, which only the user
-// itself may create.
+// token is an access token of user with scopes, which only the user itself
+// can create.
 func (a *forgeAdmin) token(user string, scopes ...string) string {
 	a.t.Helper()
 	var out struct {
@@ -242,7 +243,7 @@ func (a *forgeAdmin) createOrg(name, visibility string) {
 	a.do("POST", "/orgs", map[string]any{"username": name, "visibility": visibility}, nil)
 }
 
-// createOrgRepo creates a repository under org; an initialized one has a
+// createOrgRepo creates a repository under org. An initialized one has a
 // commit, which a fork needs.
 func (a *forgeAdmin) createOrgRepo(org, name string, private, initialized bool) {
 	a.t.Helper()
@@ -265,8 +266,9 @@ func (a *forgeAdmin) fork(owner, repo, user string) {
 	a.call(user, fixturePassword, "POST", "/repos/"+owner+"/"+repo+"/forks", map[string]any{}, nil)
 }
 
-// addTeam adds a team with write access to org, holding every repository
-// or only those added to it, with member in it, and returns its id.
+// addTeam adds a team with write access to org. The team holds every
+// repository or only those added to it, and member is in it. addTeam returns
+// the team's id.
 func (a *forgeAdmin) addTeam(org string, all bool, member string) int64 {
 	a.t.Helper()
 	var team struct {

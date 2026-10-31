@@ -13,7 +13,7 @@ import (
 )
 
 // repoFiles reads the repository files the spec names from the merge-base
-// tree, noting any it could not keep.
+// tree, and it notes any that it failed to keep.
 func repoFiles(base *object.Tree, paths []string) (repoconfig.Files, []string, error) {
 	files, notes, err := repoconfig.Collect(treeReader(base), paths...)
 	if err != nil {
@@ -23,7 +23,7 @@ func repoFiles(base *object.Tree, paths []string) (repoconfig.Files, []string, e
 }
 
 // treeReader reads a blob by path. Anything that is not a file in the tree
-// is fs.ErrNotExist, and a blob is read no further than one byte past the
+// is fs.ErrNotExist. A blob is read no further than one byte past the
 // per-file cap, so an oversized file costs no more memory than a kept one.
 func treeReader(tree *object.Tree) func(string) ([]byte, error) {
 	return func(name string) ([]byte, error) {

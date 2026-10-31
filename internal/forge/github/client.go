@@ -42,7 +42,7 @@ func NewClient(app *App, installationID int64) (*Client, error) {
 }
 
 // MergeBase implements forge.Client through the compare API, whose
-// merge_base_commit is exactly what GitHub diffs a PR against; the pull
+// merge_base_commit is exactly what GitHub diffs a PR against. The pull
 // request's number goes unused.
 func (c *Client) MergeBase(ctx context.Context, owner, repo string, _ int, base, head string) (string, error) {
 	cmp, _, err := c.api.Repositories.CompareCommits(ctx, owner, repo, base, head, &gh.ListOptions{PerPage: 1})
@@ -170,7 +170,7 @@ func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (for
 }
 
 // BotLogin implements forge.Client. An App's comments are authored by the
-// user "<slug>[bot]"; the slug comes from the App itself, so nothing in the
+// user "<slug>[bot]". The slug comes from the App itself, so nothing in the
 // configuration has to repeat it.
 func (c *Client) BotLogin(ctx context.Context) (string, error) {
 	c.mu.Lock()
@@ -257,10 +257,10 @@ func (c *Client) CreateReview(
 	return ids, nil
 }
 
-// Approve implements forge.Client. GitHub keeps every review a user
-// submits, so a re-run on the same head would stack a second approval;
-// the bot's reviews are listed first and one already approving the head
-// stands as it is.
+// Approve implements forge.Client. GitHub keeps every review that a user
+// submits, so a re-run on the same head will otherwise stack a second
+// approval. The bot's reviews are listed first, and one already approving the
+// head stands as it is.
 func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
 	approvals, err := c.approvals(ctx, owner, repo, number)
 	if err != nil {

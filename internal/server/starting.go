@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// Switch is the public listener's handler from the moment it binds: it
-// answers with one handler until Set hands it another, so the listener
-// can come up, and the replica be ready, before what it serves exists.
+// Switch is the public listener's handler from the moment it binds. It
+// answers with one handler until Set hands it another. So the listener can
+// come up, and the replica can be ready, before what it serves exists.
 type Switch struct {
 	h atomic.Pointer[http.Handler]
 }
@@ -31,12 +31,12 @@ func (s *Switch) ServeHTTP(w http.ResponseWriter, r *http.Request) { (*s.h.Load(
 // after the next attempt.
 const startingRetry = 5 * time.Second
 
-// Starting is what the public listener serves until the database answers
-// and the service is built on it: a 503 for everything, with a page a
-// browser renders and a plain line for a forge's delivery, which it refuses
-// rather than queues since nothing can hold it yet. The forge marks the
-// delivery failed; the leader's backstop poll picks the pull request up
-// once the service is up.
+// Starting is what the public listener serves until the database answers and
+// the service is built on it. It is a 503 for everything, with a page that a
+// browser renders and a plain line for a forge's delivery. It refuses the
+// delivery and does not queue it, since nothing can hold it yet. The forge
+// marks the delivery failed. The leader's backstop poll picks the pull
+// request up once the service is up.
 func Starting() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(startingRetry/time.Second)))

@@ -12,7 +12,7 @@
   import DiffFileView from './DiffFileView.svelte';
 
   // Files this long start collapsed, as does every file once the diff as a
-  // whole is this long, so a huge diff doesn't render thousands of rows up front.
+  // whole is this long. A huge diff then does not render thousands of rows up front.
   const FILE_LINES = 500;
   const TOTAL_LINES = 5000;
 
@@ -42,7 +42,7 @@
   const total = $derived(files.reduce((n, f) => n + f.lines.length, 0));
   const findings = $derived(d.findings);
   // A type change can have deletion and creation entries for the same path.
-  // Own each finding once, preferring the entry that contains its new-side line.
+  // Own each finding once, and prefer the entry that contains its new-side line.
   const owners = $derived.by(() => {
     const paths = new Map<string, number[]>();
     files.forEach((file, i) => paths.set(file.path, [...(paths.get(file.path) ?? []), i]));

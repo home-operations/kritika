@@ -61,8 +61,8 @@
   const total = (p: UsagePoint) => p.inputTokens + p.outputTokens;
   const value = (p: UsagePoint) => metric === 'cost' ? p.costUsd : total(p);
 
-  // The 24-hour period is the last 24 hours, not a whole day: a date would
-  // start it at midnight UTC.
+  // The 24-hour period is the last 24 hours, not a whole day: a date
+  // starts it at midnight UTC.
   const res = new Resource((signal) => {
     const now = Date.now();
     const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
@@ -73,7 +73,7 @@
     return getJSON<UsageSeries>(`${base}/usage?${p}`, signal);
   }, () => JSON.stringify([base, 'usage', group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
   const base = $derived(slug ? accountApi(slug) : '/api/v1');
-  // The month so far against the account's caps; the instance's is the
+  // The month so far against the account's caps. The instance's is the
   // accounts' added up, which no cap applies to.
   const summary = Resource.json<AccountSummary[]>(() => '/api/v1/accounts');
   const account = $derived(summary.data?.find((t) => t.slug === slug));

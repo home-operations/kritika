@@ -24,7 +24,7 @@ import (
 )
 
 // cacheProxy is a proxy with a cache in front of an HTTPS server that
-// answers for every host; the rules cache example.com unless they name
+// answers for every host. The rules cache example.com unless they name
 // hosts of their own.
 func cacheProxy(t *testing.T, rules egresspolicy.Rules, maxBytes int64, upstream http.HandlerFunc) *Proxy {
 	t.Helper()
@@ -206,10 +206,10 @@ func TestCacheBypass(t *testing.T) {
 	}
 }
 
-// TestCacheKeepsNamedDigests: a download whose digest the request names
-// is kept from any host and served again to another request naming it,
-// but never kept from a host the rules name as uncached or one with a
-// credential, and never for a request that names no digest.
+// TestCacheKeepsNamedDigests: a download whose digest the request names is
+// kept from any host and served again to another request naming it. It is
+// never kept from a host that the rules name as uncached or from a host with
+// a credential. It is never kept for a request that names no digest.
 func TestCacheKeepsNamedDigests(t *testing.T) {
 	for _, tt := range []struct {
 		name, host  string
@@ -264,8 +264,8 @@ func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
 	_, _ = io.WriteString(z, "zipped")
 	_ = z.Close()
 	over := strings.Repeat("x", 2048)
-	// Each names the digest of the very body it answers with, so what
-	// keeps it out of the cache is the case and not a digest mismatch.
+	// Each names the digest of the very body it answers with. So what keeps
+	// it out of the cache is the case and not a digest mismatch.
 	for _, tt := range []struct {
 		name, body string
 		respond    func(http.ResponseWriter)
@@ -367,10 +367,10 @@ func TestCacheFollowsRedirects(t *testing.T) {
 	}
 }
 
-// TestCacheKeepsNothingRedirectedOut: a fill whose redirect goes to a host
-// the cache keeps nothing from, one the rules name as uncached or one with
-// a credential, however the name is written, is not kept, and the
-// redirect is handed back.
+// TestCacheKeepsNothingRedirectedOut: a fill is not kept when its redirect
+// goes to a host that the cache keeps nothing from. That host is one that
+// the rules name as uncached or one with a credential, however the name is
+// written. The redirect is handed back.
 func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 	for _, tt := range []struct{ name, location string }{
 		{"to an uncached host", "https://api.example.net/blob"},
@@ -405,7 +405,7 @@ func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 }
 
 // TestCacheBoundsFills: a fill past maxFills, or past the bytes the fills
-// under way may write, is not made, and the request is forwarded.
+// under way can write, is not made, and the request is forwarded.
 func TestCacheBoundsFills(t *testing.T) {
 	c := &Cache{MaxBytes: 100}
 	for range maxFills {
@@ -495,7 +495,7 @@ func TestCacheRefetchesDamagedEntry(t *testing.T) {
 }
 
 // TestCacheKeepsOnlyTheDigest: a body without the digest the request
-// names is not kept, and the request is forwarded, so the runner sees what
+// names is not kept, and the request is forwarded. So the runner sees what
 // the origin serves and refuses it itself.
 func TestCacheKeepsOnlyTheDigest(t *testing.T) {
 	var calls atomic.Int32

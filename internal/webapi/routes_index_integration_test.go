@@ -62,8 +62,8 @@ func seedIndexChunks(t *testing.T, e *apiEnv) {
 	chunk(e.b, "only-in-b.go", 1, "func secretOfB() {}")
 }
 
-// indexGetter reads an index endpoint as who into out, failing on any
-// status but 200 or a body with account B's index in it.
+// indexGetter reads an index endpoint as who into out. It fails on any status
+// but 200 or a body with account B's index in it.
 func indexGetter(t *testing.T, e *apiEnv) func(who, path string, out any) {
 	return func(who, path string, out any) {
 		t.Helper()

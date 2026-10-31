@@ -20,10 +20,11 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// prepared is what afterRun hands the publish phase: the patch id, the
-// settings with the repository's .kritika.yaml applied and its templates
-// read, the notes the summary states, whether the review builds on the
-// last completed one, and the ids of the rules the agent was given.
+// prepared is what afterRun hands the publish phase. It holds the patch id
+// and the configuration, with the repository's .kritika.yaml applied and its
+// templates read. It also holds the notes that the summary states and whether
+// the review builds on the last completed one. Finally, it holds the ids of
+// the rules that the agent was given.
 type prepared struct {
 	patchID   string
 	eff       Effective
@@ -33,13 +34,13 @@ type prepared struct {
 	ruleIDs   []string
 }
 
-// afterRun re-checks the head under the account transaction and reads the
-// context pack: the runner decided whether the review is skipped and what
-// it builds on, and read the merge-base repository files. A skipped
-// review ends with a success status saying why. notes are the worker's
-// own on the repository's file. It returns a patch id when the review
-// should go on to publishing, and "" plus the terminal status it recorded
-// otherwise.
+// afterRun makes sure again that the head did not move, under the account
+// transaction, and reads the context pack. The runner decided whether the
+// review is skipped and what it builds on, and read the merge-base repository
+// files. A skipped review ends with a success status that says why. notes are
+// the worker's own notes on the repository's file. When the review goes on to
+// publishing, afterRun returns a patch id. Otherwise it returns "" plus the
+// terminal status that it recorded.
 func (w *Review) afterRun(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], account *configfile.Account, pr *pullRequest, eff Effective, notes []string,
 	client forge.Client, reviewID, runID string, prior priorReview, judged json.RawMessage, logger *slog.Logger,
@@ -54,8 +55,8 @@ func (w *Review) afterRun(
 		return prepared{}, decision.end.Status, decision.jobError()
 	}
 	if decision.end.Status == store.ReviewCanceled {
-		// A review a newer one replaced leaves the head's status to that
-		// one; a cancel someone asked for reports itself.
+		// A review that a newer one replaced leaves the head's status to that
+		// one. A cancel that someone asked for reports itself.
 		if decision.description == "" {
 			logger.Info("review canceled before preparation: a newer review replaced it")
 			return prepared{}, decision.end.Status, nil
@@ -114,9 +115,10 @@ type preparationRecord struct {
 }
 
 // recordPreparation gathers the facts for one outcome decision and persists
-// it atomically. A filtered skip is final only when labels remain unchanged
-// under the row lock shared with ingest and the River job completes in the
-// same transaction. Changed labels leave the job unfinished for a snooze.
+// it atomically. A filtered skip is final only when both of these hold:
+// labels remain unchanged under the row lock shared with ingest, and the
+// River job completes in the same transaction. Changed labels leave the job
+// unfinished for a snooze.
 func (w *Review) recordPreparation(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], prID, reviewID, runID, priorID string, judged json.RawMessage,
 	confidence configfile.Confidence,

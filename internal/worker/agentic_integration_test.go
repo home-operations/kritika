@@ -151,8 +151,8 @@ func (m *scriptedModel) reset(script modelScript) {
 	m.script, m.step = script, 0
 }
 
-// failMerge records a summary call that asked for asked and reports
-// whether it fails; m.mu is held.
+// failMerge records a summary call that asked for asked and reports whether
+// it fails. m.mu is held.
 func (m *scriptedModel) failMerge(asked string) bool {
 	m.merges = append(m.merges, asked)
 	if m.failMerges == 0 {
@@ -351,9 +351,9 @@ func (h *agenticHarness) setHead(t *testing.T, pr *pullRequest, head string) {
 	pr.headSHA = head
 }
 
-// startReview records a review of args.HeadSHA on pr as the worker would,
-// under a River job id of its own. The checks here review heads the pull
-// request never had, so its head is moved there for the start, which
+// startReview records a review of args.HeadSHA on pr as the worker does,
+// under a River job id of its own. The checks here review heads that the pull
+// request never had. So startReview moves its head there for the start, which
 // refuses a head that moved (store.StartReview), and back after it.
 func (h *agenticHarness) startReview(t *testing.T, args jobs.ReviewArgs, pr *pullRequest) store.Started {
 	t.Helper()
@@ -519,9 +519,9 @@ func (h *agenticHarness) agentRow(t *testing.T, reviewID string) agentRunRow {
 	return r
 }
 
-// conversation is the conversation the runner of reviewID kept, read as
-// that runner reads its own run, with the session it was kept under and
-// the run's id; found is false when it kept none.
+// conversation is the conversation that the runner of reviewID kept, read as
+// that runner reads its own run. It comes with the session that it was kept
+// under and the run's id. found is false when the runner kept none.
 func (h *agenticHarness) conversation(t *testing.T, reviewID string) (c agent.Conversation, session, runID string, found bool) {
 	t.Helper()
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
@@ -586,7 +586,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		// One review per check that ran an agent; the runner-only skips ran
+		// One review per check that ran an agent. The runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
 		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 22 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
@@ -596,13 +596,13 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a model route on a changed path picks the review's model", func(t *testing.T) { checkAgentRouted(t, h) })
 }
 
-// checkAgentRouted: an agent without categories on a path the pull
-// request changes replaces the default pass, running every step of the
-// review on its model, which the summary's
-// footer names with the route, and still does after a push that changes
-// other files, the route being judged over the whole pull request. The
-// default model's one slot is held throughout, which a review routed to
-// another model does not wait for.
+// checkAgentRouted: an agent without categories on a path that the pull
+// request changes replaces the default pass. It runs every step of the review
+// on its model, which the summary's footer names with the route. The agent
+// still replaces the default pass after a push that changes other files,
+// because the route is judged over the whole pull request. The default
+// model's one slot is held throughout, and a review routed to another model
+// does not wait for it.
 func checkAgentRouted(t *testing.T, h *agenticHarness) {
 	holder := int64(-1)
 	holdModelSlot(t, h, "gateway/agent-model", &holder)
@@ -644,11 +644,11 @@ func checkAgentRouted(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkAgentAliasPinned: a review whose model is a floating alias is
-// granted the model the alias selects, which every step goes to and its
-// kept conversation names, so it does not carry on one kept under another
-// model, and the next review, whose alias selects the same model, carries
-// its conversation on.
+// checkAgentAliasPinned: a review whose model is a floating alias is granted
+// the model that the alias selects. Every step goes to that model and its
+// kept conversation names it, so the review does not carry on a conversation
+// kept under another model. The next review, whose alias selects the same
+// model, carries its conversation on.
 func checkAgentAliasPinned(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	h.sm.catalog = []string{"agent-1", "agent-1.1", "agent-2-preview"}
@@ -750,11 +750,11 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	checkConversationKept(t, h, reviewID, system)
 }
 
-// checkAgentCarriesOn pushes a commit on top of the head checkAgentSubmits
-// reviewed. The review carries on that review's conversation under its
-// session: the provider is sent the earlier conversation whole, as its
-// last step sent it, then the answer to its submission and the turn that
-// says what changed since.
+// checkAgentCarriesOn pushes a commit on top of the head that
+// checkAgentSubmits reviewed. The review carries on that review's
+// conversation under its session. The provider is sent the earlier
+// conversation whole, as its last step sent it. Then it is sent the answer to
+// its submission and the turn that says what changed since.
 func checkAgentCarriesOn(t *testing.T, h *agenticHarness) {
 	firstID, _, _ := h.waitReview(t, h.head)
 	_, firstSession, firstRun, found := h.conversation(t, firstID)
@@ -800,11 +800,12 @@ func checkAgentCarriesOn(t *testing.T, h *agenticHarness) {
 	checkCarriedRecord(t, h, reviewID, runID, firstID, len(was)-1)
 }
 
-// checkCarriedRecord checks what the dashboard reads of reviewID, which
-// carried on the conversation of carried, whose last step sent sent
-// messages: its first recorded step holds only what it added to that
-// conversation, the system prompt again, and names carried, as no later
-// step does, and its agent run names carried too.
+// checkCarriedRecord makes sure that what the dashboard reads of reviewID is
+// correct.
+// reviewID carried on the conversation of carried, whose last step sent sent
+// messages. Its first recorded step holds only what it added to that
+// conversation and the system prompt again. That step names carried, as no
+// later step does, and its agent run names carried too.
 func checkCarriedRecord(t *testing.T, h *agenticHarness, reviewID, runID, carried string, sent int) {
 	t.Helper()
 	rows := h.modelCalls(t, h.account.ID(), reviewID)
@@ -836,9 +837,9 @@ func chatRequest(t *testing.T, body []byte) ([]json.RawMessage, json.RawMessage)
 }
 
 // checkGatewayConversation asks the gateway for a conversation the way a
-// runner does: it serves the one its token names, kept under the run's
-// model, and nothing for a token that names none, another model, or a
-// conversation holding the provider's key.
+// runner does. The gateway serves the conversation that its token names, kept
+// under the run's model. It serves nothing for a token that names none,
+// another model, or a conversation holding the provider's key.
 func checkGatewayConversation(t *testing.T, h *agenticHarness) {
 	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
@@ -912,10 +913,10 @@ func checkGatewayConversation(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkConversationKept checks the runner of reviewID kept its conversation
-// for the next re-review under its own session: the system prompt the
-// provider was sent, every message as the last step sent it, and the
-// model's submission last.
+// checkConversationKept makes sure that the runner of reviewID kept its
+// conversation for the next re-review under its own session: the system
+// prompt that the provider was sent, every message as the last step sent it,
+// and the model's submission last.
 func checkConversationKept(t *testing.T, h *agenticHarness, reviewID, system string) {
 	t.Helper()
 	c, session, runID, found := h.conversation(t, reviewID)
@@ -925,9 +926,10 @@ func checkConversationKept(t *testing.T, h *agenticHarness, reviewID, system str
 	}
 }
 
-// checkAgentTranscript checks that the gateway recorded a review's steps
-// so that they rebuild into the conversation the provider was last sent,
-// with no secret in any column and nothing another account can read.
+// checkAgentTranscript makes sure that the gateway recorded a review's steps
+// so that they rebuild into the conversation that the provider was last sent.
+// The record has no secret in any column and nothing that another account can
+// read.
 func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
 	t.Helper()
 	rows := h.modelCalls(t, h.account.ID(), reviewID)
@@ -985,11 +987,11 @@ func (h *agenticHarness) modelCalls(t *testing.T, accountID, reviewID string) []
 	return rows
 }
 
-// checkStepMasked checks that the run's recorded step kept its text with
+// checkStepMasked makes sure that the run's recorded step kept its text with
 // the run token and provider key in it masked.
-// checkStepSession steps once through the gateway on the run's behalf to
-// an opencode provider and checks that it was told the run as the step's
-// conversation, a run's steps are one, and the grant's effort.
+// checkStepSession steps once through the gateway on the run's behalf to an
+// opencode provider. It makes sure that the provider was told the run as the
+// step's conversation, because a run's steps are one, and the grant's effort.
 func (h *agenticHarness) checkStepSession(t *testing.T, reviewID, runID, repositoryID string) {
 	t.Helper()
 	// A run's steps are its own conversation, unless its token names the
@@ -1181,9 +1183,9 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 }
 
 // checkGatewayEndpoint calls the gateway the way a runner does, with a run
-// token minted for a run of its own: steps are answered through the
-// account's provider and charged, and refused once the budget is spent, for
-// a model other than the run's, or without a valid token.
+// token minted for a run of its own. Steps are answered through the account's
+// provider and charged. They are refused once the budget is spent, for a
+// model other than the run's, or without a valid token.
 func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"), Number: 1,
@@ -1205,7 +1207,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Far more than one step may answer with.
+		// Far more than one step can answer with.
 		// The text carries the run's token and the provider's key, which the
 		// transcript must mask.
 		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser,
@@ -1237,7 +1239,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 			t.Fatalf("token %q = %v", bad, err)
 		}
 	}
-	// A second step is still within the budget; the third is not.
+	// A second step is still within the budget. The third is not.
 	if _, err := step(token, gateway.ModelName); err != nil {
 		t.Fatal(err)
 	}
@@ -1262,7 +1264,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if _, err := step(token, gateway.ModelName); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("a revoked token = %v", err)
 	}
-	// The suites share one database; count only this account's tokens.
+	// The suites share one database. Count only this account's tokens.
 	var left int
 	if err := h.st.App().QueryRow(h.ctx, `SELECT count(*) FROM gateway_tokens WHERE account_id = $1`, h.account.ID()).Scan(&left); err != nil ||
 		left != 0 {
@@ -1396,7 +1398,7 @@ func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// inlineBodies lists the inline comment bodies; the caller holds the lock.
+// inlineBodies lists the inline comment bodies. The caller holds the lock.
 func inlineBodies(l *localForge) []string {
 	out := make([]string, len(l.inline))
 	for i, c := range l.inline {
@@ -1412,11 +1414,11 @@ type hookExecutor struct {
 
 	mu    sync.Mutex
 	after func()
-	// hold delays the next run before it starts, as a slow node would.
+	// hold delays the next run before it starts, as a slow node does.
 	hold time.Duration
-	// detach makes the next run end the way a deleted pod does: Run
-	// returns as soon as ctx ends, and the runner only sees the
-	// cancellation a moment later, as a terminating pod would.
+	// detach makes the next run end the way a deleted pod does: Run returns
+	// as soon as ctx ends, and the runner only sees the cancellation a moment
+	// later, as a terminating pod does.
 	detach bool
 	// unstarted, when set, ends the next run the way a pod that never
 	// started does: with the error, the kubelet's start time and no
@@ -1584,8 +1586,8 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	h.checkNoSecrets(t, `review_id = $1`, reviewID)
 }
 
-// checkAgentRules checks the runner was given the rules whose conditions
-// the worker found true of the pull request, and only those.
+// checkAgentRules makes sure that the runner was given the rules whose
+// conditions the worker found true of the pull request, and only those.
 func checkAgentRules(t *testing.T, system string) {
 	t.Helper()
 	if !strings.Contains(system, "\n- into-main: Keep main releasable.") || strings.Contains(system, "- renovate:") {
@@ -1693,7 +1695,7 @@ func checkAgentProviderMissing(t *testing.T, h *agenticHarness) {
 }
 
 // checkAgentCappedUnderLease caps a review on the account's daily count,
-// which earlier subtests have already spent, and checks the lease taken to
+// which earlier subtests already spent. It makes sure that the lease taken to
 // read the caps is released rather than held for the capped review.
 func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
 	capped := *h.file
@@ -1982,9 +1984,9 @@ func checkRunnerNeverStarted(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkRunnerOnlySkip has the runner skip a bot's rebase as unchanged
-// while the worker, reading the last review again after the run, does not:
-// the review the runner matched changes as its Job ends.
+// checkRunnerOnlySkip has the runner skip a bot's rebase as unchanged. The
+// worker reads the last review again after the run and does not skip it: the
+// review that the runner matched changes as its Job ends.
 func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc k() {}\n")
@@ -2039,9 +2041,9 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 }
 
 // checkLinesExcluded has the admin exclude by pr.lines under what a push
-// changes: the runner skips the review before any model call and the
-// commit status names the condition, while a review someone asks for runs
-// the agent anyway.
+// changes. The runner skips the review before any model call, and the commit
+// status names the condition. A review that someone asks for runs the agent
+// anyway.
 func checkLinesExcluded(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	h.sm.mu.Lock()
@@ -2137,11 +2139,12 @@ func checkAgentReadsDiff(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkAgentSizedForParts reviews a pull request the forge reports at the
-// size of #667's: its runner may split it into the eight parts agent.parts
-// allows, and its grant covers them. Its Job deadline covers them in rounds
-// of as many as run at once in the model slots the review holds, its own
-// and those it found free, all of which it lets go once it ends.
+// checkAgentSizedForParts reviews a pull request that the forge reports at
+// the size of #667's. Its runner can split it into the eight parts that
+// agent.parts allows, and its grant covers them. Its Job deadline covers them
+// in rounds of as many as run at once in the model slots that the review
+// holds. Those are its own slot and the slots it found free, all of which it
+// lets go once it ends.
 func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 	h.lf.setSize(forge.OpenPullRequest{Additions: 6824, Deletions: 291, ChangedFiles: 188})
 	defer h.lf.setSize(forge.OpenPullRequest{})
@@ -2192,17 +2195,18 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkAgentSplitsALargeReview reviews a change of two directories of
-// about 40 KiB each, which the forge reports large enough to split: each
-// part's agent submits under a part of its own, and the review is
-// published as one, its summary written from theirs by one more call,
-// which the review model fails twice, its provider's one retry included,
-// and review.fallback on the other provider answers. Two pushes of two
-// more such directories are then reviewed in parts too: on the first, the
-// fallback fails the call as well, and the summary joins the parts' own;
-// on the second, the second part never submits, and the review is
-// published with the first part's summary and the second's files named,
-// and is incomplete for the commit status.
+// checkAgentSplitsALargeReview reviews a change of two directories of about
+// 40 KiB each, which the forge reports large enough to split. Each part's
+// agent submits under a part of its own, and the review is published as one.
+// One more call writes its summary from theirs. The review model fails that
+// call twice, its provider's one retry included, and review.fallback on the
+// other provider answers.
+//
+// Two pushes of two more such directories are then reviewed in parts too. On
+// the first, the fallback fails the call as well, and the summary joins the
+// parts' own. On the second, the second part never submits. That review is
+// published with the first part's summary and the second's files named, and
+// is incomplete for the commit status.
 func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 	config := h.config
 	for _, r := range [][2]string{
@@ -2292,10 +2296,10 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		h.sm.mu.Lock()
 		asked := h.sm.merges
 		h.sm.mu.Unlock()
-		// The parts' steps are numbered across the run, the second part's
-		// two answers in prose too, and only the review that left a part's
-		// files unreviewed is partial; its one finished part's summary needs
-		// no merging.
+		// The parts' steps are numbered across the run, the second part's two
+		// answers in prose too. Only the review that left a part's files
+		// unreviewed is partial. Its one finished part's summary needs no
+		// merging.
 		wantStops, wantIndexes, wantMerges := []string{"submitted", "submitted"}, []int{0, 1}, 1
 		if round.script == scriptPartFails {
 			wantStops[1], wantIndexes, wantMerges = "no_submit", []int{0, 1, 2}, 0
@@ -2409,8 +2413,9 @@ func checkAgentLoadsSkill(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkRunnerFiltered checks the runner skipped reviewID as filtered by
-// the condition named, running no agent, and the commit status says so.
+// checkRunnerFiltered makes sure that the runner skipped reviewID as filtered
+// by the condition named and ran no agent, and that the commit status says
+// so.
 func (h *agenticHarness) checkRunnerFiltered(t *testing.T, reviewID, name string) {
 	t.Helper()
 	var skip, detail, recorded string
@@ -2479,10 +2484,10 @@ func (h *agenticHarness) rerun(t *testing.T, head string) string {
 	}
 }
 
-// checkGatewaySimilar indexes acme/widgets and checks stage 4 through the
-// gateway: the runner asks for it before its prompt, the gateway answers
-// from the index outside the changed paths and charges the embedding to
-// the run, and refuses a run without a pack or past its budget.
+// checkGatewaySimilar indexes acme/widgets and makes sure that stage 4 works
+// through the gateway. The runner asks for it before its prompt. The gateway
+// answers from the index outside the changed paths and charges the embedding
+// to the run. The gateway refuses a run without a pack or past its budget.
 func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 	withIndex, err := configfiletest.Parse(t, h.config+"embedding: { model: gateway/fake-embed, dims: 8 }\n")
 	if err != nil {

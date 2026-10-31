@@ -1,7 +1,8 @@
-// Package agent is a bounded tool loop over a git commit's tree: a Stepper
-// reads it through read_file, grep and list_files, and through run executes
-// allowlisted commands over a checkout of it when a repository allows them,
-// then must call submit_review to end the run.
+// Package agent is a bounded tool loop over a git commit's tree. A Stepper
+// reads the tree through read_file, grep, and list_files. When a repository
+// allows commands, the Stepper also executes allowlisted commands over a
+// checkout of the tree through run. The Stepper must then call submit_review
+// to end the run.
 package agent
 
 import (
@@ -15,8 +16,8 @@ import (
 	"github.com/home-operations/kritika/internal/chunk"
 )
 
-// binarySniffBytes is how many bytes at the start of a file are checked for
-// a NUL byte to decide it is binary.
+// binarySniffBytes is how many bytes at the start of a file isBinary searches
+// for a NUL byte to decide that the file is binary.
 const binarySniffBytes = 8 << 10
 
 // Tree is a read-only view over a commit's tree for the agent's tools. The
@@ -28,7 +29,7 @@ type Tree struct {
 }
 
 // NewTree wraps t. ignore is a set of doublestar globs that grep and
-// list_files skip; read_file may still read an ignored path.
+// list_files skip. read_file can still read an ignored path.
 func NewTree(t *object.Tree, ignore []string) *Tree {
 	return &Tree{root: t, ignore: ignore}
 }
@@ -36,8 +37,8 @@ func NewTree(t *object.Tree, ignore []string) *Tree {
 // ignored reports whether p matches one of the tree's ignore globs.
 func (t *Tree) ignored(p string) bool { return chunk.Matches(t.ignore, p) }
 
-// file returns the tree's file at p, with p cleaned and validated first.
-// The returned path is the cleaned form of p.
+// file returns the tree's file at p. It first cleans p and makes sure that p
+// is valid. The returned path is the cleaned form of p.
 func (t *Tree) file(p string) (*object.File, string, error) {
 	cleaned, err := cleanPath(p)
 	if err != nil {
@@ -69,16 +70,16 @@ func cleanPath(p string) (string, error) {
 	return cleaned, nil
 }
 
-// isBinary reports whether content has a NUL byte in its first 8 KiB, the
-// same heuristic git itself uses to skip a file in a text diff.
+// isBinary reports whether content has a NUL byte in its first 8 KiB. git
+// itself uses the same heuristic to skip a file in a text diff.
 func isBinary(content string) bool {
 	n := min(len(content), binarySniffBytes)
 	return strings.IndexByte(content[:n], 0) >= 0
 }
 
-// splitLines splits content into lines, stripping a trailing empty line
-// left by a final newline so a file's line count matches what an editor
-// would show.
+// splitLines splits content into lines. It strips a trailing empty line that
+// a final newline leaves, so that a file's line count matches what an editor
+// shows.
 func splitLines(content string) []string {
 	lines := strings.Split(content, "\n")
 	if n := len(lines); n > 0 && lines[n-1] == "" {

@@ -175,9 +175,9 @@ jobs:
 
       # Boots kritika serve as the chart deploys it: two replicas in a kind
       # cluster (the runner image ships kind, kubectl and helm) against a
-      # CloudNativePG Postgres with VectorChord, and checks readiness, helm
-      # test, one leader and the applied configuration. The only job that
-      # runs the binary end to end.
+      # CloudNativePG Postgres with VectorChord. It makes sure that the pods are
+      # ready, helm test passes, there is one leader, and the configuration is
+      # applied. The only job that runs the binary end to end.
       - name: Run smoke test
         run: mise run smoke
 
@@ -398,7 +398,7 @@ jobs:
     permissions: {}
     steps:
       # cancelled counts as failed: !cancelled() above still runs this job when
-      # individual needs were cancelled but the run was not, and a required job
+      # individual needs were cancelled but the run was not. A required job
       # that never reached a verdict must not clear the merge gate.
       - name: Any jobs failed?
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

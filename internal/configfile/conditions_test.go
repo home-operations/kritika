@@ -67,7 +67,7 @@ func TestApproveRejects(t *testing.T) {
 }
 
 // TestConfidenceWhen: confidence.when scopes scoring as review.approve's
-// conditions do approval; written empty, every pull request is scored.
+// conditions do approval. Written empty, every pull request is scored.
 func TestConfidenceWhen(t *testing.T) {
 	authEnv(t)
 	f := mustLoad(t, "confidence:\n  when:\n    - { name: renovate, expr: 'pr.headRef.startsWith(\"renovate/\")' }\n"+minimal)

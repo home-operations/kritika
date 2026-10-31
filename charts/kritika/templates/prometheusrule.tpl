@@ -24,7 +24,7 @@ metadata:
   {{- end }}
 spec:
   groups:
-    # Every replica exports kritika_leader; the one holding the lock exports 1.
+    # Every replica exports kritika_leader. The one holding the lock exports 1.
     # job is the metrics Service, so two releases in a namespace stay apart.
     - name: kritika.leader
       rules:

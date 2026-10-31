@@ -12,10 +12,11 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// FindingStatus is whether a finding was addressed, a later completed
-// review of its pull request, at another head, no longer reporting it, or
-// dismissed by a maintainer. An incremental review re-checks each finding
-// of the last one and reports it again only while it is still present.
+// FindingStatus is whether a finding was addressed or dismissed by a
+// maintainer. Addressed means that a later completed review of its pull
+// request, at another head, no longer reports it. An incremental review
+// looks again at each finding of the last one and reports it again only
+// while it is still present.
 type FindingStatus string
 
 // Finding statuses.
@@ -68,7 +69,7 @@ type PullRef struct {
 // for later, or never saw.
 type FindingPull string
 
-// The states a finding's pull request may be filtered by.
+// The states that a finding's pull request can be filtered by.
 const (
 	FindingPullOpen   FindingPull = "open"
 	FindingPullMerged FindingPull = "merged"
@@ -80,13 +81,14 @@ func (s FindingPull) Valid() bool {
 	return s == FindingPullOpen || s == FindingPullMerged || s == FindingPullClosed
 }
 
-// FindingFilter narrows ListAccountFindings. Zero fields match everything;
-// Category matches a finding of that kind; Rule matches a finding that
-// cites that rule id; Reviewer matches a finding that reviewer raised,
-// review.DefaultReviewer one that names no other; Path matches a path it
-// starts; DismissedBy matches a finding that source dismissed; Downvoted
-// matches a finding whose comment drew a 👎; Pull matches a finding whose
-// pull request stands so; Query matches a title, explanation, path or
+// FindingFilter narrows ListAccountFindings. Zero fields match everything.
+// Category matches a finding of that kind. Rule matches a finding that
+// cites that rule id. Reviewer matches a finding that reviewer raised, and
+// review.DefaultReviewer matches one that names no other. Path matches a
+// path that it starts. DismissedBy matches a finding that source dismissed.
+//
+// Downvoted matches a finding whose comment drew a 👎. Pull matches a finding
+// whose pull request stands so. Query matches a title, explanation, path or
 // pull request title substring, or a pull request number.
 type FindingFilter struct {
 	RepositoryID string
@@ -136,18 +138,18 @@ func (f FindingFilter) where() (string, pgx.StrictNamedArgs, error) {
 }
 
 // findingIssues are the common table expressions over every finding of
-// the account's completed reviews: seen is each report of one, and latest
+// the account's completed reviews. seen is each report of one. latest is
 // one row per pull request and fingerprint, as its latest review reported
-// it, with when it was first reported, whether a maintainer dismissed it,
-// and whether a later completed review at another head dropped it, which
-// a dismissed finding does not count as. A finding stored without a
-// fingerprint is its own.
+// it. That row holds when it was first reported, whether a maintainer
+// dismissed it, and whether a later completed review at another head dropped
+// it. A dismissed finding does not count as dropped. A finding stored
+// without a fingerprint is its own.
 var findingIssues = findingIssuesOf("")
 
 // findingIssuesOf is findingIssues over the completed reviews scope keeps:
 // a predicate on v, the review, led by AND, or "" for every one. It is the
 // one definition of what became of a finding, whoever asks. The base fragment
-// must stay parameter-free; scope must use the enclosing query's binding style.
+// must stay parameter-free. scope must use the enclosing query's binding style.
 func findingIssuesOf(scope string) string {
 	return `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.category, f.title, f.explanation, f.suggested_fix, f.replacement,
@@ -211,7 +213,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 }
 
 // RuleCitation is how many of a repository's findings cite a rule id, and
-// what became of those, counting a finding once per pull request as
+// what became of those. It counts a finding once per pull request, as
 // ListAccountFindings lists it.
 type RuleCitation struct {
 	Repository string
@@ -252,20 +254,21 @@ func RuleCitations(ctx context.Context, tx pgx.Tx) ([]RuleCitation, error) {
 	return out, nil
 }
 
-// FindingGroup is the findings a filter keeps that share a Key, counted: a
-// category, a rule id, an agent's name, review.DefaultReviewer for the
-// default pass, or a directory of Repository one below the filter's Path:
-// the Path and the next directory of a file's path after it, with a
-// trailing slash, so that a Path filter of it keeps the group's findings
-// and no other, or the Path itself for a file in no directory below it.
+// FindingGroup is the findings that a filter keeps and that share a Key,
+// counted. Key is a category, a rule id, an agent's name,
+// review.DefaultReviewer for the default pass, or a directory of Repository
+// one below the filter's Path. That directory is the Path and the next
+// directory of a file's path after it, with a trailing slash. So a Path
+// filter of it keeps the group's findings and no other. For a file in no
+// directory below the Path, it is the Path itself.
 type FindingGroup struct {
 	Repository string
 	Key        string
 	FindingCounts
 }
 
-// FindingSummary is the findings a filter keeps, counted once per pull
-// request as ListAccountFindings lists them, and the most common
+// FindingSummary is the findings that a filter keeps, counted once per pull
+// request as ListAccountFindings lists them. It also holds the most common
 // categories, rules, agents and directories among them.
 type FindingSummary struct {
 	FindingCounts

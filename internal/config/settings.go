@@ -12,8 +12,8 @@ import (
 	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
-// Settings holds non-secret application settings from the configuration file.
-// Operational settings can also be supplied through environment variables.
+// Settings holds non-secret application configuration from the configuration
+// file. Environment variables can also supply operational configuration.
 type Settings struct {
 	// Addr is the listen address of serve's one public listener: the
 	// webhooks, /hooks/{connection}, and the dashboard. Port 8080 matches
@@ -33,27 +33,26 @@ type Settings struct {
 	// public or management listeners.
 	GatewayAddr string `env:"KRITIKA_GATEWAY_ADDR" envDefault:":8082" yaml:"gatewayAddr,omitempty"`
 
-	// GatewayURL is the gateway's in-cluster address, http://host:port:
-	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, with their
-	// run token as its password, and a review's job document names it as
-	// its model endpoint. serve needs it, since every review reaches its
-	// model through it.
+	// GatewayURL is the gateway's in-cluster address, http://host:port: runner
+	// Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, with their run token as
+	// its password. A review's job document names it as its model endpoint.
+	// serve needs it, because every review reaches its model through it.
 	GatewayURL string `env:"KRITIKA_GATEWAY_URL" yaml:"gatewayUrl,omitempty"`
 
 	// GatewayTokenTTL is how long a run token outlives its runner Job's
-	// deadline before it expires on its own, in case the worker that
-	// minted it dies before revoking it.
+	// deadline before it expires on its own. This covers the case where the
+	// worker that minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIKA_GATEWAY_TOKEN_TTL" envDefault:"1h" yaml:"gatewayTokenTtl,omitempty"`
 
 	// GatewayCacheDir is where the gateway keeps what a repository's locked
-	// installs download, to serve each again to every runner that asks for
-	// the same URL; empty keeps none. The directory is the cache's alone,
-	// an emptyDir in the chart, so it lasts as long as the pod.
+	// installs download. The gateway serves each download again to every runner
+	// that asks for the same URL. Empty keeps none. The directory is the
+	// cache's alone, an emptyDir in the chart, so it lasts as long as the pod.
 	GatewayCacheDir string `env:"KRITIKA_GATEWAY_CACHE_DIR" yaml:"gatewayCacheDir,omitempty"`
-	// GatewayCacheMaxSize bounds what filesystem storage keeps, the least recently
-	// used downloads going first, and apart from that what its fetches
-	// under way may write, so the directory holds at most twice it. 2Gi
-	// holds a few dozen release archives.
+	// GatewayCacheMaxSize bounds what filesystem storage keeps, and the least
+	// recently used downloads go first. Apart from that, it bounds what the
+	// fetches under way can write, so the directory holds at most twice this
+	// size. 2Gi holds a few dozen release archives.
 	GatewayCacheMaxSize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_SIZE" envDefault:"2Gi" yaml:"gatewayCacheMaxSize,omitempty"`
 	// GatewayCacheStorage selects filesystem or s3. Filesystem needs no
 	// external storage and remains the default.
@@ -61,7 +60,7 @@ type Settings struct {
 	// GatewayCacheMaxEntrySize bounds one cached download. 256Mi accommodates
 	// typical release archives while bounding each fill's temporary storage.
 	GatewayCacheMaxEntrySize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE" envDefault:"256Mi" yaml:"gatewayCacheMaxEntrySize,omitempty"`
-	// GatewayCacheS3Endpoint is the object store's http(s) origin; it has no
+	// GatewayCacheS3Endpoint is the object store's http(s) origin. It has no
 	// default because each installation supplies its own storage service.
 	GatewayCacheS3Endpoint string `env:"KRITIKA_GATEWAY_CACHE_S3_ENDPOINT" yaml:"gatewayCacheS3Endpoint,omitempty"`
 	// GatewayCacheS3Region is the signing region. It is explicit because S3
@@ -70,17 +69,17 @@ type Settings struct {
 	// GatewayCacheS3Bucket is an existing bucket, never created by serve.
 	GatewayCacheS3Bucket string `env:"KRITIKA_GATEWAY_CACHE_S3_BUCKET" yaml:"gatewayCacheS3Bucket,omitempty"`
 	// GatewayCacheS3Prefix isolates this instance's entries. The default
-	// keeps them under gateway/; the storage format adds its own version.
+	// keeps them under gateway/. The storage format adds its own version.
 	GatewayCacheS3Prefix string `env:"KRITIKA_GATEWAY_CACHE_S3_PREFIX" envDefault:"gateway/" yaml:"gatewayCacheS3Prefix,omitempty"`
 	// GatewayCacheS3ForcePathStyle avoids requiring wildcard bucket DNS,
 	// which is uncommon for storage services inside a cluster.
 	GatewayCacheS3ForcePathStyle bool `env:"KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE" envDefault:"true" yaml:"gatewayCacheS3ForcePathStyle"`
 
-	// AquaRegistryURL is where the gateway fetches the aqua registry runners
-	// resolve a repository's tools against. aqua-registry's main branch by
-	// default, so a package or a definition it adds reaches the reviews
-	// without a kritika release; a release's tag holds the registry still,
-	// and a mirror serves a cluster that cannot reach GitHub.
+	// AquaRegistryURL is where the gateway fetches the aqua registry that
+	// runners resolve a repository's tools against. The default is
+	// aqua-registry's main branch, so a package or a definition that it adds
+	// reaches the reviews without a kritika release. A release's tag holds the
+	// registry still, and a mirror serves a cluster that cannot reach GitHub.
 	AquaRegistryURL string `env:"KRITIKA_AQUA_REGISTRY_URL" envDefault:"https://raw.githubusercontent.com/aquaproj/aqua-registry/main/registry.yaml" yaml:"aquaRegistryUrl,omitempty"` //nolint:lll // a struct tag does not wrap
 	// AquaRegistryRefresh is how often the gateway asks for the registry
 	// again, with the last answer's validators, so an unchanged registry
@@ -88,13 +87,14 @@ type Settings struct {
 	AquaRegistryRefresh time.Duration `env:"KRITIKA_AQUA_REGISTRY_REFRESH" envDefault:"1h" yaml:"aquaRegistryRefresh,omitempty"`
 
 	// WebURL is the dashboard's externally reachable origin: an absolute
-	// http(s) URL with a host and no query or fragment. It is how the
-	// dashboard builds absolute links (OIDC redirect URIs, session cookie
-	// scope) back to itself, and how a review's summary comment links its
-	// re-run badge to the pull request's page, so it must match how the
-	// ingress/HTTPRoute actually exposes it. A trailing slash is trimmed. Required to serve.
-	// Parsed once into an unexported *url.URL, read back with
-	// [Config.WebURLParsed].
+	// http(s) URL with a host and no query or fragment. The dashboard uses it
+	// to build absolute links (OIDC redirect URIs, session cookie scope) back
+	// to itself. A review's summary comment uses it to link its re-run badge to
+	// the pull request's page. For this reason, it must match how the
+	// ingress/HTTPRoute actually exposes it.
+	//
+	// A trailing slash is trimmed. WebURL is required to serve. It is parsed
+	// once into an unexported *url.URL, read back with [Config.WebURLParsed].
 	WebURL string `env:"KRITIKA_WEB_URL" yaml:"webUrl,omitempty"`
 
 	// DatabaseAppRole and DatabaseRunnerRole are the Postgres role names the
@@ -104,17 +104,18 @@ type Settings struct {
 	DatabaseRunnerRole string `env:"KRITIKA_DATABASE_RUNNER_ROLE" envDefault:"kritika_runner" yaml:"databaseRunnerRole,omitempty"`
 
 	// LeaderRetryInterval is how often a leader-eligible replica retries the
-	// leader lock and how often the holder verifies it still has it.
+	// leader lock and how often the holder makes sure that it still has it.
 	LeaderRetryInterval time.Duration `env:"KRITIKA_LEADER_RETRY_INTERVAL" envDefault:"15s" yaml:"leaderRetryInterval,omitempty"`
 
 	// ReviewWorkers is the capacity of each of the separate review and
-	// follow-up queues on one replica. Each job can hold a runner pod;
-	// model concurrency is bounded separately by account limits.
+	// follow-up queues on one replica. Each job can hold a runner pod.
+	// Account limits bound model concurrency separately.
 	ReviewWorkers int `env:"KRITIKA_REVIEW_WORKERS" envDefault:"2" yaml:"reviewWorkers,omitempty"`
-	// IndexWorkers is how many index jobs one worker replica runs at once;
-	// indexing is rate-limited apart from reviews so onboarding a large
-	// account cannot starve them. Each holds a runner pod too, so a replica
-	// runs at most 2*ReviewWorkers + IndexWorkers concurrent runner pods.
+	// IndexWorkers is how many index jobs one worker replica runs at once.
+	// Indexing is rate-limited apart from reviews, so onboarding a large
+	// account cannot starve them. Each index job holds a runner pod too, so a
+	// replica runs at most 2*ReviewWorkers + IndexWorkers concurrent runner
+	// pods.
 	IndexWorkers int `env:"KRITIKA_INDEX_WORKERS" envDefault:"1" yaml:"indexWorkers,omitempty"`
 
 	// ThreadWorkers reserves capacity for finding resolution/restoration updates.
@@ -122,7 +123,7 @@ type Settings struct {
 	// follow-ups without adding runner pods.
 	ThreadWorkers int `env:"KRITIKA_THREAD_WORKERS" envDefault:"1" yaml:"threadWorkers,omitempty"`
 
-	// Executor selects how runners run; see the Executor type.
+	// Executor selects how runners run. See the Executor type.
 	Executor Executor `env:"KRITIKA_EXECUTOR" envDefault:"kubernetes" yaml:"executor,omitempty"`
 
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
@@ -133,30 +134,31 @@ type Settings struct {
 	LogFormat string `env:"KRITIKA_LOG_FORMAT" envDefault:"json" yaml:"logFormat,omitempty"`
 
 	// PollInterval is how often the leader lists each app's open pull
-	// requests, its backstop for missed webhooks; 0s turns polling off.
+	// requests, its backstop for missed webhooks. 0s turns polling off.
 	PollInterval time.Duration `env:"KRITIKA_POLL_INTERVAL" envDefault:"10m" yaml:"pollInterval,omitempty"`
 	// PollLookback bounds how far back a first or long-idle poll looks, so a
 	// long outage does not list every open pull request's history at once.
 	PollLookback time.Duration `env:"KRITIKA_POLL_LOOKBACK" envDefault:"24h" yaml:"pollLookback,omitempty"`
 	// OnboardWindow is how many onboarding index jobs the leader keeps
-	// queued or running at once; accounts take turns, and the repositories
+	// queued or running at once. Accounts take turns, and the repositories
 	// whose pull requests moved last go first.
 	OnboardWindow int `env:"KRITIKA_ONBOARD_WINDOW" envDefault:"4" yaml:"onboardWindow,omitempty"`
 	// IndexGrace is how long the index of a repository that stopped running
 	// is kept, so turning it back on within the window reuses the index.
 	IndexGrace time.Duration `env:"KRITIKA_INDEX_GRACE" envDefault:"720h" yaml:"indexGrace,omitempty"`
-	// TranscriptRetention is how long a review's transcript is
-	// kept; at least a day, since members read it after the review.
+	// TranscriptRetention is how long a review's transcript is kept. It is at
+	// least a day, because members read it after the review.
 	TranscriptRetention time.Duration `env:"KRITIKA_TRANSCRIPT_RETENTION" envDefault:"720h" yaml:"transcriptRetention,omitempty"`
 	// DiffRetention is how long a review keeps the diff it was made from,
-	// the context it read and the repository files it named; at least a
-	// day, since members read them after the review. The review and its
+	// the context it read, and the repository files it named. It is at least a
+	// day, because members read them after the review. The review and its
 	// findings stay.
 	DiffRetention time.Duration `env:"KRITIKA_DIFF_RETENTION" envDefault:"720h" yaml:"diffRetention,omitempty"`
 
-	// Runner groups the runtime settings used to create runner Jobs.
+	// Runner groups the runtime configuration used to create runner Jobs.
 	Runner `yaml:"runner,omitempty"`
-	// fileEnv records file-supplied settings by env name for Env's source reporting.
+	// fileEnv records file-supplied configuration by env name for Env's source
+	// reporting.
 	fileEnv map[string]bool
 }
 

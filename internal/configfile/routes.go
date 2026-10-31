@@ -20,11 +20,11 @@ type ReviewModel struct {
 }
 
 // ModelRoute is an agent that replaces the default pass, as the review's
-// model routes it: the model a pull request one of When holds for is
-// reviewed on, none holding always, with the effort and fallback that
-// replace review.effort and review.fallback for it where it sets them.
-// When takes trigger conditions, judged over the whole pull request
-// before its review starts.
+// model routes it. It is the model that a pull request is reviewed on when
+// one of When holds for it. A route with no When always holds. It has the
+// effort and fallback that replace review.effort and review.fallback for the
+// pull request where it sets them. When takes trigger conditions, judged
+// over the whole pull request before its review starts.
 type ModelRoute struct {
 	Name     string        `json:"name,omitempty"`
 	Model    ModelRef      `json:"model"`
@@ -44,7 +44,7 @@ type namedRef struct {
 	ref *ModelRef
 }
 
-// refs are the models m names with the keys they are written under; nil m
+// refs are the models m names with the keys they are written under. A nil m
 // names none.
 func (m *ReviewModel) refs() []namedRef {
 	if m == nil {
@@ -63,11 +63,11 @@ func (m Models) NeedsDiff() bool {
 }
 
 // Pick is m as a pull request with the filter variables vars and the diff
-// d is reviewed on: the first route one of whose conditions holds replaces
+// d is reviewed on. The first route one of whose conditions holds replaces
 // the review model, and the effort and fallback where it sets them, and
-// Route names it; with none, m stands. Without d, nil when the diff could
-// not be read, a condition that needs it does not hold; one that fails to
-// evaluate does not hold either, and its error is returned for the log.
+// Route names it. With none, m stands. Without d, which is nil when the read
+// of the diff failed, a condition that needs it does not hold. One that fails
+// to evaluate does not hold either, and its error is returned for the log.
 func (m Models) Pick(vars map[string]any, d *Diff) (Models, error) {
 	if d != nil {
 		vars = maps.Clone(vars)
@@ -106,7 +106,7 @@ func firstHolding(conds []Filter, vars map[string]any, d *Diff) (Filter, bool, e
 	var errs []error
 	for _, c := range conds {
 		// Settings read back from JSON carry no compiled program, and a
-		// condition without one would hold on its globs alone.
+		// condition without one will hold on its globs alone.
 		if c.prg == nil && strings.TrimSpace(c.Expr) != "" {
 			if err := c.Compile(); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
@@ -129,8 +129,8 @@ func firstHolding(conds []Filter, vars map[string]any, d *Diff) (Filter, bool, e
 }
 
 // routeLabel names route r and the condition c that picked it, as
-// "deep (migrations)", the condition alone for a route with no name, or
-// the name alone for one with no conditions.
+// "deep (migrations)". It is the condition alone for a route with no name,
+// or the name alone for one with no conditions.
 func routeLabel(r ModelRoute, c Filter) string {
 	switch label := c.Label(); {
 	case r.Name == "":

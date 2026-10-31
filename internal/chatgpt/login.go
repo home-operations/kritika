@@ -34,13 +34,13 @@ var scopes = []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail, oidc
 type Login struct {
 	// Addr is the loopback listener, 127.0.0.1:1455 unless a test sets it.
 	Addr string
-	// Issuer is OpenAI's authorization server; a test sets its own.
+	// Issuer is OpenAI's authorization server. A test sets its own.
 	Issuer string
-	// Client makes the requests; nil means the default.
+	// Client makes the requests. nil means the default.
 	Client *http.Client
 	// Out is where the URL to open and the outcome go.
 	Out io.Writer
-	// Now is the clock; nil means time.Now.
+	// Now is the clock. nil means time.Now.
 	Now func() time.Time
 	// Registered, if set, saves the client ID a first sign-in's callback
 	// issued, before the code exchange: OpenAI asks that a failed attempt
@@ -120,7 +120,8 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 	tok, err := conf.Exchange(ctx, cb.code, oauth2.VerifierOption(verifier), oauth2.SetAuthURLParam("resource", Resource))
 	if err != nil {
 		if e, ok := errors.AsType[*oauth2.RetrieveError](err); ok {
-			// RetrieveError includes the raw response body, which may carry tokens.
+			// RetrieveError includes the raw response body, which can carry
+			// tokens.
 			return Credentials{}, fmt.Errorf("chatgpt: login: exchange: HTTP %d: %s", e.Response.StatusCode, e.ErrorCode)
 		}
 		return Credentials{}, fmt.Errorf("chatgpt: login: exchange: %w", err)
@@ -161,8 +162,8 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 	return c, nil
 }
 
-// say prints to the operator; a terminal that cannot be written to is not
-// the sign-in's concern.
+// say prints to the operator. A terminal that cannot be written to is not the
+// sign-in's concern.
 func (l Login) say(format string, args ...any) { _, _ = fmt.Fprintf(l.Out, format, args...) }
 
 // awaitCallback serves the loopback listener until the browser brings a

@@ -260,10 +260,10 @@ func TestResolveRefused(t *testing.T) {
 	}
 }
 
-// TestResolveLeavesRegistry: resolving a package for one platform leaves
-// the registry as it was for the next, a package with no
-// version_constraint included, whose overrides aqua applies in place, and
-// resolutions may run at once.
+// TestResolveLeavesRegistry: resolving a package for one platform leaves the
+// registry as it was for the next. That includes a package with no
+// version_constraint, whose overrides aqua applies in place. Resolutions can
+// run at once.
 func TestResolveLeavesRegistry(t *testing.T) {
 	r := fixtureRegistry(t)
 	arm := Platform{OS: "linux", Arch: "arm64", LibC: "glibc"}

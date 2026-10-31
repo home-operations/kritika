@@ -28,21 +28,24 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
-// Cache keeps the bodies of upgraded downloads a runner names the digest
-// of, by that digest, so a tool every review installs is fetched from
-// upstream once rather than once a run. A fill hashes what it fetches and
-// keeps it only when it has the digest asked for, so an entry is the body
-// any request naming that digest accepts, whichever request fetched it
-// first. It keeps only what any runner could fetch for itself: a GET or
-// HEAD, with no query, to a host the rules do not keep out, that carries no
-// credential and gets none from the proxy, answered by a response that does
-// not ask to stay private.
+// Cache keeps the bodies of upgraded downloads for which a runner names the
+// digest, and it keeps each body by that digest. So a tool that every review
+// installs is fetched from upstream once, not once per run. A fill hashes what
+// it fetches and keeps it only when it has the digest asked for. So an entry
+// is the body that any request naming that digest accepts, whichever request
+// fetched it first.
+//
+// The cache keeps only what any runner can fetch for itself. That is a GET or
+// HEAD with no query, to a host that the rules do not keep out. The request
+// carries no credential and gets none from the proxy. The response that
+// answers it does not ask to stay private.
 type Cache struct {
 	// Dir holds one file per digest. It is the cache's alone.
 	Dir string
-	// MaxBytes bounds what Dir keeps, the least recently used entries
-	// going first, and apart from that what the fills under way may write,
-	// so Dir holds at most twice it. A body that would not fit is not kept.
+	// MaxBytes bounds what Dir keeps, and the least recently used entries
+	// go first. Apart from that, it bounds what the fills under way can
+	// write. So Dir holds at most twice MaxBytes. A body that does not fit
+	// is not kept.
 	MaxBytes int64
 	// MaxEntryBytes bounds one download, independently of the local budget.
 	MaxEntryBytes int64
@@ -56,7 +59,7 @@ type Cache struct {
 	// entries serializes the fills of one entry, so a fill that finished
 	// between a request's miss and its own fill is not made again.
 	entries keyLocks
-	// filling counts the fills under way and reserved the bytes they may
+	// filling counts the fills under way and reserved the bytes they can
 	// write, guarded by underway.
 	underway sync.Mutex
 	filling  int
@@ -69,11 +72,11 @@ type Digest struct {
 	Algorithm, Hex string
 }
 
-// digestSizes are the algorithms a Digest may name, by their hash's size.
+// digestSizes are the algorithms a Digest can name, by their hash's size.
 var digestSizes = map[string]int{"sha256": sha256.Size, "sha512": sha512.Size}
 
 // ParseDigest reads s, "<algorithm>:<hex>", as a runner names the digest
-// a download must have; false for anything else.
+// a download must have. It returns false for anything else.
 func ParseDigest(s string) (Digest, bool) {
 	algorithm, value, _ := strings.Cut(s, ":")
 	size := digestSizes[algorithm]
@@ -112,8 +115,8 @@ func DigestOf(ctx context.Context) (Digest, bool) {
 	return d, ok
 }
 
-// OpenCache is a cache in dir, which it creates, checks it can write and
-// clears of the fills a previous process left unfinished.
+// OpenCache is a cache in dir. It creates dir, makes sure that it can write
+// there, and clears dir of the fills that a previous process left unfinished.
 func OpenCache(dir string, maxBytes int64) (*Cache, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
@@ -161,12 +164,12 @@ const (
 	maxEntryHeader = 16 << 10
 	// maxRedirects bounds the redirects one fill follows.
 	maxRedirects = 10
-	// maxFills bounds the fills under way at once, each holding an
-	// upstream connection; a request past them is forwarded.
+	// maxFills bounds the fills under way at once, and each fill holds an
+	// upstream connection. A request past them is forwarded.
 	maxFills = 8
 )
 
-// cacheable reports whether r, an upgraded request to host, may be
+// cacheable reports whether r, an upgraded request to host, can be
 // answered from the cache: one marked ForDigest, to any host the rules do
 // not name as uncached. A URL with a query is not: a signed URL's query is
 // its credential.
@@ -201,10 +204,10 @@ func upstreamURL(u *url.URL, host string) string {
 	return target.String()
 }
 
-// cached answers r, an upgraded request to host the cache may answer, from
-// the entry for its digest, filling it first when there is none. It
-// returns false, having written nothing, when the entry cannot be had, and
-// r is then forwarded as any other request is.
+// cached answers r, an upgraded request to host that the cache can answer,
+// from the entry for its digest. If there is no entry, cached fills it first.
+// If cached cannot get the entry, it writes nothing and returns false. r is
+// then forwarded as any other request is.
 func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool {
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
 	defer cancel()
@@ -251,8 +254,8 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	h.Set("Etag", `"`+d.String()+`"`)
 	// Bounded as a forwarded response is, so a client that stops reading
 	// cannot hold an entry's file, evicted or not, open for longer. The
-	// gateway's writer supports the deadline; one that does not leaves the
-	// response unbounded, as forwarding would be without its context.
+	// gateway's writer supports the deadline. A writer that does not support it
+	// leaves the response unbounded, as forwarding is without its context.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(upgradeTimeout))
 	p.observe("http", OutcomeAllowed)
 	p.Logger.Debug("egress cache", "outcome", outcome, "host", host, "method", r.Method, "path", r.URL.Path, "bytes", entry.Size)
@@ -260,19 +263,19 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	return true
 }
 
-// fill fetches target, following its redirects, and keeps its body under
-// key, d's, when it has d. Every request waiting on key waits on this one
-// fetch, so it does not end with the request that started it; it is
-// bounded as one upgraded request is, and is not made at all, leaving the
-// request to be forwarded, while maxFills are under way or their bytes hold
-// MaxBytes. The fetch is the gateway's own, with a User-Agent and Accept of
-// its own.
+// fill fetches target and follows its redirects. It keeps the body under
+// key, which is d's key, when the body has d. Every request waiting on key
+// waits on this one fetch, so the fetch does not end with the request that
+// started it. The fetch is bounded as one upgraded request is. While maxFills
+// are under way or their bytes hold MaxBytes, the fetch is not made at all,
+// and the request is left to be forwarded. The fetch is the gateway's own,
+// with a User-Agent and Accept of its own.
 func (p *Proxy) fill(ctx context.Context, key string, d Digest, target string) error {
 	lock := p.Cache.entries.lock(key)
 	defer p.Cache.entries.unlock(key, lock)
 	// A fill that finished between a request's miss and this one is not
-	// repeated. Only this directory is checked: the bucket was asked a
-	// moment ago, and may be unreachable. An entry over the limit, kept from
+	// repeated. The fill looks only in this directory: the bucket was asked a
+	// moment ago, and can be unreachable. An entry over the limit, kept from
 	// before it was lowered, does not count: load refuses it, so a fill
 	// must replace it.
 	if f, entry, _, err := p.Cache.open(key); err == nil {
@@ -367,10 +370,10 @@ func (p *Proxy) fetch(ctx context.Context, target string) (*http.Response, error
 }
 
 // checkRedirect lets a fill follow a redirect only where the runner's own
-// request could go, over HTTPS on 443 to a host the rules admit and the
-// cache does not keep out, and only as a request with no credential, from
-// a response that does not ask to stay private: Go's client turns a URL's
-// userinfo into Basic authorization.
+// request can go: over HTTPS on 443, to a host that the rules admit and the
+// cache does not keep out. The fill follows it only as a request with no
+// credential, from a response that does not ask to stay private: Go's client
+// turns a URL's userinfo into Basic authorization.
 func (p *Proxy) checkRedirect(req *http.Request, via []*http.Request) error {
 	switch {
 	case len(via) >= maxRedirects:
@@ -397,7 +400,7 @@ func (p *Proxy) checkRedirect(req *http.Request, via []*http.Request) error {
 // private reports whether a response's headers keep it from being shared
 // between runs: a cookie it sets, or a Cache-Control of private or
 // no-store. no-cache, which a GitHub release download's redirect carries,
-// only asks a cache to check before reuse.
+// only asks a cache to make sure that a response is still valid before reuse.
 func private(h http.Header) bool {
 	if len(h.Values("Set-Cookie")) > 0 {
 		return true
@@ -426,8 +429,8 @@ func (c *Cache) begin() bool {
 	return true
 }
 
-// reserve claims size bytes for a fill under way, false when the fills
-// under way would then hold more than MaxBytes.
+// reserve claims size bytes for a fill under way. It returns false if the
+// claim will make the fills under way hold more than MaxBytes.
 func (c *Cache) reserve(size int64) bool {
 	c.underway.Lock()
 	defer c.underway.Unlock()
@@ -447,10 +450,10 @@ func (c *Cache) end(reserved int64) {
 	c.reserved -= reserved
 }
 
-// open opens the entry under key and marks it used, returning its file,
-// what its first line records and where its body starts. An entry whose
-// file does not hold what its first line says is removed, to be fetched
-// again.
+// open opens the entry under key and marks it used. It returns the entry's
+// file, what its first line records, and where its body starts. An entry
+// whose file does not hold what its first line says is removed, to be
+// fetched again.
 func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 	path := filepath.Join(c.Dir, key)
 	f, err := os.Open(path)
@@ -461,20 +464,20 @@ func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 	if err != nil {
 		info, serr := f.Stat()
 		_ = f.Close()
-		// Only this file: a fill may have put a sound one in its place.
+		// Only this file: in between, a fill can put a sound one in its place.
 		if cur, cerr := os.Stat(path); serr == nil && cerr == nil && os.SameFile(info, cur) {
 			_ = os.Remove(path)
 		}
 		return nil, cacheEntry{}, 0, err
 	}
 	now := time.Now()
-	// Eviction ranks entries by this time; failing to set it only ages
+	// Eviction ranks entries by this time. Failing to set it only ages
 	// this entry.
 	_ = os.Chtimes(path, now, now)
 	return f, entry, offset, nil
 }
 
-// readEntry reads the first line of f, an entry's file, and checks that
+// readEntry reads the first line of f, an entry's file, and makes sure that
 // the body after it is as long as the line says.
 func readEntry(f *os.File) (cacheEntry, int64, error) {
 	line, err := bufio.NewReader(io.LimitReader(f, maxEntryHeader)).ReadBytes('\n')
@@ -496,8 +499,9 @@ func readEntry(f *os.File) (cacheEntry, int64, error) {
 }
 
 // store writes body, entry.Size bytes of it, as the entry under key, in
-// place of any entry there, then evicts what no longer fits. check, when
-// set, is why what body held may not be kept, asked once it is all read.
+// place of any entry there. Then it evicts what no longer fits. check, when
+// set, returns why store cannot keep what body held. store asks it once body
+// is all read.
 func (c *Cache) store(key string, entry cacheEntry, body io.Reader, check func() error) error {
 	line, err := json.Marshal(entry)
 	if err != nil {
@@ -536,9 +540,9 @@ func (c *Cache) store(key string, entry cacheEntry, body io.Reader, check func()
 }
 
 // evict removes the least recently used entries until Dir holds no more
-// than MaxBytes, sparing keep, the entry just stored. A request already
+// than MaxBytes. It spares keep, the entry just stored. A request already
 // serving an evicted entry reads it to the end from its open file. Fills
-// that a crash left behind go once no fill could still be writing them.
+// that a crash left behind go once no fill can still be writing them.
 // Eviction is best effort: an entry it cannot remove stays until the next.
 func (c *Cache) evict(keep string) {
 	c.evicting.Lock()

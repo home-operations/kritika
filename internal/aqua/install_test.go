@@ -134,8 +134,8 @@ func installer(srv *httptest.Server) *Installer {
 	return &Installer{Client: srv.Client(), APIURL: srv.URL}
 }
 
-// install installs p as a caller does: its checksum first, then the
-// download checked against it.
+// install installs p as a caller does: its checksum first, then the download,
+// with a check against that checksum.
 func install(ctx context.Context, in *Installer, p *Package, dir string) (map[string]string, error) {
 	sum, err := in.Checksum(ctx, p)
 	if err != nil {

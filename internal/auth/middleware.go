@@ -12,7 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// User is a human who has signed in to the dashboard.
+// User is a human who signed in to the dashboard.
 type User = store.User
 
 // Principal is who an authenticated request acts as, and what the grant
@@ -30,7 +30,7 @@ type Principal struct {
 	Accounts map[string]bool
 }
 
-// CanRead reports whether p may read the account's content.
+// CanRead reports whether p can read the account's content.
 func (p *Principal) CanRead(accountID string) bool {
 	return p != nil && (p.Admin || p.AllAccounts || p.Accounts[accountID])
 }
@@ -52,10 +52,10 @@ func PrincipalFrom(ctx context.Context) *Principal {
 
 // Authenticate resolves the session cookie, if any, to a Principal on the
 // request's context. A request without a valid session passes through
-// unauthenticated; RequirePrincipal is what rejects it. So does a session
-// whose sign-in the file no longer configures, now points at another
-// issuer, or has had its role configuration changed since the session
-// began.
+// unauthenticated. RequirePrincipal is what rejects it. A session also passes
+// through unauthenticated in these cases: the file no longer configures its
+// sign-in, its sign-in now points at another issuer, or its role
+// configuration changed after the session began.
 func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -74,9 +74,9 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
-// session resolves r's session cookie to the session it names, false when
-// there is none, it has expired or been signed out, or file no longer
-// honours it.
+// session resolves r's session cookie to the session it names. It returns
+// false in these cases: there is no session, the session expired or was
+// signed out, or file no longer honors it.
 func (h *Handler) session(r *http.Request, file *configfile.File) (store.Session, bool, error) {
 	c, err := r.Cookie(SessionCookieName(h.webURL))
 	if err != nil || c.Value == "" {
@@ -105,8 +105,8 @@ func (h *Handler) Stands(r *http.Request) bool {
 	return ok
 }
 
-// honoured reports whether a session still stands under file: its sign-in
-// is configured, points where it did, and would decide grants as it did.
+// honoured reports whether a session still stands under file: its sign-in is
+// configured, points where it did, and decides grants as it did.
 func honoured(file *configfile.File, sess store.Session) bool {
 	auth := file.Auth
 	provider := sess.Identity.Provider
@@ -233,8 +233,8 @@ func (h *Handler) SameOrigin(next http.Handler) http.Handler {
 }
 
 // normalizeOrigin lowercases an origin's scheme and host and drops a default
-// port, so https://host:443 and https://host compare equal; anything that
-// is not an http or https origin normalises to "".
+// port, so https://host:443 and https://host compare equal. Anything that is
+// not an http or https origin normalizes to "".
 func normalizeOrigin(s string) string {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {

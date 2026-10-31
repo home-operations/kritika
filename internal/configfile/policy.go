@@ -36,11 +36,11 @@ const (
 	keySettle         = "trigger.settle"
 )
 
-// Policies are the repository settings an admin writes at the file's root,
-// as the configuration spells them; a dotted key is nested. Sources
-// reports where each comes from. What the repository's own .kritika.yaml
-// may do with a setting is repoconfig.Merge's to say. Instance-wide
-// settings are not in it.
+// Policies are the repository configuration keys that an admin writes at the
+// file's root, as the configuration spells them. A dotted key is nested.
+// Sources reports where each comes from. What the repository's own
+// .kritika.yaml can do with a key is repoconfig.Merge's to say. Instance-wide
+// configuration is not in it.
 var Policies = []string{
 	"enabled",
 	keyModel,
@@ -84,10 +84,10 @@ var Policies = []string{
 	"limits",
 }
 
-// SpecValue is the value spec, the file's settings (a *Defaults or
-// *Overrides), writes for key, found by the names the configuration
-// spells, and whether the spec has the key at all. A nested key under an
-// unset block is that block's zero value.
+// SpecValue is the value that spec, the file's configuration (a *Defaults or
+// *Overrides), writes for key. It finds the value by the names that the
+// configuration spells. It also says whether the spec has the key at all. A
+// nested key under an unset block is that block's zero value.
 func SpecValue(spec any, key string) (any, bool) {
 	v := reflect.ValueOf(spec)
 	for part := range strings.SplitSeq(key, ".") {

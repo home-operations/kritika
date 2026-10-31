@@ -7,7 +7,7 @@ import (
 )
 
 // FitDiff keeps the whole file sections of a unified diff that fit in room
-// bytes, in order, and reports the paths of those it left out.
+// bytes, in order. It reports the paths of those that it left out.
 func FitDiff(diff string, room int) (string, []string) {
 	if len(diff) <= room {
 		return diff, nil
@@ -30,8 +30,8 @@ type fileSection struct {
 	text string
 }
 
-// FileDiffs is a unified diff's file sections, each by the path the
-// changed-files list names it by, ending in one newline.
+// FileDiffs is a unified diff's file sections, each by the path that the
+// changed-files list names it by. Each section ends in one newline.
 func FileDiffs(diff string) map[string]string {
 	out := map[string]string{}
 	for _, s := range splitFiles(diff) {
@@ -40,10 +40,10 @@ func FileDiffs(diff string) map[string]string {
 	return out
 }
 
-// fileMarks is, by path, what the changed-files list says after a file the
-// diff adds, deletes or renames; a file it only modifies has no mark. A new
-// file is worth naming: every line of it is one a finding may anchor to,
-// whether or not its section fits in the prompt.
+// fileMarks is, by path, what the changed-files list says after a file that
+// the diff adds, deletes, or renames. A file that it only modifies has no
+// mark. A new file is worth naming: every line of it is one that a finding
+// can anchor to, whether or not its section fits in the prompt.
 func fileMarks(diff string) map[string]string {
 	marks := map[string]string{}
 	for _, s := range splitFiles(diff) {

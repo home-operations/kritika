@@ -54,7 +54,7 @@ func TestEgressRefusals(t *testing.T) {
 		return ok
 	}
 	// Two refusals of one host count on one row, and one for another
-	// reason on a row of its own; a third host is past the run's bound and
+	// reason on a row of its own. A third host is past the run's bound and
 	// goes unrecorded, while the first host still counts.
 	for i, want := range []struct {
 		runID, repoID, kind, host, reason string

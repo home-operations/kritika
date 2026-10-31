@@ -20,9 +20,9 @@ import (
 	"github.com/klauspost/compress/snappy"
 )
 
-// signedFixture is a registry with a package for each signature the
-// runner checks, as aqua-registry declares them, whose files testdata
-// holds as their releases published them.
+// signedFixture is a registry with a package for each signature that the
+// runner verifies, as aqua-registry declares them. testdata holds the
+// files of those packages as their releases published them.
 const signedFixture = `packages:
   - type: github_release
     repo_owner: home-operations
@@ -376,9 +376,9 @@ func TestVerifySignatures(t *testing.T) {
 	}
 }
 
-// TestChecksumFileSigned: a checksum file the registry declares a minisign
-// signature of is read and checked before its checksum is taken, and one
-// that does not match its signature is refused.
+// TestChecksumFileSigned: a checksum file that the registry declares a
+// minisign signature of is read. The signature check runs before its checksum
+// is taken, and one that does not match its signature is refused.
 func TestChecksumFileSigned(t *testing.T) {
 	sum := fixtureFile(t, "buf-sha256.txt")
 	for _, tt := range []struct {

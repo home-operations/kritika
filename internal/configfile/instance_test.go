@@ -57,7 +57,7 @@ func TestFileInstanceDefaults(t *testing.T) {
 		t.Fatalf("file layer = %+v", layer)
 	}
 
-	// An account's own provider may not take a name the instance's use.
+	// An account's own provider cannot take a name that the instance's use.
 	mine := strings.Replace(fileWithDefaults, "  acme: {}",
 		"  acme: { providers: { openrouter: { type: openai, apiKey: { env: TEST_PROVIDER_KEY } } } }", 1)
 	if _, err := Parse([]byte(mine)); err == nil || !strings.Contains(err.Error(), "the instance declares a provider by that name") {
@@ -65,7 +65,7 @@ func TestFileInstanceDefaults(t *testing.T) {
 	}
 }
 
-// TestProviderRetries checks the file's retry bounds.
+// TestProviderRetries makes sure that the file's retry bounds hold.
 func TestProviderRetries(t *testing.T) {
 	setInstanceEnv(t)
 	withRetries := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, retries: 2 }", 1)

@@ -37,9 +37,9 @@
   function setFilter(patch: RepoFilter): void {
     replace({ name: 'repos', slug, filter: repoFilter({ ...filter, ...patch }) });
   }
-  // Which repositories the list shows: by default those kritika can run,
-  // neither archived nor forks but the forks turned on; or the forks, the
-  // public ones, or the archived ones.
+  // Which repositories the list shows. By default, it shows those kritika can
+  // run: neither archived nor forks, except for the forks turned on. Otherwise,
+  // it shows the forks, the public ones, or the archived ones.
   const kind = $derived(filter?.type ?? '');
   let filterEl = $state<HTMLInputElement | undefined>(undefined);
 
@@ -97,7 +97,7 @@
     if (r.index.backlog) return 2 + r.index.backlog / 1e6;
     return r.index.lastRunStatus ? runRank[r.index.lastRunStatus] : 7;
   }
-  // Sorting orders the repositories loaded so far; the server pages them by name.
+  // Sorting orders the repositories loaded so far. The server pages them by name.
   const sorter = new Sorter<'name' | 'enabled' | 'index' | 'review', Repository>({
     name: (r) => r.fullName,
     enabled: (r) => (isOn(r) ? 0 : 1),

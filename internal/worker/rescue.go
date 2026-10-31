@@ -28,7 +28,7 @@ const (
 // left, record as their error.
 const rescueReason = "worker heartbeat lost"
 
-// RunDeleter deletes a run's Kubernetes Job, pod and Secret with it; a Job
+// RunDeleter deletes a run's Kubernetes Job, pod and Secret with it. A Job
 // already gone counts as deleted.
 type RunDeleter interface {
 	DeleteRun(ctx context.Context, runID string) error
@@ -49,22 +49,21 @@ type rescueStore interface {
 	WithPublicationLock(ctx context.Context, pullRequestID string, fn func(context.Context) error) error
 }
 
-// Rescuer hands the jobs of a replica that died back to the queue, and
-// reaps the runner Jobs they left. River's own rescuer must wait out the
-// longest job timeout before it may touch a running job, hours; a job
-// whose JobHeartbeat has gone stale is known dead long before that. A
-// leader duty.
+// Rescuer hands the jobs of a replica that died back to the queue, and reaps
+// the runner Jobs they left. River's own rescuer must wait out the longest
+// job timeout, hours, before it can touch a running job. A job whose
+// JobHeartbeat went stale is known dead long before that. A leader duty.
 type Rescuer struct {
 	Store rescueStore
-	// Runs deletes the Kubernetes Job of an orphaned run; nil when runs
+	// Runs deletes the Kubernetes Job of an orphaned run. It is nil when runs
 	// are not Jobs, as with the local executor.
 	Runs RunDeleter
-	// Current and Forges report a review that will not be tried again on
-	// its head commit; without them nothing is reported.
+	// Current and Forges report a review that will not be tried again on its
+	// head commit. Without them nothing is reported.
 	Current *configfile.Current
 	Forges  forge.Clients
 	Logger  *slog.Logger
-	// Metrics may be nil.
+	// Metrics can be nil.
 	Metrics *metrics.Metrics
 	// every overrides rescueInterval, and stale jobAbandonedAfter.
 	every, stale time.Duration
@@ -87,13 +86,13 @@ func (r *Rescuer) Run(ctx context.Context) {
 	}
 }
 
-// Rescue makes one pass: jobs whose heartbeat went stale are handed back
-// to River, then every unfinished run whose job is no longer running, or
-// runs anew with a run of its own, is reaped, and the heartbeats of ended
-// jobs are swept. The two are independent, each idempotent, so a reap the
-// API server refuses is tried again next pass without the job waiting on
-// it, and a job claimed again before its reap does not hide the run its
-// dead worker left.
+// Rescue makes one pass: jobs whose heartbeat went stale are handed back to
+// River. Then every unfinished run whose job is no longer running, or runs
+// anew with a run of its own, is reaped. The heartbeats of ended jobs are
+// swept too. The two are independent, each idempotent. So a reap that the API
+// server refuses is tried again next pass, without the job waiting on it. A
+// job claimed again before its reap does not hide the run that its dead
+// worker left.
 func (r *Rescuer) Rescue(ctx context.Context) error {
 	stale := cmp.Or(r.stale, jobAbandonedAfter)
 	var errs []error
@@ -149,13 +148,13 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// reportEnded replaces the pending status on the head of a review job
-// that was rescued into a state River does not run again: its dead worker
-// set the status and nothing else would replace it. A look back at a merged
-// or closed pull request set none, and is left so. The status is set under
-// the pull request's publication lock, once the head is seen to be the
-// job's review's still: a newer review of it that started, as the rescue
-// freed the head for one, owns the status.
+// reportEnded replaces the pending status on the head of a review job that
+// was rescued into a state River does not run again: its dead worker set the
+// status and nothing else replaces it. A look back at a merged or closed pull
+// request set none, and is left so. The status is set under the pull
+// request's publication lock, once the head is seen to be the job's review's
+// still: a newer review of it that started, as the rescue freed the head for
+// one, owns the status.
 func (r *Rescuer) reportEnded(ctx context.Context, job store.AbandonedJob) error {
 	if r.Current == nil || r.Forges == nil {
 		return nil

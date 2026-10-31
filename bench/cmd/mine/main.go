@@ -1,10 +1,10 @@
 //go:build bench
 
-// Command mine builds corpus cases from a repository's history: for every
-// fix commit on the main branch it blames the lines the fix changed back
-// to the commit that introduced them; when that commit is itself a squash
-// merged pull request, that PR becomes a case whose expected finding is
-// the introduced lines, with the fix as the description.
+// Command mine builds corpus cases from a repository's history. For every
+// fix commit on the main branch, it blames the lines that the fix changed
+// back to the commit that introduced them. When that commit is itself a
+// squash merged pull request, that PR becomes a case. The expected finding
+// of the case is the introduced lines, and the fix is the description.
 //
 //	go run -tags bench ./bench/cmd/mine -repo ../flate -name home-operations/flate -out bench/cases/flate.yaml
 package main
@@ -29,13 +29,13 @@ import (
 
 var (
 	prNumber = regexp.MustCompile(`\(#(\d+)\)$`)
-	// Dependency and tooling bumps fix nothing a reviewer could have seen.
+	// Dependency and tooling bumps fix nothing that a reviewer can see.
 	skipSubject = regexp.MustCompile(
 		`(?i)update (module|image|tool|dependency|kubernetes|crate|helm|github|action)|^(chore|docs|ci|build|test|style)(\(|:)|\(deps\)|^release`,
 	)
 	hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 	// Generated, vendored or prose paths: a fix touching them is not a
-	// defect a reviewer could have caught in the introducing diff.
+	// defect that a reviewer can catch in the introducing diff.
 	skipPath = regexp.MustCompile(
 		`(?i)(^|/)(go\.sum|go\.mod|package-lock\.json|[^/]+\.lock|changelog\.md|readme\.md)$` +
 			`|(^|/)(values\.schema\.json|\.release-please-manifest\.json)$` +

@@ -21,9 +21,10 @@ import (
 // skill's name and description, then its instructions.
 const SkillFile = "SKILL.md"
 
-// Bounds on a repository's skills: how many are read, how long a
-// description may be, and how much of the system prompt their names and
-// descriptions may take together, and the instructions of the loaded ones.
+// Bounds on a repository's skills: how many are read and how long a
+// description can be. They also bound how much of the system prompt their
+// names and descriptions can take together. They also bound how much the
+// instructions of the loaded ones can take.
 const (
 	MaxSkills            = 50
 	MaxSkillDescription  = 1024
@@ -31,7 +32,7 @@ const (
 	MaxSkillLoadedBytes  = 32 << 10
 )
 
-// skillNameRe is what a skill's name may be, as the format has it.
+// skillNameRe is what a skill's name can be, as the format has it.
 var skillNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)
 
 // Skill is a skill a repository keeps: the folder it lives in, the name
@@ -41,9 +42,9 @@ type Skill struct {
 	Name, Description, Dir, Text string
 }
 
-// ParseSkill reads the SkillFile in dir. The name defaults to the folder's;
-// a file with no frontmatter, no description or a name that is not one is
-// an error. Every other frontmatter key, allowed-tools among them, is left
+// ParseSkill reads the SkillFile in dir. The name defaults to the folder's.
+// A file with no frontmatter, no description, or a name that is not one is
+// an error. Every other frontmatter key, such as allowed-tools, is left
 // unread: a skill guides a review and grants it nothing.
 func ParseSkill(dir string, data []byte) (Skill, error) {
 	rest, ok := bytes.CutPrefix(bytes.TrimLeft(data, "\ufeff \t\r\n"), []byte("---"))
@@ -81,21 +82,21 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 
 // Offered is what a review is given of a repository's skills: Listed by
 // name and description, to read on demand, and Loaded whole, in the system
-// prompt. Left counts the skills that applied and did not fit the listing,
-// and Unloaded the ones their scope loads that did not fit MaxSkillLoadedBytes
-// and were listed instead.
+// prompt. Left counts the skills that applied and did not fit the listing.
+// Unloaded counts the ones that their scope loads that did not fit
+// MaxSkillLoadedBytes and were listed instead.
 type Offered struct {
 	Listed, Loaded []Skill
 	Left, Unloaded int
 }
 
-// OfferedSkills is the skills of found a review of a change of the changed
-// paths is given, each in order: each that scope does not keep from it, by
-// its paths or because the worker found none of its conditions to hold
-// (off). One its scope loads is given whole while the instructions of
-// those fit MaxSkillLoadedBytes; the rest, and a loaded one that did not
-// fit, are listed while their names and descriptions fit
-// MaxSkillListingBytes.
+// OfferedSkills is the skills of found that a review of a change of the
+// changed paths is given, in order. Those are all the skills that scope does
+// not keep from the review. Scope keeps a skill out by its paths, or because
+// the worker found none of its conditions to hold (off). One that its scope
+// loads is given whole while the instructions of those fit
+// MaxSkillLoadedBytes. The rest, and a loaded one that did not fit, are
+// listed while their names and descriptions fit MaxSkillListingBytes.
 func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, changed []string) Offered {
 	var out Offered
 	room, loadRoom := MaxSkillListingBytes, MaxSkillLoadedBytes

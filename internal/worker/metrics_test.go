@@ -77,7 +77,7 @@ func TestJobMetrics(t *testing.T) {
 	}
 }
 
-// rateLimited is GitHub's primary rate limit, resetting after reset, as
+// rateLimited is GitHub's primary rate limit, which resets after reset, as
 // go-github reports it.
 func rateLimited(reset time.Duration) error {
 	req := &http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/repos/o/r"}}
@@ -87,7 +87,7 @@ func rateLimited(reset time.Duration) error {
 }
 
 // TestForgeRateLimit: a job that failed on GitHub's rate limit is snoozed
-// until the reset, spending no attempt; a job that cancels itself, and any
+// until the reset and spends no attempt. A job that cancels itself, and any
 // other error, pass through.
 func TestForgeRateLimit(t *testing.T) {
 	limit := rateLimited(10 * time.Minute)

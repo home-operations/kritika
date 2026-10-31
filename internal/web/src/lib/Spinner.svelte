@@ -1,6 +1,6 @@
 <script lang="ts">
   // A simple rotating-arc loading indicator. Inherits the surrounding text
-  // colour via currentColor, so it tints muted in lists and accent at full size.
+  // color via currentColor, so it tints muted in lists and accent at full size.
   let { size = 18 }: { size?: number } = $props();
 </script>
 

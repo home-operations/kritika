@@ -10,8 +10,9 @@ import (
 	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
-// TestRun checks how kritika runs comes from the environment: its defaults,
-// values set, an interval of 0s that turns polling off, and values refused.
+// TestRun makes sure that how kritika runs comes from the environment: its
+// defaults, values set, an interval of 0s that turns polling off, and values
+// refused.
 func TestRun(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

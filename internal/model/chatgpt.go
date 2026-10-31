@@ -32,15 +32,16 @@ type TokenSource interface {
 	Expire(ctx context.Context, token string) error
 }
 
-// ErrPlanLimit is a step the ChatGPT plan refused because its usage limit
-// is reached. The adapter then sends nothing on the plan for PlanPause, as
-// OpenAI asks, failing every step the same way, which the fallback takes;
-// the plan's owner sees the limit under ChatGPT's usage settings.
+// ErrPlanLimit is a step that the ChatGPT plan refused because its usage
+// limit is reached. The adapter then sends nothing on the plan for PlanPause,
+// as OpenAI asks. It fails every step the same way, and the fallback takes
+// those steps. The plan's owner sees the limit under ChatGPT's usage
+// settings.
 var ErrPlanLimit = errors.New("model: chatgpt: the plan's usage limit is reached")
 
-// ErrUnavailable is a provider that could not serve a request for a
-// passing reason of its own: the ChatGPT route that could not check the
-// plan's usage, or a response that failed on a server error or a rate
+// ErrUnavailable is a provider that failed to serve a request for a passing
+// reason of its own. It is the ChatGPT route that failed to read the plan's
+// usage. It is also a response that failed on a server error or a rate
 // limit after its stream opened. Transient.
 var ErrUnavailable = errors.New("model: provider unavailable")
 
@@ -75,24 +76,23 @@ const functionCallItem = "function_call"
 
 // ChatGPTConfig configures a ChatGPT plan adapter.
 type ChatGPTConfig struct {
-	// BaseURL is the API root, ".../v1"; empty means OpenAI's.
+	// BaseURL is the API root, ".../v1". Empty means OpenAI's.
 	BaseURL string
 	// Provider names the provider the adapter serves. Its output is
 	// replayed only to the same provider.
 	Provider string
 	Tokens   TokenSource
-	// HTTPClient may be nil.
+	// HTTPClient can be nil.
 	HTTPClient *http.Client
 	// ObserveAllowances receives quota data when the upstream supplies it.
 	ObserveAllowances func(context.Context, []chatgpt.Allowance)
 }
 
-// ChatGPT is a Stepper over the Responses API on a ChatGPT Plus or Pro
-// plan, signed in through Sign in with ChatGPT (internal/chatgpt). The
-// route takes streamed, unstored requests with the conversation sent whole
-// each step, as kritika sends it, and refuses max_output_tokens, so
-// MaxTokens is not sent. Every request is sent once; the gateway owns
-// retrying.
+// ChatGPT is a Stepper over the Responses API on a ChatGPT Plus or Pro plan,
+// signed in through Sign in with ChatGPT (internal/chatgpt). The route takes
+// streamed, unstored requests with the conversation sent whole each step, as
+// kritika sends it, and refuses max_output_tokens, so MaxTokens is not sent.
+// Every request is sent once. The gateway owns retrying.
 type ChatGPT struct {
 	client            openai.Client
 	provider          string
@@ -114,7 +114,7 @@ func NewChatGPT(cfg ChatGPTConfig) (*ChatGPT, error) {
 	if err := checkBaseURL(baseURL); err != nil {
 		return nil, fmt.Errorf("model: chatgpt: %w", err)
 	}
-	// The empty key keeps the client from reading OPENAI_API_KEY; each
+	// The empty key keeps the client from reading OPENAI_API_KEY. Each
 	// request carries the plan's token instead.
 	opts := append(withoutEnvironment(),
 		option.WithBaseURL(baseURL), option.WithAPIKey(""), option.WithHeader("User-Agent", userAgent()),
@@ -150,9 +150,9 @@ func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, erro
 	resp, err := eachModel(ctx, req, func(id string) (StepResponse, error) {
 		resp, err := c.step(ctx, params, id, token)
 		if replayed && errors.Is(err, errEncryptedContent) {
-			// The route refuses reasoning it can no longer read, as after
-			// its keys rotate; the step goes again with every turn as its
-			// text and calls.
+			// The route refuses reasoning that it can no longer read, for
+			// example after its keys rotate. The step goes again with every
+			// turn as its text and calls.
 			plain, _, perr := chatGPTParams(req, "")
 			if perr != nil {
 				return resp, err
@@ -164,7 +164,7 @@ func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, erro
 	if req.Once {
 		resp.ChatGPTOutput = nil
 	}
-	// A provider may echo its bearer token in an error or response. Dynamic
+	// A provider can echo its bearer token in an error or response. Dynamic
 	// credentials are absent from the configuration's transcript mask.
 	mask := func(s string) string { return strings.ReplaceAll(s, token, "***") }
 	resp.Text = mask(resp.Text)
@@ -190,9 +190,9 @@ type chatGPTError struct {
 func (e *chatGPTError) Error() string { return e.text }
 func (e *chatGPTError) Unwrap() error { return e.err }
 
-// step sends one request and reads its stream to the end. The step
-// succeeds only on response.completed; a stream that ends before it is a
-// cut connection, which is transient.
+// step sends one request and reads its stream to the end. The step succeeds
+// only on response.completed. A stream that ends before it is a cut
+// connection, which is transient.
 func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, modelID, token string) (StepResponse, error) {
 	if err := c.pausedError(); err != nil {
 		return StepResponse{}, err
@@ -234,8 +234,8 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 			return StepResponse{}, c.failed(ev.Response.Error)
 		case "response.incomplete":
 			// The route takes no max_output_tokens, but the model's own cap
-			// still cuts answers off; what it said goes back as the other
-			// adapters return a cut-off answer.
+			// still cuts answers off. What it said goes back the way that the
+			// other adapters return a cut-off answer.
 			if ev.Response.IncompleteDetails.Reason == "max_output_tokens" {
 				resp := c.response(ev.Response, modelID, done)
 				resp.Stop = StopMaxTokens
@@ -255,13 +255,13 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 	return c.response(*completed, modelID, done), nil
 }
 
-// response reads the response's output: its message's text and refusal,
-// its function calls, whose call ids the tool results answer, and every
-// item as it came, for the next step to replay. The route sends each
-// finished item as response.output_item.done and may leave the final
-// response's output empty or partial, so those items, in the order they
-// came, are the output whenever any came, as Codex reads them; the final
-// response's output only when none did.
+// response reads the response's output. It reads the message's text and
+// refusal, and the function calls, whose call ids the tool results answer. It
+// also reads every item as it came, for the next step to replay. The route
+// sends each finished item as response.output_item.done. It can leave the
+// final response's output empty or partial. So those items, in the order they
+// came, are the output whenever any came, as Codex reads them. The final
+// response's output is the output only when none came.
 func (c *ChatGPT) response(r responses.Response, modelID string, done []responses.ResponseOutputItemUnion) StepResponse {
 	if len(done) > 0 {
 		r.Output = done
@@ -291,7 +291,7 @@ func (c *ChatGPT) response(r responses.Response, modelID string, done []response
 	return out
 }
 
-// failed classifies a response.failed, which the route may send after the
+// failed classifies a response.failed, which the route can send after the
 // stream opened, by its code.
 func (c *ChatGPT) failed(e responses.ResponseError) error {
 	switch code := string(e.Code); code {
@@ -308,10 +308,10 @@ func (c *ChatGPT) failed(e responses.ResponseError) error {
 	}
 }
 
-// refused classifies a request the server refused before the stream
-// opened. A plan at its limit pauses the adapter; a token the server
-// rejected is renewed before the next step; everything else keeps the
-// SDK's error, whose status Transient reads.
+// refused classifies a request that the server refused before the stream
+// opened. A plan at its limit pauses the adapter. A token that the server
+// rejected is renewed before the next step. Everything else keeps the SDK's
+// error, whose status Transient reads.
 func (c *ChatGPT) refused(ctx context.Context, token string, err error) error {
 	apiErr, ok := errors.AsType[*openai.Error](err)
 	if !ok {
@@ -358,12 +358,12 @@ func (c *ChatGPT) pausedError() error {
 	return nil
 }
 
-// chatGPTParams maps everything but the model, which each attempt sets,
-// replaying the output provider produced, and reports whether it replayed
-// any. The system prompt goes as instructions, since the route rejects
-// system messages, and the tools in one namespace. The session keys the
-// prompt cache, since every step resends the whole conversation unstored;
-// a step no later one reads back has no reasoning to carry.
+// chatGPTParams maps everything but the model, which each attempt sets. It
+// replays the output that provider produced, and reports whether it replayed
+// any. The system prompt goes as instructions, since the route rejects system
+// messages, and the tools go in one namespace. The session keys the prompt
+// cache, since every step resends the whole conversation unstored. A step
+// that no later step reads back has no reasoning to carry.
 func chatGPTParams(req StepRequest, provider string) (responses.ResponseNewParams, bool, error) {
 	p := responses.ResponseNewParams{Store: openai.Bool(false)}
 	if !req.Once {
@@ -438,13 +438,13 @@ type chatGPTItem struct {
 	} `json:"summary"`
 }
 
-// replayable reports whether m's output can go back to provider as it
-// came, rather than as m's text and calls. The route refuses reasoning it
-// cannot read, which is any without its encrypted content or from another
-// account, and reasoning that leads to no item. The items it forwards are
-// only the kinds a turn returns, with text alone, since a runner sends
-// them, and they must add up to m's text and calls, which the loop may
-// have changed since.
+// replayable reports whether m's output can go back to provider as it came,
+// rather than as m's text and calls. The route refuses reasoning that it
+// cannot read, which is any reasoning without its encrypted content or from
+// another account. It also refuses reasoning that leads to no item. The items
+// that it forwards are only the kinds that a turn returns, with text alone,
+// since a runner sends them. They must add up to m's text and calls, which
+// the loop can change in the meantime.
 func replayable(m Message, provider string) bool {
 	out := m.ChatGPTOutput
 	if m.Role != RoleAssistant || out == nil || provider == "" || out.Provider != provider || len(out.Items) == 0 {

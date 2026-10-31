@@ -1,18 +1,18 @@
-// Package prfilter compiles and evaluates a CEL boolean expression that decides
-// which pull requests kritika reviews (a condition of the configuration's
-// trigger.include and trigger.exclude lists).
+// Package prfilter compiles and evaluates a CEL boolean expression that
+// decides which pull requests kritika reviews (a condition of the
+// configuration's trigger.include and trigger.exclude lists).
 //
-// The expression sees a single variable, pr — a map of the PR's fields. The
+// The expression sees a single variable, pr: a map of the PR's fields. The
 // caller supplies that map (ingest builds it from the webhook's pull request,
-// the worker from the stored row), so this package stays decoupled from the
-// forge model and is testable with plain maps. An
-// expression must evaluate to a boolean; the program is type-checked once at
-// Compile so a malformed filter fails fast at startup rather than per request.
+// the worker from the stored row). So this package stays decoupled from the
+// forge model and is testable with plain maps. An expression must evaluate to
+// a boolean. The program is type-checked once at Compile, so a malformed
+// filter fails fast at startup rather than per request.
 //
-// CEL is the right tool here: it's a safe, bounded, non-Turing-complete
-// expression language (no I/O, no unbounded loops), so an admin-supplied
-// predicate can't hang or escape — and the home-ops/Kubernetes audience already
-// knows it from admission policies.
+// CEL is the right tool here: it is a safe, bounded, non-Turing-complete
+// expression language (no I/O, no unbounded loops). So an admin-supplied
+// predicate cannot hang or escape. And the home-ops/Kubernetes audience
+// already knows it from admission policies.
 package prfilter
 
 import (
@@ -32,18 +32,20 @@ type Program struct {
 	src string
 }
 
-// evalCostLimit caps the CEL cost of a single filter evaluation. The expression
-// is admin-supplied (trusted) and its attacker-influenced inputs (pr.title,
-// pr.labels) are forge-bounded, so this is defense-in-depth against a pathological
-// admin's expression rather than a likely attack — a ceiling no reasonable PR
-// predicate approaches, while still bounding an accidental blow-up (CEL has no
-// loops, so a finite cost is guaranteed to exist).
+// evalCostLimit caps the CEL cost of a single filter evaluation. The
+// expression is admin-supplied (trusted) and its attacker-influenced inputs
+// (pr.title, pr.labels) are forge-bounded. So this is defense-in-depth
+// against a pathological admin's expression rather than a likely attack. It
+// is a ceiling that no reasonable PR predicate approaches, while it still
+// bounds an accidental blow-up. CEL has no loops, so a finite cost is
+// guaranteed to exist.
 const evalCostLimit = 1_000_000
 
-// Compile parses and type-checks expr and returns a runnable Program. It fails
-// when the expression is syntactically invalid, references unknown
-// variables/functions, cannot produce a boolean, or gives matches() a
-// constant pattern that is not a valid regular expression.
+// Compile parses and type-checks expr and returns a runnable Program. It
+// fails when the expression is syntactically invalid, references unknown
+// variables/functions, or cannot produce a boolean. It also fails when the
+// expression gives matches() a constant pattern that is not a valid regular
+// expression.
 func Compile(expr string) (*Program, error) {
 	// Keep the lazy error catalog (cel-expr/cel-go#1500) local to each
 	// compilation. cel.NewEnv already reuses the standard library.
@@ -55,10 +57,10 @@ func Compile(expr string) (*Program, error) {
 	if iss != nil && iss.Err() != nil {
 		return nil, fmt.Errorf("prfilter: %w", iss.Err())
 	}
-	// The filter is a yes/no decision. Field access on the dyn-valued pr map is
-	// statically dyn (only known boolean at runtime), so accept bool or dyn here;
-	// a literal of the wrong type (e.g. 42, "x") is statically typed and rejected.
-	// Eval enforces an actual boolean result.
+	// The filter is a yes/no decision. Field access on the dyn-valued pr map
+	// is statically dyn (only known boolean at runtime), so accept bool or
+	// dyn here. A literal of the wrong type (for example, 42, "x") is
+	// statically typed and rejected. Eval enforces an actual boolean result.
 	switch ast.OutputType().Kind() {
 	case types.BoolKind, types.DynKind:
 	default:
@@ -73,10 +75,10 @@ func Compile(expr string) (*Program, error) {
 	return &Program{prg: prg, ast: ast.NativeRep(), src: expr}, nil
 }
 
-// Uses reports whether the expression may read field of pr. It does not
+// Uses reports whether the expression can read field of pr. It does not
 // only when every mention of pr selects or indexes another field by name:
 // pr used whole (aliased in a list, tested with "in", compared) or indexed
-// by a key that is not a literal may read any field.
+// by a key that is not a literal can read any field.
 func (p *Program) Uses(field string) bool {
 	return len(celast.MatchDescendants(celast.NavigateAST(p.ast), func(e celast.NavigableExpr) bool {
 		if e.Kind() != celast.IdentKind || e.AsIdent() != "pr" {
@@ -102,8 +104,8 @@ func (p *Program) Uses(field string) bool {
 }
 
 // Eval runs the expression against the given pr field map and reports whether
-// the PR is allowed. A runtime error or a non-boolean result is returned as an
-// error (the caller decides the fail-safe; kritika skips the PR and logs).
+// the PR is allowed. A runtime error or a non-boolean result is returned as
+// an error. The caller decides the fail-safe: kritika skips the PR and logs.
 func (p *Program) Eval(pr map[string]any) (bool, error) {
 	out, _, err := p.prg.Eval(map[string]any{"pr": pr})
 	if err != nil {

@@ -28,11 +28,11 @@ import (
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
-// What fetch_oci may take: a run inspects at most the spec's fetches, as
-// many as fetch_repo may fetch, and lists tags at most listMax times; one
+// What fetch_oci can take: a run inspects at most the spec's fetches, as
+// many as fetch_repo can fetch, and lists tags at most listMax times. One
 // call takes at most ociWireBytes from the registry and ociTimeout of wall
-// time, reads a manifest or config of at most ociMetadataBytes, and shows a
-// config that is no image's cut to ociConfigShown, a tag listing at most
+// time. It reads a manifest or config of at most ociMetadataBytes. It shows a
+// config that is no image's cut to ociConfigShown, and a tag listing at most
 // ociTagPages pages long.
 const (
 	ociWireBytes     = 16 << 20
@@ -71,13 +71,13 @@ var fetchOCISchema = json.RawMessage(`{
 // fetch_repo fetches, and lists a repository's tags. It is offered beside
 // fetch_repo, under the same condition.
 type fetchOCITool struct {
-	// transport carries the reads; nil is upstream's default, through the
+	// transport carries the reads. nil is upstream's default, through the
 	// pod's proxy.
 	transport http.RoundTripper
-	// fetchMax is how many inspections the review may make.
+	// fetchMax is how many inspections the review can make.
 	fetchMax int
-	// hosts name what the gateway lets a read reach, for the description;
-	// empty leaves them unnamed.
+	// hosts name what the gateway lets a read reach, for the description.
+	// Empty leaves them unnamed.
 	hosts []string
 
 	fetches  int
@@ -260,7 +260,7 @@ func inspect(ctx context.Context, repo *remote.Repository, ref registry.Referenc
 		}
 		fmt.Fprintf(&b, "\nIts %s image, %s", platformName(chosen.Platform), chosen.Digest)
 		// The descriptor's annotations and the manifest's own both carry
-		// provenance; the manifest's win where they differ.
+		// provenance. The manifest's win where they differ.
 		annotations := maps.Clone(chosen.Annotations)
 		if annotations == nil {
 			annotations = map[string]string{}
@@ -312,7 +312,7 @@ func inspect(ctx context.Context, repo *remote.Repository, ref registry.Referenc
 }
 
 // readManifest reads the manifest rc holds whole, against desc's size and
-// digest, and closes it; one over ociMetadataBytes is refused unread,
+// digest, and closes it. A manifest over ociMetadataBytes is refused unread,
 // since the registry's size is trusted only that far.
 func readManifest(rc io.ReadCloser, desc ocispec.Descriptor) ([]byte, error) {
 	defer func() { _ = rc.Close() }()

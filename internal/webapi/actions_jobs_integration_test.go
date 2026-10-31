@@ -449,9 +449,9 @@ func testReindexJob(t *testing.T, e *actionsEnv) {
 }
 
 // testNonCanonicalReviewIDs: a review id is Postgres's own spelling of it,
-// the one the API hands out. Any other spelling uuid.Validate allows, some
-// of which $1::uuid refuses, is not found rather than a server error, and
-// a cursor carrying one is not valid.
+// the one that the API hands out. Any other spelling that uuid.Validate
+// allows, some of which $1::uuid refuses, is not found, not a server error. A
+// cursor that carries one is not valid.
 func testNonCanonicalReviewIDs(t *testing.T, e *actionsEnv) {
 	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
 		VALUES ($1, $2, 'headC', 'running') RETURNING id::text`, e.accountID, e.prID)

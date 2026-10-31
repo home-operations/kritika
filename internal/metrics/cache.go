@@ -102,7 +102,8 @@ func (m *Metrics) CacheRequest(outcome, reason string) {
 	}
 }
 
-// CacheOperation records a completed operation, including partial transferred bytes.
+// CacheOperation records a completed operation. This includes partial
+// transferred bytes.
 func (m *Metrics) CacheOperation(operation, outcome string, took time.Duration, bytes int64) {
 	if m != nil {
 		m.cache.operations.WithLabelValues(operation, outcome).Observe(took.Seconds())

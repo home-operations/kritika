@@ -87,9 +87,10 @@ func TestDelivered(t *testing.T) {
 	}
 }
 
-// TestFilterVarsMatchSample: every key a condition can read of a webhook's
-// pull request is one the sample conditions are checked against at load,
-// and the other way round, but pr.lines, which only the diff gives.
+// TestFilterVarsMatchSample: every key that a condition can read of a
+// webhook's pull request is one that the sample conditions are checked
+// against at load. The other way round holds too, except for pr.lines, which
+// only the diff gives.
 func TestFilterVarsMatchSample(t *testing.T) {
 	got := slices.Sorted(maps.Keys((&PullRequest{}).FilterVars("opened")))
 	sample := configfile.SamplePR()

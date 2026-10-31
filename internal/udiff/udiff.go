@@ -13,9 +13,9 @@ import (
 // File is one file's diff: every line before its first hunk, and its
 // hunks.
 type File struct {
-	// OldPath and NewPath are the base-side and head-side paths the "---"
-	// and "+++" lines name, "" for a side the file has not, /dev/null, and
-	// where the lines are missing, as in a rename alone.
+	// OldPath and NewPath are the base-side and head-side paths that the
+	// "---" and "+++" lines name. They are "" for a side the file has not,
+	// /dev/null, and where the lines are missing, as in a rename alone.
 	OldPath, NewPath string
 	// Header is the file's lines before its first hunk, as they were.
 	Header string
@@ -40,17 +40,17 @@ type Line struct {
 	Kind byte
 	// Text is the line without its marker and its newline.
 	Text string
-	// OldLine and NewLine are where the line is on each side: its own
-	// number on the side it is on, and on the side it is not, the number
-	// of the line that follows where it was.
+	// OldLine and NewLine are where the line is on each side. On the side it
+	// is on, that is its own number. On the side it is not on, that is the
+	// number of the line that follows where it was.
 	OldLine, NewLine int
 	raw              string
 }
 
-// Parse reads a unified diff. A hunk's lines are counted from its header,
-// so a removed "-- x" or an added "++ x", which read like file headers,
-// stay lines of the hunk; once the counts are spent, a "---" or "+++" line
-// opens a file, as a "diff --git" line does at any point.
+// Parse reads a unified diff. A hunk's lines are counted from its header. So
+// a removed "-- x" or an added "++ x", which read like file headers, stay
+// lines of the hunk. Once the counts are spent, a "---" or "+++" line opens a
+// file, as a "diff --git" line does at any point.
 func Parse(diff string) []File {
 	var files []File
 	var hunk *Hunk
@@ -99,9 +99,10 @@ func Parse(diff string) []File {
 	return files
 }
 
-// Path is the file's head-side path: NewPath, OldPath once deleted, or,
-// when it has neither, the name its "rename to" or "copy to" line gives,
-// or else its "diff --git" line's, as a rename alone or a binary file has.
+// Path is the file's head-side path: NewPath, OldPath once deleted, or, when
+// it has neither, the name that its "rename to" or "copy to" line gives.
+// Otherwise it is the name on its "diff --git" line, as a rename alone or a
+// binary file has.
 func (f File) Path() string {
 	if f.NewPath != "" {
 		return f.NewPath
@@ -112,8 +113,8 @@ func (f File) Path() string {
 	first, _, _ := strings.Cut(f.Header, "\n")
 	_, after, isDiff := strings.Cut(first, "diff --git ")
 	// git quotes a name whole, its prefix with it, and go-git writes every
-	// name bare, so a rename's name is git's quoting only where the diff
-	// line quotes the head-side name too.
+	// name bare. So a rename's name is git's quoting only where the diff line
+	// quotes the head-side name too.
 	quoted := strings.Contains(after, ` "b/`)
 	for l := range strings.Lines(f.Header) {
 		l = strings.TrimSuffix(l, "\n")
@@ -163,9 +164,10 @@ func (h Hunk) String() string {
 // String is the line as it was, marker and newline included.
 func (l Line) String() string { return l.raw }
 
-// sidePath is the path a "---" or "+++" line names, its prefix off, ""
-// for /dev/null. Git ends a name that has a space in it with a tab, which
-// is not the name's; a space at its end is, and go-git writes it bare.
+// sidePath is the path that a "---" or "+++" line names, with its prefix off,
+// "" for /dev/null. Git ends a name that has a space in it with a tab, which
+// is not the name's. A space at its end is the name's, and go-git writes it
+// bare.
 func sidePath(p, prefix string) string {
 	p = strings.TrimSuffix(p, "\t")
 	if p == "/dev/null" {
@@ -174,10 +176,10 @@ func sidePath(p, prefix string) string {
 	return strings.TrimPrefix(unquoteName(p), prefix)
 }
 
-// unquoteName is a name as a git header writes it, unquoted: git writes
-// one with a byte it does not print as it is, a quote, a backslash, a
-// control or a non-ASCII one, as a C string, whose escapes Go's string
-// literals share. go-git writes every name bare.
+// unquoteName is a name as a git header writes it, unquoted. git writes some
+// names as a C string, whose escapes Go's string literals share. Those are
+// names with a byte that git does not print as it is: a quote, a backslash, a
+// control, or a non-ASCII one. go-git writes every name bare.
 func unquoteName(name string) string {
 	if strings.HasPrefix(name, `"`) {
 		if unquoted, err := strconv.Unquote(name); err == nil {
@@ -187,7 +189,7 @@ func unquoteName(name string) string {
 	return name
 }
 
-// hunkHeader reads "@@ -oldStart,oldCount +newStart,newCount @@"; a count
+// hunkHeader reads "@@ -oldStart,oldCount +newStart,newCount @@". A count
 // left out is 1, and a header that does not read is all zeros.
 func hunkHeader(l string) (oldStart, oldCount, newStart, newCount int) {
 	fields := strings.Fields(l)

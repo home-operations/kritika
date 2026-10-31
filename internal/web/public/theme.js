@@ -1,7 +1,7 @@
-// Sets the theme class before the first paint: the bundle is a module, and
-// modules run after the browser may already have painted the light default.
-// A file rather than an inline script, which the CSP (script-src 'self')
-// refuses. It reads the preference theme.svelte.ts stores.
+// Sets the theme class before the first paint. The bundle is a module, and
+// the browser can paint the light default before modules run. This is a file
+// rather than an inline script, which the CSP (script-src 'self') refuses.
+// It reads the preference that theme.svelte.ts stores.
 (() => {
   let pref = 'auto';
   try {

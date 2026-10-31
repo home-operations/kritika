@@ -32,8 +32,8 @@ func (f *fakeTool) Run(context.Context, json.RawMessage) (string, error) {
 	return f.output, f.err
 }
 
-// scriptedStepper replays a fixed sequence of responses, recording every
-// request it was called with. Calling it past the end of the script is a
+// scriptedStepper replays a fixed sequence of responses and records every
+// request that it was called with. Calling it past the end of the script is a
 // test bug, not a loop bug, so it errors rather than panicking.
 type scriptedStepper struct {
 	steps []model.StepResponse
@@ -48,8 +48,8 @@ func (s *scriptedStepper) Step(_ context.Context, req model.StepRequest) (model.
 	return s.steps[len(s.calls)-1], nil
 }
 
-// ctxCancelStepper cancels its own ctx, then returns ctx.Err(), simulating a
-// Stepper that observes and reports the Run's own cancellation rather than
+// ctxCancelStepper cancels its own ctx, then returns ctx.Err(). It simulates
+// a Stepper that observes and reports the Run's own cancellation rather than
 // an unrelated failure.
 type ctxCancelStepper struct {
 	cancel context.CancelFunc
@@ -92,14 +92,14 @@ func outputBytes(e StepEvent) int {
 }
 
 // runCase is one TestRun table row. setup builds this case's Stepper and
-// context (a nil context means t.Context()); scripted is the same value
-// again when the Stepper is a *scriptedStepper, so check can inspect its
-// recorded calls, and nil for the ctx-focused cases that use a different
+// context (a nil context means t.Context()). scripted is the same value again
+// when the Stepper is a *scriptedStepper, so that check can inspect its
+// recorded calls. It is nil for the ctx-focused cases that use a different
 // Stepper double.
 //
-// setup and check are named functions rather than inline closures so each
-// case's assertions are counted, by tooling such as gocyclo, against that
-// function alone rather than against TestRun as a whole.
+// setup and check are named functions rather than inline closures. So tooling
+// such as gocyclo counts each case's assertions against that function alone
+// rather than against TestRun as a whole.
 type runCase struct {
 	name      string
 	tools     []Tool
@@ -156,8 +156,8 @@ func checkUnknownToolThenSubmit(t *testing.T, result Result, _ []StepEvent, scri
 	if result.ToolCalls["does_not_exist"] != 1 {
 		t.Fatalf("ToolCalls = %v, want does_not_exist:1", result.ToolCalls)
 	}
-	// The unknown-tool step's error result must have reached the model as
-	// the next turn's input, not silently vanished.
+	// The unknown-tool step's error result must reach the model as the next
+	// turn's input, not silently vanish.
 	last := scripted.calls[len(scripted.calls)-1]
 	lastMsg := last.Messages[len(last.Messages)-1]
 	if len(lastMsg.ToolResults) != 1 || !lastMsg.ToolResults[0].IsError {
@@ -418,8 +418,8 @@ func checkTextOnlyTwiceStopsNoSubmit(t *testing.T, _ Result, events []StepEvent,
 	if len(events) != 2 || events[0].Index != 0 || events[1].Index != 1 {
 		t.Fatalf("events = %+v", events)
 	}
-	// The nudge must have been sent as a user message after the first
-	// text-only turn, or the second turn is not really giving the model a
+	// The nudge must be sent as a user message after the first text-only
+	// turn. Otherwise, the second turn is not really giving the model a
 	// chance to submit.
 	last := scripted.calls[len(scripted.calls)-1]
 	found := false
@@ -462,8 +462,8 @@ func checkBudgetTellsToSubmit(t *testing.T, result Result, _ []StepEvent, script
 	if !toldToSubmit(scripted.calls[1]) || scripted.calls[1].ToolChoice != (model.ToolChoice{}) {
 		t.Fatalf("second request = %+v, want the submit instruction in its last user message and no tool choice", scripted.calls[1])
 	}
-	// The first request must NOT have been told: the budget only crosses
-	// the 90% threshold after step 0's usage lands.
+	// The first request must NOT be told: the budget only crosses the 90%
+	// threshold after step 0's usage lands.
 	if toldToSubmit(scripted.calls[0]) {
 		t.Fatalf("first request was told to submit: %+v", scripted.calls[0].Messages)
 	}
@@ -678,8 +678,8 @@ func setupMaxStepsReachedWithoutSubmit(t *testing.T) (model.Stepper, context.Con
 }
 
 func checkMaxStepsReachedWithoutSubmit(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
-	// The last step and each retry must have been told to submit, even
-	// though the model chose not to; the first, free, step must not.
+	// The last step and each retry must be told to submit, even though the
+	// model chose not to. The first, free, step must not be told.
 	if toldToSubmit(scripted.calls[0]) {
 		t.Fatalf("first request was told to submit: %+v", scripted.calls[0].Messages)
 	}
@@ -904,8 +904,9 @@ func TestRunWaitsOutATransientStepFailure(t *testing.T) {
 		})
 	}
 
-	// The first wait ends where the time the run keeps to submit in starts,
-	// and the step goes again told to submit; the ctx cuts that one's wait.
+	// The first wait ends where the time that the run keeps to submit in
+	// starts. The step goes again, told to submit. The ctx cuts that one's
+	// wait.
 	t.Run("a wait the ctx cut ends the run canceled", func(t *testing.T) {
 		stepRetryWaits = []time.Duration{time.Hour}
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
@@ -961,15 +962,15 @@ func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
 		// step that starts at 3m, with 1m left, is told.
 		{name: "a short run keeps a quarter of its time", timeout: 4 * time.Minute, took: 10 * time.Second, tools: 18, told: 18},
 		{name: "a run with no deadline is never told", took: time.Hour, tools: 3, told: -1},
-		// The first answer comes after a 3m wait, which would have the Run
-		// keep 6m of the 5m left had it counted.
+		// The first answer comes after a 3m wait. If the wait counted, the
+		// Run keeps 6m of the 5m left.
 		{name: "a wait between attempts is not an answer's time", timeout: 8 * time.Minute, failOn: 1, tools: 1, told: -1},
-		// The second step fails, and its 3m wait would run into the quarter
-		// of the 3m30s kept: it ends where that starts, and the step goes
-		// again told to submit.
+		// The second step fails. Its 3m wait is long enough to run into the
+		// quarter of the 3m30s kept. The wait ends where that quarter starts,
+		// and the step goes again, told to submit.
 		{name: "a wait into the time kept sends the step again told to submit", timeout: 3*time.Minute + 30*time.Second, failOn: 2,
 			tools: 1, told: 1},
-		// A 3m wait would outlast the 2m30s itself.
+		// A 3m wait outlasts the 2m30s itself.
 		{name: "a wait past the deadline ends where the time kept starts", timeout: 2*time.Minute + 30*time.Second, failOn: 2,
 			tools: 1, told: 1},
 	}
@@ -1030,9 +1031,9 @@ func TestRun(t *testing.T) {
 		},
 		{
 			// MaxSteps: 1 makes the only step the last step, which forces
-			// submit_review; a forced step that does not submit is retried
-			// until the retries run out, each told to submit again, and a
-			// tool called instead is refused rather than run.
+			// submit_review. A forced step that does not submit is retried
+			// until the retries run out, each told to submit again. A tool
+			// called instead is refused rather than run.
 			name:      "forced_never_submits_stops_after_retries",
 			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
 			limits:    Limits{MaxSteps: 1},
@@ -1080,7 +1081,7 @@ func TestRun(t *testing.T) {
 		},
 		{
 			// On a step told to submit, where no tool can be called, the
-			// input is taken whatever Evidence would say of it.
+			// input is taken whatever Evidence says of it.
 			name:      "forced_step_skips_evidence",
 			limits:    Limits{MaxSteps: 1},
 			validate:  rejectVerdict,
@@ -1170,9 +1171,8 @@ func TestRun(t *testing.T) {
 			check:     checkBudgetForcedNeverSubmits,
 		},
 		{
-			// A submission the output cap cut off ends the run at once:
-			// sent back as an error, the model would only be cut off
-			// again.
+			// A submission that the output cap cut off ends the run at once.
+			// If it went back as an error, the model is only cut off again.
 			name:      "truncated_submit_stops",
 			setup:     setupTruncatedSubmitStops,
 			wantStop:  StopTruncated,
@@ -1190,9 +1190,9 @@ func TestRun(t *testing.T) {
 			check:     checkCutOffStepGoesOn,
 		},
 		{
-			// Cut off more than cutOffRetries times in a row, the model is
-			// nudged to submit, and the next cut-off ends the run as a turn
-			// with no tool call would.
+			// If the model is cut off more than cutOffRetries times in a row,
+			// it is nudged to submit. The next cut-off ends the run as a turn
+			// with no tool call does.
 			name:      "cut_off_steps_in_a_row_fall_back_to_the_nudge",
 			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
 			setup:     setupCutOffStepsInARow,
@@ -1220,9 +1220,9 @@ func TestRun(t *testing.T) {
 			check:     checkEmptyTurnKeepsTheNudge,
 		},
 		{
-			// Empty more than emptyRetries times in a row, the model
-			// spends the nudge, and the next empty turn ends the run as a
-			// turn with no tool call would.
+			// If the model is empty more than emptyRetries times in a row, it
+			// spends the nudge. The next empty turn ends the run as a turn
+			// with no tool call does.
 			name:      "empty_turns_in_a_row_fall_back_to_the_nudge",
 			setup:     setupEmptyTurnsInARow,
 			wantStop:  StopNoSubmit,
@@ -1283,7 +1283,7 @@ func TestRun(t *testing.T) {
 		{
 			// A Stepper error correlated with the Run's own ctx cancellation
 			// must end as StopCanceled, not StopError: the Job asked for
-			// this, it wasn't a genuine Stepper failure.
+			// this, and it was not a genuine Stepper failure.
 			name:      "stepper_error_while_ctx_canceled_is_stop_canceled",
 			setup:     setupStepperErrorWhileCtxCanceled,
 			wantStop:  StopCanceled,

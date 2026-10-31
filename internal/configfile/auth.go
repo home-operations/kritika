@@ -12,15 +12,15 @@ import (
 	"github.com/home-operations/kritika/internal/rolemap"
 )
 
-// Auth configures how people sign in to the dashboard and what each may do:
+// Auth configures how people sign in to the dashboard and what each can do:
 // a local admin, an OIDC issuer, GitHub, and a Forgejo, a Gitea and a
-// GitLab instance, each optional, and each provider's role mapping. Secret values use explicit environment
-// references.
+// GitLab instance, each optional, and each provider's role mapping. Secret
+// values use explicit environment references.
 type Auth struct {
-	// SessionTTL is how long a dashboard session lasts; zero means
+	// SessionTTL is how long a dashboard session lasts. Zero means
 	// DefaultSessionTTL.
 	SessionTTL time.Duration `yaml:"sessionTTL,omitempty"`
-	// Admin is the local admin, signed in with a password; it exists only
+	// Admin is the local admin, signed in with a password. It exists only
 	// while a password is set.
 	Admin LocalAdmin `yaml:"admin,omitempty"`
 	// OIDC signs in through an OpenID Connect issuer.
@@ -39,10 +39,10 @@ type Auth struct {
 	GitLab *SignIn `yaml:"gitlab,omitempty"`
 }
 
-// LocalAdmin is the username and password that sign in as an admin, for a
-// first run or as a way in when every provider is down.
+// LocalAdmin is the username and password that sign in as an admin. It is
+// for a first run, or is a way in when every provider is down.
 type LocalAdmin struct {
-	// User is the admin's name; DefaultAdminUser when unset.
+	// User is the admin's name. It is DefaultAdminUser when unset.
 	User     string    `yaml:"user,omitempty"`
 	Password SecretRef `yaml:"password,omitempty"`
 
@@ -69,8 +69,8 @@ const (
 
 // SignIn is one identity provider people sign in through.
 type SignIn struct {
-	// Name labels an OIDC sign-in on the sign-in page; DefaultOIDCName when
-	// unset. A GitHub sign-in is labelled GitHub.
+	// Name labels an OIDC sign-in on the sign-in page. It is DefaultOIDCName
+	// when unset. A GitHub sign-in is labeled GitHub.
 	Name string `yaml:"name,omitempty"`
 	// Issuer is an OIDC sign-in's discovery issuer URL, https only.
 	Issuer string `yaml:"issuer,omitempty"`
@@ -83,8 +83,8 @@ type SignIn struct {
 	// RolesClaim names the OIDC claim whose values, as a list or as the keys
 	// of a map, the role mapping sees as roles.
 	RolesClaim string `yaml:"rolesClaim,omitempty"`
-	// RoleMappingExpr is a CEL expression deciding what a person may do;
-	// see package rolemap. A key whose value is CEL ends in Expr.
+	// RoleMappingExpr is a CEL expression that decides what a person can do.
+	// See package rolemap. A key whose value is CEL ends in Expr.
 	RoleMappingExpr string `yaml:"roleMappingExpr,omitempty"`
 	// DefaultRole is what an OIDC sign-in the mapping does not place gets:
 	// none, refused, unless set to member, which reads every account.
@@ -99,7 +99,8 @@ type SignIn struct {
 // DefaultOIDCName labels an OIDC sign-in that names none.
 const DefaultOIDCName = "SSO"
 
-// Default roles an OIDC sign-in may give a person its mapping does not place.
+// Default roles that an OIDC sign-in can give a person that its mapping does
+// not place.
 const (
 	DefaultRoleNone   = "none"
 	DefaultRoleMember = "member"
@@ -252,7 +253,7 @@ func (a *Auth) validate() error {
 		}
 	}
 	// A provider without a mapping only ever admits members, so without a
-	// password nobody could administer the instance.
+	// password nobody can administer the instance.
 	_, _, local := a.AdminUser()
 	mapped := slices.ContainsFunc(a.SignIns(), func(s *SignIn) bool { return s.mapping != nil })
 	if len(a.SignIns()) > 0 && !local && !mapped {

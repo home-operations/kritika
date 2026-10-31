@@ -12,9 +12,9 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// TestReadAnalytics checks the window totals, a series with every bucket
-// present, and the repositories' activity, over reviews and findings on
-// either side of the window.
+// TestReadAnalytics makes sure that the window totals, a series with every
+// bucket present, and the repositories' activity are correct. It runs over
+// reviews and findings on either side of the window.
 func TestReadAnalytics(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -67,7 +67,7 @@ func TestReadAnalytics(t *testing.T) {
 		review(b, "h1", "completed", day(1, 13), 3*time.Minute, [2]string{"p2", "typo"})
 		// After the window.
 		review(b, "h2", "completed", day(3, 1), time.Minute)
-		// a merged a day and a half after it opened; b closed unmerged.
+		// a merged a day and a half after it opened. b closed unmerged.
 		if _, err := tx.Exec(ctx, `UPDATE pull_requests SET merged = true, closed_at = $2 WHERE id = $1`, a, day(-1, 12)); err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func TestReadAnalytics(t *testing.T) {
 	totals, before, series, repos := data.Current, data.Previous, data.Series, data.Repositories
 
 	// naming was dropped by the review at h2, and typo by the one after the
-	// window; race is still open. old counts before the window.
+	// window. race is still open. old counts before the window.
 	median := int64(3 * time.Minute / time.Millisecond)
 	// The seeded findings predate categories, so every category counts zero.
 	want := AnalyticsTotals{

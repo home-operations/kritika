@@ -98,9 +98,9 @@ func TestChatGPTRefresher(t *testing.T) {
 	}
 }
 
-// TestChatGPTRefresherOutlivesTenure: a refresh OpenAI has answered is
-// saved even when the leader's tenure ends meanwhile, since the refresh
-// token it replaced is spent.
+// TestChatGPTRefresherOutlivesTenure: a refresh that OpenAI answered is saved
+// even when the leader's tenure ends meanwhile, since the refresh token it
+// replaced is spent.
 func TestChatGPTRefresherOutlivesTenure(t *testing.T) {
 	st := storetest.Open(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -137,10 +137,9 @@ func TestChatGPTRefresherOutlivesTenure(t *testing.T) {
 	}
 }
 
-// TestChatGPTRefresherWaitsOutThePreviousLeader: a new leader's first
-// refresh waits until a previous leader's refresh in flight has saved, so
-// the refresh token it rotated is not sent twice and the provider stays
-// signed in.
+// TestChatGPTRefresherWaitsOutThePreviousLeader: a new leader's first refresh
+// waits until a previous leader's refresh in flight saves. So the refresh
+// token that it rotated is not sent twice, and the provider stays signed in.
 func TestChatGPTRefresherWaitsOutThePreviousLeader(t *testing.T) {
 	st := storetest.Open(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -157,8 +156,8 @@ func TestChatGPTRefresherWaitsOutThePreviousLeader(t *testing.T) {
 	if err := st.ConnectChatGPTSession(ctx, key, c, ""); err != nil {
 		t.Fatal(err)
 	}
-	// rt-1 is answered once, when released, with tokens already due again;
-	// sent again it is refused as reused, as OpenAI refuses it.
+	// rt-1 is answered once, when released, with tokens already due again.
+	// Sent again, it is refused as reused, as OpenAI refuses it.
 	inFlight, release, reused := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	free, refuse := sync.OnceFunc(func() { close(release) }), sync.OnceFunc(func() { close(reused) })
 	defer free()

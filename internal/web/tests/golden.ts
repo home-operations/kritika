@@ -1,9 +1,9 @@
 // Playwright fixtures built from the Go API's golden JSON files
 // (internal/webapi/testdata/*.golden.json), which pin the wire format of
-// every DTO. Reading them here instead of hand-writing mock bodies means a
-// DTO change on the Go side shows up as a failing UI test, not a silently
+// every DTO. This file reads them instead of hand-writing mock bodies. A DTO
+// change on the Go side then shows up as a failing UI test, not a silently
 // stale mock. Where a golden is too thin to exercise a view (one diff
-// header, one of each list), tests extend it with spreads of the golden
+// header, one of each list), tests extend it. They use spreads of the golden
 // itself, typed against src/lib/types.ts.
 import { readFileSync } from 'node:fs';
 import type { Page as PWPage, Route } from '@playwright/test';
@@ -15,7 +15,7 @@ export function golden<V>(name: string): V {
   return JSON.parse(readFileSync(new URL(`${name}.golden.json`, dir), 'utf8')) as V;
 }
 
-// The golden user chose a zone, a clock and a theme; the pages are tested
+// The golden user chose a zone, a clock and a theme. The pages are tested
 // as a user who left each to the browser sees them.
 export const NO_SETTINGS: T.UserSettings = { timeZone: '', clock: '', theme: '' };
 export const me: T.Me = { ...golden<T.Me>('me'), settings: NO_SETTINGS };
@@ -30,7 +30,7 @@ export const repoPage = golden<T.Page<T.Repository>>('page');
 export const repoDetail = golden<T.RepoDetail>('repo_detail');
 export const pull = golden<T.Pull>('pull');
 export const pullDetail = golden<T.PullDetail>('pull_detail');
-// Findings carry the agents that raised them, which the goldens may leave
+// Findings carry the agents that raised them, which the goldens can leave
 // out: the default agent alone is an empty list.
 const reviewDetailGolden = golden<T.ReviewDetail>('review_detail');
 export const reviewDetail: T.ReviewDetail = { ...reviewDetailGolden, findings: reviewDetailGolden.findings.map((f) => ({ agents: [], ...f })) };
@@ -56,7 +56,7 @@ export const accepted = golden<T.Accepted>('accepted');
 
 export const SLUG = me.accounts[0]!;
 
-// The golden diff is only the file header; add a hunk whose new-side line
+// The golden diff is only the file header. Add a hunk whose new-side line
 // 3 is where the golden finding (a.go:3) points.
 export const diffWithHunk: T.ReviewDiff = {
   ...reviewDiff,
@@ -84,8 +84,8 @@ export function resyncFrame(entry: string): string {
 type Body = unknown | ((url: URL) => unknown);
 
 // mockApi answers /api/v1/* from a table of [pathname pattern, body] rows
-// (first match wins) and records every request URL so a test can assert on
-// query parameters. Anything unmatched is a 404 with the API's error shape.
+// (first match wins). It records every request URL so that a test can assert
+// on query parameters. Anything unmatched is a 404 with the API's error shape.
 export async function mockApi(page: PWPage, table: [RegExp, Body][]): Promise<URL[]> {
   const seen: URL[] = [];
   await page.route('**/api/v1/**', (route: Route) => {
@@ -159,7 +159,7 @@ export interface Sent {
 
 // mockWrites answers non-GET /api/v1/* requests from [method, pathname
 // pattern, reply] rows (first match wins) and records each with its JSON
-// body. It takes precedence over mockApi, so register it after; GETs and
+// body. It takes precedence over mockApi, so register it after. GETs and
 // unmatched writes fall through to mockApi.
 export async function mockWrites(page: PWPage, rows: [string, RegExp, Reply | ((s: Sent) => Reply)][]): Promise<Sent[]> {
   const sent: Sent[] = [];

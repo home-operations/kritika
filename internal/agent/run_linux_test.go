@@ -14,10 +14,11 @@ import (
 	"time"
 )
 
-// TestRunToolStopsWhatACommandStarted: a process a command started does
-// not outlive the call, whether the command exited, holding its output
-// open or not, or was stopped; one that left the command's process group
-// does, and the command's output is its result all the same.
+// TestRunToolStopsWhatACommandStarted: a process that a command started does
+// not outlive the call. This is true when the command exited, whether or not
+// the process held its output open. It is also true when the command was
+// stopped. A process that left the command's process group does outlive the
+// call, and the command's output is still the call's result.
 func TestRunToolStopsWhatACommandStarted(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -80,8 +81,9 @@ func TestGroupSignals(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		// The leader may be reaped by then, so not its group: a child each
-		// case leaves running has a cleanup of its own.
+		// The leader can be reaped by then, so this cleanup does not kill its
+		// group. A child that each case leaves running has a cleanup of its
+		// own.
 		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 		child := 0
 		if args[0] == "spawn" {
@@ -132,8 +134,8 @@ func TestGroupSignals(t *testing.T) {
 	}
 }
 
-// exited reports whether pid has exited: reaped, or a zombie its new
-// parent has yet to reap.
+// exited reports whether pid exited: reaped, or a zombie that its new parent
+// did not reap yet.
 func exited(pid int) bool {
 	if stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
 		// The state follows the command name, which is in parentheses.

@@ -11,10 +11,10 @@ import (
 )
 
 // Every JSON shape the dashboard API returns. internal/web/src/lib/types.ts
-// mirrors these field for field; testdata/*.golden.json pins the names.
+// mirrors these field for field. testdata/*.golden.json pins the names.
 
-// Page is one page of a keyset-paginated list; NextCursor is null on the
-// last page.
+// Page is one page of a keyset-paginated list. NextCursor is null on the last
+// page.
 type Page[T any] struct {
 	Items      []T     `json:"items"`
 	NextCursor *string `json:"nextCursor"`
@@ -28,9 +28,9 @@ type User struct {
 	AvatarURL   string `json:"avatarUrl"`
 }
 
-// Me is who the session acts as: an admin, who reads and changes
-// everything, or a member of Accounts, the slugs ("<forge>/<name>") of the
-// accounts it may read.
+// Me is who the session acts as: an admin, who reads and changes everything,
+// or a member of Accounts, the slugs ("<forge>/<name>") of the accounts that
+// it can read.
 type Me struct {
 	User     User         `json:"user"`
 	Admin    bool         `json:"admin"`
@@ -38,9 +38,9 @@ type Me struct {
 	Settings UserSettings `json:"settings"`
 }
 
-// UserSettings is what a user chose for their own dashboard; an empty
-// field leaves the choice to the browser. TimeZone is an IANA zone name,
-// Clock "12" or "24", Theme "light" or "dark".
+// UserSettings is what a user chose for their own dashboard. An empty field
+// leaves the choice to the browser. TimeZone is an IANA zone name, Clock "12"
+// or "24", Theme "light" or "dark".
 type UserSettings struct {
 	TimeZone string `json:"timeZone"`
 	Clock    string `json:"clock"`
@@ -102,13 +102,14 @@ type InstanceSetting struct {
 	Source  configfile.Source `json:"source"`
 }
 
-// CredentialsSet says which of a connection's secrets resolve to a
-// value; the values themselves are never exposed.
+// CredentialsSet says which of a connection's secrets resolve to a value. The
+// values themselves are never exposed.
 type CredentialsSet struct {
-	// ClientID is a GitHub App's; Audience and RunnerAudience a Forgejo
-	// integration's, the second the read-only one runners fetch as; both
-	// have a PrivateKey. Token and RunnerToken are a GitLab service
-	// account's or a Gitea bot user's, the second read-only.
+	// ClientID is a GitHub App's. Audience and RunnerAudience are a Forgejo
+	// integration's, the second the read-only one that runners fetch as. A
+	// GitHub App and a Forgejo integration both have a PrivateKey. Token and
+	// RunnerToken are a GitLab service account's or a Gitea bot user's, the
+	// second read-only.
 	ClientID       bool `json:"clientId,omitzero"`
 	PrivateKey     bool `json:"privateKey,omitzero"`
 	Audience       bool `json:"audience,omitzero"`
@@ -118,10 +119,10 @@ type CredentialsSet struct {
 	WebhookSecret  bool `json:"webhookSecret"`
 }
 
-// Connection is one GitHub App, Forgejo integration, GitLab service
-// account or Gitea bot user and the accounts it serves. HookPath is where
-// its webhook arrives, under the dashboard's URL; Host is the Forgejo,
-// GitLab or Gitea instance it talks to, empty for GitHub.
+// Connection is one GitHub App, Forgejo integration, GitLab service account
+// or Gitea bot user and the accounts it serves. HookPath is where its webhook
+// arrives, under the dashboard's URL. Host is the Forgejo, GitLab or Gitea
+// instance it talks to, empty for GitHub.
 type Connection struct {
 	Name        string           `json:"name"`
 	Forge       configfile.Forge `json:"forge"`
@@ -130,12 +131,12 @@ type Connection struct {
 	Credentials CredentialsSet   `json:"credentials"`
 	HookPath    string           `json:"hookPath"`
 	// LastWebhookAt is when a webhook for the connection last passed
-	// signature verification, to the minute; null when none ever has, and
-	// kritika only polls it.
+	// signature verification, to the minute. It is null when none ever did,
+	// and kritika only polls it.
 	LastWebhookAt *time.Time `json:"lastWebhookAt"`
 	// LastUnsignedWebhookAt is when one last arrived with no signature, to
-	// the minute, which a GitHub App with no webhook secret sends; null when
-	// none has.
+	// the minute, which a GitHub App with no webhook secret sends. It is null
+	// when none did.
 	LastUnsignedWebhookAt *time.Time `json:"lastUnsignedWebhookAt"`
 }
 
@@ -164,12 +165,12 @@ type IndexState struct {
 	LastRunStatus store.IndexRunStatus `json:"lastRunStatus"`
 	LastRunAt     *time.Time           `json:"lastRunAt"`
 	// Job is the repository's index job queued or running, the running one
-	// when there are several; null when there is none.
+	// when there are several. It is null when there is none.
 	Job *IndexJob `json:"job"`
 	// Backlog is the repository's place, from 1, among the account's
-	// repositories waiting for the onboarding feeder to queue their first
-	// index, which it keeps only a few of queued or running at once; 0 when
-	// it is not waiting.
+	// repositories that wait for the onboarding feeder to queue their first
+	// index. The feeder keeps only a few of these indexes queued or running
+	// at once. Backlog is 0 when the repository is not waiting.
 	Backlog int `json:"backlog,omitzero"`
 }
 
@@ -184,8 +185,8 @@ type IndexJob struct {
 	AttemptedAt *time.Time         `json:"attemptedAt"`
 }
 
-// IndexContents is what a repository's active index generation holds;
-// null fields and zero counts when it has none.
+// IndexContents is what a repository's active index generation holds. It has
+// null fields and zero counts when the repository has none.
 type IndexContents struct {
 	Indexed    bool       `json:"indexed"`
 	Commit     string     `json:"commit"`
@@ -220,8 +221,8 @@ type IndexChunk struct {
 	Text      string `json:"text,omitzero"`
 }
 
-// IndexChunks are the chunks of one indexed file, up to a bound;
-// Truncated says the file holds more.
+// IndexChunks are the chunks of one indexed file, up to a bound. Truncated
+// says that the file holds more.
 type IndexChunks struct {
 	Path      string       `json:"path"`
 	Items     []IndexChunk `json:"items"`
@@ -247,16 +248,16 @@ type Repository struct {
 	// until it has.
 	Visibility string `json:"visibility"`
 	// TurnedOn starts false for discovered repositories, then follows the
-	// admin's choice; null lets the configuration decide whether it runs.
+	// admin's choice. A null value lets the configuration decide whether it
+	// runs.
 	TurnedOn   *bool      `json:"turnedOn"`
 	Index      IndexState `json:"index"`
 	LastReview *ReviewRef `json:"lastReview"`
 }
 
-// RepoSettings are a repository's settings as they resolve: the
-// admin's, or with the in-repo .kritika.yaml applied (RepoConfig). The
-// blocks are the configuration's own resolved types; durations are served
-// in whole seconds.
+// RepoSettings is a repository's configuration as it resolves: the admin's,
+// or with the in-repo .kritika.yaml applied (RepoConfig). The blocks are the
+// configuration's own resolved types. Durations are served in whole seconds.
 type RepoSettings struct {
 	Enabled        bool                     `json:"enabled"`
 	Models         configfile.Models        `json:"models"`
@@ -272,19 +273,19 @@ type RepoSettings struct {
 }
 
 // RepoConfig is the repository's .kritika.yaml as the last review that ran
-// read it, applied to the admin's settings as they are now.
+// read it, applied to the admin's configuration as it is now.
 type RepoConfig struct {
 	ReviewID string `json:"reviewId"`
 	// Commit is the merge base the review read the file at.
 	Commit string `json:"commit"`
 	// Found is false when there was no file there.
 	Found bool `json:"found"`
-	// Settings are the repository's settings with the file applied.
+	// Settings are the repository's configuration with the file applied.
 	Settings RepoSettings `json:"settings"`
 	// Filters are the file's own conditions, passed beside the admin's.
 	Filters configfile.Filters `json:"filters"`
-	// Dropped are the file's values outside the admin's bounds; the
-	// admin's value applies for each.
+	// Dropped are the file's values outside the admin's bounds. The admin's
+	// value applies for each.
 	Dropped []string `json:"dropped"`
 	// Ignored is why the file was ignored as a whole, when it was.
 	Ignored string `json:"ignored,omitempty"`
@@ -306,11 +307,11 @@ type IndexRun struct {
 	FinishedAt *time.Time           `json:"finishedAt"`
 }
 
-// RepoDetail is one repository, its settings and recent index runs.
-// Sources says, by the policy table's keys, which layer each of the
-// admin's settings comes from: the defaults, the account (its entry or the
-// repository's entry in it) or kritika's default. RepoConfig is null until a
-// review has read the repository's .kritika.yaml.
+// RepoDetail is one repository, its configuration and recent index runs.
+// Sources says, by the policy table's keys, which layer each value of the
+// admin's configuration comes from: the defaults, the account (its entry or
+// the repository's entry in it) or kritika's default. RepoConfig is null
+// until a review reads the repository's .kritika.yaml.
 type RepoDetail struct {
 	Repository
 	Settings   RepoSettings                 `json:"settings"`

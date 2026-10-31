@@ -56,7 +56,7 @@ func (opts ParseOptions) reviewers(f Finding) []string {
 	return out
 }
 
-// allows reports whether one of f's reviewers may report its category.
+// allows reports whether one of f's reviewers can report its category.
 func (opts ParseOptions) allows(f Finding) bool {
 	reviewers := f.Agents
 	if len(reviewers) == 0 {
@@ -86,8 +86,8 @@ func SchemaFor(strict, diagram bool, categories []Category) json.RawMessage {
 }
 
 // CheckCategories is check, which also refuses a finding in a category
-// outside categories, so a reviewer that may report only some corrects
-// one it strayed into; every category passes when categories is empty.
+// outside categories. So a reviewer that can report only some corrects one
+// that it strayed into. Every category passes when categories is empty.
 func CheckCategories(check func(json.RawMessage) error, categories []Category) func(json.RawMessage) error {
 	if len(categories) == 0 {
 		return check
@@ -97,7 +97,7 @@ func CheckCategories(check func(json.RawMessage) error, categories []Category) f
 			return err
 		}
 		var res Result
-		// check has decoded the same input.
+		// check decoded the same input.
 		_ = json.Unmarshal(raw, &res)
 		for _, f := range res.Findings {
 			if !slices.Contains(categories, f.Category) {
@@ -119,15 +119,15 @@ func joinCategories(categories []Category) string {
 }
 
 // Reviewer is one reviewer of a review with several, as its system prompt
-// gives it: its name, the instructions it reviews by, and the categories
-// it may report, every category when none.
+// gives it: its name, the instructions it reviews by, and the categories it
+// can report, every category when none.
 type Reviewer struct {
 	Name, Instructions string
 	Categories         []Category
 }
 
-// reviewerRole follows the rules for a reviewer other than the default
-// one; %s is its name.
+// reviewerRole follows the rules for a reviewer other than the default one.
+// %s is its name.
 const reviewerRole = `
 
 ## Your role
@@ -135,15 +135,15 @@ const reviewerRole = `
 This pull request is reviewed by several reviewers, each an agent of its own, and you are the %s reviewer. The others
 review it as well, so keep to what this role asks of you.`
 
-// reviewerCategories follows reviewerRole for a reviewer that may report
-// only some categories; %s names them.
+// reviewerCategories follows reviewerRole for a reviewer that can report only
+// some categories. %s names them.
 const reviewerCategories = ` Report only %s findings, whatever else you notice: the other reviewers cover the rest, and
 submit_review refuses a finding in another category.`
 
 // WithReviewer is system, a review's or a follow-up's system prompt, with
-// what the reviewer r is given beyond it appended: its role, the
-// categories it may report and its instructions, the maintainers' own. The
-// default reviewer, or none, is given nothing.
+// what the reviewer r is given beyond it appended: its role, the categories
+// it can report, and its instructions, the maintainers' own. The default
+// reviewer, or none, is given nothing.
 func WithReviewer(system string, r *Reviewer) string {
 	if r == nil || r.Name == DefaultReviewer {
 		return system
@@ -158,13 +158,13 @@ func WithReviewer(system string, r *Reviewer) string {
 	return system
 }
 
-// MergeReviewers merges, in place of the first, each pair of findings
+// MergeReviewers merges, in place of the first, each pair of findings that
 // different reviewers raised about the same thing: on one path, over lines
-// that overlap, in one category or under one title. The more severe
-// finding is kept, the first when they are as severe, crediting the
-// other's reviewers after its own, and keeping the other's fingerprint
-// when it carried a prior finding's and the kept one did not, so the
-// thread an earlier review opened goes on. Findings one reviewer raised
+// that overlap, in one category or under one title. The more severe finding
+// is kept, the first when they are as severe. The kept finding credits the
+// other's reviewers after its own. It keeps the other's fingerprint when the
+// other carried a prior finding's and the kept one did not. So the thread
+// that an earlier review opened goes on. Findings that one reviewer raised
 // are never merged with each other: it meant them apart.
 func MergeReviewers(findings []Finding) []Finding {
 	out := make([]Finding, 0, len(findings))
@@ -179,10 +179,10 @@ func MergeReviewers(findings []Finding) []Finding {
 	return out
 }
 
-// mergeReviewers is MergeReviewers over findings Parse kept, each
-// carrying the fingerprint of the prior finding it reports again, its own
-// title's included, so a merge under another title keeps that thread;
-// afterwards a finding carries one only where it differs from its title's,
+// mergeReviewers is MergeReviewers over findings that Parse kept. Each
+// carries the fingerprint of the prior finding that it reports again, its own
+// title's included, so a merge under another title keeps that thread.
+// Afterwards, a finding carries one only where it differs from its title's,
 // as Parse leaves them.
 func mergeReviewers(findings []Finding) []Finding {
 	out := MergeReviewers(findings)
@@ -195,9 +195,8 @@ func mergeReviewers(findings []Finding) []Finding {
 }
 
 // mergeDropped is dropped with its findings off the diff merged as
-// mergeReviewers merges the kept ones, which a review lists apart; the
-// others stay as they are, and every one's fingerprint is left as Parse
-// leaves them.
+// mergeReviewers merges the kept ones, which a review lists apart. The others
+// stay as they are, and every one's fingerprint is left as Parse leaves them.
 func mergeDropped(dropped []Dropped) []Dropped {
 	var off []Finding
 	out := make([]Dropped, 0, len(dropped))

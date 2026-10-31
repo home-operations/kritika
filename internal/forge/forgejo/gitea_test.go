@@ -50,8 +50,8 @@ func TestGiteaReplyInline(t *testing.T) {
 	f.json("POST", repoAPI+"/pulls/7/comments/13/replies", 201, map[string]any{"id": 30, "pull_request_review_id": 100})
 	f.json("POST", repoAPI+"/pulls/7/comments/99/replies", 404, map[string]any{"message": "not found"})
 	c := f.giteaClient(t)
-	// Gitea's own route posts the reply into the conversation the comment
-	// is in; nothing is listed first.
+	// Gitea's own route posts the reply into the conversation that the
+	// comment is in. Nothing is listed first.
 	id, err := c.ReplyInline(t.Context(), "acme", "widgets", 7, forge.Comment{ID: 13, Inline: true, InReplyTo: 10}, "answer")
 	if err != nil || id != 30 {
 		t.Fatalf("ReplyInline = %d, %v", id, err)
@@ -68,8 +68,8 @@ func TestGiteaReplyInline(t *testing.T) {
 }
 
 // TestGiteaReplyToMention: a reply in a code conversation arrives as a
-// conversation comment, which Gitea's comment route answers with 204; it
-// is found among the code comments, and answered in its conversation.
+// conversation comment, which Gitea's comment route answers with 204. It is
+// found among the code comments, and answered in its conversation.
 func TestGiteaReplyToMention(t *testing.T) {
 	f := newGiteaFake(t)
 	reviews(f)

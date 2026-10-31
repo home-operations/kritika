@@ -25,8 +25,8 @@ import (
 )
 
 // postHookForge runs onPost once, as the next comment is posted, after the
-// forge has created it: it is given the context the post was made on, and
-// its error is the post's. It finds no .kritika.yaml.
+// forge creates it: it is given the context the post was made on, and its
+// error is the post's. It finds no .kritika.yaml.
 type postHookForge struct {
 	*localForge
 	onPost func(ctx context.Context) error
@@ -45,8 +45,8 @@ func (f *postHookForge) FileAt(context.Context, string, string, string, string) 
 	return nil, fs.ErrNotExist
 }
 
-// mentions is a pull request on which onedr0p, who can write, made each
-// of comments; answered of its follow-ups were answered in the last hour.
+// mentions is a pull request on which onedr0p, who can write, made each of
+// comments. answered of its follow-ups were answered in the last hour.
 type mentions struct {
 	t       *testing.T
 	st      *store.Store
@@ -144,9 +144,9 @@ func (m *mentions) status(comment int) (store.FollowupStatus, string) {
 	return state.Status, state.Reason
 }
 
-// TestFollowUpLimitNoticeOnce: once a pull request has had its answers for
-// the hour, the limit notice is posted once, whether a second mention is
-// handled while the first posts it or the first is retried after posting.
+// TestFollowUpLimitNoticeOnce: once a pull request got its answers for the
+// hour, the limit notice is posted once. That holds whether a second mention
+// is handled while the first posts it or the first is retried after posting.
 func TestFollowUpLimitNoticeOnce(t *testing.T) {
 	t.Run("a second mention while the first posts", func(t *testing.T) {
 		m := newMentions(t, 4401, followUpsPerHour, "@kritika why?", "@kritika and this?")
@@ -187,9 +187,9 @@ func TestFollowUpLimitNoticeOnce(t *testing.T) {
 	})
 }
 
-// TestFollowUpCommandReplyOnce: a command's reply cut after the forge
-// created it, as a stopping worker cuts it, is still recorded, so the job's
-// rerun, its attempt refunded, does not post it again.
+// TestFollowUpCommandReplyOnce: a command's reply cut after the forge created
+// it, as a stopping worker cuts it, is still recorded. So the job's rerun,
+// its attempt refunded, does not post it again.
 func TestFollowUpCommandReplyOnce(t *testing.T) {
 	m := newMentions(t, 4403, 0, "@kritika pause")
 	ctx, cancel := context.WithCancel(t.Context())
@@ -223,9 +223,10 @@ func TestFollowUpFailureRecordedPastTheJob(t *testing.T) {
 	}
 }
 
-// TestFollowUpReplyCutByAFence: a reply a fence cuts, after River stopped
-// the job, fails the job with the fence rather than the cancellation,
-// which River would take for its stop and refund the attempt for.
+// TestFollowUpReplyCutByAFence: a reply that a fence cuts, after River
+// stopped the job, fails the job with the fence rather than the cancellation.
+// River will otherwise take the cancellation for its stop and refund the
+// attempt for it.
 func TestFollowUpReplyCutByAFence(t *testing.T) {
 	m := newMentions(t, 4405, 0, "@kritika pause")
 	fenced, fence := context.WithCancelCause(context.Background())

@@ -54,7 +54,7 @@ func TestFilteredPreparation(t *testing.T) {
 	for _, tt := range []struct {
 		name, labels string
 		number       int
-		// available has the job no longer running as River's client sees it;
+		// available has the job no longer running as River's client sees it.
 		// moved has River's row moved on, to a rescue or a newer attempt.
 		available       bool
 		movedState      rivertype.JobState

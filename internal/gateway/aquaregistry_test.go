@@ -18,10 +18,10 @@ const aquaFixture = `packages:
     asset: tool
 `
 
-// TestAquaRegistryRefresh: a registry the source answers with replaces the
-// one kept once it parses as one with packages; an unchanged one is asked
-// for with the last answer's validator, and a failed or broken answer
-// leaves the last kept.
+// TestAquaRegistryRefresh: a registry that the source answers with replaces
+// the one kept, once it parses as a registry with packages. An unchanged
+// registry is asked for with the validator of the last answer. A failed or
+// broken answer leaves the last one kept.
 func TestAquaRegistryRefresh(t *testing.T) {
 	type answer struct {
 		status     int

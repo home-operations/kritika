@@ -76,7 +76,7 @@ func TestCompile_Valid(t *testing.T) {
 		`pr.labels.exists(l, l.name == "cluster/production")`,
 		`"area/storage" in pr.labels.map(l, l.name)`,
 		`pr.title.startsWith("feat")`,
-		"pr.draft", // statically dyn under the map model — Eval enforces bool
+		"pr.draft", // statically dyn under the map model: Eval enforces bool
 	} {
 		if _, err := Compile(expr); err != nil {
 			t.Fatalf("Compile(%q): unexpected error: %v", expr, err)
@@ -84,7 +84,7 @@ func TestCompile_Valid(t *testing.T) {
 	}
 }
 
-// sampleVars is a realistic pr field map; over replaces individual fields.
+// sampleVars is a realistic pr field map. over replaces individual fields.
 func sampleVars(over map[string]any) map[string]any {
 	pr := map[string]any{
 		"number": 142, "title": "feat(rook): bump operator", "author": "renovate[bot]",
@@ -140,7 +140,7 @@ func TestEval(t *testing.T) {
 func TestEval_NonBoolResultErrors(t *testing.T) {
 	t.Parallel()
 	// pr.title is statically dyn (Compile accepts it) but yields a string at
-	// runtime — Eval must reject it, not silently coerce.
+	// runtime. Eval must reject it, not silently coerce.
 	p, err := Compile("pr.title")
 	if err != nil {
 		t.Fatalf("Compile: %v", err)

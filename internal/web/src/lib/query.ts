@@ -31,7 +31,7 @@ function accountPath(path: string): string | undefined {
 // staleness is wider than this (invalidateApi): a read the rule leaves out
 // can still carry what the event moved, such as the spend a review embeds.
 const EVERY: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'followup', 'model_call'];
-// Model calls only move spend and the queue; the rest is a run starting,
+// Model calls only move spend and the queue. The rest is a run starting,
 // progressing or ending.
 const RUNS: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'followup'];
 const ACCOUNT = String.raw`/api/v1/accounts/[^/]+/[^/]+`;
@@ -84,7 +84,7 @@ export function invalidateApi(path?: string, event?: LiveEvent): void {
         const artifact = cachedPath.match(/\/reviews\/([^/]+)\/(diff|raw|transcript)$/);
         if (artifact) {
           if (artifact[1] !== (event.kind === 'review' ? event.id : event.reviewId)) return false;
-          // Final diffs do not change with run events; resync still revalidates retention.
+          // Final diffs do not change with run events. Resync still revalidates retention.
           if (artifact[2] === 'diff' && query.state.data && !(query.state.data as ReviewDiff).pending) return false;
         }
       }

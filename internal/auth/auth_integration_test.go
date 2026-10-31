@@ -116,8 +116,9 @@ func (e *authEnv) do(r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// login is a sign-in the browser has started: the provider authorize URL
-// it was sent to and the login cookie that binds the sign-in to it.
+// login is a sign-in that the browser started: the provider authorize URL
+// that the browser was sent to, and the login cookie that binds the sign-in
+// to the browser.
 type login struct {
 	loc    *url.URL
 	cookie *http.Cookie

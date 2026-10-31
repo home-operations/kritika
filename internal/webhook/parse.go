@@ -13,8 +13,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// stateOpen is the pull request state kritika acts on; everything else is
-// closed, merged or not.
+// stateOpen is the pull request state that kritika acts on. Everything else
+// is closed, merged or not.
 const stateOpen = "open"
 
 // Event names as GitHub puts them in the X-GitHub-Event header, and
@@ -39,9 +39,9 @@ const (
 	KindThread       Kind = "thread"
 	KindPush         Kind = "push"
 	KindInstallation Kind = "installation"
-	// KindRepository is a repository created, archived, unarchived,
-	// renamed, transferred or deleted; its Repository says what the forge
-	// now says of it.
+	// KindRepository is a repository created, archived, unarchived, renamed,
+	// transferred or deleted. Its Repository says what the forge now says of
+	// it.
 	KindRepository Kind = "repository"
 	KindIgnored    Kind = "ignored"
 )
@@ -99,8 +99,8 @@ type PullRequest struct {
 	Body        string
 	CreatedAt   time.Time
 	// UpdatedAt is when the forge last changed the pull request, zero when
-	// the payload does not say. The store keeps the newest it has seen, so
-	// an event delivered late or again cannot rewind the pull request.
+	// the payload does not say. The store keeps the newest that it saw, so an
+	// event delivered late or again cannot rewind the pull request.
 	UpdatedAt time.Time
 	// ClosedAt is when a closed pull request was closed, nil while open.
 	ClosedAt *time.Time
@@ -169,8 +169,8 @@ type Thread struct {
 	CommentID int64
 	// Resolved is the thread's state now.
 	Resolved bool
-	// Outdated is whether a push had changed the lines that comment was
-	// made on by the time the thread changed state.
+	// Outdated is whether a push changed the lines that comment was made on
+	// by the time the thread changed state.
 	Outdated    bool
 	Sender      string
 	SenderIsBot bool
@@ -183,15 +183,15 @@ type Push struct {
 }
 
 // Installation is a GitHub App installation change: which repositories the
-// App may now see.
+// App can now see.
 type Installation struct {
 	// Repositories is the full list on "created", the delta on
-	// "added"/"removed"; the action says which.
+	// "added"/"removed". The action says which.
 	Repositories []string
 }
 
-// MaxBody bounds a payload before parsing. GitHub caps deliveries at 25 MB;
-// a PR event is a few hundred kilobytes at most.
+// MaxBody bounds a payload before parsing. GitHub caps deliveries at 25 MB. A
+// PR event is a few hundred kilobytes at most.
 const MaxBody = 4 << 20
 
 // Parse turns a verified webhook into an Event. Unknown events are
@@ -240,14 +240,14 @@ type ghUser struct {
 
 func (u ghUser) isBot() bool { return IsBot(u.Type, u.Login) }
 
-// Outdated reports whether a push has changed the lines an inline comment
-// was made on, from GitHub's line and original_line of it: it nulls the
-// line of such a comment and keeps original_line; a file-level comment has
+// Outdated reports whether a push changed the lines that an inline comment
+// was made on, from GitHub's line and original_line of it. GitHub nulls the
+// line of such a comment and keeps original_line. A file-level comment has
 // neither.
 func Outdated(line, originalLine *int) bool { return line == nil && originalLine != nil }
 
-// IsBot reports whether a GitHub user of userType and login is an App or
-// bot account, as the type says or the "[bot]" suffix of its login does.
+// IsBot reports whether a GitHub user of userType and login is an App or bot
+// account. The type says so, or the "[bot]" suffix of its login does.
 func IsBot(userType, login string) bool {
 	return strings.EqualFold(userType, "Bot") || strings.HasSuffix(login, "[bot]")
 }
@@ -530,8 +530,8 @@ func parsePush(delivery string, body []byte) (Event, error) {
 	}, nil
 }
 
-// repositoryActions are the repository event actions that change what
-// kritika records of one; the rest, such as edited, change nothing it keeps.
+// repositoryActions are the repository event actions that change what kritika
+// records of one. The rest, such as edited, change nothing that it keeps.
 var repositoryActions = map[string]bool{
 	"created": true, "archived": true, "unarchived": true, "publicized": true, "privatized": true,
 	"renamed": true, "transferred": true, "deleted": true,

@@ -18,29 +18,30 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-// Attribution headers OpenRouter shows in its dashboard; harmless elsewhere.
+// Attribution headers that OpenRouter shows in its dashboard. They are
+// harmless elsewhere.
 var attribution = map[string]string{
 	"HTTP-Referer": "https://github.com/home-operations/kritika",
 	"X-Title":      "kritika",
 }
 
-// Version is the kritika version the adapters identify themselves with to
-// a provider; main sets it once at startup. Model gateways that distinguish
-// coding agents from generic SDK traffic ask for a client's own user agent
-// rather than the SDK's.
+// Version is the kritika version that the adapters identify themselves with
+// to a provider. main sets it once at startup. Model gateways that
+// distinguish coding agents from generic SDK traffic ask for a client's own
+// user agent rather than the SDK's.
 var Version = "dev"
 
 func userAgent() string { return "kritika/" + Version }
 
 // OpenAIConfig configures an OpenAI chat-completions adapter.
 type OpenAIConfig struct {
-	// BaseURL is the API root, ".../v1"; empty means the SDK's default.
+	// BaseURL is the API root, ".../v1". Empty means the SDK's default.
 	BaseURL string
 	APIKey  string
-	// Headers are the provider's configured headers, which replace
-	// kritika's own of the same name; see SessionPlaceholder.
+	// Headers are the provider's configured headers, which replace kritika's
+	// own of the same name. See SessionPlaceholder.
 	Headers map[string]string
-	// HTTPClient may be nil.
+	// HTTPClient can be nil.
 	HTTPClient *http.Client
 	// OpenRouter enables OpenRouter's extensions: server-side fallback
 	// through the models list, and usage accounting. It implies
@@ -52,27 +53,27 @@ type OpenAIConfig struct {
 	// Gateway carries the ChatGPT output kritika's model gateway returns
 	// with a turn back to it on the turn's later steps.
 	Gateway bool
-	// OpenCode names the step's conversation in the header OpenCode Go
-	// and Zen route and cache prompts by; without it they refuse the
-	// request.
+	// OpenCode names the step's conversation in the header that OpenCode Go
+	// and Zen route and cache prompts by. Without it they refuse the request.
 	OpenCode bool
 	Pricing  Pricing
-	// Retries is how many times the SDK's client sends a request the
-	// server failed again on its own, minding its Retry-After and
-	// x-should-retry headers; zero sends it once. A provider's adapter
-	// leaves it at zero: the gateway owns retrying, with the provider's
-	// retries, and the SDK's own would multiply its attempts.
+	// Retries is how many times the SDK's client sends again, on its own, a
+	// request that the server failed. The client minds the server's
+	// Retry-After and x-should-retry headers. Zero sends the request once. A
+	// provider's adapter leaves it at zero: the gateway owns retrying, with
+	// the provider's retries, and the SDK's own retries will otherwise
+	// multiply its attempts.
 	Retries int
-	// RequestTimeout bounds one request; zero is StepTimeout, a
-	// provider's. The runner's client of the gateway allows the gateway's
-	// whole step budget.
+	// RequestTimeout bounds one request. Zero is StepTimeout, a provider's
+	// timeout. The runner's client of the gateway allows the gateway's whole
+	// step budget.
 	RequestTimeout time.Duration
-	// Part names, in PartHeader on every request, the part of a split
-	// review the runner's client of the gateway steps for; zero sends none.
+	// Part names, in PartHeader on every request, the part of a split review
+	// that the runner's client of the gateway steps for. Zero sends none.
 	Part int
-	// Reviewer names, in ReviewerHeader on every request, the reviewer
-	// other than the default one the runner's client of the gateway steps
-	// for; "" sends none.
+	// Reviewer names, in ReviewerHeader on every request, the reviewer other
+	// than the default one that the runner's client of the gateway steps for.
+	// "" sends none.
 	Reviewer string
 }
 
@@ -103,20 +104,20 @@ type OpenAI struct {
 	catalogCache   modelCatalog[string]
 }
 
-// withoutEnvironment deletes the headers openai.NewClient adds from the
-// environment, OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS,
-// which would reach every OpenAI-compatible provider, the ChatGPT backend
+// withoutEnvironment deletes the headers that openai.NewClient adds from the
+// environment: OPENAI_ORG_ID, OPENAI_PROJECT_ID, and OPENAI_CUSTOM_HEADERS.
+// Otherwise they reach every OpenAI-compatible provider, the ChatGPT backend,
 // and the gateway alike. openai-go has no opt-out like anthropic-sdk-go's
-// WithoutEnvironmentDefaults; the key and base URL, kritika always sets.
-// It goes before kritika's own headers, which a custom header could name.
+// WithoutEnvironmentDefaults. kritika always sets the key and base URL. It
+// goes before kritika's own headers, which a custom header can name.
 func withoutEnvironment() []option.RequestOption {
 	opts := []option.RequestOption{option.WithHeaderDel("OpenAI-Organization"), option.WithHeaderDel("OpenAI-Project")}
 	for line := range strings.SplitSeq(os.Getenv("OPENAI_CUSTOM_HEADERS"), "\n") {
 		if name, _, ok := strings.Cut(line, ":"); ok {
 			name = strings.TrimSpace(name)
 			if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Accept") {
-				// These defaults describe the SDK's JSON requests; deleting
-				// the environment override would also delete the default.
+				// These defaults describe the SDK's JSON requests. Deleting
+				// the environment override also deletes the default.
 				opts = append(opts, option.WithHeader(name, "application/json"))
 			} else {
 				opts = append(opts, option.WithHeaderDel(name))
@@ -193,9 +194,9 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 	}
 	if o.openRouter {
 		// OpenRouter walks the models list itself, primary first. The
-		// top-level cache_control is its automatic prompt caching, a
+		// top-level cache_control is its automatic prompt caching: a
 		// breakpoint on the last cacheable block that moves forward as the
-		// conversation grows; without it, providers whose caching is not
+		// conversation grows. Without it, providers whose caching is not
 		// automatic (Anthropic, Gemini) cache none of a tool loop's steps.
 		opts = append(opts, option.WithJSONSet("usage", map[string]any{"include": true}))
 		if !req.Once {
@@ -227,9 +228,9 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 	})
 }
 
-// step sends modelID, with the fallbacks OpenRouter may answer with
-// instead, priced under alias, the floating alias that selected it, when
-// it has no price of its own.
+// step sends modelID, with the fallbacks that OpenRouter can answer with
+// instead. If modelID has no price of its own, step prices it under alias,
+// the floating alias that selected it.
 func (o *OpenAI) step(
 	ctx context.Context, params openai.ChatCompletionNewParams, modelID, alias string, fallbacks []string, opts ...option.RequestOption,
 ) (StepResponse, error) {
@@ -247,11 +248,11 @@ func (o *OpenAI) step(
 	msg := cc.Choices[0].Message
 	out := StepResponse{Text: msg.Content, Stop: openAIStop(cc.Choices[0].FinishReason), Model: modelID}
 	if o.reportsModel && cc.Model != "" {
-		// OpenRouter's server-side fallback may answer with another model
-		// in the list, and the gateway answers for a model the runner only
-		// names as "review"; both responses say which. Another provider's
-		// model field names a dated snapshot of the one asked for, which is
-		// not what an admin configured, so it is not used.
+		// OpenRouter's server-side fallback can answer with another model in
+		// the list, and the gateway answers for a model that the runner names
+		// only as "review". Both responses say which model answered. Another
+		// provider's model field names a dated snapshot of the one asked for.
+		// That is not what an admin configured, so step does not use it.
 		out.Model = cc.Model
 	}
 	for _, tc := range msg.ToolCalls {
@@ -312,12 +313,12 @@ func reportedCost(raw json.RawMessage) (float64, bool) {
 	return 0, false
 }
 
-// price is what a call the provider reported no cost for cost: the price
-// of the model that answered, else that of the model asked for or its
-// alias. Those apply only where the model that answered can be no other
-// than the one asked for, under the id an alias selected or another name
-// for it, which a request listing fallbacks cannot tell apart from one of
-// them answering.
+// price is what a call costs when the provider reported no cost for it. It is
+// the price of the model that answered, else that of the model asked for or
+// its alias. Those apply only where the model that answered can be no other
+// than the one asked for. That model can answer under the id that an alias
+// selected, or under another name for it. A request that lists fallbacks
+// cannot tell that case apart from one of the fallbacks answering.
 func (o *OpenAI) price(served, asked, alias string, fallbacks []string, u Usage) (float64, bool) {
 	keys := []string{served}
 	if served == asked || len(fallbacks) == 0 {
@@ -331,8 +332,8 @@ func (o *OpenAI) price(served, asked, alias string, fallbacks []string, u Usage)
 	return 0, true
 }
 
-// openAIError adds the body a server refused a request with to the SDK's
-// error, whose own text is only the status; the body says why.
+// openAIError adds the body that a server refused a request with to the SDK's
+// error, whose own text is only the status. The body says why.
 func openAIError(err error) error {
 	if e, ok := errors.AsType[*openai.Error](err); ok && e.RawJSON() != "" {
 		return fmt.Errorf("%w %s", err, e.RawJSON())
@@ -367,8 +368,8 @@ func (o *OpenAI) params(req StepRequest) (openai.ChatCompletionNewParams, error)
 		p.Messages = append(p.Messages, messages...)
 	}
 	if req.MaxTokens > 0 {
-		// OpenAI's own API has deprecated max_tokens; OpenRouter documents
-		// only max_tokens.
+		// OpenAI's own API deprecated max_tokens. OpenRouter documents only
+		// max_tokens.
 		if o.openRouter {
 			p.MaxTokens = openai.Int(req.MaxTokens)
 		} else {

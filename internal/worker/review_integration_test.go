@@ -107,12 +107,12 @@ type localForge struct {
 	// dismissals how often they were withdrawn.
 	approvals  []string
 	dismissals int
-	// permissions by login; unknown logins have read access.
+	// permissions by login. Unknown logins get read access.
 	permissions map[string]forge.Permission
 	replies     []string
 	resolved    []int64
 	// reactions are the bot's reactions on comments, by comment id, and
-	// reacted every comment it has reacted to, in order.
+	// reacted is every comment that it reacted to, in order.
 	reactions map[int64]string
 	reacted   []int64
 	// size is what PullRequest reports, none when it changes no files.
@@ -132,7 +132,7 @@ func (l *localForge) onPublish(fn func()) {
 	l.publishing = fn
 }
 
-// published takes the publishing hook; the caller runs it unlocked.
+// published takes the publishing hook. The caller runs it unlocked.
 func (l *localForge) published() func() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -159,7 +159,7 @@ func (l *localForge) MergeBase(context.Context, string, string, int, string, str
 	return l.base, nil
 }
 
-// PullRequestDiff is the diff the runner would make of the same commits.
+// PullRequestDiff is the diff the runner makes of the same commits.
 func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, base, head string) (string, error) {
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: l.dir, Head: head, Base: base})
 	if err != nil {
@@ -169,8 +169,7 @@ func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, ba
 	return res.Diff, nil
 }
 
-// FileAt reads path at ref from the test repository, as the forge's API
-// would.
+// FileAt reads path at ref from the test repository, as the forge's API does.
 func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, error) {
 	r, err := git.PlainOpen(l.dir)
 	if err != nil {
@@ -209,8 +208,8 @@ func (l *localForge) BranchTip(context.Context, string, string, string) (string,
 }
 
 // fakeEmbedder maps text to an 8-dimensional vector of character-bigram
-// counts, so similar text gets similar vectors without a model. With fail
-// set it errors instead, once passes more calls have succeeded.
+// counts, so similar text gets similar vectors without a model. With fail set
+// it errors instead, once passes more calls succeed.
 type fakeEmbedder struct {
 	mu     sync.Mutex
 	calls  int
@@ -271,7 +270,7 @@ func (l *localForge) CreateComment(_ context.Context, _, _ string, _ int, body s
 // commentBase puts fake comment ids where GitHub's are: beyond int32.
 const commentBase int64 = 5_800_000_000
 
-// addComment stores a conversation comment; the caller holds the lock.
+// addComment stores a conversation comment. The caller holds the lock.
 func (l *localForge) addComment(author, body string) int64 {
 	if l.comments == nil {
 		l.comments = map[int64]string{}
@@ -343,8 +342,8 @@ func (l *localForge) PullRequest(context.Context, string, string, int) (forge.Op
 	return forge.OpenPullRequest{}, forge.ErrNotFound
 }
 
-// setSize makes PullRequest report a pull request of size's lines and
-// files; the zero size reports none.
+// setSize makes PullRequest report a pull request of size's lines and files.
+// The zero size reports none.
 func (l *localForge) setSize(size forge.OpenPullRequest) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -480,7 +479,7 @@ func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ strin
 	return ids, nil
 }
 
-// Approve records the approved head; a head approved once stands.
+// Approve records the approved head. A head approved once stands.
 func (l *localForge) Approve(_ context.Context, _, _ string, _ int, headSHA, _ string) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -529,9 +528,9 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 }
 
 // fakeCompleter answers a review's first step by submitting one finding on
-// the first added line of main.go and one that cannot be anchored, a
-// follow-up's with a fixed reply, and a confidence call with a full score,
-// as the forced tool call a model.Structured makes.
+// the first added line of main.go and one that cannot be anchored. It answers
+// a follow-up's with a fixed reply. It answers a confidence call with a full
+// score, as the forced tool call that a model.Structured makes.
 type fakeCompleter struct {
 	mu       sync.Mutex
 	calls    int
@@ -550,7 +549,7 @@ type fakeCompleter struct {
 	// resolved, when set, are the ids a review lists as resolved.
 	resolved []string
 	// scoreFails is how many confidence calls still fail with a 503 before
-	// one is answered; a failed call is not recorded as made.
+	// one is answered. A failed call is not recorded as made.
 	scoreFails int
 	// reply, when set, is the JSON a follow-up's agent submits in place of
 	// its reply.
@@ -598,7 +597,7 @@ func (f *fakeCompleter) resolve(ids ...string) {
 }
 
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
-	// An agent is offered its read-only tools too; it submits at once.
+	// An agent is offered its read-only tools too. It submits at once.
 	tool := req.Tools[0].Name
 	for _, t := range req.Tools {
 		if t.Name == "submit_review" || t.Name == review.SubmitReply {
@@ -689,10 +688,10 @@ func testRepo(t *testing.T) (dir, base, head string) {
 	head = commit("main.go", "package main\n\nfunc b() {}\n", "head")
 	// checkActions later resets the branch back to base and commits again to
 	// mint fresh heads (rerunHead, canceling, ...), which orphans head from
-	// every branch. A lightweight tag keeps it reachable so a later fetch of
-	// head (e.g. EnqueueReindex's BranchTip-resolved commit) still satisfies
-	// upload-pack's allowReachableSHA1InWant check instead of failing "not
-	// our ref".
+	// every branch. A lightweight tag keeps it reachable. So a later fetch of
+	// head (for example, EnqueueReindex's BranchTip-resolved commit) still
+	// satisfies upload-pack's allowReachableSHA1InWant check instead of
+	// failing "not our ref".
 	if _, err := r.CreateTag("kritika-head", plumbing.NewHash(head), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +755,7 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, account
 		return tx.QueryRow(ctx, `SELECT model FROM reviews WHERE head_sha = $1`, head).Scan(&modelName)
 	})
 	// The finding off the diff is recorded beside the posted one. Two usage
-	// rows for the review: the completion and the stage 4 embedding; index
+	// rows for the review: the completion and the stage 4 embedding. Index
 	// runs add their own.
 	if err != nil || findings != 2 || usage < 2 || tokens < 15 || leasesHeld != 0 || modelName != "reviewer" {
 		t.Fatalf("rows: err=%v findings=%d usage=%d tokens=%d leases=%d model=%s", err, findings, usage, tokens, leasesHeld, modelName)
@@ -767,11 +766,11 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, account
 	}
 }
 
-// checkContextPack dispatches a review of head, waits for it to complete,
-// and asserts both the write-back/review-row contract (via checkWriteBack
-// and checkReviewRows) and the context pack the run recorded: its diff,
-// changed paths, empty stages array and heartbeat, joined through the
-// runner_runs row the pack's completion depends on.
+// checkContextPack dispatches a review of head and waits for it to complete.
+// It asserts both the write-back/review-row contract (via checkWriteBack and
+// checkReviewRows) and the context pack that the run recorded: its diff,
+// changed paths, empty stages array, and heartbeat. They are joined through
+// the runner_runs row that the pack's completion depends on.
 func checkContextPack(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter,
 	dispatch func(headSHA string, bot bool), waitReview func(headSHA string) (status, patchID, mergeBase string),
@@ -804,9 +803,9 @@ func checkContextPack(
 	if err != nil || phase != "done" || len(changed) != 1 || changed[0] != "main.go" || logTail == "" || !heartbeat {
 		t.Fatalf("pack: err=%v phase=%s changed=%v log=%q heartbeat=%v", err, phase, changed, logTail, heartbeat)
 	}
-	// The whole three-line file is shown by the diff, so stages 1 to 3
-	// give nothing; the index built earlier gives stage 4, which the pack
-	// records too.
+	// The diff shows the whole three-line file, so stages 1 to 3 give
+	// nothing. The index built earlier gives stage 4, which the pack records
+	// too.
 	if !strings.HasPrefix(stages, "[{") || strings.Count(stages, `"stage": "similar"`) != strings.Count(stages, `"stage"`) {
 		t.Fatalf("stages = %s", stages)
 	}
@@ -815,10 +814,11 @@ func checkContextPack(
 	}
 }
 
-// checkIndexing onboards the repository with the branch at base, moves the
-// branch to head while the full build runs, and checks that a push then
-// joins the running job, which indexes head incrementally once the build
-// is done; it checks the generation, chunk and staging rows after each.
+// checkIndexing onboards the repository with the branch at base, and moves
+// the branch to head while the full build runs. It makes sure that a push
+// then joins the running job, which indexes head incrementally once the build
+// is done. It makes sure that the generation, chunk, and staging rows are
+// correct after each.
 func checkIndexing(
 	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, accountID, repoID, base, head string,
 ) {
@@ -828,8 +828,8 @@ func checkIndexing(
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
 			// An incremental step advances the active generation's commit
-			// before its own row finishes, so only read once no run to the
-			// commit is running; the newest finished row is then the step
+			// before its own row finishes. So only read once no run to the
+			// commit is running. The newest finished row is then the step
 			// itself.
 			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, mode FROM index_runs WHERE commit_sha = $1 AND finished_at IS NOT NULL
@@ -927,10 +927,10 @@ func checkIndexing(
 	}
 }
 
-// pushDuringBuild sets the index runners going: the first, the full build
-// at base, moves the branch to head and delivers its push, whose insert
-// result it sends on pushed; the second, the incremental step to head,
-// waits until checked closes, so the full build's rows can be read first.
+// pushDuringBuild sets the index runners going. The first, the full build at
+// base, moves the branch to head and delivers its push, whose insert result
+// it sends on pushed. The second, the incremental step to head, waits until
+// checked closes, so the full build's rows can be read first.
 func pushDuringBuild(
 	ctx context.Context, t *testing.T, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, accountID, repoID, head string,
 ) (pushed <-chan error, checked chan struct{}) {
@@ -959,12 +959,12 @@ func pushDuringBuild(
 	return result, checked
 }
 
-// checkIndexRetry fails a forced rebuild's runner every time and checks
-// River works the job again: a first retry comes within the scheduler's
+// checkIndexRetry fails a forced rebuild's runner every time and makes sure
+// that River works the job again: a first retry comes within the scheduler's
 // interval, so the job is retryable only after its second failure. It then
-// cancels the third. It also checks the job drops the chunks a build killed
-// long before left behind, but not those of a build that may still be
-// running beside it.
+// cancels the third. It also makes sure that the job drops the chunks that a
+// build killed long before left behind. The job does not drop those of a
+// build that can still be running beside it.
 func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, accountID, repoID string) {
 	t.Helper()
 	killed := plantBuild(ctx, t, st, accountID, repoID, jobtimeout.RescueStuckJobsAfter+time.Minute)
@@ -1002,9 +1002,9 @@ func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *
 	}
 }
 
-// plantBuild leaves chunks under an unfinished index run started age ago,
-// as a job killed mid-build or one still embedding would, and returns the
-// run's id. The run goes when the test ends.
+// plantBuild leaves chunks under an unfinished index run started age ago, as
+// a job killed mid-build or one still embedding does. It returns the run's
+// id. The run goes when the test ends.
 func plantBuild(ctx context.Context, t *testing.T, st *store.Store, accountID, repoID string, age time.Duration) string {
 	t.Helper()
 	var runID string
@@ -1046,8 +1046,8 @@ func runChunks(ctx context.Context, t *testing.T, st *store.Store, accountID, ru
 }
 
 // checkIndexEmbedFailure fails a forced rebuild's embedding after its first
-// batch and checks progress survives a retry but is cleaned after cancellation,
-// while the live index is untouched.
+// batch. It makes sure that progress survives a retry but is cleaned after
+// cancellation, while the live index is untouched.
 func checkIndexEmbedFailure(
 	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, accountID, repoID string,
 ) {
@@ -1111,9 +1111,8 @@ func checkIndexEmbedFailure(
 	}
 }
 
-// checkOtherReviewRunning: with every review of pull request 1 finished,
-// none is running beside any other; a running one is, except beside
-// itself.
+// checkOtherReviewRunning: with every review of pull request 1 finished, none
+// is running beside any other. A running one is, except beside itself.
 func checkOtherReviewRunning(ctx context.Context, t *testing.T, b *Base, accountID string) {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
@@ -1145,9 +1144,9 @@ func checkOtherReviewRunning(ctx context.Context, t *testing.T, b *Base, account
 	}
 }
 
-// followUpHelpers post a mention on pull request 1 as the forge would
-// deliver it, wait for its follow-up's status and reason, and read the
-// last comment on the pull request.
+// followUpHelpers post a mention on pull request 1 as the forge delivers it.
+// They wait for its follow-up's status and reason, and read the last comment
+// on the pull request.
 func followUpHelpers(
 	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, req ingest.Request, accountID string,
 ) (mention func(author, body string) int64, waitFollowUp func(id int64) (string, string), lastComment func() (int, string)) {
@@ -1190,9 +1189,9 @@ func followUpHelpers(
 	return mention, waitFollowUp, lastComment
 }
 
-// replyThreads are two inline threads on the finding the review posted,
-// which checkReplies replies in, none of the replies mentioning the bot,
-// as the forge would deliver them; the second is the one conceded in.
+// replyThreads are two inline threads on the finding that the review posted,
+// which checkReplies replies in, as the forge delivers them. None of the
+// replies mentions the bot. The second is the one conceded in.
 type replyThreads struct {
 	t            *testing.T
 	st           *store.Store
@@ -1206,8 +1205,8 @@ type replyThreads struct {
 	waitFollowUp func(id int64) (string, string)
 }
 
-// reply posts body by author in the thread in opened, as the forge would
-// deliver it, and returns the comment's id.
+// reply posts body by author in the thread in opened, as the forge delivers
+// it, and returns the comment's id.
 func (r *replyThreads) reply(in int64, author, body string) int64 {
 	r.t.Helper()
 	r.lf.mu.Lock()
@@ -1249,13 +1248,13 @@ func (r *replyThreads) dismissals() int {
 	return n
 }
 
-// checkReplies posts replies in threads of a finding the review posted,
-// none of them mentioning the bot, as the forge would deliver them, and
-// checks each is answered as the agent saw fit: a reply, nothing and why,
-// which counts as an answer all the same, or a concession that dismisses
-// the finding and resolves the thread; and that one from someone without
-// write access, one past the bot's replies in its thread, or one in a
-// resolved thread, is ignored.
+// checkReplies posts replies in threads of a finding that the review posted,
+// as the forge delivers them. None of them mentions the bot. It makes sure
+// that each is answered as the agent saw fit: a reply, nothing and why, which
+// counts as an answer all the same, or a concession that dismisses the
+// finding and resolves the thread. It also makes sure that these are ignored:
+// a reply from someone without write access, one past the bot's replies in
+// its thread, or one in a resolved thread.
 func checkReplies(
 	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
 ) {
@@ -1293,8 +1292,8 @@ func checkReplies(
 	checkReplyAnswers(t, r, fc)
 	checkReplyBounds(t, r, fc)
 
-	// The checks that follow review the pull request again, and would find
-	// the conceded finding dismissed.
+	// The checks that follow review the pull request again. Without this
+	// delete, they find the conceded finding dismissed.
 	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `DELETE FROM dismissals WHERE fingerprint = $1`, fingerprint)
 		return err
@@ -1308,9 +1307,8 @@ func checkReplies(
 }
 
 // checkReplyAnswers: a reply that needs the reviewer is answered in its
-// thread from a reply-mode prompt, one that does not is answered with
-// nothing and why, which the model was paid for, and an outsider's is
-// ignored.
+// thread from a reply-mode prompt. One that does not is answered with nothing
+// and why, which the model was paid for. An outsider's is ignored.
 func checkReplyAnswers(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 	t.Helper()
 	id := r.reply(r.root, "onedr0p", "The caller holds the lock, so this cannot happen.")
@@ -1357,8 +1355,8 @@ func checkReplyAnswers(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 }
 
 // checkReplyBounds: past repliesPerThread of the bot's replies a thread is
-// left to a mention; a concession in the other thread dismisses the
-// finding and resolves the thread, which then takes no more replies.
+// left to a mention. A concession in the other thread dismisses the finding
+// and resolves the thread, which then takes no more replies.
 func checkReplyBounds(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 	t.Helper()
 	for i := 2; i <= repliesPerThread; i++ {
@@ -1400,8 +1398,9 @@ func checkReplyBounds(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 	}
 }
 
-// checkFollowUps posts mentions as the forge would deliver them and checks
-// qualification, the reply, the thread in the prompt, and the rate limit.
+// checkFollowUps posts mentions as the forge delivers them and makes sure
+// that qualification, the reply, the thread in the prompt, and the rate limit
+// are correct.
 func checkFollowUps(
 	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
 ) {
@@ -1421,7 +1420,7 @@ func checkFollowUps(
 	if want := fmt.Sprintf("followup-%d", id); session != want {
 		t.Fatalf("follow-up session = %q, want %q: the mention is the conversation", session, want)
 	}
-	// The agent is offered a review's tools; how it answers, submit_reply's
+	// The agent is offered a review's tools. How it answers, submit_reply's
 	// description says.
 	if strings.Contains(system, "submit_reply") || !strings.Contains(system, "read_file, grep and list_files") {
 		t.Fatalf("follow-up system prompt lacks its tools:\n%s", system)
@@ -1465,7 +1464,7 @@ func checkFollowUps(
 		t.Fatalf("no mention: status = %s (%s)", status, reason)
 	}
 
-	// Four more answers exhaust the hourly allowance; the next mention gets
+	// Four more answers exhaust the hourly allowance. The next mention gets
 	// one notice, the one after that nothing new.
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO followups (account_id, pull_request_id, comment_id, status)
@@ -1487,15 +1486,15 @@ func checkFollowUps(
 	id = mention("onedr0p", "@kritika and again?")
 	status, _ := waitFollowUp(id)
 	after, _ := lastComment()
-	// The mention itself is one comment; no notice follows it.
+	// The mention itself is one comment. No notice follows it.
 	if status != "limited" || after != before+1 {
 		t.Fatalf("second limited mention: status = %s, comments %d -> %d", status, before, after)
 	}
 }
 
 // checkFollowUpRun: the follow-up's agent ran in a runner of its own kind,
-// which submitted the reply, and what it spent is charged as a follow-up's
-// to no review.
+// which submitted the reply. What it spent is charged as a follow-up's to no
+// review.
 func checkFollowUpRun(ctx context.Context, t *testing.T, st *store.Store, accountID string, commentID int64) {
 	t.Helper()
 	var phase, stop, result string
@@ -1529,11 +1528,11 @@ func checkFollowUpRun(ctx context.Context, t *testing.T, st *store.Store, accoun
 }
 
 // checkReviewRequest: "@kritika review" queues a review of the head for
-// someone with write access, and answers with the bot's marks as the
-// review ends rather than a reply; anyone else is ignored as for a
-// question. It runs last, as the review it queues changes pull request 1's
-// last review, and first clears the thread's follow-ups, so the hourly
-// limit earlier checks spent does not apply, and reopens the pull request.
+// someone with write access. It answers with the bot's marks as the review
+// ends rather than a reply. Anyone else is ignored as for a question. It runs
+// last, because the review it queues changes pull request 1's last review. It
+// first clears the thread's follow-ups, so the hourly limit that earlier
+// checks spent does not apply, and it reopens the pull request.
 func checkReviewRequest(
 	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, req ingest.Request, accountID string,
 ) {
@@ -1626,7 +1625,7 @@ func checkReviewRequest(
 func TestReviewWorkerEndToEnd(t *testing.T) {
 	ctx := t.Context()
 	// Nothing runs from PATH here: without it, the host's own curl or gh
-	// would give every review a run tool.
+	// gives every review a run tool.
 	t.Setenv("PATH", t.TempDir())
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
@@ -1641,7 +1640,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Setenv("TEST_PEM", "pem")
 	// Long enough that masking it out of the transcripts leaves the prompts
-	// they are checked against intact.
+	// that they are compared against intact.
 	t.Setenv("TEST_SECRET", "test-provider-key")
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":60}}`)
 	file := configfiletest.Load(t, configYAML)
@@ -1652,8 +1651,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	current := configfile.NewCurrent(file)
 	dir, base, head := testRepo(t)
 
-	// Enqueue through the real ingest dispatcher so the rows look exactly
-	// as they would from a webhook.
+	// Enqueue through the real ingest dispatcher so the rows look exactly as
+	// they do from a webhook.
 	insertOnly, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -1742,11 +1741,11 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	}
 
 	// waitReviewCount is waitReview's counting counterpart, for a head SHA
-	// that already has a finished review: it waits until at least min finished
-	// reviews exist for headSHA before reading the latest one, so a second
-	// wait for the same head cannot re-match a still-lingering earlier row
-	// (the database is the sole source of truth for both the count and the
-	// row, so there is no client-clock race to get wrong).
+	// that already has a finished review. It waits until at least min
+	// finished reviews exist for headSHA before it reads the latest one. So a
+	// second wait for the same head cannot re-match a still-lingering earlier
+	// row. The database is the sole source of truth for both the count and
+	// the row, so there is no client-clock race to get wrong.
 	waitReviewCount := func(headSHA string, min int) (status, patchID, mergeBase string) {
 		t.Helper()
 		deadline := time.Now().Add(20 * time.Second)
@@ -1839,7 +1838,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-		// The repository's settings are read through its account's entry.
+		// The repository's configuration is read through its account's entry.
 		replyAccount, _ := replyConfig.Account(configfile.ForgeGitHub, "onedr0p")
 		checkReplies(ctx, t, appStore, svc, lf, fc, ingest.Request{File: replyConfig, Account: replyAccount}, account.ID())
 	})
@@ -1902,9 +1901,9 @@ func labelled(names []string) []webhook.Label {
 }
 
 // checkBotPatchIDSkip rebases the same change onto a new head (new commit,
-// identical diff) and asserts a bot PR with the same patch id is skipped on
-// dispatch, then that a manual re-run of that same unchanged patch bypasses
-// the skip.
+// identical diff). It asserts that a bot PR with the same patch id is skipped
+// on dispatch. It then asserts that a manual re-run of that same unchanged
+// patch bypasses the skip.
 func checkBotPatchIDSkip(
 	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
 	dispatch func(headSHA string, bot bool), waitReviewCount func(headSHA string, min int) (status, patchID, mergeBase string),
@@ -1948,14 +1947,14 @@ func checkBotPatchIDSkip(
 			forgePatch, skipReason, runs, err, runspec.SkipUnchangedPatch)
 	}
 
-	// A manual re-run of the same unchanged bot patch must bypass the skip:
-	// it inserts directly (as the web API's EnqueueRerun would) rather than
-	// through the ingest dispatcher, since only the trigger -- not the diff
-	// -- differs from the dispatch above. It shares newHead's SHA with the
-	// bot dispatch above, so waiting for a second finished review (rather
-	// than reusing waitReview, which would happily re-match the bot
-	// dispatch's already-finished row) is required to observe this job's own
-	// outcome rather than the previous one's.
+	// A manual re-run of the same unchanged bot patch must bypass the skip.
+	// It inserts directly (as the web API's EnqueueRerun does) rather than
+	// through the ingest dispatcher. The reason is that only the trigger, not
+	// the diff, differs from the dispatch above. It shares newHead's SHA with
+	// the bot dispatch above. So waiting for a second finished review is
+	// required to observe this job's own outcome rather than the previous
+	// one's. Reusing waitReview re-matches the bot dispatch's
+	// already-finished row.
 	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
 		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: newHead.String(),
 		Trigger: jobs.TriggerManual, Request: uuid.NewString(),
@@ -1969,10 +1968,10 @@ func checkBotPatchIDSkip(
 	}
 }
 
-// checkSnoozeWhileSlotsHeld holds every model slot of the account, commits
-// a new head on a pull request of its own and dispatches it: the review is
-// snoozed, recording nothing and starting no runner, until the slot is let
-// go, and then completes.
+// checkSnoozeWhileSlotsHeld holds every model slot of the account, commits a
+// new head on a pull request of its own and dispatches it: the review is
+// snoozed, records nothing and starts no runner until the slot is let go, and
+// then completes.
 func checkSnoozeWhileSlotsHeld(
 	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
 	dispatchPR func(int, string, bool, ...string), accountID, modelKey string,
@@ -2092,9 +2091,9 @@ func checkRepoConfigPrompt(t *testing.T, system, user string) {
 	}
 }
 
-// checkRepoConfig commits a .kritika.yaml with ignore globs, rules, one of
-// them a file, and a summary template onto a new merge base, then reviews
-// pull requests against it.
+// checkRepoConfig commits a .kritika.yaml onto a new merge base, then reviews
+// pull requests against it. The file has ignore globs, rules, one of them a
+// file, and a summary template.
 func checkRepoConfig(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], lf *localForge, fc *fakeCompleter,
 	dir, base string, dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
@@ -2186,7 +2185,7 @@ review:
 		t.Fatal(err)
 	}
 	codeHead := commit("code", map[string]string{"main.go": "package main\n\nfunc d() {}\n"})
-	// The scorer's first attempt fails; the provider's one retry answers.
+	// The scorer's first attempt fails. The provider's one retry answers.
 	fc.failScore(1)
 	dispatchPR(3, codeHead, false)
 	if status, _, _ := waitReview(codeHead); status != "completed" {
@@ -2223,8 +2222,8 @@ review:
 	checkWithdrawn(t, lf)
 	checkConfidence(ctx, t, appStore, lf, fc, accountID, codeHead)
 	pushedHead := commit("more code", map[string]string{"main.go": "package main\n\nfunc d() {}\n\nfunc f() {}\n"})
-	// The confidence model fails both its attempts; the fallback on the
-	// other provider scores.
+	// The confidence model fails both its attempts. The fallback on the other
+	// provider scores.
 	fc.failScore(2)
 	dispatchPR(3, pushedHead, false)
 	checkEarlierRisk(t, fc, waitReview, pushedHead, codeHead)
@@ -2261,9 +2260,9 @@ review:
 	checkStatuses(ctx, t, appStore, accountID, movedHead, "skipped", "completed")
 }
 
-// checkLabelRepeat asserts that a label change the filter still excludes
-// the head under is the skip the head has, not one more, unless a later
-// review of the head ended otherwise.
+// checkLabelRepeat asserts that a label change that the filter still excludes
+// the head under is the skip that the head has, not one more. That holds
+// unless a later review of the head ended otherwise.
 func checkLabelRepeat(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, head string) {
 	t.Helper()
 	labeled := func(request string) {
@@ -2324,10 +2323,10 @@ func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, acc
 }
 
 // checkConfidence asserts what a review does where the merge-base
-// .kritika.yaml asks for a confidence score its findings keep the pull
-// request under: the score is held to the ceiling of the blocking one,
-// though it is outside the diff, recorded with its call and its cost once,
-// whatever attempts the call took, and fails the commit status.
+// .kritika.yaml asks for a confidence score that its findings keep the pull
+// request under. The score is held to the ceiling of the blocking one, though
+// it is outside the diff. It is recorded with its call and its cost once,
+// whatever attempts the call took, and it fails the commit status.
 func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID, head string) {
 	t.Helper()
 	fc.mu.Lock()
@@ -2423,9 +2422,9 @@ func checkConfidenceCounted(ctx context.Context, t *testing.T, appStore *store.S
 	}
 }
 
-// checkEarlierRisk asserts that the review of head, pushed onto the pull
-// request whose review of prior checkConfidence asserted, is scored with
-// the risk that review was rated.
+// checkEarlierRisk asserts that the review of head is scored with the risk
+// that the review of prior was rated. head is pushed onto the pull request
+// whose review of prior checkConfidence asserted.
 func checkEarlierRisk(t *testing.T, fc *fakeCompleter, waitReview func(string) (string, string, string), head, prior string) {
 	t.Helper()
 	if status, _, _ := waitReview(head); status != "completed" {
@@ -2440,10 +2439,10 @@ func checkEarlierRisk(t *testing.T, fc *fakeCompleter, waitReview func(string) (
 	}
 }
 
-// checkFallbackScored asserts that the review of head, whose confidence
-// model failed every attempt, was scored by the merge-base .kritika.yaml's
-// confidence.fallback at the scorer's effort, and that the one call is
-// recorded and charged under the model that answered.
+// checkFallbackScored asserts that the review of head, whose confidence model
+// failed every attempt, was scored by the merge-base .kritika.yaml's
+// confidence.fallback at the scorer's effort. It also asserts that the one
+// call is recorded and charged under the model that answered.
 func checkFallbackScored(ctx context.Context, t *testing.T, appStore *store.Store, fc *fakeCompleter, accountID, head string) {
 	t.Helper()
 	fc.mu.Lock()
@@ -2467,8 +2466,8 @@ func checkFallbackScored(ctx context.Context, t *testing.T, appStore *store.Stor
 	}
 }
 
-// checkFallbackFailed asserts that the review of head, whose confidence
-// model and fallback failed every attempt, completed unscored, its one call
+// checkFallbackFailed asserts that the review of head, whose confidence model
+// and fallback failed every attempt, completed unscored. Its one call is
 // recorded under the fallback, the model it last went to.
 func checkFallbackFailed(
 	ctx context.Context, t *testing.T, appStore *store.Store, waitReview func(string) (string, string, string), accountID, head string,
@@ -2505,12 +2504,11 @@ func checkWithdrawn(t *testing.T, lf *localForge) {
 }
 
 // checkIncremental reviews a pull request, pushes a commit on top, and then
-// force-pushes it away: the second review is incremental, does not post
-// the repeated finding inline again and holds back a new one far from the
-// pushed lines, the third is full because the head it would build on is
-// gone. The merge base asks for a summary diagram, which only the first
-// review draws: the second is shown it and keeps it, the third's answer
-// without one stands.
+// force-pushes it away. The second review is incremental, does not post the
+// repeated finding inline again, and holds back a new one far from the pushed
+// lines. The third is full because the head for it to build on is gone. The
+// merge base asks for a summary diagram, which only the first review draws.
+// The second is shown it and keeps it. The third's answer without one stands.
 func checkIncremental(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
 	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
@@ -2584,8 +2582,8 @@ func checkIncremental(
 	}
 	thread := postedInline(ctx, t, appStore, accountID, firstRow.id)[0].ID
 
-	// The push adds lines 8 and 9; line 3 is further from them than a
-	// new finding may be. The first review's conversation is older than a
+	// The push adds lines 8 and 9. Line 3 is further from them than a new
+	// finding can be. The first review's conversation is older than a
 	// provider caches it, so the second review starts afresh.
 	ageConversation(ctx, t, firstRow.id)
 	second := commit(firstMain + "\nfunc f2() {}\n")
@@ -2624,10 +2622,10 @@ func checkIncremental(
 		t.Fatal(err)
 	}
 	third := commit("package main\n\nfunc f3() {}\n")
-	// The third review reports the first finding again in other words and
-	// at a line the diff does not show, naming its id: the finding keeps
-	// the thread and the fingerprint its first wording opened, and is
-	// recorded off the diff with them.
+	// The third review reports the first finding again in other words and at
+	// a line that the diff does not show. It names the finding's id. The
+	// finding keeps the thread and the fingerprint that its first wording
+	// opened, and is recorded off the diff with them.
 	original := review.Finding{Path: "main.go", Title: "first line"}
 	fc.reword(`"line":500,"title":"[p1] Line one is wrong","prior":"` + review.PriorID(original) + `"`)
 	thirdRow, prompt, inline := reviewHead(third)
@@ -2643,10 +2641,10 @@ func checkIncremental(
 	checkFullSettled(ctx, t, appStore, lf, fc, accountID, last, r, reset, commit, reviewHead)
 }
 
-// checkBackOnDiff pushes once more and asserts the review that builds on
-// third, which reports the finding third recorded off the diff on the diff
-// again under its first title, keeps the thread that record carried and
-// posts nothing twice. It returns that review.
+// checkBackOnDiff pushes once more and asserts about the review that builds
+// on third. That review reports the finding that third recorded off the diff
+// on the diff again, under its first title. It keeps the thread that record
+// carried and posts nothing twice. checkBackOnDiff returns that review.
 func checkBackOnDiff(
 	ctx context.Context, t *testing.T, appStore *store.Store, accountID string, third reviewScopeRow, thread int64,
 	commit func(string) string, reviewHead func(string) (reviewScopeRow, string, int),
@@ -2664,12 +2662,12 @@ func checkBackOnDiff(
 	return fourthRow
 }
 
-// checkSettled pushes three more times after last and asserts what becomes
-// of the last review's findings a re-review does not report again: one it
-// lists as resolved is listed so and its thread resolved; one it passes
-// over stays open, carried on unchecked from the head it was last reported
-// at, counted, on its thread and never posted again, and the next
-// re-review is shown it with that head and may resolve it.
+// checkSettled pushes three more times after last and asserts what becomes of
+// the last review's findings that a re-review does not report again. One that
+// it lists as resolved is listed so, and its thread is resolved. One that it
+// passes over stays open, carried on unchecked from the head it was last
+// reported at. That one is counted, on its thread, and never posted again.
+// The next re-review is shown it with that head and can resolve it.
 func checkSettled(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID string,
 	last reviewScopeRow, commit func(string) string, reviewHead func(string) (reviewScopeRow, string, int),
@@ -2779,8 +2777,8 @@ func checkSettled(
 	return seventhRow
 }
 
-// ageConversation makes the conversation reviewID's run kept an hour old,
-// as the owner: no role a service runs as may change one.
+// ageConversation makes the conversation reviewID's run kept an hour old, as
+// the owner: no role a service runs as can change one.
 func ageConversation(ctx context.Context, t *testing.T, reviewID string) {
 	t.Helper()
 	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
@@ -2796,8 +2794,8 @@ func ageConversation(ctx context.Context, t *testing.T, reviewID string) {
 }
 
 // checkReworded asserts that a review's one posted finding, which reported
-// original again in other words, kept original's thread and fingerprint
-// under its new title, the severity the model wrote into it stripped.
+// original again in other words, kept original's thread and fingerprint under
+// its new title. The severity that the model wrote into it is stripped.
 func checkReworded(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, accountID, reviewID string, thread int64, original review.Finding,
 ) {
@@ -2826,8 +2824,8 @@ func checkReworded(
 }
 
 // checkEarlierPrompt asserts a full re-review's prompt: the findings and
-// notes the last review left at prior, to check again, with neither the
-// delta nor the diagram an incremental re-review is shown.
+// notes that the last review left at prior, to look at again. It has neither
+// the delta nor the diagram that an incremental re-review is shown.
 func checkEarlierPrompt(t *testing.T, prompt, prior string) {
 	t.Helper()
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
@@ -2949,8 +2947,8 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 
 }
 
-// checkSupervision holds review runs open and moves the head, then stales
-// the heartbeat, expecting supervision to cancel each run.
+// checkSupervision holds review runs open and moves the head, then stales the
+// heartbeat. It expects supervision to cancel each run.
 func checkSupervision(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, exec *gateExecutor, dispatch func(string, bool),
 	waitReview func(string) (string, string, string), accountID, repoID string,
@@ -3041,12 +3039,13 @@ func checkSupervision(
 	})
 }
 
-// checkActions exercises the web dashboard's enqueue helpers (internal/jobs/
-// actions.go) against a real running worker: a manual rerun of a completed
-// head, a cancel of a review while its runner is blocked, a cancel rejected
-// once the review has finished, and a forced full reindex over an active
-// incremental generation. Each scenario lives in its own helper (below) so
-// this dispatcher stays trivial to read.
+// checkActions exercises the web dashboard's enqueue helpers
+// (internal/jobs/actions.go) against a real running worker. The first two
+// scenarios are a manual rerun of a completed head, and a cancel of a review
+// while its runner is blocked. The last two are a cancel rejected once the
+// review finished, and a forced full reindex over an active incremental
+// generation. Each scenario lives in its own helper (below) so this
+// dispatcher stays trivial to read.
 func checkActions(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
 	dispatch func(string, bool), waitReview func(string) (string, string, string),
@@ -3112,7 +3111,7 @@ func latestReviewID(ctx context.Context, t *testing.T, appStore *store.Store, ac
 }
 
 // commitOnBase resets dir's worktree to base, writes body to main.go, and
-// commits it, returning the new commit's SHA.
+// commits it. It returns the new commit's SHA.
 func commitOnBase(t *testing.T, dir, base, msg, body string) string {
 	t.Helper()
 	r, err := git.PlainOpen(dir)
@@ -3140,7 +3139,7 @@ func commitOnBase(t *testing.T, dir, base, msg, body string) string {
 }
 
 // checkEnqueueRerun re-runs EnqueueRerun over an already-completed head and
-// asserts a second completed review lands, returning the head it exercised.
+// asserts a second completed review lands. It returns the head it exercised.
 func checkEnqueueRerun(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx],
 	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, accountID, repoID string,
@@ -3192,8 +3191,8 @@ func checkEnqueueRerun(
 	if !errors.Is(err, jobs.ErrRerunQueued) || errors.Is(err, jobs.ErrRerunOther) {
 		t.Fatalf("a re-run naming no reviewer while a full one is queued = %v, want ErrRerunQueued alone", err)
 	}
-	// A focus the queued review does not have is not what it stands in
-	// for; the same focus is.
+	// A focus that the queued review does not have is not what it stands in
+	// for. The same focus is.
 	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := jobs.EnqueueReviewerRerun(ctx, tx, insertOnly, accountID, repoID, 1, "", "", "the token refresh")
 		return err
@@ -3253,11 +3252,12 @@ func checkRequestCancelCrossAccount(ctx context.Context, t *testing.T, appStore 
 	}
 }
 
-// checkRequestCancelRunning blocks a review mid-run, cancels it, and asserts
-// it lands as 'canceled' exactly once (no River retry), that the underlying
-// River job itself finished normally, that the commit status and reviews row
-// both reflect the cancel, and that the runner run the worker was waiting on
-// is recorded as failed with the remote-cancellation error.
+// checkRequestCancelRunning blocks a review mid-run and cancels it. It
+// asserts that the review lands as 'canceled' exactly once (no River retry),
+// and that the underlying River job itself finished normally. It also asserts
+// that the commit status and reviews row both reflect the cancel. It also
+// asserts that the runner run the worker was waiting on is recorded as failed
+// with the remote-cancellation error.
 func checkRequestCancelRunning(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
 	dispatch func(string, bool), waitReview func(string) (string, string, string), accountID string, lf *localForge,
@@ -3288,14 +3288,14 @@ func checkRequestCancelRunning(
 		t.Fatalf("canceled reviews for %s = %d, want 1 (no River retry)", canceling, n)
 	}
 
-	// The worker's Work method returns nil once it has recorded the review as
-	// 'canceled' itself (review.go's Important-1 fix): from River's point of
-	// view the job ran once and succeeded, so river_job lands on 'completed'
-	// with attempt=1, not a retry and not River's own 'cancelled' state (that
-	// state is for a job JobCancelTx marks before it ever starts running).
-	// River updates river_job's own row only after Work returns, which is
-	// strictly after the reviews row above already reads 'canceled', so this
-	// polls rather than reading it once.
+	// The worker's Work method returns nil once it recorded the review as
+	// 'canceled' itself (review.go's Important-1 fix). From River's point of
+	// view, the job ran once and succeeded. So river_job lands on 'completed'
+	// with attempt=1, not a retry and not River's own 'cancelled' state. That
+	// state is for a job that JobCancelTx marks before it ever starts
+	// running. River updates river_job's own row only after Work returns,
+	// which is strictly after the reviews row above already reads 'canceled'.
+	// So this polls rather than reading it once.
 	var state string
 	var attempt int
 	deadline := time.Now().Add(5 * time.Second)
@@ -3347,10 +3347,10 @@ func checkRequestCancelRunning(
 	}
 }
 
-// closedRetry is a review job of PR #1 at a head of its own, with the pull
-// request held open by the store and merged on the forge, as it is once a
+// closedRetry is a review job of PR #1 at a head of its own. The store holds
+// the pull request open and the forge has it merged. That is the state once a
 // replica died with the review running and the closed event came while none
-// was up. Its earlier attempt is made up: a review it started, which the
+// was up. Its earlier attempt is made up: a review that it started, which the
 // rescuer failed when the replica died, with the run it had. The job is
 // scheduled out of reach until release puts it on its second attempt. The
 // head is its own, so what it records is not taken for another check's.
@@ -3440,7 +3440,7 @@ func (r closedRetry) closedOnStore(ctx context.Context, t *testing.T, appStore *
 }
 
 // completed waits for the retry's job to complete, so everything its end
-// writes to the forge has landed.
+// writes to the forge landed.
 func (r closedRetry) completed(ctx context.Context, t *testing.T, insertOnly *river.Client[pgx.Tx]) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
@@ -3460,8 +3460,8 @@ func (r closedRetry) completed(ctx context.Context, t *testing.T, insertOnly *ri
 }
 
 // skipped waits for the retry's review to end skipped as merged, with no
-// runner, and the pull request to be held closed and merged as the forge
-// has it; wait bounds the wait.
+// runner. It also waits for the pull request to be held closed and merged as
+// the forge has it. wait bounds the wait.
 func (r closedRetry) skipped(ctx context.Context, t *testing.T, appStore *store.Store, accountID string, wait time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(wait)
@@ -3496,11 +3496,11 @@ func (r closedRetry) skipped(ctx context.Context, t *testing.T, appStore *store.
 	}
 }
 
-// checkRetryClosedOnForge asserts what a retried automatic review takes
-// when the store holds its pull request open and the forge has it merged:
-// the retry records the merge and ends skipped with no runner, and the
-// pending status its earlier attempt set on the head, and the eyes it
-// left, go with it. Like checkEnqueueRerunClosed, it leaves the row closed.
+// checkRetryClosedOnForge asserts what a retried automatic review takes when
+// the store holds its pull request open and the forge has it merged. The
+// retry records the merge and ends skipped with no runner. The pending status
+// that its earlier attempt set on the head, and the eyes that it left, go
+// with it. Like checkEnqueueRerunClosed, it leaves the row closed.
 func checkRetryClosedOnForge(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, dir, base string,
 	lf *localForge,
@@ -3522,10 +3522,10 @@ func checkRetryClosedOnForge(
 }
 
 // checkRetryClosedCeded asserts that the retry's skip waits for the pull
-// request's publication lock and checks under it that the status is still
-// its job's to set: a newer review that started meanwhile, as one does on
-// a pull request reopened since, keeps the pending status it set, and the
-// eyes, while the skip is still recorded.
+// request's publication lock. Under that lock, the skip makes sure that the
+// status is still its job's to set. A newer review that started meanwhile, as
+// one does on a pull request reopened since, keeps the pending status it set,
+// and the eyes. The skip is still recorded.
 func checkRetryClosedCeded(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, dir, base string,
 	lf *localForge,
@@ -3600,7 +3600,7 @@ func checkRetryClosedCeded(
 	if !eyes {
 		t.Fatal("the eyes came off the pull request while the newer review runs")
 	}
-	// The newer review is made up; it ends here so nothing waits on it.
+	// The newer review is made up. It ends here so nothing waits on it.
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = 'canceled', finished_at = now() WHERE id = $1`, newer)
 		if err != nil {
@@ -3613,20 +3613,20 @@ func checkRetryClosedCeded(
 	}
 }
 
-// checkEnqueueRerunClosed asserts what a closed pull request takes: a
-// re-run someone asks for is reviewed, with no commit status and no
-// approval, while a label change queues nothing and an automatic job ends
-// skipped with no runner. dispatchPR always reopens PR #1 (State: "open"),
-// so this closes it directly with SQL rather than through a dispatch, and
-// must run after every other checkActions subtest that dispatches: a later
-// dispatch would silently reopen the row.
+// checkEnqueueRerunClosed asserts what a closed pull request takes. A re-run
+// that someone asks for is reviewed, with no commit status and no approval. A
+// label change queues nothing, and an automatic job ends skipped with no
+// runner. dispatchPR always reopens PR #1 (State: "open"), so this closes it
+// directly with SQL rather than through a dispatch. It must run after every
+// other checkActions subtest that dispatches: a later dispatch silently
+// reopens the row.
 func checkEnqueueRerunClosed(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, head string,
 	lf *localForge,
 ) {
 	t.Helper()
-	// The pull request is left at a head the cancel subtests made up; it
-	// is merged at one the repository has, which a review can fetch.
+	// The pull request is left at a head the cancel subtests made up. It is
+	// merged at one the repository has, which a review can fetch.
 	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = true, head_sha = $3
 			WHERE account_id = $1 AND repository_id = $2 AND number = 1`, accountID, repoID, head)
@@ -3720,8 +3720,8 @@ type lookBack struct {
 	runs                   int
 }
 
-// rerunClosed asks for a review of PR #1, closed at head, once the job
-// before it lets it queue, and waits for the review it starts to end.
+// rerunClosed asks for a review of PR #1, closed at head, once the job before
+// it lets it queue. It waits for the review that it starts to end.
 func rerunClosed(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, head string,
 ) lookBack {
@@ -3788,15 +3788,15 @@ func activeIndexGeneration(ctx context.Context, t *testing.T, appStore *store.St
 	return id
 }
 
-// checkEnqueueReindex asserts a forced reindex replaces the active
-// generation with a new full/completed one and supersedes the old one.
+// checkEnqueueReindex asserts a forced reindex replaces the active generation
+// with a new full/completed one and supersedes the old one.
 //
-// A completed full generation supersedes whatever it replaces (see embed()
-// in internal/worker/index.go), so the count of mode='full' AND
-// status='completed' rows for a commit never exceeds 1: the prior
-// generation drops to 'superseded' at essentially the same time the new one
-// lands. What actually distinguishes "forced a new generation" from "no-op"
-// is the repository's active_index_run_id switching to a different row.
+// A completed full generation supersedes whatever it replaces (see embed() in
+// internal/worker/index.go). So the count of mode='full' AND
+// status='completed' rows for a commit never exceeds 1: the prior generation
+// drops to 'superseded' at essentially the same time the new one lands. What
+// actually distinguishes "forced a new generation" from "no-op" is the
+// repository's active_index_run_id switching to a different row.
 func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, head string) {
 	t.Helper()
 	before := activeIndexGeneration(ctx, t, appStore, accountID, repoID)
@@ -3858,7 +3858,7 @@ type gateExecutor struct {
 
 	mu    sync.Mutex
 	block bool
-	// after, if set, runs once a review runner has finished unblocked.
+	// after, if set, runs once a review runner finished unblocked.
 	after func()
 	// beforeIndex, if set, runs before each index runner, and fails it
 	// with any error it returns.
@@ -3949,10 +3949,10 @@ func (d *jobDeadline) fire() {
 	}
 }
 
-// checkJobEnded asserts a review job whose ctx ends after its runner has
-// finished leaves a terminal review and no River retry: a timeout during
-// afterRun fails the review, and one while it publishes keeps the review
-// completed with its usage recorded.
+// checkJobEnded asserts a review job whose ctx ends after its runner finished
+// leaves a terminal review and no River retry: a timeout during afterRun
+// fails the review, and one while it publishes keeps the review completed
+// with its usage recorded.
 func checkJobEnded(
 	ctx context.Context, t *testing.T, appStore *store.Store, exec *gateExecutor, deadline *jobDeadline,
 	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, accountID string, lf *localForge,
@@ -4009,7 +4009,7 @@ func checkJobEnded(
 
 // waitRiverJobCompleted waits for the review's River job to settle as
 // completed on its first attempt: River writes its own row only after Work
-// returns, and a job that returned an error would be retryable instead.
+// returns, and a job that returned an error is retryable instead.
 func waitRiverJobCompleted(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) {
 	t.Helper()
 	var state string
@@ -4055,8 +4055,8 @@ func checkEnqueueReindexSentinels(
 		}
 	})
 	t.Run("ErrReindexQueued only when a forced reindex is already queued", func(t *testing.T) {
-		// The earlier forced reindex's job may outlive its generation's
-		// swap by a moment, and would hold the key this checks.
+		// The earlier forced reindex's job can outlive its generation's swap
+		// by a moment, and it then holds the key that this subtest tests.
 		waitFor(t, 10*time.Second, "the earlier forced reindex's job to finish", func() bool {
 			var live int
 			if err := appStore.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1
@@ -4091,9 +4091,9 @@ func checkEnqueueReindexSentinels(
 // review an earlier attempt of the same job left running, and no other.
 // TestStartReviewOwnership: the last review to start owns the pull request
 // (store.StartReview). A start cancels the older active reviews, whatever
-// their head, and points them at itself; a retry of the job of one so
-// canceled starts nothing; a head the pull request moved past is refused;
-// and an earlier attempt of the same job is ended failed, not replaced.
+// their head, and points them at itself. A retry of the job of one so
+// canceled starts nothing. A head the pull request moved past is refused.
+// An earlier attempt of the same job is ended failed, not replaced.
 // Starts racing from many workers leave one running review.
 func TestStartReviewOwnership(t *testing.T) {
 	ctx := t.Context()

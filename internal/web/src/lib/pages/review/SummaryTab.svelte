@@ -84,7 +84,7 @@
   </Collapsible>
 {/if}
 
-<!-- The rules this review was given: one it cites nowhere was checked and found kept. -->
+<!-- The rules this review was given: if it cites one nowhere, it made sure that the rule was kept. -->
 {#if d.contextPack?.ruleIds.length}
   {@const cited = (id: string) => d.findings.filter((f) => f.rules.includes(id)).length}
   <section aria-label="Rules checked">

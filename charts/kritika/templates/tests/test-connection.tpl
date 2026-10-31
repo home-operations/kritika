@@ -3,9 +3,9 @@ kind: Pod
 metadata:
   name: {{ include "kritika.fullname" . }}-test-connection
   namespace: {{ .Release.Namespace }}
-  # Not kritika.labels: the server's selector labels would put this pod
-  # under the server's NetworkPolicy, whose egress leaves out the metrics
-  # port it probes, and behind the server's Service and PDB.
+  # Not kritika.labels: the server's selector labels will put this pod under
+  # the server's NetworkPolicy, whose egress leaves out the metrics port it
+  # probes. They will also put it behind the server's Service and PDB.
   labels:
     helm.sh/chart: {{ include "kritika.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -36,10 +36,10 @@ spec:
         capabilities:
           drop:
             - ALL
-      # /readyz answers once a replica has loaded its configuration and its
-      # listeners are up, so this checks that the metrics Service routes to
+      # /readyz answers once a replica loads its configuration and its
+      # listeners are up. This makes sure that the metrics Service routes to
       # a replica that answers. curl -f fails on a non-2xx or a refused
-      # connection, failing `helm test`; -sS stays quiet but surfaces errors,
+      # connection, which fails `helm test`. -sS stays quiet but surfaces errors,
       # and the body goes to stdout, so the rootfs stays read-only.
       command:
         - curl

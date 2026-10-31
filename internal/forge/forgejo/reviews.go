@@ -18,11 +18,11 @@ const (
 	stateChangesRequested = "REQUEST_CHANGES"
 )
 
-// CreateReview implements forge.Client with a COMMENT review. A range is
-// sent as Forgejo takes one, its first line and the count of lines after
-// it, which an instance without range comments reads as the first line
-// alone. The review's answer carries no comments, so they are listed
-// after and matched by path and body, in order.
+// CreateReview implements forge.Client with a COMMENT review. A range is sent
+// as Forgejo takes one: its first line and the count of lines after it. An
+// instance without range comments reads that as the first line alone. The
+// review's answer carries no comments, so they are listed after and matched
+// by path and body, in order.
 func (c *Client) CreateReview(
 	ctx context.Context, owner, repo string, number int, headSHA string, comments []forge.InlineComment,
 ) ([]int64, error) {
@@ -222,11 +222,11 @@ func (c *Client) inlineComments(ctx context.Context, owner, repo string, number 
 	return out, resolved, nil
 }
 
-// GetComment implements forge.Client. A conversation comment is read by
-// its id. A code comment has no endpoint of its own: the conversation
-// endpoint answers one with 204, and Forgejo delivers a reply in a code
-// conversation as a conversation comment, so a 204 is looked up among the
-// code comments, as an inline comment is from the start.
+// GetComment implements forge.Client. A conversation comment is read by its
+// id. A code comment has no endpoint of its own: the conversation endpoint
+// answers one with 204. Forgejo delivers a reply in a code conversation as a
+// conversation comment. So a 204 is looked up among the code comments, as an
+// inline comment is from the start.
 func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id int64, inline bool) (forge.Comment, error) {
 	if !inline {
 		var cm comment
@@ -245,11 +245,11 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id i
 	return cm, nil
 }
 
-// findInlineComment locates code comment id and the pull request it is
-// on. Forgejo lists code comments under their reviews alone, and the id
-// says nothing of the pull request, so the walk is over the open pull
-// requests, the most recently updated first; a comment on a closed pull
-// request is not found.
+// findInlineComment locates code comment id and the pull request it is on.
+// Forgejo lists code comments under their reviews alone, and the id says
+// nothing of the pull request. So the walk is over the open pull requests,
+// the most recently updated first. A comment on a closed pull request is not
+// found.
 func (c *Client) findInlineComment(ctx context.Context, owner, repo string, id int64) (forge.Comment, int, error) {
 	prs, err := c.ListOpenPullRequests(ctx, owner, repo, time.Time{})
 	if err != nil {
@@ -292,10 +292,10 @@ func (c *Client) ListInline(ctx context.Context, owner, repo string, number int)
 	return comments, err
 }
 
-// ReplyInline implements forge.Client. Forgejo has no reply relation: a
-// reply is a code comment on the thread's line posted into the review of
-// the comment replied to, which Forgejo shows in that conversation, as
-// its own reply form does. Gitea has a route that posts the same comment.
+// ReplyInline implements forge.Client. Forgejo has no reply relation. A reply
+// is a code comment on the thread's line, posted into the review of the
+// comment replied to. Forgejo shows that comment in that conversation, as its
+// own reply form does. Gitea has a route that posts the same comment.
 func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, to forge.Comment, body string) (int64, error) {
 	if c.gitea {
 		var posted pullReviewComment
@@ -340,10 +340,10 @@ func (c *Client) ThreadResolved(ctx context.Context, owner, repo string, number 
 }
 
 // ResolveThread implements forge.Client. Forgejo's API has no call that
-// resolves a conversation, so none is resolved there. Gitea resolves one
-// by its root, the comment its timeline shows the conversation's state
-// on; its diff view shows the oldest comment on the line instead, which
-// is another review's when an earlier one commented there.
+// resolves a conversation, so none is resolved there. Gitea resolves one by
+// its root, the comment that its timeline shows the conversation's state on.
+// Its diff view shows the oldest comment on the line instead, which is
+// another review's when an earlier one commented there.
 func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error) {
 	if !c.gitea {
 		return false, forge.ErrUnsupported

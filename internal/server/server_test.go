@@ -271,8 +271,8 @@ func TestServeBoundsReadsAndIdleConnections(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	// closed reports what the server sent before it closed the connection;
-	// the test's own deadline failing the read means it never did.
+	// closed reports what the server sent before it closed the connection. If
+	// the test's own deadline fails the read, the server never closed it.
 	closed := func(conn net.Conn) string {
 		t.Helper()
 		b, err := io.ReadAll(conn)

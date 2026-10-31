@@ -27,11 +27,11 @@ const (
 )
 
 // confidenceBudgetShare is how many times the agent's prompt budget the
-// scorer's prompt may take, up to confidenceBudgetCap tokens and never
-// less than the agent's: the scorer makes one call with no tool outputs
-// to leave room for, and the diff is what its risk rating rests on, but
-// an agent budget set for a large context must not double past what the
-// scorer's model holds.
+// scorer's prompt can take, up to confidenceBudgetCap tokens and never less
+// than the agent's. The scorer makes one call with no tool outputs to leave
+// room for, and the diff is what its risk rating rests on. But an agent
+// budget set for a large context must not double past what the scorer's model
+// holds.
 const (
 	confidenceBudgetShare = 2
 	confidenceBudgetCap   = 96_000
@@ -47,9 +47,9 @@ func confidenceBudget(prompt int) int {
 // confidence score and the scorer gave none.
 const unscoredNote = "The confidence model did not answer, so this review has no confidence score"
 
-// judge scores the review within the finalization context; changed is
-// every path the change touches, which the diff may show no line of, and
-// unfinished the summary's notes on the parts that went unreviewed. It
+// judge scores the review within the finalization context. changed is every
+// path that the change touches, and the diff can show no line of such a path.
+// unfinished is the summary's notes on the parts that went unreviewed. judge
 // returns the note the summary states when the scorer gave no answer.
 func (p *publishPhase) judge(job context.Context, res review.Result, diff string, changed, unfinished []string) string {
 	ref := p.settings.Confidence.Model
@@ -60,8 +60,8 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	ctx, cancel := context.WithTimeout(job, confidenceTimeout)
 	defer cancel()
 	// The agent is done with its slot on the review model. Scoring takes a
-	// slot of its own, and a job that held one while it waited for another
-	// could wait on a job doing the same the other way round.
+	// slot of its own. A job that holds one while it waits for another can
+	// wait on a job that does the same the other way round.
 	if p.lease != nil {
 		p.w.releaseLease(ctx, p.logger, p.lease, string(p.settings.Models.Review))
 	}
@@ -76,9 +76,9 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	return ""
 }
 
-// checkMonthCap is an error once the account has spent its tokensPerMonth:
-// the agent's admission checked the caps before it ran, and what it spent
-// since may have reached the month's.
+// checkMonthCap is an error once the account spent its tokensPerMonth. The
+// agent's admission made sure that the caps allowed a review before the agent
+// ran. What the agent spent since then can reach the month's cap.
 func (p *publishPhase) checkMonthCap(ctx context.Context) error {
 	limit := p.settings.Limits.TokensPerMonth
 	if limit <= 0 {
@@ -94,17 +94,17 @@ func (p *publishPhase) checkMonthCap(ctx context.Context) error {
 	return nil
 }
 
-// score asks ref for the score, recording the call against the review and
-// charging it to the account.
+// score asks ref for the score. It records the call against the review and
+// charges it to the account.
 func (p *publishPhase) score(
 	ctx context.Context, ref configfile.ModelRef, res review.Result, diff string, changed, unfinished []string,
 ) (review.Confidence, error) {
 	if err := p.checkMonthCap(ctx); err != nil {
 		return review.Confidence{}, err
 	}
-	// A confidence model that hangs, or a long Retry-After, would spend
-	// the score's whole time; with a fallback on another provider its
-	// attempts get at most half of what is left. One the model answered
+	// Without a limit, a confidence model that hangs, or a long Retry-After,
+	// will spend the score's whole time. With a fallback on another provider, its attempts
+	// get at most half of what is left. An attempt that the model answered
 	// without the score is billed all the same.
 	call, err := p.structured(ref, p.settings.Confidence.Fallback, store.ModelCallConfidence, store.RoleConfidence,
 		"confidence", true)
@@ -166,13 +166,13 @@ func (p *publishPhase) score(
 	return c, nil
 }
 
-// earlierRisk is the risk prior was rated, which a review of head is asked
-// to keep unless the change now does something that rating does not
-// account for. It is nil when prior was not scored, saw head itself or
-// the review was asked for by hand, so that a re-run rates afresh, was
-// rated under instructions other than rubric's, or was held to a floor:
-// the floor applies again, and one since lowered must not live on in the
-// rating.
+// earlierRisk is the risk that prior was rated. A review of head is asked to
+// keep that risk unless the change now does something that the rating does
+// not account for. It is nil when prior was not scored. It is also nil when
+// prior saw head itself or the review was asked for by hand, so that a re-run
+// rates afresh. It is also nil when prior was rated under instructions other
+// than rubric's, or was held to a floor. The floor applies again, and a floor
+// lowered since then must not live on in the rating.
 func earlierRisk(prior priorReview, head, rubric, trigger string) *review.EarlierRisk {
 	c := prior.confidence
 	if c == nil || prior.headSHA == head || trigger == jobs.TriggerManual || c.Rubric != rubric || c.Rated != "" {
@@ -207,13 +207,13 @@ func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 	}
 }
 
-// carriedConfidence is the confidence a patch unchanged since its last
-// review keeps: the one the pull request's newest completed
-// review other than reviewID got, held to the threshold and the risk
-// floors want sets now. skippable says the patch may be skipped as
-// unchanged: always for a repository that asks for no score, and otherwise
-// only when that review left one to carry, so a rebase neither passes a
-// patch that failed nor leaves an unscored one unscored.
+// carriedConfidence is the confidence that a patch unchanged since its last
+// review keeps. That is the confidence that the pull request's newest
+// completed review other than reviewID got. It is held to the threshold and
+// the risk floors that want sets now. skippable says the patch can be skipped
+// as unchanged. That is always so for a repository that asks for no score.
+// Otherwise it is so only when that review left a score to carry. So a rebase
+// neither passes a patch that failed nor leaves an unscored one unscored.
 func carriedConfidence(
 	ctx context.Context, tx pgx.Tx, prID, reviewID string, want configfile.Confidence,
 ) (c *review.Confidence, skippable bool, err error) {
@@ -245,12 +245,12 @@ func skipVerdict(carried *review.Confidence, gate bool, reason string) (forge.St
 	}
 }
 
-// carryApproval applies the verdict an unchanged patch carries to
-// kritika's approval, where the repository has it approve: the skip
-// reviewed nothing, but the threshold, the risk ceiling or the approval's
-// conditions may have moved since the score was given, and an approval
-// must not outlive them. The head is the one the skip was just decided
-// for, and scope is judgeApproval's word on the pull request as it stands.
+// carryApproval applies the verdict that an unchanged patch carries to
+// kritika's approval, where the repository has it approve. The skip reviewed
+// nothing. But the threshold, the risk ceiling, or the approval's conditions
+// can move after the score is given, and an approval must not outlive them.
+// The head is the one that the skip was just decided for. scope is
+// judgeApproval's word on the pull request as it stands.
 func carryApproval(
 	ctx context.Context, logger *slog.Logger, scope approvalScope, client forge.Client, pr *pullRequest,
 	settings configfile.Settings, carried *review.Confidence,

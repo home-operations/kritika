@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The name, which takes a review pass once the page has painted and on
+  // The name, which takes a review pass after the page paints and on
   // hover: a cursor sweeps across it and each letter it reaches flashes and
   // lifts, then settles. A run always plays to its end, so leaving the brand
   // mid-way never snaps the letters back. Nothing moves for a reader who
@@ -16,7 +16,7 @@
 
   $effect(() => {
     if (!playing) return;
-    // Hidden letters may never start an animation, so no end event is guaranteed.
+    // Hidden letters can fail to start an animation, so no end event is guaranteed.
     const t = setTimeout(() => { playing = false; }, Math.max(560, 480 + (letters.length - 1) * 55));
     return () => clearTimeout(t);
   });

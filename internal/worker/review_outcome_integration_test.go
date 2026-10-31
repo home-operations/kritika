@@ -31,7 +31,7 @@ func queuedOutcomeReview(t *testing.T, h *agenticHarness) *river.Job[jobs.Review
 	}
 	h.dispatch(t, h.head)
 	// River's table is outside the account policies, so the job is the
-	// account's own by its arguments, and the newest where a test queued
+	// account's own by its arguments. It is the newest where a test queued
 	// more than one.
 	var id int64
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
@@ -60,9 +60,9 @@ func queuedOutcomeReview(t *testing.T, h *agenticHarness) *river.Job[jobs.Review
 	return job
 }
 
-// TestEndedReviewRecordedOnce: a review its job ends before a runner, the
-// job retried as when its first attempt's commit went unacknowledged or its
-// completion unrecorded, is recorded and counted once.
+// TestEndedReviewRecordedOnce: a review that its job ends before a runner is
+// recorded and counted once. The job is retried, as when its first attempt's
+// commit went unacknowledged or its completion unrecorded.
 func TestEndedReviewRecordedOnce(t *testing.T) {
 	h := newAgenticHarness(t, 1009)
 	job := queuedOutcomeReview(t, h)

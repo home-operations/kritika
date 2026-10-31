@@ -1,12 +1,12 @@
 // Package forgejo implements forge.Client against a Forgejo or Gitea
 // instance's REST API, https://<host>/api/v1, with the standard library's
-// HTTP client: requests and responses are written out for the subset of
-// the API kritika needs, which keeps a context on every call. On Forgejo
+// HTTP client. Requests and responses are written out for the subset of the
+// API that kritika needs, which keeps a context on every call. On Forgejo,
 // kritika authenticates as an authorized integration of a user on the
-// instance, with tokens its Issuer signs; Gitea has no such integration,
-// so there it calls with a bot user's access tokens. Gitea speaks the
-// API Forgejo does, and where the two have parted, replying in a code
-// conversation and resolving one, takes routes of its own.
+// instance, with tokens that its Issuer signs. Gitea has no such integration,
+// so there kritika calls with a bot user's access tokens. Gitea speaks the
+// API that Forgejo does. The two parted in replying in a code conversation
+// and in resolving one, and there Gitea takes routes of its own.
 package forgejo
 
 import (
@@ -70,10 +70,11 @@ type Client struct {
 	http     *http.Client
 	api, web string
 	issuer   *Issuer
-	// audience names the integration kritika calls the API as, and
-	// runnerAudience the one a runner fetches as: a second integration
-	// with read access alone, so the pod that reads untrusted content
-	// never holds a token that can write; audience when there is none.
+	// audience names the integration that kritika calls the API as.
+	// runnerAudience names the one that a runner fetches as: a second
+	// integration with read access alone. So the pod that reads untrusted
+	// content never holds a token that can write. runnerAudience is audience
+	// when there is no second integration.
 	audience, runnerAudience string
 	// gitea is a Gitea instance, called with apiToken, a runner fetching
 	// with runnerToken: access tokens of the bot user, split as the
@@ -82,25 +83,25 @@ type Client struct {
 	apiToken, runnerToken string
 	now                   func() time.Time
 
-	// Bots are logins on the instance that are bots though the forge does
-	// not say so, as a connection lists them; set before the client is
+	// Bots are logins on the instance that are bots though the forge does not
+	// say so, as a connection lists them. They are set before the client is
 	// shared.
 	Bots []string
 
 	mu    sync.Mutex
 	login string
-	// token is the API token in use and expires when it does; it is
-	// replaced before then. Its own lock: a call holding mu mints one.
+	// token is the API token in use and expires when it does. It is replaced
+	// before then. Its own lock: a call holding mu mints one.
 	tokenMu sync.Mutex
 	token   string
 	expires time.Time
 }
 
-// NewClient builds a Client for host, a hostname reached over HTTPS, or a
-// URL with its scheme, which tests point at a server of their own, calling
-// the API as the integration of audience with tokens issuer signs, and
-// runners fetching as runnerAudience when set. A nil httpClient is
-// http.DefaultClient.
+// NewClient builds a Client for host. host is a hostname reached over HTTPS,
+// or a URL with its scheme, which tests point at a server of their own. The
+// Client calls the API as the integration of audience, with tokens that
+// issuer signs. Runners fetch as runnerAudience when it is set. A nil
+// httpClient is http.DefaultClient.
 func NewClient(host string, issuer *Issuer, audience, runnerAudience string, httpClient *http.Client) (*Client, error) {
 	if audience == "" {
 		return nil, errors.New("forgejo: audience is required: create the authorized integration on the instance and set its audience")
@@ -116,9 +117,9 @@ func NewClient(host string, issuer *Issuer, audience, runnerAudience string, htt
 	return c, nil
 }
 
-// NewGiteaClient builds a Client for a Gitea instance at host, as
-// NewClient does, calling the API with token, an access token of the bot
-// user, and runners fetching with runnerToken when set.
+// NewGiteaClient builds a Client for a Gitea instance at host, as NewClient
+// does. The Client calls the API with token, an access token of the bot user.
+// Runners fetch with runnerToken when it is set.
 func NewGiteaClient(host, token, runnerToken string, httpClient *http.Client) (*Client, error) {
 	if token == "" {
 		return nil, errors.New("forgejo: a Gitea access token is required")
@@ -169,15 +170,15 @@ func (c *Client) bearer() (string, error) {
 	return token, nil
 }
 
-// do sends an API request and decodes its JSON answer into out, when out
-// is not nil; a *string takes the body as text. body, when not nil, is
-// sent as JSON.
+// do sends an API request and decodes its JSON answer into out, when out is
+// not nil. A *string takes the body as text. body, when not nil, is sent as
+// JSON.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	_, err := c.request(ctx, method, path, body, out)
 	return err
 }
 
-// request is do, returning the answer's headers too.
+// request is do, and it returns the answer's headers too.
 func (c *Client) request(ctx context.Context, method, path string, body, out any) (http.Header, error) {
 	var reader io.Reader
 	if body != nil {
@@ -232,13 +233,13 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	return resp.Header, nil
 }
 
-// list reads every page of path, whose query gains page and limit, as
-// long as the answer says there is another: a Link header with rel="next",
-// or an X-Total-Count the pages read fall short of. Without either, a page
-// shorter than asked is the last. The page size asked for is capped by the
-// instance, and a listing may leave out what the bot cannot see, so a
-// short page alone does not say the listing is over. stop ends the walk
-// early, after the page it was called on.
+// list reads every page of path, whose query gains page and limit, as long as
+// the answer says there is another. That is a Link header with rel="next", or
+// an X-Total-Count that the pages read fall short of. Without either, a page
+// shorter than asked is the last. The instance caps the page size asked for,
+// and a listing can leave out what the bot cannot see. So a short page alone
+// does not say that the listing is over. stop ends the walk early, after the
+// page it was called on.
 func (c *Client) list[T any](ctx context.Context, path string, query url.Values, stop func(T) bool) ([]T, error) {
 	var out []T
 	largest := 0
@@ -265,12 +266,12 @@ func (c *Client) list[T any](ctx context.Context, path string, query url.Values,
 	}
 }
 
-// morePages reads whether a listing's answer has a page after page: a
-// Link to the next, or a total the pages read so far fall short of. The
-// total counts what a listing leaves out of a page too, so a page emptied
-// that way does not end the walk, and the pages are measured by the
-// largest page seen, which is at most the size the instance caps a page
-// at, whatever was asked: a page is never taken for more than it held.
+// morePages reads whether a listing's answer has a page after page: a Link to
+// the next, or a total that the pages read so far fall short of. The total
+// also counts what a listing leaves out of a page, so a page emptied that way
+// does not end the walk. morePages measures the pages by the largest page
+// seen. That is at most the size that the instance caps a page at, whatever
+// was asked. A page is never taken for more than it held.
 func morePages(header http.Header, page, got, largest int) bool {
 	for _, link := range header.Values("Link") {
 		if strings.Contains(link, `rel="next"`) {
@@ -295,11 +296,10 @@ func escapePath(path string) string {
 	return strings.Join(segs, "/")
 }
 
-// pullAt reads pull request number as it stands, and refuses one whose
-// head is not head, or whose merge base is not base when one is given:
-// Forgejo reports a pull request's merge base and diff as they are now,
-// and a review of an earlier head, queued before a push, must not take
-// the new head's.
+// pullAt reads pull request number as it stands. It refuses one whose head is
+// not head, or whose merge base is not base when one is given. Forgejo
+// reports a pull request's merge base and diff as they are now. A review of
+// an earlier head, queued before a push, must not take the new head's.
 func (c *Client) pullAt(ctx context.Context, owner, repo string, number int, base, head string) (pullRequest, error) {
 	var pr pullRequest
 	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/pulls/%d", repoPath(owner, repo), number), nil, &pr); err != nil {
@@ -315,9 +315,9 @@ func (c *Client) pullAt(ctx context.Context, owner, repo string, number int, bas
 	return pr, nil
 }
 
-// MergeBase implements forge.Client from the pull request, which reports
-// the merge base Forgejo computed against its base branch, when head is
-// still its head; base goes unused.
+// MergeBase implements forge.Client from the pull request, which reports the
+// merge base that Forgejo computed against its base branch, when head is
+// still its head. base goes unused.
 func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, _, head string) (string, error) {
 	pr, err := c.pullAt(ctx, owner, repo, number, "", head)
 	if err != nil {
@@ -329,10 +329,10 @@ func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, 
 	return pr.MergeBase, nil
 }
 
-// PullRequestDiff implements forge.Client. Forgejo diffs a pull request,
-// not two commits: the diff runs from the pull request's current merge
-// base to its current head, which must be base and head before the diff
-// is read and still after, so a push between the two reads is caught.
+// PullRequestDiff implements forge.Client. Forgejo diffs a pull request, not
+// two commits. The diff runs from the pull request's current merge base to
+// its current head. They must be base and head before the diff is read and
+// still after, so a push between the two reads is caught.
 func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, number int, base, head string) (string, error) {
 	if _, err := c.pullAt(ctx, owner, repo, number, base, head); err != nil {
 		return "", fmt.Errorf("forgejo: diff of %s/%s#%d: %w", owner, repo, number, err)
@@ -565,15 +565,15 @@ func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int
 type Repository struct {
 	FullName, DefaultBranch string
 	Archived, Fork          bool
-	// Visibility is public, private or internal, as GitHub would name
-	// what Forgejo's private and internal flags say.
+	// Visibility is public, private or internal, as GitHub names what
+	// Forgejo's private and internal flags say.
 	Visibility string
 }
 
-// Repositories lists the repositories of account, an organization or a
-// user, that the bot can see. The users route lists an organization's
-// too, and asks the token for the repository scope alone, where the
-// organizations route would ask for the organization scope as well.
+// Repositories lists the repositories of account, an organization or a user,
+// that the bot can see. The users route lists an organization's too. It asks
+// the token for the repository scope alone, where the organizations route
+// asks for the organization scope as well.
 func (c *Client) Repositories(ctx context.Context, account string) ([]Repository, error) {
 	repos, err := c.list[repository](ctx, "/users/"+url.PathEscape(account)+"/repos", nil, nil)
 	if err != nil {
@@ -594,7 +594,7 @@ func (c *Client) conversationComment(cm comment) forge.Comment {
 	}
 }
 
-// inlineComment maps a code comment, replying to root, 0 when it is one.
+// inlineComment maps a code comment that replies to root, 0 when it is one.
 func (c *Client) inlineComment(cm pullReviewComment, root int64) forge.Comment {
 	return forge.Comment{
 		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: c.isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
@@ -614,7 +614,7 @@ func (c *Client) openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	out.Number, out.Title, out.Body = pr.Number, pr.Title, pr.Body
 	out.Author, out.AuthorIsBot = pr.User.Login, c.isBot(pr.User)
 	out.State, out.Merged, out.Draft = pr.State, pr.Merged, pr.Draft
-	// A fork PR's head lives in another repository than its base; a deleted
+	// A fork PR's head lives in another repository than its base. A deleted
 	// fork leaves head.repo null, which is not the base repository either.
 	out.Fork = pr.Head.Repo == nil || fullName(pr.Head.Repo) != fullName(pr.Base.Repo)
 	out.HeadRef, out.HeadSHA, out.BaseRef = pr.Head.Ref, pr.Head.SHA, pr.Base.Ref

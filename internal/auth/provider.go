@@ -1,7 +1,7 @@
 // Package auth signs humans in to the dashboard, as the local admin or
-// through the file's OIDC, GitHub, Forgejo, Gitea and GitLab sign-ins, decides what each may do
-// from the sign-in's role mapping and the forge, keeps their sessions, and
-// guards the dashboard's routes.
+// through the file's OIDC, GitHub, Forgejo, Gitea and GitLab sign-ins. It
+// decides what each human can do from the sign-in's role mapping and the
+// forge. It keeps their sessions and guards the dashboard's routes.
 package auth
 
 import (
@@ -19,10 +19,10 @@ import (
 )
 
 // Identity is who a sign-in provider says a human is. Provider is the
-// sign-in's type and Origin where it points (see signInOrigin); Subject is
-// the provider's stable id for them, unique within that origin.
-// EmailVerified is the provider's own word: the OIDC email_verified claim,
-// or the forge's verified flag on the primary address.
+// sign-in's type, and Origin is where it points (see signInOrigin). Subject
+// is the provider's stable id for them, unique within that origin.
+// EmailVerified is the provider's own word: the OIDC email_verified claim, or
+// the forge's verified flag on the primary address.
 type Identity struct {
 	Provider, Origin, Subject, Login, Email string
 	EmailVerified                           bool
@@ -32,29 +32,29 @@ type Identity struct {
 // Provider is one configured way to sign in.
 type Provider interface {
 	// AuthCodeURL is where to send the browser to sign in. nonce binds an
-	// OIDC ID token to this request; forge OAuth ignores it.
+	// OIDC ID token to this request. Forge OAuth ignores it.
 	AuthCodeURL(state, nonce, pkceVerifier string) string
 	// Exchange trades the callback's code for the human's identity and the
 	// facts their grant is decided from.
 	Exchange(ctx context.Context, code, pkceVerifier, nonce string) (Identity, Facts, error)
 }
 
-// Facts are what a provider learned about a person, bound to their token,
-// for deciding what they may do.
+// Facts are what a provider learned about a person, bound to their token, for
+// deciding what they can do.
 type Facts struct {
-	// MappingVars fills the sign-in's role mapping's variables; it may call
-	// the provider, so it runs only when the sign-in has a mapping.
+	// MappingVars fills the variables of the sign-in's role mapping. It can
+	// call the provider, so it runs only when the sign-in has a mapping.
 	MappingVars func(ctx context.Context) (map[string]any, error)
-	// Membership asks a forge about one organization; nil for OIDC.
+	// Membership asks a forge about one organization. It is nil for OIDC.
 	Membership Membership
 }
 
 // ErrUnknownProvider is a sign-in the file does not configure.
 var ErrUnknownProvider = errors.New("auth: unknown sign-in")
 
-// failedBuildTTL is how long a failed build, an unreachable OIDC issuer's
-// discovery, is remembered before a sign-in retries it, so a dead issuer
-// does not cost a network round trip on every attempt.
+// failedBuildTTL is how long a failed build, that is, the discovery of an
+// unreachable OIDC issuer, is remembered before a sign-in retries it. So a
+// dead issuer does not cost a network round trip on every attempt.
 const failedBuildTTL = 30 * time.Second
 
 // providers builds each sign-in's Provider on first use and keeps it until
@@ -127,10 +127,10 @@ func (ps *providers) get(ctx context.Context, auth configfile.Auth, name string)
 }
 
 // requestEnded reports whether a failed build is the caller's request going
-// away rather than the provider failing, which says nothing about the
-// provider and must not hold back the next sign-in. Only ctx decides: an
-// http.Client timeout also matches context.DeadlineExceeded, yet it is the
-// provider being slow.
+// away, not the provider failing. The caller's request going away says
+// nothing about the provider and must not hold back the next sign-in. Only
+// ctx decides: an http.Client timeout also matches context.DeadlineExceeded,
+// yet it is the provider being slow.
 func requestEnded(ctx context.Context) bool {
 	return ctx.Err() != nil
 }
@@ -169,10 +169,10 @@ func buildProvider(
 	}
 }
 
-// signInOrigin is where a sign-in points: its type and base URL, github.com
-// or a forge instance's, or for OIDC its issuer exactly as configured, since
-// the issuer is compared exactly against the ID token's. Identities and
-// sessions are bound to it.
+// signInOrigin is where a sign-in points: its type and base URL, which is
+// github.com or a forge instance's. For OIDC, it is its type and its issuer
+// exactly as configured, since the issuer is compared exactly against the ID
+// token's. Identities and sessions are bound to it.
 func signInOrigin(s *configfile.SignIn) string {
 	switch {
 	case s.Type() == configfile.SignInOIDC:

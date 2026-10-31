@@ -29,10 +29,11 @@ type Filter struct {
 // without one its expression, or its globs.
 func (f Filter) Label() string { return cmp.Or(f.Name, f.Expr, strings.Join(f.Paths, ", ")) }
 
-// Compile checks the condition's globs, compiles its expression and
-// smoke-tests it against SamplePR, so one that type-checks but fails at
-// runtime (a field of the wrong type, a non-boolean result) is caught when
-// it is read rather than on the first pull request.
+// Compile makes sure that the condition's globs are valid, compiles its
+// expression, and smoke-tests it against SamplePR. So it catches one that
+// type-checks but fails at runtime (a field of the wrong type, a non-boolean
+// result). It catches that one when it is read rather than on the first pull
+// request.
 func (f *Filter) Compile() error {
 	if strings.TrimSpace(f.Expr) == "" && len(f.Paths) == 0 {
 		return errors.New("expr or paths is required")
@@ -113,14 +114,15 @@ func (fs *Filters) Compile() error {
 }
 
 // Skips reports whether fs, compiled, keep a pull request with the filter
-// variables vars from being reviewed, and the condition that decided: the
-// exclusion that holds, or nil when it is that no inclusion does. A
-// condition that fails to evaluate skips, and is returned with its error.
+// variables vars from being reviewed. It also returns the condition that
+// decided: the exclusion that holds, or nil when it is that no inclusion
+// does. A condition that fails to evaluate skips, and is returned with its
+// error.
 //
 // d is the pull request's diff, nil before it is fetched. Then a condition
-// that needs it is left for later: such an exclusion does not yet hold,
-// and such an inclusion may, so the pull request is not kept out for want
-// of an inclusion while one is still to be judged.
+// that needs it is left for later. Such an exclusion does not yet hold, and
+// such an inclusion can. So the pull request is not kept out for want of an
+// inclusion while one is still to be judged.
 func (fs Filters) Skips(vars map[string]any, d *Diff) (bool, *Filter, error) {
 	if d != nil {
 		vars = maps.Clone(vars)

@@ -27,9 +27,9 @@ import (
 // "read" is the reader.
 const environHelper = "KRITIKA_TEST_ENVIRON"
 
-// TestHideEnviron checks the property the run tool relies on: once the
-// runner is non-dumpable, a child with the runner's uid cannot read the
-// runner's environment from /proc.
+// TestHideEnviron makes sure that the property the run tool relies on holds:
+// once the runner is non-dumpable, a child with the runner's uid cannot read
+// the runner's environment from /proc.
 func TestHideEnviron(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
@@ -68,7 +68,7 @@ func TestHideEnviron(t *testing.T) {
 
 func TestCommandTool(t *testing.T) {
 	// commandTool hides the environment of the process it runs in, this
-	// test binary; make it dumpable again afterwards.
+	// test binary. Make it dumpable again afterward.
 	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
 	self, err := os.Executable()
 	if err != nil {
@@ -158,9 +158,9 @@ func TestCommandTool(t *testing.T) {
 
 }
 
-// TestCommandToolCheckoutLock: the checkout waits for the head lock a split
-// review's parts share, gives up when its part ends first, and is written
-// by the next command once the lock is free.
+// TestCommandToolCheckoutLock: the checkout waits for the head lock that a
+// split review's parts share and gives up when its part ends first. The next
+// command writes it once the lock is free.
 func TestCommandToolCheckoutLock(t *testing.T) {
 	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
 	self, err := os.Executable()
@@ -198,8 +198,8 @@ func TestCommandToolCheckoutLock(t *testing.T) {
 }
 
 // checkFirstCommandCheckout: the checkout at dir waits for the first
-// command, which finds the head's files there, less the ignored paths,
-// marked as a repository whose origin is cloneURL.
+// command. That command finds the head's files there, less the ignored
+// paths, marked as a repository whose origin is cloneURL.
 func checkFirstCommandCheckout(t *testing.T, run *agent.RunTool, dir, cloneURL string) {
 	t.Helper()
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
@@ -225,8 +225,8 @@ func checkFirstCommandCheckout(t *testing.T, run *agent.RunTool, dir, cloneURL s
 }
 
 // TestCommandToolAdminEnv: the admin's variables reach a command from the
-// runner's own environment, where they are prefixed, never one of the
-// runner's own of the same name, and what it prints of a Secret's is
+// runner's own environment, where they are prefixed. The command never gets
+// one of the runner's own of the same name. What it prints of a Secret's is
 // masked.
 func TestCommandToolAdminEnv(t *testing.T) {
 	// The run tool runs this binary as grep with the argument "adminenv":
@@ -267,7 +267,7 @@ func TestCommandToolAdminEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Stderr shares the output in arrival order, and a coverage build of
-	// this binary warns there that GOCOVERDIR is unset, so each line is
+	// this binary warns there that GOCOVERDIR is unset. So each line is
 	// looked for on its own.
 	for _, want := range []string{
 		"KONFLATE_URL=https://konflate.internal.example true\n", "API_TOKEN=*** true\n", "UNSET_KEY= false\n", "RUNNER_ONLY= false\n",
@@ -279,8 +279,8 @@ func TestCommandToolAdminEnv(t *testing.T) {
 }
 
 // TestCommandToolCache: a command writes under XDG_CACHE_HOME, the cache
-// directory of the run's scratch space, where a tool that keeps a cache
-// there, as flate does, has it; HOME still takes no write.
+// directory of the run's scratch space. A tool that keeps a cache there, as
+// flate does, has it there. HOME still takes no write.
 func TestCommandToolCache(t *testing.T) {
 	// The run tool runs this binary as grep with the argument "cache": a
 	// bare environment carries no helper variable, so the role is an
@@ -396,7 +396,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 	if b, err := os.ReadFile(curlrc); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\nproto = \"=http,https\"\n" {
 		t.Fatalf(".curlrc = %q, %v", b, err)
 	}
-	// A command may not rewrite it, with a trace that prints the proxy
+	// A command cannot rewrite it, with a trace that prints the proxy
 	// credential, say: HOME is read-only once the tool is built.
 	if info, err := os.Stat(curlrc); err != nil || info.Mode().Perm()&0o222 != 0 {
 		t.Fatalf(".curlrc mode = %v, %v; want read-only", info.Mode().Perm(), err)

@@ -1,8 +1,8 @@
 // Server-sent events keep the dashboard live: run status changes, review
 // completions, follow-up updates, and the like. One shared EventSource per
 // page load, reconnected with the same exponential-backoff-with-jitter
-// konflate's websocket uses, so a server restart doesn't reconnect every open
-// tab in lockstep a couple seconds later.
+// that konflate's websocket uses. A server restart then does not reconnect
+// every open tab in lockstep a couple seconds later.
 import { toSignIn } from './api.svelte';
 import { basePath } from './base';
 import { invalidateApi } from './query';
@@ -27,8 +27,8 @@ export function bootedFrom(url: string): void {
 }
 
 // stream is what the topbar says of the connection. It only reads as down
-// once the stream has stayed closed for DOWN_AFTER_MS, so the routine
-// reconnect after a server restart or a proxy's idle cut goes unremarked.
+// once the stream stays closed for DOWN_AFTER_MS. The routine reconnect
+// after a server restart or a proxy's idle cut then goes unremarked.
 export const stream = $state<{ down: boolean; since: string }>({ down: false, since: '' });
 const DOWN_AFTER_MS = 2_000;
 let downTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,9 +79,9 @@ function isResync(v: unknown): v is Resync {
 }
 
 // runsOtherBuild reports whether a resync names an entry script other than
-// the one this page booted from. A resync that names none, from a server
-// whose UI was built without the manifest or from a release before resyncs
-// named one, is no reason to reload.
+// the one this page booted from. A resync that names none is no reason to
+// reload. Such a resync comes from a server whose UI was built without the
+// manifest, or from a release before resyncs named one.
 function runsOtherBuild(data: unknown): boolean {
   if (!entry || !isResync(data) || !data.entry) return false;
   return new URL(data.entry, document.baseURI).href !== entry;
@@ -97,7 +97,7 @@ function scheduleReconnect(): void {
 
 // probeSession asks /api/v1/me whether the session outlived the stream: an
 // EventSource cannot see the 401 that refused it, so without this a dead
-// session would reconnect forever.
+// session reconnects forever.
 async function probeSession(): Promise<void> {
   let res: Response;
   try {
@@ -117,10 +117,10 @@ function connect(): void {
     clearDown();
   });
   // The server opens every stream with a resync, since anything published
-  // while the stream was down, or before it first opened, never reached it,
-  // and sends another when the stream falls behind. A resync naming another
-  // build means the server was upgraded under this tab, whose code may no
-  // longer fit its API: the tab reloads rather than refetch.
+  // while the stream was down, or before it first opened, never reached it.
+  // The server sends another when the stream falls behind. A resync that names
+  // another build means that the server was upgraded under this tab, whose
+  // code can fail to fit its API. The tab reloads rather than refetch.
   source.addEventListener('resync', (e) => {
     const data = parseData(e as MessageEvent<string>);
     if (runsOtherBuild(data)) {
@@ -132,12 +132,12 @@ function connect(): void {
     for (const fn of listeners.get('resync') ?? []) fn(data);
   });
   // EventSource retries on its own after 'error', but only at a fixed
-  // interval; close it and drive the reconnect ourselves so the backoff
+  // interval. Close it and drive the reconnect ourselves so that the backoff
   // above actually applies.
   source.addEventListener('error', () => {
     source?.close();
     armDown();
-    // Once the stream has failed twice running, check it is not the session.
+    // Once the stream fails twice running, make sure that it is not the session.
     if (attempt > 0) void probeSession();
     scheduleReconnect();
   });
@@ -151,7 +151,7 @@ export function initEvents(): void {
 }
 
 // closeEvents tears down the shared connection on sign-out, so a stale
-// session cookie doesn't keep streaming another account's events into a
+// session cookie does not keep streaming another account's events into a
 // signed-out tab. initEvents() reconnects cleanly on the next sign-in.
 export function closeEvents(): void {
   clearTimeout(timer);
@@ -162,7 +162,7 @@ export function closeEvents(): void {
   clearDown();
 }
 
-// subscribe registers fn for events of the given kind, returning an
+// subscribe registers fn for events of the given kind and returns an
 // unsubscribe function. Safe to call before initEvents(): the listener is
 // attached to the EventSource once one exists (immediately, or on the next
 // connect).

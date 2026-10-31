@@ -1,8 +1,8 @@
 // Package gitlab implements forge.Client against a GitLab instance's REST
-// API, through gitlab.com/gitlab-org/api/client-go. kritika calls the API
-// as a service account with a personal access token, and runners fetch
-// with a second token of that account that can only read repositories.
-// GitLab 19 or later is assumed.
+// API, through gitlab.com/gitlab-org/api/client-go. kritika calls the API as
+// a service account with a personal access token. Runners fetch with a second
+// token of that account that can only read repositories. GitLab 19 or later
+// is assumed.
 package gitlab
 
 import (
@@ -42,16 +42,16 @@ type Client struct {
 	// merge request's author comes without the flag, so it is read once
 	// per author.
 	bots map[int64]bool
-	// pulls is the pull request, by note id, of every note the client has
-	// read or posted: GitLab addresses a note under its merge request,
-	// and the forge interface names a comment by its id alone.
+	// pulls is the pull request, by note id, of every note that the client
+	// read or posted: GitLab addresses a note under its merge request, and
+	// the forge interface names a comment by its id alone.
 	pulls map[int64]int
 }
 
-// NewClient builds a Client for host, a hostname reached over HTTPS, or a
-// URL with its scheme, which tests point at a server of their own, calling
-// the API with token and runners fetching with runnerToken, token when it
-// is empty. A nil httpClient is the SDK's default.
+// NewClient builds a Client for host. host is a hostname reached over HTTPS,
+// or a URL with its scheme, which tests point at a server of their own. The
+// Client calls the API with token. Runners fetch with runnerToken, or token
+// when it is empty. A nil httpClient is the SDK's default.
 func NewClient(host, token, runnerToken string, httpClient *http.Client) (*Client, error) {
 	if host == "" {
 		return nil, errors.New("gitlab: host is required")
@@ -150,8 +150,8 @@ func apiError(err error) error {
 	return err
 }
 
-// list reads every page of a listing, whose page function is called with
-// the page to read and answers it with what GitLab says of the next.
+// list reads every page of a listing. Its page function is called with the
+// page to read and answers it with what GitLab says of the next.
 func list[T any](page func(gl.ListOptions) ([]T, *gl.Response, error)) ([]T, error) {
 	var out []T
 	for p := int64(1); ; {
@@ -167,9 +167,9 @@ func list[T any](page func(gl.ListOptions) ([]T, *gl.Response, error)) ([]T, err
 	}
 }
 
-// versionAt is the merge request's diff version whose head is head: GitLab
-// keeps one per push, so the diff and merge base of a head the pull
-// request has moved on from are still its own.
+// versionAt is the merge request's diff version whose head is head. GitLab
+// keeps one per push, so the diff and merge base of a head that the pull
+// request moved on from are still its own.
 func (c *Client) versionAt(ctx context.Context, pid string, number int, head string) (*gl.MergeRequestDiffVersion, error) {
 	versions, err := list(func(lo gl.ListOptions) ([]*gl.MergeRequestDiffVersion, *gl.Response, error) {
 		return c.api.MergeRequests.GetMergeRequestDiffVersions(pid, int64(number),
@@ -187,7 +187,7 @@ func (c *Client) versionAt(ctx context.Context, pid string, number int, head str
 }
 
 // MergeBase implements forge.Client from the diff version of head, which
-// records the merge base GitLab computed for it; base goes unused.
+// records the merge base that GitLab computed for it. base goes unused.
 func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, _, head string) (string, error) {
 	v, err := c.versionAt(ctx, project(owner, repo), number, head)
 	if err != nil {
@@ -222,10 +222,10 @@ func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, number
 	return diff, nil
 }
 
-// unifiedDiff joins the files of a diff version into one unified diff.
-// GitLab gives each file's hunks with their "---" and "+++" lines when
-// asked for unidiff, and without them otherwise; the git header is added
-// either way, and the file lines when they are missing.
+// unifiedDiff joins the files of a diff version into one unified diff. GitLab
+// gives each file's hunks with their "---" and "+++" lines when asked for
+// unidiff, and without them otherwise. The git header is added either way,
+// and the file lines when they are missing.
 func unifiedDiff(diffs []fileDiff) string {
 	var b strings.Builder
 	for _, d := range diffs {
@@ -375,8 +375,8 @@ func (c *Client) BotLogin(ctx context.Context) (string, error) {
 	return c.login, nil
 }
 
-// isBot is whether GitLab marks the user as a bot, read once per user,
-// or whether its login says so as a GitHub bot's would.
+// isBot is whether GitLab marks the user as a bot, read once per user, or
+// whether its login says so as a GitHub bot's does.
 func (c *Client) isBot(ctx context.Context, u *gl.BasicUser) bool {
 	if u == nil {
 		return false
@@ -409,10 +409,11 @@ func (c *Client) remember(number int, ids ...int64) {
 	}
 }
 
-// pullOf is the pull request note id is on: the one it was read or posted
-// under, else found by walking the open pull requests, the most recently
-// updated first, as a note's id says nothing of its merge request. A note
-// on a closed pull request the client never read is not found.
+// pullOf is the pull request that note id is on: the one it was read or
+// posted under. Otherwise it is found by walking the open pull requests, the
+// most recently updated first, as a note's id says nothing of its merge
+// request. A note on a closed pull request that the client never read is not
+// found.
 func (c *Client) pullOf(ctx context.Context, owner, repo string, id int64) (int, error) {
 	c.mu.Lock()
 	number, ok := c.pulls[id]
@@ -478,7 +479,7 @@ func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64
 }
 
 // buildState is the commit status state GitLab shows for one kritika
-// reports. A review that reached no verdict is canceled: failed would read
+// reports. A review that reached no verdict is canceled: failed reads
 // as one.
 func buildState(state forge.StatusState) gl.BuildStateValue {
 	switch state {
@@ -652,8 +653,8 @@ func timeOf(t *time.Time) time.Time {
 	return *t
 }
 
-// openPullRequest maps a merge request. GitLab's states are opened,
-// closed, merged and locked; kritika's are open and closed.
+// openPullRequest maps a merge request. GitLab's states are opened, closed,
+// merged and locked. kritika's are open and closed.
 func (c *Client) openPullRequest(ctx context.Context, mr *gl.BasicMergeRequest, defaultBranch string) forge.OpenPullRequest {
 	out := forge.OpenPullRequest{DefaultBranch: defaultBranch}
 	out.Number, out.Title, out.Body = int(mr.IID), mr.Title, mr.Description

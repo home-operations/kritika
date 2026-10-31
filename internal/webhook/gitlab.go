@@ -195,8 +195,8 @@ func parseGitLabNote(delivery string, body []byte) (Event, error) {
 	if a.NoteableType != "MergeRequest" || a.System {
 		return Event{Kind: KindIgnored, Action: glNote, Delivery: delivery}, nil
 	}
-	// A note on a diff line is a diff note, a reply in its discussion too;
-	// the payload says nothing of which note a reply answers.
+	// A note on a diff line is a diff note, and so is a reply in its
+	// discussion. The payload says nothing of which note a reply answers.
 	inline := a.Type == "DiffNote" || a.LineCode != "" || len(a.Position) > 0 && string(a.Position) != "null"
 	return Event{
 		Kind: KindComment, Action: cmp.Or(glNoteActions[a.Action], a.Action), Delivery: delivery,

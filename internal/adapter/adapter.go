@@ -1,5 +1,5 @@
 // Package adapter resolves the configuration's providers to model adapters,
-// built once for the life of the process, as the configuration is, and
+// built once for the life of the process, as the configuration is. It also
 // records what they are asked for the transcript view. The workers and the
 // gateway share it.
 package adapter
@@ -29,7 +29,7 @@ func (c *Steppers) Stepper(f *configfile.File, t *configfile.Account, name strin
 	if !ok {
 		return nil, fmt.Errorf("adapter: provider %q is not in the configuration", name)
 	}
-	// Two accounts may each name a provider of their own alike.
+	// Two accounts can each name a provider of their own alike.
 	key := name
 	if t != nil {
 		if _, own := t.Providers[name]; own {
@@ -70,7 +70,7 @@ type Embedders struct {
 	embedder model.Embedder
 }
 
-// Embedder returns f's embedder and its settings, or nil for both when f
+// Embedder returns f's embedder and its configuration, or nil for both when f
 // configures none.
 func (e *Embedders) Embedder(f *configfile.File) (model.Embedder, *configfile.Embedding) {
 	if e == nil || f.Embedding == nil {
@@ -102,8 +102,8 @@ func Outcome(err error) string {
 }
 
 // ServedRef is the model that answered a call made to ref, as a model
-// reference, for metrics: OpenRouter's server-side fallback may answer with
-// a model other than the one asked for, and served names it, "" for none.
+// reference, for metrics. OpenRouter's server-side fallback can answer with a
+// model other than the one asked for, and served names it, "" for none.
 func ServedRef(ref configfile.ModelRef, served string) string {
 	if served == "" {
 		return string(ref)

@@ -29,10 +29,10 @@ const MaxLinkedIssues = 3
 var closingKeyword = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+` +
 	`(?:https?://[^\s/]+/([\w.-]+/[\w.-]+)/issues/|([\w.-]+/[\w.-]+)#|#)(\d+)\b`)
 
-// LinkedIssues is the numbers of the issues of repository, "owner/name",
-// that body says the change closes, in order of first mention and at most
-// MaxLinkedIssues of them. A reference to another repository's issue is
-// left out: the review reads only the repository it reviews.
+// LinkedIssues is the numbers of the issues of repository, "owner/name", that
+// body says the change closes. They are in order of first mention, and there
+// are at most MaxLinkedIssues of them. A reference to another repository's
+// issue is left out: the review reads only the repository it reviews.
 func LinkedIssues(body, repository string) []int {
 	var out []int
 	for _, m := range closingKeyword.FindAllStringSubmatch(body, -1) {
@@ -53,13 +53,13 @@ func LinkedIssues(body, repository string) []int {
 	return out
 }
 
-// closingIssue matches every spelling of the closing tag a model might
+// closingIssue matches every spelling of the closing tag that a model can
 // read as one.
 var closingIssue = regexp.MustCompile(`(?i)<\s*/\s*issue\s*>`)
 
-// writeIssues appends the linked issues, sharing limit bytes equally,
-// between tags their bodies cannot close, as writeDescription does the
-// description.
+// writeIssues appends the linked issues between tags that their bodies cannot
+// close, as writeDescription does the description. The issues share limit
+// bytes equally.
 func writeIssues(b *strings.Builder, issues []Issue, limit int) {
 	if len(issues) == 0 {
 		return

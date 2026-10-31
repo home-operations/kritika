@@ -22,15 +22,16 @@ var ErrNoHead = errors.New("jobs: pull request has no head to re-review")
 // River job it started as, or reviewID/by is not a well-formed UUID.
 var ErrNotCancelable = errors.New("jobs: review is not in a cancelable state")
 
-// ErrRerunQueued is returned by EnqueueRerun when the pull request's
-// current head is already being reviewed, or a review job for it is queued:
-// a second run would pay the model twice and publish its findings twice.
+// ErrRerunQueued is what EnqueueRerun returns when the pull request's
+// current head is already being reviewed, or a review job for it is queued.
+// A second run pays the model twice and publishes its findings twice.
 var ErrRerunQueued = errors.New("jobs: a review of this head is already queued or running")
 
-// ErrRerunOther is ErrRerunQueued for a re-run whose reviewer, or every
-// reviewer when it names none, is not the one the review in flight runs:
-// that review does not stand in for it, and starting it would cancel that
-// review, so it is refused for the one asking to try again.
+// ErrRerunOther is ErrRerunQueued for a re-run whose reviewer is not the one
+// that the review in flight runs. A re-run that names no reviewer asks for
+// every reviewer. The review in flight does not stand in for such a re-run,
+// and starting the re-run will cancel the review in flight. So kritika
+// refuses the re-run, and the one who asked can try again.
 var ErrRerunOther = fmt.Errorf("%w for other reviewers", ErrRerunQueued)
 
 // ErrRepositoryNotFound is returned by EnqueueReindex when repositoryID does
@@ -38,20 +39,22 @@ var ErrRerunOther = fmt.Errorf("%w for other reviewers", ErrRerunQueued)
 var ErrRepositoryNotFound = errors.New("jobs: repository not found")
 
 // ErrReindexQueued is returned by EnqueueReindex when a forced reindex of
-// the repository is already queued or running; no new job was inserted.
+// the repository is already queued or running. No new job was inserted.
 var ErrReindexQueued = errors.New("jobs: reindex already queued")
 
 // EnqueueRerun re-queues a review of number's current head, the way a human
-// asks kritika to look again, a merged or closed pull request's too: a look
-// back at what was missed, which the worker reviews with no commit status
-// and no approval. It gives the job a fresh, random Request value
-// so it inserts even when a review of the same head already completed,
-// bypassing the push-triggered dedup that keys on
-// account+repository+number+head alone; while a review of that head is
-// running or prepared, or a review job for it has yet to finish, it is
-// ErrRerunQueued instead. Row-level security on pull_requests and reviews
-// already scopes every query to the transaction's account; the explicit
-// account_id predicates are defense in depth.
+// asks kritika to look again. This also applies to a merged or closed pull
+// request: the re-run is a look back at what was missed, and the worker
+// reviews it with no commit status and no approval. EnqueueRerun gives the
+// job a fresh, random Request value, so the job inserts even when a review
+// of the same head already completed. This bypasses the push-triggered dedup
+// that keys on account+repository+number+head alone.
+//
+// While a review of that head is running or prepared, or a review job for it
+// has yet to finish, the result is ErrRerunQueued instead. Row-level security
+// on pull_requests and reviews already scopes every query to the
+// transaction's account. The explicit account_id predicates are defense in
+// depth.
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {
@@ -59,9 +62,10 @@ func EnqueueRerun(
 }
 
 // EnqueueReviewerRerun is EnqueueRerun for a re-run of reviewer alone, the
-// one whose name someone wrote after "@<bot> review", or of every reviewer
-// with requested, a word written there that names none, and with focus,
-// what the request asks the review to look hardest at.
+// one whose name someone wrote after "@<bot> review". The re-run can also be
+// of every reviewer, with requested, a word written there that names none.
+// Either re-run carries focus, which is what the request asks the review to
+// look hardest at.
 func EnqueueReviewerRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 	reviewer, requested, focus string,
@@ -71,9 +75,9 @@ func EnqueueReviewerRerun(
 
 // EnqueueLabelChange queues a review of number's current head for trigger,
 // a label added or removed (see LabelChange). The head's earlier job, the
-// one that ended in the skip the label may lift, still holds the key a
-// push dedupes on, so the job gets a fresh Request as a re-run does, and is
-// ErrRerunQueued under the same conditions.
+// one that ended in the skip that the label can lift, still holds the key
+// that a push dedupes on. So the job gets a fresh Request as a re-run does.
+// The result is ErrRerunQueued under the same conditions.
 func EnqueueLabelChange(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
 ) (int64, error) {
@@ -94,8 +98,9 @@ func enqueueFresh(
 	if err != nil {
 		return 0, fmt.Errorf("jobs: look up pull request head: %w", err)
 	}
-	// Two re-runs of one pull request at once would each see the other's
-	// job not yet committed; the lock makes the second wait and see it.
+	// Without the lock, two re-runs of one pull request at once each see the
+	// other's job as not yet committed. The lock makes the second wait and see
+	// it.
 	key := "kritika:rerun:" + accountID + ":" + repositoryID + ":" + strconv.Itoa(number)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
@@ -107,9 +112,9 @@ func enqueueFresh(
 			return 0, err
 		}
 	}
-	// same is whether a live job of the head runs the reviewers this one
-	// would, with the focus it would, which then stands in for it; a
-	// review row with no live job is taken to.
+	// same is whether a live job of the head runs the same reviewers as this
+	// one, with the same focus. That live job then stands in for this one. A
+	// review row with no live job is taken to stand in too.
 	var busy, same bool
 	err = tx.QueryRow(ctx, `WITH live AS (
 			SELECT coalesce(args->>'reviewer', '') AS reviewer, coalesce(args->>'focus', '') AS focus FROM river_job
@@ -142,12 +147,13 @@ func enqueueFresh(
 	return res.Job.ID, nil
 }
 
-// cancelWaiting cancels the review jobs of the head that a push queued
-// and that are scheduled for later, waiting their trigger.settle. A job
-// River holds, about to start, is left to it: the live check then finds
-// it and the request stands behind it as it would behind any review in
-// flight. A review someone asked for that waits for a model slot is not
-// a push's, and is not touched.
+// cancelWaiting cancels the review jobs of the head that a push queued and
+// that are scheduled for later, while they wait for their trigger.settle. A
+// job that River holds and that is about to start stays with River. The
+// lookup of live jobs then finds that job, and the request stands behind it
+// as it does behind any review in flight. A review that someone asked for
+// and that waits for a model slot is not a push's, and cancelWaiting does
+// not touch it.
 func cancelWaiting(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, headSHA string,
 ) error {
@@ -205,8 +211,8 @@ func PullQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, 
 
 // RequestCancel asks the worker running reviewID to stop. It only applies
 // when the review is still running or queued (prepared) and recorded the
-// River job it started as, and that job has not ended; otherwise there is
-// nothing a cancel can reach.
+// River job it started as. It also applies only when that job did not end.
+// Otherwise there is nothing that a cancel can reach.
 // The row update and the JobCancelTx call share tx, so a rollback undoes
 // both together.
 func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], reviewID string) error {
@@ -224,8 +230,8 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 	if err != nil {
 		return fmt.Errorf("jobs: request cancel: %w", err)
 	}
-	// A job that already ended can no longer end its review: JobCancelTx
-	// would return it unchanged, and nothing would ever act on the request.
+	// A job that already ended can no longer end its review. JobCancelTx
+	// returns such a job unchanged, and then nothing ever acts on the request.
 	var state string
 	err = tx.QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1 FOR UPDATE`, jobID).Scan(&state)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -239,7 +245,7 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 		return ErrNotCancelable
 	}
 	// Prepared reviews finish cancellation in the worker. Marking their River
-	// job canceled could discard a delivery error before that worker sees it.
+	// job canceled can discard a delivery error before that worker sees it.
 	if prepared {
 		if rivertype.JobState(state) == rivertype.JobStateRunning {
 			return nil

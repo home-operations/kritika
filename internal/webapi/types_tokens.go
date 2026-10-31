@@ -6,8 +6,8 @@ import "time"
 // lists, which tokens.go serves.
 
 // APIToken is a personal access token as its owner or an admin lists it,
-// never its value. Accounts are the configured accounts it reads unless
-// AllAccounts; Owner is set in an admin's list alone.
+// never its value. Accounts are the configured accounts that it reads unless
+// AllAccounts. Owner is set in an admin's list alone.
 type APIToken struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name"`
@@ -22,7 +22,7 @@ type APIToken struct {
 
 // TokenStatus is whether a token still reads: it stops at its expiry, and
 // goes stale when the sign-in configuration it came from changes, as a
-// session would end.
+// session ends.
 type TokenStatus string
 
 // Token statuses.
@@ -33,8 +33,9 @@ const (
 )
 
 // CreateTokenRequest creates a token named Name that reads Accounts, the
-// slugs of accounts its creator reads, or everything they read when it
-// names none, for ExpiresInDays days: 7, 30, 90 or 365, 0 for never.
+// slugs of accounts that its creator reads. When it names none, the token
+// reads everything that they read. The token lasts for ExpiresInDays days: 7,
+// 30, 90 or 365, 0 for never.
 type CreateTokenRequest struct {
 	Name          string   `json:"name"`
 	Accounts      []string `json:"accounts"`

@@ -2,8 +2,8 @@
 // kritika binary serves it without any external static-file dependency.
 //
 // dist/ is populated by `mise run ui-build` (see .mise/config.toml and the
-// Dockerfile's ui stage); only dist/favicon.svg is committed so `go build`
-// succeeds on a clean checkout before the UI has ever been built.
+// Dockerfile's ui stage). Only dist/favicon.svg is committed, so `go build`
+// succeeds on a clean checkout before the UI is ever built.
 package web
 
 import (

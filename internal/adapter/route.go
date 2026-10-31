@@ -58,9 +58,9 @@ func (c *Steppers) warnUnpriced(ctx context.Context, logger *slog.Logger, accoun
 	}
 }
 
-// Pin pins ref, when it is a floating alias kritika resolves, to the model
-// it selects now for effort (model.Pinner); any other ref comes back as it
-// is.
+// Pin pins ref, when it is a floating alias that kritika resolves, to the
+// model it selects now for effort (model.Pinner). Any other ref comes back as
+// it is.
 func (c *Steppers) Pin(
 	ctx context.Context, f *configfile.File, t *configfile.Account, ref configfile.ModelRef, effort model.Effort,
 ) (configfile.ModelRef, error) {
@@ -83,32 +83,31 @@ func (c *Steppers) Pin(
 }
 
 // Call is one model call as the configuration routes it: a step on Route,
-// tried again with its provider's retries (Step), and, when Fallback is
-// set, the same step on the fallback once those attempts are spent, with
-// that provider's retries, so a review carries on there. The request is
+// tried again with its provider's retries (Step). When Fallback is set, the
+// same step goes on the fallback once those attempts are spent, with that
+// provider's retries. So a review carries on there. The request is
 // provider-neutral, so it goes to the fallback as it is. A fallback on the
 // route's own provider is not a Call's: it goes to the provider with the
 // request, as model.StepRequest.Fallbacks.
 type Call struct {
 	Route
 	// Fallback is the model on another provider that takes the step when
-	// Route's attempts are spent; nil for none.
+	// Route's attempts are spent. It is nil for none.
 	Fallback *Route
 	// Failed reports each failure the call goes on from: err on route on,
 	// which next tries again, or, for the fallback's first attempt, takes
-	// over. It may be nil.
+	// over. It can be nil.
 	Failed func(err error, on, next Route)
 	// Halve, with a Fallback, bounds the attempts on Route to half the time
-	// ctx has left, so the fallback always gets a turn; unset, they may
-	// take all of it.
+	// ctx has left, so the fallback always gets a turn. Unset, they can take
+	// all of it.
 	Halve bool
 }
 
-// Do makes the call: it returns the answer or the last error, how many
-// requests were sent in all, and the route that answered or failed last,
-// which is where the call's cost, metrics and errors belong. The fallback
-// gets no turn once ctx is done, since its attempt would fail the same
-// way.
+// Do makes the call. It returns the answer or the last error, how many
+// requests were sent in all, and the route that answered or failed last. That
+// route is where the call's cost, metrics and errors belong. The fallback
+// gets no turn once ctx is done, since its attempt will fail the same way.
 func (c Call) Do(ctx context.Context, req model.StepRequest) (model.StepResponse, int, Route, error) {
 	req.Model = c.Ref.Model()
 	own := ctx

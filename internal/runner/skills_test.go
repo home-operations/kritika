@@ -107,8 +107,8 @@ func TestDiscoverSkills(t *testing.T) {
 	}
 }
 
-// TestSkillTool runs its calls in order on one tool: the skills it has
-// opened are each listed once, in the order first read, and a call that
+// TestSkillTool runs its calls in order on one tool: the skills it opened
+// are each listed once, in the order first read, and a call that
 // failed opened none.
 func TestSkillTool(t *testing.T) {
 	goBody := skillDoc("description: How Go is reviewed here.", "# Go\n\nSee checklist.md.\n")
@@ -186,7 +186,7 @@ func TestSkillTool(t *testing.T) {
 }
 
 // TestPromptInputsSkills: a review is offered the skills found only when
-// its spec has skills, less the ones its scope keeps from this change, and
+// its spec has skills, less the ones its scope keeps from this change. It is
 // given whole the ones its scope loads.
 func TestPromptInputsSkills(t *testing.T) {
 	found := []repoconfig.Skill{

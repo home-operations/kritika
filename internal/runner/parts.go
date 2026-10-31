@@ -25,9 +25,10 @@ import (
 )
 
 // splitReview is the parts a review is split into, the paths of each, nil
-// when it is reviewed whole: the diff it reads, the pull request's or, on
-// an incremental re-review, the diff since the last review, cut where it is
-// over review.PartBytes into no more parts than its grant covers.
+// when it is reviewed whole. It splits the diff it reads: the pull request's
+// or, on an incremental re-review, the diff since the last review. That diff
+// is cut where it is over review.PartBytes into no more parts than its grant
+// covers.
 func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]string {
 	if p.Agent == nil {
 		return nil
@@ -40,8 +41,8 @@ func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]s
 }
 
 // reviewPart is one part of a split review: the files it reviews and its
-// prompt, and in a review with several reviewers the reviewer it is for,
-// whether it reviews the whole change, and its agent's bounds.
+// prompt. In a review with several reviewers, it also holds the reviewer it
+// is for, whether it reviews the whole change, and its agent's bounds.
 type reviewPart struct {
 	paths    []string
 	prompt   agentPrompt
@@ -51,14 +52,16 @@ type reviewPart struct {
 }
 
 // partPrompts writes each part's prompt: its own files' diff, the context
-// built from that diff, the rules, skills and context references of its
-// paths, and the last review's and the dismissed findings on its files.
-// The first part of each reviewer also gets those on files none of its
-// parts reviews. Every part has a submit check that refuses a finding on
-// another part's file, or a file its reviewer does not review. In a
-// review with several reviewers, a part is given its reviewer's role,
-// rules and skills, and the findings of the last review its reviewer
-// raised, and its submission may hold only the categories its reviewer
+// built from that diff, and the rules, skills, and context references of its
+// paths. The prompt also holds the last review's and the dismissed findings
+// on its files. The first part of each reviewer also gets those on files
+// that none of its parts reviews. Every part has a submit check that refuses
+// a finding on another part's file, or a file that its reviewer does not
+// review.
+//
+// In a review with several reviewers, a part gets its reviewer's role,
+// rules, and skills, and the findings of the last review its reviewer
+// raised. Its submission can hold only the categories that its reviewer
 // reports. tools gets search_code when the repository has an index, and
 // load_skill offers every part's skills. It returns the parts, and the
 // context and the rules they were given together, which the pack keeps.
@@ -145,7 +148,8 @@ func partPrompts(
 }
 
 // partSimilarCode overlaps remote retrieval within the review's granted
-// parallelism. It reads no git objects; those belong to the serial context pass.
+// parallelism. It reads no git objects. Those belong to the serial context
+// pass.
 func partSimilarCode(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs, changed []string, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
@@ -175,10 +179,10 @@ func partSimilarCode(
 	return out, nil
 }
 
-// unsplitPaths are the files of the last review's findings that reviewer
-// raised (the default reviewer when unnamed), and of the dismissed findings that
-// no part of split reviews, which the first part checks again, as a review
-// not split would.
+// unsplitPaths are the files that no part of split reviews. They are the
+// files of the last review's findings that reviewer raised (the default
+// reviewer when unnamed), and of the dismissed findings. The first part looks
+// at them again, as a review that is not split does.
 func unsplitPaths(p runspec.Spec, reviewer string, split [][]string) []string {
 	var out []string
 	add := func(path string) {
@@ -197,10 +201,11 @@ func unsplitPaths(p runspec.Spec, reviewer string, split [][]string) []string {
 	return out
 }
 
-// partSpec is p for one part of a split review: the last review's and the
-// dismissed findings on paths alone, of the last review's only those
-// reviewer raised (the default reviewer when unnamed), and no diagram to carry forward,
-// since the review's summary is written from all the parts'.
+// partSpec is p for one part of a split review. It holds the last review's
+// and the dismissed findings on paths alone. Of the last review's findings,
+// it holds only those that reviewer raised (the default reviewer when
+// unnamed). It has no diagram to carry forward, since the review's summary is
+// written from all the parts'.
 func partSpec(p runspec.Spec, paths []string, reviewer string) runspec.Spec {
 	prompt := *p.Prompt
 	theirs := func(path string) bool { return !slices.Contains(paths, path) }
@@ -217,7 +222,7 @@ func partSpec(p runspec.Spec, paths []string, reviewer string) runspec.Spec {
 
 // splitNotes are what the summary states of a review in parts: a split
 // review's parts, or each reviewer's of several split, and what their
-// prompts' cuts left out, stated as one prompt's would be.
+// prompts' cuts left out, stated as one prompt's is.
 func splitNotes(parts []reviewPart, shares []partShare) []string {
 	var whole agentPrompt
 	for _, part := range parts {
@@ -231,24 +236,25 @@ func splitNotes(parts []reviewPart, shares []partShare) []string {
 }
 
 // minPartTime is the least time a part of a split review starts with, or
-// half its timeout when that is less: less is not enough for an agent to
-// read its files and answer. Its whole timeout would be too much, since the
-// run's deadline leaves the last round no more than that, less what the run
-// took to reach it.
+// half its timeout when that is less. Less is not enough for an agent to
+// read its files and answer. Its whole timeout is too much. The run's
+// deadline leaves the last round no more than that, less what the run took
+// to reach it.
 const minPartTime = 2 * time.Minute
 
-// partLocks are what the parts of a split review running at once share,
-// each a channel of one, so that a part's slow command, fetch or search
-// holds up another part's read of a file no more than it must. head
-// serializes what reads the head or the base through the run's one go-git
-// repository, which is not safe for concurrent use: read_file, grep,
-// list_files, load_skill and the checkout the run tool writes on its first
-// command. writes serializes the run tool and fetch_repo, which share the
-// directory beside the checkout and its budget, and read_file when it reads
-// there. search and oci keep the counts those tools record. A holder of
+// partLocks are what the parts of a split review running at once share.
+// Each is a channel of one. So a part's slow command, fetch, or search holds
+// up another part's read of a file no more than it must.
+//
+// head serializes what reads the head or the base through the run's one
+// go-git repository, which is not safe for concurrent use: read_file, grep,
+// list_files, load_skill, and the checkout that the run tool writes on its
+// first command. writes serializes the run tool and fetch_repo, which share
+// the directory beside the checkout and its budget, and read_file when it
+// reads there. search and oci keep the counts those tools record. A holder of
 // more than one takes them in the order writes, head, oci: the run tool
 // holds writes while its checkout takes head, and a part's checkpoint
-// reads the run tool, fetch_repo and fetch_oci.
+// reads the run tool, fetch_repo, and fetch_oci.
 type partLocks struct {
 	head, writes, search, oci chan struct{}
 }
@@ -259,7 +265,7 @@ func newPartLocks() *partLocks {
 	}
 }
 
-// acquire takes lock, a channel of one, and returns what releases it; a
+// acquire takes lock, a channel of one, and returns what releases it. A
 // nil lock is nothing to take. A part that ends while it waits takes
 // nothing.
 func acquire(ctx context.Context, lock chan struct{}) (func(), error) {
@@ -306,10 +312,10 @@ func (t lockedTool) Run(ctx context.Context, input json.RawMessage) (string, err
 }
 
 // lockTools wraps each of tools to run holding the lock of locks for what
-// it touches; read_file over fetched files takes head or writes itself, by
-// the path, and read_diff reads what it was built with and takes none. A
-// tool of any other type takes head: one that writes beside the checkout
-// must be listed with the run tool.
+// it touches. read_file over fetched files takes head or writes itself, by
+// the path. read_diff reads what it was built with and takes none. A tool of
+// any other type takes head: one that writes beside the checkout must be
+// listed with the run tool.
 func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 	out := make([]agent.Tool, len(tools))
 	for i, t := range tools {
@@ -337,7 +343,7 @@ func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 }
 
 // runParts runs a split review's parts, each an agent of its own with the
-// run's limits over the same tools, and writes their run as one row: the
+// run's limits over the same tools. It writes their run as one row: the
 // findings every part submitted under a joined summary, and how each part
 // ended.
 func runParts(
@@ -395,11 +401,11 @@ func runParts(
 }
 
 // runPartLoops runs the agents of a split review's parts, as many at once
-// as the worker grants slots for, and returns each
-// part's result and the run's timeline, its steps numbered across the parts
-// in part order. The parts share the agent time the worker sized the Job
-// for, so a part late enough to pass it is left out, ending the run cleanly
-// rather than at the Job's deadline.
+// as the worker grants slots for. It returns each part's result and the run's
+// timeline, with its steps numbered across the parts in part order. The parts
+// share the agent time that the worker sized the Job for. So a part late
+// enough to pass it is left out, and the run ends cleanly and not at the
+// Job's deadline.
 func runPartLoops(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
 	parts []reviewPart, logger *slog.Logger,
@@ -478,11 +484,12 @@ func runPartLoops(
 	return results, timeline, nil
 }
 
-// mergeParts is a split review's run as one agent.Result: the reviews its
-// parts submitted joined (review.MergeParts), each finding of a part for a
-// reviewer naming it, what they spent together, and why the others
-// stopped; and how each part ended, its summary once it submitted. A run
-// no part submitted for stops as its first part did.
+// mergeParts is a split review's run as one agent.Result. That result holds
+// the reviews its parts submitted joined (review.MergeParts), each finding of
+// a part for a reviewer naming it. It also holds what they spent together and
+// why the others stopped. mergeParts also returns how each part ended, its
+// summary once it submitted. A run no part submitted for stops as its first
+// part did.
 func mergeParts(parts []reviewPart, results []agent.Result, secrets runspec.Secrets) (agent.Result, []store.AgentPart, error) {
 	merged := agent.Result{ToolCalls: map[string]int{}}
 	var submitted []review.Result

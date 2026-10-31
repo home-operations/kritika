@@ -21,9 +21,9 @@ type caseResult struct {
 	NiceTotal int              `json:"nice_total"`
 	NiceHit   int              `json:"nice_hit"`
 	Matched   int              `json:"matched_findings"`
-	// Judged are the pairs the judge was asked about, an expected range
-	// no finding landed on against each finding in its file, and
-	// JudgeHit how many expected ranges a judge's match alone hit.
+	// Judged are the pairs that the judge was asked about: an expected
+	// range that no finding landed on, against each finding in its file.
+	// JudgeHit is how many expected ranges a judge's match alone hit.
 	Judged      []verdict      `json:"judged,omitempty"`
 	JudgeHit    int            `json:"judge_hit"`
 	JudgeCost   float64        `json:"judge_cost_usd"`
@@ -41,8 +41,8 @@ type caseResult struct {
 type Report struct {
 	Options benchOptions `json:"options"`
 	Model   string       `json:"model"`
-	// Judge is the judge that scored the run, as judge.Name says, "" for
-	// lines alone; the floors are pinned to it.
+	// Judge is the judge that scored the run, as judge.Name says, or "" for
+	// lines alone. The floors are pinned to it.
 	Judge string    `json:"judge,omitempty"`
 	When  time.Time `json:"when"`
 	Dry   bool      `json:"dry"`

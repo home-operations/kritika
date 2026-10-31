@@ -1,6 +1,6 @@
 // Central icon registry. Importing only the names we use keeps the bundle
-// small (the bundler tree-shakes @mdi/js to just these paths),
-// so the list holds only what src/ references.
+// small (the bundler tree-shakes @mdi/js to just these paths).
+// The list therefore holds only what src/ references.
 
 export {
   mdiGithub as githubIcon,

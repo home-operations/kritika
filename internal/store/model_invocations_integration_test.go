@@ -199,7 +199,7 @@ func assertInvocationAdmission(t *testing.T, s *Store, u Usage, token, id, other
 }
 
 // TestSweepModelInvocations: a settled invocation is swept once its
-// settlement is older than the retention; one settled later, and one not
+// settlement is older than the retention. One settled later, and one not
 // settled however old, stay.
 func TestSweepModelInvocations(t *testing.T) {
 	s := openStore(t)

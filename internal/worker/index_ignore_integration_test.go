@@ -29,7 +29,8 @@ func checkIndexIgnoreChanges(
 	t.Cleanup(func() {
 		current.Set(original)
 		lf.setTip(head)
-		// Cleanup also runs after a subtest aborts; restore the index for later checks.
+		// Cleanup also runs after a subtest aborts. Restore the index for
+		// later checks.
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
 		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)

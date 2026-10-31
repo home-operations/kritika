@@ -1,6 +1,6 @@
 <script lang="ts">
   // One headline number: its label, value, and change against the window
-  // before, coloured by whether that change is good rather than by its sign.
+  // before, colored by whether that change is good rather than by its sign.
   // Several side by side go in a `.stats` group, which draws the border.
   import type { Snippet } from 'svelte';
   import { change } from '../format';
@@ -20,14 +20,14 @@
     children,
   }: {
     label: string;
-    // value unset is a number still loading (pending) or one that could not be.
+    // value unset is a number still loading (pending) or one that failed to load.
     value?: string;
     sub?: string;
     // define says what the number counts.
     define?: string;
     now?: number | null;
     before?: number | null;
-    // good is the direction that is good news; unset, a change is neither.
+    // good is the direction that is good news. When it is unset, a change is neither.
     good?: 'up' | 'down';
     // points compares two percentages by their difference.
     points?: boolean;

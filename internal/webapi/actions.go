@@ -15,22 +15,22 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Actions queues the work an admin can ask for from the dashboard, each in
-// the caller's account transaction so the job and its audit row commit
-// together.
+// Actions queues the work that an admin can ask for from the dashboard. It
+// queues each in the caller's account transaction, so the job and its audit
+// row commit together.
 type Actions interface {
 	// Rerun queues a manual review of the pull request's current head,
 	// jobs.ErrNoHead when none is known, jobs.ErrRerunQueued when one is
 	// already queued or running.
 	Rerun(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int) (int64, error)
-	// Cancel asks a running review to stop; jobs.ErrNotCancelable when it
-	// is not running.
+	// Cancel asks a running review to stop. It returns jobs.ErrNotCancelable
+	// when the review is not running.
 	Cancel(ctx context.Context, tx pgx.Tx, reviewID string) error
-	// Reindex queues a full reindex of the repository;
-	// jobs.ErrRepositoryNotFound when it no longer exists (findRepo already
-	// resolved it in the same transaction, so this is defense in depth),
-	// jobs.ErrReindexQueued when a forced reindex is already queued or
-	// running.
+	// Reindex queues a full reindex of the repository. It returns
+	// jobs.ErrRepositoryNotFound when the repository no longer exists
+	// (findRepo already resolved it in the same transaction, so this is
+	// defense in depth). It returns jobs.ErrReindexQueued when a forced
+	// reindex is already queued or running.
 	Reindex(ctx context.Context, tx pgx.Tx, accountID, repositoryID string) (int64, error)
 }
 
@@ -80,8 +80,8 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 }
 
 // queuedMessage says what the review job that stands in a re-run's way is
-// doing, so whoever asked again learns why no review has shown up. j is nil
-// when a running review has no unfinished job to name.
+// doing, so whoever asked again learns why no review showed up. j is nil when
+// a running review has no unfinished job to name.
 func queuedMessage(j *store.JobRow) string {
 	if j == nil {
 		return "a review of this head is already queued or running"

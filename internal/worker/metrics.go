@@ -15,8 +15,8 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
-// JobMetrics observes each pickup, including retries and snoozes, before
-// work starts so long-running or crashed jobs do not hide queue delays.
+// JobMetrics observes each pickup before work starts, retries and snoozes
+// included, so long-running or crashed jobs do not hide queue delays.
 type JobMetrics struct {
 	river.MiddlewareDefaults
 	Metrics *metrics.Metrics
@@ -31,9 +31,9 @@ func (m *JobMetrics) Work(ctx context.Context, job *rivertype.JobRow, next func(
 }
 
 // ForgeRateLimit snoozes a job that failed on GitHub's rate limit until the
-// limit allows it again. A snooze spends no attempt, where River's backoff
-// would bring the job back inside the limit's window to fail again, until
-// its attempts ran out. A job that cancels itself is left to do so.
+// limit allows it again. A snooze spends no attempt. River's backoff, by
+// contrast, brings the job back inside the limit's window to fail again,
+// until its attempts run out. A job that cancels itself is left to do so.
 type ForgeRateLimit struct {
 	river.MiddlewareDefaults
 	Logger *slog.Logger

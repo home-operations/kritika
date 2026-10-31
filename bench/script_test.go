@@ -13,8 +13,8 @@ import (
 )
 
 // TestScripted: the script answers a review with a finding on each
-// expected range of its case, as a submission the loop takes, and a
-// judge with a match.
+// expected range of its case, as a submission that the loop takes. It
+// answers a judge with a match.
 func TestScripted(t *testing.T) {
 	s := &scripted{}
 	s.use(Case{Expected: []Expected{

@@ -37,7 +37,8 @@ func TestS3Integration(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() {
-		// Test contexts are canceled before cleanup; only this test's prefix is removed.
+		// Test contexts are canceled before cleanup. Only this test's prefix
+		// is removed.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for obj := range c.s3.client.ListObjects(ctx, opts.Bucket, minio.ListObjectsOptions{Prefix: opts.Prefix, Recursive: true}) {

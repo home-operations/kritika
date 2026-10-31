@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// The management API's JSON shapes; internal/web/src/lib/types.ts mirrors
+// The management API's JSON shapes. internal/web/src/lib/types.ts mirrors
 // these too.
 
 // Meta is what the dashboard needs before anyone signs in.
@@ -14,9 +14,9 @@ type Meta struct {
 	WebURL  string `json:"webUrl"`
 }
 
-// AppInstallation is one account a connection's GitHub App is installed
+// AppInstallation is one account that a connection's GitHub App is installed
 // on. Served is whether the connection lists the account: kritika reviews
-// nothing on one it does not, and an admin may uninstall the App there.
+// nothing on one it does not, and an admin can uninstall the App there.
 type AppInstallation struct {
 	ID          int64  `json:"id"`
 	Account     string `json:"account"`
@@ -39,7 +39,7 @@ type SetupStatus struct {
 	// Connections are the running connections.
 	Connections []string `json:"connections"`
 	// ReviewModel is defaults.models.review, which validation holds to a
-	// model an instance provider serves; "" when unset.
+	// model that an instance provider serves. It is "" when unset.
 	ReviewModel string `json:"reviewModel"`
 	// Embedding is whether an embedder is set.
 	Embedding bool `json:"embedding"`
@@ -50,8 +50,7 @@ type RegisterResult struct {
 	Added int `json:"added"`
 }
 
-// Accepted is an action queued; JobID is the queued job, when there is
-// one.
+// Accepted is an action queued. JobID is the queued job, when there is one.
 type Accepted struct {
 	JobID int64 `json:"jobId,omitzero"`
 }
@@ -77,9 +76,9 @@ type TurnOnRequest struct {
 	On bool `json:"on"`
 }
 
-// AuditEvent is one audit log entry. Actor is null once the user is
-// deleted; Account is the account's slug, "" when the event names none or
-// no connection serves the account now. Detail never holds a secret.
+// AuditEvent is one audit log entry. Actor is null once the user is deleted.
+// Account is the account's slug, "" when the event names none or no
+// connection serves the account now. Detail never holds a secret.
 type AuditEvent struct {
 	ID      string          `json:"id"`
 	At      time.Time       `json:"at"`

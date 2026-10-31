@@ -58,7 +58,7 @@ func TestJobHeartbeatBeatsWhileTheJobRuns(t *testing.T) {
 		job := &rivertype.JobRow{ID: 42}
 		var atStart, during int
 		// The job's own context ends before Work does, as a timeout or a
-		// cancel ends it; the beats go on until Work returns.
+		// cancel ends it. The beats go on until Work returns.
 		jctx, cancel := context.WithCancel(t.Context())
 		err := h.Work(jctx, job, func(context.Context) error {
 			atStart = store.count()
@@ -104,9 +104,9 @@ func TestJobHeartbeatRefusesToStartUnseen(t *testing.T) {
 	}
 }
 
-// TestJobHeartbeatFencesTheJobOnceBeatsStopLanding: the job is cut once
-// no beat landed for jobFenceAfter, before the leader may hand it back,
-// and no beat is written after, though the job runs on.
+// TestJobHeartbeatFencesTheJobOnceBeatsStopLanding: the job is cut once no
+// beat landed for jobFenceAfter, before the leader can hand it back. No beat
+// is written after, though the job runs on.
 func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeHeartbeater{}
@@ -119,8 +119,8 @@ func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
 			store.mu.Unlock()
 			<-ctx.Done()
 			fencedAfter = time.Since(start)
-			// A cut job may finish on contexts of its own; the database
-			// back meanwhile takes no beat.
+			// A cut job can finish on contexts of its own. The database, back
+			// meanwhile, takes no beat.
 			store.mu.Lock()
 			store.down = false
 			store.mu.Unlock()

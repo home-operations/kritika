@@ -65,9 +65,9 @@ func TestSnooze(t *testing.T) {
 	}
 }
 
-// TestEarlyEndStatus checks the commit status an early end reports: a skip
-// states the reason recorded with it, the repository's or the runner's, and
-// one with none, an admission's, the error it ends with.
+// TestEarlyEndStatus makes sure that an early end reports the correct commit
+// status. A skip states the reason recorded with it, the repository's or the
+// runner's. One with none, an admission's, states the error it ends with.
 func TestEarlyEndStatus(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -17,27 +17,28 @@ import (
 
 // Reviewer is an agent of review.agents, by its Name. One with Categories
 // is a specialist: an agent of its own that reviews the change, or the
-// part of it Paths leave it, for those categories alone, beside the other
-// agents, with instructions, a model, rules and skills of its own. One
-// without replaces the default pass, review.model's, when its When hold:
-// the first such agent that holds does, with its model, fallback and
-// effort, as a route of the review's model (see Route), and takes nothing
-// else.
+// part of it that Paths leave it, for those categories alone. It runs beside
+// the other agents, with instructions, a model, rules, and skills of its own.
+//
+// One without Categories replaces the default pass, review.model's, when its
+// When hold. The first such agent that holds does this, with its model,
+// fallback, and effort, as a route of the review's model (see Route). It
+// takes nothing else.
 type Reviewer struct {
 	// Name names the agent to comments, commands and the dashboard.
 	Name string `yaml:"name" json:"name"`
-	// Enabled false turns the agent off; unset is on.
+	// Enabled false turns the agent off. Unset is on.
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// Instructions are what the agent reviews for, added after kritika's
-	// own; File, instead, names a repository file read from the merge base
+	// own. File, instead, names a repository file read from the merge base
 	// whose content they are.
 	Instructions string `yaml:"instructions,omitempty" json:"instructions,omitempty"`
 	File         string `yaml:"file,omitempty" json:"file,omitempty"`
-	// Categories are the only categories the agent may report; written,
+	// Categories are the only categories the agent can report. Written,
 	// they make it a specialist.
 	Categories []review.Category `yaml:"categories,omitempty" json:"categories,omitempty"`
-	// Model, Fallback and Effort are its model, the one that takes a step
-	// the model fails and how hard they reason; a specialist's unset are
+	// Model, Fallback, and Effort are its model, the one that takes a step
+	// the model fails, and how hard they reason. A specialist's unset are
 	// the default pass's, as the review's agents picked it.
 	Model    ModelRef      `yaml:"model,omitempty" json:"model,omitempty"`
 	Fallback ModelRef      `yaml:"fallback,omitempty" json:"fallback,omitempty"`
@@ -45,17 +46,18 @@ type Reviewer struct {
 	// Paths are the changed files a specialist reads, every one when none:
 	// a pull request that changes none of them is not reviewed by it. When
 	// are conditions as a trigger's, judged over the whole pull request,
-	// one of which must hold for the agent to run; none always holds.
+	// one of which must hold for the agent to run. An agent with none always
+	// holds.
 	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 	When  []Filter `yaml:"when,omitempty" json:"when,omitempty"`
 	// Rules are checks a specialist makes, in place of the configuration's,
 	// which are the default pass's.
 	Rules []Rule `yaml:"rules,omitempty" json:"rules,omitempty"`
-	// Skills lays scopes over the repository's for a specialist; its paths
-	// may not be written, the repository's skills being one set.
+	// Skills lays scopes over the repository's for a specialist. Its paths
+	// cannot be written, because the repository's skills are one set.
 	Skills SkillsSpec `yaml:"skills,omitempty" json:"skills,omitzero"`
 	// Agent bounds a specialist within the repository's own bounds, which
-	// it may lower and never raise.
+	// it can lower and never raise.
 	Agent ReviewerAgent `yaml:"agent,omitempty" json:"agent,omitzero"`
 }
 
@@ -101,10 +103,10 @@ func (r Reviewer) Bounds(a AgentSettings) AgentSettings {
 }
 
 // Holds reports whether r's when conditions let it run on a pull request
-// with the filter variables vars and the diff d, nil when the diff could
-// not be read: one of them holds, or there are none. A condition is
-// judged as a model route's is (see Models.Pick), and the error of one
-// that fails to evaluate is returned for the log.
+// with the filter variables vars and the diff d. d is nil when the read of
+// the diff failed. The conditions let it run when one of them holds, or there
+// are none. A condition is judged as a model route's is (see Models.Pick),
+// and the error of one that fails to evaluate is returned for the log.
 func (r Reviewer) Holds(vars map[string]any, d *Diff) (bool, error) {
 	if len(r.When) == 0 {
 		return true, nil
@@ -145,16 +147,18 @@ const MaxReviewerChars = 8000
 // the one the default pass runs.
 const MaxReviewers = 8
 
-// CheckAgents rejects agents with a name that is not valid, is the
-// default pass's or is given twice, more than MaxReviewers, a specialist
-// whose instructions are both or overlong, whose file is outside the
-// repository, whose categories are not categories, or whose paths, rules,
-// skills or bounds are not valid, an agent that replaces the default pass
-// with no model or anything but its name, model, fallback, effort, when
-// and enabled, and any whose conditions or effort are not valid; it
-// compiles their conditions in place. Their models are their caller's to
-// check: what they may name depends on the scope. The error starts with
-// the agent's place, as review.agents[0] (security).
+// CheckAgents rejects agents with a name that is not valid, is the default
+// pass's, or is given twice. It rejects more than MaxReviewers. It rejects a
+// specialist whose instructions are both or overlong, or whose file is
+// outside the repository. It also rejects a specialist whose categories are
+// not categories, or whose paths, rules, skills, or bounds are not valid. It
+// rejects an agent that replaces the default pass with no model or with
+// anything but its name, model, fallback, effort, when, and enabled. It also
+// rejects any agent whose conditions or effort are not valid.
+//
+// CheckAgents compiles their conditions in place. The caller makes sure that
+// their models are valid, because what they can name depends on the scope.
+// The error starts with the agent's place, as review.agents[0] (security).
 func CheckAgents(agents []Reviewer) error {
 	if len(agents) > MaxReviewers {
 		return fmt.Errorf("review.agents: %d agents are over the %d allowed", len(agents), MaxReviewers)
@@ -312,8 +316,8 @@ func ruleFiles(rules []Rule) []string {
 	return out
 }
 
-// validateAgents checks the file's agents, as validateOverrides checks
-// its models.
+// validateAgents makes sure that the file's agents are valid, as
+// validateOverrides does for its models.
 func (f *File) validateAgents(agents []Reviewer) error {
 	if err := CheckAgents(agents); err != nil {
 		return fmt.Errorf("configfile: %w", err)

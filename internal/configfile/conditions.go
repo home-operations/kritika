@@ -12,11 +12,11 @@ import (
 	"github.com/home-operations/kritika/internal/prfilter"
 )
 
-// Switch is a setting a file writes as true or false, or as a block whose
-// when lists the conditions, one of which a pull request must hold for the
-// setting to be on for it, as a rule's do: review.approve and
-// confidence.gate. The block turns the setting on and lists at least one
-// condition; true is how it is on for every pull request.
+// Switch is a setting that a file writes as true or false, or as a block
+// whose when lists the conditions, as a rule's does. A pull request must hold
+// one of those conditions for the setting to be on for it. review.approve
+// and confidence.gate are switches. The block turns the setting on and lists
+// at least one condition. true is how it is on for every pull request.
 type Switch struct {
 	On   bool
 	When []When
@@ -68,7 +68,7 @@ func (w When) Label() string {
 
 // AnyHolds reports whether one of when holds for the pull request with
 // the filter variables vars, or when is empty. A condition that does not
-// compile or evaluate does not hold, as it could not say it does.
+// compile or evaluate does not hold, because it cannot say that it does.
 func AnyHolds(when []When, vars map[string]any) bool {
 	return len(when) == 0 || slices.ContainsFunc(when, func(w When) bool {
 		prg, err := prfilter.Compile(w.Expr)
@@ -87,8 +87,8 @@ func (r Review) ApprovesFor(vars map[string]any) bool {
 	return AnyHolds(r.ApproveWhen, vars) && AnyHolds(r.ApproveWhenInRepo, vars)
 }
 
-// checkConditions checks the approval, gate and confidence conditions one
-// scope writes, as a rule's are checked.
+// checkConditions makes sure that the approval, gate, and confidence
+// conditions that one scope writes are valid, the same way as a rule's.
 func checkConditions(r *Overrides) error {
 	for key, s := range map[string]*Switch{keyApprove: r.Review.Approve, keyGate: r.Confidence.Gate} {
 		if s == nil {

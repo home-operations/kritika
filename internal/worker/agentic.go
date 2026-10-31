@@ -60,7 +60,7 @@ type admission struct {
 	monthLeft int64
 }
 
-// budget is what a review in parts parts may spend through its grant: each
+// budget is what a review in parts parts can spend through its grant: each
 // part maxTokens, together within what the month leaves.
 func (a admission) budget(parts int) int64 {
 	total := int64(parts) * a.maxTokens
@@ -70,12 +70,12 @@ func (a admission) budget(parts int) int64 {
 	return total
 }
 
-// agentAdmit settles what a review may spend before its runner
-// starts, since the runner spends against the model through the gateway:
-// a review model must be configured, the account's caps must allow a
-// review, and a free model lease is taken, renewed until released, or
-// errNoSlot returned. A non-empty status ends the review
-// before it runs, for the reason given.
+// agentAdmit settles what a review can spend before its runner starts,
+// because the runner spends against the model through the gateway. A review
+// model must be configured, and the account's caps must allow a review.
+// agentAdmit takes a free model lease, renewed until released, or returns
+// errNoSlot. A non-empty status ends the review before it runs, for the
+// reason given.
 func (w *Review) agentAdmit(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings, jobID int64,
 ) (admission, store.ReviewStatus, string, error) {
@@ -129,11 +129,11 @@ func (e noSlot) Error() string        { return errNoSlot.Error() + ": " + e.mode
 func (e noSlot) Is(target error) bool { return target == errNoSlot }
 
 // reviewerLeases takes a slot on each model, other than the review model,
-// that one of settings' reviewers that is on reviews with, settings being
-// cut to those the review may run (see mayRun): which of them have files
-// to read is known only once the runner has the diff, so a review holds
-// one for each that may. A model with no free slot lets go of those taken
-// and is a noSlot.
+// that a reviewer in settings that is on reviews with. settings is cut to the
+// reviewers that the review can run (see mayRun). Which of them have files to
+// read is known only once the runner has the diff. So a review holds one slot
+// for each reviewer that can have files to read. A model with no free slot
+// lets go of the slots taken and is a noSlot.
 func (w *Review) reviewerLeases(
 	ctx context.Context, logger *slog.Logger, account *configfile.Account, settings configfile.Settings, jobID int64,
 ) (map[string]*store.Lease, error) {
@@ -173,8 +173,9 @@ func reviewerModelKeys(settings configfile.Settings) []string {
 	return out
 }
 
-// agentCaps is the token budget a review may spend and what the month's
-// cap leaves, 0 when there is none, or the cap that stops it.
+// agentCaps is the token budget that a review can spend and what the month's
+// cap leaves, 0 when there is no such cap. If a cap stops the review, it is
+// that cap instead.
 func (w *Review) agentCaps(
 	ctx context.Context, account *configfile.Account, settings configfile.Settings,
 ) (budget, left int64, capped string, err error) {
@@ -196,14 +197,14 @@ func (w *Review) agentCaps(
 	return budget, left, capped, nil
 }
 
-// minAgentTokens is the least monthly headroom a review starts
-// with: below it the agent could not read the diff before running out.
+// minAgentTokens is the least monthly headroom a review starts with: below it
+// the agent cannot read the diff before running out.
 const minAgentTokens = 50_000
 
-// agentBudget is how many tokens one review may spend: the
-// repository's agent budget, cut to what is left of the account's monthly
-// cap when one is set. A non-empty reason caps the review instead, when
-// too little is left for an agent to do anything with.
+// agentBudget is how many tokens one review can spend: the repository's agent
+// budget, cut to what is left of the account's monthly cap when one is set. A
+// non-empty reason caps the review instead, when too little is left for an
+// agent to do anything with.
 func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) {
 	if tokensPerMonth <= 0 {
 		return agentMax, ""
@@ -215,11 +216,13 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 	return min(agentMax, left), ""
 }
 
-// agentPrompt reads what the runner needs to write the prompt and to tell
-// a review the worker will skip: the pull request as the repository filter
-// sees it, pull, read once for the whole job, the issues its description says it closes, and, for a bot
-// author, the patch id of its last prepared review, which afterRun skips as
-// unchanged. The notes say which issues could not be read.
+// agentPrompt reads what the runner needs to write the prompt and to
+// recognize a review that the worker will skip. The runner needs the pull
+// request as the repository filter sees it: that is pull, read once for the
+// whole job. It also needs the issues that the pull request's description
+// says it closes. For a bot author, it also needs the patch id of the pull
+// request's last prepared review, which afterRun skips as unchanged. The notes
+// say which issues agentPrompt failed to read.
 func (w *Review) agentPrompt(
 	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, pull repoconfig.PullRequest, eff Effective,
 	prior priorReview, client forge.Client, logger *slog.Logger,
@@ -234,8 +237,9 @@ func (w *Review) agentPrompt(
 		p.PriorDiagram = prior.diagram
 	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		// The rules' when conditions are judged here, before the runner cuts the
-		// body, so a rule applies as it will when the worker reads the run.
+		// agentPrompt judges the rules' when conditions here, before the
+		// runner cuts the body. So a rule applies as it will when the worker
+		// reads the run.
 		judged := p.PullRequest
 		judged.Event = trigger
 		vars, err := judged.Vars()
@@ -246,9 +250,9 @@ func (w *Review) agentPrompt(
 		if sk := eff.Skills; len(sk.Paths) > 0 {
 			p.Skills = &runspec.Skills{Paths: sk.Paths, Scope: sk.Scope, Off: repoconfig.SkillsOff(sk.Scope, vars)}
 		}
-		// The conditions only the diff can judge are the runner's; it
-		// judges them as the review's trigger, and a review someone asked
-		// for passes the admin's lists whatever they say.
+		// The runner owns the conditions that only the diff can judge. It
+		// judges them with the review's trigger as the event. A review that
+		// someone asked for passes the admin's lists, whatever they say.
 		p.PullRequest.Event = trigger
 		if trigger != jobs.TriggerManual && eff.Filters.NeedsDiff() {
 			p.Filters = append(p.Filters, eff.Filters)
@@ -283,8 +287,8 @@ func (w *Review) agentPrompt(
 	return p, notes, nil
 }
 
-// loadAgentRun reads the agent_runs row of a runner run; found is false
-// when the runner wrote none.
+// loadAgentRun reads the agent_runs row of a runner run. found is false when
+// the runner wrote none.
 func (b *Base) loadAgentRun(ctx context.Context, accountID, runID string) (run store.AgentRunRow, found bool, err error) {
 	err = b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
@@ -300,23 +304,24 @@ func (b *Base) loadAgentRun(ctx context.Context, accountID, runID string) (run s
 	return run, true, nil
 }
 
-// agentRun is what a runner's run came to: the executor's result, the
-// cause supervision ended it with, nil when it did not, and the agent's
-// row, or why it could not be read.
+// agentRun is what a runner's run came to. It holds the executor's result and
+// the cause that supervision ended the run with, nil when supervision did not
+// end it. It also holds the agent's row, or the reason that the read of the
+// row failed.
 type agentRun struct {
 	res      executor.Result
 	cause    error
 	agent    *store.AgentRunRow
 	agentErr error
-	// unpaid is set when the run failed with no agent row and no model
-	// step recorded: it spent nothing on the model, so it may run again.
+	// unpaid is set when the run failed with no agent row and no model step
+	// recorded: it spent nothing on the model, so it can run again.
 	unpaid bool
 }
 
-// runRunner runs spec on exec, supervised as sup, until it ends, then
-// revokes the run's gateway tokens and reads the agent's row. The row is
-// read before the caller records the run, which settles its phase: a
-// stopped run's row may still be on its way from the terminating pod.
+// runRunner runs spec on exec, supervised as sup, until it ends, then revokes
+// the run's gateway tokens and reads the agent's row. The row is read before
+// the caller records the run, which settles its phase: a stopped run's row
+// can still be on its way from the terminating pod.
 func (b *Base) runRunner(
 	ctx context.Context, exec executor.Executor, sup supervision, spec executor.Spec, accountID, runID string, ref configfile.ModelRef,
 	rowWait time.Duration, logger *slog.Logger,
@@ -337,12 +342,11 @@ func (b *Base) runRunner(
 	return agentRun{res: res, cause: cause, agent: row, agentErr: agentErr, unpaid: unpaid}
 }
 
-// modelUntouched reports whether no model step of the run was begun. A
-// step is reserved before the provider is called, so a step in flight
-// when the runner died counts, though its record may be on its way. A
-// read that fails counts as a step: a retry on a guess could pay for the
-// model twice. ctx's cancellation is not inherited, as readAgentRun's is
-// not.
+// modelUntouched reports whether no model step of the run began. A step is
+// reserved before the provider is called. So a step in flight when the runner
+// died counts, though its record can be on its way. A read that fails counts
+// as a step: a retry on a guess can pay for the model twice. ctx's
+// cancellation is not inherited, as readAgentRun's is not.
 func (b *Base) modelUntouched(ctx context.Context, accountID, runID string, logger *slog.Logger) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -361,14 +365,13 @@ func (b *Base) modelUntouched(ctx context.Context, accountID, runID string, logg
 
 // readAgentRun reads the run's agent_runs row, nil when the runner wrote
 // none. What the agent spent is already charged: the gateway records usage
-// for every step it serves, whatever becomes of the review. A run no step
-// of which was answered names ref's model, the one it was granted.
+// for every step it serves, whatever becomes of the review. A run no step of
+// which was answered names ref's model, the one it was granted.
 //
-// A run that ended in error may still be writing its row: a deleted runner
+// A run that ended in error can still be writing its row: a deleted runner
 // pod records how its agent stopped while it terminates. await waits for
-// that, until the run settles or wait, agentRowWait when zero, passes.
-// ctx's cancellation is not inherited, so a job River cancels still reads
-// the row.
+// that, until the run settles or wait, agentRowWait when zero, passes. ctx's
+// cancellation is not inherited, so a job River cancels still reads the row.
 func (b *Base) readAgentRun(
 	ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool, wait time.Duration,
 ) (*store.AgentRunRow, error) {
@@ -386,11 +389,11 @@ func (b *Base) readAgentRun(
 	return &run, nil
 }
 
-// pinModels is models as a run's grant names them: each floating alias
-// pinned to the model it selects now (adapter.Steppers.Pin), so every step
-// of the run goes to that model, whichever replica's gateway serves it,
-// and a conversation the run keeps names it. An alias that cannot be
-// pinned is granted as it is, which each step then resolves.
+// pinModels is models as a run's grant names them. Each floating alias is
+// pinned to the model that it selects now (adapter.Steppers.Pin). So every
+// step of the run goes to that model, whichever replica's gateway serves it,
+// and a conversation that the run keeps names that model. An alias that
+// cannot be pinned is granted as it is, and each step then resolves it.
 func pinModels(
 	ctx context.Context, logger *slog.Logger, steppers *adapter.Steppers, file *configfile.File, account *configfile.Account,
 	models configfile.Models,
@@ -408,13 +411,14 @@ func pinModels(
 	return models
 }
 
-// agentSpec gives spec its agent: the prompt, with the reviewers it runs,
-// the gateway and a run token for it, granting models and each other
-// reviewer's grants, which lets it carry on cont when that is set, and the
-// agent's bounds, for a review sized for size's parts. The
-// token is minted last, so an error leaves none behind; the caller
-// revokes it once the run ends. It returns the runner Job's deadline,
-// which the agent's timeout may lengthen, and the prompt's notes.
+// agentSpec gives spec its agent. The agent gets the prompt, with the
+// reviewers it runs, the gateway, and a run token for the gateway. It also
+// gets its bounds, for a review sized for size's parts. The token grants
+// models and the grants of each other reviewer, which lets the agent carry on
+// cont when cont is set. The token is minted last, so an error leaves none
+// behind. The caller revokes it once the run ends. agentSpec returns the
+// runner Job's deadline, which the agent's timeout can lengthen, and the
+// prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger, focus string, pr *pullRequest, eff Effective, models configfile.Models,
 	prior priorReview, cont *runspec.Continuation, admitted admission, size sizing, spec *runspec.Spec, secrets *runspec.Secrets,
@@ -483,15 +487,16 @@ func (w *Review) splitParts(ctx context.Context, client forge.Client, pr *pullRe
 	return estimateParts(size, maxParts)
 }
 
-// partsTimeout is the agent time a review needs whose parts run in rounds
-// rounds, each part within timeout, as much of it as a job may run.
+// partsTimeout is the agent time that a review needs if its parts run in
+// rounds rounds, each part within timeout. It is at most as much as a job can
+// run.
 func partsTimeout(rounds int, timeout time.Duration) time.Duration {
 	return min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout)
 }
 
-// sizing is what a review is sized for: the parts its runner may split it
-// into, and the review model's slots it holds, which its parts may run in
-// at once.
+// sizing is what a review is sized for: the parts that its runner can split
+// it into, and the slots that it holds on the review model. Its parts can run
+// in those slots at once.
 type sizing struct {
 	parts, slots int
 }
@@ -499,9 +504,9 @@ type sizing struct {
 // rounds is how many parts run one after another at the most.
 func (s sizing) rounds() int { return (s.parts + s.slots - 1) / s.slots }
 
-// revokeGatewayTokens ends the run's token once its runner is done, on a
-// context of its own since the job's may have ended. A token not revoked
-// still expires on its own.
+// revokeGatewayTokens ends the run's token once its runner is done. It uses a
+// context of its own, because the job's context can already be over. A token
+// that is not revoked still expires on its own.
 func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) bool {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()

@@ -1,7 +1,7 @@
-// Package webhook verifies and parses inbound forge webhook requests.
-// Verification uses crypto/hmac rather than a forge SDK: it is the
-// canonical, auditable primitive, and one forge-neutral place to add
-// another forge's scheme.
+// Package webhook does signature verification on inbound forge webhook
+// requests and parses them. Verification uses crypto/hmac rather than a forge
+// SDK: it is the canonical, auditable primitive, and one forge-neutral place
+// to add another forge's scheme.
 package webhook
 
 import (
@@ -27,8 +27,9 @@ var (
 )
 
 // Verify reports whether an inbound webhook request is authentic for forge,
-// given the connection's secret, the request headers, and the raw body.
-// It returns nil when authentic; otherwise one of the sentinel errors above.
+// given the connection's secret, the request headers, and the raw body. It
+// returns nil when authentic. Otherwise it returns one of the sentinel errors
+// above.
 func Verify(forge configfile.Forge, secret string, header http.Header, body []byte) error {
 	if secret == "" {
 		return ErrNoSecret
@@ -61,15 +62,16 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 	}
 }
 
-// gitlabTolerance is how far a GitLab delivery's timestamp may be from
-// now: the signature covers it, so an older one is a replay.
+// gitlabTolerance is how far a GitLab delivery's timestamp can be from now:
+// the signature covers it, so an older one is a replay.
 const gitlabTolerance = 5 * time.Minute
 
-// verifyGitLab checks a delivery signed with a GitLab webhook's signing
-// token: webhook-signature is one or more space-separated "v1," + base64
-// HMAC-SHA256 values over "{webhook-id}.{webhook-timestamp}.{body}", keyed
-// by the base64 the token carries after its "whsec_" prefix. A webhook
-// with only a secret token, which GitLab sends in plain text, is unsigned.
+// verifyGitLab does signature verification on a delivery signed with a GitLab
+// webhook's signing token: webhook-signature is one or more space-separated
+// "v1," + base64 HMAC-SHA256 values over
+// "{webhook-id}.{webhook-timestamp}.{body}", keyed by the base64 that the
+// token carries after its "whsec_" prefix. A webhook with only a secret
+// token, which GitLab sends in plain text, is unsigned.
 func verifyGitLab(secret string, header http.Header, body []byte, now time.Time) error {
 	provided := header.Get("webhook-signature")
 	if provided == "" {
@@ -114,9 +116,9 @@ func GitLabSigningKey(token string) ([]byte, error) {
 	return key, nil
 }
 
-// Delivered reports whether the request carries the headers forge puts on
-// every delivery, signed or not, so a request from anyone else can be told
-// from one the forge sent.
+// Delivered reports whether the request carries the headers that forge puts
+// on every delivery, signed or not. So a request from anyone else can be told
+// from one that the forge sent.
 func Delivered(forge configfile.Forge, header http.Header) bool {
 	switch forge {
 	case configfile.ForgeGitHub:
@@ -132,8 +134,8 @@ func Delivered(forge configfile.Forge, header http.Header) bool {
 	}
 }
 
-// verifyHMAC checks a "sha256=" + hex HMAC-SHA256 signature header. The
-// comparison is constant-time (hmac.Equal).
+// verifyHMAC does signature verification on a "sha256=" + hex HMAC-SHA256
+// signature header. The comparison is constant-time (hmac.Equal).
 func verifyHMAC(provided, secret string, body []byte) error {
 	if provided == "" {
 		return ErrMissingSignature

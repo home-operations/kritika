@@ -28,24 +28,24 @@ type GatewayGrant struct {
 	// review's run. A follow-up's ReviewID is the pull request's last
 	// completed review, "" without one.
 	FollowupCommentID int64
-	// Model and Fallback are the provider/model references the run may
-	// call; Fallback may be empty. Effort is how hard they reason, a
+	// Model and Fallback are the provider/model references that the run can
+	// call. Fallback can be empty. Effort is how hard they reason, a
 	// model.Effort, or empty for the provider's default.
 	Model, Fallback, Effort string
-	// Budget is the tokens the run may spend, Spent what it has. An index
-	// run's is 0: its token admits it to the egress proxy alone.
+	// Budget is the tokens that the run can spend, and Spent is what it spent.
+	// An index run's is 0: its token admits it to the egress proxy alone.
 	Budget, Spent int64
-	// Continues is the run whose kept conversation a review's run may
-	// carry on, "" for none, and Session the conversation its steps are
+	// Continues is the run whose kept conversation a review's run can
+	// carry on, "" for none. Session is the conversation that its steps are
 	// sent as, "" for its own.
 	Continues, Session string
 	// Reviewers are the models of the reviewers other than the default
-	// one the run may run, by name; a step for one names it, and a step
+	// one that the run can run, by name. A step for one names it, and a step
 	// that names none is the default reviewer's, on Model.
 	Reviewers map[string]ReviewerGrant
 }
 
-// ReviewerGrant is what one reviewer's steps may call: its provider/model
+// ReviewerGrant is what one reviewer's steps can call: its provider/model
 // references and its effort, as GatewayGrant's own.
 type ReviewerGrant struct {
 	Model    string `json:"model"`
@@ -53,9 +53,9 @@ type ReviewerGrant struct {
 	Effort   string `json:"effort,omitempty"`
 }
 
-// For is what a step for reviewer may call: the grant's own models for
+// For is what a step for reviewer can call: the grant's own models for
 // the default reviewer, named or not, and a granted reviewer's for
-// another; false for a reviewer the grant does not name.
+// another. It is false for a reviewer that the grant does not name.
 func (g GatewayGrant) For(reviewer string) (ReviewerGrant, bool) {
 	if reviewer == "" || reviewer == review.DefaultReviewer {
 		return ReviewerGrant{Model: g.Model, Fallback: g.Fallback, Effort: g.Effort}, true
@@ -118,11 +118,11 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 	return g, nil
 }
 
-// ReserveGatewayTokens adds tokens to what the token's run has spent,
-// before a step, if the run has not spent its budget, and reports whether
-// it did. Each step's reservation is visible to the next at once, so
-// concurrent steps overshoot the budget by at most one step, as the
-// agent's own loop may.
+// ReserveGatewayTokens adds tokens to what the token's run spent, before a
+// step, if the run did not spend its budget. It reports whether it did.
+// Each step's reservation is visible to the next at once. So concurrent
+// steps overshoot the budget by at most one step, as the agent's own loop
+// can.
 func (s *Store) ReserveGatewayTokens(ctx context.Context, token string, tokens int64) (bool, error) {
 	tag, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2
 		WHERE token_hash = $1 AND expires_at > now() AND spent_tokens < budget_tokens`, tokenHash(token), tokens)
@@ -132,8 +132,8 @@ func (s *Store) ReserveGatewayTokens(ctx context.Context, token string, tokens i
 	return tag.RowsAffected() == 1, nil
 }
 
-// ChargeGatewayToken adds tokens, which may be negative, to what the
-// token's run has spent: a step's actual spend less its reservation.
+// ChargeGatewayToken adds tokens, which can be negative, to what the
+// token's run spent: a step's actual spend less its reservation.
 func (s *Store) ChargeGatewayToken(ctx context.Context, token string, tokens int64) error {
 	if _, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2 WHERE token_hash = $1`,
 		tokenHash(token), tokens); err != nil {
@@ -143,7 +143,7 @@ func (s *Store) ChargeGatewayToken(ctx context.Context, token string, tokens int
 }
 
 // RevokeGatewayTokens deletes the run's tokens, and with them every token
-// that has expired, so a worker that died before revoking leaves nothing
+// that expired, so a worker that died before revoking leaves nothing
 // behind for long.
 func (s *Store) RevokeGatewayTokens(ctx context.Context, runID string) error {
 	if _, err := s.app.Exec(ctx, `DELETE FROM gateway_tokens WHERE runner_run_id = $1 OR expires_at <= now()`, runID); err != nil {

@@ -14,9 +14,9 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// Limits bounds a Run: how many steps it may take, how much of a tool's
-// output it keeps, and the token and per-step output budgets that force an
-// early submission.
+// Limits bounds a Run. It sets how many steps the Run can take and how much
+// of a tool's output it keeps. It also sets the token and per-step output
+// budgets that force an early submission.
 type Limits struct {
 	MaxSteps               int
 	MaxToolOutputBytes     int
@@ -77,7 +77,7 @@ type StepEvent struct {
 	Duration time.Duration
 	Usage    model.Usage
 	// Items are the kinds of the step's Responses output items, on the
-	// ChatGPT route; nil elsewhere.
+	// ChatGPT route. Items is nil elsewhere.
 	Items []string
 }
 
@@ -105,16 +105,17 @@ type Result struct {
 	// Model is the model that answered the last step, empty before one
 	// has.
 	Model string
-	// Err says why the Run stopped where the reason alone does not: Do
-	// sets it to the Stepper's error for StopError, and a caller that
-	// bounds ctx may set it to explain a StopCanceled.
+	// Err says why the Run stopped where the reason alone does not. Do sets
+	// it to the Stepper's error for StopError, and a caller that bounds ctx
+	// can set it to explain a StopCanceled.
 	Err string
 	// Refused is Validate's refusal of Submitted when the Run took it as
 	// its Fallback, empty when Submitted was accepted.
 	Refused string
 	// ForcedBy is the limit that first made the loop tell the model to
-	// submit, empty when it never did or the Run had one step to take: a
-	// submission then may not cover all the model meant to read.
+	// submit. It is empty when the loop never did or the Run had one step to
+	// take. When it is set, a submission can fail to cover all that the model
+	// meant to read.
 	ForcedBy ForcedBy
 }
 
@@ -129,41 +130,41 @@ func (r *Result) add(resp model.StepResponse) {
 	}
 }
 
-// Run is a bounded, read-only tool loop over a git commit's tree: on each
-// step the Stepper may call one of Tools or Submit, until it submits, a
-// limit is reached, or ctx ends.
+// Run is a bounded, read-only tool loop over a git commit's tree. On each
+// step, the Stepper can call one of Tools or Submit. The loop goes on until
+// the Stepper submits, a limit is reached, or ctx ends.
 type Run struct {
 	Stepper model.Stepper
 	Model   string
 	System  string
 	User    string
 	Tools   []Tool
-	// Submit is the tool the model answers with, a review's submit_review
-	// or a follow-up's submit_reply; its schema is the answer's contract.
-	// The loop never runs it: a call to Submit ends the Run.
+	// Submit is the tool that the model answers with, a review's
+	// submit_review or a follow-up's submit_reply. Its schema is the answer's
+	// contract. The loop never runs it: a call to Submit ends the Run.
 	Submit model.ToolDef
-	// Validate, if set, checks a Submit input against the contract beyond
-	// its being JSON. A rejected input goes back to the model as the
-	// tool's error, so it can correct it, like invalid JSON.
+	// Validate, if set, makes sure that a Submit input meets the contract
+	// beyond its being JSON. A rejected input goes back to the model as the
+	// tool's error, so that the model can correct it, like invalid JSON.
 	Validate func(input json.RawMessage) error
-	// Fallback, if set, says whether an input Validate refused is still an
-	// answer. A Run that would end without a valid submission, other than
-	// by cancellation, ends with the last such input instead, so a slip the
-	// model never corrects does not cost the whole answer.
+	// Fallback, if set, says whether an input that Validate refused is still
+	// an answer. If a Run is about to end without a valid submission, other
+	// than by cancellation, it ends with the last such input instead. So a
+	// slip that the model never corrects does not cost the whole answer.
 	Fallback func(input json.RawMessage) bool
-	// Evidence, if set, checks a Submit input Validate accepted on a step
-	// the model was not told to submit on. A refusal goes back as the
-	// tool's error, like Validate's, and asks for what the model can still
-	// do, such as read a file; on a step it must submit on, where it can
-	// call no tool, the input is taken as it is.
+	// Evidence, if set, judges a Submit input that Validate accepted on a
+	// step that the model was not told to submit on. A refusal goes back as
+	// the tool's error, like Validate's, and asks for what the model can
+	// still do, such as read a file. On a step that it must submit on, where
+	// it can call no tool, the input is taken as it is.
 	Evidence func(input json.RawMessage) error
 	Limits   Limits
 	// OnStep, if set, is called after each step completes.
 	OnStep func(StepEvent)
-	// Carried, when set, is an earlier Run's conversation this one carries
-	// on, which must have offered this Run's System and tools (see
-	// Carries). User is then the next user turn, which first answers each
-	// call of the conversation's last answer.
+	// Carried, when set, is an earlier Run's conversation that this one
+	// carries on. That conversation must be one that offered this Run's
+	// System and tools (see Carries). User is then the next user turn, which
+	// first answers each call of the conversation's last answer.
 	Carried *Conversation
 }
 
@@ -214,20 +215,20 @@ func carriedTurn(c *Conversation, submit, text string) model.Message {
 	return turn
 }
 
-// nudgeText is appended, as a user message, after a turn with no tool
-// call: once after a turn with text, before a second such turn ends the
-// Run, and after each turn with no text either, while emptyRetries allows,
-// without spending that one nudge. A turn the output cap cut off before
-// any tool call is answered with cutOffText instead, while cutOffRetries
-// allows.
+// nudgeText is appended, as a user message, after a turn with no tool call.
+// It is appended once after a turn with text, before a second such turn ends
+// the Run. It is also appended after each turn with no text either, while
+// emptyRetries allows, without spending that one nudge. A turn that the
+// output cap cut off before any tool call is answered with cutOffText
+// instead, while cutOffRetries allows.
 func (r Run) nudgeText() string { return "call " + r.Submit.Name }
 
-// emptyRetries is how many steps in a row may end with neither text nor a
-// tool call and each be nudged without spending the once-per-Run nudge. A
-// reasoning model on the ChatGPT route sometimes ends the step before its
-// submission so, and the nudge has recovered every one; the once-per-Run
-// nudge is kept for a turn that answers in prose. One more is taken as a
-// turn with no tool call.
+// emptyRetries is how many steps in a row can end with neither text nor a
+// tool call and each get a nudge. These nudges do not spend the once-per-Run
+// nudge. A reasoning model on the ChatGPT route sometimes ends the step
+// before its submission this way, and the nudge recovered every one. The
+// once-per-Run nudge is kept for a turn that answers in prose. One more such
+// step is taken as a turn with no tool call.
 const emptyRetries = 2
 
 // goOnText answers a step with no tool call that spends no nudge: a step
@@ -243,9 +244,9 @@ func (r Run) goOnText(limit int64, cutOffs, empties int) string {
 	return ""
 }
 
-// emptyStreak is how many steps in a row, resp's last, ended with neither
-// text nor a tool call, other than by the output cap, given n before
-// resp's.
+// emptyStreak is how many steps in a row ended with neither text nor a tool
+// call, other than by the output cap. resp's step is the last of them, and n
+// is the count before it.
 func emptyStreak(n int, resp model.StepResponse) int {
 	if resp.Text == "" && len(resp.ToolCalls) == 0 && resp.Stop != model.StopMaxTokens {
 		return n + 1
@@ -253,23 +254,23 @@ func emptyStreak(n int, resp model.StepResponse) int {
 	return 0
 }
 
-// cutOffText answers a step the output cap cut off before it called a tool,
-// whose reasoning was spent without an answer: the model goes on, where the
-// nudge would end its review on a step it had not finished. limit is the
-// cap.
+// cutOffText answers a step that the output cap cut off before it called a
+// tool, whose reasoning was spent without an answer. The model goes on. A
+// nudge here will end its review on a step that it did not finish. limit is
+// the cap.
 func (r Run) cutOffText(limit int64) string {
 	return fmt.Sprintf("Your last step reached the %d output tokens a step may produce before it called a tool. "+
 		"Go on with your next tool call, or call %s when you are done.", limit, r.Submit.Name)
 }
 
-// cutOffRetries is how many steps in a row the output cap may cut off
-// before any tool call and the model still be told to go on. One more is
-// taken as a turn with no tool call: a model that cannot fit a step into the
-// cap is better asked for what it has.
+// cutOffRetries is how many steps in a row the output cap can cut off before
+// any tool call. The model is still told to go on after each of them. One
+// more is taken as a turn with no tool call: it is better to ask a model that
+// cannot fit a step into the cap for what it has.
 const cutOffRetries = 2
 
-// cutOffStreak is how many steps in a row, resp's last, the output cap has
-// cut off before any tool call, given n before resp's.
+// cutOffStreak is how many steps in a row the output cap cut off before any
+// tool call. resp's step is the last of them, and n is the count before it.
 func cutOffStreak(n int, resp model.StepResponse) int {
 	if len(resp.ToolCalls) == 0 && resp.Stop == model.StopMaxTokens {
 		return n + 1
@@ -284,30 +285,31 @@ func (r Run) submitNowText() string {
 	return "Call " + r.Submit.Name + " now with what you have, and call nothing else."
 }
 
-// forcedRetries is how many more steps a model that was told to submit and
-// did not gets, each told again: a rejected submission goes back with its
-// error, prose and other tool calls with onlySubmitText. The steps spent
-// exploring are worth more than one slip at the end; the token budget
-// bounds the retries where the step cap does not.
+// forcedRetries is how many more steps a model gets after it was told to
+// submit and did not. Each of these steps tells it again. A rejected
+// submission goes back with its error. Prose and other tool calls go back
+// with onlySubmitText. The steps spent exploring are worth more than one slip
+// at the end. The token budget bounds the retries where the step cap does
+// not.
 const forcedRetries = 2
 
-// wrapUpFloor is the least time a Run keeps, before its context's
-// deadline, for the steps it tells the model to submit on, unless the Run
-// was given less than four times that in all. A submission writes the
-// whole answer, so it can take longer than any step before it.
+// wrapUpFloor is the least time that a Run keeps, before its context's
+// deadline, for the steps that it tells the model to submit on. The exception
+// is a Run that was given less than four times that in all. A submission
+// writes the whole answer, so it can take longer than any step before it.
 const wrapUpFloor = 2 * time.Minute
 
-// wrapUpReserve is the time left before the deadline at which a Run that
-// was given total time in all, and whose slowest answer so far took
-// slowest, tells the model to submit: two such answers, one for the
-// submission and one for a retry, and at least wrapUpFloor, or a quarter
-// of total when that is less.
+// wrapUpReserve is the time left before the deadline at which a Run tells the
+// model to submit. The Run was given total time in all, and its slowest
+// answer so far took slowest. The reserve is two such answers, one for the
+// submission and one for a retry. It is at least wrapUpFloor, or a quarter of
+// total when that is less.
 func wrapUpReserve(slowest, total time.Duration) time.Duration {
 	return max(2*slowest, min(wrapUpFloor, total/4))
 }
 
-// clock is a Run's time: the deadline its ctx has, when timed, when it
-// began, and the longest a step's answer has taken.
+// clock is a Run's time: the deadline its ctx has, when timed, when it began,
+// and the longest that a step's answer took.
 type clock struct {
 	deadline, begun time.Time
 	timed           bool
@@ -343,8 +345,8 @@ func forcedBy(step int, spent int64, limits Limits, c clock) ForcedBy {
 	return ""
 }
 
-// onlySubmitText answers a tool call other than Submit on a step the model
-// was told to submit on; the tool is not run.
+// onlySubmitText answers a tool call other than Submit on a step that the
+// model was told to submit on. The loop does not run the tool.
 func (r Run) onlySubmitText() string { return "agent: only " + r.Submit.Name + " is available now" }
 
 // noResponseText replaces an empty Text on an appended assistant message, so
@@ -403,9 +405,10 @@ func (r Run) endedWith(toolDefs []model.ToolDef, messages []model.Message, resp 
 	}
 }
 
-// Do runs the loop to completion. The model is told to submit with what it
-// has on the last step it may take, once 90% of its tokens are spent, and,
-// when ctx has a deadline, once the time left is no more than wrapUpReserve.
+// Do runs the loop to completion. Do tells the model to submit with what it
+// has. It does so on the last step that the model can take and once 90% of
+// its tokens are spent. When ctx has a deadline, it also does so once the
+// time left is no more than wrapUpReserve.
 func (r Run) Do(ctx context.Context) (result Result) {
 	limits := r.Limits.WithDefaults()
 
@@ -422,8 +425,8 @@ func (r Run) Do(ctx context.Context) (result Result) {
 
 	result = Result{ToolCalls: map[string]int{}}
 	// Every return below that is not a submission or a cancellation is
-	// rewritten on the way out, into a submission of the fallback's input,
-	// when one was held.
+	// rewritten on the way out when a fallback input was held. The return
+	// becomes a submission of the fallback's input.
 	var fb fallback
 	defer fb.end(&result)
 	nudged := false
@@ -433,7 +436,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 	// empties counts the steps in a row, up to the last, that ended with
 	// neither text nor a tool call.
 	empties := 0
-	// forcedSteps counts the steps the model was told to submit on; the
+	// forcedSteps counts the steps that the model was told to submit on. The
 	// Run ends when the retries after the first are spent.
 	forcedSteps := 0
 	c := clock{begun: time.Now()}
@@ -497,7 +500,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 				return result
 			}
 			// The gateway's count is the one the caps see: its refusal ends
-			// the run as the loop's own budget check would.
+			// the run as the loop's own budget check does.
 			result.Stop = StopError
 			if errors.Is(err, model.ErrBudget) {
 				result.Stop = StopBudget
@@ -600,13 +603,14 @@ func (r Run) Do(ctx context.Context) (result Result) {
 	}
 }
 
-// takeSubmission judges call, a call of Submit on a step answered by resp:
-// an input Validate, and Evidence on a step not forced, accept is the
-// Run's answer, and neither is returned; one refused goes back to the
-// model as the refusal, held as the fallback when Fallback holds it, with
-// ended the conversation the step ends; one the output cap cut off is
-// neither, since sent back as an error the model would re-emit it whole
-// and be cut off again, step after step.
+// takeSubmission judges call, a call of Submit on a step that resp answered.
+// An input that Validate accepts, and that Evidence accepts on a step not
+// forced, is the Run's answer, and neither result is returned. An input that
+// they refuse goes back to the model as the refusal. It is held as the
+// fallback when Fallback holds it, with ended as the conversation that the
+// step ends. An input that the output cap cut off is neither an answer nor a
+// refusal. If it went back as an error, the model re-emits it whole and is
+// cut off again, step after step.
 func (r Run) takeSubmission(
 	call model.ToolCall, resp model.StepResponse, forced bool, limits Limits, fb *fallback, ended func() *Conversation,
 ) (refusal *model.ToolResult, cutOff bool) {
@@ -630,12 +634,12 @@ func (r Run) takeSubmission(
 	}, false
 }
 
-// step sends req, again after each of stepRetryWaits while the failure is
-// transient and ctx lives, and says how long the last attempt took: the
-// waits between attempts are not the model's, and would make a Run keep
-// far more time to submit in than a submission takes. A req not told to
-// submit, forced false, is not sent again into the time c keeps to submit
-// in: a wait ends where that time starts, and step returns errWrapUp.
+// step sends req, and sends it again after each of stepRetryWaits while the
+// failure is transient and ctx lives. It says how long the last attempt took.
+// The waits between attempts are not the model's. If they counted, a Run
+// keeps far more time to submit in than a submission takes. A req not told to
+// submit, forced false, is not sent again into the time that c keeps to
+// submit in. A wait ends where that time starts, and step returns errWrapUp.
 func (r Run) step(ctx context.Context, req model.StepRequest, c clock, forced bool) (model.StepResponse, time.Duration, error) {
 	attempt := func() (model.StepResponse, time.Duration, error) {
 		start := time.Now()

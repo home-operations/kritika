@@ -25,8 +25,8 @@ import (
 var (
 	mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
 	// reviewAfter is a review request as it follows a mention: the word
-	// review, then what the request says, up to the line's end; a mention
-	// in it is a request of its own, and cut from it.
+	// review, then what the request says, up to the line's end. A mention in
+	// it is a request of its own, and is cut from it.
 	reviewAfter    = regexp.MustCompile(`(?i)^\s+review\b(?:[ \t]+([^\r\n]*))?`)
 	reviewerWord   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 	dismissPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+dismiss(?:ed)?\b`)
@@ -100,10 +100,10 @@ func requestsDismiss(body, slug string) (string, bool) {
 }
 
 // dismiss records the finding the comment replies to as dismissed, with
-// reason, resolves its thread and says so: later reviews of the pull
-// request are told not to raise it again. Only a reply in one of the bot's
-// finding threads names a finding; anywhere else, the reply says how to
-// use it. It counts against the hourly follow-up limit.
+// reason, resolves its thread and says so: later reviews of the pull request
+// are told not to raise it again. Only a reply in one of the bot's finding
+// threads names a finding. Anywhere else, the reply says how to use it. It
+// counts against the hourly follow-up limit.
 func (f *followUp) dismiss(ctx context.Context, reason string) (store.FollowupStatus, error) {
 	limited, err := f.rateLimited(ctx)
 	if err != nil {
@@ -165,11 +165,12 @@ func (f *followUp) dismissedFinding(ctx context.Context) (string, error) {
 	return fingerprint, nil
 }
 
-// findingReviewer is the reviewer other than the default one that raised
-// the finding of rec, the pull request's last review, whose thread the
-// comment is in: "" when it is in none, or the default reviewer raised
-// it. A reply has its thread's finding already; a mention's is looked up,
-// and one that cannot be is answered by the default reviewer.
+// findingReviewer is the reviewer, other than the default one, that raised
+// the finding whose thread the comment is in. That finding is in rec, the
+// pull request's last review. It is "" when the comment is in no such thread,
+// or the default reviewer raised the finding. A reply already has its
+// thread's finding. A mention's finding is looked up, and the default
+// reviewer answers a mention whose finding cannot be looked up.
 func (f *followUp) findingReviewer(ctx context.Context, rec reviewRecord) string {
 	fingerprint := f.fingerprint
 	if fingerprint == "" {
@@ -188,10 +189,10 @@ func (f *followUp) findingReviewer(ctx context.Context, rec reviewRecord) string
 }
 
 // answer posts body as the reply and records the mention answered, for
-// reason. Both run on past the job's ctx, as run's reply does: a reply cut
-// after the forge created it refunds the attempt when the worker stops,
-// and the rerun, a first attempt again, would not look for it on the forge
-// and post it twice. A fenced job is the exception.
+// reason. Both run on past the job's ctx, as run's reply does. A reply cut
+// after the forge created it refunds the attempt when the worker stops. The
+// rerun, a first attempt again, does not look for the reply on the forge and
+// posts it twice. A fenced job is the exception.
 func (f *followUp) answer(ctx context.Context, body, reason string) (store.FollowupStatus, error) {
 	if cause := context.Cause(jobFence(ctx)); errors.Is(cause, errJobFenced) {
 		return store.FollowupFailed, cause
@@ -251,14 +252,16 @@ const reviewRequested = "review requested"
 
 // requestReview queues a review of the pull request's head, as the
 // dashboard's re-run does, for someone with write access who asked with
-// "@<bot> review", or of one reviewer's alone with "@<bot> review <name>":
-// it is how a pull request the trigger filter keeps out, such as a fork's,
-// gets one, and a merged or closed one a look back. A
-// review of the head already queued or running stands in for it. The
-// request is answered with the bot's marks rather than a reply: its eyes
+// "@<bot> review". With "@<bot> review <name>", it queues that one reviewer's
+// review alone. This is how a pull request that the trigger filter keeps out,
+// such as a fork's, gets a review. It is also how a merged or closed one gets
+// a look back. A review of the head that is already queued or running stands
+// in for it.
+//
+// The request is answered with the bot's marks rather than a reply: its eyes
 // now, and its job then waits to end them as the review ends (awaitReview).
-// Like every mark, the eyes are best effort: a forge that refuses them
-// costs the request its marks and nothing else. It counts against the
+// Like every mark, the eyes are best effort: a forge that refuses them costs
+// the request its marks and nothing else. The request counts against the
 // hourly follow-up limit.
 func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, error) {
 	limited, err := f.rateLimited(ctx)
@@ -302,7 +305,7 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	}
 	if errors.Is(err, jobs.ErrRerunOther) {
 		// The review in flight does not stand in for this one, and starting
-		// this one would cancel it.
+		// this one cancels it.
 		return f.answer(ctx, review.ReviewBusyBody(f.pr.headSHA), "another review of the head is in flight")
 	}
 	if err != nil {
@@ -312,14 +315,15 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	return store.FollowupAnswered, f.awaitReview(ctx)
 }
 
-// namedReviewer is the reviewer "@<bot> review <name>" asks to run alone:
-// the default one, or one the repository's settings, its .kritika.yaml
-// applied, name, while it is on; "" when nothing follows review, for a
-// review of every reviewer that applies. requested is a word alone that
-// names no reviewer that is on, which the review states it ran every
-// reviewer in place of. focus is the rest of the line, what the request
-// asks the review to look hardest at: the whole of it when its first
-// word names no reviewer, since a word that opens a sentence names none.
+// namedReviewer is the reviewer that "@<bot> review <name>" asks to run
+// alone. That is the default one, or one that the repository's configuration,
+// with its .kritika.yaml applied, names, while it is on. It is "" when
+// nothing follows review, for a review of every reviewer that applies.
+// requested is a word alone that names no reviewer that is on. The review
+// states that it ran every reviewer in place of that word. focus is the rest
+// of the line, what the request asks the review to look hardest at. focus is
+// the whole line when its first word names no reviewer, since a word that
+// opens a sentence names none.
 func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested, focus string, err error) {
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
 	word, rest := requestedReview(f.comment.Body, slug)
@@ -333,11 +337,11 @@ func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested, focu
 	return reviewer, requested, focus, nil
 }
 
-// resolveRequest is what a request's word and rest, as requestedReview
-// splits them, ask for, settings being the repository's: the reviewer the
-// word names, when it names one that is on, with the rest as the focus;
-// else the word alone as requested, or the whole line as the focus when
-// there is more than the word.
+// resolveRequest is what a request's word and rest, as requestedReview splits
+// them, ask for. settings is the repository's. When the word names a reviewer
+// that is on, the result is that reviewer, with the rest as the focus.
+// Otherwise the result is the word alone as requested, or the whole line as
+// the focus when there is more than the word.
 func resolveRequest(word, rest string, settings configfile.Settings) (reviewer, requested, focus string) {
 	if word != "" {
 		reviewer, requested = splitRequested(strings.TrimRight(strings.ToLower(word), ",.;:!?"), settings)
@@ -351,11 +355,11 @@ func resolveRequest(word, rest string, settings configfile.Settings) (reviewer, 
 	return reviewer, requested, review.CleanFocus(focus)
 }
 
-// splitRequested is name as a review request carries it, settings being
-// the repository's: the agent to run alone when it is the default pass,
-// an agent that replaces it, or a specialist that is on, else the word
-// requested, kept apart so the request is one of every agent, which a
-// review of every agent in flight stands in for.
+// splitRequested is name as a review request carries it. settings is the
+// repository's. The result is the agent to run alone when name is the default
+// pass, an agent that replaces it, or a specialist that is on. Otherwise the
+// result is the word requested, kept apart so the request is one of every
+// agent. A review of every agent in flight stands in for such a request.
 func splitRequested(name string, settings configfile.Settings) (reviewer, requested string) {
 	if runsAlone(settings, name) {
 		return name, ""
@@ -364,7 +368,7 @@ func splitRequested(name string, settings configfile.Settings) (reviewer, reques
 }
 
 // awaitInterval is how long the job of an answered review request sleeps
-// between looks at whether the review has ended.
+// between looks at whether the review ended.
 const awaitInterval = 15 * time.Second
 
 // awaitingReview reports whether the comment is a review request answered
@@ -385,10 +389,10 @@ func (f *followUp) awaitingReview(ctx context.Context) (bool, error) {
 	return state.Status == store.FollowupAnswered && state.Reason == reviewRequested && state.ReplyCommentID == nil, nil
 }
 
-// awaitReview ends the marks on an answered review request once no review
-// job of the pull request is left, as requestOutcome says of the review
-// that ended last since the request, and snoozes the job until then. Only
-// River's jobs count as left: a review row whose job died running holds
+// awaitReview ends the marks on an answered review request once no review job
+// of the pull request is left. It ends them as requestOutcome says of the
+// review that ended last since the request, and snoozes the job until then.
+// Only River's jobs count as left: a review row whose job died running holds
 // no wait.
 func (f *followUp) awaitReview(ctx context.Context) error {
 	if _, err := f.client.React(ctx, f.owner, f.repo, f.comment, forge.ReactionEyes); err != nil {
@@ -415,11 +419,12 @@ func (f *followUp) awaitReview(ctx context.Context) error {
 	return f.record(ctx, store.FollowupAnswered, "review request settled: "+string(cmp.Or(status, store.ReviewFailed)), 0, "")
 }
 
-// requestOutcome is what the marks on a review request say of status, that
-// of the review that ended last since the request, "" for none: answered
-// once one was posted, failed when it failed or none ended, as when the
-// review's job gave up before recording one, and unanswered otherwise, as
-// when it was skipped, or superseded by a head no review followed.
+// requestOutcome is what the marks on a review request say of status. status
+// is that of the review that ended last since the request, "" for none. The
+// outcome is answered once a review was posted. It is failed when the review
+// failed or none ended, as when the review's job gave up before recording
+// one. It is unanswered otherwise, as when the review was skipped, or
+// superseded by a head that no review followed.
 func requestOutcome(status store.ReviewStatus) outcome {
 	switch status {
 	case store.ReviewCompleted:

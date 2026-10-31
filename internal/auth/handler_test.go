@@ -39,7 +39,7 @@ func TestReturnTo(t *testing.T) {
 func TestSessionCookie(t *testing.T) {
 	expires := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	// __Host- (https at the root) binds a cookie to this host alone, with
-	// Path=/, so a sibling subdomain can neither set nor shadow it; under a
+	// Path=/. So a sibling subdomain can neither set nor shadow it. Under a
 	// path only __Secure- is possible.
 	tests := []struct {
 		web, path, loginPath, session, login string

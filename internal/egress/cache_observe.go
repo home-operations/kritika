@@ -39,8 +39,8 @@ func (c *Cache) Observe(m *metrics.Metrics, logger *slog.Logger) {
 	c.metrics.CacheLocal(size, c.MaxBytes, 0)
 }
 
-// One warning per minute per replica bounds logs during a storage outage;
-// operation metrics still record every failure.
+// One warning per minute per replica bounds logs during a storage outage.
+// Operation metrics still record every failure.
 func (c *Cache) warn(operation, key string, err error) {
 	if c.logger == nil || errors.Is(err, context.Canceled) {
 		return

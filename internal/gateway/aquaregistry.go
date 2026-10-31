@@ -22,17 +22,18 @@ const (
 )
 
 // aquaRegistryRetry is how soon a replica that has no registry yet asks
-// again, so one that started while its source was down serves tools soon
-// after it is back; a variable for the tests.
+// again. So a replica that started while its source was down serves tools
+// soon after the source is back. It is a variable for the tests.
 var aquaRegistryRetry = time.Minute
 
-// AquaRegistry is the aqua registry the gateway keeps for runners to
-// resolve repository tools against: the file at URL, asked for again every
-// Refresh with the last answer's validators, and taken only once it parses
-// as a registry, so a fetch that fails, or answers with something else,
-// leaves the last one served. Runners read it from the gateway rather than
-// its source, so a runner pod needs no egress for it, and the source sees
-// a replica's fetch each Refresh rather than one a run.
+// AquaRegistry is the aqua registry that the gateway keeps for runners to
+// resolve repository tools against. It is the file at URL, which the gateway
+// asks for again every Refresh with the validators of the last answer. The
+// gateway takes the file only once it parses as a registry. So a fetch that
+// fails, or that answers with something else, leaves the last registry
+// served. Runners read it from the gateway, not from its source. So a runner
+// pod needs no egress for it, and the source sees a replica's fetch each
+// Refresh, not one fetch per run.
 type AquaRegistry struct {
 	URL     string
 	Refresh time.Duration
@@ -113,7 +114,7 @@ func (a *AquaRegistry) refresh(ctx context.Context) error {
 	return nil
 }
 
-// current is the registry kept, nil before a fetch has taken.
+// current is the registry kept, nil before a fetch is taken.
 func (a *AquaRegistry) current() []byte {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

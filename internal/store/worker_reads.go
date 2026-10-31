@@ -147,7 +147,7 @@ func RunnerPhase(ctx context.Context, tx pgx.Tx, runID string) (string, error) {
 	return phase, nil
 }
 
-// StickyCommentID returns zero when no sticky comment has been recorded.
+// StickyCommentID returns zero when no sticky comment was recorded.
 func StickyCommentID(ctx context.Context, tx pgx.Tx, prID string) (int64, error) {
 	var id int64
 	err := tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, prID).Scan(&id)

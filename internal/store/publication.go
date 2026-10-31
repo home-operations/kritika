@@ -159,7 +159,7 @@ func (s *Store) WithPublicationLock(ctx context.Context, pullRequestID string, f
 }
 
 // PublicationCurrent refuses an old head or an answer overtaken by a newer
-// completed review, including another review of the same head.
+// completed review. This includes another review of the same head.
 func PublicationCurrent(ctx context.Context, tx pgx.Tx, reviewID string) (bool, error) {
 	var current bool
 	err := tx.QueryRow(ctx, `SELECT r.status = 'prepared' AND r.head_sha = p.head_sha

@@ -97,7 +97,7 @@ func ResumeIndexRun(ctx context.Context, tx pgx.Tx, jobID int64, key string) (ru
 	return runID, runnerRunID, nil
 }
 
-// ReadyIndexRun seals staging only after the runner has exited successfully.
+// ReadyIndexRun seals staging only after the runner exits successfully.
 func ReadyIndexRun(ctx context.Context, tx pgx.Tx, runID, runnerRunID string) error {
 	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET access_token_hash = NULL WHERE id = $1`, runnerRunID); err != nil {
 		return fmt.Errorf("store: seal index staging: %w", err)
@@ -155,8 +155,9 @@ func DiscardIndexProgress(ctx context.Context, tx pgx.Tx, runID, runnerRunID str
 	return nil
 }
 
-// SweepIndexProgress releases checkpoints after terminal jobs, including those
-// cancelled while waiting for a retry. Owner connection; bounded by limit.
+// SweepIndexProgress releases checkpoints after terminal jobs. These include
+// jobs canceled while they wait for a retry. It uses the owner connection and
+// is bounded by limit.
 func (s *Store) SweepIndexProgress(ctx context.Context, limit int) error {
 	if s.owner == nil {
 		return errors.New("store: SweepIndexProgress needs the owner connection")

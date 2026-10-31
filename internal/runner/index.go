@@ -16,10 +16,11 @@ import (
 )
 
 // runIndex fetches the commit to index and stages its chunks. With Base
-// set it tries an incremental step from that commit first; if the base
-// cannot be fetched (unreachable after a force push, or older than the
-// server will serve by SHA) it falls back to a full build and says so in
-// the pack, so the worker never has to retry the Job.
+// set, it tries an incremental step from that commit first. If the base
+// cannot be fetched, it falls back to a full build and says so in the pack.
+// So the worker never has to retry the Job. The base cannot be fetched when
+// it is unreachable after a force push, or older than the server will serve
+// by SHA.
 func runIndex(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := st.SetRunnerPhase(ctx, p.RunID, "fetching"); err != nil {
 		return err

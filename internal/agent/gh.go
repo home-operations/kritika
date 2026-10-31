@@ -14,9 +14,9 @@ var ghValueFlags = map[string]bool{
 	"-L": true, "--limit": true, "--json": true,
 }
 
-// ghSource is what a gh call with args reads, as a URL: gh api's
-// resource, or the release, pull request, issue or repository a view
-// names; "" for any other call.
+// ghSource is what a gh call with args reads, as a URL: gh api's resource, or
+// the release, pull request, issue, or repository that a view names. It is ""
+// for any other call.
 func ghSource(args []string) string {
 	repo, pos := ghArgs(args)
 	if len(pos) < 2 {
@@ -83,9 +83,10 @@ func ownerRepo(s string) bool {
 	return ok && owner != "" && repo != "" && !strings.ContainsAny(repo, "/ ")
 }
 
-// ghUnknownCommand is what the run tool answers, in place of gh's list of
-// all its commands, when out is gh's error for a first argument that is no
-// command: what the call most likely meant. It is "" for any other output.
+// ghUnknownCommand is what the run tool answers when out is gh's error for a
+// first argument that is not a command. This answer takes the place of gh's
+// list of all its commands, and it is what the call most likely meant. It is
+// "" for any other output.
 func ghUnknownCommand(out string) string {
 	line, _, _ := strings.Cut(strings.TrimLeft(out, "\n"), "\n")
 	name, ok := strings.CutPrefix(line, `unknown command "`)
@@ -117,9 +118,9 @@ func ghUnknownCommand(out string) string {
 	return hint
 }
 
-// ghVerbs are the reading subcommands of gh's release, pr and issue
-// commands, a call that leaves its command out starts with, and the
-// commands that have each.
+// ghVerbs are the reading subcommands of gh's release, pr, and issue
+// commands. A call that leaves its command out starts with one of these
+// subcommands. The map also holds the commands that have each subcommand.
 var ghVerbs = map[string][]string{
 	"view":     {ghRelease, ghPR, ghIssue},
 	"list":     {ghRelease, ghPR, ghIssue},

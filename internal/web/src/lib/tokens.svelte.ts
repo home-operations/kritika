@@ -3,11 +3,11 @@
 import { untrack } from 'svelte';
 
 // Highlighted keeps the tokens load gives for what of names, while on
-// says they are wanted. value is undefined until they have loaded, when
+// says they are wanted. value is undefined until they load, when
 // load gives none (no language for it), and once of names something else.
 export class Highlighted<K, T> {
   // Raw: what was highlighted is compared by identity, which a state
-  // proxy would hide.
+  // proxy hides.
   #got = $state.raw<{ of: K; tokens: T } | undefined>(undefined);
   readonly #of: () => K;
 

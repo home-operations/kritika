@@ -14,8 +14,8 @@ import (
 // indexChunkLimit bounds the chunks one file's listing returns.
 const indexChunkLimit = 200
 
-// indexQueue is where each of the account's repositories stands for its
-// next index: its index jobs queued or running, running ones first, or
+// indexQueue is where each of the account's repositories stands for its next
+// index: its index jobs queued or running, with the running ones first, or
 // its place in the onboarding backlog.
 type indexQueue struct {
 	jobs    map[string][]IndexJob
@@ -23,9 +23,9 @@ type indexQueue struct {
 }
 
 // readIndexQueue reads the account's index queue. The backlog is the
-// onboarding feeder's order for the account, less the repositories its
-// settings leave off, as the feeder passes them over; without an embedder
-// the feeder offers nothing, so nothing waits.
+// onboarding feeder's order for the account, less the repositories that its
+// configuration leaves off, as the feeder passes them over. Without an
+// embedder, the feeder offers nothing, so nothing waits.
 func readIndexQueue(ctx context.Context, tx pgx.Tx, t *accountScope) (indexQueue, error) {
 	q := indexQueue{jobs: map[string][]IndexJob{}, backlog: map[string]int{}}
 	live, err := store.LiveIndexJobs(ctx, tx, "")

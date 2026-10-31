@@ -1,10 +1,12 @@
-// Package configfile loads application policy and runtime settings from YAML.
-// Operational settings support environment variables; policy and app declarations use the file.
+// Package configfile loads application policy and runtime configuration from
+// YAML. Operational configuration supports environment variables. Policy and
+// app declarations use the file.
 //
-// The file is loaded whole: the document is decoded with unknown keys
-// rejected, every secret reference resolved, every filter compiled and
-// smoke-tested, and every invariant checked before any of it is returned. A
-// bad document is an error, and startup fails on it.
+// The file is loaded whole. The document is decoded with unknown keys
+// rejected. Every secret reference is resolved, and every filter is compiled
+// and smoke-tested. The loader makes sure that every invariant holds. All of
+// this happens before any of the file is returned. A bad document is an
+// error, and startup fails on it.
 package configfile
 
 import (
@@ -55,8 +57,8 @@ type SecretRef struct {
 }
 
 // ValueOrRef is a setting given inline, or by a reference to where it
-// lives like a secret's, for a value that is not secret but is often kept
-// next to one.
+// lives like a secret's. It is for a value that is not secret but is often
+// kept next to one.
 type ValueOrRef struct {
 	Value string
 	Ref   SecretRef
@@ -81,7 +83,7 @@ func (v ValueOrRef) resolve(s *secrets) (string, error) {
 }
 
 // Secret is a resolved secret value. Its String method redacts, so a Secret
-// can be logged or formatted without leaking; call Value to use it.
+// can be logged or formatted without leaking. Call Value to use it.
 type Secret struct {
 	value string
 }
@@ -100,8 +102,8 @@ func (s Secret) String() string {
 // GoString redacts in %#v output too.
 func (s Secret) GoString() string { return s.String() }
 
-// ModelRef names a model as "<provider>/<model>", where provider is a key of
-// the account's or the instance's providers map and model is whatever the
+// ModelRef names a model as "<provider>/<model>". The provider is a key of
+// the account's or the instance's providers map, and model is whatever the
 // provider accepts.
 type ModelRef string
 
@@ -125,7 +127,7 @@ func (m ModelRef) Model() string {
 	return id
 }
 
-// Models are the resolved completion roles; a role empty after resolution
+// Models are the resolved completion roles. A role empty after resolution
 // means the feature is off. The embedding model is not here: it is the
 // instance's Embedding, since changing it reindexes every repository. The
 // resolved types carry json tags because the dashboard's API serves them
@@ -134,22 +136,22 @@ type Models struct {
 	Review   ModelRef `json:"review"`
 	Fallback ModelRef `json:"fallback"`
 	// Effort is how hard the review model, and the fallback that takes its
-	// step, reasons; empty leaves it to the provider.
+	// step, reasons. Empty leaves it to the provider.
 	Effort model.Effort `json:"effort"`
 	// Routes are the agents of review.agents that replace the default
-	// pass, which Pick judges for a pull request; Review, Fallback and
-	// Effort are what one none picks gets.
+	// pass, which Pick judges for a pull request. Review, Fallback, and
+	// Effort are what a pull request that none picks gets.
 	Routes []ModelRoute `json:"routes,omitempty"`
 	// Route names the route Pick took for the pull request under review,
 	// "" for none.
 	Route string `json:"route,omitzero"`
 }
 
-// Limits bound what an account may consume, as resolved. A cap of zero is no
-// cap; Concurrency is never zero once resolved.
+// Limits bound what an account can consume, as resolved. A cap of zero is no
+// cap. Concurrency is never zero once resolved.
 type Limits struct {
 	// Concurrency is the number of advisory-lock slots per account and model:
-	// how many model calls may run at once.
+	// how many model calls can run at once.
 	Concurrency int `json:"concurrency"`
 	// ReviewsPerDay caps review passes per account per calendar day.
 	ReviewsPerDay int `json:"reviewsPerDay"`
@@ -158,10 +160,10 @@ type Limits struct {
 	TokensPerMonth int64 `json:"tokensPerMonth"`
 }
 
-// LimitsSpec sets limits at the file's root or for one account. A limit an
-// account writes replaces the root's, so an explicit 0 lifts a cap the root
-// set; one left out inherits it. Concurrency, when written, must be
-// positive; unset everywhere it is DefaultConcurrency.
+// LimitsSpec sets limits at the file's root or for one account. A limit that
+// an account writes replaces the root's, so an explicit 0 lifts a cap the
+// root set. One left out inherits it. Concurrency, when written, must be
+// positive. Unset everywhere, it is DefaultConcurrency.
 type LimitsSpec struct {
 	Concurrency    *int   `yaml:"concurrency,omitempty"`
 	ReviewsPerDay  *int   `yaml:"reviewsPerDay,omitempty"`
@@ -171,19 +173,20 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
-// Defaults are the settings the file writes at its root: they apply to
-// every repository, and Limits to every account unless its entry sets its
-// own.
+// Defaults are the configuration values that the file writes at its root:
+// they apply to every repository, and Limits to every account unless its
+// entry sets its own.
 type Defaults struct {
 	Overrides `yaml:",inline"`
 	Limits    LimitsSpec `yaml:"limits,omitempty"`
 }
 
-// Overrides are the repository settings the admin writes at the file's
-// root. A field it writes replaces kritika's default, even when it is
-// empty or zero; a field it leaves out keeps it. Ignore globs are unioned
-// instead, and rules add up by id. The keys are the ones a .kritika.yaml
-// takes too, at the same level, with the admin's own beside them.
+// Overrides are the repository configuration values that the admin writes
+// at the file's root. A field that it writes replaces kritika's default,
+// even when it is empty or zero. A field that it leaves out keeps it. Ignore
+// globs are unioned instead, and rules add up by id. The keys are the ones a
+// .kritika.yaml takes too, at the same level, with the admin's own beside
+// them.
 type Overrides struct {
 	// Enabled is the default for existing repositories without a dashboard
 	// choice. New forge discoveries wait for UI enablement.
@@ -197,22 +200,22 @@ type Overrides struct {
 	Context    []ContextFile  `yaml:"context,omitempty"`
 	Skills     SkillsSpec     `yaml:"skills,omitempty"`
 	// Ignore are globs of the paths kritika leaves out of a review's
-	// context and of the index; a pull request that changes nothing else
+	// context and of the index. A pull request that changes nothing else
 	// is skipped. They add to kritika's own.
 	Ignore []string `yaml:"ignore,omitempty"`
 }
 
-// ReviewSpec sets how a review is done: its models, a role written here,
-// even empty, replacing kritika's default, how hard they
-// reason, whether a finding must carry a suggested fix, whether it
-// approves, how many files may change since the last review before a
-// re-review covers the whole pull request again, whether the summary
-// draws the change's flow, and whether its footer states the pull
+// ReviewSpec sets how a review is done. It sets the models. A role written
+// here, even empty, replaces kritika's default. It sets how hard they reason,
+// whether a finding must carry a suggested fix, and whether the review
+// approves. It sets how many files can change since the last review before a
+// re-review covers the whole pull request again. It also sets whether the
+// summary draws the change's flow, and whether its footer states the pull
 // request's spend.
 type ReviewSpec struct {
 	Model    *ReviewModel `yaml:"model,omitempty"`
 	Fallback *ModelRef    `yaml:"fallback,omitempty"`
-	// Effort is one of model.Efforts; written empty, it leaves the effort
+	// Effort is one of model.Efforts. Written empty, it leaves the effort
 	// to the provider.
 	Effort      *model.Effort `yaml:"effort,omitempty"`
 	Fixes       *bool         `yaml:"fixes,omitempty"`
@@ -221,19 +224,20 @@ type ReviewSpec struct {
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
 	Replies     *bool         `yaml:"replies,omitempty"`
-	// Agents are the agents a review runs beside the default pass, those
-	// with categories, and those that replace it when their conditions
-	// hold, the others, the first that holds doing.
+	// Agents are the agents that a review runs. Those with categories run
+	// beside the default pass. The others replace it when their conditions
+	// hold, and the first that holds does so.
 	Agents []Reviewer `yaml:"agents,omitempty"`
 }
 
-// ConfidenceSpec sets how a review is judged: the model that scores the
-// reviewed pull request and the one that takes its call when it fails, a
-// model written here, even empty, replacing kritika's default, how hard
-// they reason, the score the pull request must reach, whether the commit
-// status fails under it, the highest risk a change may carry and still be
-// approved, and the admin's guidance to the scorer on rating risk and the
-// least risk a change to some paths is rated.
+// ConfidenceSpec sets how a review is judged. It sets the model that scores
+// the reviewed pull request and the one that takes its call when it fails. A
+// model written here, even empty, replaces kritika's default. It sets how
+// hard they reason, the score that the pull request must reach, and whether
+// the commit status fails under it. It sets the highest risk that a change
+// can carry and still be approved. It also sets the admin's guidance to the
+// scorer on rating risk and the least risk that a change to some paths is
+// rated.
 type ConfidenceSpec struct {
 	Model        *ModelRef     `yaml:"model,omitempty"`
 	Fallback     *ModelRef     `yaml:"fallback,omitempty"`
@@ -244,7 +248,7 @@ type ConfidenceSpec struct {
 	Instructions *string       `yaml:"instructions,omitempty"`
 	Floors       RiskFloors    `yaml:"floors,omitempty"`
 	// When are the conditions one of which a pull request must hold for to
-	// be scored, as a rule's; none, or an empty list, scores every pull
+	// be scored, as a rule's. None, or an empty list, scores every pull
 	// request.
 	When []When `yaml:"when,omitempty"`
 }
@@ -253,9 +257,9 @@ type ConfidenceSpec struct {
 // matching one of the level's globs, whatever the scorer says.
 type RiskFloors map[review.Risk][]string
 
-// Floor is the highest level in f a path of changed matches, review.RiskLow
-// when none does, and the first such path in order, so the path named is
-// the same for the same change however changed is listed.
+// Floor is the highest level in f that a path of changed matches, or
+// review.RiskLow when none does, and the first such path in order. So the
+// path named is the same for the same change however changed is listed.
 func (f RiskFloors) Floor(changed []string) (review.Risk, string) {
 	floor, at := review.RiskLow, ""
 	changed = slices.Sorted(slices.Values(changed))
@@ -287,29 +291,29 @@ type Confidence struct {
 	// a required check. Off unless set: a score never blocks a merge
 	// nobody asked it to, and the status only reports it. GateWhen are
 	// confidence.gate's conditions, one of which a pull request must hold
-	// for to be gated, none for every one; one they do not hold for shows
+	// for to be gated, none for every one. One they do not hold for shows
 	// its score and passes.
 	Gate     bool   `json:"gate"`
 	GateWhen []When `json:"gateWhen,omitempty"`
-	// Risk is the highest risk a change may be rated and still be approved.
+	// Risk is the highest risk a change can be rated and still be approved.
 	Risk review.Risk `json:"risk"`
 	// Instructions are the admin's guidance to the scorer on rating risk.
 	// A repository's own file cannot set them: a pull request must not be
 	// able to talk its risk down.
 	Instructions string `json:"instructions"`
 	// Floors is the least risk a change to a path is rated, by level,
-	// held in code whatever the scorer says; the admin's alone, as
+	// held in code whatever the scorer says. They are the admin's alone, as
 	// Instructions are.
 	Floors RiskFloors `json:"floors,omitempty"`
 	// When are confidence.when's conditions, one of which a pull request
-	// must hold for to be scored, none for every one; one they hold for no
+	// must hold for to be scored, none for every one. One they hold for no
 	// longer is reviewed as if no model were set. WhenInRepo are a
 	// repository file's own, one of which must hold as well.
 	When       []When `json:"when,omitempty"`
 	WhenInRepo []When `json:"whenInRepo,omitempty"`
 	// RepoUnscored is a pull request WhenInRepo left unscored where the
 	// admin asks for a score, so it is not approved: a repository's file
-	// may narrow scoring, never lift the admin's risk policy by it.
+	// can narrow scoring, never lift the admin's risk policy by it.
 	RepoUnscored bool `json:"repoUnscored,omitzero"`
 }
 
@@ -324,18 +328,17 @@ const (
 // TriggerSpec sets which pull requests get a review, and when.
 type TriggerSpec struct {
 	Filters `yaml:",inline"`
-	// Limit pauses a pull request's automatic reviews once that many have
-	// completed, until someone resumes them; zero never pauses.
+	// Limit pauses a pull request's automatic reviews once that many
+	// complete, until someone resumes them. Zero never pauses.
 	Limit *int `yaml:"limit,omitempty"`
-	// Settle is how long the review of a push waits to start, so a burst
-	// of pushes gets one review, of the head that settles, rather than
-	// one of each head started and replaced in turn; zero starts it at
-	// once.
+	// Settle is how long the review of a push waits to start. A burst of
+	// pushes then gets one review, of the head that settles, rather than one
+	// of each head started and replaced in turn. Zero starts it at once.
 	Settle *time.Duration `yaml:"settle,omitempty"`
 }
 
-// MaxPushSettle is the most a push's review may wait: longer would be a
-// manual review in all but name.
+// MaxPushSettle is the most that a push's review can wait: a longer wait
+// is a manual review in all but name.
 const MaxPushSettle = time.Hour
 
 // Embedding is the instance's embedder, which builds the similar-code
@@ -351,7 +354,7 @@ type Embedding struct {
 	Dims int `yaml:"dims"`
 	// MaxBatch, MaxBatchChars and MaxItemChars bound one request: inputs,
 	// characters, and characters per input, beyond which an input is cut.
-	// OpenAI-compatible servers differ widely in what they accept; unset,
+	// OpenAI-compatible servers differ widely in what they accept. Unset,
 	// each is a default conservative enough for the common ones.
 	MaxBatch      int `yaml:"maxBatch,omitempty"`
 	MaxBatchChars int `yaml:"maxBatchChars,omitempty"`
@@ -359,14 +362,14 @@ type Embedding struct {
 	// SimilarFloor is the cosine similarity an index chunk needs to count
 	// as similar code, for the review's similar-code stage and the agent's
 	// search_code tool alike. Where useful matches part from noise depends
-	// on the model, its prompts and the repository; unset is
+	// on the model, its prompts and the repository. Unset is
 	// DefaultSimilarFloor, which only fits inputs without prompts.
 	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
 	// SimilarMargin is how far below the best match of its query, in cosine
-	// similarity, a chunk may score and still count as similar code. A
-	// query's scores sit at a height set by the code it is near, which
-	// differs between repositories and between the hunks of one diff, so
-	// the margin follows each query's best where a floor cannot; unset is
+	// similarity, a chunk can score and still count as similar code. A
+	// query's scores sit at a height set by the code it is near. That height
+	// differs between repositories and between the hunks of one diff. So the
+	// margin follows each query's best where a floor cannot. Unset is
 	// DefaultSimilarMargin, and 0 keeps only each query's best.
 	SimilarMargin *float64 `yaml:"similarMargin,omitempty"`
 	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
@@ -445,7 +448,7 @@ var DefaultIgnore = []string{
 }
 
 // GitHubApp is a GitHub App credential owned by a connection. The client
-// id is not secret, but admins often keep it next to the key, so it may
+// id is not secret, but admins often keep it next to the key, so it can
 // be given inline or by reference.
 type GitHubApp struct {
 	ClientID      ValueOrRef `yaml:"clientId"`
@@ -463,18 +466,18 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// Connection is one GitHub App or Forgejo bot serving the accounts it
-// lists, an entry of the configuration's apps or forgejo maps, which are
-// keyed by name. The name is the hook path, /hooks/{name}.
+// Connection is one GitHub App or Forgejo bot that serves the accounts it
+// lists. It is an entry of the configuration's apps or forgejo maps, which
+// are keyed by name. The name is the hook path, /hooks/{name}.
 type Connection struct {
 	// Name is the entry's key under apps or forgejo.
 	Name string `yaml:"-"`
-	// Forge is the map the entry came from; the file does not name it.
+	// Forge is the map the entry came from. The file does not name it.
 	Forge Forge `yaml:"-"`
 	// Accounts are the users and organizations the connection serves: a
 	// webhook for any other account is ignored, and a repository belongs to
 	// the connection serving its owner. A public GitHub App installed on
-	// several organizations lists each one kritika reviews for; nothing is
+	// several organizations lists each one kritika reviews for. Nothing is
 	// served that is not listed.
 	Accounts []string `yaml:"accounts"`
 
@@ -487,11 +490,11 @@ type Connection struct {
 	Gitea   GiteaBot           `yaml:"-"`
 }
 
-// RepoTraits is what kritika knows of a repository beyond its name: what the
-// forge says of it, that an archived repository is read-only and a fork a
-// copy of another one, who can read it, and its dashboard enablement. Newly
-// discovered repositories start turned off; nil uses the configuration's
-// default.
+// RepoTraits is what kritika knows of a repository beyond its name. It has
+// what the forge says of it: that an archived repository is read-only and a
+// fork a copy of another one. It also has who can read it and its dashboard
+// enablement. Newly discovered repositories start turned off. nil uses the
+// configuration's default.
 type RepoTraits struct {
 	Archived, Fork bool
 	// Visibility is public, private or internal as GitHub reports it, ""
@@ -501,22 +504,22 @@ type RepoTraits struct {
 }
 
 // Agent bounds a review's agent. A field left unset takes its default from
-// DefaultAgent; one that is set must be positive.
+// DefaultAgent. One that is set must be positive.
 type Agent struct {
 	Steps *int `yaml:"steps,omitempty"`
 	// Output bounds one tool result, in bytes.
 	Output *int `yaml:"output,omitempty"`
 	// Tokens bounds the prompt plus output tokens one review, or each part
-	// of a split one, may spend across all its steps.
+	// of a split one, can spend across all its steps.
 	Tokens *int64 `yaml:"tokens,omitempty"`
 	// Prompt bounds, in tokens, the opening prompt of a review and a
 	// follow-up: how much of the diff and context they start from before
 	// tools read the rest. The confidence score, with no tools, gets up to
 	// twice it.
 	Prompt *int `yaml:"prompt,omitempty"`
-	// Parts is the most parts a review whose diff is over review.PartBytes
-	// is split into, each read by an agent with these bounds of its own; 1
-	// never splits.
+	// Parts is the most parts that a review whose diff is over review.PartBytes
+	// is split into. An agent with these bounds of its own reads each part. A
+	// value of 1 never splits.
 	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
@@ -584,11 +587,11 @@ const DefaultFetches = 8
 const DefaultCommandTimeout = 30 * time.Second
 
 // MinPromptTokens is the least agent.prompt takes: the system prompt, with
-// its rules and skills, and the pull request's description are paid
-// for out of the same budget, and below it little of the diff would fit.
+// its rules and skills, and the pull request's description are paid for out
+// of the same budget. Below it, little of the diff will fit.
 const MinPromptTokens = 8_000
 
-// IncrementalSettings are the resolved incremental settings.
+// IncrementalSettings are the resolved incremental configuration values.
 type IncrementalSettings struct {
 	MaxDeltaFiles int
 }
@@ -616,12 +619,12 @@ type Review struct {
 	// an image the dashboard serves.
 	Dashboard bool `json:"dashboard"`
 	// Approve is true to approve a pull request whose review found nothing
-	// at P0 or P1, or, where a confidence score is asked for,
-	// whose score and risk allow it, and to dismiss that approval when a
-	// later review's do not. Off unless set.
+	// at P0 or P1. Where a confidence score is asked for, it approves a pull
+	// request whose score and risk allow it. True also dismisses that approval
+	// when a later review's do not allow it. Off unless set.
 	Approve bool `json:"approve"`
 	// ApproveWhen are review.approve's conditions, one of which a pull
-	// request must hold for to be approved, none for every one; an
+	// request must hold for to be approved, none for every one. An
 	// approval of one they stop holding for is dismissed.
 	// ApproveWhenInRepo are a repository file's own, one of which must
 	// hold as well, so the file never approves what the admin's keep out.
@@ -635,15 +638,15 @@ type Review struct {
 	// request's reviews have cost together. Off unless set: the comment
 	// is public, and the figure is the instance's spend.
 	Cost bool `json:"cost"`
-	// Replies is true to have kritika answer a reply someone with write
-	// access makes in one of its own finding threads without mentioning
-	// it, when the reply needs an answer. Off unless set: each answer is a
-	// model call the repository's reviewers did not ask for.
+	// Replies is true to have kritika answer a reply in one of its own finding
+	// threads. Someone with write access makes the reply without mentioning
+	// kritika, and the reply needs an answer. Off unless set: each answer is a
+	// model call that the repository's reviewers did not ask for.
 	Replies bool          `json:"replies"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes. The API serves them
 	// from the rules routes, with what each enforced, not with the
-	// settings.
+	// configuration.
 	Rules []Rule `json:"-"`
 }
 
@@ -656,11 +659,11 @@ type ContextFile struct {
 	Paths       []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 }
 
-// CommentsSpec sets how a review comments: whether findings
-// go inline, the repository files that replace the built-in summary
-// and finding templates, where an empty path restores the built-in one,
-// and whether the comments carry the dashboard's URL, which only the
-// admin decides.
+// CommentsSpec sets how a review comments: whether findings go inline, and
+// the repository files that replace the built-in summary and finding
+// templates, where an empty path restores the built-in one. It also sets
+// whether the comments carry the dashboard's URL, which only the admin
+// decides.
 type CommentsSpec struct {
 	Inline    *bool   `yaml:"inline,omitempty"`
 	Summary   *string `yaml:"summary,omitempty"`
@@ -690,14 +693,14 @@ func (r Review) Referenced() []string {
 // Account is a forge account, github/<name>, and the unit of isolation. It
 // exists because a connection serves it. Its entry under the
 // configuration's accounts holds what is its alone, its limits and
-// providers; an account without one inherits the defaults.
+// providers. An account without one inherits the defaults.
 type Account struct {
 	Forge Forge  `yaml:"-"`
 	Name  string `yaml:"-"`
 	// Limits and Providers are its accounts entry's: its caps, and its own
 	// model providers, its keys for the models it pays for. A model
 	// reference in its repositories' .kritika.yaml names one of them or one
-	// of the instance's, and a name may not be both.
+	// of the instance's, and a name cannot be both.
 	Limits    LimitsSpec          `yaml:"limits"`
 	Providers map[string]Provider `yaml:"-"`
 
@@ -706,16 +709,17 @@ type Account struct {
 	entry string
 }
 
-// Egress is what runner pods may reach through the worker's gateway beyond
+// Egress is what runner pods can reach through the worker's gateway beyond
 // the forges the connections talk to, which are always allowed. Allow and
 // Deny entries are an exact host, a suffix with a leading "*.", "*" for
-// every host, or an IP address or CIDR; a denied destination is refused
-// however Allow matches it, a destination that is not on the public
-// internet is reached only when an Allow address covers it, and the
-// gateway tunnels TLS to port 443 only. A credential is the token the
-// gateway adds, as a bearer, to a plain http:// request a runner makes to
-// that host, so the runner can use an API at a token's rate limit without
-// holding it.
+// every host, or an IP address or CIDR. A denied destination is refused
+// however Allow matches it. A destination that is not on the public
+// internet is reached only when an Allow address covers it. The gateway
+// tunnels TLS to port 443 only.
+//
+// A credential is the token that the gateway adds, as a bearer, to a plain
+// http:// request that a runner makes to that host. So the runner can use an
+// API at a token's rate limit without holding it.
 type Egress struct {
 	Allow       []string             `yaml:"allow,omitempty"`
 	Deny        []string             `yaml:"deny,omitempty"`
@@ -725,7 +729,8 @@ type Egress struct {
 	credentials map[string]Secret
 }
 
-// File is the running configuration from the file and operational environment settings.
+// File is the running configuration from the file and the operational
+// configuration in the environment.
 type File struct {
 	Auth        Auth
 	Connections []Connection
@@ -734,7 +739,7 @@ type File struct {
 	Egress      Egress
 	// Embedding is the instance's embedder, nil when indexing is off.
 	Embedding *Embedding
-	// Run holds the resolved runtime settings.
+	// Run holds the resolved runtime configuration.
 	Run Run
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
@@ -756,9 +761,9 @@ func (f *File) SecretEnv() []string { return f.secretEnv }
 // it with their own copy to report drift.
 func (f *File) Hash() string { return f.hash }
 
-// Settings are the effective settings of an account's repositories:
-// kritika's defaults under the file's root, with the account's limits. A
-// repository's .kritika.yaml is merged over them separately.
+// Settings are the effective configuration values of an account's
+// repositories: kritika's defaults under the file's root, with the account's
+// limits. A repository's .kritika.yaml is merged over them separately.
 type Settings struct {
 	Enabled bool
 	Models  Models
@@ -770,9 +775,9 @@ type Settings struct {
 	// file's globs are unioned in by the caller that has the checkout.
 	Ignore []string
 	// MaxAutoReviews pauses a pull request's automatic reviews once that
-	// many have completed; zero never pauses.
+	// many complete. Zero never pauses.
 	MaxAutoReviews int
-	// PushSettle is how long the review of a push waits to start; zero
+	// PushSettle is how long the review of a push waits to start. Zero
 	// starts it at once.
 	PushSettle  time.Duration
 	Agent       AgentSettings
@@ -781,10 +786,10 @@ type Settings struct {
 	Confidence  Confidence
 	Skills      Skills
 	// Reviewers are the review's specialists, its agents with categories,
-	// by name; the agents that replace the default pass are Models.Routes.
+	// by name. The agents that replace the default pass are Models.Routes.
 	Reviewers map[string]Reviewer
-	// Providers name the model providers the repository's account may use,
-	// the instance's and its own, sorted: the ones a .kritika.yaml may
+	// Providers name the model providers that the repository's account can use,
+	// the instance's and its own, sorted: the ones that a .kritika.yaml can
 	// choose a model of.
 	Providers []string
 }

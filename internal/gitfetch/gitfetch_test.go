@@ -19,19 +19,19 @@ import (
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
-// repo builds a local repository with a base commit and two head commits:
-// one that changes a file, and a rebase of that same change on top of an
-// unrelated commit that edits one file and adds another, so the patch id
-// can be checked for stability and the base's movement told from the
+// repo builds a local repository with a base commit and two head commits. One
+// changes a file. The other is a rebase of that same change on top of an
+// unrelated commit that edits one file and adds another. So the test can make
+// sure that the patch id is stable, and tell the base's movement from the
 // change's.
 type repo struct {
 	dir                                 string
 	base, head, other, rebased, renamed string
-	// On a third branch, the base gains a file the change then edits at
-	// its end: long is the merge base the change (prior) was reviewed
-	// against, touched the merge base after the base edited the file's
-	// start, merged the change brought up to date with it as it was, and
-	// moved the change brought up to date and extended.
+	// On a third branch, the base gains a file that the change then edits at
+	// its end. long is the merge base that the change (prior) was reviewed
+	// against. touched is the merge base after the base edited the file's
+	// start. merged is the change brought up to date with it as it was. moved
+	// is the change brought up to date and extended.
 	long, prior, touched, merged, moved string
 	// On a fourth branch from base, a change and its revert: a head
 	// ahead of the base whose tree is the base's.
@@ -205,9 +205,9 @@ func TestRunRejectsNonSHA(t *testing.T) {
 	}
 }
 
-// TestRunNotFoundNamesTheToken: a remote that answers not found, as a forge
-// does for a repository the token cannot see, is reported with the token
-// as a possible cause, and go-git's sentinel stays in the chain.
+// TestRunNotFoundNamesTheToken: a remote answers not found, as a forge does
+// for a repository that the token cannot see. The failure is reported with
+// the token as a possible cause, and go-git's sentinel stays in the chain.
 func TestRunNotFoundNamesTheToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
 	t.Cleanup(srv.Close)
@@ -244,7 +244,7 @@ func TestRunPriorDelta(t *testing.T) {
 		wantBaseErr     bool
 		wantHeadChanged string
 	}{
-		// head and rebased carry the same main.go; README.md moved between
+		// head and rebased carry the same main.go. README.md moved between
 		// them with the base, which is no change of the pull request's.
 		{name: "rebased, the change as it was", prior: r.head, priorChanged: []string{"main.go"}, wantPrior: true},
 		// The paths the change touched at the prior head count as its own,

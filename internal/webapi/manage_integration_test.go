@@ -160,7 +160,7 @@ func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 	e.users[name] = user.ID
 }
 
-// do sends a request as who; a mutation carries the same-origin headers
+// do sends a request as who. A mutation carries the same-origin headers
 // unless csrf is false.
 func (e *manageEnv) do(who, method, path string, csrf ...bool) (int, []byte) {
 	e.t.Helper()
@@ -187,7 +187,8 @@ func (e *manageEnv) do(who, method, path string, csrf ...bool) (int, []byte) {
 	return resp.StatusCode, out
 }
 
-// expect checks a response's status and, for an error, its code.
+// expect makes sure that a response has the expected status and, for an
+// error, the expected code.
 func (e *manageEnv) expect(status int, body []byte, wantStatus int, wantCode ErrorCode) {
 	e.t.Helper()
 	if status != wantStatus {
@@ -214,8 +215,8 @@ func (e *manageEnv) audits(action AuditAction, target string) int {
 
 const mdPath = "/api/v1/accounts/github/md"
 
-// TestManage walks the actions an admin takes and the audit log they
-// leave; each step depends on the ones before it.
+// TestManage walks the actions that an admin takes and the audit log they
+// leave. Each step depends on the ones before it.
 func TestManage(t *testing.T) {
 	e := newManageEnv(t)
 	md := configfile.AccountID(configfile.ForgeGitHub, "md")
@@ -250,9 +251,9 @@ func (e *manageEnv) send(who, method, path, body string) (int, []byte) {
 	return resp.StatusCode, out
 }
 
-// testTokens: a user creates tokens from what their session reads, lists
-// and revokes their own, and an admin lists and revokes anyone's; a token's
-// value is shown once, and creating and revoking are audited.
+// testTokens: a user creates tokens from what their session reads, and lists
+// and revokes their own. An admin lists and revokes anyone's. A token's value
+// is shown once, and creating and revoking are audited.
 func testTokens(t *testing.T, e *manageEnv) {
 	create := func(who, body string) CreatedToken {
 		t.Helper()
@@ -351,9 +352,9 @@ func testTokens(t *testing.T, e *manageEnv) {
 	}
 }
 
-// testUsers: an admin lists every user with what their session reads, and
-// signs one out everywhere, which ends their sessions and is audited; no
-// one else sees the route.
+// testUsers: an admin lists every user with what their session reads. An
+// admin also signs one out everywhere, which ends their sessions and is
+// audited. No one else sees the route.
 func testUsers(t *testing.T, e *manageEnv) {
 	e.signIn("leaver", "mgr-leaver", memberOfAccounts("github/md"))
 	status, body := e.do("member", "GET", "/api/v1/admin/users")
@@ -382,8 +383,8 @@ func testUsers(t *testing.T, e *manageEnv) {
 		t.Fatalf("leaver = %+v; want a member of github/md with one session and their sign-in", leaver)
 	}
 
-	// Access is what the newest honoured session reads. A newer session whose
-	// sign-in has changed since counts for nothing, not even as live.
+	// Access is what the newest honored session reads. A newer session whose
+	// sign-in changed since then counts for nothing, not even as live.
 	for _, accounts := range [][]string{{"github/md"}, {"github/mf"}, {"github/md", "github/mf"}} {
 		e.signIn("juggler", "mgr-juggler", memberOfAccounts(accounts...))
 	}

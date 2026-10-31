@@ -105,18 +105,20 @@ func (forgejoAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (ma
 	return vars, nil
 }
 
-// forgejoPageSize is the page size a listing asks for, the instance's
-// default cap; forgejoMaxPages bounds how many pages a sign-in reads.
+// forgejoPageSize is the page size that a listing asks for, which is the
+// instance's default cap. forgejoMaxPages bounds how many pages a sign-in
+// reads.
 const (
 	forgejoPageSize = 50
 	forgejoMaxPages = 20
 )
 
-// forgejoPages calls fn with each page of the list at path until the pages
-// read reach the X-Total-Count the instance sends, or, without one, a page
-// comes back short. fn returns how many items its page held. A list longer
-// than forgejoMaxPages is an error rather than a cut one: a role mapping
-// must not decide on part of what the person belongs to.
+// forgejoPages calls fn with each page of the list at path. It stops when the
+// pages read reach the X-Total-Count that the instance sends. Without an
+// X-Total-Count, it stops when a page comes back short. fn returns how many
+// items its page held. A list longer than forgejoMaxPages is an error, not a
+// cut list: a role mapping must not decide on part of what the person belongs
+// to.
 func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.RawMessage) (int, error)) error {
 	read := 0
 	for page := 1; page <= forgejoMaxPages; page++ {

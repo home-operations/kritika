@@ -15,11 +15,11 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
-// TestSlotWakeChecksSnoozedReview: a review saved as snoozed for a model
-// slot is woken when a slot is free by then, and left to its snooze while
-// every slot is held; a job snoozed for anything else, of another kind, or
-// of an account that is not running, is left alone. Run returns only once
-// the checks it started have.
+// TestSlotWakeChecksSnoozedReview: a review saved as snoozed for a model slot
+// is woken when a slot is free by then. It is left to its snooze while every
+// slot is held. A job snoozed for anything else, of another kind, or of an
+// account that is not running, is left alone. Run returns only once the
+// checks it started are done.
 func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 	ctx := t.Context()
 	appStore := storetest.Open(t)

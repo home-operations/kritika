@@ -45,12 +45,12 @@ func TestJobTimeouts(t *testing.T) {
 		followUp  time.Duration
 	}{
 		// The agent's 20m plus 5m of fetch headroom outlasts the runner
-		// deadline, plus 15m to take the lease and 5m to publish; the index
+		// deadline, plus 15m to take the lease and 5m to publish. The index
 		// has 15m + 60m to embed.
 		{name: "a review that is never split", root: "agent: { parts: 1 }\n", accountID: "acme", review: 45 * time.Minute,
 			index: 75 * time.Minute, followUp: 45 * time.Minute},
-		// Eight parts of 20m each pass the agent's cap, so a review may run
-		// to the job cap; a follow-up is never split.
+		// Eight parts of 20m each pass the agent's cap, so a review can run
+		// to the job cap. A follow-up is never split.
 		{name: "the default agent timeout", accountID: "acme", review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
 		{name: "a longer agent timeout", root: "agent: { timeout: 50m }\n", accountID: "acme",
 			review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
@@ -99,8 +99,8 @@ func TestJobTimeouts(t *testing.T) {
 	}
 }
 
-// TestThreadTimeout: a thread job's few forge requests may each wait out
-// a rate limit of up to a minute, longer than River's default timeout.
+// TestThreadTimeout: a thread job's few forge requests can each wait out a
+// rate limit of up to a minute, longer than River's default timeout.
 func TestThreadTimeout(t *testing.T) {
 	if got := (&Thread{}).Timeout(&river.Job[jobs.ThreadArgs]{}); got != 5*time.Minute {
 		t.Fatalf("thread timeout = %s, want 5m: room for a few forge requests that each wait out a rate limit", got)

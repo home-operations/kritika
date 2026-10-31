@@ -39,7 +39,7 @@ type StoredRow struct {
 	CreatedAt         time.Time
 	// CarriedReviewID is the review whose transcript holds the messages
 	// before MessagesFrom, when the row's run carried on its run's
-	// conversation; "" when they are the row's own run's.
+	// conversation. It is "" when they are the row's own run's.
 	CarriedReviewID string
 }
 
@@ -53,10 +53,10 @@ type Conversation struct {
 }
 
 // Turn is one model call: the request messages new in it, from index
-// MessagesFrom of its request, and what the model answered. System and
-// Tools are set when the call changed them from the turn before; Reset
-// says an agent step's request did not extend what its run had recorded,
-// so Messages is the whole request.
+// MessagesFrom of its request, and what the model answered. System and Tools
+// are set when the call changed them from the turn before. Reset says that an
+// agent step's request did not extend what its run recorded, so Messages is
+// the whole request.
 type Turn struct {
 	ID                string
 	Kind              Kind
@@ -85,13 +85,13 @@ type Turn struct {
 	CarriedReviewID string
 }
 
-// Rebuild turns rows, in the order they were recorded, into a
-// conversation. A row leaves its system prompt and tools out when its
-// run's part sent the same with its last step, so the ones a turn had in
-// effect are its part's. A turn shows them where they differ from those its
-// part had at its turn before or, at a part's first turn, from the
-// conversation's, so a split review's parts, interleaved as they run at
-// once, each read on their own.
+// Rebuild turns rows, in the order they were recorded, into a conversation. A
+// row leaves its system prompt and tools out when its run's part sent the
+// same with its last step. So the ones that a turn had in effect are its
+// part's. A turn shows them where they differ from those that its part had at
+// its turn before. At a part's first turn, it shows them where they differ
+// from the conversation's. So a split review's parts, interleaved as they run
+// at once, each read on their own.
 func Rebuild(rows []StoredRow) Conversation {
 	var c Conversation
 	type conversation struct {
@@ -172,8 +172,8 @@ func DecodeResponse(raw []byte) (Response, error) {
 	return r, nil
 }
 
-// DecodeTools decodes a row's tools column; nil (SQL NULL) is nil, the
-// tools left unchanged.
+// DecodeTools decodes a row's tools column. nil (SQL NULL) is nil, the tools
+// left unchanged.
 func DecodeTools(raw []byte) (*[]model.ToolDef, error) {
 	if raw == nil {
 		return nil, nil

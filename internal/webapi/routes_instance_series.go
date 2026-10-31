@@ -202,8 +202,8 @@ func topReviewUsage(rows []UsagePoint, byTokens bool) []UsagePoint {
 	return out
 }
 
-// collapseUsage is rows as one, keyed and attributed to the account; none
-// when there are none, so an idle account has no row.
+// collapseUsage is rows as one, keyed and attributed to the account. It is
+// none when there are none, so an idle account has no row.
 func collapseUsage(rows []UsagePoint, slug string) []UsagePoint {
 	if len(rows) == 0 {
 		return nil

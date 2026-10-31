@@ -2,10 +2,10 @@
   import { ChartCore, Svg, Bar, Axis, Tooltip } from 'layerchart/svg';
   // Columns over time, one or several stacked series, in inline SVG that
   // fills its container's width. Pointer and arrow keys read one column at
-  // a time; the table view carries every value without hovering.
+  // a time. The table view carries every value without hovering.
   interface Series {
     label: string;
-    // color is a CSS colour, normally a --chart-* token.
+    // color is a CSS color, normally a --chart-* token.
     color: string;
   }
   interface Row {
@@ -43,7 +43,7 @@
   const max = $derived(niceMax(Math.max(0, ...totals)));
   const ticks = $derived([0, max / 2, max]);
   // The left margin holds the widest axis label, at about 6.5px a character
-  // of the 10px tick text, so a long one ($2,000.00) is not cut off.
+  // of the 10px tick text. A long label ($2,000.00) is then not cut off.
   const pad = $derived({ top: 10, right: 6, bottom: 22, left: Math.max(46, 12 + 6.5 * Math.max(...ticks.map((t) => format(t).length))) });
   const plotW = $derived(Math.max(0, width - pad.left - pad.right));
   const band = $derived(rows.length ? plotW / rows.length : 0);

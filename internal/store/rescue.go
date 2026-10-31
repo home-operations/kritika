@@ -33,7 +33,7 @@ type AbandonedJob struct {
 }
 
 // RescueState is the state the job is handed back in, as River's own
-// rescuer would: cancelled when a cancel was asked of it, retryable while
+// rescuer does: cancelled when a cancel was asked of it, retryable while
 // it has attempts left, discarded otherwise.
 func (j AbandonedJob) RescueState() rivertype.JobState {
 	switch {
@@ -46,9 +46,9 @@ func (j AbandonedJob) RescueState() rivertype.JobState {
 	}
 }
 
-// AbandonedJobs lists up to limit running jobs whose worker has stamped
-// no heartbeat for stale, oldest first. A job claimed less than stale ago
-// is left alone: its first beat may be on its way. Owner connection: River's
+// AbandonedJobs lists up to limit running jobs whose worker stamped no
+// heartbeat for stale, oldest first. A job claimed less than stale ago
+// is left alone: its first beat can be on its way. Owner connection: River's
 // rows are outside row-level security and the leader spans every account.
 func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit int) ([]AbandonedJob, error) {
 	if s.owner == nil {
@@ -74,8 +74,8 @@ func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit in
 }
 
 // RescueJob hands job back to River in its RescueState, with reason as
-// the attempt's error, and ends the reviews the job left running, which
-// would otherwise block every re-run of their head. It reports whether it
+// the attempt's error. It also ends the reviews that the job left running,
+// which otherwise block every re-run of their head. It reports whether it
 // did: false when the job finished, was claimed again or stamped a
 // heartbeat within stale since it was listed. Owner connection.
 func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Duration, reason string) (bool, error) {
@@ -159,7 +159,7 @@ func (s *Store) JobHead(ctx context.Context, jobID int64) (JobHead, bool, error)
 // JobOwnsStatus reports whether a review River job jobID started on its
 // pull request set the pending status on the head and still owns it: it
 // began on an open pull request (see JobHead.Statusless) and no newer
-// review has taken the head over (JobHead.Ceded). False when the job
+// review took the head over (JobHead.Ceded). It is false when the job
 // started none. Account connection, for a worker without the owner's.
 func JobOwnsStatus(ctx context.Context, tx pgx.Tx, jobID int64) (bool, error) {
 	var owns bool
@@ -192,13 +192,15 @@ type OrphanedRun struct {
 // OrphanedRuns lists up to limit unfinished runs whose River job is not
 // running, or has a newer run still open, oldest first. A run's job is
 // running for as long as the worker is inside Work, which is where the run
-// is ended; a run still open after that was left by a worker that died, or
-// whose record of it failed. A job handed back and claimed again runs anew,
-// with a run of its own, before the pass that hands it back may reach its
-// reaping, so the run its earlier attempt left is known by the newer one.
-// Only an open newer run counts, so the lookup stays on the index of
-// unfinished runs rather than every run the job ever had; once the newer
-// run ends, its job soon does too. Owner connection.
+// is ended. A run still open after that was left by a worker that died, or
+// whose record of it failed.
+//
+// A job handed back and claimed again runs anew, with a run of its own. It
+// runs before the pass that hands it back can reach its reaping. So the run
+// that its earlier attempt left is known by the newer one. Only an open
+// newer run counts, so the lookup stays on the index of unfinished runs
+// rather than every run that the job ever had. Once the newer run ends, its
+// job soon does too. Owner connection.
 func (s *Store) OrphanedRuns(ctx context.Context, limit int) ([]OrphanedRun, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: OrphanedRuns needs the owner connection")
@@ -260,7 +262,7 @@ func (s *Store) EndOrphanedRun(ctx context.Context, run OrphanedRun, reason stri
 
 // SweepJobHeartbeats deletes the heartbeats of jobs no longer running, and
 // returns how many. A worker leaves its last beat behind when its job ends,
-// since River marks the job only after Work returns, so the rows are
+// since River marks the job only after Work returns. So the rows are
 // cleared here rather than racing that. Owner connection.
 func (s *Store) SweepJobHeartbeats(ctx context.Context) (int64, error) {
 	if s.owner == nil {

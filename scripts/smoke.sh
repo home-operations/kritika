@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# smoke.sh — boot `kritika serve` the way the chart deploys it and check it
-# comes up: two replicas in a throwaway kind cluster, against a CloudNativePG
-# Postgres with VectorChord mounted as an image volume extension, the owner,
-# application and runner roles as the docs set them up. It fails on a pod
-# that never becomes ready (a startup panic, a refused configuration, a
-# database the roles cannot use), on `helm test`, and when the replicas do
-# not settle on exactly one leader with the configuration applied.
+# smoke.sh boots `kritika serve` the way the chart deploys it and makes sure
+# that it comes up: two replicas in a throwaway kind cluster, against a
+# CloudNativePG Postgres with VectorChord mounted as an image volume extension.
+# The owner, application and runner roles are as the docs set them up. It fails
+# on a pod that never becomes ready (a startup panic, a refused configuration,
+# a database the roles cannot use). It also fails on `helm test`, and when the
+# replicas do not settle on exactly one leader with the configuration applied.
 #
 # Needs docker, kind, kubectl and helm on PATH. `mise run smoke` runs it.
 #   KRITIKA_SMOKE_IMAGE    an image already built and loadable by docker, to
-#                          skip the build; a pulled multi-platform image
+#                          skip the build. A pulled multi-platform image
 #                          needs a local tag first (kind cannot load the
 #                          manifest list a pull leaves behind)
 #   KRITIKA_SMOKE_CLUSTER  the kind cluster's name (kritika-smoke)
@@ -113,7 +113,7 @@ kubectl -n "$ns" create secret generic kritika-smoke-auth --from-literal=passwor
 # A variable the runner container's env takes from a Secret.
 kubectl -n "$ns" create secret generic kritika-smoke-tools --from-literal=token="$(password)" \
   --dry-run=client -o yaml | kubectl apply -f -
-# The configuration file names an app, whose key must be a PEM; nothing
+# The configuration file names an app, whose key must be a PEM. Nothing
 # here ever signs with it.
 kubectl -n "$ns" create secret generic kritika-smoke-bot \
   --from-literal=private-key.pem="$(openssl genrsa 2048 2>/dev/null)" \
@@ -196,7 +196,7 @@ kubectl -n "$ns" wait database/kritika databaserole/kritika-app databaserole/kri
   --for=jsonpath='{.status.applied}'=true --timeout=2m
 
 log "installing the chart"
-# --wait returns once both replicas are ready: each has loaded its file,
+# --wait returns once both replicas are ready: each loaded its file,
 # reached the database and serves the webhooks and the dashboard.
 helm upgrade --install kritika charts/kritika -n "$ns" --values scripts/smoke/values.yaml \
   --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
@@ -204,7 +204,7 @@ helm upgrade --install kritika charts/kritika -n "$ns" --values scripts/smoke/va
 helm test kritika -n "$ns" --logs
 
 log "checking the replicas settle on one leader with the configuration applied"
-# Each pod's /metrics through the API server's pod proxy; the leader lock
+# Each pod's /metrics through the API server's pod proxy. The leader lock
 # follows the migration, so the sum takes a moment to reach 1.
 metric() {
   kubectl get --raw "/api/v1/namespaces/${ns}/pods/$1:8081/proxy/metrics" | awk -v m="$2" '$1 == m { print $2 }'
@@ -233,7 +233,7 @@ log "ok: ${pods[*]} ready, one leader, configuration applied"
 
 log "checking the runner admission refuses from kritika serve what is not a runner's"
 # Each replica's startup check already sent a runner Job, as the executor
-# builds it, through the policies: one they found invalid would have kept it
+# builds it, through the policies. One they found invalid keeps the replica
 # unready, and any other refusal is in its log.
 for pod in "${pods[@]}"; do
   if kubectl -n "$ns" logs "$pod" | grep 'runner Job not checked'; then
@@ -255,7 +255,7 @@ refused() { # what, then the kubectl arguments
 }
 refused "a Job that is not a runner's" create job not-a-runner --image=busybox:1.37
 refused "a Secret that is not a run's" create secret generic not-a-run --from-literal=x=y
-# A Job deleted but in the foreground would leave its run's Secret behind.
+# A Job deleted other than in the foreground leaves its run's Secret behind.
 kubectl -n "$ns" create job orphan-check --image=busybox:1.37 -- true >/dev/null
 refused "to orphan a Job's dependents" delete job orphan-check --cascade=orphan
 kubectl -n "$ns" delete job orphan-check --cascade=foreground >/dev/null

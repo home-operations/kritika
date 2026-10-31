@@ -15,7 +15,7 @@
   {#if router.origin}
     <a class="back-to-list text-[length:13px] mb-1" href={router.origin.hash} onclick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); returnToList(); } }}>← Back to {router.origin.label}</a>
   {/if}
-  <!-- The scope switcher already names the account; a crumb earns its row only past it. -->
+  <!-- The scope switcher already names the account. A crumb earns its row only past it. -->
   {#if parents.length}
     <nav class="crumbs text-ui-sm text-muted" aria-label="Breadcrumb">
       {#if slug}<a class="mono" href={href({ name: 'account', slug })}>{slug}</a>

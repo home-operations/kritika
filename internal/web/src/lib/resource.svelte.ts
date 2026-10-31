@@ -37,7 +37,7 @@ export class Resource<T> {
     return new Resource<T>(undefined, path);
   }
 
-  // live is a read that keeps itself current: once the page has loaded it,
+  // live is a read that keeps itself current: once the page loads it,
   // the events its path refreshes on (see refreshes) reload it.
   static live<T>(path: () => string, delayMs?: number): Resource<T> {
     const res = new Resource<T>(undefined, path);
@@ -71,7 +71,7 @@ export class Resource<T> {
         ...(this.#fetcher ? {
           queryKey: ['snapshot', this.#snapshot, key],
           queryFn: ({ signal }: { signal: AbortSignal }) => this.#fetcher!(signal),
-          // Custom fetchers can close over page state; release them on unmount.
+          // Custom fetchers can close over page state. Release them on unmount.
           gcTime: 0,
         } : apiQuery<T>(key!)),
         // Pages decide when hidden tabs and coordinated list snapshots load.
@@ -173,7 +173,7 @@ export function live(
 // Live refreshes publish a coherent snapshot from fresh cursors. Initial
 // restoration reveals pages as they arrive so a deep list stays usable.
 // The events the list's path refreshes on (see refreshes) refresh it once
-// the page has loaded it.
+// the page loads it.
 export class Paged<T> {
   readonly first: Resource<Page<T>>;
   loadingMore = $state(false);

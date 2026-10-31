@@ -1,8 +1,8 @@
-// Package contextpack builds the review context the runner writes next to
-// the diff: the PR-head overlay (whole declarations the diff touches),
-// exact definitions of identifiers on changed lines, and callers of changed
-// declarations. Everything comes from the two trees the runner fetched;
-// nothing needs an index or a model key.
+// Package contextpack builds the review context that the runner writes next
+// to the diff. That context is the PR-head overlay (whole declarations that
+// the diff touches), exact definitions of identifiers on changed lines, and
+// callers of changed declarations. Everything comes from the two trees that
+// the runner fetched. Nothing needs an index or a model key.
 package contextpack
 
 import (
@@ -45,7 +45,7 @@ type SimilarRequest struct {
 }
 
 // SimilarResponse is the gateway's answer: the nearest chunks, StageSimilar
-// each, and whether the repository has an index to search at all, so a run
+// each, and whether the repository has an index to search at all. So a run
 // can tell an empty answer from no index.
 type SimilarResponse struct {
 	Chunks  []Chunk `json:"chunks"`
@@ -79,18 +79,18 @@ type Input struct {
 
 // Options bound the work and the output.
 type Options struct {
-	// MaxDeclLines is the largest declaration used whole; a bigger one
-	// gets a window around the change instead.
+	// MaxDeclLines is the largest declaration used whole. A bigger one gets a
+	// window around the change instead.
 	MaxDeclLines int
 	// WindowRadius is the fixed-window fallback's reach on each side.
 	WindowRadius int
 	// MaxIdentifiers caps stage 2 lookups per review, most frequent first.
 	MaxIdentifiers int
-	// DefinitionsPerIdentifier and CallersPerSymbol cap each lookup;
+	// DefinitionsPerIdentifier and CallersPerSymbol cap each lookup.
 	// MaxDefinitions and MaxCallers cap the stages.
 	DefinitionsPerIdentifier, CallersPerSymbol int
 	MaxDefinitions, MaxCallers                 int
-	// MaxChunkBytes truncates one chunk; MaxPackBytes stops adding chunks.
+	// MaxChunkBytes truncates one chunk. MaxPackBytes stops adding chunks.
 	MaxChunkBytes, MaxPackBytes int
 	// MaxScanFiles and MaxScanBytes bound the head-tree walk.
 	MaxScanFiles, MaxScanBytes int
@@ -131,8 +131,8 @@ type Part struct {
 	Changed []string
 }
 
-// BuildParts builds independent packs with one shared repository scan.
-// Output budgets apply to each part; scan statistics count shared work once.
+// BuildParts builds independent packs with one shared repository scan. Output
+// budgets apply to each part. Scan statistics count shared work once.
 func BuildParts(ctx context.Context, head, base *object.Tree, ignore []string, parts []Part, opts Options) ([][]Chunk, Stats, error) {
 	if opts.MaxDeclLines == 0 {
 		opts = DefaultOptions
@@ -440,8 +440,8 @@ func (b *builder) assemble() []Chunk {
 	return out
 }
 
-// pick keeps up to n chunks, preferring one per file before a second from
-// the same file.
+// pick keeps up to n chunks. It prefers one per file before a second from the
+// same file.
 func pick(cs []Chunk, n int) []Chunk {
 	if n <= 0 {
 		return nil

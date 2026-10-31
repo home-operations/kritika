@@ -53,7 +53,7 @@ func TestRateLimitWait(t *testing.T) {
 }
 
 // limitedServer refuses the first n requests with status and headers, then
-// answers 200 with the request body echoed, recording every body it saw.
+// answers 200 with the request body echoed. It records every body it saw.
 type limitedServer struct {
 	mu      sync.Mutex
 	refuse  int
@@ -206,7 +206,7 @@ func TestRateLimitTransport(t *testing.T) {
 }
 
 // TestRetryAfter: go-github's rate limit errors, wrapped as the client wraps
-// them, say how long a job waits; any other error is no limit.
+// them, say how long a job waits. Any other error is no limit.
 func TestRetryAfter(t *testing.T) {
 	now := time.Now()
 	twoMinutes := 2 * time.Minute
@@ -231,9 +231,9 @@ func TestRetryAfter(t *testing.T) {
 	}
 }
 
-// TestRetryAfterOfAClient: a request GitHub refused for its primary limit,
-// and the next one, which go-github refuses itself until the reset, both
-// fail with an error RetryAfter reads.
+// TestRetryAfterOfAClient: GitHub refuses a request for its primary limit,
+// and go-github refuses the next one itself until the reset. Both fail with
+// an error that RetryAfter reads.
 func TestRetryAfterOfAClient(t *testing.T) {
 	f, c := newFakeAPI(t)
 	reset := time.Now().Add(10 * time.Minute)

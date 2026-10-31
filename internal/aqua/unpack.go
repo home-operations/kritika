@@ -97,7 +97,7 @@ func unpack(ctx context.Context, file, format, asset, root string) error {
 	return u.file(name, r, 0o755)
 }
 
-// decompress reads r through compression, "" for none; closer frees what
+// decompress reads r through compression, "" for none. closer frees what
 // reading it took.
 func decompress(r io.Reader, compression string) (_ io.Reader, closer func(), _ error) {
 	switch compression {
@@ -124,7 +124,7 @@ func decompress(r io.Reader, compression string) (_ io.Reader, closer func(), _ 
 	return nil, nil, fmt.Errorf("%s is not a compression the runner reads", compression)
 }
 
-// bounded reads r until left bytes have been read, then fails.
+// bounded reads r until left bytes are read, then fails.
 type bounded struct {
 	r    io.Reader
 	left int64
@@ -139,9 +139,10 @@ func (b *bounded) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// unpacker writes an archive's entries under root, never through a link:
-// every directory an entry is written in is one it made or found as a
-// directory, not a link, and a link an entry is never replaces one.
+// unpacker writes an archive's entries under root, never through a link.
+// Every directory that an entry is written in is one it made or found as a
+// directory, not a link. A link that an entry is never replaces such a
+// directory.
 type unpacker struct {
 	ctx     context.Context
 	root    string
@@ -150,8 +151,8 @@ type unpacker struct {
 	entries int
 }
 
-// check is why name may not be an entry's path: one that is absolute or
-// leaves root.
+// check is why name cannot be an entry's path: one that is absolute or leaves
+// root.
 func (u *unpacker) check(name string) error {
 	if !filepath.IsLocal(filepath.FromSlash(name)) {
 		return fmt.Errorf("entry %q is not a path within the download", name)
@@ -179,8 +180,8 @@ func (u *unpacker) clean(name string) (string, error) {
 	return name, nil
 }
 
-// dir makes name, a directory, and every one above it, finding each that
-// exists a directory and not a link.
+// dir makes name, a directory, and every one above it. It makes sure that
+// each one that exists is a directory and not a link.
 func (u *unpacker) dir(name string) error {
 	if u.dirs[name] {
 		return nil

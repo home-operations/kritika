@@ -1,9 +1,9 @@
 //go:build bench
 
-// Package bench is the offline evaluation harness: a corpus of pull
-// requests with known defects, run through the same fetch, context and
-// prompt code the service uses, against a live model, with recall on
-// must-find cases and cost per review as the output. It runs only locally
+// Package bench is the offline evaluation harness. It runs a corpus of pull
+// requests with known defects against a live model. The runs go through the
+// same fetch, context, and prompt code that the service uses. The output is
+// the recall on must-find cases and the cost per review. It runs only locally
 // with a model key, never in CI.
 package bench
 
@@ -17,11 +17,11 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// Case is one pull request with what a reviewer should have caught.
+// Case is one pull request with what a reviewer is expected to catch.
 type Case struct {
 	// ID is unique across files: "<repo>#<pr>".
 	ID string `yaml:"id"`
-	// Repository is owner/name; CloneURL defaults to GitHub's HTTPS URL.
+	// Repository is owner/name. CloneURL defaults to GitHub's HTTPS URL.
 	Repository string `yaml:"repository"`
 	CloneURL   string `yaml:"cloneUrl,omitempty"`
 	// PR is the pull request number, for the record.
@@ -41,22 +41,22 @@ type Case struct {
 	Notes string `yaml:"notes,omitempty"`
 }
 
-// Expected is one defect a reviewer should point at.
+// Expected is one defect that a reviewer is expected to point at.
 type Expected struct {
 	Path string `yaml:"path"`
-	// Lines is the inclusive head-side line range; a finding within
+	// Lines is the inclusive head-side line range. A finding within
 	// Tolerance lines of it matches.
 	Lines [2]int `yaml:"lines"`
-	// Description is a sentence for the curator; the harness never shows
+	// Description is a sentence for the curator. The harness never shows
 	// it to the model.
 	Description string `yaml:"description"`
-	// Must marks a finding a review has to make; the rest are nice to have.
+	// Must marks a finding a review has to make. The rest are nice to have.
 	Must bool `yaml:"must"`
 	// Fix is the commit that fixed it, when mined.
 	Fix string `yaml:"fix,omitempty"`
 }
 
-// Tolerance is how far, in lines, a finding may land from an expected
+// Tolerance is how far, in lines, a finding can land from an expected
 // range and still count.
 const Tolerance = 3
 

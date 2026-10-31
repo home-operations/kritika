@@ -50,7 +50,7 @@ func TestCommandEnv(t *testing.T) {
 // TestCurlrcSchemes: the host's curl, given the runner's .curlrc, fetches
 // an http:// URL and refuses one of any other scheme, given or redirected
 // to, before connecting: curl's exit code 1, an unsupported protocol,
-// where a connection to the closed port would fail with 7.
+// where a connection to the closed port fails with 7.
 func TestCurlrcSchemes(t *testing.T) {
 	bin, err := exec.LookPath("curl")
 	if err != nil {
@@ -126,9 +126,9 @@ func TestClearDir(t *testing.T) {
 }
 
 // TestCheckoutFailure: a failed checkout names itself to the model and the
-// summary, and a path error among its causes by its operation and cause
-// alone, never the path, which the run tool would otherwise do by dropping
-// the checkout from the message.
+// summary. It names a path error among its causes by its operation and cause
+// alone, never the path. Otherwise, the run tool does that by dropping the
+// checkout from the message.
 func TestCheckoutFailure(t *testing.T) {
 	t.Parallel()
 	full := &fs.PathError{Op: "write", Path: "/tmp/kritika-run-1/checkout/main.go", Err: syscall.ENOSPC}
@@ -157,9 +157,10 @@ func TestCheckoutFailure(t *testing.T) {
 	}
 }
 
-// TestKeptOutputRead: a cut output the run tool keeps beside the checkout
-// is read by the commands at the path its note names, and by read_file,
-// which reads the directory whether or not fetch_repo is offered.
+// TestKeptOutputRead: a cut output that the run tool keeps beside the
+// checkout is read by the commands at the path that its note names. It is
+// also read by read_file, which reads the directory whether or not
+// fetch_repo is offered.
 func TestKeptOutputRead(t *testing.T) {
 	catBin, err := exec.LookPath("cat")
 	if err != nil {
@@ -209,9 +210,10 @@ func TestKeptOutputRead(t *testing.T) {
 }
 
 // TestDefaultCommandsMatchImage: the commands the run tool looks for on
-// PATH are those the -tools image carries: the packages the Dockerfile's dnf
-// installs into its root, each by its command, findutils' being find, less
-// the library and data packages, and gh from its release.
+// PATH are those the -tools image carries. They are the packages that the
+// Dockerfile's dnf installs into its root, each by its command, less the
+// library and data packages. The command of findutils is find. gh comes
+// from its release.
 func TestDefaultCommandsMatchImage(t *testing.T) {
 	dockerfile, err := os.ReadFile("../../Dockerfile")
 	if err != nil {

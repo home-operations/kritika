@@ -131,9 +131,10 @@ apps:
 			}
 		})
 	}
-	// A download a runner checks names its digest in
-	// runspec.DigestHeader; the proxy gets the request marked with it, and
-	// one naming no sound digest unmarked, the header gone from both.
+	// When a runner makes sure that a download has the right digest, the
+	// request names that digest in runspec.DigestHeader. The proxy gets that
+	// request marked with the digest. The proxy gets a request that names no
+	// sound digest unmarked. The header is gone from both.
 	digest := "sha256:" + strings.Repeat("ab", 32)
 	for _, tt := range []struct {
 		name, header string
@@ -179,9 +180,9 @@ apps:
 	}
 }
 
-// checkAquaRegistry reads the registry the gateway at base keeps, as a
-// runner does, with no token, with the run token, and with it before the
-// gateway has fetched one.
+// checkAquaRegistry reads the registry that the gateway at base keeps, as a
+// runner does. It reads with no token, with the run token, and with the run
+// token before the gateway fetches a registry.
 func checkAquaRegistry(t *testing.T, base, token string, registry *AquaRegistry) {
 	t.Helper()
 	for _, tt := range []struct {

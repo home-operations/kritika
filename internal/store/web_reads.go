@@ -13,7 +13,7 @@ import (
 )
 
 // The dashboard's read queries. Each takes a transaction opened by
-// WithAccount, so row-level security confines it to that account; none of
+// WithAccount, so row-level security confines it to that account. None of
 // them filters by account_id itself.
 
 // ReviewStatus is a reviews.status value.
@@ -65,7 +65,7 @@ const (
 // PullState filters pull requests by pull_requests.state.
 type PullState string
 
-// Pull request states a list may ask for; PullAll matches both.
+// Pull request states that a list can ask for. PullAll matches both.
 const (
 	PullOpen   PullState = "open"
 	PullClosed PullState = "closed"
@@ -78,14 +78,14 @@ func (s PullState) Valid() bool { return s == PullOpen || s == PullClosed || s =
 // PullIs narrows a pull request list to those that are something.
 type PullIs string
 
-// What a list may ask its pull requests to be: with automatic reviews
+// What a list can ask its pull requests to be: with automatic reviews
 // paused, or with a P0 finding in their newest review.
 const (
 	PullPaused PullIs = "paused"
 	PullP0     PullIs = "p0"
 )
 
-// Valid reports whether i is something a list may ask for.
+// Valid reports whether i is something a list can ask for.
 func (i PullIs) Valid() bool { return i == PullPaused || i == PullP0 }
 
 // Cursor is the position after the last row of a page: the sort key of that
@@ -140,8 +140,8 @@ func uuidParam(s string) any {
 	return s
 }
 
-// paged trims a query's limit+1 rows to the page, returning the cursor of
-// the next page or nil at the end of the list.
+// paged trims a query's limit+1 rows to the page. It returns the cursor of
+// the next page, or nil at the end of the list.
 func paged[T any](rows []T, limit int, key func(T) Cursor) ([]T, *Cursor) {
 	if len(rows) <= limit {
 		return rows, nil
@@ -159,12 +159,12 @@ type AccountStats struct {
 }
 
 // MonthUsage is what an account's caps count: tokens and spend this calendar
-// month and completed reviews today; and what the month's spend bought:
-// the reviews that completed, what they cost together (a review's cost is
-// its own usage rows, which follow-ups and indexing have none of) and the
-// median cost of one, nil when none completed. A review with an unpriced
-// call has no known cost, so ReviewCostUSD and MedianReviewCostUSD leave
-// out the UnpricedReviews.
+// month and completed reviews today. It is also what the month's spend
+// bought: the reviews that completed, what they cost together, and the median
+// cost of one, nil when none completed. A review's cost is its own usage
+// rows, which follow-ups and indexing have none of. A review with an unpriced
+// call has no known cost, so ReviewCostUSD and MedianReviewCostUSD leave out
+// the UnpricedReviews.
 type MonthUsage struct {
 	Tokens              int64
 	CostUSD             float64
@@ -176,7 +176,7 @@ type MonthUsage struct {
 	MedianReviewCostUSD *float64
 }
 
-// ReadAccountStats reads the account's counts; a repository counts when
+// ReadAccountStats reads the account's counts. A repository counts when
 // enabled also admits its traits. The month and day boundaries are the
 // database's, as the worker's cap checks use.
 func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(t configfile.RepoTraits) bool) (AccountStats, error) {
@@ -252,14 +252,15 @@ func ReadLastPoll(ctx context.Context, tx pgx.Tx) (*time.Time, error) {
 }
 
 // WebhookDeliveries is when a connection's webhook last delivered a
-// verified request and one with no signature, each nil for never.
+// request that passed verification and one with no signature, each nil for
+// never.
 type WebhookDeliveries struct {
 	Verified, Unsigned *time.Time
 }
 
-// ReadWebhookDeliveries reads when each connection last received a verified
-// webhook and an unsigned one, keyed by connection id; one that never
-// received either is absent.
+// ReadWebhookDeliveries reads when each connection last received a webhook
+// that passed verification and an unsigned one, keyed by connection id. One
+// that never received either is absent.
 func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]WebhookDeliveries, error) {
 	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at, last_unsigned_webhook_at FROM connections
 		WHERE last_webhook_at IS NOT NULL OR last_unsigned_webhook_at IS NOT NULL`)
@@ -499,8 +500,8 @@ func LastRepoFiles(ctx context.Context, tx pgx.Tx) (map[string]RepoFileRow, erro
 	return out, nil
 }
 
-// LastRepoFile reads the .kritika.yaml the repository's last review with a
-// context pack read; ErrNotFound when no review has one yet.
+// LastRepoFile reads the .kritika.yaml that the repository's last review with
+// a context pack read. It returns ErrNotFound when no review has one yet.
 func LastRepoFile(ctx context.Context, tx pgx.Tx, repositoryID string) (RepoFileRow, error) {
 	var row RepoFileRow
 	err := tx.QueryRow(ctx, `

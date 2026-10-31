@@ -34,7 +34,7 @@ const submitDescription = "Submit the review and end it. The input is the whole 
 // it measures what a review sends.
 func SubmitTool(strict, diagram bool) model.ToolDef { return submitTool(strict, diagram, nil) }
 
-// submitTool is SubmitTool for a reviewer that may report only
+// submitTool is SubmitTool for a reviewer that can report only
 // categories, every category when none.
 func submitTool(strict, diagram bool, categories []review.Category) model.ToolDef {
 	return model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: review.SchemaFor(strict, diagram, categories)}
@@ -64,7 +64,7 @@ const (
 	noteSkillsUnloaded    = "%d skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"
 )
 
-// promptInputs is what the repository's files and the settings give the
+// promptInputs is what the repository's files and the configuration give the
 // review prompt for this change: the rules and reference files that apply
 // to its paths, the skills it is offered by name and the ones it is given
 // whole. notes say what was left out.
@@ -88,8 +88,8 @@ func (in promptInputs) ruleIDs() []string {
 }
 
 // newPromptInputs selects, for a change of the changed paths, the spec's
-// rules, whose when conditions the worker has already judged, its skills
-// and its context files.
+// rules, its skills, and its context files. The worker already judged the
+// when conditions of those rules.
 func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
 	var in promptInputs
 	if sk := p.Prompt.Skills; sk != nil {
@@ -113,19 +113,21 @@ func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.
 }
 
 // agentPrompt is what the agent is sent: the system prompt, the first user
-// message, and the tool it answers with, whose input validate checks and
-// fallback, when set, holds to be an answer validate refused only for a
-// slip. omitted names the diff files, and contextOmitted counts the chunks, the
-// budget left out of the message; context is the chunks it holds. carried,
-// when set, is the conversation the agent carries on, and user then its
-// next turn, which holds no context.
+// message, and the tool it answers with. validate makes sure that the input
+// of that tool is valid. fallback, when set, holds an input to be an answer
+// that validate refused only for a slip.
+//
+// omitted names the diff files that the budget left out of the message, and
+// contextOmitted counts the chunks that it left out. context is the chunks
+// that the message holds. carried, when set, is the conversation the agent
+// carries on. user is then its next turn, which holds no context.
 type agentPrompt struct {
 	system, user string
 	submit       model.ToolDef
 	validate     func(json.RawMessage) error
 	fallback     func(json.RawMessage) bool
 	// quotes holds the run's submissions to the quotes their findings
-	// cite rules with; nil holds them to nothing.
+	// cite rules with. nil holds them to nothing.
 	quotes            *review.QuoteGate
 	omitted           []string
 	contextOmitted    int
@@ -162,10 +164,9 @@ func (a agentPrompt) notes() []string {
 }
 
 // newAgentPrompt composes the prompt from the inputs, with the role of the
-// reviewer they are for, and the pack, whose context includes the similar
-// code the gateway found. commands are what
-// the run tool offers, fetch says fetch_repo is offered, and search
-// search_code.
+// reviewer they are for. It also uses the pack, whose context includes the
+// similar code the gateway found. commands are what the run tool offers,
+// fetch says fetch_repo is offered, and search says search_code is offered.
 func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
 	bumps := review.Bumps(pack.Diff)
 	// The role is part of the system prompt before the user message is
@@ -198,7 +199,7 @@ func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []s
 	if in.role != nil {
 		categories = in.role.Categories
 	}
-	// The fallback judges a refused submission again; it must not spend
+	// The fallback judges a refused submission again. It must not spend
 	// the gate's refusals doing so.
 	quotes, check := review.NewQuoteGate(in.rules), review.CheckCategories(review.Check, categories)
 	return agentPrompt{
@@ -210,11 +211,11 @@ func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []s
 }
 
 // agentSkip returns why the worker will skip this review whatever the
-// agent finds, or "", and for a filtered one the name of the exclusion
-// that decided: settled before the agent runs, so a skipped review spends
-// nothing. A condition that fails to evaluate skips; the error is
-// returned for the log. The conditions see the pull request as the spec
-// carries it, its body cut to MaxBodyBytes.
+// agent finds, or "". For a filtered review, it also returns the name of the
+// exclusion that decided. This is settled before the agent runs, so a
+// skipped review spends nothing. A condition that fails to evaluate skips,
+// and the error is returned for the log. The conditions see the pull request
+// as the spec carries it, its body cut to MaxBodyBytes.
 func agentSkip(p runspec.Spec, changed []string, patchID, diff string) (reason, detail string, err error) {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
@@ -283,7 +284,7 @@ func offeredTools(p runspec.Spec, head *object.Tree, ignore []string, extra []ag
 }
 
 // agentLoop runs the tool loop with tools until the agent answers with
-// prompt's submit tool. A positive timeout bounds it; running out of time
+// prompt's submit tool. A positive timeout bounds it. Running out of time
 // ends it as canceled with the timeout in Err.
 func agentLoop(
 	ctx context.Context, stepper model.Stepper, p runspec.Spec, tools []agent.Tool, prompt agentPrompt, timeout time.Duration,
@@ -296,9 +297,9 @@ func agentLoop(
 	defer cancel()
 	timeline := []store.TimelineStep{}
 	limits := agentLimits(p.Agent)
-	// A review of one step reads nothing: its findings come from the
-	// prompt alone, and are not held to a file it could not read, though
-	// its submission is cleared of any unread the model wrote.
+	// A review of one step reads nothing: its findings come from the prompt
+	// alone, and are not held to a file it cannot read. Its submission is still
+	// cleared of any unread that the model wrote.
 	var ledger *readLedger
 	var evidence func(json.RawMessage) error
 	switch {
@@ -365,9 +366,9 @@ func agentLoop(
 }
 
 // agentTools is what the agent gets beside the read-only tools over head:
-// read_diff over the pull request's diff, the run tool, when commands are
-// offered, with fetch_repo and fetch_oci when one of them reaches the
-// network, and search_code, when the repository has an index.
+// read_diff over the pull request's diff, and the run tool when commands are
+// offered. It also gets fetch_repo and fetch_oci when one of the commands
+// reaches the network, and search_code when the repository has an index.
 type agentTools struct {
 	diff   *readDiffTool
 	run    *agent.RunTool
@@ -375,7 +376,7 @@ type agentTools struct {
 	oci    *fetchOCITool
 	search *searchTool
 	skills *skillTool
-	// notes say what of the run tool was not offered and why; a run with
+	// notes say what of the run tool was not offered and why. A run with
 	// no summary to state them, a follow-up, records them with the
 	// command errors, which its reply carries.
 	notes []string
@@ -414,12 +415,12 @@ func (t agentTools) commands() []string {
 }
 
 // gatewayRetries is how many times a step the gateway answered with a 500,
-// its own database not answering, is sent again; the gateway marks every
-// other refusal final, since it has already retried the provider.
+// its own database not answering, is sent again. The gateway marks every
+// other refusal final, since it already retried the provider.
 const gatewayRetries = 2
 
 // runAgentic runs the agent over the fetched head with the prompt already
-// composed, writes its agent_runs row, with a review's conversation for
+// composed. It writes its agent_runs row, with a review's conversation for
 // the next re-review, and marks the run done.
 func runAgentic(
 	ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
@@ -439,8 +440,8 @@ func runAgentic(
 		continued = p.Prompt.Continue.RunID
 	}
 	if cerr := ctx.Err(); cerr != nil {
-		// The run was cancelled, deleted or ran out of Job time: what the
-		// agent spent so far is still spent, so the row is written on a
+		// The run was canceled, deleted, or ran out of Job time. What the
+		// agent spent so far is still spent. So the row is written on a
 		// context of its own, short enough for the pod's termination grace.
 		res.Stop = agent.StopCanceled
 		if res.Err == "" {
@@ -466,7 +467,7 @@ func runAgentic(
 	rec.continued = continued
 	if p.Kind == runspec.KindReview && res.Conversation != nil {
 		// The gateway names a run's steps by the run, unless its token
-		// names the session of a conversation it may carry on.
+		// names the session of a conversation it can carry on.
 		rec.conversation, rec.tokens, rec.granted = keptConversation(res.Conversation, secrets, logger), res.Conversation.Tokens, p.Model.Granted
 		rec.session = p.RunID
 		if c := p.Prompt.Continue; c != nil {
@@ -479,10 +480,10 @@ func runAgentic(
 	return writeAgentRun(ctx, st, p, rec, "done")
 }
 
-// gatewayStepper is the run's client of the gateway, naming part, the part
-// of a split review its steps are for, or none when part is 0, and
-// reviewer, the reviewer other than the default one they are for, or none
-// when it is "" or the default one.
+// gatewayStepper is the run's client of the gateway. It names part, the part
+// of a split review that its steps are for, or none when part is 0. It names
+// reviewer, the reviewer other than the default one that the steps are for,
+// or none when reviewer is "" or the default one.
 func gatewayStepper(p runspec.Spec, secrets runspec.Secrets, part int, reviewer string) (model.Stepper, error) {
 	if reviewer == review.DefaultReviewer {
 		reviewer = ""
@@ -543,21 +544,21 @@ type agentRecord struct {
 	usage                        model.Usage
 	costUSD                      float64
 	unpricedSteps                int
-	// skillsOffered are the skills the agent could load, and skillsOpened
-	// the ones it did; commandsOffered and commandsRun the same for the
+	// skillsOffered are the skills the agent can load, and skillsOpened
+	// the ones it did. commandsOffered and commandsRun are the same for the
 	// run tool's commands.
 	skillsOffered, skillsOpened  []string
 	commandsOffered, commandsRun []string
 	commandErrors                []string
 	commandCounts                map[string]int
-	// model answered the run's last step; empty when no step was answered,
-	// and the worker then names the model the run was granted.
+	// model answered the run's last step. It is empty when no step was
+	// answered, and the worker then names the model the run was granted.
 	model string
 	err   string
-	// conversation is the agent's exchange, encoded, which the pull
-	// request's next re-review may carry on, nil when none is kept, with
-	// its size in tokens; session is the conversation its steps were sent
-	// as, and granted the model reference the run was granted.
+	// conversation is the agent's exchange, encoded, which the pull request's
+	// next re-review can carry on. It is nil when none is kept. tokens is its
+	// size in tokens. session is the conversation its steps were sent as, and
+	// granted is the model reference the run was granted.
 	conversation     []byte
 	tokens           int64
 	session, granted string
@@ -567,8 +568,8 @@ type agentRecord struct {
 	// parts are how a split review's parts ended, encoded, nil for a
 	// review that was not split.
 	parts []byte
-	// forcedBy is the limit that made the loop tell the agent to submit,
-	// "" when it never did; a split review's parts each record their own.
+	// forcedBy is the limit that made the loop tell the agent to submit, ""
+	// when it never did. A split review's parts each record their own.
 	forcedBy agent.ForcedBy
 }
 
@@ -598,7 +599,7 @@ func keptConversation(c *agent.Conversation, secrets runspec.Secrets, logger *sl
 
 // newAgentRecord encodes a finished Run and the sources its commands
 // fetched. The error text, the sources and the submitted review are
-// masked: an error may carry a token, a steered model may write one into
+// masked: an error can carry a token, a steered model can write one into
 // its review, and the worker shows all three.
 func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets runspec.Secrets) (agentRecord, error) {
 	rec := agentRecord{

@@ -127,7 +127,7 @@ func TestEnqueueReconnect(t *testing.T) {
 	t.Run("evicts the oldest queued item when full rather than dropping the reconnect signal", func(t *testing.T) {
 		notifications := make(chan func(), 1)
 		// lastWarnAt starts non-zero so drop()'s once-per-second warning does
-		// not fire (and reset the counter) on this very first call, letting
+		// not fire (and reset the counter) on this very first call. That lets
 		// the assertion below observe the increment.
 		warner := &dropWarner{logger: slog.New(slog.DiscardHandler), lastWarnAt: time.Now()}
 
@@ -175,7 +175,7 @@ func TestDeliverResyncsAfterADrop(t *testing.T) {
 		t.Fatal("the events past the queue's room were not reported dropped")
 	}
 	drain()
-	// c's drop evicted a for the resync; d's found one already waiting.
+	// c's drop evicted a for the resync. d's found one already waiting.
 	if want := []string{"b", "resync"}; !slices.Equal(ran, want) {
 		t.Fatalf("ran = %v, want %v", ran, want)
 	}

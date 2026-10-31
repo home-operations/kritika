@@ -88,7 +88,7 @@ func TestChatRoundTrip(t *testing.T) {
 				t.Fatalf("requests = %d", len(*got))
 			}
 			decoded := (*got)[0]
-			// The adapter re-encodes schemas; compare them as JSON.
+			// The adapter re-encodes schemas. Compare them as JSON.
 			for i := range decoded.Tools {
 				if !jsonEqual(t, decoded.Tools[i].InputSchema, req.Tools[i].InputSchema) {
 					t.Fatalf("tool %d schema = %s", i, decoded.Tools[i].InputSchema)

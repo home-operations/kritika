@@ -13,8 +13,8 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
-// TestToolsTakeZeroValuesAsLeftOut: a model may send every property of a
-// tool's input, the ones it does not mean as zero values, so an optional
+// TestToolsTakeZeroValuesAsLeftOut: a model can send every property of a
+// tool's input, the ones it does not mean as zero values. So an optional
 // property given its zero value does what leaving it out does.
 func TestToolsTakeZeroValuesAsLeftOut(t *testing.T) {
 	head := tree(t, map[string]string{
@@ -73,8 +73,8 @@ func TestToolsTakeZeroValuesAsLeftOut(t *testing.T) {
 }
 
 // withZeroOptionals is base with every optional property of schema that it
-// lacks set to its type's zero value, a list of strings to [""] when blank
-// is set.
+// lacks set to its type's zero value. A list of strings is set to [""] when
+// blank is set.
 func withZeroOptionals(t *testing.T, schema json.RawMessage, base map[string]any, blank bool) map[string]any {
 	t.Helper()
 	var s struct {

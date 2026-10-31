@@ -31,8 +31,8 @@ type forgeAPI interface {
 }
 
 // forgeProvider is an OAuth 2 authorization-code sign-in with PKCE against a
-// forge, whose API then says who the user is and which organizations they
-// belong to.
+// forge. The API of the forge then says who the user is and which
+// organizations they belong to.
 type forgeProvider struct {
 	signIn  *configfile.SignIn
 	conf    *oauth2.Config
@@ -116,10 +116,10 @@ type apiClient struct {
 	headers map[string]string
 }
 
-// get fetches path and, on a 2xx answer, decodes its JSON body into v when v
-// is non-nil. It returns the status, the headers and, on any other answer,
-// its body for the caller to classify; only a transport or decoding failure
-// is an error.
+// get fetches path. On a 2xx answer, it decodes the JSON body into v when v
+// is non-nil. It returns the status and the headers. On any other answer, it
+// also returns the body for the caller to classify. Only a transport or
+// decoding failure is an error.
 func (c apiClient) get(ctx context.Context, path string, v any) (int, http.Header, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
@@ -164,9 +164,9 @@ func (c apiClient) getOK(ctx context.Context, path string, v any) error {
 	return nil
 }
 
-// verifiedOnly is id's email when the forge verified it, else empty: what a
-// sign-in on a forge instance lets a role mapping see, so a mapping never
-// grants on an address someone merely typed.
+// verifiedOnly is id's email when the forge verified it, else empty. This is
+// what a sign-in on a forge instance lets a role mapping see. So a mapping
+// never grants on an address that someone merely typed.
 func verifiedOnly(id Identity) string {
 	if id.EmailVerified {
 		return id.Email
@@ -181,7 +181,7 @@ type forgeEmail struct {
 	Verified bool   `json:"verified"`
 }
 
-// verifiedEmail sets id's email to the primary address when the forge has
+// verifiedEmail sets id's email to the primary address when the forge
 // verified it. Without the scope to list addresses, the profile's own email
 // stands, unverified.
 func verifiedEmail(ctx context.Context, c apiClient, id *Identity) error {

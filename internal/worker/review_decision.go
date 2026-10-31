@@ -27,7 +27,8 @@ const (
 )
 
 // A decision describes policy only. Callers still own transaction boundaries,
-// forge writes and metrics; a failure to persist an outcome remains retryable.
+// forge writes and metrics. A failure to persist an outcome remains
+// retryable.
 type reviewDecision struct {
 	end         store.ReviewEnd
 	disposition reviewDisposition
@@ -100,7 +101,7 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 	if errors.Is(jobCause, river.ErrJobCancelledRemotely) || (res.Err != nil && stoppingCause(jobCause)) {
 		return decideInterruptedReview(jobCause, res.Err)
 	}
-	// A runner that never started spent nothing; its retry may run the model.
+	// A runner that never started spent nothing. Its retry can run the model.
 	if res.Err != nil && runCause == nil && res.NeverStarted && !finalAttempt {
 		end := store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner did not start; retried", OnlyUnfinished: true}
 		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: runner did not start: %w", res.Err)}
@@ -108,7 +109,7 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 	// A runner whose pod Kubernetes disrupted, by a node drain, a preemption
 	// or an eviction, did not fail on its own: its retry runs it again,
 	// paying the model again, so the pull request still gets its review. A
-	// disrupted pod slow to terminate may lose its heartbeat first.
+	// disrupted pod slow to terminate can lose its heartbeat first.
 	if res.Err != nil && (runCause == nil || errors.Is(runCause, errHeartbeatLost)) && res.Disruption != "" && !finalAttempt {
 		end := store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner's pod was disrupted; retried", OnlyUnfinished: true}
 		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: runner pod disrupted: %w", res.Err)}
@@ -122,7 +123,7 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: runner failed before the model ran: %w", res.Err)}
 	}
 	if agentErr != nil {
-		// Retrying a missing result would pay for the agent again.
+		// Retrying a missing result pays for the agent again.
 		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: agentErr.Error()},
 			disposition: reviewFinish, description: reviewFailedDescription}
 	}

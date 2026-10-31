@@ -30,7 +30,7 @@ func modelCalls(
 	return rows
 }
 
-// checkReviewTranscript checks that the gateway recorded a review's one
+// checkReviewTranscript makes sure that the gateway recorded a review's one
 // agent step: the system prompt, the prompt, the agent's tools and
 // submit_review's input.
 func checkReviewTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID, head string, fc *fakeCompleter) {
@@ -63,7 +63,7 @@ func checkReviewTranscript(ctx context.Context, t *testing.T, st *store.Store, a
 	}
 }
 
-// checkFollowUpTranscript checks that answering commentID recorded one
+// checkFollowUpTranscript makes sure that answering commentID recorded one
 // agent step, of the follow-up's own run, against the review it followed.
 func checkFollowUpTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID string, commentID int64, fc *fakeCompleter) {
 	t.Helper()

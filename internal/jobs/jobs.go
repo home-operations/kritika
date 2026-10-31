@@ -1,8 +1,8 @@
 // Package jobs defines the River job arguments that ingest, the leader and
-// the dashboard enqueue and the worker consumes. Uniqueness lives here because it is the contract
-// between the two: a review is unique per head SHA so no push is ever lost,
-// a follow-up per comment, a thread change per thread and state, an index
-// run per target commit.
+// the dashboard enqueue and the worker consumes. Uniqueness lives here
+// because it is the contract between the two. A review is unique per head
+// SHA, so no push is ever lost. A follow-up is unique per comment, a thread
+// change per thread and state, and an index run per target commit.
 package jobs
 
 import (
@@ -37,9 +37,9 @@ func ReviewKind(kind string) bool {
 // carries, the one trigger.settle holds.
 const TriggerSynchronize = "synchronize"
 
-// TriggerManual is the Trigger a human-requested re-run carries. It is the
-// only trigger the worker lets bypass the bot-author patch-id skip; a
-// review that replaces an undelivered manual one stands in for it (see
+// TriggerManual is the Trigger that a human-requested re-run carries. It is
+// the only trigger that the worker lets bypass the bot-author patch-id skip.
+// A review that replaces an undelivered manual one stands in for it (see
 // store.ReviewOwed).
 const TriggerManual = "manual"
 
@@ -79,10 +79,10 @@ const (
 const indexAttempts = 3
 
 // reviewAttempts bounds a review, follow-up or thread job's tries. With
-// River's backoff the last comes over an hour after the first, which
-// outlasts a restart or a database failover; a job that fails every try is
-// failing on its input, and each further try would only repeat its failed
-// review and commit status.
+// River's backoff, the last try comes over an hour after the first, which
+// outlasts a restart or a database failover. A job that fails every try
+// fails on its input, and each further try only repeats its failed review
+// and commit status.
 const reviewAttempts = 8
 
 // LiveStates are the states a job is in while queued or running: what a
@@ -111,23 +111,23 @@ type ReviewArgs struct {
 	// labeled, unlabeled, manual.
 	Trigger string `json:"trigger"`
 	// Request distinguishes one manual re-run, or one label change, from
-	// another. River dedupes by the river:"unique" fields, so every other
+	// another. River dedupes by the river:"unique" fields. So every other
 	// trigger leaves it empty and dedupes on account, repository, number
-	// and head, and these two set a fresh value (a UUID) so the job is never
-	// deduped against a prior run of the same head, including another of
-	// its kind.
+	// and head. These two set a fresh value (a UUID), so the job is never
+	// deduped against a prior run of the same head. That includes another
+	// run of its kind.
 	Request string `json:"request,omitempty" river:"unique"`
-	// Reviewer, on a re-run someone asked for, names the one reviewer it
-	// runs, whatever its paths and conditions; "" runs every reviewer that
-	// applies.
+	// Reviewer, on a re-run that someone asked for, names the one reviewer
+	// that it runs, whatever its paths and conditions. "" runs every reviewer
+	// that applies.
 	Reviewer string `json:"reviewer,omitempty"`
-	// Requested is the word a re-run's request wrote after review that
-	// names no reviewer, which the review states it ran every reviewer in
-	// place of; it leaves the request one of every reviewer.
+	// Requested is the word that a re-run's request wrote after review and
+	// that names no reviewer. The review states that it ran every reviewer in
+	// place of that word. Requested leaves the request one of every reviewer.
 	Requested string `json:"requested,omitempty"`
-	// Focus is what a re-run's request asks the review to look hardest
-	// at, the text written after review and the reviewer's name, as
-	// review.CleanFocus keeps it; "" asks for nothing in particular.
+	// Focus is what a re-run's request asks the review to look hardest at.
+	// It is the text written after review and the reviewer's name, as
+	// review.CleanFocus keeps it. "" asks for nothing in particular.
 	Focus string `json:"focus,omitempty"`
 }
 
@@ -139,7 +139,8 @@ func (ReviewArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueueReview, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
-// PrepareArgs finalizes a saved runner answer, including merge and confidence calls.
+// PrepareArgs finalizes a saved runner answer. This includes merge and
+// confidence calls.
 type PrepareArgs struct {
 	ReviewArgs
 	ReviewID string `json:"review_id" river:"unique"`
@@ -168,7 +169,7 @@ type FollowUpArgs struct {
 	Number       int    `json:"number"`
 	CommentID    int64  `json:"comment_id" river:"unique"`
 	Inline       bool   `json:"inline"`
-	// Reply says the comment may be answered as a reply in one of the
+	// Reply says the comment can be answered as a reply in one of the
 	// bot's finding threads when it does not mention the bot.
 	Reply bool `json:"reply,omitempty"`
 }
@@ -191,8 +192,8 @@ type ThreadArgs struct {
 	CommentID int64 `json:"comment_id" river:"unique"`
 	// Resolved is the thread's state when the event was emitted.
 	Resolved bool `json:"resolved" river:"unique"`
-	// Outdated is whether a push had changed the lines the comment was made
-	// on by the time the thread changed state.
+	// Outdated is whether a push changed the lines that the comment was made
+	// on, by the time the thread changed state.
 	Outdated bool `json:"outdated"`
 	// Sender is who changed it.
 	Sender string `json:"sender"`
@@ -202,8 +203,8 @@ type ThreadArgs struct {
 func (ThreadArgs) Kind() string { return "thread" }
 
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
-// thread and state while queued or running: a thread resolved and then
-// unresolved is two jobs, the same change delivered twice is one, and a
+// thread and state while queued or running. A thread resolved and then
+// unresolved is two jobs. The same change delivered twice is one job. A
 // thread resolved again later is a new job.
 func (ThreadArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
@@ -223,11 +224,11 @@ type IndexArgs struct {
 	// Trigger is why: TriggerOnboard, TriggerPush or TriggerReindex.
 	Trigger string `json:"trigger"`
 	// Full forces a full rebuild even when the active generation already
-	// covers the tip. It is part of the unique key, so a forced rebuild is
-	// queued beside an update rather than folded into it, and dedupes only
+	// covers the tip. It is part of the unique key. So a forced rebuild is
+	// queued beside an update rather than folded into it, and it dedupes only
 	// onto another forced rebuild.
 	Full bool `json:"full,omitempty" river:"unique"`
-	// CatchUp identifies the rebuild whose publication needs a tip check.
+	// CatchUp identifies the rebuild whose publication needs a look at the tip.
 	// Its update must not dedupe onto a push that published before the rebuild.
 	CatchUp string `json:"catch_up,omitempty" river:"unique"`
 }

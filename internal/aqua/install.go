@@ -23,10 +23,10 @@ import (
 	"github.com/aquaproj/aqua/v2/pkg/checksum"
 )
 
-// What bounds an install: maxDownloadBytes a package's download, the
-// largest the registry's tools ship being a few hundred MiB;
-// maxChecksumFileBytes a checksum file, which lists a release's assets;
-// and maxReleaseBytes the GitHub API's description of a release.
+// What bounds an install. maxDownloadBytes bounds a package's download: the
+// largest that the registry's tools ship is a few hundred MiB.
+// maxChecksumFileBytes bounds a checksum file, which lists a release's
+// assets. maxReleaseBytes bounds the GitHub API's description of a release.
 const (
 	maxDownloadBytes     = 1 << 30
 	maxChecksumFileBytes = 4 << 20
@@ -38,9 +38,9 @@ var (
 	// for: neither its GitHub release nor a checksum file the registry
 	// names.
 	ErrNoChecksum = errors.New("no checksum is published for the download")
-	// ErrDownload is a download that could not be fetched, or, with
-	// ErrChecksum, did not match its checksum: what another way to fetch
-	// it may get right.
+	// ErrDownload is a download that failed to fetch, or, with ErrChecksum,
+	// did not match its checksum. That is what another way to fetch it can
+	// get right.
 	ErrDownload = errors.New("the download failed")
 	// ErrChecksum is a download that does not match its checksum.
 	ErrChecksum = errors.New("the download does not match its checksum")
@@ -48,15 +48,17 @@ var (
 
 // Installer installs resolved packages.
 type Installer struct {
-	// Client fetches what a download is checked against: the GitHub REST
-	// API's account of a release and its attestations at APIURL, with
-	// Token as its credential when set, a checksum file and a signature.
+	// Client fetches what the checks of a download use. That is the GitHub
+	// REST API's account of a release and its attestations at APIURL, with
+	// Token as its credential when set. It is also a checksum file and a
+	// signature.
 	Client *http.Client
 	APIURL string
 	Token  string
-	// Downloads fetches the download itself; nil takes Client.
+	// Downloads fetches the download itself. nil takes Client.
 	Downloads *http.Client
-	// Logger, when set, logs the signatures checked and those passed over.
+	// Logger, when set, logs the signature checks that ran and the signatures
+	// passed over.
 	Logger *slog.Logger
 }
 
@@ -72,12 +74,12 @@ type Sum struct {
 	Algorithm, Hex string
 }
 
-// Install downloads p, checks the download against sum, its Checksum, and
-// the signatures the registry declares of it before anything of it is
-// unpacked, and unpacks it into dir, which must not exist. The download
-// and the unpacking are kept beside dir until the package is whole, so dir
-// is the package or nothing. It returns where the package's commands are,
-// by name.
+// Install downloads p. Before it unpacks anything of p, it makes sure that
+// the download matches sum, its Checksum, and the signatures that the
+// registry declares of it. It unpacks p into dir, which must not exist. The
+// download and the unpacking are kept beside dir until the package is whole,
+// so dir is the package or nothing. It returns where the package's commands
+// are, by name.
 func (in *Installer) Install(ctx context.Context, p *Package, sum Sum, dir string) (map[string]string, error) {
 	download, err := os.CreateTemp(filepath.Dir(dir), ".download-*")
 	if err != nil {
@@ -121,15 +123,15 @@ func (in *Installer) Install(ctx context.Context, p *Package, sum Sum, dir strin
 	return commands, nil
 }
 
-// Checksum is what p's download must match: the digest GitHub keeps of a
-// release's asset, else the one in the checksum file the registry names.
-// Looking the release up also checks the version is one of its tags,
-// which the registry cannot tell: it resolves any version. A release
+// Checksum is what p's download must match: the digest that GitHub keeps of a
+// release's asset, else the one in the checksum file that the registry names.
+// Looking the release up also makes sure that the version is one of its tags,
+// which the registry cannot tell: it resolves any version. A release that
 // GitHub says it does not have, or one without the asset, fails though a
-// checksum file is named; one that keeps no digest, or that GitHub could
-// not be asked about, leaves the file to stand in. A checksum file the
-// registry declares a signature of is read in place of the digest, as aqua
-// reads it, and its signature checked.
+// checksum file is named. One that keeps no digest, or that the Installer
+// failed to ask GitHub about, leaves the file to stand in. A checksum file
+// that the registry declares a signature of is read in place of the digest,
+// as aqua reads it. Checksum makes sure that its signature is valid.
 func (in *Installer) Checksum(ctx context.Context, p *Package) (Sum, error) {
 	var released Sum
 	var releaseErr error
@@ -152,8 +154,8 @@ func (in *Installer) Checksum(ctx context.Context, p *Package) (Sum, error) {
 	return in.checksumFile(ctx, p, signatures{}, releaseErr)
 }
 
-// checksumFile is the checksum of p's download its checksum file holds,
-// once s, the signatures declared of the file, check; releaseErr is why the
+// checksumFile is the checksum of p's download that its checksum file holds,
+// once s, the signatures declared of the file, pass. releaseErr is why the
 // release gave none, joined to the file's own failure.
 func (in *Installer) checksumFile(ctx context.Context, p *Package, s signatures, releaseErr error) (Sum, error) {
 	content, err := get(ctx, in.Client, p.ChecksumURL, nil, maxChecksumFileBytes)
@@ -237,7 +239,7 @@ func get(ctx context.Context, client *http.Client, url string, header http.Heade
 	return body, nil
 }
 
-// request GETs url with client and header, failing on any status but 200.
+// request GETs url with client and header. It fails on any status but 200.
 func request(ctx context.Context, client *http.Client, url string, header http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -258,8 +260,9 @@ func request(ctx context.Context, client *http.Client, url string, header http.H
 	return resp, nil
 }
 
-// download writes url's body to w, at most maxDownloadBytes of it, checks
-// it matches sum, and returns its SHA-256, which a signature is of.
+// download writes url's body to w, at most maxDownloadBytes of it. It makes
+// sure that the body matches sum, and returns its SHA-256, which a signature
+// is of.
 func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Writer) ([]byte, error) {
 	h, err := hasher(sum.Algorithm)
 	if err != nil {
@@ -299,8 +302,9 @@ func hasher(algorithm string) (hash.Hash, error) {
 }
 
 // command makes the command at src in root, the unpacked download,
-// executable: a regular file there, or a link that resolves to one within
-// root, as it will once root moves, since it leads nowhere out of it.
+// executable. The command is a regular file there, or a link that resolves to
+// one within root. The link resolves the same way once root moves, since it
+// leads nowhere out of root.
 func command(root, src string) error {
 	resolved, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(src)))
 	if err != nil {

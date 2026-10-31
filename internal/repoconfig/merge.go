@@ -15,34 +15,36 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// Merged is the admin's settings with the merge-base FileName applied.
+// Merged is the admin's configuration with the merge-base FileName applied.
 type Merged struct {
 	configfile.Settings
 	// InRepoFilters are the file's own conditions, passed beside the
 	// admin's, which ingest has already applied.
 	InRepoFilters configfile.Filters
 	// Dropped says which of the file's values fell outside the admin's
-	// bounds; the admin's value applies for each.
+	// bounds. The admin's value applies for each.
 	Dropped []string
 	// Tools are the file's tools, nil when it declares none. They have no
 	// admin counterpart: the image's commands are the admin's.
 	Tools Tools
 }
 
-// Merge applies doc, the merge-base FileName or nil when the repository has
-// none, over the admin's settings op. The file narrows what an admin allows
-// (enabled, ignore, and include and exclude lists of its own, with no
-// condition under an admin's name),
-// appends its context files and rules to the
-// admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
-// their effort, the confidence threshold, how the review comments,
-// whether it approves and whether its summary draws a diagram, and adds
-// approval and confidence conditions that must hold beside the admin's, and
-// adds reviewers of its own (see reviewers). A model must be one of a provider
-// op.Providers names, and an effort one of model.Efforts or empty, which
-// leaves it to the provider. A value it may not take is dropped, and
-// Dropped says so. A file that does not parse is ignored as a whole: op stands, and the
-// error says why.
+// Merge applies doc over the admin's configuration op. doc is the merge-base
+// FileName, or nil when the repository has none.
+//
+// The file narrows what an admin allows: enabled, ignore, and include and
+// exclude lists of its own, with no condition under an admin's name. The
+// file appends its context files and rules to the admin's. It can only turn
+// review.fixes on and can only lower confidence.risk. It replaces the models,
+// their effort, the confidence threshold, how the review comments, whether
+// it approves, and whether its summary draws a diagram. It adds approval and
+// confidence conditions that must hold beside the admin's. It also adds
+// reviewers of its own (see reviewers).
+//
+// A model must be one of a provider that op.Providers names. An effort must
+// be one of model.Efforts or empty, which leaves it to the provider. A value
+// that the file cannot take is dropped, and Dropped says so. A file that
+// does not parse is ignored as a whole: op stands, and the error says why.
 func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
 	op.Review.Context = slices.Clone(op.Review.Context)
@@ -137,20 +139,27 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	return m, nil
 }
 
-// agents adds the file's agents to the admin's. Its agents that replace
-// the default pass are settled first: written, even all off, they replace
-// the admin's, as its review.model does, whole or not at all, one of a
-// model of a provider not among op.Providers, or more of them than leave
-// the admin's specialists room under configfile.MaxReviewers, dropping
-// them all, since without one another model would review than the file
-// says. Then a specialist of its own is added as written, its models among
-// op.Providers, while there is room for it beside the agents the review
-// ends with; to the admin's of its name it adds only rules, under an id
-// neither that agent's nor the admin's rules have, and skill scopes, of a
-// skill that agent does not scope, the rest it writes of it dropped with a
-// note: a pull request must not be able to turn off, narrow or retune a
-// specialist the admin set. An agent under a name an admin's agent of the
-// other kind has, or the default pass's, is dropped with a note.
+// agents adds the file's agents to the admin's. Its agents that replace the
+// default pass are settled first. When written, even if all are off, they
+// replace the admin's, as its review.model does, whole or not at all. One
+// with a model of a provider not among op.Providers drops them all. So do
+// more of them than leave the admin's specialists room under
+// configfile.MaxReviewers. Without one of them, another model will review
+// than the file says, so all are dropped.
+//
+// Then a specialist of the file's own is added as written, with its models
+// among op.Providers. This happens while there is room for it beside the
+// agents that the review ends with.
+//
+// To the admin's specialist of its name, the file adds only rules and skill
+// scopes. A rule must have an id that neither that agent's rules nor the
+// admin's rules have. A skill scope must be of a skill that agent does not
+// scope. The rest that the file writes of that agent is dropped with a note.
+// A pull request must not be able to turn off, narrow, or retune a specialist
+// that the admin set.
+//
+// An agent under a name that an admin's agent of the other kind has, or
+// under the default pass's name, is dropped with a note.
 func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 	if len(file) == 0 {
 		return
@@ -251,8 +260,8 @@ func (m *Merged) addTo(key string, admin, r configfile.Reviewer, adminRules []co
 }
 
 // choose applies the models f chooses: a model of one of providers. Its
-// review.model replaces the admin's default pass, and the agents the admin
-// has replace it with, as the file's own may (see agents).
+// review.model replaces the admin's default pass, and the agents that the
+// admin has replace it with, as the file's own can (see agents).
 func (m *Merged) choose(f *File, providers []string) {
 	if ref := f.Review.Model.Default; ref != "" {
 		if ref.Model() != "" && slices.Contains(providers, ref.Provider()) {
@@ -282,7 +291,7 @@ func (m *Merged) choose(f *File, providers []string) {
 }
 
 // routesDropped says why the file's agents that replace the default pass
-// may not apply, "" when they may: a model or a fallback of a provider not
+// cannot apply, or "" when they can: a model or a fallback of a provider not
 // among providers.
 func routesDropped(routes []configfile.ModelRoute, providers []string) string {
 	allowed := func(ref configfile.ModelRef) bool {
@@ -299,9 +308,9 @@ func routesDropped(routes []configfile.ModelRoute, providers []string) string {
 	return ""
 }
 
-// own is the file's conditions of one list it may keep: all but those
-// under a name one of the admin's conditions has, which are dropped with a
-// note, so a pull request cannot pass off its own condition as the
+// own is the file's conditions of one list that it can keep: all but those
+// under a name that one of the admin's conditions has. Those are dropped
+// with a note, so a pull request cannot pass off its own condition as the
 // admin's.
 func (m *Merged) own(list string, conditions []configfile.Filter, admin configfile.Filters) []configfile.Filter {
 	var out []configfile.Filter
@@ -315,7 +324,7 @@ func (m *Merged) own(list string, conditions []configfile.Filter, admin configfi
 	return out
 }
 
-// drop notes a value the file may not take.
+// drop notes a value that the file cannot take.
 func (m *Merged) drop(field, value, allowed string) {
 	m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s %s was dropped; allowed: %s", FileName, field, value, allowed))
 }
@@ -362,11 +371,11 @@ func (r SkipReason) Description() string {
 }
 
 // Check returns why m skips a review of a pull request with the filter
-// variables vars that changes changed, or "" when it does not, and for a
-// filtered one the condition that decided: the exclusion that holds, or
-// nil when no inclusion does. Its conditions that need the diff are the
-// runner's to judge. A filter that fails to evaluate skips, since the file
-// may only narrow; the error is returned for the log.
+// variables vars that changes changed, or "" when it does not. For a
+// filtered review, it also returns the condition that decided: the exclusion
+// that holds, or nil when no inclusion does. Its conditions that need the
+// diff are the runner's to judge. A filter that fails to evaluate skips,
+// because the file can only narrow. The error is returned for the log.
 func (m *Merged) Check(vars map[string]any, changed []string) (reason SkipReason, by *configfile.Filter, err error) {
 	if !m.Enabled {
 		return SkipDisabled, nil, nil

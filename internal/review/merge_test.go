@@ -30,9 +30,9 @@ func TestMergeSystemPromptAndSchema(t *testing.T) {
 	}
 }
 
-// TestBuildMerge: the merge call is shown the pull request, each part's
-// files and summary, a part's text unable to close its section, and the
-// findings while they fit.
+// TestBuildMerge: the merge call is shown the pull request, each part's files
+// and summary, and the findings while they fit. A part's text is unable to
+// close its section.
 func TestBuildMerge(t *testing.T) {
 	parts := []MergePart{
 		{Paths: []string{"a/x.go"}, Summary: Summary{Headline: "Adds x", Take: "X is sound." + strings.Repeat(" It holds.", 25), Praise: []string{"tidy"}}},
@@ -59,8 +59,8 @@ func TestBuildMerge(t *testing.T) {
 }
 
 // TestBuildMergeBudget: a part's files are named up to maxMergePaths and
-// counted past them, and a part that no longer fits the budget is left
-// out, the findings given what is left.
+// counted past them. A part that no longer fits the budget is left out, and
+// the findings are given what is left.
 func TestBuildMergeBudget(t *testing.T) {
 	paths := make([]string, maxMergePaths+3)
 	for i := range paths {

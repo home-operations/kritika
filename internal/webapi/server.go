@@ -1,9 +1,9 @@
-// Package webapi is the dashboard's JSON API and static UI server: reads
-// over each account's reviews, repositories, usage and queue, and over the
-// running configuration, its setup and connections; re-runs, cancels,
-// reindexes and turning repositories on or off, with their audit log; and
-// the server-sent event stream that keeps the UI live. kritika serve runs
-// it; internal/auth decides who a request acts as.
+// Package webapi is the dashboard's JSON API and static UI server. It serves
+// reads over each account's reviews, repositories, usage and queue, and over
+// the running configuration, its setup and connections. It serves re-runs,
+// cancels, reindexes and turning repositories on or off, with their audit
+// log. It also serves the server-sent event stream that keeps the UI live.
+// kritika serve runs it. internal/auth decides who a request acts as.
 package webapi
 
 import (
@@ -30,28 +30,29 @@ import (
 type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
-	// Auth signs the dashboard in and stands behind every route; it is
+	// Auth signs the dashboard in and stands behind every route. It is
 	// required, as Store and Current are.
 	Auth *auth.Handler
-	// Actions queues re-runs, cancels and reindexes; nil disables them.
+	// Actions queues re-runs, cancels and reindexes. A nil value disables
+	// them.
 	Actions Actions
 	// Version is the build's version, shown by /api/v1/meta.
 	Version string
-	// UI is the built dashboard, served under the base path; nil serves
-	// no UI.
+	// UI is the built dashboard, served under the base path. A nil value
+	// serves no UI.
 	UI fs.FS
-	// WebURL is the dashboard's external URL, required; its path is the
-	// base path every route is served under.
+	// WebURL is the dashboard's external URL, which is required. Its path is
+	// the base path that every route is served under.
 	WebURL *url.URL
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
 	// Now defaults to time.Now.
 	Now func() time.Time
-	// Env is this process's environment as the configuration read it,
-	// shown to admins; secrets show only whether they are set.
+	// Env is this process's environment as the configuration read it, shown
+	// to admins. Secrets show only whether they are set.
 	Env []config.EnvVar
-	// GitHubAPI is the GitHub API the connections' Apps call, "" for
-	// api.github.com; tests point it at a server of their own.
+	// GitHubAPI is the GitHub API that the connections' Apps call, "" for
+	// api.github.com. Tests point it at a server of their own.
 	GitHubAPI string
 }
 
@@ -95,11 +96,10 @@ func New(cfg Config) *Server {
 	}
 }
 
-// Run feeds the event stream from the store's notifications until ctx
-// ends. The web process runs exactly one, however many streams it serves.
-// When it returns every open stream ends too, so a browser reconnects to
-// a replica that is still listening instead of waiting on one shutting
-// down.
+// Run feeds the event stream from the store's notifications until ctx ends.
+// The web process runs exactly one, however many streams it serves. When it
+// returns, every open stream ends too. So a browser reconnects to a replica
+// that is still listening, and does not wait on one that is shutting down.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.hub.close()
 	s.store.Listen(ctx, store.ListenHandlers{OnEvent: s.hub.publish, OnReconnect: s.hub.resyncAll})
@@ -125,8 +125,8 @@ func (s *Server) Handler() http.Handler {
 	}
 	authed := s.auth.Authenticate(h)
 	assets := s.basePath + "/assets/"
-	// A fingerprinted asset is the same for everyone; resolving the session
-	// cookie every one of them carries would only cost database round trips.
+	// A fingerprinted asset is the same for everyone. Resolving the session
+	// cookie that every one of them carries only costs database round trips.
 	return s.accessLog(s.recoverer(securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, assets) {
 			h.ServeHTTP(w, r)
@@ -136,14 +136,14 @@ func (s *Server) Handler() http.Handler {
 	}))))
 }
 
-// routes splits the API, the sign-in routes and the UI by prefix by hand:
-// a "/api/" pattern for every method would conflict with the UI's "GET /".
+// routes splits the API, the sign-in routes and the UI by prefix by hand: a
+// "/api/" pattern for every method conflicts with the UI's "GET /".
 func (s *Server) routes() http.Handler {
 	api := http.NewServeMux()
 	s.registerAPI(api)
 	api.HandleFunc("/", s.notFound)
-	// Mutations are held to the dashboard's own origin; every API route
-	// needs a principal.
+	// Mutations are held to the dashboard's own origin. Every API route needs
+	// a principal.
 	apiHandler := s.auth.SameOrigin(s.auth.RequirePrincipal(api))
 	// What the sign-in page needs is served before anyone signs in.
 	public := http.NewServeMux()
@@ -192,9 +192,8 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, r, s.logger, errNotFound("route"))
 }
 
-// uiHandler serves the embedded UI. Fingerprinted files under /assets/
-// are immutable; everything else revalidates so a redeploy is picked up at
-// once.
+// uiHandler serves the embedded UI. Fingerprinted files under /assets/ are
+// immutable. Everything else revalidates so a redeploy is picked up at once.
 func (s *Server) uiHandler() http.Handler {
 	if s.ui == nil {
 		return http.NotFoundHandler()
@@ -219,10 +218,10 @@ func (s *Server) uiHandler() http.Handler {
 	})
 }
 
-// uiEntry returns the path of the dashboard's entry script, as the build
-// manifest Vite writes beside it names it, or "" for no UI or one built
-// without the manifest. Vite names the script after its content, which
-// takes in the names of every chunk it imports, so any change to the
+// uiEntry returns the path of the dashboard's entry script, as named by the
+// build manifest that Vite writes beside it. It returns "" for no UI or one
+// built without the manifest. Vite names the script after its content, which
+// takes in the names of every chunk it imports. So any change to the
 // dashboard's scripts renames it.
 func uiEntry(ui fs.FS) (string, error) {
 	if ui == nil {
@@ -245,7 +244,7 @@ func uiEntry(ui fs.FS) (string, error) {
 }
 
 // isBareDir reports whether urlPath names a directory of ui with no
-// index.html, which http.FileServerFS would otherwise list.
+// index.html. http.FileServerFS otherwise lists such a directory.
 func isBareDir(ui fs.FS, urlPath string) bool {
 	name := cmp.Or(strings.TrimPrefix(path.Clean("/"+urlPath), "/"), ".")
 	st, err := fs.Stat(ui, name)
@@ -257,7 +256,7 @@ func isBareDir(ui fs.FS, urlPath string) bool {
 }
 
 // contentSecurityPolicy allows only the dashboard's own scripts, styles,
-// connections and forms; img-src also admits https for forge avatars.
+// connections and forms. img-src also admits https for forge avatars.
 const contentSecurityPolicy = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; " +
 	"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 

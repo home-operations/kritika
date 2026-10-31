@@ -47,14 +47,14 @@
   }
 
   // currentSlug reads the account slug off whatever route is active, when the
-  // route carries one — every account-scoped Route variant does.
+  // route carries one. Every account-scoped Route variant carries one.
   function currentSlug(r: Route): string | undefined {
     return 'slug' in r ? r.slug : undefined;
   }
 
   // Gated the same way as the sidebar: the administration's pages
   // and each account's audit log are for admins, and "Sign in" only makes
-  // sense when there's no session yet.
+  // sense when there is no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', hint: 'instance', words: true, route: { name: 'overview' }, icon: mdiViewGridOutline, keywords: 'all accounts' }];
     if (me) {
@@ -164,7 +164,7 @@
   <Dialog.Portal>
     <Dialog.Overlay class="overlay fixed [inset:0] z-[var(--z-overlay)] [background:color-mix(in_srgb,_var(--bg)_60%,_transparent)]" />
     <Dialog.Content class="modal palette top-[12vh] left-0 right-0 my-0 mx-auto w-[min(640px,_92vw)] max-h-[70vh] flex flex-col rounded-[10px] shadow-[0_16px_48px_color-mix(in_srgb,_var(--text)_25%,_transparent)] overflow-hidden" aria-label="Go to">
-      <!-- The rows are already the ones that match, so Bits UI's own filter is off; it keeps the cursor and the arrow keys. -->
+      <!-- The rows are already the ones that match, so Bits UI's own filter is off. Bits UI keeps the cursor and the arrow keys. -->
       <Command.Root class="palette-command flex flex-col min-h-0" shouldFilter={false} loop label="Go to">
         <div class="palette-input flex items-center gap-2.5 py-[11px] px-3.5 border-b border-solid border-b-line text-muted">
           <Icon path={mdiMagnify} size={16} />

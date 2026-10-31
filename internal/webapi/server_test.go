@@ -358,8 +358,8 @@ func TestUIServesFilesOnly(t *testing.T) {
 				}
 			})
 		}
-		// The test server's auth has no store: resolving the cookie would fail
-		// the request, so an asset served with one never looked it up.
+		// The test server's auth has no store: resolving the cookie fails the
+		// request, so an asset served with one never looked it up.
 		t.Run(web+" an asset skips the session lookup", func(t *testing.T) {
 			r := httptest.NewRequest("GET", base+"/assets/app-1.css", nil)
 			r.AddCookie(&http.Cookie{Name: auth.SessionCookieName(ts.srv.webURL), Value: "tok"})

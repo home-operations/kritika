@@ -2,7 +2,7 @@
 // reads the same. Pure and rune-free, so tests import it directly.
 //
 //   An instant (when a review started, a job is due): relative while it is
-//   within a week either way, "5m ago" or "in 5m"; beyond that its date,
+//   within a week either way, "5m ago" or "in 5m". Beyond that, its date,
 //   "Sep 1", with the year when it is not this one. Always through
 //   components/Time.svelte, which carries the full timestamp on hover.
 //
@@ -13,7 +13,7 @@
 //   settings, or else their browser's.
 //
 //   A day a figure is counted over (a chart column, a table row): the
-//   server's days are UTC, so "Sep 1, 2026" in UTC; "Sep 1" where the year
+//   server's days are UTC, so "Sep 1, 2026" in UTC. "Sep 1" where the year
 //   only crowds, as on a chart's axis.
 //
 // The words are English like the rest of the dashboard, whatever the
@@ -27,7 +27,7 @@ export function hour12Of(locale?: string): boolean {
 }
 
 // DatePrefs is what the viewer chose over the browser's own: a time zone,
-// an IANA name, and a clock, '12' or '24'; '' leaves either to the browser.
+// an IANA name, and a clock, '12' or '24'. '' leaves either to the browser.
 export interface DatePrefs {
   timeZone: string;
   clock: '' | '12' | '24';
@@ -102,8 +102,8 @@ export function timestamp(iso: string | null | undefined): string {
   return Number.isNaN(t) ? '' : fmt.stamp.format(t);
 }
 
-// day renders a UTC day the server keys a figure by, "2026-09-01"; a key
-// that is not a day is returned as it is.
+// day renders a UTC day the server keys a figure by, "2026-09-01". It returns
+// a key that is not a day as it is.
 export function day(key: string, short = false): string {
   const t = Date.parse(`${key}T00:00:00Z`);
   return Number.isNaN(t) ? key : (short ? dayShortFmt : dayFmt).format(t);

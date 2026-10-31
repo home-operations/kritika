@@ -25,7 +25,7 @@ type catalogModel struct {
 	Capabilities map[string]any `json:"capabilities,omitempty"`
 }
 
-// effortLevels is a model's capabilities, taking effort at levels.
+// effortLevels is a model's capabilities: it takes effort at levels.
 func effortLevels(levels ...string) map[string]any {
 	effort := map[string]any{"supported": true}
 	for _, l := range []string{"low", "medium", "high", "xhigh", "max"} {

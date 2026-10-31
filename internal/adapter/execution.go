@@ -35,8 +35,8 @@ type Execution struct {
 	logger     *slog.Logger
 }
 
-// Execution resolves both routes before the caller reserves a run's budget.
-// A missing fallback is logged; the primary still gets its configured attempts.
+// Execution resolves both routes before the caller reserves a run's budget. A
+// missing fallback is logged. The primary still gets its configured attempts.
 func (c *Steppers) Execution(file *configfile.File, account *configfile.Account, ref, fallback configfile.ModelRef,
 	halve bool, logger *slog.Logger,
 ) (*Execution, error) {

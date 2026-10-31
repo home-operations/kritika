@@ -68,41 +68,41 @@ type ModelEndpoint struct {
 	Model string `json:"model"`
 	// Granted is the provider/model reference the gateway answers a
 	// review's run with, which its runner records with the conversation it
-	// keeps; the runner calls the model only by Model.
+	// keeps. The runner calls the model only by Model.
 	Granted string `json:"granted,omitempty"`
 }
 
 // AgentLimits bound a review's or a follow-up's agent. A zero limit takes the agent loop's
-// default; a zero timeout leaves the tool loop to the Job deadline.
+// default. A zero timeout leaves the tool loop to the Job deadline.
 type AgentLimits struct {
 	MaxSteps           int   `json:"maxSteps"`
 	MaxToolOutputBytes int   `json:"maxToolOutputBytes"`
 	MaxTokens          int64 `json:"maxTokens"`
 	// MaxPromptTokens bounds the agent's opening prompt, the diff and
-	// context it starts from; zero takes review.DefaultBudgetTokens.
+	// context it starts from. Zero takes review.DefaultBudgetTokens.
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
-	// Parts is the most parts the runner may split a review into, which
-	// the run's grant and deadline cover; under two it never splits.
+	// Parts is the most parts the runner can split a review into, which
+	// the run's grant and deadline cover. Under two, it never splits.
 	// Parallel is the initial capacity held by the worker. A split review
 	// observes later grants through runner_runs.part_slots.
 	// TimeoutSeconds bounds each part.
 	Parts          int `json:"parts,omitempty"`
 	Parallel       int `json:"parallel,omitempty"`
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
-	// CommandTimeoutSeconds bounds one command the run tool executes;
-	// zero takes configfile.DefaultCommandTimeout.
+	// CommandTimeoutSeconds bounds one command the run tool executes.
+	// Zero takes configfile.DefaultCommandTimeout.
 	CommandTimeoutSeconds int `json:"commandTimeoutSeconds,omitempty"`
 	// Fetches bounds fetch_repo's fetches for the run, a split review's
-	// parts between them; zero takes configfile.DefaultFetches.
+	// parts between them. Zero takes configfile.DefaultFetches.
 	Fetches int `json:"fetches,omitempty"`
 	// Hosts name what the gateway lets the commands and fetch_repo reach,
-	// as configfile.EgressHosts lists them, for the tools' descriptions;
-	// empty leaves them unnamed.
+	// as configfile.EgressHosts lists them, for the tools' descriptions.
+	// Empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
-	// CacheLocked says the gateway keeps downloads, as
-	// configfile.GatewayCaches reports, so a repository's tool, whose
-	// download the run checks against a checksum fetched apart from it, is
-	// installed through the cache, naming that checksum in DigestHeader.
+	// CacheLocked says the gateway keeps downloads, as configfile.GatewayCaches
+	// reports. So a repository's tool is installed through the cache. The run
+	// makes sure that the tool's download matches a checksum fetched apart from
+	// it, and the install names that checksum in DigestHeader.
 	CacheLocked bool `json:"cacheLocked,omitempty"`
 	// Env names the variables of the runner's own environment that the
 	// run tool's commands get, the admin's.
@@ -119,13 +119,13 @@ type CommandEnvVar struct {
 
 // CommandEnvPrefix prefixes, on the runner container, the names of the
 // admin's variables for the commands, so they configure the commands and
-// never the runner itself: a GODEBUG, TMPDIR or PGHOST of theirs would
+// never the runner itself: a GODEBUG, TMPDIR or PGHOST of theirs will
 // otherwise change how the runner fetches, logs or connects.
 const CommandEnvPrefix = "KRITIKA_COMMAND_ENV_"
 
 // Prompt is what a review run needs beyond the checkout to write its
 // review prompt and to tell whether the worker will skip the review: the
-// pull request, the review settings with the merge-base .kritika.yaml
+// pull request, the review configuration with the merge-base .kritika.yaml
 // applied, and the last completed review's findings. A follow-up's prompt
 // is written from the same pull request, rules, context files and
 // findings.
@@ -139,7 +139,7 @@ type Prompt struct {
 	// pointed at to read for itself.
 	Context []configfile.ContextFile `json:"context,omitempty"`
 	// Rules are the configuration's rules, each applied when the change
-	// matches its paths; a file rule's file is among the spec's RepoFiles.
+	// matches its paths. A file rule's file is among the spec's RepoFiles.
 	Rules               []configfile.Rule `json:"rules,omitempty"`
 	RequireSuggestedFix bool              `json:"requireSuggestedFix,omitempty"`
 	// Diagram asks the review for a Mermaid diagram of the change's flow
@@ -149,10 +149,10 @@ type Prompt struct {
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`
 	// PriorDiagram is the last completed review's summary diagram, which a
-	// re-review is asked to keep or update; "" when Diagram is off.
+	// re-review is asked to keep or update. It is "" when Diagram is off.
 	PriorDiagram string `json:"priorDiagram,omitempty"`
-	// PriorChecked are the last completed review's notes on what it
-	// checked and found sound, which a re-review is shown with Prior.
+	// PriorChecked are the last completed review's notes on what it made sure
+	// was sound, which a re-review is shown with Prior.
 	PriorChecked []string `json:"priorChecked,omitempty"`
 	// Dismissed are the findings maintainers dismissed on the pull
 	// request, which the review is told not to raise again.
@@ -160,8 +160,8 @@ type Prompt struct {
 	// UnchangedPatchID, when the head's patch id equals it, means the
 	// worker will skip the review, so the agent is not run.
 	UnchangedPatchID string `json:"unchangedPatchId,omitempty"`
-	// Skills are the directories of the merge base the repository's skills
-	// are looked for in, with the scope of those that have one; nil offers
+	// Skills are the directories of the merge base that the repository's skills
+	// are looked for in, with the scope of those that have one. nil offers
 	// none.
 	Skills *Skills `json:"skills,omitempty"`
 	// Filters are the include and exclude lists with a condition only the
@@ -170,20 +170,20 @@ type Prompt struct {
 	// for, and the repository's own.
 	Filters []configfile.Filters `json:"filters,omitempty"`
 	// Continue, when set, lets an incremental review carry on the last
-	// review's conversation, which the gateway serves the run, if the
-	// review would send it the same system prompt and tools; nil starts
-	// afresh.
+	// review's conversation, which the gateway serves the run. It does so if
+	// the system prompt and tools of the review match those of the
+	// conversation. nil starts afresh.
 	Continue *Continuation `json:"continue,omitempty"`
 	// Focus is what the review someone asked for is to look hardest at,
-	// in their words; "" for nothing in particular.
+	// in their words. It is "" for nothing in particular.
 	Focus string `json:"focus,omitempty"`
-	// Reviewers are the reviewers to run, the default one, when it is
-	// among them, by its name alone, the rules, skills and the rest of the
-	// prompt being its own; each other one whose when conditions the
-	// worker found to hold, and which the runner runs when the change
-	// touches its paths. Nil runs the default reviewer alone, as a review
-	// always has. A follow-up carries the reviewer of the finding it
-	// answers about, when that is not the default one.
+	// Reviewers are the reviewers to run. The default one, when it is among
+	// them, is there by its name alone. The rules, skills, and the rest of
+	// the prompt are its own. Each other one is one whose when conditions the
+	// worker found to hold, and the runner runs it when the change touches its
+	// paths. Nil runs the default reviewer alone, as a review always does. A
+	// follow-up carries the reviewer of the finding it answers about, when that
+	// is not the default one.
 	Reviewers []Reviewer `json:"reviewers,omitempty"`
 }
 
@@ -193,13 +193,13 @@ type Prompt struct {
 const SkipUnchangedPatch = "unchanged_patch"
 
 // Reviewer is one reviewer a review runs, as its job document carries it
-// (see configfile.Reviewer): its instructions, or the merge-base file
-// among the spec's RepoFiles they are read from; the categories it may
-// report; the changed paths it reviews, every one when none; its rules,
-// whose when conditions the worker has judged; its skills, as Prompt's;
-// and its agent's bounds where they are lower than the run's. Full says
-// the last review did not run it, so it reviews the whole change rather
-// than what changed since.
+// (see configfile.Reviewer). It holds its instructions, or the merge-base
+// file among the spec's RepoFiles that they are read from. It holds the
+// categories that it can report, and the changed paths that it reviews, every
+// one when none. It holds its rules, whose when conditions the worker judged,
+// and its skills, as Prompt's. It also holds its agent's bounds where they
+// are lower than the run's. Full says the last review did not run it, so it
+// reviews the whole change rather than what changed since.
 type Reviewer struct {
 	Name         string            `json:"name"`
 	Instructions string            `json:"instructions,omitempty"`
@@ -213,14 +213,14 @@ type Reviewer struct {
 }
 
 // ReviewerLimits are a reviewer's agent's bounds where they are lower than
-// the run's AgentLimits; a zero bound is the run's.
+// the run's AgentLimits. A zero bound is the run's.
 type ReviewerLimits struct {
 	MaxSteps       int   `json:"maxSteps,omitempty"`
 	MaxTokens      int64 `json:"maxTokens,omitempty"`
 	TimeoutSeconds int   `json:"timeoutSeconds,omitempty"`
 }
 
-// Continuation is the last review's conversation a review may carry on.
+// Continuation is the last review's conversation that a review can carry on.
 type Continuation struct {
 	// RunID is the run that kept it, and Session the conversation its
 	// steps were sent as, which the gateway sends this run's as too.
@@ -247,17 +247,18 @@ type Spec struct {
 	CheckpointScope string `json:"checkpointScope,omitempty"`
 	// CloneURL is fetched with Secrets.GitToken.
 	CloneURL string `json:"cloneUrl"`
-	// Forge is the repository's forge, github, forgejo, gitlab or gitea; empty is github.
-	// Secrets.GitToken is a GitHub token only on GitHub, where gh and the
-	// repository tools' lookups in the GitHub API are given it.
+	// Forge is the repository's forge, github, forgejo, gitlab or gitea.
+	// Empty is github. Secrets.GitToken is a GitHub token only on GitHub,
+	// where gh and the repository tools' lookups in the GitHub API are given
+	// it.
 	Forge string `json:"forge,omitempty"`
 	// Head is the commit under review or to index. Base is the merge-base
 	// for a review and the previously indexed commit for an incremental
 	// index. PriorHead is the head of the last completed review,
 	// PriorChanged the paths the change touched there, and PriorBase the
-	// merge base it was reviewed against, so the delta since is kept to the
-	// change's own paths, less what the base gained in them, under a merge
-	// or a rebase.
+	// merge base it was reviewed against. So under a merge or a rebase, the
+	// delta since is kept to the change's own paths, less what the base
+	// gained in them.
 	Head         string   `json:"head"`
 	Base         string   `json:"base,omitempty"`
 	PriorHead    string   `json:"priorHead,omitempty"`
@@ -267,11 +268,11 @@ type Spec struct {
 	// context stages, and a review whose every changed path matches one is
 	// skipped.
 	Ignore []string `json:"ignore,omitempty"`
-	// RepoFiles are repository paths read from the merge base: the files
-	// the review settings name, and .kritika.yaml itself when there is one.
+	// RepoFiles are repository paths read from the merge base: the files the
+	// review configuration names, and .kritika.yaml itself when there is one.
 	RepoFiles []string `json:"repoFiles,omitempty"`
-	// Tools are the repository's tools the merge-base .kritika.yaml
-	// declares, each at its version; none offers the image's commands
+	// Tools are the repository's tools that the merge-base .kritika.yaml
+	// declares, each at its version. None offers the image's commands
 	// alone.
 	Tools  repoconfig.Tools `json:"tools,omitempty"`
 	Agent  *AgentLimits     `json:"agent,omitempty"`
@@ -282,11 +283,11 @@ type Spec struct {
 	Thread []review.Message `json:"thread,omitempty"`
 	// Reply says the last of them replied in the thread of one of
 	// kritika's findings without addressing it: the agent answers only if
-	// the reviewer is needed, and may concede the finding.
+	// the reviewer is needed, and can concede the finding.
 	Reply bool `json:"reply,omitempty"`
 }
 
-// Validate checks a spec is one a runner of this build can carry out.
+// Validate makes sure that a spec is one a runner of this build can carry out.
 func (s Spec) Validate() error {
 	if s.Version != Version {
 		return fmt.Errorf("runspec: spec version %d is not supported (want %d)", s.Version, Version)
@@ -336,10 +337,10 @@ func (s Spec) Validate() error {
 }
 
 // Spec size bounds. A spec travels as a key of the run's Secret, which
-// Kubernetes caps at 1 MiB with the credentials beside it, so what grows
+// Kubernetes caps at 1 MiB with the credentials beside it. So what grows
 // with a pull request is cut before it is encoded.
 const (
-	// MaxBytes bounds an encoded spec, leaving the Secret room for the
+	// MaxBytes bounds an encoded spec, and it leaves the Secret room for the
 	// git and gateway tokens.
 	MaxBytes = 900 << 10
 	// MaxPriorFindings is how many of the last review's findings a spec
@@ -360,10 +361,10 @@ const (
 const maxPromptBytes = 768 << 10
 
 // Trim cuts what a pull request can grow without bound to what a spec
-// carries: the body, at a rune boundary, and the prior findings, first to
-// MaxPriorFindings and then, while the encoded prompt is still over its
-// share of the spec, by half at a time, keeping the first in the order the
-// worker read them.
+// carries: the body, at a rune boundary, and the prior findings. The
+// findings are cut first to MaxPriorFindings, then, while the encoded
+// prompt is still over its share of the spec, by half at a time. Trim keeps
+// the first in the order the worker read them.
 func (p *Prompt) Trim() {
 	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, MaxBodyBytes)
 	for i := range p.Issues {
@@ -449,7 +450,7 @@ type Redactions struct {
 	values []string
 }
 
-// Add adds v, once; an empty value is nothing to mask.
+// Add adds v, once. An empty value is nothing to mask.
 func (r *Redactions) Add(v string) {
 	if v == "" {
 		return
@@ -489,16 +490,18 @@ func (s Secrets) Mask(text string) string {
 	return text
 }
 
-// DigestHeader names, on a plain HTTP request a runner makes of the
-// gateway, the digest its body must have, as "sha256:<hex>" or
-// "sha512:<hex>": the checksum the runner fetched apart from a download
-// and checks it against. The gateway's cache keeps such a download by that
-// digest, from any host the rules allow, and only a body that has it; the
-// gateway marks the request egress.ForDigest and sends the header no
-// further. A command can name a digest too, and gets a cached body only if
-// it has it; a request the cache passes over, a body without the digest
-// among them, gets the origin's answer as is, which the caller still
-// checks, as the runner does.
+// DigestHeader names, on a plain HTTP request that a runner makes of the
+// gateway, the digest that its body must have, as "sha256:<hex>" or
+// "sha512:<hex>". That digest is the checksum that the runner fetched apart
+// from a download, and the runner makes sure that the download matches it.
+// The gateway's cache keeps such a download by that digest, from any host the
+// rules allow, and only a body that has it. The gateway marks the request
+// egress.ForDigest and sends the header no further.
+//
+// A command can name a digest too, and gets a cached body only if it has it.
+// A request that the cache passes over, a body without the digest among them,
+// gets the origin's answer as is. The caller still makes sure that the answer
+// has the digest, as the runner does.
 const DigestHeader = "Kritika-Digest"
 
 // AquaRegistryPath is where a runner reads, with its run token, the aqua

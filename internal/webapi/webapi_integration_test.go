@@ -52,9 +52,8 @@ apps:
 `
 
 // followupComment is answered in both accounts, as comment ids from two
-// forges may collide; onlyBComment is answered only in account B. Both
-// exceed int4, as GitHub's comment ids do, so the queries must bind them
-// as bigint.
+// forges can collide. onlyBComment is answered only in account B. Both exceed
+// int4, as GitHub's comment ids do, so the queries must bind them as bigint.
 const (
 	followupComment = 4168513971
 	onlyBComment    = 4168513972
@@ -133,9 +132,9 @@ func (e *apiEnv) scalar(sql string, args ...any) string {
 }
 
 // seedAccount writes a pull request with a finished agentic review, its
-// runner and agent runs, context pack, findings, usage, model calls, an
-// index run, a follow-up and a queued job, all as the owner so no policy
-// stands in the way.
+// runner and agent runs, context pack, findings, usage and model calls. It
+// also writes an index run, a follow-up and a queued job. It writes all of
+// them as the owner, so no policy stands in the way.
 func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	e.t.Helper()
 	owner, _, _ := strings.Cut(repo, "/")
@@ -376,8 +375,8 @@ func (e *apiEnv) bMarkers() []string {
 }
 
 // testCrossAccountIDs asks for account B's rows by id under account A's slug:
-// even an admin, who may read B, finds nothing, since the query runs
-// scoped to A.
+// even an admin, who can read B, finds nothing, since the query runs scoped
+// to A.
 func testCrossAccountIDs(t *testing.T, e *apiEnv) {
 	a := "/api/v1/accounts/github/wa"
 	paths := []string{
@@ -526,7 +525,7 @@ func testRepoPagination(t *testing.T, e *apiEnv) {
 }
 
 // testRepoKinds: the repository list leaves out archived repositories and
-// forks, but for a fork turned on by its own entry, as wa/one's is; each
+// forks, except for a fork turned on by its own entry, as wa/one's is. Each
 // has a list of its own, and neither counts as the account's.
 func testPullsByAuthor(t *testing.T, e *apiEnv) {
 	for author, want := range map[string]string{"ada": `"title":"PR of webapi-a"`, "Ada": `"title":"PR of webapi-a"`, "ad": `"items":[]`} {
@@ -558,8 +557,8 @@ func testPullNumbersOutsideInt4(t *testing.T, e *apiEnv) {
 }
 
 // testFindingsExport downloads the account's findings as Markdown and as
-// JSON, each a file named for the account, and refuses an export of no
-// format it serves.
+// JSON, each a file named for the account. It also refuses an export of no
+// format that it serves.
 func testFindingsExport(t *testing.T, e *apiEnv) {
 	a := "/api/v1/accounts/github/wa/findings/export"
 	for _, tc := range []struct {
@@ -738,8 +737,8 @@ wait:
 	}
 }
 
-// putSettings replaces who's settings, as the dashboard would, or without
-// its same-origin headers.
+// putSettings replaces who's settings, as the dashboard does, or without its
+// same-origin headers.
 func (e *apiEnv) putSettings(who, body string, sameOrigin bool) int {
 	e.t.Helper()
 	req, err := http.NewRequest(http.MethodPut, e.http.URL+"/api/v1/me/settings", strings.NewReader(body))

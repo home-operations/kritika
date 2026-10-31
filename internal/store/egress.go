@@ -9,26 +9,26 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// refusalsPerRun bounds the refusal rows a run has, one per kind, host
-// and reason: past it a run's further refusals are counted on the rows it
-// has and new ones go unrecorded, so a looping agent cannot fill the
-// table. A variable for the tests.
+// refusalsPerRun bounds the refusal rows that a run has, one per kind, host
+// and reason. Past it, a run's further refusals are counted on the rows it
+// has and new ones go unrecorded. So a looping agent cannot fill the table.
+// It is a variable for the tests.
 var refusalsPerRun = 100
 
 // EgressRefusal is one proxy request the gateway refused a run, with the
 // host as the agent asked for it.
 type EgressRefusal struct {
 	RunID, AccountID string
-	// RepositoryID may be empty for a run that has no repository.
+	// RepositoryID can be empty for a run that has no repository.
 	RepositoryID       string
 	Kind, Host, Reason string
 }
 
 // RecordEgressRefusal counts r against its run: a row for the first
 // refusal of a host for a reason, and that row's count after. It reports
-// false when the run already has refusalsPerRun rows and this would be
-// another. The run's refusals are recorded one at a time, under an
-// advisory lock the transaction holds, so two at once cannot both pass
+// false when the run already has refusalsPerRun rows and this refusal will
+// otherwise be another. The run's refusals are recorded one at a time, under an
+// advisory lock that the transaction holds. So two at once cannot both pass
 // the bound.
 func RecordEgressRefusal(ctx context.Context, tx pgx.Tx, r EgressRefusal) (bool, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('egress_refusals:' || $1::text, 0))`, r.RunID); err != nil {
@@ -61,9 +61,9 @@ type EgressRefusalRow struct {
 }
 
 // ReadEgressRefusals lists the hosts refused in [from, to), by when they
-// were last refused, per repository, the most refused first: every row of
-// the limit most refused hosts, counted over every repository, so a host
-// refused a little in many repositories is not lost behind one refused
+// were last refused, per repository, the most refused first. It lists every
+// row of the limit most refused hosts, counted over every repository. So a
+// host refused a little in many repositories is not lost behind one refused
 // much in one.
 func ReadEgressRefusals(ctx context.Context, tx pgx.Tx, from, to time.Time, limit int) ([]EgressRefusalRow, error) {
 	rows, err := tx.Query(ctx, `WITH refused AS (

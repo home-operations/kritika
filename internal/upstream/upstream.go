@@ -1,9 +1,9 @@
-// Package upstream fetches a repository other than the one under review,
-// such as the upstream of a dependency the change bumps, at one ref into a
-// throwaway bare repository, and writes its files to a directory the run
-// tool's commands can search. Given a second ref it also diffs the two.
-// Like gitfetch it is pure go-git, and every fetch is bounded: what the
-// server may send and what is written are both capped.
+// Package upstream fetches a repository other than the one under review, at
+// one ref, into a throwaway bare repository. An example is the upstream of a
+// dependency that the change bumps. It writes the files of the repository to
+// a directory that the run tool's commands can search. Given a second ref, it
+// also diffs the two. Like gitfetch it is pure go-git, and every fetch is
+// bounded: what the server can send and what is written are both capped.
 package upstream
 
 import (
@@ -58,7 +58,7 @@ type Request struct {
 	// Ref is what to fetch: a tag or branch name, HEAD, or a full commit
 	// SHA.
 	Ref string
-	// From, when set, is an earlier ref of the same kinds; the result then
+	// From, when set, is an earlier ref of the same kinds. The result then
 	// carries the diff from it to Ref.
 	From string
 	// Paths, when set, are the files and directories, relative to the
@@ -69,17 +69,17 @@ type Request struct {
 
 // Limits bound one fetch.
 type Limits struct {
-	// WireBytes caps what the server may send, across every request the
+	// WireBytes caps what the server can send, across every request that the
 	// fetch makes.
 	WireBytes int64
 	// WriteBytes caps the files written. They are written in the tree's
 	// order, so past the cap the paths that sort last are left out.
 	WriteBytes int64
-	// BlobBytes is the largest file written or diffed; a larger one is
-	// left out of both, and not read.
+	// BlobBytes is the largest file written or diffed. A larger one is left
+	// out of both, and not read.
 	BlobBytes int64
-	// DiffBytes caps the diff: a file whose diff would take it past the
-	// cap is left out of it.
+	// DiffBytes caps the diff: a file whose own diff takes it past the cap is
+	// left out of it.
 	DiffBytes int
 }
 
@@ -87,7 +87,7 @@ type Limits struct {
 type Result struct {
 	// Commit is the commit Ref names, and FromCommit the one From names.
 	Commit, FromCommit string
-	// Filtered says the server sent only the files asked for; it sends
+	// Filtered says that the server sent only the files asked for. It sends
 	// the whole tree when no paths are given or it cannot filter.
 	Filtered bool
 	// Files and Bytes are what was written. Skipped counts the symlinks,
@@ -98,9 +98,9 @@ type Result struct {
 	Skipped   int
 	Truncated bool
 	// Diff is the unified diff from FromCommit to Commit, kept to Paths.
-	// Changed lists every path the diff touches, and DiffCut how many of
-	// those files Diff leaves out: those over BlobBytes, and those that
-	// would take it past DiffBytes.
+	// Changed lists every path that the diff touches, and DiffCut says how
+	// many of those files Diff leaves out: those over BlobBytes, and those
+	// that take it past DiffBytes.
 	Diff    string
 	Changed []string
 	DiffCut int
@@ -122,9 +122,9 @@ const nearMax = 5
 // Fetcher fetches repositories within its Limits.
 type Fetcher struct {
 	// Transport carries the fetch's HTTP requests. Nil is a clone of
-	// http.DefaultTransport: a client of kritika's own takes the place of
-	// go-git's, so the transport has to read the proxy, the egress
-	// gateway, from the environment as go-git's does.
+	// http.DefaultTransport. A client of kritika's own takes the place of
+	// go-git's. So the transport has to read the proxy, the egress gateway,
+	// from the environment as go-git's does.
 	Transport http.RoundTripper
 	Limits    Limits
 }
@@ -236,10 +236,10 @@ func (f *Fetcher) wire() (*cappedTransport, func()) {
 	return capped(f.Transport, f.Limits.WireBytes)
 }
 
-// CappedTransport is base, through the pod's proxy as a clone of
-// http.DefaultTransport when nil, whose response bodies read at most max
-// bytes together before a read fails with ErrTooLarge; done releases what
-// a clone holds once the transport is no longer used.
+// CappedTransport is base, whose response bodies read at most max bytes
+// together before a read fails with ErrTooLarge. When base is nil, it is a
+// clone of http.DefaultTransport that goes through the pod's proxy. done
+// releases what a clone holds once the transport is no longer used.
 func CappedTransport(base http.RoundTripper, max int64) (rt http.RoundTripper, done func()) {
 	return capped(base, max)
 }
@@ -249,8 +249,9 @@ func capped(base http.RoundTripper, max int64) (*cappedTransport, func()) {
 		return &cappedTransport{base: base, max: max}, func() {}
 	}
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	// Nothing reuses t once the fetch is done, and it would keep its idle
-	// connections open until they time out.
+	// Nothing reuses t once the fetch is done. Without
+	// t.CloseIdleConnections, t keeps its idle connections open until they
+	// time out.
 	return &cappedTransport{base: t, max: max}, t.CloseIdleConnections
 }
 
@@ -326,10 +327,10 @@ func (f *Fetcher) listErr(wire *cappedTransport, err error) error {
 	return fmt.Errorf("upstream: tags: %w", err)
 }
 
-// newerFirst orders tag names by the numbers in them, compared as
-// numbers and largest first, so v1.10.0 comes before v1.9.0 and
-// gpu-v0.12.1 before gpu-v0.12.0, whatever a name puts around its
-// version. A pre-release is listed just above its release.
+// newerFirst orders tag names by the numbers in them, compared as numbers and
+// largest first. So v1.10.0 comes before v1.9.0 and gpu-v0.12.1 before
+// gpu-v0.12.0, whatever a name puts around its version. A pre-release is
+// listed just above its release.
 func newerFirst(a, b string) int {
 	for a != "" && b != "" {
 		da, db := digitRun(a), digitRun(b)
@@ -358,10 +359,10 @@ func digitRun(s string) int {
 	return n
 }
 
-// fetchErr says why a fetch over wire failed. A ref the server lacks fails
-// as an empty repository when the server lists only the refs asked for, as
-// protocol v2 lets it, which the error leaves out: it reads as a wrong
-// repository rather than a wrong ref.
+// fetchErr says why a fetch over wire failed. A ref that the server lacks
+// fails as an empty repository when the server lists only the refs asked for,
+// as protocol v2 lets it. The error leaves that out: it reads as a wrong
+// repository, not a wrong ref.
 func (f *Fetcher) fetchErr(wire *cappedTransport, err error) error {
 	switch {
 	case wire.over():
@@ -498,10 +499,10 @@ func blobs(files []file, changes object.Changes) []plumbing.Hash {
 	return out
 }
 
-// backfill fetches the blobs a filtered fetch left out. The refs to the
-// fetched commits go first: go-git offers every local ref as a have, and a
-// server told the client has a commit sends none of the blobs under it,
-// wanted or not.
+// backfill fetches the blobs that a filtered fetch left out. It removes the
+// refs to the fetched commits first. go-git offers every local ref as a have.
+// A server told that the client has a commit sends none of the blobs under
+// it, wanted or not.
 func backfill(ctx context.Context, repo *git.Repository, opts []client.Option, hashes []plumbing.Hash) error {
 	var missing []plumbing.Hash
 	for _, h := range hashes {
@@ -601,10 +602,10 @@ func writeBlob(dst *os.Root, name string, blob *object.Blob) error {
 // found.
 const renameLimit = 50
 
-// render is changes, with their renames found, as a unified diff, the
-// paths they touch by their new names, and how many files the diff leaves
-// out: those over l.BlobBytes, which are neither read nor diffed, and those
-// that would take it past l.DiffBytes.
+// render is changes, with their renames found, as a unified diff. It also
+// gives the paths that they touch by their new names, and how many files the
+// diff leaves out. Those are the files over l.BlobBytes, which are neither
+// read nor diffed, and those that take it past l.DiffBytes.
 func render(ctx context.Context, changes object.Changes, l Limits) (string, []string, int, error) {
 	var small, large object.Changes
 	for _, c := range changes {
@@ -647,7 +648,7 @@ func render(ctx context.Context, changes object.Changes, l Limits) (string, []st
 	return b.String(), changed, cut, nil
 }
 
-// check validates r and returns its paths cleaned.
+// check makes sure that r is valid and returns its paths cleaned.
 func (r Request) check() ([]string, error) {
 	if err := checkURL(r.URL); err != nil {
 		return nil, err
@@ -682,9 +683,9 @@ func checkURL(raw string) error {
 	return nil
 }
 
-// checkRef accepts HEAD, a full commit SHA, or a name a remote tag or
-// branch could have, which also keeps it from changing the refspec it is
-// put in.
+// checkRef accepts HEAD, a full commit SHA, or a name that a remote tag or
+// branch can have. This also keeps the ref from changing the refspec that it
+// is put in.
 func checkRef(ref string) error {
 	if ref == "HEAD" || gitfetch.IsSHA(ref) {
 		return nil
@@ -706,7 +707,7 @@ func relPath(p string) (string, error) {
 	return c, nil
 }
 
-// under reports whether name is one of paths or inside one; with no paths,
+// under reports whether name is one of paths or inside one. With no paths,
 // every name is.
 func under(name string, paths []string) bool {
 	if len(paths) == 0 {
@@ -721,9 +722,9 @@ func under(name string, paths []string) bool {
 }
 
 // cappedTransport counts the bytes of every response body it carries and
-// fails the read that passes max. That read returns only the bytes up to
-// max: go-git reads a small response whole, in one read, and parses it from
-// a buffer, so an error that came with every byte would never be seen.
+// fails the read that passes max. That read returns only the bytes up to max.
+// go-git reads a small response whole, in one read, and parses it from a
+// buffer. So an error that comes with every byte is never seen.
 type cappedTransport struct {
 	base http.RoundTripper
 	max  int64
@@ -739,7 +740,7 @@ func (t *cappedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// over reports whether the bodies have passed the cap.
+// over reports whether the bodies passed the cap.
 func (t *cappedTransport) over() bool { return t.n.Load() > t.max }
 
 type cappedBody struct {

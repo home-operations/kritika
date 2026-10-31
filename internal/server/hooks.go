@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-// Public is the handler of the one listener a forge and a browser reach.
-// POST /hooks/{connection}, and the same under basePath, the dashboard
-// URL's path, goes to hooks, which checks each delivery's signature itself;
-// GET /forgejo/.well-known/{document}, and the same under basePath, goes
-// to issuer, the documents a Forgejo instance reads kritika's signing keys
-// from; everything else goes to web, the dashboard, which signs its own
-// requests in.
+// Public is the handler of the one listener that a forge and a browser reach.
+// POST /hooks/{connection}, and the same under basePath, the dashboard URL's
+// path, goes to hooks. hooks does its own signature verification on each
+// delivery. GET /forgejo/.well-known/{document}, and the same under basePath,
+// goes to issuer, the documents that a Forgejo instance reads kritika's
+// signing keys from. Everything else goes to web, the dashboard, which signs
+// its own requests in.
 func Public(basePath string, hooks, issuer, web http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST /hooks/{connection}", hooks)

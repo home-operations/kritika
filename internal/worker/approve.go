@@ -19,7 +19,7 @@ type approvalScope int
 const (
 	approvalInScope approvalScope = iota
 	approvalOutOfScope
-	// approvalUnjudged is conditions that could not be judged: the pull
+	// approvalUnjudged is conditions that kritika failed to judge: the pull
 	// request is neither approved nor its approval dismissed.
 	approvalUnjudged
 	// approvalClosed is a pull request closed since its review began, which
@@ -27,12 +27,12 @@ const (
 	approvalClosed
 )
 
-// judgeApproval reads whether the pull request as it stands, from its
-// stored row, is one kritika approves: open, and one review.approve's
-// conditions hold for, as trigger started the review. The row is read
-// whether or not there are conditions: the review may have begun on an
-// open pull request that merged or closed since, and a head that merges
-// no more is neither approved nor its approval withdrawn.
+// judgeApproval reads whether the pull request as it stands, from its stored
+// row, is one that kritika approves. That means that it is open and that
+// review.approve's conditions hold for it, given that trigger started the
+// review. judgeApproval reads the row whether or not there are conditions.
+// The review can begin on an open pull request that then merges or closes. A
+// head that merges no more is neither approved nor its approval withdrawn.
 func judgeApproval(
 	ctx context.Context, st *store.Store, accountID, prID, trigger string, r configfile.Review, logger *slog.Logger,
 ) approvalScope {
@@ -58,15 +58,15 @@ func judgeApproval(
 }
 
 // approve approves the head when the review's verdict allows it (see
-// approvable) and no reviewer stands as requesting changes, and otherwise
-// dismisses the approval an earlier review gave, so an approval never
+// approvable) and no reviewer stands as requesting changes. Otherwise it
+// dismisses the approval that an earlier review gave, so an approval never
 // outlives the verdict behind it. current says the head is still the pull
 // request's: a head that moved while it was reviewed is left to its own
-// review to approve. A pull request review.approve's conditions do not
-// hold for is not one kritika approves: an approval it gave is dismissed,
-// and otherwise the summary says nothing of approval. All of it is best
-// effort, logged when it fails, and what became of it is returned for the
-// summary to state.
+// review to approve. A pull request that review.approve's conditions do not
+// hold for is not one that kritika approves. An approval that it gave is
+// dismissed, and otherwise the summary says nothing of approval. All of it is
+// best effort, logged when it fails, and what became of it is returned for
+// the summary to state.
 func (p *publishPhase) approve(ctx context.Context, counts review.Counts, current bool, scope approvalScope) *review.Approval {
 	defer p.timeStage("forge_approval")()
 	owner, repo := p.pr.ownerRepo()
@@ -123,9 +123,9 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 	}
 }
 
-// dismissOutOfScope dismisses the approval kritika gave a pull request
-// review.approve's conditions no longer hold for, and says so; one it never
-// approved gets no word on approval.
+// dismissOutOfScope dismisses the approval that kritika gave a pull request
+// that review.approve's conditions no longer hold for, and says so. A pull
+// request that it never approved gets no word on approval.
 func (p *publishPhase) dismissOutOfScope(ctx context.Context) *review.Approval {
 	owner, repo := p.pr.ownerRepo()
 	const why = "review.approve's conditions no longer hold for this pull request"
@@ -168,8 +168,8 @@ func approvable(counts review.Counts, want configfile.Confidence, c *review.Conf
 	return true, fmt.Sprintf("confidence %d/%d with %s risk", c.Score, review.MaxConfidence, c.Risk)
 }
 
-// headCurrent reports whether the reviewed head is still the pull
-// request's; a head that could not be read is taken as moved.
+// headCurrent reports whether the reviewed head is still the pull request's.
+// A head that it failed to read is taken as moved.
 func (p *publishPhase) headCurrent(ctx context.Context) bool {
 	var head string
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {

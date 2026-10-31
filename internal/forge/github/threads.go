@@ -60,9 +60,9 @@ func (c *Client) ThreadResolved(ctx context.Context, owner, repo string, number 
 	return thread.IsResolved, true, nil
 }
 
-// ResolveThread implements forge.Client. GitHub lets an App resolve a
-// thread only with write access to the repository's contents, whatever its
-// access to pull requests, so an installation without it resolves nothing.
+// ResolveThread implements forge.Client. GitHub lets an App resolve a thread
+// only with write access to the repository's contents, whatever its access to
+// pull requests. So an installation without it resolves nothing.
 func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error) {
 	can, err := c.tokens.CanWriteContents(ctx)
 	if err != nil {
@@ -148,8 +148,8 @@ func sameLogin(a, b string) bool {
 const maxGraphQLErrorBytes = 1 << 10
 
 // graphql posts one query with its variables through the installation's
-// authenticated client and decodes data into out; a response with errors
-// is an error.
+// authenticated client and decodes data into out. A response with errors is
+// an error.
 func (c *Client) graphql(ctx context.Context, query string, vars map[string]any, out any) error {
 	body, err := json.Marshal(map[string]any{"query": query, "variables": vars})
 	if err != nil {
@@ -186,8 +186,9 @@ func (c *Client) graphql(ctx context.Context, query string, vars map[string]any,
 		limited = limited || e.Type == "RATE_LIMITED"
 	}
 	if resp.StatusCode != http.StatusOK {
-		// The body is kept for the message: a refusal's own words say why,
-		// a proxy's error page in full would be the job's last error.
+		// The body is kept for the message: a refusal's own words say why.
+		// Without the cut, a proxy's error page in full is the job's last
+		// error.
 		message := fmt.Sprintf("graphql: %s: %s", resp.Status, textcut.Prefix(strings.TrimSpace(string(raw)), maxGraphQLErrorBytes))
 		return graphqlError(resp, message, limited)
 	}

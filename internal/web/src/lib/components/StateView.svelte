@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
   // The loading / error / empty / loaded switch every page shares. Keeps the
   // previous data on screen during a background refetch so a live update
-  // doesn't flash a spinner.
+  // does not flash a spinner.
   import type { Snippet } from 'svelte';
   import type { Resource } from '../resource.svelte';
   import { errorMessage } from '../resource.svelte';

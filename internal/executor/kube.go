@@ -56,18 +56,18 @@ type Kube struct {
 	// DatabaseRole is the database role the runner login must inherit.
 	DatabaseRole string
 	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
-	// and HTTP_PROXY, with its run token as the password the gateway admits
-	// a proxy request by: with the runner network policy allowing nothing
-	// else, every byte the runner sends out passes the gateway's host
-	// allowlist.
-	// Every review needs it, so serve refuses to start without one; the
-	// check here only keeps a test's spec honest.
+	// and HTTP_PROXY. The URL has the run token as the password that the
+	// gateway admits a proxy request by. The runner network policy allows
+	// nothing else, so every byte the runner sends out passes the gateway's
+	// host allowlist. Every review needs it, so serve refuses to start
+	// without one. The check here only keeps a test's spec honest.
 	GatewayURL string
 	// Poll is how often a run reads its Job and pod from the watch again,
-	// besides on each change to them, for the time a pod's start is given.
+	// besides on each change to them. These reads let the run notice when the
+	// time that a pod's start is given runs out.
 	Poll time.Duration
-	// StartGrace is how long a pod may stay unable to start before its run
-	// is given up; startGrace unless set.
+	// StartGrace is how long a pod can stay unable to start before its run
+	// is given up. It is startGrace unless set.
 	StartGrace time.Duration
 	// Events, when set, records the Events on runner Jobs.
 	Events *Events
@@ -126,18 +126,18 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err != nil {
 		err = setupError(ctx, fmt.Errorf("executor: create job: %w", err))
 		if ctx.Err() != nil {
-			// The server may have persisted the Job before the call gave up.
+			// The server can persist the Job before the call gives up.
 			k.deleteJob(ctx, name, "")
 		}
 		return Result{NeverStarted: true, Err: err}
 	}
 	res := Result{JobName: created.Name, JobUID: string(created.UID)}
 	// The Secret is the Job's from the start, so garbage collection deletes
-	// it with the Job whatever becomes of this process; until it exists the
-	// kubelet keeps retrying the Job's pod, which mounts it.
+	// it with the Job whatever becomes of this process. Until the Secret
+	// exists, the kubelet keeps retrying the Job's pod, which mounts it.
 	if unknown, err := k.createSecret(ctx, k.secret(spec, runSpec, created)); err != nil {
-		// A Secret that may have been stored may have started the pod: the
-		// run surely never started only when the API refused it.
+		// If the Secret was possibly stored, the pod possibly started. The run
+		// surely never started only when the API refused the Secret.
 		res.NeverStarted, res.Err = !unknown, setupError(ctx, err)
 		k.deleteJob(ctx, created.Name, created.UID)
 		return res
@@ -171,11 +171,11 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			err = fmt.Errorf("another Job of that name, uid %s", j.UID)
 		}
 		if err != nil {
-			// A Job not in the watch is on its way there, or was deleted by
-			// someone else; one of its name with another UID is an earlier
-			// one the watch has yet to drop. One still missing after
-			// maxMissing ticks is deleted rather than left to run beside the
-			// retry the worker will start.
+			// A Job not in the watch is on its way there, or someone else
+			// deleted it. A Job of its name with another UID is an earlier one
+			// that the watch did not yet drop. A Job still missing after
+			// maxMissing ticks is deleted, not left to run beside the retry that
+			// the worker will start.
 			if tick {
 				missing++
 			}
@@ -210,9 +210,9 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			if stuck == noPod {
 				why = k.whyNoPod(ctx, created.Name)
 			}
-			// The watch may hold a pod's status from before it recovered, or
-			// no pod created meanwhile: the API is asked before the Job is
-			// given up, and a pod list that fails, or one that no longer
+			// The watch can hold a pod's status from before it recovered, or it
+			// can miss a pod created meanwhile. So the API is asked before the
+			// Job is given up. A pod list that fails, or one that no longer
 			// shows what the watch did, gives nothing up.
 			pods, err := k.listedPods(ctx, created)
 			var fresh string
@@ -233,20 +233,20 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	}
 }
 
-// ended says how a Job that finished went, in res, which finish has filled
-// from its pod; started is whether one of its containers was seen running.
+// ended says how a Job that finished went, in res, which finish filled
+// from its pod. started is whether one of its containers was seen running.
 func (k *Kube) ended(ctx context.Context, res *Result, j *batchv1.Job, started bool) {
 	switch {
 	case j.Status.Succeeded > 0:
-	// A Job that failed with no failed pod, none of whose containers was
-	// seen running, no pod for finish and none now, never had one created,
-	// as when the namespace refuses it on admission and its deadline passes
-	// first.
+	// This case is a Job that failed with no failed pod, and none of its
+	// containers was seen running. It had no pod for finish and has none now.
+	// So it never had a pod created, as when the namespace refuses the pod on
+	// admission and the Job's deadline passes first.
 	case j.Status.Failed == 0 && !started && res.PodName == "" && k.podless(ctx, j):
 		res.NeverStarted, res.TerminationReason = true, k.whyNoPod(ctx, j.Name)+"; then "+jobFailure(j)
 		res.Err = fmt.Errorf("executor: job %s never started: %s", j.Name, res.TerminationReason)
 	// The Job's pod failure policy fails it for a disrupted pod alone, which
-	// may be gone by the time finish looks for it.
+	// can be gone by the time finish looks for it.
 	case res.Disruption != "" || failedBy(j, batchv1.JobReasonPodFailurePolicy):
 		res.Disruption = cmp.Or(res.Disruption, jobFailure(j))
 		res.Err = fmt.Errorf("executor: job %s's pod was disrupted: %s", j.Name, res.Disruption)
@@ -266,17 +266,18 @@ func setupError(ctx context.Context, err error) error {
 	return fmt.Errorf("%w (%w)", err, context.Cause(ctx))
 }
 
-// startGrace is how long a runner pod may stay unable to start, uncreated,
-// unscheduled or its container refused, before the run is given up rather
-// than holding its review's slot until the Job's deadline. It outlasts what
-// clears on its own: a registry's hiccup, a node on its way from an
-// autoscaler.
+// startGrace is how long a runner pod can stay unable to start before the
+// run is given up. The pod can be uncreated, unscheduled, or have its
+// container refused. The run is given up so that it does not hold its
+// review's slot until the Job's deadline. startGrace outlasts what clears
+// on its own: a registry's hiccup, a node on its way from an autoscaler.
 const startGrace = 3 * time.Minute
 
-// noPod is why a Job's pod cannot start while none exists: on its way for
-// the moment the Job controller takes to create it, stuck once startGrace
-// passes, as when the namespace refuses it on admission, by a ResourceQuota,
-// Pod Security or a webhook, and the controller keeps trying.
+// noPod is why a Job's pod cannot start while none exists. The pod is on its
+// way for the moment that the Job controller takes to create it. It is stuck
+// once startGrace passes. For example, the namespace refuses it on admission,
+// by a ResourceQuota, Pod Security, or a webhook, and the controller keeps
+// trying.
 const noPod = "no pod was created for the Job"
 
 // stuckReasons are the container waiting reasons of a pod that will not
@@ -284,9 +285,10 @@ const noPod = "no pod was created for the Job"
 // kubelet cannot build, as from a Secret or key that does not exist.
 var stuckReasons = []string{"ErrImagePull", "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError", "CreateContainerError"}
 
-// podStart reports whether a Job's pod, the latest of pods, has started its
-// container, and otherwise why it cannot, empty while it is only on its
-// way, pulling its image; noPod while there is none.
+// podStart reports whether a Job's pod, the latest of pods, started its
+// container, and otherwise why it cannot. The reason is empty while the pod
+// is only on its way and pulling its image. The reason is noPod while there
+// is no pod.
 func podStart(pods []*corev1.Pod) (started bool, stuck string) {
 	if len(pods) == 0 {
 		return false, noPod
@@ -370,8 +372,9 @@ func (k *Kube) whyNoPod(ctx context.Context, job string) string {
 	return noPod + ": " + note
 }
 
-// eventSeen is when an Event was last seen, as the Events API or, for one
-// a controller recorded through the core API, its deprecated fields say.
+// eventSeen is when an Event was last seen, as the Events API says. For an
+// Event that a controller recorded through the core API, its deprecated
+// fields say when.
 func eventSeen(e eventsv1.Event) time.Time {
 	switch {
 	case e.Series != nil:
@@ -382,9 +385,9 @@ func eventSeen(e eventsv1.Event) time.Time {
 	return e.DeprecatedLastTimestamp.Time
 }
 
-// failure is the Job's failed condition, or its FailureTarget, which the
-// Job controller sets first and may count the failed pod under before it
-// adds the other; ok is false when the Job has neither.
+// failure is the Job's failed condition, or its FailureTarget. The Job
+// controller sets FailureTarget first and can count the failed pod under it
+// before it adds the failed condition. ok is false when the Job has neither.
 func failure(j *batchv1.Job) (c batchv1.JobCondition, ok bool) {
 	for _, t := range []batchv1.JobConditionType{batchv1.JobFailed, batchv1.JobFailureTarget} {
 		if i := slices.IndexFunc(j.Status.Conditions, func(c batchv1.JobCondition) bool {
@@ -410,15 +413,16 @@ func jobFailure(j *batchv1.Job) string {
 	return "the Job failed"
 }
 
-// maxMissing is how many ticks in a row a Job may be missing from the watch
+// maxMissing is how many ticks in a row a Job can be missing from the watch
 // before it is given up on: with the default poll, half a minute.
 const maxMissing = 10
 
-// createSecret creates the run's Secret. A create that fails without the
-// API refusing it may have stored the Secret all the same, the answer lost:
-// it is sent again, and the API answering that a Secret of its name exists
-// says it was, the name being the run's alone. unknown is whether a failure
-// leaves open that it was stored, and the Job's pod started with it.
+// createSecret creates the run's Secret. A create can fail without the API
+// refusing it, and the Secret can still be stored, with the answer lost. So
+// the create is sent again. If the API answers that a Secret of its name
+// exists, that says it was stored, because the name is the run's alone.
+// unknown is whether a failure leaves open that it was stored and that the
+// Job's pod started with it.
 func (k *Kube) createSecret(ctx context.Context, secret *corev1.Secret) (unknown bool, err error) {
 	secrets := k.Client.CoreV1().Secrets(k.Namespace)
 	_, err = secrets.Create(ctx, secret, metav1.CreateOptions{})
@@ -434,9 +438,9 @@ func (k *Kube) createSecret(ctx context.Context, secret *corev1.Secret) (unknown
 	return unknown, fmt.Errorf("executor: create secret: %w", err)
 }
 
-// refused reports whether err is the API's answer that it would not carry
-// out a request, which it then did not, rather than a failure that leaves
-// that unknown.
+// refused reports whether err is the API's answer that it will not carry
+// out a request, which it then does not. The alternative is a failure that
+// leaves that unknown.
 func refused(err error) bool {
 	status, ok := errors.AsType[*apierrors.StatusError](err)
 	return ok && status.ErrStatus.Code >= 400 && status.ErrStatus.Code < 500 && status.ErrStatus.Code != http.StatusRequestTimeout
@@ -523,8 +527,8 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets)
 		}
 	}
 	// LimitBytes keeps the first bytes of what it is given, so the tail is
-	// asked for by lines, generously, with LimitBytes only as a ceiling;
-	// the kept tail is cut from the end of what came back.
+	// asked for by lines, generously, with LimitBytes only as a ceiling.
+	// The kept tail is cut from the end of what came back.
 	lines, limit := int64(logTailLines), int64(logReadBytes)
 	logStarted := time.Now()
 	var logErr error
@@ -551,7 +555,7 @@ const (
 
 // logTail is the last LogTailBytes of a pod's log, secrets masked before
 // the cut so none straddles it. A read that hit the byte ceiling ends
-// mid-line, where a secret could be cut short of its mask, so that partial
+// mid-line, where a secret can be cut short of its mask, so that partial
 // line is dropped.
 func logTail(log string, hitCeiling bool, secrets runspec.Secrets) string {
 	if hitCeiling {
@@ -583,7 +587,8 @@ func jobName(runID string) string { return "kritika-run-" + runID[:8] }
 // name can only be the one the run created.
 func secretName(runID string) string { return "kritika-run-" + runID }
 
-// gatewayHost is the host of a gateway URL config has already checked.
+// gatewayHost is the host of a gateway URL. Package config already made sure
+// that the URL is valid.
 func gatewayHost(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -601,7 +606,7 @@ func proxyEnv(gatewayURL string) string {
 }
 
 // runnerLabels are shared by a run's Job, pod and Secret. The role label is what
-// a NetworkPolicy selects runner pods by. A label value may not hold a
+// a NetworkPolicy selects runner pods by. A label value cannot hold a
 // slash, which an owner/repo name does.
 func runnerLabels(spec Spec) map[string]string {
 	l := map[string]string{
@@ -633,13 +638,14 @@ func (k *Kube) secret(spec Spec, runSpec []byte, job *batchv1.Job) *corev1.Secre
 }
 
 // defaultTTL is how long a finished Job stays for kubectl when the
-// jobTemplate sets no ttlSecondsAfterFinished; the run row keeps everything
+// jobTemplate sets no ttlSecondsAfterFinished. The run row keeps everything
 // the Job knew.
 const defaultTTL = 10 * time.Minute
 
 // job builds the Job for a spec. The runner gets its job document as a
 // read-only file and its credentials as variables, both from the run's
-// Secret, and the runner role's DSN from the database Secret; nothing else.
+// Secret. It gets the runner role's DSN from the database Secret. It gets
+// nothing else.
 func (k *Kube) job(spec Spec) *batchv1.Job {
 	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
@@ -662,10 +668,10 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: secret, Key: key, Optional: new(false)}}
 	}
-	// The admin's variables are the commands', named for the runner to
-	// hand on alone, and come first: the kubelet expands a $(NAME) in a
-	// value to a variable defined before it alone, so none of theirs can
-	// take in a credential of the run's.
+	// The admin's variables are the commands', named so that the runner only
+	// hands them on, and come first. The kubelet expands a $(NAME) in a value
+	// only to a variable defined before it. So none of the admin's variables
+	// can take in a credential of the run's.
 	var env []corev1.EnvVar
 	for _, e := range k.PodTemplate.runner().Env {
 		e.Name = runspec.CommandEnvPrefix + e.Name
@@ -751,10 +757,11 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 					PriorityClassName:            pod.PriorityClassName,
 					HostUsers:                    pod.HostUsers,
 					// The chart's gateway name, <service>.<namespace>.svc.<clusterDomain>,
-					// has at least three dots: with ndots at 3 it is looked up as written
-					// rather than through the search list first, whose expansions
-					// of it the chart's Cilium DNS rule refuses and musl's
-					// resolver, which statically linked tools carry, gives up at.
+					// has at least three dots. With ndots at 3, it is looked up
+					// as written and not through the search list first. The
+					// chart's Cilium DNS rule refuses the search list's expansions
+					// of the name. musl's resolver, which statically linked tools
+					// carry, gives up at those expansions.
 					DNSConfig: &corev1.PodDNSConfig{Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: new("3")}}},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: new(true), RunAsUser: new(int64(65532)), RunAsGroup: new(int64(65532)),

@@ -10,8 +10,8 @@ import (
 
 // Rules is what the proxy allows, refuses and adds.
 type Rules struct {
-	// Allow are the destinations a runner may reach and Deny those it may
-	// not, even when Allow matches them. The port is not part of a rule:
+	// Allow are the destinations a runner can reach and Deny those it cannot
+	// reach, even when Allow matches them. The port is not part of a rule:
 	// CONNECT is allowed to 443 only, and an upgraded request always goes
 	// to 443.
 	Allow, Deny List
@@ -30,8 +30,8 @@ type List struct {
 	Hosts []string
 	// Prefixes are addresses, one address alone as a /32 or /128. A
 	// destination given as an address is reached only when an Allow prefix
-	// covers it, and a name's resolved address that is not public must be
-	// covered too.
+	// covers it. A name's resolved address that is not public must be covered
+	// too.
 	Prefixes []netip.Prefix
 }
 
@@ -52,7 +52,7 @@ func (l List) matchesHost(host string) bool {
 }
 
 // contains reports whether a prefix covers addr, or the IPv4 address it
-// embeds, so a rule written for an IPv4 destination holds when a DNS64
+// embeds. So a rule written for an IPv4 destination holds when a DNS64
 // resolver or 6to4 hands the destination over as IPv6.
 func (l List) contains(addr netip.Addr) bool {
 	v4, embeds := embedded(addr)
@@ -104,9 +104,9 @@ func (r Rules) Refuses(host string) string {
 	return ""
 }
 
-// Admit returns the resolved addresses of a name the rules let the proxy
-// dial, or why none may be: a denied address never, a private one only
-// when an Allow prefix covers it.
+// Admit returns the resolved addresses of a name that the rules let the
+// proxy dial, or why none can be dialed. A denied address is never dialed.
+// A private address is dialed only when an Allow prefix covers it.
 func (r Rules) Admit(addrs []netip.Addr) ([]netip.Addr, string) {
 	var ok []netip.Addr
 	denied := false
@@ -130,11 +130,11 @@ func (r Rules) Admit(addrs []netip.Addr) ([]netip.Addr, string) {
 }
 
 // notPublic are the address ranges that are not routed on the internet,
-// so a runner may reach them only through an explicit Allow prefix:
+// so a runner can reach them only through an explicit Allow prefix. They are
 // private and shared address space, loopback, link-local (where the cloud
-// metadata endpoints live), multicast, reserved, benchmarking and the
-// unspecified address, plus the metadata endpoints some clouds put
-// elsewhere.
+// metadata endpoints live), multicast, reserved, benchmarking, and the
+// unspecified address. They also include the metadata endpoints that some
+// clouds put elsewhere.
 var notPublic = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("172.16.0.0/12"),
@@ -168,8 +168,8 @@ func embedded(a netip.Addr) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
-// public reports whether an address is routed on the internet, judging one
-// that carries an IPv4 address by that address.
+// public reports whether an address is routed on the internet. It judges an
+// address that carries an IPv4 address by that IPv4 address.
 func public(a netip.Addr) bool {
 	if v4, ok := embedded(a); ok {
 		a = v4

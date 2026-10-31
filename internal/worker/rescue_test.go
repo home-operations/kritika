@@ -81,7 +81,7 @@ func (f *fakeRescueStore) SweepJobHeartbeats(context.Context) (int64, error) {
 	return 0, nil
 }
 
-// fakeRunDeleter deletes runs' Jobs, refusing the one in fail.
+// fakeRunDeleter deletes runs' Jobs and refuses the one in fail.
 type fakeRunDeleter struct {
 	deleted []string
 	fail    string
@@ -214,9 +214,9 @@ func (f clientsFunc) For(_ context.Context, _ *configfile.Connection, repo strin
 }
 
 // TestRescueReportsAReviewThatWillNotRunAgain: a review job rescued into
-// discarded or cancelled has its head's pending status replaced; one that
-// is retried, a look back that set no status, or a job of another kind,
-// does not.
+// discarded or cancelled has its head's pending status replaced. One that is
+// retried, a look back that set no status, or a job of another kind, does
+// not.
 func TestRescueReportsAReviewThatWillNotRunAgain(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "pem")
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")

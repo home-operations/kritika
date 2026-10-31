@@ -28,7 +28,7 @@ import (
 )
 
 // rival starts a review of head on the harness's pull request the way a
-// second worker's job jobID would, under the publication lock.
+// second worker's job jobID does, under the publication lock.
 func (h *agenticHarness) rival(t *testing.T, head string, jobID int64) (store.Started, error) {
 	t.Helper()
 	return h.rivalAs(t, head, jobID, "test")
@@ -80,9 +80,9 @@ func (h *agenticHarness) waitRunning(t *testing.T, head string) string {
 	return id
 }
 
-// checkReplaced asserts the review a newer one replaced ended as its
-// start recorded it, that its job ran once and completed, and that the
-// head's commit status is still the one the winner owns.
+// checkReplaced asserts that the review that a newer one replaced ended as
+// its start recorded it. It also asserts that its job ran once and completed,
+// and that the head's commit status is still the one the winner owns.
 func (h *agenticHarness) checkReplaced(t *testing.T, id string, winner store.Started) {
 	t.Helper()
 	if r := h.replacedRow(t, id); r.status != "canceled" || r.errText != store.ReplacedReviewError || r.replacedBy != winner.ReviewID {
@@ -118,13 +118,13 @@ func (h *agenticHarness) waitJob(t *testing.T, id string) error {
 	return nil
 }
 
-// TestReplacementCancelsARunningReview: a review that starts while another
-// of the same head runs cancels it, as a second worker's start would. The
-// older review's runner is stopped and its run recorded as such, its slot
-// is let go, it sets no status and posts nothing, and its job is done: a
-// retry of it starts nothing, and nor does a queued review of a head the
-// pull request has moved past. A third start cancels the second the same
-// way, and the first stays pointed at the second.
+// TestReplacementCancelsARunningReview: a review that starts while another of
+// the same head runs cancels it, as a second worker's start does. The older
+// review's runner is stopped and its run recorded as such, and its slot is
+// let go. It sets no status and posts nothing, and its job is done: a retry
+// of it starts nothing, and nor does a queued review of a head that the pull
+// request moved past. A third start cancels the second the same way, and the
+// first stays pointed at the second.
 func TestReplacementCancelsARunningReview(t *testing.T) {
 	h := newAgenticHarness(t, 1991)
 	// The held runner never starts, so no agent row comes once it is stopped.
@@ -188,8 +188,8 @@ func TestReplacementCancelsARunningReview(t *testing.T) {
 }
 
 // TestReplacementBeforePublicationPostsNothing: a review replaced once its
-// runner has answered, before it prepares its publication, ends canceled
-// without posting a comment or touching the head's status.
+// runner answered, before it prepares its publication, ends canceled without
+// posting a comment or touching the head's status.
 func TestReplacementBeforePublicationPostsNothing(t *testing.T) {
 	h := newAgenticHarness(t, 1992)
 	h.sm.reset(scriptSubmit)
@@ -218,10 +218,10 @@ func TestReplacementBeforePublicationPostsNothing(t *testing.T) {
 	h.checkReplaced(t, id, winner)
 }
 
-// TestReplacementWaitsForPublication: a start while the pull request's
-// review is posting finds the publication lock held and comes back later
-// (store.ErrPublicationBusy), so the older review either posts in full or
-// never posts. Once it has, a start replaces nothing.
+// TestReplacementWaitsForPublication: a start while the pull request's review
+// is posting finds the publication lock held and comes back later
+// (store.ErrPublicationBusy). So the older review either posts in full or
+// never posts. Once it posts, a start replaces nothing.
 func TestReplacementWaitsForPublication(t *testing.T) {
 	h := newAgenticHarness(t, 1993)
 	h.sm.reset(scriptSubmit)
@@ -250,10 +250,10 @@ func TestReplacementWaitsForPublication(t *testing.T) {
 	}
 }
 
-// TestReplacementWaitsForIncompletePublication: a review that stopped
-// short posts that under the publication lock as a delivery does, so a
-// start meanwhile waits for it (store.ErrPublicationBusy) rather than
-// letting the older review post over the newer one's result.
+// TestReplacementWaitsForIncompletePublication: a review that stopped short
+// posts that under the publication lock as a delivery does. So a start
+// meanwhile waits for it (store.ErrPublicationBusy) rather than letting the
+// older review post over the newer one's result.
 func TestReplacementWaitsForIncompletePublication(t *testing.T) {
 	h := newAgenticHarness(t, 1994)
 	h.sm.reset(scriptProse)
@@ -308,11 +308,11 @@ func (f *statusHookForge) SetStatus(ctx context.Context, owner, repo, head strin
 }
 
 // TestFailureStatusWaitsForStarts: a review that reports its failure on the
-// head does so under the publication lock, so a start meanwhile waits
-// (store.ErrPublicationBusy) and the failure is not written over what the
-// newer review says of the head: the fallback status of an incomplete
-// review whose summary the forge refused, and the status a job's last
-// attempt sets as it fails.
+// head does so under the publication lock. So a start meanwhile waits
+// (store.ErrPublicationBusy), and the failure is not written over what the
+// newer review says of the head. This covers the fallback status of an
+// incomplete review whose summary the forge refused. It also covers the
+// status that a job's last attempt sets as it fails.
 func TestFailureStatusWaitsForStarts(t *testing.T) {
 	for i, tt := range []struct {
 		name         string
@@ -334,8 +334,9 @@ func TestFailureStatusWaitsForStarts(t *testing.T) {
 			if tt.failComments {
 				h.sm.reset(scriptProse)
 			} else {
-				// A context pack the worker cannot decode fails the attempt
-				// after the runner has answered; the last attempt reports that.
+				// A context pack that the worker cannot decode fails the
+				// attempt after the runner answered. The last attempt reports
+				// that.
 				h.sm.reset(scriptSubmit)
 				job.Attempt = job.MaxAttempts
 				h.exec.after = func() {
@@ -370,11 +371,11 @@ func TestFailureStatusWaitsForStarts(t *testing.T) {
 	}
 }
 
-// TestSkipStatusWaitsForStarts: a review the runner found filtered out
-// completes its job as it records the skip, which frees the head for a
-// review someone asks for; the skip's status and carried approval are then
-// written under the publication lock, so such a start waits
-// (store.ErrPublicationBusy) and the skip is not written over it.
+// TestSkipStatusWaitsForStarts: a review that the runner found filtered out
+// completes its job as it records the skip. That frees the head for a review
+// that someone asks for. The skip's status and carried approval are then
+// written under the publication lock. So such a start waits
+// (store.ErrPublicationBusy), and the skip is not written over it.
 func TestSkipStatusWaitsForStarts(t *testing.T) {
 	h, job, pr, reviewID, runID := filteredPreparation(t, 1997)
 	f := &statusHookForge{localForge: h.lf}
@@ -405,8 +406,8 @@ func TestSkipStatusWaitsForStarts(t *testing.T) {
 	}
 }
 
-// rebase puts the head's change on a new merge base, as a merge of the
-// base branch into the pull request does, and tells the forge: a new
+// rebase puts the head's change on a new merge base, as a merge of the base
+// branch into the pull request does. It tells the forge. The result is a new
 // head, returned, whose patch is the one already reviewed.
 func (h *agenticHarness) rebase(t *testing.T, unrelated string) string {
 	t.Helper()
@@ -436,18 +437,19 @@ func (h *agenticHarness) rebase(t *testing.T, unrelated string) string {
 	return commit("main.go", "package main\n\nfunc b() {}\n")
 }
 
-// TestReplacementOwesTheRequestedReview: a bot's pull request someone
-// asked a review of takes a push that leaves its patch as the last review
-// had it, a merge of the base branch, while the review they asked for
-// runs. The push's review replaces that one and stands in for it: the
-// unchanged patch is reviewed rather than deduped away, so the request
-// ends in a review. Once one completes nothing is owed, and the next such
-// push is skipped before its runner as before. A request whose job has
-// yet to start when the push's review runs is owed the same, and the
-// superseded review that job records once it wakes, after the review
-// that answered it, is dated by the job and owes nothing. A request
-// whose job runs first and finds the head moved records a superseded
-// review the push's review then stands in for.
+// TestReplacementOwesTheRequestedReview: someone asked for a review of a
+// bot's pull request. While that review runs, the pull request takes a push,
+// a merge of the base branch. The push leaves its patch as the last review
+// had it. The push's review replaces the requested review and stands in for
+// it. The unchanged patch is reviewed rather than deduped away, so the
+// request ends in a review. Once one completes nothing is owed, and the next
+// such push is skipped before its runner as before.
+//
+// A request whose job did not yet start when the push's review runs is owed
+// the same. The superseded review that job records once it wakes, after the
+// review that answered it, is dated by the job and owes nothing. A request
+// whose job runs first and finds the head moved records a superseded review.
+// The push's review then stands in for that review.
 func TestReplacementOwesTheRequestedReview(t *testing.T) {
 	h := newAgenticHarness(t, 1118)
 	h.sm.reset(scriptSubmit)
@@ -457,7 +459,7 @@ func TestReplacementOwesTheRequestedReview(t *testing.T) {
 		t.Fatalf("first review = %s: %s", status, errText)
 	}
 	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), first)
-	// The review asked for runs as a second worker's job would.
+	// The review asked for runs as a second worker's job does.
 	asked, err := h.rivalAs(t, h.head, 7_000_010, jobs.TriggerManual)
 	if err != nil || len(asked.Replaced) != 0 {
 		t.Fatalf("the requested review's start = %+v, %v; want it to replace nothing", asked, err)

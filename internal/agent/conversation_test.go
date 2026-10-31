@@ -9,9 +9,9 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 )
 
-// TestRunKeepsItsConversation: a submitted Run hands back its exchange as
-// the last step sent it, with the model's answer to that step last, and
-// it encodes and decodes to itself, a malformed tool input included.
+// TestRunKeepsItsConversation: a submitted Run hands back its exchange as the
+// last step sent it, with the model's answer to that step last. The exchange
+// encodes and decodes to itself, a malformed tool input included.
 func TestRunKeepsItsConversation(t *testing.T) {
 	submit := toolCall("2", "submit_review", validSubmitInput)
 	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
@@ -53,9 +53,9 @@ func TestRunKeepsItsConversation(t *testing.T) {
 	}
 }
 
-// TestRunCarriesOnAConversation: a Run carrying on a conversation sends it
-// whole, then a turn answering each call of its last answer before the new
-// text, and keeps the longer conversation in turn.
+// TestRunCarriesOnAConversation: a Run that carries on a conversation sends
+// it whole. Then it sends a turn that answers each call of the conversation's
+// last answer before the new text. It keeps the longer conversation in turn.
 func TestRunCarriesOnAConversation(t *testing.T) {
 	grep := &fakeTool{name: "grep", output: "hit"}
 	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}

@@ -2,8 +2,8 @@
 // yields tokens, never markup, so highlighted code reaches the page through
 // text interpolation like everything else a review wrote. Shiki, its
 // JavaScript regex engine (the content security policy admits no
-// WebAssembly) and each language load on first use, so a page with no code
-// pays for none of it.
+// WebAssembly) and each language load on first use. A page with no code
+// then pays for none of it.
 import type { HighlighterCore, LanguageRegistration } from 'shiki/core';
 
 type Grammar = { default: LanguageRegistration[] };
@@ -64,8 +64,8 @@ export function languageOf(name: string | undefined): string | undefined {
   return lang in LANGUAGES ? lang : undefined;
 }
 
-// A run of text in one colour: a CSS colour, a var(--code-…) that app.css
-// defines for both themes, or none for the text colour.
+// A run of text in one color: a CSS color, a var(--code-…) that app.css
+// defines for both themes, or none for the text color.
 export interface Token {
   text: string;
   color?: string;
@@ -113,11 +113,11 @@ export async function highlight(code: string, lang: string | undefined): Promise
   );
 }
 
-// highlightDiff highlights a file's diff lines: an array as long as lines,
-// holding each code line's tokens and undefined for a hunk header or a
-// note. The new side (context and additions) and the old (context and
-// deletions) are each read as one text, so a construct that spans lines
-// keeps its colours; a hunk starts mid-file, so its first lines may be read
+// highlightDiff highlights a file's diff lines: an array as long as lines.
+// The array holds each code line's tokens, and undefined for a hunk header or
+// a note. The new side (context and additions) and the old (context and
+// deletions) are each read as one text. A construct that spans lines then
+// keeps its colors. A hunk starts mid-file, so its first lines can be read
 // out of context. undefined when the language is not one highlighted.
 export async function highlightDiff(
   lines: readonly { kind: 'add' | 'del' | 'ctx' | 'hunk' | 'meta'; text: string }[],

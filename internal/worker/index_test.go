@@ -63,8 +63,8 @@ func TestIndexResumeIdentity(t *testing.T) {
 }
 
 // TestIndexMatches: an index is kept, and stepped incrementally, only when
-// the embedder that built it would build the same vectors; the query
-// prompt changes no stored vector.
+// the embedder that built it builds the same vectors. The query prompt
+// changes no stored vector.
 func TestIndexMatches(t *testing.T) {
 	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: "}
 	built := store.Generation{Model: "model", Dims: 8, DocumentPrompt: "text: ", IgnoreHash: "ignore"}

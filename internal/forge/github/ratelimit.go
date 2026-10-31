@@ -11,12 +11,12 @@ import (
 	gh "github.com/google/go-github/v93/github"
 )
 
-// RetryAfter reports how long to wait before trying again after err, when
-// err is GitHub's rate limit from REST or GraphQL: until the primary
-// limit resets, with the second of grace rateLimitWait gives, or for the
-// secondary limit's Retry-After, rateLimitMaxWait when it names none.
-// A job retried sooner only spends an attempt; the REST client also refuses
-// requests locally until its limit resets.
+// RetryAfter reports how long to wait before trying again after err, when err
+// is GitHub's rate limit from REST or GraphQL. The wait lasts until the
+// primary limit resets, with the second of grace that rateLimitWait gives. Or
+// it lasts for the secondary limit's Retry-After, or rateLimitMaxWait when
+// that limit names none. A job retried sooner only spends an attempt. The
+// REST client also refuses requests locally until its limit resets.
 func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 	if e, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return max(e.Rate.Reset.Sub(now)+time.Second, time.Second), true
@@ -27,19 +27,19 @@ func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 	return 0, false
 }
 
-// rateLimitMaxWait bounds how long a request waits out a rate limit before
-// it is sent again. A longer wait is not worth holding a worker for: the
-// response goes back to go-github, which then refuses every request until
-// the reset without asking GitHub, and to the caller, whose job River
-// retries later.
+// rateLimitMaxWait bounds how long a request waits out a rate limit before it
+// is sent again. A longer wait is not worth holding a worker for. The
+// response goes back to go-github, which then refuses every request until the
+// reset without asking GitHub. It also goes back to the caller, whose job
+// River retries later.
 const rateLimitMaxWait = time.Minute
 
-// rateLimitTransport sends a request GitHub refused for a rate limit once
-// more when the limit resets soon. GitHub's secondary limits, on content
+// rateLimitTransport sends a request that GitHub refused for a rate limit
+// once more when the limit resets soon. GitHub's secondary limits, on content
 // creation above all, answer with a Retry-After of seconds to tens of
-// seconds; without the wait every such refusal fails a review or a poll
-// outright, and River's retry, which knows nothing of Retry-After, may
-// come back inside the same window.
+// seconds. Without the wait, every such refusal fails a review or a poll
+// outright. River's retry, which knows nothing of Retry-After, can come back
+// inside the same window.
 type rateLimitTransport struct {
 	base    http.RoundTripper
 	maxWait time.Duration
@@ -102,10 +102,11 @@ func (t *rateLimitTransport) wait(ctx context.Context, d time.Duration) error {
 }
 
 // rateLimitWait reads how long a response says to wait. GitHub answers a
-// rate-limited request with 403 or 429 and either Retry-After, in seconds,
-// for a secondary limit, or x-ratelimit-remaining 0 with the reset as an
-// epoch for the primary one; the wait is never under a second, and a reset
-// gets a second's grace for clock skew. Any other response is not a limit.
+// rate-limited request with 403 or 429. For a secondary limit, the answer has
+// Retry-After, in seconds. For the primary limit, it has
+// x-ratelimit-remaining 0 with the reset as an epoch. The wait is never under
+// a second, and a reset gets a second's grace for clock skew. Any other
+// response is not a limit.
 func rateLimitWait(resp *http.Response, now time.Time) (time.Duration, bool) {
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
 		return 0, false

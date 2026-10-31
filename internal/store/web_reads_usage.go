@@ -58,8 +58,8 @@ var usageKeys = map[UsageGroup][2]string{
 }
 
 // UsageSeriesRow is one key of a usage series. Tokens, cost and calls come
-// from the usage rows, the durable accounting; the cache token counts come
-// from the model calls, which only the transcript retention keeps, so they
+// from the usage rows, the durable accounting. The cache token counts come
+// from the model calls, which only the transcript retention keeps. So they
 // cover at most that window.
 type UsageSeriesRow struct {
 	Key              string
@@ -74,7 +74,7 @@ type UsageSeriesRow struct {
 }
 
 // UsageFilter narrows both durable accounting and retained cache detail.
-// A nil field leaves the dimension unfiltered; an empty value selects
+// A nil field leaves the dimension unfiltered. An empty value selects
 // accounting rows with no attribution for that dimension.
 type UsageFilter struct {
 	Repository *string
@@ -201,7 +201,7 @@ type JobRow struct {
 	CancelableReviewID string
 }
 
-// queueFinished bounds how many finished jobs the queue view lists;
+// queueFinished bounds how many finished jobs the queue view lists.
 // queueActive bounds the unfinished ones, which a healthy queue keeps far
 // below it.
 const (
@@ -211,8 +211,8 @@ const (
 
 // jobColumns selects a JobRow from the account's review, follow-up, thread and
 // index jobs. River's tables carry no row-level security, so the account
-// comes from the transaction's own setting rather than a parameter a caller
-// could get wrong.
+// comes from the transaction's own setting rather than a parameter that a
+// caller can get wrong.
 var jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.created_at, j.scheduled_at, j.attempted_at, j.finalized_at,
 	coalesce(j.args->>'repository_id', ''), coalesce(r.name, ''), coalesce((j.args->>'number')::int, 0),
 	coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
@@ -249,8 +249,8 @@ func scanJob(row pgx.CollectableRow) (JobRow, error) {
 }
 
 // ListQueue returns the account's review, follow-up, thread and index jobs that
-// have not finished, oldest first, then finished ones with recent failures
-// taking priority over the remaining history.
+// did not finish, oldest first. It then returns finished ones, and recent
+// failures take priority over the remaining history.
 func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 	// Rank bounded history and failure candidates together so prioritizing
 	// attention does not sort the account's entire completed-job history.

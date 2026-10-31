@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Everyone who has signed in, with how they sign in and what their
-  // session reads; an admin can sign one out everywhere.
+  // Everyone who signed in, with how they sign in and what their
+  // session reads. An admin can sign one out everywhere.
   import { AlertDialog } from 'bits-ui';
   import { sendJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';

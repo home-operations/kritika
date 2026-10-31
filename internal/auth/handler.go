@@ -18,26 +18,27 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// URL schemes the dashboard may be served on.
+// URL schemes that the dashboard can be served on.
 const (
 	schemeHTTP  = "http"
 	schemeHTTPS = "https"
 )
 
-// sessionCookieBase is the dashboard session cookie's name before its
-// prefix; SessionCookieName is the name a browser sees.
+// sessionCookieBase is the dashboard session cookie's name before its prefix.
+// SessionCookieName is the name that a browser sees.
 const sessionCookieBase = "kritika_session"
 
-// loginCookieBase names the cookie binding an in-flight sign-in to the
-// browser that started it, so a callback URL carried into another browser
+// loginCookieBase names the cookie that binds an in-flight sign-in to the
+// browser that started it. So a callback URL carried into another browser
 // cannot sign that browser in as someone else (login CSRF).
 const loginCookieBase = "kritika_login"
 
 // defaultHTTPTimeout bounds each call to a sign-in provider.
 const defaultHTTPTimeout = 15 * time.Second
 
-// returnToRe is the only shape a post-sign-in destination may take: a route
-// of the dashboard's hash router, so a return_to can never leave WebURL.
+// returnToRe is the only shape that a post-sign-in destination can take: a
+// route of the dashboard's hash router. So a return_to can never leave
+// WebURL.
 var returnToRe = regexp.MustCompile(`^#/[A-Za-z0-9/_.~%-]*$`)
 
 // Config wires a Handler.
@@ -48,7 +49,8 @@ type Config struct {
 	// the cookie's path and Secure flag, and the allowed Origin derive from
 	// it.
 	WebURL *url.URL
-	// HTTPClient calls sign-in providers; nil gets one with a timeout.
+	// HTTPClient calls sign-in providers. A nil value gets one with a
+	// timeout.
 	HTTPClient *http.Client
 	// Now defaults to time.Now.
 	Now func() time.Time
@@ -104,7 +106,7 @@ func New(c Config) (*Handler, error) {
 var ErrWebURL = errors.New("auth: the web URL must be an absolute http or https URL with a host")
 
 // Register mounts the sign-in routes on mux, relative to the dashboard's
-// root; the caller strips any base path.
+// root. The caller strips any base path.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/providers", h.listProviders)
 	mux.HandleFunc("GET /auth/login/{name}", h.login)
@@ -168,11 +170,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, p.AuthCodeURL(state, ls.Nonce, ls.PKCEVerifier), http.StatusFound)
 }
 
-// callback completes a sign-in: it consumes the state the login left,
-// provided this browser holds the login cookie it was bound to, trades the
-// code for an identity, decides what the person may do, and starts a
-// session with that grant in place of any this browser already had. A
-// sign-in that grants nothing is refused.
+// callback completes a sign-in. It consumes the state that the login left,
+// provided that this browser holds the login cookie that the state was bound
+// to. It trades the code for an identity and decides what the person can do.
+// It then starts a session with that grant, in place of any session that this
+// browser already had. callback refuses a sign-in that grants nothing.
 func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name, q := r.PathValue("name"), r.URL.Query()
@@ -237,9 +239,9 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.home()+returnTo(ls.ReturnTo), http.StatusFound)
 }
 
-// replaceSession ends the session r's browser already has, if any, records
-// the signed-in identity, and returns a new session's cookie value and
-// expiry, holding grant g.
+// replaceSession ends the session that r's browser already has, if any. It
+// records the signed-in identity. It returns the cookie value and expiry of a
+// new session that holds grant g.
 func (h *Handler) replaceSession(r *http.Request, id Identity, g store.SessionGrant, ttl time.Duration) (string, time.Time, error) {
 	ctx, now := r.Context(), h.now()
 	if c, err := r.Cookie(SessionCookieName(h.webURL)); err == nil && c.Value != "" {
@@ -283,8 +285,8 @@ const errorPage = `<!doctype html>
 <body><h1>Sign-in failed</h1><p>Error code: <code>%s</code></p><p><a href="%s">Back to kritika</a></p></body></html>
 `
 
-// fail renders the sign-in error page with only a fixed error code; err,
-// which may carry provider detail, goes to the log.
+// fail renders the sign-in error page with only a fixed error code. err,
+// which can carry provider detail, goes to the log.
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, code errorCode, err error) {
 	if err != nil {
 		h.logger.WarnContext(r.Context(), "auth: sign-in failed", "code", code, "sign_in", r.PathValue("name"), "error", err)
@@ -324,10 +326,10 @@ func loginCookiePath(webURL *url.URL) string {
 const hostPrefix = "__Host-"
 
 // cookiePrefix is the prefix on every auth cookie's name. Over https at the
-// root it is __Host-: the browser then accepts the cookie only from this
-// exact host, Secure, with no Domain and Path=/, so a sibling subdomain
+// root it is __Host-. The browser then accepts the cookie only from this
+// exact host, Secure, with no Domain and Path=/. So a sibling subdomain
 // cannot plant a session or login cookie of its own. Under a path only
-// __Secure- is possible; over plain http, none.
+// __Secure- is possible. Over plain http, none is possible.
 func cookiePrefix(webURL *url.URL) string {
 	switch {
 	case webURL.Scheme == schemeHTTP:

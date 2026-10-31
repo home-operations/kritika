@@ -385,8 +385,8 @@ func TestTurnTools(t *testing.T) {
 }
 
 // TestRepoSettingsSkillLoads: each skill scope is served with the load it
-// applies, written or decided by its paths and conditions, without
-// writing through to the settings.
+// applies, written or decided by its paths and conditions, without writing
+// through to the configuration.
 func TestRepoSettingsSkillLoads(t *testing.T) {
 	scope := map[string]configfile.SkillScope{
 		"paths": {Paths: []string{"db/**"}}, "conditions": {When: []configfile.When{{Expr: "pr.draft"}}}, "neither": {},

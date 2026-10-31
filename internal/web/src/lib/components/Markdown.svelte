@@ -1,6 +1,6 @@
 <script lang="ts">
   // Renders the tree markdown.ts makes of model-written prose. Every value
-  // goes through text interpolation (auto-escaped); links are http(s) only.
+  // goes through text interpolation (auto-escaped). Links are http(s) only.
   import { parseMarkdown, type Block, type Inline } from '../markdown';
   import CodeBlock from './CodeBlock.svelte';
   let { text }: { text: string } = $props();

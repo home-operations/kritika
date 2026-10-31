@@ -80,7 +80,7 @@ func TestAgentRoutes(t *testing.T) {
 }
 
 // TestAgentAlways: an agent without categories or conditions always
-// replaces the default pass, which is how an admin takes it over; one
+// replaces the default pass, which is how an admin takes it over. One
 // that is off replaces nothing.
 func TestAgentAlways(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
@@ -98,9 +98,9 @@ func TestAgentAlways(t *testing.T) {
 	}
 }
 
-// TestPickConditions: a condition that fails to evaluate does not hold,
-// and one read back from JSON, with no program, is compiled before it is
-// judged rather than holding on no globs.
+// TestPickConditions: a condition that fails to evaluate does not hold. One
+// read back from JSON, with no program, is compiled before it is judged
+// rather than holding on no globs.
 func TestPickConditions(t *testing.T) {
 	failing := Filter{Expr: `pr.labels[0].name == "x"`}
 	if err := failing.Compile(); err != nil {

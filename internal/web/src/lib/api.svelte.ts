@@ -1,9 +1,10 @@
-// A thin fetch wrapper: every call is same-origin with credentials, tags
-// itself so a reverse proxy or WAF can tell it apart from a browser
-// navigation, and turns a non-2xx response into a typed ApiError instead of
-// forcing every call site to check res.ok. A 401 means the session died
-// (expired cookie, revoked token) — redirect to sign-in without a history
-// entry so "back" doesn't bounce the user right back into the 401.
+// A thin fetch wrapper. Every call is same-origin with credentials, and tags
+// itself so that a reverse proxy or WAF can tell it apart from a browser
+// navigation. The wrapper turns a non-2xx response into a typed ApiError
+// instead of forcing every call site to test res.ok. A 401 means that the
+// session died (expired cookie, revoked token). The wrapper then redirects to
+// sign-in without a history entry, so that "back" does not bounce the user
+// right back into the 401.
 import { basePath } from './base';
 import { parse, replace } from './router.svelte';
 import { session } from './session.svelte';
@@ -24,10 +25,10 @@ export class ApiError extends Error {
 
 const commonHeaders: HeadersInit = { 'X-Kritika': '1' };
 
-// Where SignIn.svelte should send the user back to after signing in: the
+// Where SignIn.svelte must send the user back to after signing in: the
 // hash they were on when a 401 bounced them, captured before replace()
 // overwrites it with #/signin. Never a sign-in route itself: a 401 while
-// already on sign-in doesn't redirect, so returnTo keeps its '' default and
+// already on sign-in does not redirect, so returnTo keeps its '' default and
 // SignIn.svelte falls back to '#/'.
 export const signinState = $state<{ returnTo: string }>({ returnTo: '' });
 
@@ -36,13 +37,13 @@ async function toApiError(res: Response): Promise<ApiError> {
   try {
     body = (await res.json()) as Partial<ErrorBody>;
   } catch {
-    // No JSON body (e.g. a proxy error page) — fall back to the status text.
+    // No JSON body (for example, a proxy error page). Fall back to the status text.
   }
   return new ApiError(res.status, body.code ?? 'unknown', body.message ?? res.statusText);
 }
 
-// toSignIn sends the tab to sign-in, remembering where it was, unless it
-// is already there. The session is forgotten first: the shell sends a
+// toSignIn sends the tab to sign-in and remembers where it was, unless it
+// is already there. It forgets the session first: the shell sends a
 // signed-in user off the sign-in page, straight back into the 401.
 export function toSignIn(): void {
   session.me = undefined;
@@ -53,12 +54,12 @@ export function toSignIn(): void {
 }
 
 async function handle<T>(res: Response): Promise<T> {
-  // The dashboard has no public content: a 401 means the session is dead
-  // (expired cookie, revoked token, or no session at all) and every route --
-  // including the bare root, which has no hash -- redirects to sign-in. The
-  // only guard is against a redirect loop when already on sign-in, decided
-  // by the router's parse so every spelling it accepts (e.g. "#/signin/")
-  // counts.
+  // The dashboard has no public content. A 401 means that the session is dead
+  // (expired cookie, revoked token, or no session at all). Every route then
+  // redirects to sign-in, including the bare root, which has no hash. The
+  // only guard is against a redirect loop when already on sign-in. The
+  // router's parse decides this, so every spelling that it accepts (for
+  // example, "#/signin/") counts.
   if (res.status === 401) toSignIn();
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;

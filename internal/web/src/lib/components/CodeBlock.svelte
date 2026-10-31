@@ -1,8 +1,8 @@
 <script lang="ts">
   // Preformatted text with a copy button. Anything past maxLines is clipped
-  // behind a "show all" toggle so one huge tool result doesn't bury a page.
-  // Code in a language highlight.ts knows is highlighted once that has
-  // loaded, and shown plain until then.
+  // behind a "show all" toggle so that one huge tool result does not bury a page.
+  // Code in a language that highlight.ts knows is highlighted once that loads,
+  // and shown plain until then.
   import { highlight, languageOf } from '../highlight';
   import { Highlighted } from '../tokens.svelte';
   import Copy from './Copy.svelte';

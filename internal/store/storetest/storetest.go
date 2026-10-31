@@ -14,7 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Env is the environment variable key, skipping the test when it is
+// Env is the environment variable key. It skips the test when the key is
 // unset.
 func Env(t testing.TB, key string) string {
 	t.Helper()
@@ -46,8 +46,8 @@ func Open(t testing.TB) *store.Store {
 }
 
 // Repositories records the repositories named, "owner/name", as the forge
-// would report them to their accounts in f, turned on in the dashboard, so
-// a test's reviews and indexing may run on them.
+// reports them to their accounts in f, turned on in the dashboard. So a
+// test's reviews and indexing can run on them.
 func Repositories(t testing.TB, st *store.Store, f *configfile.File, names ...string) {
 	t.Helper()
 	ctx := t.Context()

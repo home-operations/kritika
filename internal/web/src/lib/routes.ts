@@ -1,7 +1,7 @@
 // Pure, rune-free route parsing/serialization for the hash router. Kept out
-// of router.svelte.ts (which needs the .svelte.ts extension because of its
-// `$state` rune) so these functions can be imported by tooling that doesn't
-// go through Svelte's compiler -- e.g. a plain Playwright test.
+// of router.svelte.ts, which needs the .svelte.ts extension because of its
+// `$state` rune. Tooling that does not go through Svelte's compiler can then
+// import these functions, for example a plain Playwright test.
 //
 //   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
@@ -11,15 +11,15 @@
 //   #/analytics[?days=1|7|90]                analytics across accounts
 //   #/usage[?<filter>]                       usage/cost across accounts
 //   #/settings                                the viewer's own settings
-//   #/a/<slug>                              account overview; slug is <forge>/<name>
+//   #/a/<slug>                              account overview (slug is <forge>/<name>)
 //   #/a/<slug>/analytics[?days=1|7|90]       account analytics
 //   #/a/<slug>/repos[?<filter>]              account's repo list
 //   #/a/<slug>/repos/<owner>/<repo>           one repo
-//   #/a/<slug>/pulls[?<filter>]               account's pull list; filter is a PullFilter
+//   #/a/<slug>/pulls[?<filter>]               account's pull list (filter is a PullFilter)
 //   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/a/<slug>/reviews/<id>?finding=<id>      one review, at one of its findings
-//   #/a/<slug>/findings[?<filter>]            account's findings; filter is a FindingFilter
+//   #/a/<slug>/findings[?<filter>]            account's findings (filter is a FindingFilter)
 //   #/a/<slug>/rules                          the files reviews read
 //   #/a/<slug>/queue[?<filter>]              run queue
 //   #/a/<slug>/usage[?<filter>]              usage/cost dashboard
@@ -29,14 +29,15 @@
 // Segments round-trip through encodeURIComponent/decodeURIComponent, so a
 // slug/owner/repo/id/section containing a literal "/" or other reserved
 // character survives href() -> parse(). A single trailing slash is
-// tolerated -- "#/a/<slug>/repos/" parses exactly like "#/a/<slug>/repos" --
-// since href() never produces one but a bookmark or typed URL might. Any
-// other malformation -- an empty non-trailing segment (e.g. "#/a//repos"),
-// more than one trailing slash, an undecodable percent-escape, or extra
-// trailing segments beyond what a route shape accepts -- falls back to that
-// account's overview once a slug has been parsed, and to the global overview
-// otherwise, including when the malformation is what prevents the slug
-// itself from being parsed (e.g. "#/a//acme").
+// tolerated: "#/a/<slug>/repos/" parses exactly like "#/a/<slug>/repos".
+// href() never produces one, but a bookmark or typed URL can. Any other
+// malformation falls back to that account's overview once a slug is parsed,
+// and to the global overview otherwise. That includes when the malformation
+// is what prevents the slug itself from being parsed (for example,
+// "#/a//acme"). The other malformations are an empty non-trailing segment
+// (for example, "#/a//repos"), more than one trailing slash, and an undecodable
+// percent-escape. Extra trailing segments beyond what a route shape accepts
+// are also malformed.
 
 import type { DismissSource, FindingStatus, ReviewStatus, Severity, Category, UsageGroup } from './types';
 import { SEVERITIES, CATEGORIES } from './format';
@@ -70,7 +71,7 @@ export interface PullFilter {
 }
 
 // pullFilter drops the fields of f that are a default, so each filter has
-// one Route and one URL; undefined when nothing is left.
+// one Route and one URL. It returns undefined when nothing is left.
 export const PULL_IS = ['paused', 'p0'] as const;
 
 export function pullFilter(f: { state?: string; outcome?: string; is?: string; repo?: string; author?: string; q?: string }): PullFilter | undefined {
@@ -87,10 +88,10 @@ export function pullFilter(f: { state?: string; outcome?: string; is?: string; r
 }
 
 // FindingFilter is the findings list's filters, in the hash's query like a
-// PullFilter's; a field is present only when it narrows the list.
-// dismissed narrows to the findings that source dismissed, path to those
-// under a path, pr to those whose pull request stands so, and is to those
-// whose comment drew a 👎.
+// PullFilter's. A field is present only when it narrows the list.
+// dismissed narrows to the findings that source dismissed, and path to those
+// under a path. pr narrows to those whose pull request stands so, and is to
+// those whose comment drew a 👎.
 export interface FindingFilter {
   severity?: Severity;
   category?: Category;
@@ -114,8 +115,8 @@ export const DISMISS_SOURCES: readonly DismissSource[] = ['command', 'resolved',
 export const FINDING_PULLS: readonly FindingPull[] = ['open', 'merged', 'closed'];
 export const FINDING_IS = ['downvoted'] as const;
 
-// findingFilter drops the fields of f that match everything; undefined when
-// nothing is left.
+// findingFilter drops the fields of f that match everything. It returns
+// undefined when nothing is left.
 export function findingFilter(f: {
   severity?: string;
   category?: string;
@@ -229,11 +230,11 @@ const PULL_NUMBER = /^\d+$/;
 // segments splits the part of the hash after "#/" on "/" and decodes each
 // piece. A single trailing slash (exactly one trailing empty segment) is
 // tolerated and dropped, so it decodes identically to the same hash without
-// it. Any other malformation -- an empty non-trailing segment, more than one
-// trailing slash, or an undecodable percent-escape -- stops decoding right
-// there: `ok` is false and `parts` holds only what decoded cleanly before
-// the bad segment, so a caller can still recover a slug that was fully
-// parsed before the malformation struck.
+// it. Any other malformation stops decoding right there: an empty
+// non-trailing segment, more than one trailing slash, or an undecodable
+// percent-escape. `ok` is then false and `parts` holds only what decoded
+// cleanly before the bad segment. A caller can still recover a slug that was
+// fully parsed before the malformation struck.
 function segments(hash: string): { parts: string[]; ok: boolean } {
   const stripped = hash.replace(/^#\/?/, '');
   if (stripped === '') return { parts: [], ok: true };
@@ -251,11 +252,11 @@ function segments(hash: string): { parts: string[]; ok: boolean } {
   return { parts: decoded, ok: true };
 }
 
-// parseAccountRoute handles everything under #/a/<forge>/<name>/... , the
-// account's slug being "<forge>/<name>". Anything malformed past the slug --
-// including an extra trailing segment -- falls back to that account's
-// overview rather than the global overview, so a bad deep link still lands
-// the user in-account.
+// parseAccountRoute handles everything under #/a/<forge>/<name>/... , where
+// the account's slug is "<forge>/<name>". Anything malformed past the slug,
+// including an extra trailing segment, falls back to that account's overview
+// rather than the global overview. A bad deep link still lands the user
+// in-account.
 function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams): Route {
   const [section, ...tail] = rest;
   switch (section) {
@@ -336,10 +337,10 @@ export function parse(hash: string): Route {
   const { parts, ok } = segments(q < 0 ? hash : hash.slice(0, q));
   const slug = parts[0] === 'a' && parts[1] !== undefined && parts[2] !== undefined ? `${parts[1]}/${parts[2]}` : undefined;
   if (!ok) {
-    // The malformation struck before a slug could be parsed: nothing to
+    // The malformation struck before a slug was parsed: nothing to
     // fall back into but the global overview. Once a slug WAS parsed, the
     // malformation is downstream of it (a bad section, an empty segment,
-    // extra segments, ...), so fall back to that account's own overview
+    // extra segments, ...). Fall back to that account's own overview
     // instead.
     return slug ? { name: 'account', slug } : { name: 'overview' };
   }

@@ -31,10 +31,11 @@ func (f *File) forgeHosts() []string {
 	return hosts
 }
 
-// validateEgress parses the allow and deny entries, checks that no deny
-// entry cuts off the forge a connection needs, and that each credential
-// names one host that is allowed, explicitly or implicitly; the gateway
-// looks a credential up by exact host, so a pattern would never apply.
+// validateEgress parses the allow and deny entries. It makes sure that no
+// deny entry cuts off the forge that a connection needs. It also makes sure
+// that each credential names one host that is allowed, explicitly or
+// implicitly. The gateway looks a credential up by exact host, so a pattern
+// will never apply.
 func (f *File) validateEgress() error {
 	var err error
 	if f.Egress.allow, err = parseList(f.Egress.Allow); err != nil {
@@ -66,9 +67,9 @@ func (f *File) validateEgress() error {
 	return nil
 }
 
-// parseList sorts entries into hosts and address prefixes, an address
-// alone as a prefix of its own length and an IPv4-mapped IPv6 entry as the
-// IPv4 it maps, which is how the gateway sees such a destination; an error
+// parseList sorts entries into hosts and address prefixes. An address alone
+// becomes a prefix of its own length. An IPv4-mapped IPv6 entry becomes the
+// IPv4 it maps, which is how the gateway sees such a destination. An error
 // names the entry's index.
 func parseList(entries []string) (egresspolicy.List, error) {
 	var l egresspolicy.List
@@ -96,7 +97,7 @@ func parseList(entries []string) (egresspolicy.List, error) {
 // checkHost accepts a lowercase hostname, optionally with a leading "*.",
 // or "*" alone, and nothing else: no scheme, port, path or trailing dot,
 // which the gateway strips from a requested host, so an entry carrying one
-// would never match.
+// will never match.
 func checkHost(h string) error {
 	if h == "*" {
 		return nil
@@ -109,13 +110,14 @@ func checkHost(h string) error {
 	return nil
 }
 
-// EgressRules is what the gateway allows for this file: the configured
-// entries and the connections' forges, GitHub and its API for an App,
-// since runners fetch from the one and gh reads the other, and a Forgejo
-// instance's host for a bot, the denied entries, plus the credentials as
-// Authorization header values, and what its cache never keeps: the GitHub
-// API, which the runner and gh send the run's token, not even for a locked
-// install.
+// EgressRules is what the gateway allows for this file. It has the
+// configured entries and the connections' forges. The forges are GitHub and
+// its API for an App, because runners fetch from the one and gh reads the
+// other. They also include a Forgejo instance's host for a bot. It also has
+// the denied entries, the credentials as Authorization header values, and
+// what its cache never keeps. The cache never keeps the GitHub API, to which
+// the runner and gh send the run's token, not even for a locked install.
+//
 // Provider endpoints are not among them: a runner reaches its model
 // through the gateway's model endpoint, and the worker calls the provider.
 func (f *File) EgressRules() egresspolicy.Rules {
@@ -142,7 +144,7 @@ func (f *File) GatewayCaches() bool { return f.Run.GatewayCacheDir != "" }
 // EgressHosts names the hosts the gateway lets a runner reach, for the
 // agent's tool descriptions: the allowed hosts, the forges' among them, less
 // an exact host a deny entry refuses. A pattern stays as written, and
-// "*" says every host, since the agent is told what it may try, not
+// "*" says every host, since the agent is told what it can try, not
 // what the rules refuse.
 func (f *File) EgressHosts() []string {
 	rules := f.EgressRules()

@@ -14,22 +14,22 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// SlotWake wakes a review River has just saved as snoozed for a model slot
-// when one is free by then: a slot let go between the review finding every
+// SlotWake wakes a review that River just saved as snoozed for a model slot,
+// when a slot is free by then. A slot let go between the review finding every
 // slot held and River saving its snooze found no waiter to wake (see
-// store.SlotWaitKey), and the review would sleep out its snooze with the
-// slot free. It reads the queue client's snoozed-job events, sent once the
-// snooze is saved.
+// store.SlotWaitKey). Without SlotWake, the review then sleeps out its snooze
+// with the slot free. SlotWake reads the queue client's snoozed-job events,
+// sent once the snooze is saved.
 type SlotWake struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Logger  *slog.Logger
 }
 
-// Run checks each snoozed job until ctx ends or events closes, and
-// returns once the checks it started have. River drops the events a slow
-// subscriber leaves in its channel, so each check runs on its own; a
-// dropped one leaves its review to wake when its snooze ends.
+// Run calls check on each snoozed job until ctx ends or events closes, and
+// returns once the checks it started are done. River drops the events that a
+// slow subscriber leaves in its channel, so each check runs on its own. A
+// dropped event leaves its review to wake when its snooze ends.
 func (s *SlotWake) Run(ctx context.Context, events <-chan *river.Event) {
 	var checks sync.WaitGroup
 	defer checks.Wait()

@@ -1,10 +1,10 @@
 <script lang="ts">
   // One row per pull request: its title over its repository, number and
-  // author; its last review's findings and status.
-  // `selected` marks the keyboard cursor; a click anywhere on a row that is
+  // author, and its last review's findings and status.
+  // `selected` marks the keyboard cursor. A click anywhere on a row that is
   // not a control opens its preview. With onpick, each row has a checkbox
-  // for a bulk action, picked naming the ones checked by pullKey; a merged
-  // or closed pull request takes no more reviews, so it has none.
+  // for a bulk action, and picked names the ones checked, by pullKey. A merged
+  // or closed pull request takes no more reviews, so it has no checkbox.
   import { href, router } from '../router.svelte';
   import { rowToggles } from '../rowclick';
   import { pageIn } from '../sections';
@@ -72,7 +72,7 @@
         {@const life = lifecycle(p)}
         {@const key = `${accountOf(p)}:${pullKey(p)}`}
         {@const previewId = `${tableId}-${i}`}
-        <!-- The title is the row's link; the rest of the row toggles its preview. -->
+        <!-- The title is the row's link. The rest of the row toggles its preview. -->
         <tr class="pull-row row-toggles" class:selected={i === selected} class:row-expanded={expanded[key]} data-index={i} onclick={(e) => onRowClick(e, key)}>
           {#if onpick}
             <td class="pick">
@@ -93,7 +93,7 @@
           {#if !slug}<td data-label="Account" class="mono small text-ui-sm"><a href={href(pageIn(router.route, accountOf(p)))}>{accountOf(p)}</a></td>{/if}
           <td class="pull-main">
             <a class="pull-title inline-flex max-w-full items-center gap-1.5 min-w-0 align-top text-ink [font-weight:550] text-[length:15px] leading-[1.5]" href={href(pullRoute(accountOf(p), p))} aria-current={i === selected ? 'true' : undefined}>
-              <!-- A row marks what is no longer simply open, and only a merge in colour: a list of red marks would shout. -->
+              <!-- A row marks what is no longer just open, and only a merge in color: a list of red marks shouts. -->
               {#if life.state !== 'open'}<span class="lifecycle tone-{life.state === 'merged' ? life.tone : 'muted'}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}
               <span class="pull-text min-w-0 overflow-hidden text-ellipsis">{p.title}</span>
             </a>

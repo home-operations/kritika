@@ -128,17 +128,18 @@ func LastForgePatchID(ctx context.Context, tx pgx.Tx, prID string) (string, erro
 
 // ReviewOwed reports whether the pull request owes someone a review: one
 // asked for (jobs.TriggerManual) since its last completed review started
-// that delivered none. That is a job yet to start one, or, as the latest
-// review asked for since says, one still running or prepared, which a
-// newer review's start cancels, canceled by such a start, or superseded
-// by a head that moved, before it started or under it. A review that
-// replaces it stands in for it, so an unchanged bot patch is reviewed
-// rather than deduped away. A request that ended on its own, completed,
-// failed, skipped or capped, or whose cancel was asked for, is not owed.
-// A review a retry superseded is the request's word only until the retry
-// records its own, and one superseded before it started is dated by its
-// job (see EndedReview.CreatedAt), so a stale job that wakes late does
-// not outrank the review that answered it or a newer request.
+// that delivered none. That can be a job yet to start one. It can also be
+// what the latest review asked for since says. That review is still running
+// or prepared, which a newer review's start cancels. Or such a start canceled
+// it, or a head that moved superseded it, before it started or under it.
+//
+// A review that replaces it stands in for it, so an unchanged bot patch is
+// reviewed rather than deduped away. A request that ended on its own,
+// completed, failed, skipped or capped, or whose cancel was asked for, is
+// not owed. A review that a retry superseded is the request's word only
+// until the retry records its own. One superseded before it started is dated
+// by its job (see EndedReview.CreatedAt). So a stale job that wakes late
+// does not outrank the review that answered it or a newer request.
 func ReviewOwed(ctx context.Context, tx pgx.Tx, prID string) (bool, error) {
 	var owed bool
 	err := tx.QueryRow(ctx, `WITH last AS (SELECT coalesce(max(created_at), '-infinity') AS at FROM reviews
@@ -174,13 +175,13 @@ func LastReviewMergeBase(ctx context.Context, tx pgx.Tx, prID, head string) (str
 type ReviewBaseline struct {
 	PatchID    string
 	Confidence *review.Confidence
-	// Changed is every path the baseline's change touched, as its context
-	// pack records; nil when none was written.
+	// Changed is every path that the baseline's change touched, as its context
+	// pack records. It is nil when none was written.
 	Changed []string
 }
 
 // LastReviewBaseline returns the latest reusable review's patch, score and
-// changed paths, excluding reviewID when nonempty. No baseline yields a
+// changed paths. It excludes reviewID when nonempty. No baseline yields a
 // zero value, and SQL NULL or JSON null confidence yields a nil score. The
 // caller chooses the threshold and the risk floors to apply to the score.
 func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (ReviewBaseline, error) {

@@ -18,13 +18,13 @@ import (
 )
 
 // similarTimeout bounds one similar-code request to the gateway, which
-// may wait for the account's embedding slot.
+// can wait for the account's embedding slot.
 const similarTimeout = time.Minute
 
 // maxSimilarBody bounds the gateway's answer: ten chunks.
 const maxSimilarBody = 1 << 20
 
-// searchCalls is how many times one run may call search_code.
+// searchCalls is how many times one run can call search_code.
 const searchCalls = 10
 
 // similarCode asks the gateway for the chunks of the repository's index

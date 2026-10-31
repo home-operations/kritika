@@ -6,8 +6,8 @@ import (
 	"github.com/riverqueue/river/rivertype"
 )
 
-// JobArgs are the parts of a job's arguments the queue shows; fields a
-// kind does not carry are zero.
+// JobArgs are the parts of a job's arguments that the queue shows. Fields
+// that a kind does not carry are zero.
 type JobArgs struct {
 	Repository string `json:"repository"`
 	Number     int    `json:"number"`

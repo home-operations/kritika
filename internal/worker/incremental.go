@@ -12,10 +12,10 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// priorReview is a pull request's last completed review; id is "" when it
-// has none. Its findings leave out the ones maintainers dismissed, which
-// dismissed holds: their threads are resolved already, and the next
-// review is told of them apart.
+// priorReview is a pull request's last completed review. id is "" when it has
+// none. Its findings leave out the ones maintainers dismissed, which
+// dismissed holds: their threads are resolved already, and the next review is
+// told of them apart.
 type priorReview struct {
 	id, headSHA, trigger string
 	// mergeBase is the merge base it was reviewed against.
@@ -79,11 +79,12 @@ func dismissedFindings(dismissed []store.Dismissal) []review.DismissedFinding {
 	return out
 }
 
-// dropDismissed leaves out the findings maintainers dismissed on the pull
-// request, should the model raise one again, and counts them. A dismissed
-// finding is not among the prior findings a raised one carries a
-// fingerprint on from, so it is also known by the path and title it was
-// dismissed under, which may not be the ones its fingerprint was made of.
+// dropDismissed leaves out the findings that maintainers dismissed on the
+// pull request, if the model raises one again, and counts them. A dismissed
+// finding is not among the prior findings that a raised one carries a
+// fingerprint on from. So it is also known by the path and title that it was
+// dismissed under. Those can differ from the ones that its fingerprint was
+// made of.
 func dropDismissed(findings []review.Finding, dismissed []store.Dismissal) ([]review.Finding, int) {
 	if len(dismissed) == 0 {
 		return findings, 0
@@ -97,13 +98,13 @@ func dropDismissed(findings []review.Finding, dismissed []store.Dismissal) ([]re
 	return kept, len(findings) - len(kept)
 }
 
-// carriedDiagram is the diagram a review's summary keeps: drawn, what
-// Parse kept of answer's, or prior when an incremental re-review's answer
-// has no diagram at all. The re-review is asked to keep or update the last
-// diagram, but it looks mostly at the commits since, and may not have been
-// shown the last one, so it may still leave out one that describes the
-// whole change. An empty diagram is its answer that the flow is gone, and
-// stands, as a full review's does whatever it is.
+// carriedDiagram is the diagram that a review's summary keeps: drawn, what
+// Parse kept of answer's, or prior when an incremental re-review's answer has
+// no diagram at all. The re-review is asked to keep or update the last
+// diagram. But it looks mostly at the commits since, and it can run without
+// being shown the last one. So it can still leave out a diagram that
+// describes the whole change. An empty diagram is its answer that the flow is
+// gone, and stands, as a full review's does whatever it is.
 func carriedDiagram(answer json.RawMessage, drawn, prior string, incremental bool) string {
 	if drawn != "" || !incremental {
 		return drawn
@@ -128,9 +129,9 @@ func reviewFindings(prior []priorFinding) []review.Finding {
 	return out
 }
 
-// alreadyInline reports, per finding, the inline comment a prior finding
-// with the same fingerprint already has on the forge, in which case it is
-// not posted again and its thread carries on.
+// alreadyInline reports, per finding, the inline comment that a prior finding
+// with the same fingerprint already has on the forge. In that case, it is not
+// posted again and its thread carries on.
 func alreadyInline(findings []review.Finding, prior []priorFinding) []store.InlinePosted {
 	posted := map[string]store.InlinePosted{}
 	for _, p := range prior {

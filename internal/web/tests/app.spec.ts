@@ -2,7 +2,7 @@ import { test, expect, DEFAULT_ME, DEFAULT_PROVIDERS } from './fixtures';
 
 test.describe('signed-out shell', () => {
   // The dashboard has no public content: a 401 from /api/v1/me on the bare
-  // root -- same as on any other route -- shows the sign-in page rather
+  // root, the same as on any other route, shows the sign-in page rather
   // than a public overview shell.
   test('a 401 at the bare root bounces to sign-in with providers', async ({ page, mockProviders }) => {
     await mockProviders();
@@ -267,7 +267,7 @@ test.describe('theme toggle', () => {
     await expect.poll(stored).toBe('auto');
   });
 
-  // The bundle runs after the first paint may have happened, so the class
+  // The first paint can happen before the bundle runs, so the class
   // must not depend on it.
   test('applies the OS or stored theme without the bundle', async ({ page }) => {
     await page.route('**/assets/*.js', (route) => route.abort());

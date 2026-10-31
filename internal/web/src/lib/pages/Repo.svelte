@@ -29,12 +29,12 @@
   $effect(() => {
     void pulls.load();
   });
-  // A queued index job raises no event until its run starts, so the page
-  // polls while the repository has one, or waits its turn for one.
+  // A queued index job raises no event until its run starts. The page
+  // therefore polls while the repository has one, or waits its turn for one.
   const indexPending = $derived(!!res.data && (res.data.indexJobs.length > 0 || !!res.data.index.backlog));
   $effect(() => (indexPending ? pollJobs(() => void res.load()) : undefined));
   // reindexing is the forced rebuild queued or running, which a second
-  // reindex would only meet as already queued.
+  // reindex only meets as already queued.
   const reindexing = $derived(res.data?.indexJobs.find((j) => j.full));
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
@@ -61,7 +61,7 @@
       .join('; ') || '—';
   const yes = (b: boolean) => (b ? 'yes' : 'no');
   // bounded is the conditions a setting holds under: the admin's, and the
-  // repository file's, which must hold as well; '' for none.
+  // repository file's, which must hold as well. It is '' for none.
   const bounded = (admin: Condition[] = [], repo: Condition[] = []) =>
     [admin.length ? `when ${conditions(admin)}` : '', repo.length ? `${admin.length ? 'and' : 'when'} ${conditions(repo)} (.kritika.yaml)` : '']
       .filter(Boolean)

@@ -69,7 +69,7 @@ type PullRow struct {
 	UnpricedCalls int64
 }
 
-// PullFilter narrows ListPulls. Zero fields match everything; Author is
+// PullFilter narrows ListPulls. Zero fields match everything. Author is
 // the author's login in any case, and Query matches a title or author
 // substring, or a number.
 type PullFilter struct {
@@ -172,7 +172,7 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 // Attention counts the account's open pull requests that want a look, by
 // why: the newest review that was not skipped failed, hit a cap or found
 // a P0 finding, or automatic reviews are paused. One pull request
-// may count under several.
+// can count under several.
 type Attention struct {
 	Failed, Capped, P0, Paused int
 }
@@ -350,7 +350,7 @@ type FollowupRow struct {
 	CreatedAt      time.Time
 }
 
-// FollowupFilter narrows ListFollowups; zero fields match everything.
+// FollowupFilter narrows ListFollowups. Zero fields match everything.
 type FollowupFilter struct {
 	RepositoryID  string
 	PullRequestID string

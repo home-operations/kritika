@@ -1,8 +1,8 @@
 <script lang="ts">
   import PageHeader from '../components/PageHeader.svelte';
   // The instance's landing page: totals across every account the viewer can
-  // see, then one row per account with its numbers and its health, each
-  // cell that names something wrong leading to where the account shows it.
+  // see, then one row per account with its numbers and its health. Each
+  // cell that names something wrong leads to where the account shows it.
   import { href } from '../router.svelte';
   import { Resource, pollJobs } from '../resource.svelte';
   import { tokens, costTotal, reviewsLeftOut, usd, wholeNumber } from '../format';

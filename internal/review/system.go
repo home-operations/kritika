@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-// The reviewer's standing instructions, in the pieces SystemPrompt
-// assembles: what to report and how, the summary, the diagram, and what
-// an agentic review sees and may do.
+// The reviewer's standing instructions, in the pieces that SystemPrompt
+// assembles: what to report and how, the summary, the diagram, and what an
+// agentic review sees and can do.
 
 const systemLead = "You are kritika, a code reviewer for pull requests. "
 
-// systemReport is what a review reports: anything a maintainer could act
+// systemReport is what a review reports: anything that a maintainer can act
 // on.
 const systemReport = `Comment on every line of the diff where a maintainer could act on what you say: bugs, behaviour changes the
 description does not mention, security and data-loss risks, breaking changes, missing error handling, and mistakes
@@ -118,10 +118,10 @@ const keepDiagram = "Return the diagram as you drew it while it still matches th
 const agenticSees = `You see the diff of the change and can read the rest of the head commit
 through tools.`
 
-// The tool paragraphs say when to reach for a tool; what each does, its
-// definition says. agenticTools is the read-only tools a review and a
+// The tool paragraphs say when to reach for a tool. Each tool's definition
+// says what it does. agenticTools is the read-only tools that a review and a
 // follow-up share, and reviewTools follows it in a review: where findings
-// anchor, and that a file the prompt left out is reviewed like the rest.
+// anchor, and that a file that the prompt left out is reviewed like the rest.
 const (
 	agenticTools = `
 
@@ -151,8 +151,8 @@ const agenticSearch = `
 You can also search the repository by meaning with search_code, for what grep cannot find by name. Its index is of
 the default branch and may lag the head commit, so confirm what it returns with read_file before relying on it.`
 
-// agenticCommands follows the tools when the run tool is offered; %s is
-// the commands it runs.
+// agenticCommands follows the tools when the run tool is offered. %s is the
+// commands that it runs.
 const agenticCommands = `
 
 You can also run commands with the run tool: %s. Use it to read the upstream of a dependency the change bumps
@@ -234,10 +234,10 @@ type Rule struct {
 }
 
 // SystemPrompt is the reviewer's standing instructions, with the rules and
-// skills from the admin and the merge base appended. commands are what
-// the run tool offers; none leaves the tool out of the prompt. fetch says
-// fetch_repo is offered, search says search_code is offered, diagram
-// asks for a diagram in the summary, and bumps says the change moves
+// skills from the admin and the merge base appended. commands are what the
+// run tool offers. None leaves the tool out of the prompt. fetch says that
+// fetch_repo is offered, and search says that search_code is offered. diagram
+// asks for a diagram in the summary. bumps says that the change moves
 // versions (see Bumps), which the user message lists.
 func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram, bumps bool) string {
 	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules
@@ -260,17 +260,17 @@ func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search
 	return withSkills(withRules(system, rules, ruleCitation), skills)
 }
 
-// Skill is a skill the repository keeps for a kind of change, as the
-// system prompt gives it: by its name, with what it says it is for, and
-// with Text, its instructions, when the review starts with them rather
-// than reading the skill with load_skill.
+// Skill is a skill that the repository keeps for a kind of change, as the
+// system prompt gives it: by its name, with what it says it is for. It also
+// has Text, its instructions, when the review starts with them rather than
+// reading the skill with load_skill.
 type Skill struct {
 	Name, Description, Text string
 }
 
-// withSkills appends the skills a review is given. They come last: a
-// skill is read on demand, or given because its scope says it applies,
-// and what it says gives way to everything the prompt has already said.
+// withSkills appends the skills that a review is given. They come last: a
+// skill is read on demand, or given because its scope says it applies. What
+// it says gives way to everything that the prompt already said.
 func withSkills(system string, skills []Skill) string {
 	var listed, loaded []string
 	for _, s := range skills {
@@ -297,8 +297,8 @@ func withSkills(system string, skills []Skill) string {
 	return system
 }
 
-// ruleCitation is how a review's findings name the rules they enforce;
-// a follow-up, which has no findings, is not told.
+// ruleCitation is how a review's findings name the rules that they enforce. A
+// follow-up, which has no findings, is not told.
 const ruleCitation = ", and the finding lists the id in rules and copies the passage it enforces into quote, verbatim"
 
 func withRules(system string, rules []Rule, cite string) string {

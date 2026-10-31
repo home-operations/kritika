@@ -16,7 +16,7 @@ import (
 
 // Local runs the runner in this process against the given store, which must
 // be opened with the runner role's DSN. It exists for tests and local
-// development; it is not a supported deployment mode, because it gives the
+// development. It is not a supported deployment mode, because it gives the
 // checkout the worker's credentials.
 type Local struct {
 	Store *store.Store
@@ -73,8 +73,8 @@ func specRoundTrip(s runspec.Spec) (runspec.Spec, error) {
 // small enough to store per run.
 const LogTailBytes = 64 << 10
 
-// tail is the last n bytes of s, less any leading bytes of a rune the cut
-// split, so the result stays valid UTF-8 for a text column.
+// tail is the last n bytes of s, less any leading bytes of a rune that the
+// cut split. So the result stays valid UTF-8 for a text column.
 func tail(s string, n int) string {
 	if len(s) <= n {
 		return s

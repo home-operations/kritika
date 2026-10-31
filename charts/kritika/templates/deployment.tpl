@@ -62,8 +62,8 @@ spec:
         {{- end }}
       {{- end }}
     spec:
-      # The Service is named after the release; the kubelet's legacy link
-      # variables would otherwise inject KRITIKA_PORT and collide with config.
+      # The Service is named after the release. The kubelet's legacy link
+      # variables otherwise inject KRITIKA_PORT and collide with the configuration.
       enableServiceLinks: false
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:

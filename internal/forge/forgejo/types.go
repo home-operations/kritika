@@ -2,8 +2,8 @@ package forgejo
 
 import "time"
 
-// user is a user as the REST API carries one. Gitea types a bot user Bot,
-// as GitHub does; Forgejo types no account, so its bots are told by the
+// user is a user as the REST API carries one. Gitea types a bot user Bot, as
+// GitHub does. Forgejo types no account, so its bots are told by the
 // login-suffix heuristic alone.
 type user struct {
 	Login string `json:"login"`
@@ -79,7 +79,7 @@ type commit struct {
 	} `json:"commit"`
 }
 
-// issue is GET /issues/{index}; pull_request is set when it is a pull
+// issue is GET /issues/{index}. pull_request is set when it is a pull
 // request, which Forgejo files among the issues.
 type issue struct {
 	Number      int             `json:"number"`
@@ -110,11 +110,11 @@ type pullReview struct {
 	Dismissed bool   `json:"dismissed"`
 }
 
-// pullReviewComment is one code comment under a review. position is the
-// line on the new side of the diff, original_position on the old side;
-// resolver is who resolved its conversation, null while it is open. There
-// is no reply relation: Forgejo shows the code comments of one review on
-// one line as one conversation, and a reply joins the root's review.
+// pullReviewComment is one code comment under a review. position is the line
+// on the new side of the diff, and original_position is the line on the old
+// side. resolver is who resolved its conversation, null while it is open.
+// There is no reply relation. Forgejo shows the code comments of one review
+// on one line as one conversation, and a reply joins the root's review.
 type pullReviewComment struct {
 	ID               int64     `json:"id"`
 	ReviewID         int64     `json:"pull_request_review_id"`
@@ -128,10 +128,10 @@ type pullReviewComment struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
-// createReviewComment is one code comment of a review: on line
-// new_position of the new side, and the extra_lines_count lines after it,
-// which a Forgejo that takes the field shows as a range and applies a
-// suggestion to; an older one comments the one line.
+// createReviewComment is one code comment of a review: on line new_position
+// of the new side, and the extra_lines_count lines after it. A Forgejo that
+// takes the field shows those lines as a range and applies a suggestion to
+// them. An older one comments the one line.
 type createReviewComment struct {
 	Path            string `json:"path"`
 	Body            string `json:"body"`

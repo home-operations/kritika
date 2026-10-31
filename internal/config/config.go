@@ -1,4 +1,5 @@
-// Package config loads process settings from the configuration file and environment.
+// Package config loads process configuration from the configuration file and
+// the environment.
 package config
 
 import (
@@ -28,8 +29,8 @@ const (
 	CommandServe Command = "serve"
 	// CommandChatGPTLogin connects a configured provider to a ChatGPT plan.
 	CommandChatGPTLogin Command = "chatgpt login"
-	// CommandConfigCheck loads a configuration file as serve would at
-	// startup, without the database, and reports whether serve would
+	// CommandConfigCheck loads a configuration file as serve does at
+	// startup, without the database, and reports whether serve will
 	// accept it.
 	CommandConfigCheck Command = "config check"
 )
@@ -65,8 +66,8 @@ const (
 	ExecutorLocal Executor = "local"
 )
 
-// Config combines file settings with bootstrap credentials from the environment.
-// Call Load to parse and validate it.
+// Config combines file configuration with bootstrap credentials from the
+// environment. Call Load to parse it and make sure that it is valid.
 type Config struct {
 	Settings
 
@@ -74,16 +75,17 @@ type Config struct {
 	// Changes take effect after a restart.
 	ConfigFile string `env:"KRITIKA_CONFIG_FILE"`
 
-	// DatabaseURL is the DSN every process connects with for request and
+	// DatabaseURL is the DSN that every process connects with for request and
 	// job work. It must be the application role: not a superuser, no BYPASSRLS,
 	// owning nothing, so row-level security applies to it. Runner pods get
-	// the runner role's DSN under the same variable name. Checked at
-	// startup; a DSN that bypasses row-level security refuses to start.
+	// the runner role's DSN under the same variable name. The process makes
+	// sure that this is true at startup. A DSN that bypasses row-level security
+	// refuses to start.
 	DatabaseURL string `env:"KRITIKA_DATABASE_URL,required,notEmpty,unset"`
 
 	// DatabaseOwnerURL is the DSN of the role that owns the schema. It runs
 	// migrations, the configuration loader and the chunks DDL, all of which
-	// write across accounts. serve needs it to become leader; a runner
+	// write across accounts. serve needs it to become leader. A runner
 	// must not have it.
 	DatabaseOwnerURL string `env:"KRITIKA_DATABASE_OWNER_URL,unset"`
 
@@ -112,7 +114,8 @@ type Config struct {
 	// review.
 	GitToken     string `env:"KRITIKA_GIT_TOKEN,unset"`
 	GatewayToken string `env:"KRITIKA_GATEWAY_TOKEN,unset"`
-	// DatabaseToken authenticates this run to its database rows; it has no default.
+	// DatabaseToken authenticates this run to its database rows. It has no
+	// default.
 	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
 	webURL        *url.URL
 	logLevel      slog.Level
@@ -123,8 +126,8 @@ type Config struct {
 // FileDocument returns the document read by Load. Treat the snapshot as read-only.
 func (c *Config) FileDocument() Document { return c.document }
 
-// ValidateRunner checks what a runner pod needs. The job document itself is
-// decoded and validated by package runspec.
+// ValidateRunner makes sure that a runner pod has what it needs. Package
+// runspec decodes the job document itself and makes sure that it is valid.
 func (c *Config) ValidateRunner() error {
 	if c.RunSpecFile == "" {
 		return errors.New("config: KRITIKA_RUN_SPEC_FILE is required to run")
@@ -145,9 +148,9 @@ func (c *Config) WebBasePath() string {
 	return c.webURL.Path
 }
 
-// parseWebURL trims a trailing slash from WebURL, rejects anything that
-// isn't an absolute http(s) URL with a host and no query or fragment, and
-// caches the result for WebURLParsed. A no-op when WebURL is unset.
+// parseWebURL trims a trailing slash from WebURL. It rejects anything that
+// is not an absolute http(s) URL with a host and no query or fragment. It
+// caches the result for WebURLParsed. It is a no-op when WebURL is unset.
 func (c *Config) parseWebURL() error {
 	if c.WebURL == "" {
 		return nil
@@ -168,8 +171,9 @@ func (c *Config) parseWebURL() error {
 	return nil
 }
 
-// Load reads the environment and configuration file, then validates. It fails fast
-// on an invalid value so a misconfigured process never starts serving.
+// Load reads the environment and configuration file, then makes sure that
+// the values are valid. It fails fast on an invalid value so a misconfigured
+// process never starts serving.
 func Load() (*Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {
@@ -181,9 +185,9 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// LoadFile reads the settings and the configuration file at path as Load
-// does, for kritika config check: the variables only a running process
-// reads, the database DSNs among them, are neither read nor required.
+// LoadFile reads the Settings and the configuration file at path as Load
+// does, for kritika config check. The variables that only a running process
+// reads are neither read nor required. The database DSNs are among them.
 func LoadFile(path string) (*Config, error) {
 	s, err := env.ParseAs[Settings]()
 	if err != nil {
@@ -209,8 +213,8 @@ func LoadFile(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// load reads the configuration file, when there is one, and validates the
-// settings.
+// load reads the configuration file, when there is one, and makes sure that
+// the configuration is valid.
 func (c *Config) load() error {
 	if c.ConfigFile != "" {
 		raw, err := os.ReadFile(c.ConfigFile)
@@ -240,15 +244,15 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// The schemes of the URLs the settings name.
+// The schemes of the URLs that the configuration names.
 const (
 	schemeHTTP  = "http"
 	schemeHTTPS = "https"
 )
 
-// checkGatewayURL checks a gateway URL a runner will be handed: http, a
-// host, no path and no credentials, since the run token becomes its
-// password.
+// checkGatewayURL makes sure that a gateway URL that a runner will be handed
+// is http, with a host, no path, and no credentials. It has no credentials
+// because the run token becomes its password.
 func checkGatewayURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -260,7 +264,7 @@ func checkGatewayURL(raw string) error {
 	return nil
 }
 
-// logLevels are the slog levels LogLevel may name.
+// logLevels are the slog levels LogLevel can name.
 var logLevels = map[string]slog.Level{
 	"debug": slog.LevelDebug, "info": slog.LevelInfo, "warn": slog.LevelWarn, "warning": slog.LevelWarn, "error": slog.LevelError,
 }
@@ -268,10 +272,10 @@ var logLevels = map[string]slog.Level{
 // Level is the slog level LogLevel names.
 func (c *Config) Level() slog.Level { return c.logLevel }
 
-// EnvVar is one environment variable Config reads, as this process has it.
-// A secret, one the process unsets once read, shows only whether it is
-// set. Set identifies environment values; File identifies file values, with
-// Path naming their YAML key.
+// EnvVar is one environment variable that Config reads, as this process has
+// it. A secret, which the process unsets once read, shows only whether it is
+// set. Set identifies environment values. File identifies file values, and
+// Path names their YAML key.
 type EnvVar struct {
 	Name   string
 	Path   string
@@ -281,9 +285,9 @@ type EnvVar struct {
 	File   bool
 }
 
-// Env lists the variables Config reads, in the order it declares them. The
-// environment has lost its secrets by the time Load returns, so a secret
-// is set when its field holds a value.
+// Env lists the variables Config reads, in the order it declares them. When
+// Load returns, the secrets are gone from the environment, so a secret is
+// set when its field holds a value.
 func (c *Config) Env() []EnvVar {
 	var out []EnvVar
 	var visit func(reflect.Value, string)

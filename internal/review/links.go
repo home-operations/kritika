@@ -9,10 +9,10 @@ import (
 )
 
 // redirectHost serves github.com's pages under another name. A github.com
-// link to an issue or pull request makes GitHub add a reference to it on
-// the linked page, so a review citing an upstream would add one to every
-// project it read; Renovate and Dependabot link through redirect.github.com
-// for the same reason.
+// link to an issue or pull request makes GitHub add a reference to it on the
+// linked page. Without this host, a review that cites an upstream adds one to
+// every project that it read. Renovate and Dependabot link through
+// redirect.github.com for the same reason.
 const redirectHost = "redirect.github.com"
 
 // SourceLinks is urls as links for a comment, in order and without
@@ -95,16 +95,15 @@ var (
 	shortRef = regexp.MustCompile(`(?:^|[^\w/.@-])([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+)#(\d+)(?:$|[^\w])`)
 )
 
-// RedirectReferences rewrites the GitHub references in text, markdown the
-// model wrote, so the forge does not add a cross-reference to each page
-// they name: a github.com URL moves to redirect.github.com as SourceLinks
-// does, and owner/repo#N becomes a link to that issue or pull request
+// RedirectReferences rewrites the GitHub references in text, markdown that
+// the model wrote. So the forge does not add a cross-reference to each page
+// that they name. A github.com URL moves to redirect.github.com as
+// SourceLinks does. owner/repo#N becomes a link to that issue or pull request
 // there (GitHub redirects /issues/N to the pull request when N is one).
-// References to repository, the "owner/repo" under review, are left
-// alone: a cross-reference there is the author's own. So are references
-// in code spans and fenced blocks, which the forge does not link, and the
-// text of a link already made, which keeps a second pass from nesting
-// one.
+// References to repository, the "owner/repo" under review, are left alone: a
+// cross-reference there is the author's own. So are references in code spans
+// and fenced blocks, which the forge does not link. So is the text of a link
+// already made, which keeps a second pass from nesting one.
 func RedirectReferences(text, repository string) string {
 	return mapProse(text, func(s string) string {
 		s = githubURL.ReplaceAllStringFunc(s, func(m string) string {
@@ -142,12 +141,11 @@ func ownRepository(path, repository string) bool {
 	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
-// mapProse applies fn to the parts of text outside code spans and fenced
-// code blocks, as CommonMark reads them: a fence of three or more
-// backticks or tildes opening a line runs to a line that is a fence of
-// the same character at least as long, or to the end; a run of backticks
-// opens a span closed by the next run of the same length, and one with no
-// closer is text.
+// mapProse applies fn to the parts of text outside code spans and fenced code
+// blocks, as CommonMark reads them. A fence of three or more backticks or
+// tildes can open a line. It runs to a line that is a fence of the same
+// character at least as long, or to the end. A run of backticks opens a span
+// closed by the next run of the same length, and one with no closer is text.
 func mapProse(text string, fn func(string) string) string {
 	var b strings.Builder
 	prose := 0 // start of the prose not yet mapped
@@ -197,8 +195,8 @@ func fenceAt(text string, i int) (int, bool) {
 	return n, n >= 3
 }
 
-// fenceEnd is the index just past the closing fence of the block opened
-// at i by n characters c, or len(text) when it never closes.
+// fenceEnd is the index just past the closing fence of the block that n
+// characters c opened at i. It is len(text) when the block never closes.
 func fenceEnd(text string, i int, c byte, n int) int {
 	for {
 		nl := strings.IndexByte(text[i:], '\n')

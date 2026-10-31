@@ -887,7 +887,7 @@ test('the account overview refreshes attention on a review and ignores model cal
   await expect(page.getByRole('region', { name: 'Account activity' })).toBeVisible();
   await expect(page.locator('[data-loading="true"]')).toHaveCount(0);
   await emit(page, 'model_call');
-  await page.waitForTimeout(500); // Past the refresh debounce: a model call must not have refetched.
+  await page.waitForTimeout(500); // Past the refresh debounce: a model call must not refetch.
   expect(reads).toBe(1);
   await emit(page, 'review');
   await expect.poll(() => reads).toBe(2);
@@ -903,7 +903,7 @@ test('the repository page refreshes on an index run and ignores model calls', as
   await expect.poll(() => repoReads).toBe(1);
   await expect.poll(() => pullReads).toBe(1);
   await emit(page, 'model_call');
-  await page.waitForTimeout(500); // Past the refresh debounce: a model call must not have refetched.
+  await page.waitForTimeout(500); // Past the refresh debounce: a model call must not refetch.
   expect(repoReads).toBe(1);
   expect(pullReads).toBe(1);
   await emit(page, 'index_run');
@@ -932,7 +932,7 @@ test('indexed chunks refresh in open rows and rows reopened after publication', 
     await expect(page.getByRole('region', { name: `Chunks of ${path}`, exact: true }).locator('pre')).toHaveText('generation 1');
   }
   await page.getByRole('button', { name: 'Chunks of other.go', exact: true }).click();
-  // The second publication rebuilds the same commit; commit alone cannot identify a generation.
+  // The second publication rebuilds the same commit. Commit alone cannot identify a generation.
   for (generation = 2; generation <= 3; generation++) {
     await emit(page, 'index_run');
     await expect(page.getByText('bbbbbbb', { exact: true })).toBeVisible();

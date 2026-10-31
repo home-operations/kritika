@@ -1,10 +1,10 @@
 // Markdown for model-written prose (finding explanations, the review
-// take). marked reads it; what it returns is turned here into a small tree
-// of our own kinds, which the Markdown component renders through ordinary
+// take). marked reads it. This file turns what marked returns into a small
+// tree of our own kinds, which the Markdown component renders through ordinary
 // Svelte text interpolation. Every character of API content is escaped:
 // there is no HTML path at all. HTML in the source is shown as the text it
-// is, a link survives only with an http(s) href, and an image is a link to
-// it, since loading one would tell its host who reads the review.
+// is, and a link survives only with an http(s) href. An image is a link to
+// it, since loading one tells its host who reads the review.
 import { lexer, type Token, type Tokens } from 'marked';
 
 export type Inline =
@@ -17,7 +17,7 @@ export type Inline =
   | { kind: 'link'; href: string; inlines: Inline[] };
 
 export interface ListItem {
-  // checked is a task item's box; undefined for an ordinary item.
+  // checked is a task item's box. It is undefined for an ordinary item.
   checked?: boolean;
   blocks: Block[];
 }

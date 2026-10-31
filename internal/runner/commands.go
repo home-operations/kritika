@@ -27,18 +27,19 @@ import (
 // The run tool offers those of them on the runner's PATH, on any image.
 var defaultCommands = []string{"curl", "find", "gh", "grep", "jq"}
 
-// commandTool is the run tool for the commands a run offers over a
-// checkout of tree written to scratch space, and fetch_repo, which writes
-// beside the checkout, when one of the commands already reaches the
-// network. The commands are the defaultCommands on PATH and, over them,
-// those of the repository's own tools, p.Tools, each installed on first
+// commandTool is the run tool for the commands that a run offers over a
+// checkout of tree written to scratch space. It also returns fetch_repo,
+// which writes beside the checkout, when one of the commands already reaches
+// the network. The commands are the defaultCommands on PATH and, over them,
+// those of the repository's own tools, p.Tools. Each is installed on first
 // use.
-// head, when not nil, is the lock the parts of a split review share for
-// reading the head (partLocks), which the checkout holds while it is
+//
+// head, when not nil, is the lock that the parts of a split review share for
+// reading the head (partLocks). The checkout holds that lock while it is
 // written. Both tools are nil, with a no-op cleanup, when there is nothing to
-// offer or the commands cannot be kept from the runner's secrets; the
-// review then goes on with the read-only tools alone. notes say what was
-// not offered, for the review's summary. cleanup removes the scratch space.
+// offer or the commands cannot be kept from the runner's secrets. The review
+// then goes on with the read-only tools alone. notes say what was not
+// offered, for the review's summary. cleanup removes the scratch space.
 func commandTool(
 	ctx context.Context, p runspec.Spec, tree *agent.Tree, head chan struct{}, secrets runspec.Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
@@ -52,18 +53,18 @@ func commandTool(
 		logger.Warn("commands not offered: no scratch space", "error", err)
 		return nil, nil, notes, cleanup
 	}
-	// HOME is apart from the checkout, or a repository could plant the
-	// ~/.curlrc curl reads before its arguments; the runner writes its own,
-	// and keeps HOME read-only once the tool is built, so a command cannot
-	// rewrite it, or the binaries the repository's tools install there. The cache
-	// directory is the commands' XDG_CACHE_HOME, so a tool that keeps a
-	// cache there, as flate does, has somewhere to write it that is not
-	// HOME.
+	// HOME is apart from the checkout. Otherwise, a repository can plant the
+	// ~/.curlrc that curl reads before its arguments. The runner writes its
+	// own, and keeps HOME read-only once the tool is built. So a command
+	// cannot rewrite it, or the binaries that the repository's tools install
+	// there. The cache directory is the commands' XDG_CACHE_HOME. So a tool
+	// that keeps a cache there, as flate does, has somewhere to write it that
+	// is not HOME.
 	dir, home, up, cache := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"),
 		filepath.Join(scratch, upstreamDir), filepath.Join(scratch, "cache")
 	// The scratch space goes however the run ended, so its removal does
 	// not stop with ctx. Only home and the scratch directory itself were
-	// made read-only; home may not exist yet.
+	// made read-only. home possibly does not exist yet.
 	cleanup = func() {
 		err := lockTree(context.WithoutCancel(ctx), home, false)
 		if err := errors.Join(os.Chmod(scratch, 0o755), err); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -129,11 +130,11 @@ func commandTool(
 		tools.locked = true
 	}
 	// The checkout is written on the first command, so a review that reads
-	// the head through its tools alone never writes one; it reads the head
-	// holding head, the lock a split review's parts share for that, when
-	// given one. A checkout that stopped at its cap says so with each
-	// command's result, since the description was sent before it was
-	// written.
+	// the head through its tools alone never writes one. When given head, the
+	// lock that a split review's parts share for reading the head, the checkout
+	// reads the head while it holds that lock. A checkout that stopped at its
+	// cap says so with each command's result, since the description was sent
+	// before it was written.
 	prepare := func(ctx context.Context) (string, error) {
 		release, err := acquire(ctx, head)
 		if err != nil {
@@ -144,8 +145,8 @@ func commandTool(
 		stats, err := tree.Checkout(ctx, dir, agent.MaxCheckoutBytes)
 		if err != nil {
 			logger.Warn("checkout not written", "error", err)
-			// What a stopped checkout wrote would be in the way of the
-			// next command's, which writes every path anew.
+			// What a stopped checkout wrote will otherwise be in the way of
+			// the next command's, which writes every path anew.
 			if err := clearDir(dir); err != nil {
 				logger.Warn("checkout not cleared", "error", err)
 			}
@@ -174,7 +175,7 @@ func commandTool(
 		}
 	}
 	// A cut output is kept beside the checkout, where fetch_repo writes,
-	// within the budget the two share; one file holds at most what
+	// within the budget that the two share. One file holds at most what
 	// read_file reads of a diff, in line ranges.
 	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
@@ -195,12 +196,12 @@ func commandTool(
 	return run, fetch, notes, cleanup
 }
 
-// commandCredentials are the variables the commands that carry a
-// credential get, by command, and the token the repository's tools are
-// looked up in the GitHub API with. gh reaches GitHub over HTTPS, which
-// the gateway cannot add a credential to, so it carries the run's
-// read-only token; a command that carries a credential is never a binary
-// the repository chose. On another forge the token is that forge's: gh
+// commandCredentials are the variables, by command, that the commands that
+// carry a credential get. It also returns the token that the repository's
+// tools are looked up with in the GitHub API. gh reaches GitHub over HTTPS,
+// which the gateway cannot add a credential to, so it carries the run's
+// read-only token. A command that carries a credential is never a binary
+// that the repository chose. On another forge, the token is that forge's: gh
 // and the lookups get none.
 func commandCredentials(p runspec.Spec, secrets runspec.Secrets) (map[string][]string, string) {
 	if !onGitHub(p) {
@@ -210,7 +211,7 @@ func commandCredentials(p runspec.Spec, secrets runspec.Secrets) (map[string][]s
 }
 
 // offered is found less gh on another forge than GitHub, where gh,
-// signed in nowhere, would only fail.
+// signed in nowhere, will only fail.
 func offered(p runspec.Spec, found map[string]string) map[string]string {
 	if !onGitHub(p) {
 		delete(found, "gh")
@@ -222,16 +223,18 @@ func offered(p runspec.Spec, found map[string]string) map[string]string {
 // runspec.Secrets.GitToken is a GitHub token.
 func onGitHub(p runspec.Spec) bool { return p.Forge == "" || p.Forge == string(configfile.ForgeGitHub) }
 
-// curlrc is the configuration curl reads from HOME. Without a terminal
-// curl prints its progress meter to stderr, which the run tool keeps in
-// the result, and --silent would drop its warnings and errors with it.
-// The gateway hands redirects back to the client, so curl follows them
-// itself; it sends credentials only to the initial host. A host the
-// gateway refuses answers a plain http:// request with a 403, which curl
-// would otherwise report as a success, exit code 0 and the refusal as the
-// body; failing on it keeps the body, which names the reason. The proxy
-// variables cover http and https alone, so a URL of any other scheme curl
-// speaks, given or redirected to, would connect around the gateway.
+// curlrc is the configuration that curl reads from HOME. Without a terminal,
+// curl prints its progress meter to stderr, which the run tool keeps in the
+// result. --silent drops its warnings and errors with the meter. The gateway
+// hands redirects back to the client, so curl follows them itself. curl sends
+// credentials only to the initial host.
+//
+// A host that the gateway refuses answers a plain http:// request with a 403.
+// Unless it fails on the 403, curl reports that as a success, with exit code
+// 0 and the refusal as the body. Failing on the 403 keeps the body, which
+// names the reason. The proxy variables cover http and https alone. Without
+// the proto line, a URL of any other scheme that curl speaks, given or
+// redirected to, connects around the gateway.
 const curlrc = "no-progress-meter\nlocation\nfail-with-body\nproto = \"=http,https\"\n"
 
 // clearDir empties dir, which itself stays: its parent, the scratch
@@ -248,11 +251,11 @@ func clearDir(dir string) error {
 	return errors.Join(errs...)
 }
 
-// checkoutFailure is a failed checkout as the model and the summary see
-// it: the run tool would show a path error by its operation and cause
-// alone, so that it never names a path under the scratch space, which
-// would lose the checkout from the message; here the path is dropped the
-// same way, but what could not be written stays named.
+// checkoutFailure is a failed checkout as the model and the summary see it.
+// The run tool shows a path error by its operation and cause alone, so that
+// it never names a path under the scratch space. That loses the checkout
+// from the message. Here the path is dropped the same way, but what failed
+// to be written stays named.
 func checkoutFailure(err error) error {
 	if pe, ok := errors.AsType[*fs.PathError](err); ok {
 		err = fmt.Errorf("%s: %w", pe.Op, pe.Err)
@@ -272,11 +275,12 @@ func markRepository(dir, cloneURL string) error {
 	return err
 }
 
-// The admin's variables for the commands may not set a name the runner
-// sets for a command, one that carries a credential, or one that points a
-// tool at a config file or the loader at a library: CURL_HOME would trade
-// the .curlrc the runner writes for another, and LD_PRELOAD would load a
-// library into every command, gh with the run's token among them.
+// The admin's variables for the commands cannot set a name that the runner
+// sets for a command or a name that carries a credential. They also cannot
+// set a name that points a tool at a configuration file or the loader at a
+// library. Otherwise, CURL_HOME trades the .curlrc that the runner writes for
+// another. LD_PRELOAD loads a library into every command, gh with the run's
+// token among them.
 var (
 	reservedEnv = []string{
 		"HOME", "PATH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GITHUB_TOKEN",
@@ -286,7 +290,7 @@ var (
 )
 
 // ReservedEnvName reports whether a variable the admin gives the commands
-// may not be named name.
+// cannot be named name.
 func ReservedEnvName(name string) bool {
 	upper := strings.ToUpper(name)
 	return slices.Contains(reservedEnv, upper) ||
@@ -295,7 +299,7 @@ func ReservedEnvName(name string) bool {
 
 // adminEnv is the admin's variables for the commands, read from the
 // runner's own environment under CommandEnvPrefix, where its pod template
-// put them; a value from a Secret joins the masked secrets. A variable
+// put them. A value from a Secret joins the masked secrets. A variable
 // from an optional Secret key that is not set is left out.
 func adminEnv(vars []runspec.CommandEnvVar, secrets runspec.Secrets) []string {
 	var env []string
@@ -316,9 +320,9 @@ func adminEnv(vars []runspec.CommandEnvVar, secrets runspec.Secrets) []string {
 // cache as XDG_CACHE_HOME, and the pod's proxies under both spellings,
 // since curl reads http_proxy only in lower case. The pod's NO_PROXY is
 // left out, so curl reaches localhost and the gateway's own host through
-// the gateway too: its --connect-to or an --alt-svc cache would send a
-// direct connection to one anywhere. proxied reports whether there is an
-// HTTPS proxy, the egress gateway.
+// the gateway too. Otherwise, its --connect-to or an --alt-svc cache will
+// send a direct connection to one anywhere. proxied reports whether there
+// is an HTTPS proxy, the egress gateway.
 func commandEnv(home, cache string) (env []string, proxied bool) {
 	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "XDG_CACHE_HOME=" + cache}
 	for _, name := range []string{"HTTP_PROXY", httpsProxyEnv} {

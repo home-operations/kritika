@@ -18,9 +18,9 @@ import (
 )
 
 // TestCarryOn: a review carries on the conversation the gateway serves it
-// only when it would send that conversation's system prompt and tools,
-// and its next turn is given no context; otherwise, or when the gateway
-// serves none, it starts afresh with the context of a fresh prompt.
+// only when it will send that conversation's system prompt and tools. Its
+// next turn is given no context. Otherwise, or when the gateway serves none,
+// it starts afresh with the context of a fresh prompt.
 func TestCarryOn(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Continue = &runspec.Continuation{RunID: "run-0", Session: "run-0"}

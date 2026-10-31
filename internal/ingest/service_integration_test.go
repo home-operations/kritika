@@ -24,8 +24,8 @@ import (
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
-// The store suite's TestMain resets the schema; this suite runs after it in
-// the same `go test ./...` invocation only by package order, so it starts by
+// The store suite's TestMain resets the schema. This suite runs after it in
+// the same `go test ./...` invocation only by package order. So it starts by
 // migrating whatever state it finds and applying its own configuration.
 func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Helper()
@@ -37,8 +37,8 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	// Each test's repositories, turned on; a test that needs other settings
-	// loads a configuration of its own with withRoot.
+	// Each test's repositories, turned on. A test that needs a different
+	// configuration loads one of its own with withRoot.
 	storetest.Repositories(t, st, f, "onedr0p/home-ops", "onedr0p/replies", "onedr0p/polled", "onedr0p/at-once", "onedr0p/opened-only",
 		"onedr0p/labelled", "onedr0p/no-forks", "onedr0p/no-locks", "onedr0p/source-only", "onedr0p/bots-or-source")
 	// onedr0p/disabled is one an admin turned off.
@@ -187,9 +187,9 @@ func TestDispatchPullRequest(t *testing.T) {
 	})
 }
 
-// TestDispatchLeavesDiffConditions: a condition only the diff can judge
-// keeps no pull request out at ingest, an inclusion among them standing in
-// for the ones that do not hold yet.
+// TestDispatchLeavesDiffConditions: a condition that only the diff can judge
+// keeps no pull request out at ingest. An inclusion among them stands in for
+// the ones that do not hold yet.
 func TestDispatchLeavesDiffConditions(t *testing.T) {
 	svc, _, _ := setupService(t)
 	ctx := t.Context()
@@ -217,9 +217,9 @@ func TestDispatchLeavesDiffConditions(t *testing.T) {
 	}
 }
 
-// TestDispatchForkRecorded: a fork's pull request is queued for review
-// like any other, and one the filter keeps out is recorded all the same, so
-// a maintainer can ask for its review.
+// TestDispatchForkRecorded: a fork's pull request is queued for review like
+// any other. One that the filter keeps out is recorded all the same, so a
+// maintainer can ask for its review.
 func TestDispatchForkRecorded(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
@@ -300,9 +300,9 @@ func TestDispatchSkipsPaused(t *testing.T) {
 }
 
 // TestDispatchPollSkipsReviewedHead: a poll lists a pull request whenever it
-// moved, so a head a review has already seen is skipped rather than
-// reviewed again, while a new head is reviewed. A merged pull request is
-// recorded and never reviewed, whatever the action and however new its head.
+// moved. So a head that a review already saw is skipped, not reviewed again,
+// while a new head is reviewed. A merged pull request is recorded and never
+// reviewed, whatever the action and however new its head.
 func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
@@ -313,7 +313,7 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 		return webhook.Event{Kind: webhook.KindPullRequest, Action: action, Repository: repo("onedr0p/polled"), PullRequest: pr}
 	}
 	// The database is shared with the other packages' suites, which delete
-	// pull requests by number; the review row must not stand in their way.
+	// pull requests by number. The review row must not stand in their way.
 	t.Cleanup(func() {
 		_ = st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(context.Background(), `DELETE FROM reviews WHERE pull_request_id IN
@@ -335,9 +335,9 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, pr))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
 		t.Fatalf("poll of a reviewed head = %+v, %v; want it skipped as reviewed", out, err)
 	}
-	// A webhook event for the reviewed head, delivered again or reopening
-	// the pull request, is not news either, however long ago River cleaned
-	// the job up.
+	// A webhook event for the reviewed head, delivered again or reopening the
+	// pull request, is not news either. This holds however long ago River
+	// cleaned the job up.
 	if out, err := svc.Dispatch(ctx, request(f, ev("reopened", pr))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
 		t.Fatalf("reopened with a reviewed head = %+v, %v; want it skipped as reviewed", out, err)
 	}
@@ -398,9 +398,9 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	}
 }
 
-// TestDispatchStaleEvent: an event the forge changed the pull request
+// TestDispatchStaleEvent: an event that the forge changed the pull request
 // after, delivered late or again, neither rewinds the head nor reopens a
-// closed pull request, and starts no review.
+// closed pull request. It starts no review.
 func TestDispatchStaleEvent(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
@@ -593,8 +593,8 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 		t.Fatalf("synchronize scheduled_at = %v, want within [%v, %v]", got, before, after)
 	}
 
-	// With trigger.settle, a push's review waits that long; an opening
-	// does not.
+	// With trigger.settle, a push's review waits that long. An opening does
+	// not.
 	settled := withTrigger(t, "  settle: 90s\n")
 	synced.HeadSHA = "s3"
 	before = time.Now()
@@ -756,9 +756,9 @@ func TestDispatchCommentPush(t *testing.T) {
 }
 
 // TestDispatchReply: a reply in an inline thread that mentions no one is a
-// follow-up where the configuration answers replies in finding threads, and
-// its job says so; a root inline comment, or a reply where they are off,
-// is not.
+// follow-up where the configuration answers replies in finding threads. Its
+// job says so. A root inline comment, or a reply where they are off, is not a
+// follow-up.
 func TestDispatchReply(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
@@ -942,9 +942,9 @@ func TestDispatchRepository(t *testing.T) {
 }
 
 // TestDispatchRepositoryMoved: a repository renamed or transferred is
-// recorded under its new name and the row of its old name is disabled,
-// under the old owner's account when kritika serves it, but a rename that
-// changes only the case keeps its row; a repository deleted is disabled.
+// recorded under its new name. The row of its old name is disabled, under the
+// old owner's account when kritika serves it. But a rename that changes only
+// the case keeps its row. A repository deleted is disabled.
 func TestDispatchRepositoryMoved(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
@@ -1093,8 +1093,8 @@ func TestRecordUnsigned(t *testing.T) {
 }
 
 // TestDispatchRecordsEdits: an edit, a label change or a draft conversion
-// updates what kritika holds of the pull request, past the filter, and
-// queues no review beside the one its head has coming.
+// updates what kritika holds of the pull request, past the filter. It queues
+// no review beside the one that its head has coming.
 func TestDispatchRecordsEdits(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
@@ -1133,8 +1133,8 @@ func TestDispatchRecordsEdits(t *testing.T) {
 	if _, _, _, labels, queued := row(); !strings.Contains(labels, "skip-review") || queued != 1 {
 		t.Fatalf("after labeled: labels %s queued %d; want skip-review recorded and the one job", labels, queued)
 	}
-	// The repository's filter skips drafts; the conversion is recorded
-	// all the same, so the filter has the draft state to judge next time.
+	// The repository's filter skips drafts. The conversion is recorded all
+	// the same, so the filter has the draft state to judge next time.
 	draft := labeled
 	draft.Draft = true
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "converted_to_draft", Repository: repo("onedr0p/home-ops"), PullRequest: &draft})); err != nil || out.Status != Skipped || out.Reason != "converted_to_draft" {
@@ -1150,8 +1150,8 @@ func TestDispatchRecordsEdits(t *testing.T) {
 }
 
 // TestDispatchLabelChange: a label change is recorded whatever the filter
-// says of it, and starts a review of a head that has none a label could
-// not change, unless one is still to come.
+// says of it. It starts a review of a head that has no review that a label
+// cannot change, unless one is still to come.
 func TestDispatchLabelChange(t *testing.T) {
 	svc, st, _ := setupService(t)
 	ctx := t.Context()
@@ -1174,8 +1174,9 @@ func TestDispatchLabelChange(t *testing.T) {
 		}
 		return out
 	}
-	// review records how the worker ended its review of the head, and takes
-	// the head's job off the queue as the worker's finishing it would.
+	// review records how the worker ended its review of the head. It takes
+	// the head's job off the queue, as the worker does when it finishes the
+	// job.
 	review := func(status, skipReason string) {
 		t.Helper()
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {

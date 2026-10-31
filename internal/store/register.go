@@ -13,7 +13,7 @@ import (
 
 // ReachedRepository is a repository as the forge reports it. Traits is nil
 // when the report names it without saying what it is, as an installation
-// event does; the row keeps what it knew, or starts as neither archived
+// event does. The row keeps what it knew, or starts as neither archived
 // nor a fork.
 type ReachedRepository struct {
 	FullName, DefaultBranch string
@@ -21,15 +21,14 @@ type ReachedRepository struct {
 }
 
 // RegisterRepositories records the repositories of account accountID that
-// its connection's App reaches, as a webhook from each would, so polling
-// and onboarding know them before any event arrives. repos is the
-// account's whole listing, taken from listedAt on, by the database's
-// clock as Now reads it: the forge-reported repositories it lacks,
-// deleted, renamed, transferred or no longer reached, are disabled as an
-// installation event would, unless named since listedAt, as a webhook may
-// have done after the listing. An empty listing disables nothing, so a bad
-// one never disables a whole account. It returns how many were new and how
-// many it disabled.
+// its connection's App reaches, as a webhook from each does. So polling and
+// onboarding know them before any event arrives. repos is the account's whole
+// listing, taken from listedAt on, by the database's clock as Now reads it.
+// The forge-reported repositories that it lacks, deleted, renamed, transferred
+// or no longer reached, are disabled as an installation event does, unless
+// named since listedAt. A webhook can name them after the listing. An empty
+// listing disables nothing, so a bad one never disables a whole account. It
+// returns how many were new and how many it disabled.
 func (s *Store) RegisterRepositories(
 	ctx context.Context, accountID string, repos []ReachedRepository, listedAt time.Time,
 ) (added, disabled int, err error) {
@@ -61,25 +60,26 @@ func (s *Store) RegisterRepositories(
 }
 
 // EnsureRepository records repository r of account accountID as the forge
-// names it, spelling included, and returns its id and whether it is new.
+// names it, with its spelling, and returns its id and whether it is new.
 // The row is reachable (enabled), since the forge just named it, but
 // starts turned off until an admin enables it in the dashboard. Existing
 // rows keep their turned_on choice. A DefaultBranch of "" leaves the known
-// one, and so does a nil Traits the known traits, and so does a Visibility
-// of "" the known visibility. A row enabled again loses
-// the time the index sweep found it stopped: it may run, and stop again,
-// before the next sweep sees it. updated_at is the time of the write, not
-// of the transaction's start, for RegisterRepositories to leave a row
-// named while a listing ran.
+// one. A nil Traits leaves the known traits, and a Visibility of "" leaves
+// the known visibility.
+//
+// A row enabled again loses the time when the index sweep found it stopped.
+// It can run, and stop again, before the next sweep sees it. updated_at is
+// the time of the write, not of the transaction's start, for
+// RegisterRepositories to leave a row named while a listing ran.
 func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository) (id string, isNew bool, err error) {
 	return ensureRepository(ctx, tx, accountID, r, nil)
 }
 
 // ensureRepository is EnsureRepository for a report taken at listedAt, nil
-// for one just made: what a listing says of a repository, its default
-// branch and traits, is left aside on a row written since the listing was
-// taken, and that it is reachable on a row disabled since, as a webhook
-// saying something newer may have done.
+// for one just made. What a listing says of a repository, its default branch
+// and traits, is left aside on a row written since the listing was taken.
+// That it is reachable is left aside on a row disabled since. A webhook that
+// says something newer can do either.
 func ensureRepository(
 	ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository, listedAt *time.Time,
 ) (id string, isNew bool, err error) {
@@ -121,7 +121,7 @@ func ensureRepository(
 // RepositoryTraits is what is known of the repository with id, the
 // dashboard's choice included, after recording what reported says of it,
 // if anything: that it is archived or a fork, and its visibility when the
-// payload names one; a payload without one leaves the known visibility,
+// payload names one. A payload without one leaves the known visibility,
 // which is what it returns. nil records nothing, for a report that only
 // repeats what the store already said. The row is written only when the
 // report changes it, so a pull request's every push does not stamp a known

@@ -14,10 +14,10 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// TestPausePullRequest checks that automatic reviews pause on request or
-// once their count reaches the repository's maximum, that a request to
-// review still finds the pull request paused until it is resumed, and
-// that resuming starts the count over.
+// TestPausePullRequest makes sure that automatic reviews pause on request or
+// once their count reaches the repository's maximum. It also makes sure that
+// a request to review still finds the pull request paused until it is
+// resumed. Last, it makes sure that resuming starts the count over.
 func TestPausePullRequest(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -108,7 +108,7 @@ func TestPausePullRequest(t *testing.T) {
 		t.Fatal("resuming starts the count over")
 	}
 	// The second and third of three reviews, both told no pause as they
-	// read the count at once, pass the limit unpaused; the next announces
+	// read the count at once, pass the limit unpaused. The next announces
 	// the pause and pauses.
 	for range 2 {
 		if countTold(false) || paused() {
@@ -136,7 +136,7 @@ func TestPausePullRequest(t *testing.T) {
 	}
 }
 
-// TestReviewSkipReason checks that a review ended as skipped keeps the
+// TestReviewSkipReason makes sure that a review ended as skipped keeps the
 // reason it was given, the repository's or the runner's, and gives it back.
 func TestReviewSkipReason(t *testing.T) {
 	s := openStore(t)
@@ -167,7 +167,7 @@ func TestReviewSkipReason(t *testing.T) {
 	}
 }
 
-// TestNewestReviewID checks that a review names the pull request's newest
+// TestNewestReviewID makes sure that a review names the pull request's newest
 // review, that the newest names none, and that a skipped one is never it.
 func TestNewestReviewID(t *testing.T) {
 	s := openStore(t)
@@ -212,7 +212,7 @@ func TestNewestReviewID(t *testing.T) {
 	}
 }
 
-// TestAccountStatsCountCompletedReviews checks that the account's review
+// TestAccountStatsCountCompletedReviews makes sure that the account's review
 // count is of the reviews that completed, whatever else ended otherwise.
 func TestAccountStatsCountCompletedReviews(t *testing.T) {
 	s := openStore(t)
@@ -245,10 +245,10 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 	}
 }
 
-// TestMonthUsageCostsTheCompletedReviews checks that the month's review
+// TestMonthUsageCostsTheCompletedReviews makes sure that the month's review
 // costs are of the reviews that completed, each costing its own usage rows
-// whatever their role, with a follow-up's and a failed review's spend in
-// the month's total only, and a review with an unpriced call counted apart.
+// whatever their role. A follow-up's and a failed review's spend are in the
+// month's total only, and a review with an unpriced call is counted apart.
 func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -346,9 +346,10 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	}
 }
 
-// TestLastReviewIsNotASkippedOne checks that a skipped review newer than
-// one with a blocking finding leaves that one the last review of its pull
-// request and of its repository, and its finding in what wants attention.
+// TestLastReviewIsNotASkippedOne looks at a skipped review newer than one
+// with a blocking finding. It makes sure that the older one stays the last
+// review of its pull request and of its repository. It also makes sure that
+// the finding of the older one stays in what wants attention.
 func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -400,9 +401,9 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 // its last completed review delivered none: its job yet to start, or its
 // latest review still running or prepared, canceled by a newer review's
 // start or superseded by a moved head. One that ended on its own answered
-// the request, as does any review that completed after it was asked, a
-// cancel asked for withdraws it, the latest request speaks for the pull
-// request, and a push's review is never owed.
+// the request, as does any review that completed after it was asked. A
+// cancel asked for withdraws it. The latest request speaks for the pull
+// request. A push's review is never owed.
 func TestReviewOwed(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -412,9 +413,9 @@ func TestReviewOwed(t *testing.T) {
 	listRepos(t, s, "owed", "owed/one")
 	account := accountID(t, s, "owed")
 	// A job is a review job of the pull request of trigger in state,
-	// created minute minutes from now; a rev is a review of trigger,
-	// status and error created then, of the job at index job in jobs, or
-	// of none for -1, whose cancel was asked for when canceled.
+	// created minute minutes from now. A rev is a review of trigger,
+	// status and error created then. It is of the job at index job in jobs,
+	// or of none for -1. Its cancel was asked for when canceled.
 	type job struct {
 		trigger, state string
 		minute         int
@@ -548,9 +549,8 @@ func TestOverlappingPullRequests(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// A completed review's run has ended; one left unfinished would be
-		// an orphan to TestOrphanedRuns, which counts them over the whole
-		// database.
+		// A completed review's run ended. One left unfinished will be an orphan
+		// to TestOrphanedRuns, which counts them over the whole database.
 		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done', finished_at = now() WHERE id = $1`, runID); err != nil {
 			t.Fatal(err)
 		}
@@ -588,9 +588,8 @@ func TestOverlappingPullRequests(t *testing.T) {
 		elsewhere := addPull(tx, 1, pull{repo: two, headRef: "fix", baseRef: "main", state: "open"})
 		addPack(tx, elsewhere, "head", []string{"a.go"}, 0)
 		addPull(tx, 9, pull{repo: one, headRef: "new", baseRef: "main", state: "open"})
-		// A fork's branch may be called main without being the one mine is
-		// stacked on, while a fork's pull request into my branch is stacked
-		// on mine.
+		// A fork's branch can be called main without being the one that mine is
+		// stacked on. A fork's pull request into my branch is stacked on mine.
 		forked := addPull(tx, 10, pull{repo: one, headRef: "main", baseRef: "main", state: "open", fork: true})
 		addPack(tx, forked, "head", []string{"b.go"}, 0)
 		forkAbove := addPull(tx, 11, pull{repo: one, headRef: "main", baseRef: "feat", state: "open", fork: true})

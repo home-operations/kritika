@@ -24,7 +24,7 @@ func TestSettingsValidation(t *testing.T) {
 			"runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
 		{"fractional runner deadline", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: 1.5}}}", "must be a whole number of seconds"},
 		{"negative runner deadline", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: -900}}}", "must be a whole number of seconds"},
-		// Past time.Duration's range, the seconds would wrap to 900.
+		// Past time.Duration's range, the seconds will wrap to 900.
 		{"overflowing runner deadline", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: 18446744974}}}", "must be a whole number of seconds"},
 		{"runner deadline as a duration", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: 15m}}}", "must be a number of seconds"},
 		{"zero onboarding window", "onboardWindow: 0", "onboardWindow: KRITIKA_ONBOARD_WINDOW must be positive"},

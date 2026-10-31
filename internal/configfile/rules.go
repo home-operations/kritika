@@ -8,12 +8,12 @@ import (
 	"unicode/utf8"
 )
 
-// Rule is a check a review makes, written in the configuration, by an id
-// findings cite it by and a repository's file may not reuse. The check is
-// Rule's text or the content of File, a repository file read from the merge
-// base, exactly one of them. With Paths it applies only when a changed path
-// matches one of them, and with When only to a pull request one of those
-// conditions holds for.
+// Rule is a check that a review makes, written in the configuration. It has
+// an id that findings cite it by and that a repository's file cannot reuse.
+// The check is Rule's text or the content of File, a repository file read
+// from the merge base, exactly one of them. With Paths, it applies only when
+// a changed path matches one of them. With When, it applies only to a pull
+// request that one of those conditions holds for.
 type Rule struct {
 	ID    string   `yaml:"id" json:"id"`
 	Rule  string   `yaml:"rule,omitempty" json:"rule,omitempty"`
@@ -33,14 +33,15 @@ type When struct {
 // MaxRuleChars bounds one rule's text.
 const MaxRuleChars = 2000
 
-// ruleIDRe is what a rule's id may be.
+// ruleIDRe is what a rule's id can be.
 var ruleIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // CheckRules rejects a list of rules with an id that is not valid or is
-// listed twice, neither or both of a rule and a file, an overlong rule, a
-// file outside the repository, a glob that is not valid, or a when
-// condition that does not compile or fails against a sample pull request.
-// The error starts with the rule's place in the list, as rules[i].
+// listed twice. It rejects neither or both of a rule and a file, an overlong
+// rule, or a file outside the repository. It also rejects a glob that is not
+// valid, or a when condition that does not compile or fails against a sample
+// pull request. The error starts with the rule's place in the list, as
+// rules[i].
 func CheckRules(rules []Rule) error {
 	for i, r := range rules {
 		if !ruleIDRe.MatchString(r.ID) {
@@ -73,10 +74,10 @@ func CheckRules(rules []Rule) error {
 	return nil
 }
 
-// CheckWhen rejects conditions with no expression, a name given twice, or
-// an expression that does not compile, fails against a sample pull
-// request or reads pr.lines: they are judged before the diff is fetched.
-// The error starts with the condition's place, as when[i].
+// CheckWhen rejects conditions with no expression or a name given twice. It
+// also rejects an expression that does not compile, fails against a sample
+// pull request, or reads pr.lines: they are judged before the diff is
+// fetched. The error starts with the condition's place, as when[i].
 func CheckWhen(when []When) error {
 	for i, w := range when {
 		if w.Name != "" && slices.ContainsFunc(when[:i], func(o When) bool { return o.Name == w.Name }) {

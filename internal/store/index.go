@@ -12,13 +12,13 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 )
 
-// EnsureIndexSchema makes index_chunks match the instance's embedder: it
+// EnsureIndexSchema makes index_chunks match the instance's embedder. It
 // creates the table at dims on first use and records model, dims and the
 // document prompt in index_schema. When any differs from what is recorded,
-// every generation is dropped with the table and it is rebuilt, so each
-// repository is indexed afresh by the onboarding that follows; rebuilt
-// reports that. The dashboard asks the admin to confirm such a change
-// before it is saved. Leader only.
+// every generation is dropped with the table and the table is rebuilt. So
+// the onboarding that follows indexes each repository afresh. rebuilt reports
+// that. The dashboard asks the admin to confirm such a change before it is
+// saved. Leader only.
 func (s *Store) EnsureIndexSchema(
 	ctx context.Context, appRole, model string, dims int, documentPrompt string,
 ) (rebuilt bool, err error) {
@@ -60,8 +60,8 @@ func (s *Store) EnsureIndexSchema(
 	return rebuilt && err == nil, err
 }
 
-// IndexSchemaIn is the embedding model, dimension and document prompt
-// index_chunks was built for, read in tx; ok is false when it was never
+// IndexSchemaIn is the embedding model, dimension and document prompt that
+// index_chunks was built for, read in tx. ok is false when it was never
 // built.
 func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (model string, dims int, documentPrompt string, ok bool, err error) {
 	err = tx.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt FROM index_schema WHERE id = 1`).
@@ -120,19 +120,20 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 	return nil
 }
 
-// SweepStoppedIndexes drops the index of every repository that has not run
+// SweepStoppedIndexes drops the index of every repository that did not run
 // for longer than grace and returns how many it dropped. A repository runs
-// while it is enabled and runs, given its account ID and traits, says it
-// does. Its clock, stopped_at, starts at the first sweep that finds
-// it holding an index and not running, and is cleared by the first that
-// finds it running or holding none. The repository is left with no active
-// generation, which is marked superseded, so running it again onboards a
-// fresh index. It runs on the owner connection, which row-level security
-// does not restrict. Leader only.
+// while it is enabled and while runs, given its account ID and traits, says
+// that it does. Its clock, stopped_at, starts at the first sweep that finds
+// it holding an index and not running. The first sweep that finds it running
+// or holding none clears the clock.
+//
+// The repository is left with no active generation, which is marked
+// superseded, so running it again onboards a fresh index. It runs on the
+// owner connection, which row-level security does not restrict. Leader only.
 //
 // Only the repositories whose index is dropped are locked, and read again
-// under the lock, so no webhook or index job waits on a repository the
-// sweep merely looked at while the chunks, which may be many, are deleted.
+// under the lock. So no webhook or index job waits on a repository that the
+// sweep merely looked at while the chunks, which can be many, are deleted.
 func (s *Store) SweepStoppedIndexes(
 	ctx context.Context, grace time.Duration, runs func(accountID string, t configfile.RepoTraits) bool,
 ) (int64, error) {
@@ -144,8 +145,8 @@ func (s *Store) SweepStoppedIndexes(
 		// The index schema's lock, so a rebuild for a new embedder runs
 		// before or after the sweep, not during it. The rebuild holds every
 		// repository's row while its DROP TABLE index_chunks waits for an
-		// exclusive lock on repositories, which the FOR UPDATE below would
-		// hold while waiting for one of those rows.
+		// exclusive lock on repositories. The FOR UPDATE below will otherwise
+		// hold that lock while it waits for one of those rows.
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
 			return err
 		}
@@ -249,8 +250,8 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// onboardCandidate holds for a repository, r, OnboardCandidates may offer,
-// whatever enabled says of it; $1 is the retryAfter, in seconds.
+// onboardCandidate holds for a repository, r, that OnboardCandidates can
+// offer, whatever enabled says of it. $1 is the retryAfter, in seconds.
 // onboardActivity is when its pull requests last moved, which orders an
 // account's candidates.
 var onboardCandidate = `r.enabled AND r.turned_on IS DISTINCT FROM false
@@ -272,11 +273,11 @@ type BacklogRepo struct {
 	configfile.RepoTraits
 }
 
-// OnboardBacklog lists the transaction's account's repositories the
-// onboarding feeder would offer, as OnboardCandidates selects them, in
-// the order it would offer them, for the dashboard to say where each one
-// waits. The caller drops those the account's settings leave off, as
-// OnboardCandidates' enabled does.
+// OnboardBacklog lists the transaction's account's repositories that the
+// onboarding feeder can offer, as OnboardCandidates selects them, in the
+// order that it will offer them. The dashboard uses the list to say where
+// each one waits. The caller drops those that the account's configuration
+// leaves off, as OnboardCandidates' enabled does.
 func OnboardBacklog(ctx context.Context, tx pgx.Tx, retryAfter time.Duration) ([]BacklogRepo, error) {
 	rows, err := tx.Query(ctx, `SELECT r.id::text, r.archived, r.fork, r.turned_on FROM repositories r
 		WHERE `+onboardCandidate+`
@@ -295,18 +296,19 @@ func OnboardBacklog(ctx context.Context, tx pgx.Tx, retryAfter time.Duration) ([
 	return out, nil
 }
 
-// OnboardCandidates lists up to limit enabled repositories, of those
-// enabled also admits by account ID and traits, whose active index
-// generation is missing or was built by another embedder than index_schema
-// records, with no index job queued or running, and no onboarding job that
-// finished within retryAfter without building an index: one that failed or
-// was skipped would fail or be skipped again. A pod still on the previous
-// configuration during a rollout can publish a generation of another
-// embedder, which the gateway never queries and a repository without pushes
-// would otherwise keep. Accounts take turns,
-// and within an account the repositories whose pull requests moved last come
-// first, as the ones a review is likeliest to need soon. Owner connection:
-// it spans every account.
+// OnboardCandidates lists up to limit enabled repositories, of those that
+// enabled also admits by account ID and traits. A listed repository's active
+// index generation is missing, or another embedder than index_schema records
+// built it. A listed repository has no index job queued or running. It also
+// has no onboarding job that finished within retryAfter without building an
+// index: one that failed or was skipped will fail or be skipped again.
+//
+// A pod still on the previous configuration during a rollout can publish a
+// generation of another embedder. The gateway never queries that generation,
+// and a repository without pushes otherwise keeps it. Accounts take turns.
+// Within an account, the repositories whose pull requests moved last come
+// first, as the ones a review is likeliest to need soon. Owner connection: it
+// spans every account.
 func (s *Store) OnboardCandidates(
 	ctx context.Context, limit int, retryAfter time.Duration, enabled func(accountID string, t configfile.RepoTraits) bool,
 ) ([]RepoRef, error) {

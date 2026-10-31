@@ -107,7 +107,7 @@
     navigate({ name: 'signin' });
   }
 
-  // The account the route is in the scope of; none in the instance's.
+  // The account the route is in the scope of. A route in the instance's scope has none.
   const currentSlug = $derived(scopeOf(router.route));
   const currentSection = $derived(sectionOf(router.route));
   const instanceTabs = $derived(INSTANCE_TABS.filter((t) => (!t.admin || me?.admin)));
@@ -130,7 +130,7 @@
   );
 
   // The theme button steps to the next theme, and keeps a light or dark
-  // one with the user; auto is this browser's own to follow its system.
+  // one with the user. Auto stays with this browser, which follows its system.
   function cycleTheme(): void {
     const next = nextTheme();
     if (session.me) void saveSettings({ theme: next === 'auto' ? '' : next });
@@ -144,8 +144,8 @@
   let navOpen = $state(false);
   let wordmark = $state<Wordmark>();
 
-  // On a phone the actions sit in the header row; on a desktop in a bar
-  // over the page, beside the sidebar. One copy of each, placed by width.
+  // On a phone, the actions sit in the header row. On a desktop, they sit in a
+  // bar over the page, beside the sidebar. One copy of each, placed by width.
   const NARROW = '(max-width: 800px)';
   let narrow = $state(typeof matchMedia !== 'undefined' && matchMedia(NARROW).matches);
   $effect(() => {

@@ -89,8 +89,9 @@ func TestGitLabIdentity(t *testing.T) {
 	}
 }
 
-// TestGitLabMember: a top-level group is the user's when GitLab lists it,
-// in any case; a subgroup's membership alone does not make its parent's.
+// TestGitLabMember: a top-level group is the user's when GitLab lists it, in
+// any letter case. Membership of a subgroup alone does not make the user a
+// member of its parent.
 func TestGitLabMember(t *testing.T) {
 	c := userinfoServer(t, 200, `{"sub":"7","nickname":"alice","groups":["Platform","platform/backend","other/sub"]}`)
 	for group, want := range map[string]bool{"platform": true, "other": false, "initech": false} {

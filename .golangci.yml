@@ -51,7 +51,7 @@ linters:
   exclusions:
     generated: lax
     rules:
-      # Tests favour readability over the stricter prod rules.
+      # Tests favor readability over the stricter prod rules.
       - path: (.+)_test.go
         linters:
           - goconst

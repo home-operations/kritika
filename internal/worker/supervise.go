@@ -30,9 +30,9 @@ func (supersededBy) Error() string { return errSuperseded.Error() }
 func (supersededBy) Unwrap() error { return errSuperseded }
 
 const (
-	// superviseInterval is how often a running run is checked.
+	// superviseInterval is how often supervision looks at a running run.
 	superviseInterval = 10 * time.Second
-	// heartbeatStale is how old a runner's heartbeat may get before the run
+	// heartbeatStale is how old a runner's heartbeat can get before the run
 	// is treated as dead: six missed beats, to ride out a slow database.
 	heartbeatStale = 6 * runspec.HeartbeatInterval
 )
@@ -40,24 +40,24 @@ const (
 // supervision is what the worker watches while a runner works.
 type supervision struct {
 	every, stale time.Duration
-	// heartbeat reports the age of the run's last heartbeat, and whether
-	// the runner has stamped one at all.
+	// heartbeat reports the age of the run's last heartbeat, and whether the
+	// runner stamped one at all.
 	heartbeat func(context.Context) (age time.Duration, started bool, err error)
-	// head reads the pull request's current head; nil for runs no newer
-	// head can supersede.
+	// head reads the pull request's current head. It is nil for runs that no
+	// newer head can supersede.
 	head func(context.Context) (string, error)
 	want string
-	// replaced reports whether a newer review replaced the run's; nil for
-	// runs that are not a review's.
+	// replaced reports whether a newer review replaced the run's. It is nil
+	// for runs that are not a review's.
 	replaced func(context.Context) (bool, error)
-	// logger reports a check that could not be made.
+	// logger reports a check that failed to run.
 	logger *slog.Logger
 }
 
-// supervise runs spec, cancelling it when its heartbeat goes stale, a newer
-// head supersedes it or a newer review replaces it. It returns the
-// executor's result and the cause it cancelled with, nil when it did not.
-// An executor that runs Jobs records on the run's Job why kritika ended it.
+// supervise runs spec and cancels it when its heartbeat goes stale, a newer
+// head supersedes it, or a newer review replaces it. It returns the
+// executor's result and the cause it canceled with, nil when it did not. An
+// executor that runs Jobs records on the run's Job why kritika ended it.
 func supervise(ctx context.Context, s supervision, exec executor.Executor, spec executor.Spec) (executor.Result, error) {
 	rctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -86,10 +86,10 @@ func supervise(ctx context.Context, s supervision, exec executor.Executor, spec 
 	}
 }
 
-// check returns a reason to end the run, or nil. A read that fails is
-// logged and retried on the next tick rather than ending the run. A
-// replacement is checked before the head: a newer head's review that
-// started already ended this one, and that end stands.
+// check returns a reason to end the run, or nil. A read that fails is logged
+// and retried on the next tick rather than ending the run. check looks for a
+// replacement before it looks at the head: a newer head's review that started
+// already ended this one, and that end stands.
 func (s supervision) check(ctx context.Context) error {
 	if s.replaced != nil {
 		replaced, err := s.replaced(ctx)
@@ -119,14 +119,14 @@ func (s supervision) check(ctx context.Context) error {
 	return nil
 }
 
-// runEnd says why kritika ended a run, for an Event on its Job: whether
-// the Event is a warning, its reason and its note. It reads the executor's
-// own account of the run, res, whose error carries the cause a cancelled
-// run stopped with, rather than whichever cause has landed since:
-// supervision may settle on one, or the job's ctx end, after the run
-// already stopped. jobCause is the job's: a run cut by a shutdown or the
-// job's timeout stopped with it. A run that ended on its own has no
-// reason; its Job's own Events tell.
+// runEnd says why kritika ended a run, for an Event on its Job: whether the
+// Event is a warning, its reason, and its note. It reads the executor's own
+// account of the run, res, whose error carries the cause that a canceled run
+// stopped with. It does not read whichever cause landed since: supervision
+// can settle on one, or the job's ctx can end, after the run already stopped.
+// jobCause is the job's: a run cut by a shutdown or the job's timeout stopped
+// with it. A run that ended on its own has no reason. Its Job's own Events
+// tell.
 func runEnd(jobCause error, res executor.Result) (warning bool, reason, note string) {
 	if res.Err == nil {
 		return false, "", ""

@@ -15,7 +15,7 @@ func outputItemDone(index int, item string) string {
 	return fmt.Sprintf(`{"type":"response.output_item.done","output_index":%d,"item":%s}`, index, item)
 }
 
-// planOutput is newTestChatGPT's output of items, a JSON array; nil for
+// planOutput is newTestChatGPT's output of items, a JSON array. It is nil for
 // "null".
 func planOutput(t *testing.T, items string) *ChatGPTOutput {
 	t.Helper()
@@ -214,7 +214,7 @@ func TestChatGPTReplayable(t *testing.T) {
 }
 
 // TestChatGPTSendsUnreplayableTurnsAsTextAndCalls: a turn whose output the
-// route would refuse goes as the loop recorded it, reasoning left out.
+// route refuses goes as the loop recorded it, with reasoning left out.
 func TestChatGPTSendsUnreplayableTurnsAsTextAndCalls(t *testing.T) {
 	const reasoning = `{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`
 	const call = `{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","namespace":"kritika","arguments":"{}"}`

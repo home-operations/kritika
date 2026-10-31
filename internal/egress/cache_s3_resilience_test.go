@@ -123,7 +123,7 @@ func TestS3OutageRecovery(t *testing.T) {
 					return resp, nil
 				})}
 				// Distinct bodies: a failed lookup fills the local directory,
-				// so a repeated digest would be a local hit and not ask S3.
+				// so a repeated digest is a local hit and does not ask S3.
 				for i := range s3Failures + 2 {
 					started := time.Now()
 					body := fmt.Sprintf("origin /tool%d", i)

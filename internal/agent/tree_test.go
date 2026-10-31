@@ -17,10 +17,11 @@ import (
 // detected as binary regardless of its total length.
 var binaryContent = "\x00\x01\x02binary stuff"
 
-// testTree builds a small commit in memory and returns its tree: a Go
-// file, a file matching an ignore glob, a binary file, a blob over the
-// read_file/grep size cap, and two small files sharing a marker at
-// different lines so grep's sort order can be asserted across files.
+// testTree builds a small commit in memory and returns its tree. The tree
+// holds these files: a Go file, a file that matches an ignore glob, a binary
+// file, a blob over the read_file/grep size cap, and two small files. The two
+// small files share a marker at different lines so that a test can assert
+// grep's sort order across files.
 func testTree(t *testing.T) *object.Tree {
 	t.Helper()
 	fs := memfs.New()

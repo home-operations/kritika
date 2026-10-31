@@ -15,10 +15,10 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// tokenNameMax is the longest name a token may have, in characters.
+// tokenNameMax is the longest name that a token can have, in characters.
 const tokenNameMax = 100
 
-// tokenLifetimes are the days a token may last; 0 is never expiring.
+// tokenLifetimes are the days that a token can last. 0 is never expiring.
 var tokenLifetimes = []int{0, 7, 30, 90, 365}
 
 // registerTokens mounts the personal access tokens a user manages, and
@@ -135,9 +135,10 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request, userID stri
 	return nil
 }
 
-// tokenGrant is the read-only grant of a token p creates for the account
-// slugs: the keys of those accounts, each one p reads; else every account,
-// when p reads every account, or the keys of all p reads.
+// tokenGrant is the read-only grant of a token that p creates for the account
+// slugs. It is the keys of those accounts, each one that p reads. Without
+// slugs, it is every account when p reads every account, or else the keys of
+// all that p reads.
 func tokenGrant(file *configfile.File, p *auth.Principal, slugs []string) (store.SessionGrant, error) {
 	g := store.SessionGrant{Role: store.RoleMember, Accounts: []string{}}
 	reads := readable(file, p)

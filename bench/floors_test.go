@@ -22,7 +22,7 @@ func TestFloorsFrom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// diff: mean 0.55, sigma 0.05, floor 0.55 - 0.11; the collapse floors
+	// diff: mean 0.55, sigma 0.05, floor 0.55 - 0.11. The collapse floors
 	// are half the means, 3 and 9. context ran once: its sigma is 0.
 	want := Floors{Judge: "vendor/judge", Modes: map[string]ModeFloors{
 		"diff":    {MustRecall: 0.44, MeanFindings: 1.5, MeanToolCalls: 4.5},

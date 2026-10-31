@@ -15,10 +15,10 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// judgeRun ends a review whose run ended before its agent could finish it,
-// or whose agent run cannot be read, and says what River does next: it
-// reports whether it ended the review, and the error River retries on.
-// A run that finished is judged by afterRun.
+// judgeRun ends a review whose run ended before its agent finished it, or
+// whose agent run cannot be read. It says what River does next: it reports
+// whether it ended the review, and the error that River retries on. A run
+// that finished is judged by afterRun.
 func (w *Review) judgeRun(
 	ctx, cctx context.Context, job *river.Job[jobs.ReviewArgs], e endedReview, out agentRun,
 ) (bool, error) {
@@ -80,9 +80,9 @@ type endedReview struct {
 const lockRetry = 500 * time.Millisecond
 
 // lockedWrite runs write under the publication lock of pull request prID,
-// taken with lock, waiting out a holder for as long as ctx allows: the
-// holder is a review's start or another review's publication, each brief.
-// A wait ctx ends carries ctx's cause, so a job stopped while it waited
+// taken with lock. It waits out a holder for as long as ctx allows: the
+// holder is a review's start or another review's publication, each brief. A
+// wait that ctx ends carries ctx's cause, so a job stopped while it waited
 // returns what River refunds the attempt for.
 func lockedWrite(
 	ctx context.Context, lock func(context.Context, string, func(context.Context) error) error, prID string,
@@ -101,11 +101,11 @@ func lockedWrite(
 	}
 }
 
-// ownedWrite runs write, what a review that ended short of publishing says
-// of its pull request on the forge, under the pull request's publication
-// lock and only while the review still speaks for it (store.ReviewCeded):
-// a newer review's start sets its own status under the same lock, so the
-// write never lands over what a newer review said.
+// ownedWrite runs write, what a review that ended short of publishing says of
+// its pull request on the forge. It runs write under the pull request's
+// publication lock, and only while the review still speaks for it
+// (store.ReviewCeded). A newer review's start sets its own status under the
+// same lock, so the write never lands over what a newer review said.
 func (w *Base) ownedWrite(ctx context.Context, e endedReview, write func(context.Context) error) {
 	err := lockedWrite(ctx, w.Store.WithPublicationLock, e.prID, func(ctx context.Context) error {
 		var ceded bool
@@ -132,13 +132,13 @@ func (w *Base) reportEnd(ctx context.Context, e endedReview, desc string) {
 	})
 }
 
-// finishEnded ends a review whose job ctx ended before the review could: a
-// remote cancel as canceled, River's job timeout as failed, both returning
-// nil, since an error would have River retry the review and pay for the
-// model again. A stopping worker's cut is the exception: the review ends
-// superseded by its retry, and an error is returned for River to retry it.
-// A review that is already terminal is left as it is. While ctx is still
-// live it returns err as is.
+// finishEnded ends a review whose job ctx ended before the review did: a
+// remote cancel as canceled, River's job timeout as failed. Both return nil,
+// because an error has River retry the review and pay for the model again. A
+// stopping worker's cut is the exception: the review ends superseded by its
+// retry, and an error is returned for River to retry it. A review that is
+// already terminal is left as it is. While ctx is still live, it returns err
+// as is.
 func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) error {
 	decision := decideInterruptedReview(context.Cause(ctx), err)
 	if decision.disposition != reviewInterrupted {
@@ -168,11 +168,11 @@ func (w *Review) finishInterrupted(ctx context.Context, e endedReview, decision 
 	return decision.jobError()
 }
 
-// agentSpecFailed ends a review whose runner never started because its
-// agent spec could not be built, and the run made for it. When the job's
-// ctx ended meanwhile (a remote cancel, River's timeout, a stopping
-// worker), that is why, and the review ends as finishEnded ends it;
-// otherwise err is returned for River to retry.
+// agentSpecFailed ends a review whose runner never started because its agent
+// spec failed to build, and it ends the run made for it. When the job's ctx
+// ended meanwhile (a remote cancel, River's timeout, a stopping worker), that
+// is why, and the review ends as finishEnded ends it. Otherwise err is
+// returned for River to retry.
 func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID string, err error) error {
 	dctx, cancel := detach(ctx)
 	defer cancel()

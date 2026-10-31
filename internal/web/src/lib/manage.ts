@@ -1,5 +1,5 @@
 // Turning management API errors into what the dashboard tells the user.
-// The server's message is already human-readable; these add what to do
+// The server's message is already human-readable. These add what to do
 // next where the code alone says more than the message does.
 import { ApiError } from './api.svelte';
 import { toast } from './toast.svelte';

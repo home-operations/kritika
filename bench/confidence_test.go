@@ -60,7 +60,7 @@ func loadConfidenceCases(path string) ([]stageCase, error) {
 }
 
 func checkConfidence(f confidenceCase, raw string) error {
-	// ParseConfidence reads the first JSON value; the answer must be one.
+	// ParseConfidence reads the first JSON value. The answer must be one.
 	if !json.Valid([]byte(raw)) {
 		return fmt.Errorf("bench: answer is not one JSON value")
 	}
@@ -72,7 +72,8 @@ func checkConfidence(f confidenceCase, raw string) error {
 		return fmt.Errorf("bench: incomplete risk or reason")
 	}
 	// The findings' ceiling holds the parsed score within range whatever
-	// the model said, so the model's own score is checked as well.
+	// the model said. So this code also makes sure that the model's own
+	// score is within range.
 	if p.Given < f.Score[0] || p.Given > f.Score[1] || p.Score < f.Score[0] || p.Score > f.Score[1] || p.Risk != f.Risk {
 		return fmt.Errorf("bench: score/risk %d (model %d)/%s, want [%d,%d]/%s", p.Score, p.Given, p.Risk, f.Score[0], f.Score[1], f.Risk)
 	}

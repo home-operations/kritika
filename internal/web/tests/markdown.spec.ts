@@ -1,7 +1,7 @@
 // markdown.ts is pure (no runes), so it is tested directly with no browser.
-// These pin the safety contract: only http(s) links survive as links, and
-// nothing in the source can become markup since the renderer only ever
-// interpolates text and a validated href.
+// These pin the safety contract: only http(s) links survive as links. Nothing
+// in the source can become markup, since the renderer only ever interpolates
+// text and an href that safeHref accepted.
 import { test, expect } from '@playwright/test';
 import { parseInline, parseMarkdown, safeHref, type Inline } from '../src/lib/markdown';
 

@@ -23,9 +23,9 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 )
 
-// installTimeout bounds each step of installing a tool, the registry's
-// fetch, a checksum's lookup and each attempt at the download, as
-// fetchTimeout bounds a fetch; fetchRegistry fetches the aqua registry the
+// installTimeout bounds each step of installing a tool: the registry's
+// fetch, a checksum's lookup, and each attempt at the download. It does so
+// as fetchTimeout bounds a fetch. fetchRegistry fetches the aqua registry the
 // run's gateway keeps, and githubAPI is where the GitHub REST API is.
 // Variables for the tests.
 var (
@@ -51,7 +51,7 @@ type repoTool struct {
 // repoTools are the repository's tools and the commands they offer, each
 // tool installed on the first call that needs it. Everything an install
 // writes lives under the run's HOME, which the runner keeps read-only
-// between its own installs, so a command cannot replace an installed
+// between its own installs. So a command cannot replace an installed
 // binary. An installed command is linked from bin, which leads the
 // commands' PATH, so one tool can run another's command.
 type repoTools struct {
@@ -66,10 +66,9 @@ type repoTools struct {
 	direct    *http.Client
 	byCommand map[string]*repoTool
 	logger    *slog.Logger
-	// locked says home is read-only, as it is once the run tool is built,
-	// and writable that unlocked has it writable for the while; broken is
-	// why it could not be made read-only again, after which no command
-	// runs.
+	// locked says home is read-only, as it is once the run tool is built.
+	// writable says that unlocked has it writable for the while. broken is
+	// why it failed to become read-only again, after which no command runs.
 	locked, writable bool
 	broken           error
 }
@@ -81,16 +80,15 @@ type download struct {
 	note   string
 }
 
-// newRepoTools resolves tools, the repository's, in the aqua registry the
-// run's gateway at gatewayURL keeps, read with the run's gatewayToken, to
+// newRepoTools resolves tools, the repository's, in the aqua registry that
+// the run's gateway at gatewayURL keeps, read with the run's gatewayToken, to
 // install under home. env is the commands' environment, through whose
 // proxy, the gateway, a tool's download reaches its host. cacheLocked says
 // the gateway keeps a checked download, which a tool's then goes through
-// first. credentialed names the commands that run with
-// one of the run's credentials, which a repository's tool may not offer;
-// token is the run's GitHub token, for the GitHub API's account of a
-// release, "" off GitHub. notes say what was not offered and why, for the
-// review's summary.
+// first. credentialed names the commands that run with one of the run's
+// credentials, which a repository's tool cannot offer. token is the run's
+// GitHub token, for the GitHub API's account of a release, "" off GitHub.
+// notes say what was not offered and why, for the review's summary.
 func newRepoTools(
 	ctx context.Context, tools repoconfig.Tools, gatewayURL, gatewayToken, home string, env []string, cacheLocked bool,
 	credentialed []string, token string, logger *slog.Logger,
@@ -171,15 +169,16 @@ func proxiedClient(proxy string) *http.Client {
 }
 
 // cachedClient is a client for a download with sum that goes through the
-// gateway's cache over proxy, the transport to it: as the plain HTTP
-// request the gateway upgrades, naming sum as the digest the cache keeps
-// the download by, for a URL plainHTTP rewrites, and as is for any other.
+// gateway's cache over proxy, the transport to it. For a URL that plainHTTP
+// rewrites, the download goes as the plain HTTP request that the gateway
+// upgrades. That request names sum as the digest that the cache keeps the
+// download by. For any other URL, it goes as is.
 func cachedClient(proxy http.RoundTripper, sum aqua.Sum) *http.Client {
 	return &http.Client{Transport: digestNaming{proxy, sum.Algorithm + ":" + sum.Hex}}
 }
 
-// digestNaming sends each request plainHTTP rewrites as that plain HTTP
-// request, naming digest.
+// digestNaming sends each request that plainHTTP rewrites as that plain HTTP
+// request, and names digest.
 type digestNaming struct {
 	base   http.RoundTripper
 	digest string
@@ -238,10 +237,11 @@ func (r *repoTools) withPath(env []string) []string {
 	return out
 }
 
-// resolveWith resolves a command one of the tools offers as its link in
-// bin, installing the tool first when it is not yet, and any other
-// command as the binary onPath names for it, each run with env, and none
-// once home could not be made read-only again. Its error is for the agent.
+// resolveWith resolves a command that one of the tools offers as its link
+// in bin. It installs the tool first when it is not yet installed. It
+// resolves any other command as the binary that onPath names for it. Each
+// runs with env. It resolves none once home was not made read-only again.
+// Its error is for the agent.
 func (r *repoTools) resolveWith(onPath map[string]string, env []string) func(context.Context, string) (string, []string, error) {
 	return func(ctx context.Context, command string) (string, []string, error) {
 		if r.broken != nil {
@@ -260,16 +260,18 @@ func (r *repoTools) resolveWith(onPath map[string]string, env []string) func(con
 	}
 }
 
-// install installs t and links the commands it offers from bin. The
-// download is checked against a checksum fetched apart from it, around
-// the cache: first as it comes through the gateway's cache, while the
-// gateway keeps checked downloads, then, should that fail, around the
-// cache, in case the gateway's own fetch is what the origin refuses. The
+// install installs t and links the commands it offers from bin. The runner
+// makes sure that the download matches a checksum fetched apart from it,
+// around the cache. The download first comes through the gateway's cache,
+// while the gateway keeps checked downloads. If that fails, it comes around
+// the cache, in case the gateway's own fetch is what the origin refuses. The
 // lookup and each attempt have installTimeout of their own, so one that
-// stalls leaves the next its time. Whatever an earlier call left of t's
-// directory goes first, and a tool whose commands could not all be linked
-// is removed again, links and all, so the next call installs it anew; one
-// installed is linked even if ctx ended meanwhile.
+// stalls leaves the next its time.
+//
+// Whatever an earlier call left of t's directory goes first. A tool whose
+// commands did not all link is removed again, links and all, so the next call
+// installs it anew. A tool that is installed is linked even if ctx ended
+// meanwhile.
 func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	started := time.Now()
 	if err := os.RemoveAll(t.dir); err != nil {
@@ -315,15 +317,15 @@ func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	return nil
 }
 
-// within runs f with installTimeout of its own, ending with ctx.
+// within runs f with installTimeout of its own, and f ends with ctx.
 func within[T any](ctx context.Context, f func(context.Context) (T, error)) (T, error) {
 	ctx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
 	return f(ctx)
 }
 
-// link links from bin each command t offers, at commands, or, should one
-// fail, removes what it linked and t's directory.
+// link links from bin each command t offers, at commands. If one fails, it
+// removes what it linked and t's directory.
 func (r *repoTools) link(t *repoTool, commands map[string]string) error {
 	var linked []string
 	for name, tool := range r.byCommand {

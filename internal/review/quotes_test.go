@@ -134,9 +134,9 @@ func TestCheckQuotes(t *testing.T) {
 	}
 }
 
-// TestQuoteGate: a gate refuses a misquoted submission MaxQuoteRefusals
-// times and takes the next; Drop then removes the misquoted findings and
-// nothing else, and leaves a clean submission as it is.
+// TestQuoteGate: a gate refuses a misquoted submission MaxQuoteRefusals times
+// and takes the next. Drop then removes the misquoted findings and nothing
+// else, and leaves a clean submission as it is.
 func TestQuoteGate(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors with fmt.Errorf and the package name."}}
 	quoted := `{"path":"a.go","line":1,"severity":"p2","category":"correctness","title":"t","explanation":"e","rules":["wrap-errors"],"quote":"fmt.Errorf and the package name"}`
@@ -152,8 +152,8 @@ func TestQuoteGate(t *testing.T) {
 	if err := check(raw); err != nil {
 		t.Fatalf("the submission after %d refusals = %v, want it taken", MaxQuoteRefusals, err)
 	}
-	// Peek refuses as Check would, spending nothing: the fallback judges a
-	// submission Check refused once more without costing a refusal.
+	// Peek refuses as Check does and spends nothing: the fallback judges a
+	// submission that Check refused once more without costing a refusal.
 	fresh := NewQuoteGate(rules)
 	for range MaxQuoteRefusals + 1 {
 		if err := fresh.Peek(Check)(raw); err == nil {

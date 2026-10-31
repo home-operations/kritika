@@ -30,8 +30,8 @@ import (
 // path segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// fileDoc holds policy and sign-in configuration; config.Settings owns
-// operational settings.
+// fileDoc holds policy and sign-in configuration. config.Settings owns
+// operational configuration.
 type fileDoc struct {
 	Auth      Auth                  `yaml:"auth,omitempty"`
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
@@ -41,7 +41,8 @@ type fileDoc struct {
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
 	Embedding *Embedding            `yaml:"embedding,omitempty"`
 	Egress    Egress                `yaml:"egress,omitempty"`
-	// Defaults are the repository settings written at the file's root.
+	// Defaults are the repository configuration values written at the
+	// file's root.
 	Defaults Defaults              `yaml:",inline"`
 	Accounts map[string]accountDoc `yaml:"accounts,omitempty"`
 }
@@ -64,9 +65,9 @@ func configHash(raw []byte, secretEnv []string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Parse reads defaults and operational environment settings, then decodes,
-// resolves and validates raw as the configuration file; nil or blank bytes
-// are no file.
+// Parse reads defaults and the operational configuration in the environment.
+// It then decodes and resolves raw as the configuration file and makes sure
+// that it is valid. nil or blank bytes are no file.
 func Parse(raw []byte) (*File, error) {
 	settings, doc, err := config.LoadSettings(raw)
 	if err != nil {
@@ -75,7 +76,8 @@ func Parse(raw []byte) (*File, error) {
 	return parse(doc, settings)
 }
 
-// FromConfig uses the file snapshot and runtime settings already read by config.Load.
+// FromConfig uses the file snapshot and runtime configuration that
+// config.Load already read.
 func FromConfig(cfg *config.Config) (*File, error) {
 	return parse(cfg.FileDocument(), cfg.Settings)
 }
@@ -188,8 +190,8 @@ func (f *File) resolveEmbedding() error {
 
 // accountsOf gathers the accounts entries, in the order of their names. An
 // entry is keyed by the account's name alone, so it is the account's on
-// the forge serving that name, forges; one no connection serves is
-// GitHub's, and one served on two forges names neither.
+// the forge that serves that name, which forges gives. One that no connection
+// serves is GitHub's, and one served on two forges names neither.
 func accountsOf(entries map[string]accountDoc, forges map[string][]Forge) ([]Account, error) {
 	byKey := map[string]*Account{}
 	for _, name := range slices.Sorted(maps.Keys(entries)) {
@@ -276,13 +278,13 @@ func (i *Connection) resolve(where string, s *secrets) error {
 	return nil
 }
 
-// validate checks every invariant the rest of kritika relies on, over f and
-// the account entries.
+// validate makes sure that every invariant that the rest of kritika relies
+// on holds, over f and the account entries.
 func (f *File) validate(accounts []Account) error {
 	if err := f.validateProviders(); err != nil {
 		return err
 	}
-	// Connections first: egress checks their hosts.
+	// Connections first: egress makes sure that their hosts are allowed.
 	if err := validateConnections(f.Connections); err != nil {
 		return err
 	}
@@ -298,9 +300,9 @@ func (f *File) validate(accounts []Account) error {
 	return f.validateAccounts(accounts)
 }
 
-// validateEmbedding checks the embedder's dimension fits the index column,
-// its bounds are not negative and prompts come with a floor of their own;
-// its provider is checked with the rest.
+// validateEmbedding makes sure that the embedder's dimension fits the index
+// column, its bounds are not negative, and prompts come with a floor of
+// their own. Its provider goes through validation with the rest.
 func (f *File) validateEmbedding() error {
 	e := f.Embedding
 	if e == nil {
@@ -312,7 +314,7 @@ func (f *File) validateEmbedding() error {
 	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
 		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
 	}
-	// NaN passes any comparison's negation, and would then keep no chunk.
+	// NaN passes any comparison's negation, and will otherwise keep no chunk.
 	if math.IsNaN(e.SimilarFloor) || e.SimilarFloor < 0 || e.SimilarFloor > 1 {
 		return fmt.Errorf("configfile: embedding.similarFloor must be between 0 and 1 (a cosine similarity), got %g", e.SimilarFloor)
 	}
@@ -320,7 +322,7 @@ func (f *File) validateEmbedding() error {
 		return fmt.Errorf("configfile: embedding.similarMargin must be between 0 and 1 (a difference of cosine similarities), got %g", *m)
 	}
 	// Prompts move every score, up or down depending on the model, so the
-	// default floor could keep everything or nothing without a sign of it.
+	// default floor can keep everything or nothing without a sign of it.
 	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "") {
 		return errors.New("configfile: embedding.queryPrompt and documentPrompt need embedding.similarFloor set, " +
 			"since prompts move the scores the floor compares")
@@ -340,9 +342,9 @@ func (f *File) validateProviders() error {
 	return nil
 }
 
-// validateAccounts checks the file's own settings and every account's entries,
-// served or not, so an entry is judged when it is written rather than when
-// a connection first serves it.
+// validateAccounts makes sure that the file's own configuration and every
+// account's entries, served or not, are valid. So an entry is judged when it
+// is written rather than when a connection first serves it.
 func (f *File) validateAccounts(accounts []Account) error {
 	if err := checkLimits("limits", f.Defaults.Limits); err != nil {
 		return err
@@ -358,7 +360,7 @@ func (f *File) validateAccounts(accounts []Account) error {
 	return nil
 }
 
-// validateAccount checks an account's accounts entry.
+// validateAccount makes sure that an account's accounts entry is valid.
 func (f *File) validateAccount(a *Account) error {
 	if err := checkLimits(a.entry+".limits", a.Limits); err != nil {
 		return err
@@ -366,9 +368,9 @@ func (f *File) validateAccount(a *Account) error {
 	return f.validateAccountProviders(a.entry, a)
 }
 
-// validateOverrides checks the settings the file's root writes: its models
-// name providers the instance declares, and its trigger, agent, review and
-// comments keys are in range.
+// validateOverrides makes sure that the configuration that the file's root
+// writes is valid: its models name providers that the instance declares, and
+// its trigger, agent, review, and comments keys are in range.
 func (f *File) validateOverrides(r *Overrides) error {
 	for _, m := range append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
 		namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback}) {
@@ -434,8 +436,8 @@ func (f *File) validateOverrides(r *Overrides) error {
 	return cmp.Or(f.validateAgents(r.Review.Agents), validateReview(r))
 }
 
-// validateAgent checks the agent bounds the file writes beyond its steps
-// and output.
+// validateAgent makes sure that the agent bounds that the file writes beyond
+// its steps and output are valid.
 func validateAgent(a Agent) error {
 	if a.Tokens != nil && *a.Tokens <= 0 {
 		return fmt.Errorf("configfile: agent.tokens must be positive")
@@ -457,8 +459,9 @@ func validateAgent(a Agent) error {
 	return nil
 }
 
-// validateReview checks what the file writes of a review's context, rules
-// and comment templates: the paths stay inside the repository.
+// validateReview makes sure that what the file writes of a review's context,
+// rules, and comment templates is valid: the paths stay inside the
+// repository.
 func validateReview(r *Overrides) error {
 	for i, c := range r.Context {
 		if err := c.Check(); err != nil {
@@ -505,7 +508,7 @@ func (c ContextFile) Check() error {
 	return nil
 }
 
-// ValidGlob reports whether g is a doublestar glob a setting may take.
+// ValidGlob reports whether g is a doublestar glob that a setting can take.
 func ValidGlob(g string) bool { return strings.TrimSpace(g) != "" && doublestar.ValidatePattern(g) }
 
 // ValidConfidence reports whether n is a confidence score.
@@ -513,7 +516,7 @@ func ValidConfidence(n int) bool { return n >= 0 && n <= MaxConfidence }
 
 // CheckRepoPath rejects a repository path that is empty, absolute or
 // escapes the repository root: every path a configuration names is read
-// in a checkout, so an unbounded one would read outside the repository.
+// in a checkout, so an unbounded one will read outside the repository.
 func CheckRepoPath(p string) error {
 	if strings.TrimSpace(p) == "" {
 		return errors.New("path must not be empty")
@@ -603,7 +606,7 @@ func (f *File) checkModelRef(where string, ref ModelRef) error {
 // checkAlias rejects a floating alias, a model ID starting with ~, that a
 // provider of type t cannot resolve: OpenRouter resolves its own
 // ~<author>/<family>-latest, kritika ~<family>-latest for the types that
-// take aliases, and the others would send one as it is.
+// take aliases, and the others will otherwise send one as it is.
 func checkAlias(where string, t ProviderType, id string) error {
 	switch {
 	case !model.Floating(id):
@@ -630,10 +633,11 @@ func checkLimits(where string, l LimitsSpec) error {
 	return nil
 }
 
-// compileFilter compiles a CEL filter and smoke-tests it against a sample PR,
-// so a filter that type-checks but fails at runtime (a field of the wrong
-// type, a non-boolean result) is caught at load rather than on the first
-// webhook. An empty filter compiles to nil, meaning "no restriction".
+// compileFilter compiles a CEL filter and smoke-tests it against a sample PR.
+// So it catches a filter that type-checks but fails at runtime (a field of
+// the wrong type, a non-boolean result). It catches that filter at load
+// rather than on the first webhook. An empty filter compiles to nil, which
+// means "no restriction".
 func compileFilter(expr string) (*prfilter.Program, error) {
 	if strings.TrimSpace(expr) == "" {
 		return nil, nil

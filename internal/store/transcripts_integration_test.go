@@ -152,7 +152,8 @@ func checkSplitRunTranscript(
 	}
 }
 
-// checkModelCallRefusals checks what InsertModelCall refuses.
+// checkModelCallRefusals makes sure that InsertModelCall refuses the correct
+// calls.
 func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta string) {
 	ctx := t.Context()
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
@@ -361,7 +362,7 @@ func TestSweepConversations(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		// Only a runner writes a conversation; the owner stands in for it.
+		// Only a runner writes a conversation. The owner stands in for it.
 		if _, err := s.owner.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, created_at)
 			VALUES ($1, $2, $3, '{"system":"s"}', 10, now() - $4::interval)`, id, alpha, id, age); err != nil {
 			t.Fatal(err)

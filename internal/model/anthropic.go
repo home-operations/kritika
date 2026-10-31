@@ -13,18 +13,18 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
-// defaultAnthropicMaxTokens applies when a request sets none; the Messages
+// defaultAnthropicMaxTokens applies when a request sets none. The Messages
 // API requires one.
 const defaultAnthropicMaxTokens = 8192
 
 // AnthropicConfig configures an Anthropic Messages adapter.
 type AnthropicConfig struct {
-	// BaseURL is the API root, without "/v1"; empty means the SDK's default.
+	// BaseURL is the API root, without "/v1". Empty means the SDK's default.
 	BaseURL string
 	APIKey  string
 	// Headers are as OpenAIConfig.Headers.
 	Headers map[string]string
-	// HTTPClient may be nil.
+	// HTTPClient can be nil.
 	HTTPClient *http.Client
 	Pricing    Pricing
 }
@@ -46,7 +46,8 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 	}
 	opts := []option.RequestOption{
 		option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey), option.WithHeader("User-Agent", userAgent()),
-		// The gateway owns retrying; the SDK's own would multiply its attempts.
+		// The gateway owns retrying. The SDK's own retries will otherwise
+		// multiply its attempts.
 		option.WithMaxRetries(0), option.WithRequestTimeout(StepTimeout),
 	}
 	if cfg.BaseURL != "" {
@@ -190,8 +191,8 @@ func anthropicEffort(e Effort) anthropic.OutputConfigEffort {
 	return anthropic.OutputConfigEffort(e)
 }
 
-// anthropicBlocks maps one message. Tool results lead a user message, as
-// the API requires; empty text is dropped because the API rejects it.
+// anthropicBlocks maps one message. Tool results lead a user message, as the
+// API requires. Empty text is dropped because the API rejects it.
 func anthropicBlocks(m Message) []anthropic.ContentBlockParamUnion {
 	blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.ToolCalls)+len(m.ToolResults))
 	for _, r := range m.ToolResults {

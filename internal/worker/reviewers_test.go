@@ -75,8 +75,8 @@ func TestChooseReviewers(t *testing.T) {
 }
 
 // TestJudgeReviewers: a specialist's conditions are judged over the whole
-// pull request, the diff read once when one needs it, and its models are
-// its own, or the default pass's as the agents picked them.
+// pull request, the diff read once when one needs it. Its models are its own,
+// or the default pass's as the agents picked them.
 func TestJudgeReviewers(t *testing.T) {
 	high := model.EffortHigh
 	off := false
@@ -112,9 +112,9 @@ func TestJudgeReviewers(t *testing.T) {
 	}
 }
 
-// TestPickModelsAsked: an agent that replaces the default pass, asked for
-// by name, picks the review's model whatever its conditions; asked for no
-// such agent, the first that holds does.
+// TestPickModelsAsked: an agent that replaces the default pass, asked for by
+// name, picks the review's model whatever its conditions. Asked for no such
+// agent, the first that holds does.
 func TestPickModelsAsked(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	fresh := func() Effective {
@@ -174,8 +174,8 @@ func TestRequestedReview(t *testing.T) {
 	}
 }
 
-// TestResolveRequest: the first word names a reviewer only when one that
-// is on; otherwise everything on the line is the focus, and a word alone
+// TestResolveRequest: the first word names a reviewer only when it names one
+// that is on. Otherwise everything on the line is the focus, and a word alone
 // that names none is what the review states it ran every agent for.
 func TestResolveRequest(t *testing.T) {
 	settings := configfile.Settings{Reviewers: map[string]configfile.Reviewer{"security": {}}}
@@ -220,9 +220,9 @@ func TestReviewRequestFocus(t *testing.T) {
 	}
 }
 
-// TestRequestedNoReviewer: "@<bot> review <word>" that names no agent
-// that is on queues a review of every agent that keeps the word, so the
-// review states why the one asked for did not run.
+// TestRequestedNoReviewer: "@<bot> review <word>" that names no agent that is
+// on queues a review of every agent that keeps the word. So the review states
+// why the one asked for did not run.
 func TestRequestedNoReviewer(t *testing.T) {
 	off := false
 	settings := configfile.Settings{
@@ -247,9 +247,9 @@ func TestRequestedNoReviewer(t *testing.T) {
 	}
 }
 
-// TestMayRun: a review holds slots on the models of the specialists it
-// may run alone: those whose conditions held, or the one asked for, and
-// none when the default pass or an agent that replaces it is asked for.
+// TestMayRun: a review holds slots on the models of the specialists it can
+// run alone: those whose conditions held, or the one asked for, and none when
+// the default pass or an agent that replaces it is asked for.
 func TestMayRun(t *testing.T) {
 	off := false
 	eff := Effective{
@@ -280,8 +280,8 @@ func TestMayRun(t *testing.T) {
 	}
 }
 
-// TestMayRunStaleRequest: a request queued for an agent that is no longer
-// on runs every agent that applies, and holds slots for them all, as
+// TestMayRunStaleRequest: a request queued for an agent that is no longer on
+// runs every agent that applies. It holds slots for them all, as
 // chooseReviewers falls back to.
 func TestMayRunStaleRequest(t *testing.T) {
 	off := false

@@ -10,11 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// APIToken is a personal access token a user created for an agent: a
-// read-only copy of what the sign-in its session came from let them read,
-// every account or the forge accounts Grant names, which stands while that
-// sign-in's configuration still matches Grant.Key, until ExpiresAt, nil
-// for never. Grant.Role is always RoleMember: a token never administers.
+// APIToken is a personal access token that a user created for an agent. It
+// is a read-only copy of what the sign-in its session came from let them
+// read: every account, or the forge accounts that Grant names. It stands
+// while that sign-in's configuration still matches Grant.Key, until
+// ExpiresAt, nil for never. Grant.Role is always RoleMember: a token never
+// administers.
 type APIToken struct {
 	ID         string
 	User       User
@@ -66,9 +67,9 @@ func CreateAPIToken(ctx context.Context, tx pgx.Tx, t APIToken) (token, id strin
 	return token, id, nil
 }
 
-// LookupAPIToken returns the token a value names, with its user, unless it
-// has expired by now, and records its use at most once a minute; else
-// ErrSession.
+// LookupAPIToken returns the token that a value names, with its user, unless
+// it expired by now, and records its use at most once a minute. Otherwise it
+// returns ErrSession.
 func (s *Store) LookupAPIToken(ctx context.Context, token string, now time.Time) (APIToken, error) {
 	t, err := scanAPIToken(s.app.QueryRow(ctx, `SELECT `+apiTokenColumns+`
 		FROM api_tokens t JOIN users u ON u.id = t.user_id
@@ -120,9 +121,9 @@ func ListAPITokens(ctx context.Context, tx pgx.Tx, userID string) ([]APIToken, e
 	return out, nil
 }
 
-// DeleteAPIToken deletes the token with id, only if it is the user's when
-// userID is not "", and returns it as it was; ErrNotFound when there is no
-// such token.
+// DeleteAPIToken deletes the token with id and returns it as it was. When
+// userID is not "", it deletes the token only if it is the user's. It returns
+// ErrNotFound when there is no such token.
 func DeleteAPIToken(ctx context.Context, tx pgx.Tx, id, userID string) (APIToken, error) {
 	t, err := scanAPIToken(tx.QueryRow(ctx, `WITH gone AS (
 			DELETE FROM api_tokens WHERE id::text = $1 AND ($2 = '' OR user_id::text = $2) RETURNING *)

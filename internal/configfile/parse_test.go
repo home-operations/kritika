@@ -27,7 +27,7 @@ func TestParseEmpty(t *testing.T) {
 }
 
 // TestParse: the file holds the whole configuration, and runs the accounts
-// its apps serve, keeping the entries none serves aside.
+// that its apps serve. It keeps aside the entries that none serves.
 func TestParse(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -114,8 +114,8 @@ func TestParseRejectsEntries(t *testing.T) {
 	}
 }
 
-// embeddingDoc is a file with an openrouter provider and an embedder of
-// it that is valid but for override, a field that replaces the one of its
+// embeddingDoc is a file with an openrouter provider and an embedder of it.
+// The file is valid but for override, a field that replaces the one of its
 // name.
 func embeddingDoc(override string) string {
 	fields := map[string]string{"model": "model: or/voyage-code-3", "dims": "dims: 1024"}

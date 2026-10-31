@@ -24,8 +24,8 @@ const (
 	CodeNoHead        ErrorCode = "no_head"
 	CodeNotCancelable ErrorCode = "not_cancelable"
 	CodeAlreadyQueued ErrorCode = "already_queued"
-	// CodeForgeError is the forge failing or refusing a call an admin
-	// asked for; the message is the forge's.
+	// CodeForgeError is the forge failing or refusing a call that an admin
+	// asked for. The message is the forge's.
 	CodeForgeError ErrorCode = "forge_error"
 	// CodeInstallationServed refuses to uninstall an App from an account
 	// its connection serves.
@@ -57,9 +57,9 @@ func errStatus(status int, code ErrorCode, message string) error {
 	return &apiError{status: status, code: code, message: message}
 }
 
-// jsonOptions is how every API response is encoded: json/v2's semantics,
-// under which a nil slice or map is an empty one, as the UI's types
-// promise, with map members sorted so a response reads the same twice.
+// jsonOptions is how every API response is encoded: json/v2's semantics, with
+// map members sorted so a response reads the same twice. Under those
+// semantics, a nil slice or map is an empty one, as the UI's types promise.
 var jsonOptions = jsonv2.JoinOptions(jsonv2.Deterministic(true))
 
 // writeJSON writes v as the response. Every API response is no-store:
@@ -89,12 +89,12 @@ func classify(err error) (int, ErrorBody, bool) {
 	return http.StatusInternalServerError, ErrorBody{Code: CodeInternal, Message: "internal error"}, false
 }
 
-// writeError writes err as classify answers it, logging an unexpected one.
+// writeError writes err as classify answers it. It logs an unexpected one.
 func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
 	status, body, expected := classify(err)
 	if !expected {
 		if r.Context().Err() != nil {
-			return // the client went away; there is no one to answer
+			return // the client went away, so there is no one to answer
 		}
 		logger.ErrorContext(r.Context(), "webapi: request failed", "method", r.Method, "path", r.URL.Path, "error", err)
 	}

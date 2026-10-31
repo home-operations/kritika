@@ -27,12 +27,12 @@ type CheckoutStats struct {
 }
 
 // Checkout writes the tree's files under dir, an empty directory, for the
-// commands the run tool executes. It skips ignored paths, files over the
-// read_file size cap and symlinks, which could point out of dir, and stops
-// before the total would pass maxBytes. Every file is written through an
-// os.Root on dir, which refuses a path that leads out of it, and 0644,
-// whatever mode git recorded: the commands read the checkout, and nothing
-// in it is meant to run.
+// commands that the run tool executes. It skips ignored paths, files over the
+// read_file size cap, and symlinks, which can point out of dir. It stops
+// before the total passes maxBytes. It writes every file through an os.Root
+// on dir, which refuses a path that leads out of it. It writes every file as
+// 0644, whatever mode git recorded: the commands read the checkout, and
+// nothing in it is meant to run.
 func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (CheckoutStats, error) {
 	var stats CheckoutStats
 	dst, err := os.OpenRoot(dir)

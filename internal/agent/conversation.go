@@ -7,9 +7,9 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 )
 
-// ContinueTokens is the most a conversation may hold, in tokens, for a
+// ContinueTokens is the most that a conversation can hold, in tokens, for a
 // later Run to carry it on. Every step of that Run reads the whole of it
-// again, so past this a fresh Run with a handoff costs less, even with
+// again. So past this limit, a fresh Run with a handoff costs less, even with
 // the provider's cache warm.
 const ContinueTokens = 100_000
 

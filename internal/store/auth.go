@@ -34,12 +34,12 @@ type SessionGrant struct {
 	AllAccounts bool
 	// Accounts are lowercased "<forge>/<name>" keys.
 	Accounts []string
-	// Key fingerprints the sign-in configuration that decided the grant; a
-	// caller honours the session only while it still matches.
+	// Key fingerprints the sign-in configuration that decided the grant. A
+	// caller honors the session only while it still matches.
 	Key string
 }
 
-// User is a human who has signed in to the dashboard.
+// User is a human who signed in to the dashboard.
 type User struct {
 	ID            string
 	DisplayName   string
@@ -77,8 +77,8 @@ func (s *Store) SetUserSettings(ctx context.Context, userID string, v UserSettin
 }
 
 // SignInIdentity is who a sign-in provider says a human is. Provider is the
-// sign-in's configured name and Origin where it pointed when the human
-// signed in (GitHub, the OIDC issuer, or "local" for the local admin);
+// sign-in's configured name. Origin is where it pointed when the human
+// signed in (GitHub, the OIDC issuer, or "local" for the local admin).
 // Subject is the provider's stable id for them, unique only within that
 // origin.
 type SignInIdentity struct {
@@ -103,14 +103,14 @@ type LoginState struct {
 	ReturnTo     string
 }
 
-// LoginStateTTL is how long a sign-in may take between leaving for the
+// LoginStateTTL is how long a sign-in can take between leaving for the
 // provider and coming back.
 const LoginStateTTL = 10 * time.Minute
 
 // MaxLoginStates caps the sign-ins in flight at once. Starting one needs
-// no session, so without a cap anyone could grow login_states without
-// bound for LoginStateTTL; far more than any real dashboard's users start
-// in ten minutes.
+// no session. So without a cap, anyone can grow login_states without bound
+// for LoginStateTTL. The cap is far more than any real dashboard's users
+// start in ten minutes.
 const MaxLoginStates = 10_000
 
 var (
@@ -139,7 +139,7 @@ func RandomToken() string {
 // UpsertIdentity finds or creates the user behind id and refreshes its
 // profile. Identities are keyed by provider, origin and subject only: an
 // email seen on two providers never links their users, since either
-// provider may let anyone claim any address.
+// provider can let anyone claim any address.
 func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity) (User, error) {
 	var u User
 	err := pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
@@ -165,8 +165,8 @@ func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity) (User, er
 
 // identityUser returns the user id of an existing identity, or
 // creates both. A concurrent first sign-in of the same identity makes the
-// identity insert a no-op; the user this call created is then dropped
-// and the winner's returned.
+// identity insert a no-op. The user that this call created is then dropped,
+// and the winner's is returned.
 func identityUser(ctx context.Context, tx pgx.Tx, id SignInIdentity) (string, error) {
 	var userID string
 	err := tx.QueryRow(ctx, `SELECT user_id FROM identities WHERE provider = $1 AND origin = $2 AND subject = $3`,
@@ -197,9 +197,9 @@ func identityUser(ctx context.Context, tx pgx.Tx, id SignInIdentity) (string, er
 }
 
 // CreateSession stores a new session for the user, signed in through
-// the provider at origin with grant g, valid until expires, records the
-// sign-in on the user, and returns its cookie value. Only the value's
-// SHA-256 is kept. Expired sessions are swept on the way.
+// the provider at origin with grant g, valid until expires. It records the
+// sign-in on the user and returns the session's cookie value. Only the
+// value's SHA-256 is kept. Expired sessions are swept on the way.
 func (s *Store) CreateSession(
 	ctx context.Context, userID, provider, origin string, g SessionGrant, now, expires time.Time,
 ) (string, error) {
@@ -292,8 +292,8 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 }
 
 // CreateLoginState stores ls for LoginStateTTL, bound to browser, the value
-// of the kritika_login cookie set in the browser starting the sign-in, and
-// returns the random state parameter that names it. Only SHA-256s of the
+// of the kritika_login cookie set in the browser starting the sign-in. It
+// returns the random state parameter that names ls. Only SHA-256s of the
 // state and browser values are kept. Expired states are swept on the way.
 func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser string, now time.Time) (string, error) {
 	if browser == "" {
@@ -315,11 +315,11 @@ func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser str
 	return state, nil
 }
 
-// ConsumeLoginState deletes and returns the login state a state parameter
-// names, so each can complete at most one sign-in, or ErrLoginState. The
-// state must have been created bound to browser. A mismatched browser
-// leaves the state in place: a callback replayed into another browser must
-// not burn the sign-in of the browser that started it.
+// ConsumeLoginState deletes and returns the login state that a state
+// parameter names, so each can complete at most one sign-in, or returns
+// ErrLoginState. The state must be one created bound to browser. A mismatched
+// browser leaves the state in place: a callback replayed into another
+// browser must not burn the sign-in of the browser that started it.
 func (s *Store) ConsumeLoginState(ctx context.Context, state, browser string, now time.Time) (LoginState, error) {
 	if state == "" || browser == "" {
 		return LoginState{}, ErrLoginState

@@ -34,9 +34,9 @@ type s3Cache struct {
 }
 
 // UseS3 shares completed downloads through S3. Local fills remain usable if an
-// upload fails; their directory and budget still belong to this process alone.
+// upload fails. Their directory and budget still belong to this process alone.
 // The bucket is not contacted at startup, so its availability cannot stop serve.
-// o is as package config checked the settings it comes from.
+// Package config made sure that the configuration o comes from is valid.
 func (c *Cache) UseS3(o S3Options) error {
 	if c.MaxEntryBytes <= 0 || c.MaxEntryBytes > 5<<30 {
 		return errors.New("egress: cache: S3 entry limit must be positive and at most 5Gi")
@@ -140,8 +140,8 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 	}}, entry, nil
 }
 
-// s3Entry is what an object's metadata records of the entry under key,
-// and false for an object that does not hold a sound entry for it.
+// s3Entry is what an object's metadata records of the entry under key. It
+// returns false for an object that does not hold a sound entry for key.
 func (c *Cache) s3Entry(info minio.ObjectInfo, key string) (cacheEntry, bool) {
 	var entry cacheEntry
 	raw, err := base64.StdEncoding.DecodeString(info.Metadata.Get("X-Amz-Meta-Kritika-Entry"))
@@ -188,10 +188,10 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 	ctx, cancel := context.WithTimeout(ctx, uploadDeadline(entry.Size))
 	defer cancel()
 	started := time.Now()
-	// Another replica may have published the entry already, the same body
-	// under the same digest: then this upload is not made. The check spends
-	// from the upload's own budget, and failing it does not stop the
-	// upload, which the circuit bounds.
+	// Another replica can publish the entry first, the same body under the
+	// same digest. Then this upload is not made. The lookup spends from the
+	// upload's own budget. A failed lookup does not stop the upload, which the
+	// circuit bounds.
 	statCtx, cancelStat := context.WithTimeout(ctx, s3LookupTimeout)
 	info, err := c.s3.client.StatObject(statCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
 	cancelStat()
@@ -217,7 +217,8 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 		minio.PutObjectOptions{
 			UserMetadata: map[string]string{"kritika-entry": metadata},
 			ContentType:  "application/octet-stream", DisableMultipart: true, SendContentMd5: true,
-			// Content-MD5 verifies the body without requiring aws-chunked signing.
+			// Content-MD5 makes sure that the body is intact without requiring
+			// aws-chunked signing.
 			DisableContentSha256: true,
 		})
 	if err != nil {

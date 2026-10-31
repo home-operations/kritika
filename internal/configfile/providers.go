@@ -23,17 +23,17 @@ type Provider struct {
 	BaseURL string    `yaml:"baseUrl,omitempty"`
 	APIKey  SecretRef `yaml:"apiKey"`
 	// Pricing, keyed by model id or floating alias, computes the cost of
-	// calls the provider does not report a cost for; without a price such
+	// calls that the provider does not report a cost for. Without a price, such
 	// calls are recorded as unpriced, at no cost, while their tokens still
 	// count against limits.
 	Pricing model.Pricing `yaml:"pricing,omitempty"`
-	// Retries is how many more times a review's or a follow-up's step, the
-	// scorer's call or a split review's summary call on one of the
-	// provider's models is tried after it failed in a way another attempt
-	// may not (a 5xx, a 429, a timeout, a cut connection), at most
-	// MaxProviderRetries; zero tries once. A routing proxy that picks a
-	// model per request is where it earns its keep. The embedder does not
-	// use it.
+	// Retries is how many more times each of these is tried on one of the
+	// provider's models: a review's or a follow-up's step, the scorer's call,
+	// or a split review's summary call. It applies after an attempt failed in
+	// a way that another attempt can avoid (a 5xx, a 429, a timeout, a cut
+	// connection). It is at most MaxProviderRetries, and zero tries once. A
+	// routing proxy that picks a model per request is where it earns its keep.
+	// The embedder does not use it.
 	Retries int `yaml:"retries,omitempty"`
 	// Headers are sent with every request to the provider, by name, and
 	// replace kritika's own of the same name: a gateway's routing or
@@ -64,7 +64,7 @@ func (p Provider) HeaderValues() map[string]string {
 }
 
 // HeaderSecrets returns the resolved values of the headers given by
-// reference; an inline value is not a secret.
+// reference. An inline value is not a secret.
 func (p Provider) HeaderSecrets() []string {
 	var out []string
 	for name, h := range p.Headers {
@@ -81,7 +81,7 @@ func (p Provider) HeaderSecrets() []string {
 func (p Provider) ChatGPTSessionKey() string { return p.sessionKey }
 
 // Provider is the model provider name refers to for account t: the account's
-// own when it declares one by that name, else the instance's. t may be nil.
+// own when it declares one by that name, else the instance's. t can be nil.
 // A file not built by Parse gets its session keys here.
 func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
@@ -97,17 +97,18 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 
 // UnpricedModel is a configured model whose calls will be unpriced.
 type UnpricedModel struct {
-	// Setting names where the file sets it, as its errors would.
+	// Setting names where the file sets it, as its errors do.
 	Setting string
 	Ref     ModelRef
 }
 
-// UnpricedModels lists the review, fallback, agents' and confidence models
-// of the file's own settings whose provider's API reports no cost, as anthropic's
-// and openai's do not, and whose pricing has no price under the model as
-// written: its id, or the floating alias that prices whatever model it
-// selects. A repository's .kritika.yaml is read only when it is reviewed,
-// so its models are not listed.
+// UnpricedModels lists models from the file's own configuration: the review,
+// fallback, agents', and confidence models. It lists those whose provider's
+// API reports no cost, as anthropic's and openai's do not. Of those, it lists
+// the ones whose pricing has no price under the model as written: its id, or
+// the floating alias that prices whatever model it selects. A repository's
+// .kritika.yaml is read only when it is reviewed, so its models are not
+// listed.
 func (f *File) UnpricedModels() []UnpricedModel {
 	var out []UnpricedModel
 	r := &f.Defaults.Overrides
@@ -134,7 +135,7 @@ func (f *File) UnpricedModels() []UnpricedModel {
 }
 
 // ChatGPTProviders returns the chatgpt providers account t can use, the
-// instance's and its own, by name. t may be nil.
+// instance's and its own, by name. t can be nil.
 func (f *File) ChatGPTProviders(t *Account) map[string]Provider {
 	out := map[string]Provider{}
 	names := slices.Collect(maps.Keys(f.Providers))
@@ -183,8 +184,8 @@ func (p *Provider) resolve(where, sessionKey string, s *secrets) error {
 }
 
 // reservedHeaders are the headers of a provider request that apiKey, the
-// SDKs or Go's HTTP client set, and X-Api-Key, which would send a second
-// key, canonicalized.
+// SDKs, or Go's HTTP client set. They also include X-Api-Key, which will
+// otherwise send a second key. All are canonicalized.
 var reservedHeaders = []string{
 	"Authorization", "X-Api-Key", "Host", "Content-Type", "Content-Length", "Content-Encoding",
 	"Transfer-Encoding", "Connection", "Accept", "Accept-Encoding",
@@ -194,8 +195,9 @@ var reservedHeaders = []string{
 // and not a JSON object, which has quotes or colons.
 var placeholderRe = regexp.MustCompile(`\{[^{}\s"':,]+\}`)
 
-// validateHeaders checks the names and resolved values of a provider's
-// headers. Errors never quote a value, which may be a secret.
+// validateHeaders makes sure that the names and resolved values of a
+// provider's headers are valid. Errors never quote a value, which can be a
+// secret.
 func (p Provider) validateHeaders(where string) error {
 	if p.Type == ProviderChatGPT && len(p.Headers) > 0 {
 		return fmt.Errorf("configfile: %s.headers: a chatgpt provider takes none", where)
@@ -229,8 +231,8 @@ func (p Provider) validateHeaders(where string) error {
 	return nil
 }
 
-// validate checks a provider's type, endpoint, key, retries, headers and
-// prices.
+// validate makes sure that a provider's type, endpoint, key, retries,
+// headers, and prices are valid.
 func (p Provider) validate(where string) error {
 	if !p.Type.Valid() {
 		return fmt.Errorf("configfile: %s.type must be %s, %s, %s, %s or %s, got %q",
@@ -267,8 +269,9 @@ func (p Provider) validate(where string) error {
 	return nil
 }
 
-// validateAccountProviders checks an account's own providers: names a model
-// reference can carry, none the instance's providers already use, each valid.
+// validateAccountProviders makes sure that an account's own providers are
+// valid: names that a model reference can carry, none that the instance's
+// providers already use, each valid.
 func (f *File) validateAccountProviders(where string, t *Account) error {
 	for _, name := range slices.Sorted(maps.Keys(t.Providers)) {
 		pwhere := where + ".providers." + name

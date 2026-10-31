@@ -13,9 +13,9 @@ func Marker(number int) string {
 	return fmt.Sprintf("<!-- kritika:pr-%d -->", number)
 }
 
-// FindingMarker is the hidden HTML comment that identifies the inline
-// comment posted for a finding, by its Fingerprint, so a review that posts
-// again after a crash finds the forge already has it. Like Marker, it is
+// FindingMarker is the hidden HTML comment that identifies the inline comment
+// posted for a finding, by its Fingerprint. So a review that posts again
+// after a crash finds that the forge already has it. Like Marker, it is
 // matched together with the comment's author.
 func FindingMarker(fingerprint string) string {
 	return "<!-- kritika:finding:" + fingerprint + " -->"
@@ -27,10 +27,10 @@ func MarkedFinding(body string) (string, bool) {
 	return marked(body, "<!-- kritika:finding:")
 }
 
-// markerPattern matches the hidden HTML comments kritika marks its own
-// comments with, which stripMarkers drops from the model's text: one the
-// model echoes, quoting a finding's or a reply's, would otherwise pass for
-// kritika's own when a comment is read back.
+// markerPattern matches the hidden HTML comments that kritika marks its own
+// comments with, which stripMarkers drops from the model's text. Otherwise,
+// one that the model echoes when it quotes a finding's or a reply's passes
+// for kritika's own when a comment is read back.
 var markerPattern = regexp.MustCompile(`<!-- kritika:[^>]* -->`)
 
 // stripMarkers removes every marker from s, until none is left: dropping
@@ -45,9 +45,9 @@ func stripMarkers(s string) string {
 	}
 }
 
-// FollowUpMarker is the hidden HTML comment that identifies the reply to
-// the comment commentID, so a follow-up job that runs again after a crash
-// finds the reply already posted.
+// FollowUpMarker is the hidden HTML comment that identifies the reply to the
+// comment commentID. So a follow-up job that runs again after a crash finds
+// the reply already posted.
 func FollowUpMarker(commentID int64) string {
 	return fmt.Sprintf("<!-- kritika:followup:%d -->", commentID)
 }
@@ -58,10 +58,10 @@ func MarkedFollowUp(body string) (string, bool) {
 	return marked(body, "<!-- kritika:followup:")
 }
 
-// ConcessionMarker is the hidden HTML comment a reply that concedes the
-// finding fingerprint carries, so a follow-up job that runs again after a
-// crash between posting it and recording the dismissal still dismisses
-// the finding.
+// ConcessionMarker is the hidden HTML comment that a reply carries when it
+// concedes the finding fingerprint. So a follow-up job that runs again after
+// a crash between posting the reply and recording the dismissal still
+// dismisses the finding.
 func ConcessionMarker(fingerprint string) string {
 	return "<!-- kritika:conceded:" + fingerprint + " -->"
 }

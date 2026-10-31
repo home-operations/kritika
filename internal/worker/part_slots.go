@@ -12,7 +12,7 @@ import (
 
 const partSlotInterval = 2 * time.Second
 
-// reviewSlots owns only the extra leases; admission retains the first slot.
+// reviewSlots owns only the extra leases. Admission retains the first slot.
 // Its watch is stopped before close or any other caller accesses the leases.
 type reviewSlots struct {
 	worker                  *Review

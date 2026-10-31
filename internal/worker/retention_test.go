@@ -25,11 +25,11 @@ apps:
 `)
 }
 
-// sweepCall is one call fakeRetentionStore received, carrying the argument
-// it was given. Sending the value on the channel (rather than stashing it in
-// a field the test reads separately) means the data only ever crosses
-// goroutines through the channel op itself, so there's no shared state for
-// a later, unsynchronized pass to race against.
+// sweepCall is one call that fakeRetentionStore received, and it carries the
+// argument that the call was given. The value is sent on the channel rather
+// than stashed in a field that the test reads separately. So the data only
+// ever crosses goroutines through the channel op itself. There is no shared
+// state for a later, unsynchronized pass to race against.
 type sweepCall struct {
 	name    string
 	swept   time.Duration
@@ -198,9 +198,9 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		close(done)
 	}()
 
-	// Every sweep fails on every pass; wait for two full passes (14 calls)
-	// to prove a failure doesn't stop the loop, and one call more, which
-	// the fourteenth call's warning is logged before.
+	// Every sweep fails on every pass. Wait for two full passes (14 calls) to
+	// prove that a failure does not stop the loop. Wait for one call more,
+	// which the fourteenth call's warning is logged before.
 	for range 15 {
 		select {
 		case <-st.calls:

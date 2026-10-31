@@ -11,10 +11,10 @@ import (
 )
 
 // linkedIssues reads the issues of owner/repo that body, the pull request
-// description, says the change closes, for the prompt. A number the forge
-// has no issue for, or that names a pull request, is left out; one the
-// forge would not give is left out with a note the summary states, since
-// the App may lack the permission to read it.
+// description, says the change closes, for the prompt. A number that the
+// forge has no issue for, or that names a pull request, is left out. A number
+// that the forge did not give is left out with a note the summary states. The
+// reason is that the App can lack the permission to read it.
 func linkedIssues(ctx context.Context, client forge.Client, owner, repo, body string, logger *slog.Logger) ([]review.Issue, []string) {
 	numbers := review.LinkedIssues(body, owner+"/"+repo)
 	issues := make([]review.Issue, 0, len(numbers))

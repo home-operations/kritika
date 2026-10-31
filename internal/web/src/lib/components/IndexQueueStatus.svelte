@@ -1,7 +1,7 @@
 <script lang="ts">
   // Where a repository stands for its next index: its index job queued or
-  // running, or its place among the repositories waiting for the
-  // onboarding feeder, which queues only a few first indexes at a time.
+  // running, or its place among the repositories that wait for the
+  // onboarding feeder. The feeder queues only a few first indexes at a time.
   import Pill from './Pill.svelte';
   import { indexJobText, jobTone } from '../format';
   import type { IndexState } from '../types';

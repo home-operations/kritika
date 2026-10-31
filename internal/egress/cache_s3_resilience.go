@@ -16,8 +16,8 @@ const (
 	s3ReadTimeout   = 10 * time.Second
 	s3UploadTimeout = 30 * time.Second
 	// s3UploadRate is the slowest upload allowed past the fixed budget: one
-	// second per MiB, so a 256Mi entry has about five minutes and the 5Gi
-	// cap about ninety, instead of a deadline no large entry could meet.
+	// second per MiB. So a 256Mi entry has about five minutes and the 5Gi
+	// cap about ninety, instead of a deadline that no large entry can meet.
 	s3UploadRate    = 1 << 20
 	s3Cooldown      = 30 * time.Second
 	s3Failures      = 3
@@ -108,7 +108,7 @@ func (b *s3Circuit) complete(a s3Attempt, err error, now time.Time) {
 }
 
 // RunUploads owns the background workers. Cancellation drops queued keys and
-// cancels active uploads; uploads never extend gateway shutdown.
+// cancels active uploads. Uploads never extend gateway shutdown.
 func (c *Cache) RunUploads(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	for range s3UploadWorkers {
@@ -121,7 +121,7 @@ func (c *Cache) RunUploads(ctx context.Context) error {
 					if ctx.Err() != nil {
 						return nil
 					}
-					// upload records storage errors; publication is best effort.
+					// upload records storage errors. Publication is best effort.
 					_ = c.upload(ctx, key)
 				}
 			}

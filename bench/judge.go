@@ -39,10 +39,11 @@ const judgeSystem = "You compare one code review finding with one known defect i
 	"the defect does not match. Judge from what is given; do not assume the finding is right because it is near the lines."
 
 // judge decides, as Kodus's recall judge does, whether a finding identifies
-// the defect an expected entry describes when its lines do not land on it,
-// so a review that found the defect and anchored it a few lines away, or
-// on its cause, still counts. It is a model of its own, with its verdicts
-// recorded so a floor can be pinned to it.
+// the defect that an expected entry describes. It decides this when the
+// finding's lines do not land on the defect. A review that found the defect
+// and anchored it a few lines away, or on its cause, still counts. The judge
+// is a model of its own, with its verdicts recorded so that a floor can be
+// pinned to it.
 type judge struct {
 	completer model.Structured
 	model     string
@@ -80,8 +81,8 @@ type verdict struct {
 	Error      string  `json:"error,omitempty"`
 }
 
-// Matches asks whether f identifies the defect e describes. An error is
-// no match, recorded on the verdict; the pair is never asked again.
+// Matches asks whether f identifies the defect that e describes. An error
+// is no match and is recorded on the verdict. The pair is never asked again.
 func (j *judge) Matches(ctx context.Context, e Expected, f review.Finding) verdict {
 	v := verdict{Expected: fmt.Sprintf("%s:%d-%d", e.Path, e.Lines[0], e.Lines[1]), Finding: fmt.Sprintf("%s:%d %s", f.Path, f.Line, f.Title)}
 	var b strings.Builder

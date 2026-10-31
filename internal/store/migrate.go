@@ -20,7 +20,7 @@ import (
 var migrationFS embed.FS
 
 // Migrate applies River's schema and then kritika's own migrations, in order,
-// each in its own transaction, recording each in schema_migrations. It runs
+// each in its own transaction. It records each in schema_migrations. It runs
 // as the owner and is idempotent. Grants to the application and runner
 // roles are re-applied after every run because a new table needs them and
 // GRANT is idempotent.
@@ -60,7 +60,7 @@ func (s *Store) applyMigration(ctx context.Context, name, version string) error 
 		return fmt.Errorf("store: begin migration %s: %w", version, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	// Serialise concurrent migrators; the leader lock already does, but a
+	// Serialize concurrent migrators. The leader lock already does, but a
 	// manual run from a shell must not race it.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-migrate'))`); err != nil {
 		return fmt.Errorf("store: migration lock: %w", err)
@@ -90,9 +90,9 @@ func (s *Store) applyMigration(ctx context.Context, name, version string) error 
 }
 
 // SchemaReady reports whether every embedded migration, River's and
-// kritika's, has been applied and River's tables granted, so a replica that
-// is not the leader knows when it may start working jobs: a release may
-// bring a River migration without one of kritika's. A fresh database has no
+// kritika's, is applied and River's tables are granted. So a replica that is
+// not the leader knows when it can start working jobs. A release can bring a
+// River migration without one of kritika's. A fresh database has no
 // schema_migrations table at all, which is "not yet", not an error.
 func (s *Store) SchemaReady(ctx context.Context) (bool, error) {
 	names, err := fs.Glob(migrationFS, "migrations/*.sql")
@@ -113,7 +113,7 @@ func (s *Store) SchemaReady(ctx context.Context) (bool, error) {
 	if applied < len(names) {
 		return false, nil
 	}
-	// The result says what River's migrator would log, at every poll.
+	// The result says what River's migrator will otherwise log, at every poll.
 	migrator, err := rivermigrate.New(riverpgxv5.New(s.app), &rivermigrate.Config{Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		return false, fmt.Errorf("store: river migrator: %w", err)
@@ -163,7 +163,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	stmts := []string{
 		`GRANT USAGE ON SCHEMA public TO ` + app + `, ` + runner,
 		`GRANT SELECT ON accounts, config_state, schema_migrations TO ` + app,
-		// Only the leader writes connections; a request stamps a delivery.
+		// Only the leader writes connections. A request stamps a delivery.
 		`GRANT SELECT, UPDATE (last_webhook_at, last_unsigned_webhook_at) ON connections TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
@@ -179,16 +179,16 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT ON audit_events TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls, egress_refusals, model_invocations TO ` + app,
 		// The runner role sees only its own job through the runner_job
-		// policies; it needs the table privileges those policies gate. On
-		// runner_runs it may update only what a runner reports, never the
-		// account or review its run belongs to.
+		// policies. It needs the table privileges that those policies gate. On
+		// runner_runs, it can update only what a runner reports, never the
+		// account or review that its run belongs to.
 		`GRANT SELECT, UPDATE (` + strings.Join(runnerRunColumns, ", ") + `) ON runner_runs TO ` + runner,
 		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs, agent_conversations TO ` + runner,
 		`GRANT SELECT, INSERT ON review_part_checkpoints TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}
-	// River's tables are outside row-level security; the application role
+	// River's tables are outside row-level security. The application role
 	// inserts and works jobs. Their set changes across River versions, so
 	// grant on whatever River's migrations created rather than a fixed list.
 	rows, err := s.owner.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename LIKE 'river\_%'`)

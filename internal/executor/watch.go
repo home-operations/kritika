@@ -41,17 +41,17 @@ type watches struct {
 }
 
 // Start watches runner Jobs and their pods, which Run needs first, until
-// Stop: the API server sends each change as it happens, rather than the
-// replica asking after every run in flight. It returns once the API has let
-// it watch both and both are listed, waiting at most watchSync, and ctx
+// Stop. The API server sends each change as it happens, rather than the
+// replica asking after every run in flight. Start returns once the API lets
+// it watch both and both are listed, and it waits at most watchSync. ctx
 // bounds that wait alone: the watch outlasts ctx, which a signal ends while
-// runs still drain. It watches the role label's Jobs and pods alone, never
-// a Secret.
+// runs still drain. It watches the role label's Jobs and pods alone, never a
+// Secret.
 func (k *Kube) Start(ctx context.Context) error {
 	sctx, cancel := context.WithTimeout(ctx, watchSync)
 	defer cancel()
-	// A watch refused would leave the informers relisting, which their
-	// first lists succeeding does not show: each is tried once, for no
+	// A refused watch will leave the informers relisting, and the success of
+	// their first lists does not show that. So each watch is tried once, for no
 	// object.
 	none := metav1.ListOptions{LabelSelector: runnerSelector, FieldSelector: "metadata.name=" + watchCheck}
 	jw, err := k.Client.BatchV1().Jobs(k.Namespace).Watch(sctx, none)
@@ -88,8 +88,8 @@ func (k *Kube) Start(ctx context.Context) error {
 	if err := factory.WaitForCacheSyncWithContext(sctx).AsError(); err != nil {
 		return fmt.Errorf("executor: watch runner jobs: not listed within %s: %w", watchSync, err)
 	}
-	// The lists are handed to the handler before any run registers, so an
-	// event of a listed Job never stands in for the cache read a
+	// The lists are handed to the handler before any run registers. So an
+	// event of a listed Job never stands in for the cache read that a
 	// registration asks for.
 	if !cache.WaitForCacheSync(sctx.Done(), handled...) {
 		return fmt.Errorf("executor: watch runner jobs: not handled within %s", watchSync)
@@ -130,10 +130,10 @@ func (w *watches) changed(obj any) {
 }
 
 // wait requests an initial cache read and wakes again on job's changes until
-// done, which leaves alone a later wait on a Job of the same name.
+// done. done leaves alone a later wait on a Job of the same name.
 func (w *watches) wait(job string) (wake <-chan struct{}, done func()) {
 	ch := make(chan struct{}, 1)
-	// Creation and Secret delivery may outlast the Job's watch events.
+	// Creation and Secret delivery can outlast the Job's watch events.
 	ch <- struct{}{}
 	w.mu.Lock()
 	w.woken[job] = ch

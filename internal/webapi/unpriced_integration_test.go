@@ -118,9 +118,9 @@ func testUnpricedDashboard(t *testing.T, e *apiEnv) {
 	checkUnpricedAgentSteps(t, e, reviewPath, before)
 }
 
-// checkUnpricedAgentSteps: a call the worker makes for the run, as a split
-// review's merge is, is the review's but none of the agent's steps, which
-// the runner counts.
+// checkUnpricedAgentSteps: a call that the worker makes for the run, as a
+// split review's merge is, is the review's. It is none of the agent's steps,
+// which the runner counts.
 func checkUnpricedAgentSteps(t *testing.T, e *apiEnv, reviewPath string, before ReviewDetail) {
 	ctx := t.Context()
 	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {

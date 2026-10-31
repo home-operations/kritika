@@ -91,7 +91,7 @@ func TestReadLedgerCheck(t *testing.T) {
 	if err := l.check(json.RawMessage(`not json`)); err != nil {
 		t.Fatalf("what does not decode is Validate's to refuse, got %v", err)
 	}
-	// Refused once, a submission is refused again until the model has seen
+	// Refused once, a submission is refused again until the model sees
 	// the refusal, then only once more was read.
 	if err := l.check(sub("main.go", "other.go")); err == nil {
 		t.Fatal("not refused again before the refusal was delivered")
@@ -111,7 +111,7 @@ func TestReadLedgerCheck(t *testing.T) {
 }
 
 // TestReadLedgerMark: marking sets unread on the findings of files never
-// read and drops the model's own, touching nothing else.
+// read and drops the model's own. It touches nothing else.
 func TestReadLedgerMark(t *testing.T) {
 	l := newReadLedger(nil)
 	l.add(json.RawMessage(`{"path":"main.go"}`))
@@ -136,7 +136,7 @@ func TestReadLedgerMark(t *testing.T) {
 	if len(res.Findings) != 2 || res.Findings[0].Unread || !res.Findings[1].Unread || res.Summary.Take != "ok" {
 		t.Fatalf("marked = %s", marked)
 	}
-	// The model's own unread, in any case, goes; the summary and the keys
+	// The model's own unread, in any case, goes. The summary and the keys
 	// the contract does not define stay as they were, an empty diagram
 	// that takes the last review's back included.
 	raw = json.RawMessage(`{"summary":{"take":"ok","praise":[],"diagram":""},"verdict":"x","findings":[` +
@@ -218,9 +218,10 @@ func sameFinding(t *testing.T, raw json.RawMessage, unread bool) bool {
 		res.Findings[0].Title == "t" && res.Findings[0].Unread == unread
 }
 
-// TestReviewAgentEvidence: a finding on a file the agent never read is
-// refused while the agent can still read, taken on a step it must submit
-// on, and then marked unread; a review of one step is not held to it.
+// TestReviewAgentEvidence: a finding on a file that the agent never read is
+// refused while the agent can still read. It is taken on a step that the
+// agent must submit on, and then marked unread. A review of one step is not
+// held to it.
 func TestReviewAgentEvidence(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n\nfunc b() {}\n"})
 	finding := `{"summary":{"take":"ok","praise":[]},"findings":[{"path":"main.go","line":3,"severity":"p2","category":"correctness","title":"t","explanation":"e"}]}`
@@ -300,8 +301,8 @@ func TestReviewAgentEvidence(t *testing.T) {
 	})
 }
 
-// TestReviewAgentEvidenceTaken: a submission the agent can no longer be
-// refused on, forced or held as a fallback, is taken and marked; a review
+// TestReviewAgentEvidenceTaken: a submission that the agent can no longer be
+// refused on, forced or held as a fallback, is taken and marked. A review
 // of one step is not held to the gate.
 func TestReviewAgentEvidenceTaken(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n\nfunc b() {}\n"})

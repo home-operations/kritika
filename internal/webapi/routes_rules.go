@@ -17,10 +17,10 @@ import (
 // rulesRepoPage is how many repositories one read of the list takes.
 const rulesRepoPage = 500
 
-// listRules serves the rules, review instructions and context files the
+// listRules serves the rules, review instructions and context files that the
 // account's running repositories read: the configuration's, and each
-// repository's own from its .kritika.yaml as its last review read it; a
-// written rule with the findings that cite it.
+// repository's own from its .kritika.yaml as its last review read it. It
+// serves a written rule with the findings that cite it.
 func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	rules, err := s.accountRules(r.Context(), t, "")
 	if err != nil {

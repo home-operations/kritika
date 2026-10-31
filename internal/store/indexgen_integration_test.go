@@ -30,11 +30,11 @@ func TestGenerationPublication(t *testing.T) {
 	account := accountID(t, s, "generation")
 	tests := []struct {
 		name string
-		// first publishes before second; concurrent holds first's
+		// first publishes before second. concurrent holds first's
 		// transaction open until second waits on the repository lock.
 		first, second string
 		concurrent    bool
-		// stale is whether second is refused; active is the run left
+		// stale is whether second is refused. active is the run left
 		// active at commit, and superseded the generation it replaced.
 		stale                      bool
 		active, commit, superseded string
@@ -148,7 +148,7 @@ func TestFinishIndexRunPreservesTerminalStatus(t *testing.T) {
 					account, repo, tt.status).Scan(&run); err != nil {
 					return err
 				}
-				// A terminal record may reflect a successful COMMIT whose
+				// A terminal record can reflect a successful COMMIT whose
 				// acknowledgement never reached the worker doing failure cleanup.
 				if err := FinishIndexRun(ctx, tx, run, IndexFailed, 0, "commit acknowledgement lost"); err != nil {
 					return err

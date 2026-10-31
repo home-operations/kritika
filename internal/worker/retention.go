@@ -9,15 +9,15 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// retentionSweepInterval is how often the leader deletes model-call
-// transcripts, egress refusals, settled model invocations, review diffs,
-// agent conversations, stopped repositories' indexes and dashboard sessions
-// past their retention window.
+// retentionSweepInterval is how often the leader deletes these items past
+// their retention window: model-call transcripts, egress refusals, settled
+// model invocations, review diffs, agent conversations, stopped repositories'
+// indexes and dashboard sessions.
 const retentionSweepInterval = time.Hour
 
 // conversationRetention is how long an agent's conversation is kept for a
-// re-review to carry on: well past any provider's cache window, after
-// which carrying it on would cost more than starting afresh.
+// re-review to carry on: well past any provider's cache window, after which
+// carrying it on costs more than starting afresh.
 const conversationRetention = 2 * time.Hour
 
 // retentionStore is the subset of *store.Store that Retention needs,
@@ -34,13 +34,14 @@ type retentionStore interface {
 	SweepModelInvocations(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
-// Retention deletes what is kept only so long: model-call transcripts,
-// egress refusals and settled model invocations older than the current
-// configuration's transcript retention window, review diffs
-// past theirs, the indexes of repositories it has not run for longer than
-// its index grace and agent conversations older than conversationRetention
-// (owner pool, bypassing row-level security), and expired dashboard
-// sessions (app pool). A leader duty.
+// Retention deletes what is kept only so long. The owner pool bypasses
+// row-level security. With that pool, Retention deletes model-call
+// transcripts, egress refusals, and settled model invocations older than the
+// current configuration's transcript retention window. It also deletes review
+// diffs past their own retention window. It also deletes the indexes of
+// repositories that the configuration did not run for longer than its index
+// grace, and agent conversations older than conversationRetention. With the
+// app pool, it deletes expired dashboard sessions. A leader duty.
 type Retention struct {
 	Store   retentionStore
 	Current *configfile.Current

@@ -12,7 +12,7 @@ export interface Lifecycle {
 }
 
 // lifecycle is the first that holds of merged, closed, draft and open: a
-// merged pull request is also closed, and a draft may be either.
+// merged pull request is also closed, and a draft can be either.
 export function lifecycle(p: Pick<Pull, 'merged' | 'state' | 'draft'>): Lifecycle {
   if (p.merged) return { state: 'merged', label: 'Merged', icon: mdiSourceMerge, tone: 'merged' };
   if (p.state === 'closed') return { state: 'closed', label: 'Closed', icon: mdiSourceBranchRemove, tone: 'danger' };

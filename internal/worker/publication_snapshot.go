@@ -69,8 +69,9 @@ type preparationInput struct {
 	Preparation *publicationPreparation
 }
 
-// publicationInput is the finalized answer and its rendering context. Delivery
-// has no dependency on parsing settings or on the original runner's full row.
+// publicationInput is the finalized answer and its rendering context.
+// Delivery has no dependency on parsing configuration or on the original
+// runner's full row.
 type publicationInput struct {
 	publicationContext
 	Version   int
@@ -195,7 +196,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 		Models: configfile.Models{Effort: s.Effort, Route: s.Route}, MaxAutoReviews: s.MaxAutoReviews}
 	// Whether the comments carry the dashboard's URL follows the
 	// configuration the publication resumes under, not the one it was saved
-	// with: the restart that turned comments.dashboard off may be what
+	// with: the restart that turned comments.dashboard off can be what
 	// interrupted it.
 	p.settings.Review.Dashboard = p.file.Settings(p.account).Review.Dashboard
 	p.templates, p.scope, p.trigger, p.focus = s.Templates, s.Scope, s.Trigger, s.Focus

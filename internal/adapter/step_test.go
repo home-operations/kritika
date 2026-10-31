@@ -12,9 +12,9 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 )
 
-// stepperFunc answers each step from the next error in errs, then the
-// answer; it records how many steps it took and the model each asked for,
-// and calls then, when set, after each.
+// stepperFunc answers each step from the next error in errs, then the answer.
+// It records how many steps it took and the model each asked for, and calls
+// then, when set, after each.
 type stepperFunc struct {
 	errs   []error
 	steps  int

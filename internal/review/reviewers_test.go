@@ -213,7 +213,7 @@ func TestRenderReviewers(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, summary)
 		}
 	}
-	// A specialist that ran alone, finding nothing, is still named.
+	// A specialist that ran alone and found nothing is still named.
 	lone := RenderData{Number: 1, HeadSHA: "abcdef1234", Agents: []string{"security"}}
 	summary, _ = RenderSummary(context.Background(), Templates{}, lone)
 	for _, want := range []string{"1 agent</summary>", "**Agents:** `security`"} {
@@ -230,8 +230,8 @@ func TestRenderReviewers(t *testing.T) {
 }
 
 // TestParseReviewersKeepPriorThread: a finding that repeats a prior one's
-// title carries its thread into the finding of another reviewer it is
-// merged into, though the other's title wins.
+// title carries its thread into the finding of another reviewer that it is
+// merged into. The other's title still wins.
 func TestParseReviewersKeepPriorThread(t *testing.T) {
 	prior := Finding{Path: "main.go", Line: 11, Severity: SeverityP2, Category: CategorySecurity, Title: "Unchecked input"}
 	raw := `{"summary": {"take": "T."}, "findings": [

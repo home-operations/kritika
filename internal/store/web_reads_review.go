@@ -82,7 +82,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 }
 
 // PartCosts is what the model calls of each part of a split review's run
-// runnerRunID cost, by part, from 1; a run whose calls were swept, or that
+// runnerRunID cost, by part, from 1. A run whose calls were swept, or that
 // was not split, has none.
 func PartCosts(ctx context.Context, tx pgx.Tx, runnerRunID string) (map[int]float64, error) {
 	rows, err := tx.Query(ctx, `SELECT part, sum(cost_usd)::float8 FROM model_calls WHERE runner_run_id = $1 AND part > 0
@@ -144,8 +144,8 @@ func LatestRunnerRun(ctx context.Context, tx pgx.Tx, reviewID string) (RunnerRun
 // TimelineStep is one agent step as agent_runs.timeline records it.
 type TimelineStep struct {
 	Index int `json:"index"`
-	// Part is the part of a split review the step was for, from 1; 0 when
-	// the review was not split.
+	// Part is the part of a split review that the step was for, from 1. It is
+	// 0 when the review was not split.
 	Part         int      `json:"part,omitempty"`
 	Tools        []string `json:"tools"`
 	DurationMS   int64    `json:"duration_ms"`
@@ -163,9 +163,9 @@ type AgentRunRow struct {
 	ToolCalls map[string]int
 	Timeline  []TimelineStep
 	Sources   []string
-	// SkillsOffered are the repository skills the agent could load, and
-	// SkillsOpened the ones it did; CommandsOffered and CommandsRun the
-	// same for the run tool's commands.
+	// SkillsOffered are the repository skills that the agent can load, and
+	// SkillsOpened are the ones that it did. CommandsOffered and CommandsRun
+	// are the same for the run tool's commands.
 	SkillsOffered, SkillsOpened  []string
 	CommandsOffered, CommandsRun []string
 	// CommandErrors are masked command setup failures for the review summary.
@@ -179,10 +179,10 @@ type AgentRunRow struct {
 	// CarriedReviewID is the review whose run's conversation the agent
 	// carried on, nil when it started afresh.
 	CarriedReviewID *string
-	// Parts are how the parts of a split review ended, in part order;
+	// Parts are how the parts of a split review ended, in part order. It is
 	// empty when the review was not split.
 	Parts []AgentPart
-	// ForcedBy is the limit that made the loop tell the agent to submit,
+	// ForcedBy is the limit that made the loop tell the agent to submit. It is
 	// "" when it never did, and for a split review, whose parts each
 	// record their own.
 	ForcedBy string
@@ -193,8 +193,8 @@ type AgentRunRow struct {
 // wrote.
 type AgentPart struct {
 	ReusedFrom string `json:"reused_from,omitempty"`
-	// Reviewer is the reviewer the part was for in a review with several,
-	// "" in a review with the default reviewer alone; Full says it
+	// Reviewer is the reviewer that the part was for in a review with several,
+	// "" in a review with the default reviewer alone. Full says that it
 	// reviewed the whole change where the review built on the last one.
 	Reviewer string          `json:"agent,omitempty"`
 	Full     bool            `json:"full,omitempty"`
@@ -287,7 +287,7 @@ type ContextPackMeta struct {
 	RepoNotes    []string
 	// RuleIDs are the ids of the rules the review's prompt was given.
 	RuleIDs []string
-	// Stages are the context chunks with Text empty; StageBytes[i] is the
+	// Stages are the context chunks with Text empty. StageBytes[i] is the
 	// size of Stages[i]'s text.
 	Stages     []contextpack.Chunk
 	StageBytes []int
@@ -336,15 +336,15 @@ func FindContextPackMeta(ctx context.Context, tx pgx.Tx, runnerRunID string) (Co
 
 type ContextPackChanges struct {
 	Diff, Delta string
-	// Changed is every path the change touches, deleted and binary ones
-	// the diff shows no line of included; DeltaPaths the ones the delta
-	// does.
+	// Changed is every path that the change touches, deleted and binary ones
+	// that the diff shows no line of included. DeltaPaths is the ones that the
+	// delta touches.
 	Changed, DeltaPaths []string
 	Swept               bool
 }
 
-// ContextPackDiffs returns the diffs and paths of the context pack a
-// runner run wrote, and whether the retention sweep has emptied the diffs,
+// ContextPackDiffs returns the diffs and paths of the context pack that a
+// runner run wrote, and whether the retention sweep emptied the diffs,
 // or ErrNotFound.
 func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackChanges, error) {
 	var changes ContextPackChanges
@@ -380,22 +380,22 @@ func ContextPackInputs(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]co
 	return chunks, repoFiles, nil
 }
 
-// ReviewModelCalls returns a review's own model calls, its agent's steps,
+// ReviewModelCalls returns a review's own model calls: its agent's steps,
 // the call that wrote a split review's summary and the one that scored its
-// confidence, in the order they were recorded, not the follow-ups later
-// answered against it.
+// confidence. It returns them in the order that they were recorded. It does
+// not return the follow-ups later answered against it.
 func ReviewModelCalls(ctx context.Context, tx pgx.Tx, reviewID string) ([]transcript.StoredRow, error) {
 	return modelCallsWhere(ctx, tx, `review_id = $1::uuid AND kind IN ('agent_step', 'merge', 'confidence') AND followup_comment_id IS NULL`,
 		reviewID)
 }
 
 // FollowupModelCalls returns the model calls that answered a follow-up
-// comment on one pull request: its agent's steps. GitHub numbers conversation and inline
-// comments apart, so a comment id alone may name two comments, and the pull
-// request pins which one is meant: a call recorded against a
-// review must belong to one of its reviews, and one recorded against no
-// review is kept only when no other pull request of the account has a
-// follow-up with that comment id.
+// comment on one pull request: its agent's steps. GitHub numbers conversation
+// and inline comments apart, so a comment id alone can name two comments. The
+// pull request pins which one is meant. A call recorded against a review must
+// belong to one of its reviews. One recorded against no review is kept only
+// when no other pull request of the account has a follow-up with that comment
+// id.
 func FollowupModelCalls(ctx context.Context, tx pgx.Tx, pullRequestID string, commentID int64) ([]transcript.StoredRow, error) {
 	return modelCallsWhere(ctx, tx, `kind IN ('followup', 'agent_step') AND followup_comment_id = $2 AND (
 		review_id IN (SELECT id FROM reviews WHERE pull_request_id = $1::uuid)

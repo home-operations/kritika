@@ -14,9 +14,9 @@ k8s:io.kubernetes.pod.namespace: {{ .namespace | quote }}
 {{- join " && " $labels | default "all()" }}
 {{- end -}}
 {{- /* DNS egress to the cluster's DNS alone, as networkPolicy.dns describes
-it, in each flavor: kritika.dnsEgress and kritika.calicoDNSEgress take
-networkPolicy.dns, kritika.ciliumDNSEgress a dict of it as dns and of the
-names the pods may look up as names, any name when there are none. */}}
+it, in each flavor. kritika.dnsEgress and kritika.calicoDNSEgress take
+networkPolicy.dns. kritika.ciliumDNSEgress takes a dict of it as dns and of the
+names the pods can look up as names, any name when there are none. */}}
 {{- define "kritika.dnsEgress" -}}
 - to:
     - namespaceSelector:
@@ -76,7 +76,7 @@ them, the host's identity, which no CIDR selects. */}}
     selector: {{ include "kritika.calicoSelector" $.podSelector | quote }}
     ports:
       - 53
-{{- /* One rule an address: a rule's nets may not mix IPv4 and IPv6. */}}
+{{- /* One rule an address: a rule's nets cannot mix IPv4 and IPv6. */}}
 {{- range $.nodeLocalAddresses }}
 - action: Allow
   protocol: {{ $protocol }}
@@ -121,10 +121,10 @@ networkPolicy.postgres with the namespace filled in. */}}
     ports:
       - {{ .port }}
 {{- end -}}
-{{- /* The runner pods' NetworkPolicy: no ingress at all; egress to the
-database and the gateway port on the server pods, through which the git
-remote, the model and similar-code endpoints and every allowed host are
-reached, and to the cluster's DNS when withDNS is set. */}}
+{{- /* The runner pods' NetworkPolicy: no ingress at all. Egress goes to the
+database and the gateway port on the server pods, and to the cluster's DNS
+when withDNS is set. The git remote, the model and similar-code endpoints and
+every allowed host are reached through the gateway port. */}}
 {{- define "kritika.runnerNetworkPolicy" -}}
 {{- $root := .root }}
 apiVersion: networking.k8s.io/v1
@@ -164,7 +164,7 @@ spec:
 {{- $dns := dict "namespace" $np.dns.namespace "podSelector" ($np.dns.podSelector | default (dict "k8s-app" "kube-dns")) "nodeLocalAddresses" $np.dns.nodeLocalAddresses }}
 {{- $pg := dict "namespace" ($np.postgres.namespace | default .Release.Namespace) "podSelector" $np.postgres.podSelector "port" (int $np.postgres.port) }}
 {{- /* auto renders the flavor whose API the cluster serves, as Helm, Flux
-and Argo CD see it; helm template without --api-versions sees neither and
+and Argo CD see it. helm template without --api-versions sees neither and
 renders the default flavor. */}}
 {{- $type := $np.type }}
 {{- if eq $type "auto" }}
@@ -192,8 +192,8 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # No `from`: the public and metrics ports are reachable by any peer;
-    # lock down per cluster with your own policy if needed.
+    # No `from`: the public and metrics ports are reachable by any peer.
+    # If needed, lock down per cluster with your own policy.
     - ports:
         - port: {{ $public }}
           protocol: TCP
@@ -209,7 +209,7 @@ spec:
           protocol: TCP
   egress:
     {{- include "kritika.dnsEgress" $dns | nindent 4 }}
-    {{- /* Without ports, a rule with no to would allow every destination. */}}
+    {{- /* Without ports, a rule with no to allows every destination. */}}
     {{- with $np.egressPorts }}
     - ports:
         {{- range . }}
@@ -309,8 +309,8 @@ spec:
 {{- /* Cilium refuses the policy above where its L7 proxy is off, for its
 DNS rules, and a runner pod with no policy reaches anything. This one,
 without DNS, keeps runner pods to the database and the gateway either way:
-it allows nothing the policy above does not, and where that policy is
-refused a runner cannot look up a name, so every run fails rather than run
+it allows nothing the policy above does not. Where that policy is refused,
+a runner cannot look up a name, so every run fails rather than run
 unconfined. */}}
 {{- $_ := set $runner "withDNS" false }}
 {{ include "kritika.runnerNetworkPolicy" $runner }}
@@ -370,7 +370,7 @@ metadata:
     app.kubernetes.io/component: runner
 spec:
   selector: kritika.home-operations.com/role == 'runner'
-  # Ingress in types with no ingress rules: nothing may reach a runner pod.
+  # Ingress in types with no ingress rules: nothing can reach a runner pod.
   types:
     - Ingress
     - Egress

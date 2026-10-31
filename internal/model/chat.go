@@ -10,10 +10,10 @@ import (
 )
 
 // This file is the OpenAI chat completions wire format as kritika's model
-// gateway serves it: the part of it the OpenAI adapter sends and reads,
-// decoded into a StepRequest and encoded from a StepResponse, so a runner's
-// adapter can talk to the gateway and the gateway can answer through any
-// provider's adapter.
+// gateway serves it. It holds the part of the format that the OpenAI adapter
+// sends and reads, decoded into a StepRequest and encoded from a
+// StepResponse. So a runner's adapter can talk to the gateway, and the
+// gateway can answer through any provider's adapter.
 
 // ErrBudget is a step the gateway refused because the run's token budget
 // or the account's monthly cap is spent.
@@ -70,7 +70,7 @@ type chatTool struct {
 }
 
 // DecodeChatRequest reads a chat completions request into a StepRequest.
-// System messages join into System; tool messages and the user text after
+// System messages join into System. Tool messages and the user text after
 // them become one user message, as the OpenAI adapter splits them.
 func DecodeChatRequest(body []byte) (StepRequest, error) {
 	var in chatRequest
@@ -180,8 +180,9 @@ func chatToolChoice(raw json.RawMessage) (ToolChoice, error) {
 var chatFinish = map[StopReason]string{StopEndTurn: "stop", StopToolUse: "tool_calls", StopMaxTokens: "length", StopOther: "other"}
 
 // EncodeChatResponse writes resp as a chat completion. Usage carries the
-// whole prompt with its cached parts broken out, and the cost and serving
-// provider the way OpenRouter reports them, which the OpenAI adapter reads.
+// whole prompt with its cached parts broken out. It also carries the cost and
+// serving provider the way OpenRouter reports them, which the OpenAI adapter
+// reads.
 func EncodeChatResponse(id string, resp StepResponse) ([]byte, error) {
 	type function struct {
 		Name      string `json:"name"`

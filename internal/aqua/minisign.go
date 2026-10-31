@@ -11,10 +11,11 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
-// verifyMinisign checks sig, a minisign signature file, over the message r
-// reads, against publicKey, a minisign public key's base64 line: the
-// signature over the message, as itself or prehashed with BLAKE2b-512, and
-// the global signature over that signature and the trusted comment.
+// verifyMinisign makes sure that sig, a minisign signature file, is valid
+// over the message that r reads, against publicKey, a minisign public key's
+// base64 line. It covers the signature over the message, as itself or
+// prehashed with BLAKE2b-512, and the global signature over that signature
+// and the trusted comment.
 func verifyMinisign(publicKey string, sig []byte, r io.Reader) error {
 	pk, err := base64.StdEncoding.DecodeString(strings.TrimSpace(publicKey))
 	if err != nil || len(pk) != 2+8+ed25519.PublicKeySize || string(pk[:2]) != "Ed" {

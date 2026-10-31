@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One line of highlighted code: its tokens, each in its colour.
+  // One line of highlighted code: its tokens, each in its color.
   import type { Token } from '../highlight';
   let { line }: { line: Token[] } = $props();
 </script>

@@ -13,8 +13,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// planTokenTTL bounds how long a replica keeps using an access token it
-// read without reading it again, so a new sign-in reaches every replica
+// planTokenTTL bounds how long a replica keeps using an access token that it
+// read without reading it again. So a new sign-in reaches every replica
 // within it.
 const planTokenTTL = time.Minute
 
@@ -40,7 +40,7 @@ func StepperBuilder(sessions PlanSessions) func(configfile.Provider) (model.Step
 }
 
 // planTokens reads a provider's access token from the store and keeps it
-// until the leader is due to renew it, rather than reading it on every
+// until the leader is due to renew it. It does not read the token on every
 // step.
 type planTokens struct {
 	sessions PlanSessions
@@ -91,7 +91,7 @@ func (p *planTokens) Expire(ctx context.Context, token string) error {
 }
 
 // observe records quota data off the step's path: it is best effort and
-// must neither delay nor change the outcome of the model call, which may
+// must neither delay nor change the outcome of the model call, which can
 // finish after its caller cancels.
 func (p *planTokens) observe(ctx context.Context, allowances []chatgpt.Allowance) {
 	go func() {

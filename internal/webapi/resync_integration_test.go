@@ -39,9 +39,9 @@ apps:
 `
 
 // TestRegisterReachedJudgesByTheDatabaseClock: the dashboard's resync tells
-// the rows a webhook wrote since its listing by the database's clock, as
-// the leader's sync does, so an application clock behind the database's
-// does not leave aside what a fresh listing says of a repository.
+// the rows that a webhook wrote since its listing by the database's clock, as
+// the leader's sync does. So an application clock behind the database's does
+// not leave aside what a fresh listing says of a repository.
 func TestRegisterReachedJudgesByTheDatabaseClock(t *testing.T) {
 	ctx := t.Context()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

@@ -17,16 +17,16 @@ import (
 // onboardInterval is how often the feeder tops the window up.
 const onboardInterval = 30 * time.Second
 
-// Onboarder feeds onboarding index jobs to the index queue a few at a time:
-// after a first install, or a model change that drops every index, all
-// repositories need one at once, and inserting them all would put the
-// first-declared account's hundreds ahead of everyone else's. It keeps at
-// most indexing.onboardWindow of them queued or running, accounts taking turns and the
-// repositories whose pull requests moved last going first. A leader duty.
+// Onboarder feeds onboarding index jobs to the index queue a few at a time.
+// After a first install, or a model change that drops every index, all
+// repositories need one at once. Inserting them all puts the first-declared
+// account's hundreds ahead of everyone else's. It keeps at most
+// indexing.onboardWindow of them queued or running. Accounts take turns, and
+// the repositories whose pull requests moved last go first. A leader duty.
 type Onboarder struct {
 	Store *store.Store
 	Queue *river.Client[pgx.Tx]
-	// Current's indexing.onboardWindow is how many onboarding jobs may be
+	// Current's indexing.onboardWindow is how many onboarding jobs can be
 	// queued or running at once.
 	Current *configfile.Current
 	Logger  *slog.Logger

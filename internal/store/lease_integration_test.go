@@ -8,8 +8,8 @@ import (
 )
 
 // TestReleaseWakesSnoozedReview: letting a slot go wakes the oldest review
-// snoozed for one on that model of that account, one per release, and
-// leaves every other queued job to its own time.
+// snoozed for one on that model of that account, one per release. It leaves
+// every other queued job to its own time.
 func TestReleaseWakesSnoozedReview(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -88,7 +88,7 @@ func TestReleaseWakesSnoozedReview(t *testing.T) {
 }
 
 // TestWakeIfSlotFree: a review snoozed for a model slot is woken when a
-// slot of the model is free, and only that review; it is left asleep while
+// slot of the model is free, and only that review. It is left asleep while
 // every slot is held, as is one not snoozed for a slot.
 func TestWakeIfSlotFree(t *testing.T) {
 	s := openStore(t)
