@@ -57,38 +57,55 @@ func withRuleFiles(base *object.Tree, p runspec.Spec, files repoconfig.Files) (r
 // file without them applies to every change. A file that a configured rule
 // names is that rule's, and one whose id a configured rule or an earlier
 // file has is left out with a note, as is one too long to ever fit a
-// review's rule files. The rules come scoped ones first, then the rest,
-// each by path: so a long file that applies everywhere does not take the
-// room of ones narrowed to the change.
+// review's rule files. At most MaxRuleFiles files are read, kept or not.
+// The rules come scoped ones first, then the rest, each by path: so a long
+// file that applies everywhere does not take the room of ones narrowed to
+// the change.
 func discoverRuleFiles(
 	base *object.Tree, rf *runspec.RuleFiles,
 ) (rules []configfile.Rule, texts repoconfig.Files, notes []string, err error) {
-	read := treeReader(base)
+	readFile := treeReader(base)
 	texts = repoconfig.Files{}
+	configured := make([]string, len(rf.Files))
+	for i, f := range rf.Files {
+		configured[i] = path.Clean(f)
+	}
+	seen := map[string]bool{}
+	read := 0
 	for _, dir := range rf.Paths {
 		dir = path.Clean(dir)
-		t, terr := base.Tree(dir)
-		if terr != nil {
-			continue
+		t := base
+		if dir != "." {
+			var terr error
+			if t, terr = base.Tree(dir); terr != nil {
+				continue
+			}
+		}
+		// A file a configured rule names, or an earlier directory held, is
+		// not read, so it takes none of the room to list the ones that are.
+		wanted := func(rel string) bool {
+			file := path.Join(dir, rel)
+			return !slices.Contains(configured, file) && !seen[file]
 		}
 		var names []string
-		markdownFiles(t, "", 0, &names)
+		markdownFiles(t, "", 0, &names, repoconfig.MaxRuleFiles+1-read, wanted)
 		slices.Sort(names)
 		for _, rel := range names {
 			file := path.Join(dir, rel)
-			if slices.Contains(rf.Files, file) {
-				continue
-			}
-			if len(rules) == repoconfig.MaxRuleFiles {
+			if read == repoconfig.MaxRuleFiles {
 				notes = append(notes, fmt.Sprintf(noteRuleFilesCapped, repoconfig.MaxRuleFiles))
 				return orderRuleFiles(rules), texts, notes, nil
 			}
-			data, rerr := read(file)
+			seen[file], read = true, read+1
+			data, rerr := readFile(file)
 			switch {
 			case errors.Is(rerr, fs.ErrNotExist):
 				continue
 			case rerr != nil:
 				return nil, nil, nil, rerr
+			case len(data) > repoconfig.MaxFileBytes:
+				notes = append(notes, repoconfig.TooLarge(file))
+				continue
 			}
 			id := repoconfig.RuleFileID(rel)
 			parsed := repoconfig.ParseRuleFile(data)
@@ -135,17 +152,21 @@ func orderRuleFiles(rules []configfile.Rule) []configfile.Rule {
 }
 
 // markdownFiles appends to names the paths below t, joined to prefix, of
-// the files t holds with the rule file extension, at most maxRuleFileDepth
-// directories down. A symlink is passed over: the tree holds its target's
-// path, not that file's text.
-func markdownFiles(t *object.Tree, prefix string, depth int, names *[]string) {
+// the files t holds with the rule file extension that wanted keeps, at
+// most maxRuleFileDepth directories down and at most limit of them in all.
+// A symlink is passed over: the tree holds its target's path, not that
+// file's text.
+func markdownFiles(t *object.Tree, prefix string, depth int, names *[]string, limit int, wanted func(string) bool) {
 	for _, e := range t.Entries {
+		if len(*names) >= limit {
+			return
+		}
 		name := path.Join(prefix, e.Name)
 		if e.Mode == filemode.Symlink {
 			continue
 		}
 		if e.Mode.IsFile() {
-			if strings.HasSuffix(e.Name, repoconfig.RuleFileExt) {
+			if strings.HasSuffix(e.Name, repoconfig.RuleFileExt) && wanted(name) {
 				*names = append(*names, name)
 			}
 			continue
@@ -154,7 +175,7 @@ func markdownFiles(t *object.Tree, prefix string, depth int, names *[]string) {
 			continue
 		}
 		if sub, err := t.Tree(e.Name); err == nil {
-			markdownFiles(sub, name, depth+1, names)
+			markdownFiles(sub, name, depth+1, names, limit, wanted)
 		}
 	}
 }

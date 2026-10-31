@@ -54,6 +54,11 @@ func TestDiscoverRuleFiles(t *testing.T) {
 		Paths: configfile.DefaultRuleFilePaths, IDs: []string{"taken", "own"}, Files: []string{".claude/rules/configured.md"},
 	}
 	many, capped, cappedTexts := map[string]string{}, []configfile.Rule{}, repoconfig.Files{}
+	blanks := map[string]string{"r/z.md": "Read past the cap.\n"}
+	manyMore := map[string]string{"r/rule-101.md": "One of many.\n", "r/rule-102.md": "One of many.\n"}
+	manyMoreTexts := repoconfig.Files{"r/rule-101.md": "One of many."}
+	nested, nestedTexts := map[string]string{"r/z.md": "The hundredth.\n"}, repoconfig.Files{"r/z.md": "The hundredth."}
+	var nestedRules []configfile.Rule
 	for i := range repoconfig.MaxRuleFiles + 1 {
 		id := fmt.Sprintf("rule-%03d", i)
 		many["r/"+id+".md"] = "One of many.\n"
@@ -61,7 +66,20 @@ func TestDiscoverRuleFiles(t *testing.T) {
 			capped = append(capped, configfile.Rule{ID: id, File: "r/" + id + ".md"})
 			cappedTexts["r/"+id+".md"] = "One of many."
 		}
+		if i < repoconfig.MaxRuleFiles {
+			blanks["r/"+id+".md"] = ""
+		}
+		manyMore["r/"+id+".md"] = "One of many.\n"
+		if i >= 2 {
+			manyMoreTexts["r/"+id+".md"] = "One of many."
+		}
+		if i < repoconfig.MaxRuleFiles-1 {
+			nested["r/sub/"+id+".md"] = "One of many.\n"
+			nestedRules = append(nestedRules, configfile.Rule{ID: id, File: "r/sub/" + id + ".md"})
+			nestedTexts["r/sub/"+id+".md"] = "One of many."
+		}
 	}
+	nestedRules = append(nestedRules, configfile.Rule{ID: "z", File: "r/z.md"})
 	tests := []struct {
 		name      string
 		files     map[string]string
@@ -92,6 +110,41 @@ func TestDiscoverRuleFiles(t *testing.T) {
 		{
 			name: "past the cap", files: many, rf: &runspec.RuleFiles{Paths: []string{"r"}}, want: capped, wantTexts: cappedTexts,
 			wantNotes: []string{"more than 100 rule files found; the rest were left out"},
+		},
+		{
+			name: "the cap counts the files read, kept or not", files: blanks, rf: &runspec.RuleFiles{Paths: []string{"r"}},
+			wantNotes: []string{"more than 100 rule files found; the rest were left out"},
+		},
+		{
+			name: "files a configured rule names take no room past the cap", files: manyMore,
+			rf:        &runspec.RuleFiles{Paths: []string{"r"}, Files: []string{"r/rule-000.md", "r/rule-001.md"}},
+			want:      append(slices.Clone(capped[2:]), configfile.Rule{ID: "rule-100", File: "r/rule-100.md"}, configfile.Rule{ID: "rule-101", File: "r/rule-101.md"}),
+			wantTexts: manyMoreTexts,
+			wantNotes: []string{"more than 100 rule files found; the rest were left out"},
+		},
+		{
+			name: "files an earlier directory held take no room", files: nested,
+			rf: &runspec.RuleFiles{Paths: []string{"r/sub", "r"}}, want: nestedRules, wantTexts: nestedTexts,
+		},
+		{
+			name: "the root directory", files: map[string]string{"rules.md": "Tag it.\n", "a/b.md": "Deep.\n", "main.go": ""},
+			rf:        &runspec.RuleFiles{Paths: []string{"."}},
+			want:      []configfile.Rule{{ID: "a-b", File: "a/b.md"}, {ID: "rules", File: "rules.md"}},
+			wantTexts: repoconfig.Files{"a/b.md": "Deep.", "rules.md": "Tag it."},
+		},
+		{
+			name: "directories that overlap read a file once", files: files,
+			rf:        &runspec.RuleFiles{Paths: []string{"docs", "docs/rules"}},
+			want:      []configfile.Rule{{ID: "rules-release", File: "docs/rules/release.md"}},
+			wantTexts: repoconfig.Files{"docs/rules/release.md": "Tag it."},
+		},
+		{
+			name: "a configured file named with a dot", files: files,
+			rf: &runspec.RuleFiles{Paths: []string{"docs/rules"}, Files: []string{"./docs/rules/release.md"}},
+		},
+		{
+			name: "a file too large to read", files: map[string]string{"r/big.md": strings.Repeat("x", repoconfig.MaxFileBytes+1)},
+			rf: &runspec.RuleFiles{Paths: []string{"r"}}, wantNotes: []string{repoconfig.TooLarge("r/big.md")},
 		},
 	}
 	for _, tt := range tests {
