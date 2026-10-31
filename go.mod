@@ -12,7 +12,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/go-jose/go-jose/v4 v4.1.7
 	github.com/go-sprout/sprout v1.1.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-github/v93 v93.0.0
