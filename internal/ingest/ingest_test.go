@@ -156,9 +156,9 @@ func TestHandler(t *testing.T) {
 	}
 }
 
-// TestHandlerLogsRepositoryAndPullRequest: a handled delivery's line
-// names the repository it was for and, when the event concerns one, the
-// pull request, so a skip can be traced from the logs alone.
+// TestHandlerLogsRepositoryAndPullRequest: a handled delivery's line names
+// the repository that it was for and, when the event concerns one, the pull
+// request. So a skip can be traced from the logs alone.
 func TestHandlerLogsRepositoryAndPullRequest(t *testing.T) {
 	const repo = `"repository":{"full_name":"onedr0p/home-ops","default_branch":"main","owner":{"login":"onedr0p"}}`
 	for _, tt := range []struct {
@@ -221,10 +221,10 @@ func loggedLine(t *testing.T, logs *bytes.Buffer, msg string) map[string]any {
 	return nil
 }
 
-// TestHandlerRecordsUnsigned: a delivery with no signature, which an App
-// with no webhook secret sends, is recorded as unsigned; a wrong signature
-// is not, and neither is an unsigned request without GitHub's delivery
-// headers, which anyone can send to the public hook path.
+// TestHandlerRecordsUnsigned: a delivery with no signature, which an App with
+// no webhook secret sends, is recorded as unsigned. A wrong signature is not
+// recorded as unsigned. Neither is an unsigned request without GitHub's
+// delivery headers, which anyone can send to the public hook path.
 func TestHandlerRecordsUnsigned(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
@@ -329,9 +329,9 @@ func (f *fakeAuthors) PullRequestAuthor(_ context.Context, in *configfile.Connec
 	return f.login, true, f.err
 }
 
-// TestHandlerReadsGitLabAuthor: a GitLab merge request event names the
-// author by id alone, so one another user's action sends is completed
-// from the forge before it is dispatched, or fails.
+// TestHandlerReadsGitLabAuthor: a GitLab merge request event names the author
+// by id alone. So an event that another user's action sends is completed from
+// the forge before it is dispatched, or it fails.
 func TestHandlerReadsGitLabAuthor(t *testing.T) {
 	t.Setenv("TEST_GL_TOKEN", "glpat")
 	t.Setenv("TEST_GL_HOOK", "whsec_c2lnbmluZy1rZXk=")

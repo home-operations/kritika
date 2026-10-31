@@ -1,8 +1,8 @@
-// Package gitfetch fetches exactly the commits a review needs, the head and
-// the merge-base and, for a re-review, the head and merge base of the last
-// review, at depth one into a throwaway bare repository, and diffs their
-// trees. Trees are enough: `git diff` compares trees and needs no history.
-// It is pure go-git; the runner image has no git binary.
+// Package gitfetch fetches exactly the commits that a review needs: the head
+// and the merge-base and, for a re-review, the head and merge base of the
+// last review. It fetches them at depth one into a throwaway bare repository,
+// and diffs their trees. Trees are enough: `git diff` compares trees and
+// needs no history. It is pure go-git. The runner image has no git binary.
 package gitfetch
 
 import (
@@ -29,7 +29,7 @@ import (
 )
 
 // Refs the commits are fetched into. They are private to kritika so the bare
-// repository never gains a branch a later fetch could confuse.
+// repository never gains a branch that a later fetch can confuse.
 const (
 	headRef      = "refs/kritika/head"
 	baseRef      = "refs/kritika/base"
@@ -48,8 +48,8 @@ type Fetch struct {
 	Token string
 	// Head and Base are full commit SHAs.
 	Head, Base string
-	// Prior, when set, is the full SHA of the head the last review saw. It
-	// is fetched best effort: a force-push may have made it unreachable.
+	// Prior, when set, is the full SHA of the head that the last review saw.
+	// It is fetched best effort: a force-push can make it unreachable.
 	// PriorChanged are the paths the change touched at Prior, and PriorBase
 	// the merge base it was reviewed against, also fetched best effort.
 	Prior        string
@@ -73,19 +73,19 @@ type Result struct {
 	// NOT NULL column, and pgx writes a nil slice as NULL.
 	Changed []string
 	// Prior is the fetched prior head, nil when none was asked for or it
-	// could not be fetched, in which case PriorErr says why. DeltaDiff and
+	// failed to fetch, in which case PriorErr says why. DeltaDiff and
 	// DeltaChanged are the diff from it to head and the paths that diff
-	// touches, kept to the paths the change touches at either end, less
-	// the hunks the base gained in them between the two merge bases: what
-	// else moved between the two heads is the base, under a merge or a
-	// rebase. PriorBaseErr is why the prior merge base could not be
-	// fetched, in which case those hunks stay in.
+	// touches. They are kept to the paths that the change touches at either
+	// end. They leave out the hunks that the base gained in those paths
+	// between the two merge bases. What else moved between the two heads is
+	// the base, under a merge or a rebase. PriorBaseErr is why the prior
+	// merge base failed to fetch, in which case those hunks stay in.
 	Prior        *object.Commit
 	PriorErr     error
 	PriorBaseErr error
 	DeltaDiff    string
 	DeltaChanged []string
-	// Dir is the bare repository on disk; the caller removes it.
+	// Dir is the bare repository on disk. The caller removes it.
 	Dir string
 
 	repo *git.Repository
@@ -96,7 +96,7 @@ type Result struct {
 func (r *Result) Close() error { return errors.Join(r.repo.Close(), os.RemoveAll(r.Dir)) }
 
 // Run fetches head and base at depth one and diffs them. The temp dir is
-// removed on error; on success the caller owns it through Result.Close.
+// removed on error. On success the caller owns it through Result.Close.
 func Run(ctx context.Context, f Fetch) (*Result, error) {
 	return fetch(ctx, f, false)
 }
@@ -141,7 +141,7 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 	if f.Token != "" {
 		opts = append(opts, client.WithHTTPAuth(&githttp.BasicAuth{Username: "x-access-token", Password: f.Token}))
 	}
-	// Fetching a bare SHA needs the server to allow it; GitHub does for
+	// Fetching a bare SHA needs the server to allow it. GitHub does for
 	// reachable commits. Both refspecs in one fetch so the server can send
 	// one pack.
 	err = repo.FetchContext(ctx, &git.FetchOptions{
@@ -152,9 +152,9 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 		RefSpecs:      refSpecs(f),
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		// A forge answers not found for a repository the token cannot
-		// see as it does for one that does not exist, and the run was
-		// started from the repository: the token is the usual cause.
+		// A forge answers not found for a repository that the token cannot
+		// see, as it does for one that does not exist. The run was started
+		// from the repository, so the token is the usual cause.
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
 			return nil, fmt.Errorf("gitfetch: fetch: the repository is missing or the token cannot see it: %w", err)
 		}
@@ -229,7 +229,7 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 
 // fetchCommit fetches one commit into ref in a fetch of its own, so that an
 // unreachable commit cannot fail the fetch of head and base. The error says
-// why it could not be had; the caller decides whether that matters.
+// why fetchCommit failed to get it. The caller decides whether that matters.
 func fetchCommit(ctx context.Context, repo *git.Repository, opts []client.Option, sha, ref string) (*object.Commit, error) {
 	if c, err := repo.CommitObject(plumbing.NewHash(sha)); err == nil {
 		return c, nil
@@ -251,10 +251,10 @@ func fetchCommit(ctx context.Context, repo *git.Repository, opts []client.Option
 	return c, nil
 }
 
-// baseGained is the hunks the base gained in the change's own paths
-// between the merge base the last review saw and this one's, counted as
-// hunkKeys counts them. A merge or a rebase carries them to the head without
-// their being the change's, so the delta leaves them out.
+// baseGained is the hunks that the base gained in the change's own paths.
+// They are the ones between the merge base that the last review saw and this
+// one's, counted as hunkKeys counts them. A merge or a rebase carries them to
+// the head without their being the change's, so the delta leaves them out.
 func baseGained(ctx context.Context, priorBase, base *object.Commit, own map[string]bool) (map[string]int, error) {
 	changes, err := treeChanges(ctx, priorBase, base)
 	if err != nil {
@@ -290,9 +290,9 @@ func treeChanges(ctx context.Context, from, to *object.Commit) (object.Changes, 
 	return changes, nil
 }
 
-// renderChanges is the changes as a unified diff, with the paths it
-// touches by their head-side names, less the hunks gained counts, taken
-// off a copy of it: a change left with none is not of the diff.
+// renderChanges is the changes as a unified diff, with the paths it touches
+// by their head-side names. It leaves out the hunks that gained counts, taken
+// off a copy of gained. A change left with none is not of the diff.
 func renderChanges(ctx context.Context, changes object.Changes, gained map[string]int) (string, []string, error) {
 	gained = maps.Clone(gained)
 	var b strings.Builder

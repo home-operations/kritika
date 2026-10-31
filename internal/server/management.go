@@ -1,5 +1,5 @@
 // Package server holds kritika's HTTP listeners. The management listener
-// (health and metrics) runs in every role; the hook listener runs only in the
+// (health and metrics) runs in every role. The hook listener runs only in the
 // roles that ingest forge webhooks.
 package server
 
@@ -18,12 +18,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// shutdownTimeout bounds how long an in-flight request may hold up process
-// exit once the root context is cancelled.
+// shutdownTimeout bounds how long an in-flight request can hold up process
+// exit once the root context is canceled.
 const shutdownTimeout = 10 * time.Second
 
-// Management serves /healthz, /readyz and /metrics. Readiness starts false and
-// is flipped by the role once its own dependencies are up, so a pod is not
+// Management serves /healthz, /readyz and /metrics. Readiness starts false.
+// The role flips it once the role's own dependencies are up, so a pod is not
 // routed to before it can do work.
 type Management struct {
 	addr     string
@@ -82,9 +82,9 @@ func (m *Management) Run(ctx context.Context) error {
 // readTimeout bounds reading one request, body included, so a client that
 // trickles a body does not hold its connection open. It does not bound the
 // handler: an event stream or a model step runs on past it. idleTimeout is
-// how long a keep-alive connection may wait for its next request. There is
-// no write timeout, which would cut the event streams. Variables for the
-// tests.
+// how long a keep-alive connection can wait for its next request. There is no
+// write timeout, because a write timeout cuts the event streams. These are
+// variables for the tests.
 var (
 	readTimeout = time.Minute
 	idleTimeout = 2 * time.Minute

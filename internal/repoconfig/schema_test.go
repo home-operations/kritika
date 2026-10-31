@@ -77,8 +77,8 @@ func TestSchemaMatchesFile(t *testing.T) {
 // yamlKeys lists the keys T decodes from.
 func yamlKeys[T any]() []string { return leafKeys(reflect.TypeFor[T](), "", false) }
 
-// TestFileKeysAreSettings checks the keys .kritika.yaml takes are settings
-// an admin writes too, spelled the same.
+// TestFileKeysAreSettings makes sure that the keys that .kritika.yaml takes
+// are configuration keys that an admin writes too, spelled the same.
 func TestFileKeysAreSettings(t *testing.T) {
 	keys := configfile.Policies
 	for _, key := range leafKeys(reflect.TypeFor[File](), "", true) {
@@ -95,9 +95,9 @@ func TestFileKeysAreSettings(t *testing.T) {
 	}
 }
 
-// leafKeys lists the keys t decodes from, an inline block's among them:
-// dotted down to the settings when nested, not looking into lists, and t's
-// own otherwise.
+// leafKeys lists the keys that t decodes from, an inline block's among them.
+// When nested, the keys are dotted down to the configuration values, and it
+// does not look into lists. Otherwise, they are t's own.
 func leafKeys(t reflect.Type, prefix string, nested bool) []string {
 	var out []string
 	for f := range t.Fields() {

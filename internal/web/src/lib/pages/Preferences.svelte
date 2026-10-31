@@ -13,7 +13,7 @@
   import ApiTokens from './settings/ApiTokens.svelte';
 
   const settings = $derived(session.me?.settings);
-  // A zone chosen in another browser may be one this one does not list.
+  // A zone chosen in another browser can be one this one does not list.
   const zones = $derived([...new Set([...(settings?.timeZone ? [settings.timeZone] : []), ...Intl.supportedValuesOf('timeZone')])].sort());
 
   const CLOCKS = [

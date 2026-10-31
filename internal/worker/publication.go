@@ -18,8 +18,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// resumePublication runs before admission. A saved runner answer may still
-// need merge and confidence calls; a finalized answer only needs delivery.
+// resumePublication runs before admission. A saved runner answer can still
+// need merge and confidence calls. A finalized answer only needs delivery.
 func (w *publicationWorker) resumePublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File,
 	logger *slog.Logger,
 ) (resumed bool, err error) {
@@ -88,10 +88,10 @@ func (w *publicationWorker) resumePublication(ctx context.Context, job *river.Jo
 	if err != nil {
 		return true, river.JobCancel(err)
 	}
-	// The checkpoint knows whether the review began on an open pull
-	// request, which is what set its pending status; a close since, even
-	// one the row's timestamps put before the review, leaves the outcome
-	// to replace it.
+	// The checkpoint knows whether the review began on an open pull request,
+	// which is what set its pending status. A close since then, even one that
+	// the row's timestamps put before the review, leaves the outcome to
+	// replace it.
 	p.client = client
 	if p.pr.closed != "" {
 		p.client = statusless{client}
@@ -208,9 +208,10 @@ func (w *publicationWorker) publicationEnded(ctx context.Context, job *river.Job
 	return errors.Join(decision.jobError(), readErr)
 }
 
-// preparationCurrent checks durable cancellation even when River's context
-// already carries a shutdown cause and cannot receive a later cancellation,
-// and whether a newer head or review has overtaken the review meanwhile.
+// preparationCurrent makes sure that no durable cancellation exists, even
+// when River's context already carries a shutdown cause and cannot receive a
+// later cancellation. It also makes sure that no newer head or review
+// overtook the review meanwhile.
 func (p *publishPhase) preparationCurrent(ctx context.Context) error {
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		saved, err := store.ReadPublication(ctx, tx, p.jobID)
@@ -293,7 +294,7 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 	if err != nil {
 		return "", err
 	}
-	// Delivery may consume its entire timeout after posting. Recording that
+	// Delivery can consume its entire timeout after posting. Recording that
 	// outcome has its own bound, while the publication lock is still held.
 	fctx, finish := context.WithTimeout(lockCtx, detachTimeout)
 	defer finish()

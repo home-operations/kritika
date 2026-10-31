@@ -23,31 +23,32 @@ type Confidence struct {
 	Score     int    `json:"score"`
 	Threshold int    `json:"threshold"`
 	Reason    string `json:"reason"`
-	// Risk is how much a mistake in the change would cost, whatever the
-	// review found.
+	// Risk is how much a mistake in the change can cost, whatever the review
+	// found.
 	Risk Risk `json:"risk"`
 	// Model is the model that scored it.
 	Model string `json:"model"`
 	// Rubric identifies the standing instructions the scorer was given (see
 	// ConfidenceRubric).
 	Rubric string `json:"rubric,omitempty"`
-	// Rated is the risk the scorer gave when a floor held Risk above it,
-	// and Held the path that set the floor; both "" when none did.
+	// Rated is the risk that the scorer gave when a floor held Risk above it,
+	// and Held is the path that set the floor. Both are "" when none did.
 	Rated Risk   `json:"rated,omitempty"`
 	Held  string `json:"held,omitempty"`
 }
 
-// EarlierRisk is the risk the last review of a pull request was rated, at
-// the head it saw, and the reason the scorer gave with it.
+// EarlierRisk is the risk that the last review of a pull request was rated,
+// at the head that it saw. It also holds the reason that the scorer gave with
+// it.
 type EarlierRisk struct {
 	HeadSHA string
 	Risk    Risk
 	Reason  string
 }
 
-// Risk is how much damage a change could do if the review missed
-// something: a property of what the change can do, not of the area it
-// touches or of what was found.
+// Risk is how much damage a change can do if the review missed something: a
+// property of what the change can do, not of the area it touches or of what
+// was found.
 type Risk string
 
 // Risk levels, lowest first.
@@ -77,12 +78,12 @@ const RiskLevels = string(RiskLow) + ", " + string(RiskMedium) + ", " + string(R
 // Passed reports whether the score reaches the threshold.
 func (c Confidence) Passed() bool { return c.Score >= c.Threshold }
 
-// Hold holds the risk to floor, the one at sets: the rating the scorer
-// gave, Rated when an earlier floor held it, is raised to floor when it is
-// below it and stands otherwise, so a floor since lowered lets the rating
-// go. A risk that is no level is left as it is, since it must not read as
-// a safe one. It reports whether the floor holds the risk above the
-// rating.
+// Hold holds the risk to floor, the one that at sets. The rating that the
+// scorer gave, which is Rated when an earlier floor held it, is raised to
+// floor when it is below floor. Otherwise it stands, so a floor since lowered
+// lets the rating go. A risk that is no level is left as it is, since it must
+// not read as a safe one. It reports whether the floor holds the risk above
+// the rating.
 func (c *Confidence) Hold(floor Risk, at string) bool {
 	rated := cmp.Or(c.Rated, c.Risk)
 	if !rated.Valid() {
@@ -251,22 +252,22 @@ const (
 )
 
 // Record is what kritika saw of a review's run, as the scorer is told it
-// beside the review's own account: the sources its tools read outside the
-// repository, the commands it ran and the ones that failed to run, and
-// the notes on the parts of a split review that ended before they
-// submitted, whose files went unreviewed.
+// beside the review's own account. It holds the sources that its tools read
+// outside the repository, the commands that it ran, and the ones that failed
+// to run. It also holds the notes on the parts of a split review that ended
+// before they submitted, whose files went unreviewed.
 type Record struct {
 	Sources, CommandsRun, CommandErrors, Unfinished []string
 }
 
-// BuildConfidence renders the scorer's user message, sent with system
-// within a prompt budget of budget tokens (see UserBudget): the pull
-// request, its description and its diff as Build renders them, with
-// Input.Toolless set since the scorer cannot read what the diff leaves out,
-// then the review's account of itself, res's summary and checked lines,
-// the record of its run, the findings it reported and, when earlier
-// is not nil, the risk the last review was rated, which the description
-// and the diff give way to.
+// BuildConfidence renders the scorer's user message, sent with system within
+// a prompt budget of budget tokens (see UserBudget). The message starts with
+// the pull request, its description, and its diff as Build renders them.
+// Input.Toolless is set, since the scorer cannot read what the diff leaves
+// out. Then the message holds the review's account of itself, res's summary
+// and checked lines, the record of its run, and the findings that it
+// reported. When earlier is not nil, it also holds the risk that the last
+// review was rated, which the description and the diff give way to.
 func BuildConfidence(in Input, res Result, rec Record, earlier *EarlierRisk, system string, budget int) string {
 	var tail strings.Builder
 	tail.WriteString("\n\nThe review's account of itself:\n")
@@ -301,8 +302,8 @@ func BuildConfidence(in Input, res Result, rec Record, earlier *EarlierRisk, sys
 	for _, e := range rec.CommandErrors {
 		fmt.Fprintf(&tail, "\nA command failed to run: %s\n", oneLine(e))
 	}
-	// A note names the files that went unreviewed, which the rubric rests
-	// on, so it is kept whole as a finding is, not cut as a line.
+	// A note names the files that went unreviewed, which the rubric rests on.
+	// So it is kept whole as a finding is, not cut as a line.
 	for _, n := range rec.Unfinished {
 		if n = strings.Join(strings.Fields(n), " "); len(n) > maxConfidenceFinding {
 			n = textcut.Prefix(n, maxConfidenceFinding) + " …"
@@ -352,14 +353,14 @@ func ConfidenceCeiling(c Counts) int {
 	return MaxConfidence
 }
 
-// Parsed is the scorer's answer as ParseConfidence reads it: the score
-// held to the ceiling and the risk held to a level, beside what the
-// scorer gave, so a disagreement with the ceiling or an answer outside
-// the levels can be seen.
+// Parsed is the scorer's answer as ParseConfidence reads it: the score held
+// to the ceiling and the risk held to a level, beside what the scorer gave.
+// So a disagreement with the ceiling or an answer outside the levels can be
+// seen.
 type Parsed struct {
 	Score, Given int
 	Risk         Risk
-	// RiskGiven is the risk as the scorer wrote it, which may be no level.
+	// RiskGiven is the risk as the scorer wrote it, which can be no level.
 	RiskGiven string
 	Reason    string
 }
@@ -372,13 +373,13 @@ func (p Parsed) Clamped() bool { return p.Score < p.Given }
 func (p Parsed) Defaulted() bool { return string(p.Risk) != p.RiskGiven }
 
 // ParseConfidence decodes the scorer's answer and holds its score to the
-// ceiling counts set, so the gate never rests on the scorer agreeing that
-// a reported finding counts. The reason's GitHub references are redirected
-// as Parse does for a review; repository is the "owner/repo" the pull
-// request is on. A reason over maxConfidenceReason is cut after the last
-// word that fits, once the references are redirected, so the cut lands
-// inside neither a word nor a link the redirection made. A risk that is no
-// level is the highest: an answer that does not say how risky the change
+// ceiling that counts set. So the gate never rests on the scorer agreeing
+// that a reported finding counts. The reason's GitHub references are
+// redirected as Parse does for a review. repository is the "owner/repo" that
+// the pull request is on. A reason over maxConfidenceReason is cut after the
+// last word that fits, once the references are redirected. So the cut lands
+// inside neither a word nor a link that the redirection made. A risk that is
+// no level is the highest: an answer that does not say how risky the change
 // is must not read as a safe one.
 func ParseConfidence(raw, repository string, counts Counts) (Parsed, error) {
 	var out struct {
@@ -404,7 +405,7 @@ func ParseConfidence(raw, repository string, counts Counts) (Parsed, error) {
 }
 
 // cutWords is the longest prefix of s at most n bytes long that ends on a
-// word, s itself when it fits; a first word longer than n is cut as
+// word, or s itself when it fits. A first word longer than n is cut as
 // textcut.Prefix cuts it. s is one line, so a space is the only boundary.
 func cutWords(s string, n int) string {
 	if len(s) <= n {

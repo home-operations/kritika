@@ -1,9 +1,9 @@
-// Package github is kritika's forge: the App's credentials, a transport
-// that signs requests as the App with a short-lived JWT and one that mints,
-// caches and refreshes an installation token, the forge.Client over an
-// installation, and the App manifest flow. The installation token
-// authenticates API calls and git fetches alike, so an App-only
-// installation needs no personal token.
+// Package github is kritika's forge. It holds the App's credentials and a
+// transport that signs requests as the App with a short-lived JWT. It also
+// holds a transport that mints, caches, and refreshes an installation token,
+// the forge.Client over an installation, and the App manifest flow. The
+// installation token authenticates API calls and git fetches alike, so an
+// App-only installation needs no personal token.
 package github
 
 import (
@@ -48,7 +48,7 @@ type App struct {
 
 // NewApp parses the App's private key and builds the App-level client used
 // for installation lookup and token minting. apiBase is empty for
-// api.github.com; tests point it at a server of their own.
+// api.github.com. Tests point it at a server of their own.
 func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	return newApp(clientID, privateKeyPEM, apiBase, baseTransport)
 }
@@ -72,10 +72,10 @@ func newApp(clientID, privateKeyPEM, apiBase string, base http.RoundTripper) (*A
 	return a, nil
 }
 
-// responseHeaderTimeout bounds how long a request waits for GitHub to
-// start answering. The leader's poll runs on a context with no deadline,
-// and a worker's job on one of hours, so a server that accepts a request
-// and never answers would otherwise hold either for as long.
+// responseHeaderTimeout bounds how long a request waits for GitHub to start
+// answering. The leader's poll runs on a context with no deadline, and a
+// worker's job on one of hours. Otherwise, a server that accepts a request
+// and never answers holds either for as long.
 const responseHeaderTimeout = time.Minute
 
 // baseTransport is under every App's clients: the default transport, which
@@ -87,9 +87,9 @@ var baseTransport = func() *http.Transport {
 	return t
 }()
 
-// limit puts the wait for a rate limit that resets soon above rt, a
-// client's authentication, so a request sent again after the wait is
-// authorized again, with a token refreshed while it waited.
+// limit puts the wait for a rate limit that resets soon above rt, a client's
+// authentication. So a request sent again after the wait is authorized again,
+// with a token refreshed while it waited.
 func (a *App) limit(rt http.RoundTripper) http.RoundTripper {
 	return &rateLimitTransport{base: rt, maxWait: rateLimitMaxWait, observe: a.rateLimited}
 }
@@ -259,7 +259,7 @@ func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
 }
 
 // appJWT mints a short-lived App JWT with the client id as issuer. The
-// 9-minute lifetime stays under GitHub's 10-minute cap; the backdated iat
+// 9-minute lifetime stays under GitHub's 10-minute cap. The backdated iat
 // absorbs minor clock skew.
 func appJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, (&jose.SignerOptions{}).WithType("JWT"))
@@ -294,7 +294,7 @@ func parseRSAKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
-// appJWTTransport signs each request as the App itself, regenerating the
+// appJWTTransport signs each request as the App itself. It regenerates the
 // JWT as it nears expiry.
 type appJWTTransport struct {
 	base     http.RoundTripper
@@ -350,7 +350,7 @@ type InstallationTokens struct {
 	contentsReadOnly bool
 }
 
-// Token returns a valid installation token, minting one if needed.
+// Token returns a valid installation token. It mints one if needed.
 func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -366,9 +366,9 @@ func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 	return t.tok, nil
 }
 
-// CanWriteContents reports whether the installation was granted write
-// access to repository contents. A token GitHub minted without saying what
-// it may do counts as one that can.
+// CanWriteContents reports whether the installation was granted write access
+// to repository contents. A token that GitHub minted without saying what it
+// can do counts as one that can.
 func (t *InstallationTokens) CanWriteContents(ctx context.Context) (bool, error) {
 	if _, err := t.Token(ctx); err != nil {
 		return false, err
@@ -415,7 +415,7 @@ func (t *installTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 // Redirects can retain Authorization across ports or subdomains, so a
-// hostname alone cannot determine whether credentials may be sent.
+// hostname alone cannot determine whether credentials can be sent.
 func sameOrigin(u, origin *url.URL) bool {
 	return origin != nil && strings.EqualFold(u.Scheme, origin.Scheme) &&
 		strings.EqualFold(u.Hostname(), origin.Hostname()) && originPort(u) == originPort(origin)

@@ -8,9 +8,9 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// A step that failed in a way another attempt may not is tried again after
-// retryMin, doubled each time up to retryMax. A provider's Retry-After is
-// honored up to retryAfterMax: a longer one would sleep the step past its
+// A step that failed in a way that another attempt can avoid is tried again
+// after retryMin, doubled each time up to retryMax. A provider's Retry-After
+// is honored up to retryAfterMax: a longer one sleeps the step past its
 // caller's deadline with the remaining retries and the fallback untried.
 const (
 	retryMin      = time.Second
@@ -18,12 +18,13 @@ const (
 	retryAfterMax = time.Minute
 )
 
-// Step runs one model step through stepper, and after a transient failure
-// (model.Transient) tries again, up to retries more times with backoff, or
-// the wait the provider asked for when that is longer, up to retryAfterMax,
-// while ctx lives; failed reports each failure it tries again after. It
-// returns the last answer or error and how many attempts it made. The
-// request is the same each time, so one reservation covers them all.
+// Step runs one model step through stepper. After a transient failure
+// (model.Transient), it tries again, up to retries more times, while ctx
+// lives. It waits with backoff, or the wait that the provider asked for when
+// that is longer, up to retryAfterMax. failed reports each failure it tries
+// again after. It returns the last answer or error and how many attempts it
+// made. The request is the same each time, so one reservation covers them
+// all.
 func Step(
 	ctx context.Context, stepper model.Stepper, req model.StepRequest, retries int, failed func(error),
 ) (model.StepResponse, int, error) {
@@ -47,11 +48,11 @@ func step(
 	}
 }
 
-// retryable reports whether a step the provider failed with err is worth
-// sending again: as its x-should-retry header says, when it says, else as
-// Transient judges. Transient itself leaves the header alone, since the
-// gateway sets it false on its refusals for the runner's SDK, and the
-// runner's loop waits those out by Transient.
+// retryable reports whether a step that the provider failed with err is worth
+// sending again. It goes by what the x-should-retry header says, when it
+// says. Otherwise it goes by what Transient judges. Transient itself leaves
+// the header alone, since the gateway sets it false on its refusals for the
+// runner's SDK. The runner's loop waits those out by Transient.
 func retryable(err error) bool {
 	if retry, set := model.ShouldRetry(err); set {
 		return retry

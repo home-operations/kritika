@@ -212,8 +212,8 @@ func TestDisqualified(t *testing.T) {
 	}
 }
 
-// TestBotReplies: the bot's replies in a thread are its comments that carry
-// a follow-up marker, not the finding's own comment, counted over the
+// TestBotReplies: the bot's replies in a thread are its comments that carry a
+// follow-up marker, not the finding's own comment. They are counted over the
 // whole thread when the prompt keeps only its last messages.
 func TestBotReplies(t *testing.T) {
 	at := func(s int64) time.Time { return time.Unix(s, 0) }

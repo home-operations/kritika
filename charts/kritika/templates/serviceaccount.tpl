@@ -14,7 +14,7 @@ automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
 {{- end }}
 {{- if .Values.runner.serviceAccount.create }}
 ---
-# Runner pods run as this account; it grants nothing and mounts no token.
+# Runner pods run as this account. It grants nothing and mounts no token.
 # The executor builds runner Jobs without pull secrets, so the account
 # carries the chart's: the kubelet adds a ServiceAccount's to every pod
 # that runs as it, whether or not a token is mounted.

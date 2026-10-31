@@ -19,20 +19,20 @@ type Clients interface {
 	For(ctx context.Context, in *configfile.Connection, repo string) (Client, error)
 }
 
-// OpenPullRequest is a pull request as the forge lists or returns it, in
-// the same shape the webhook parser produces so the poller can dispatch it
-// as an event.
+// OpenPullRequest is a pull request as the forge lists or returns it. It has
+// the same shape that the webhook parser produces, so the poller can dispatch
+// it as an event.
 type OpenPullRequest struct {
 	webhook.PullRequest
 	DefaultBranch string
 	// Additions, Deletions and ChangedFiles are the size of the pull
-	// request's diff as the forge counts it, lines and files, all zero when
-	// it was listed rather than read alone.
+	// request's diff as the forge counts it, lines and files. They are all
+	// zero when it was listed rather than read alone.
 	Additions, Deletions, ChangedFiles int
 }
 
 // Comment is a pull request comment as the forge holds it: a conversation
-// comment, or an inline one on a diff line that may reply to another.
+// comment, or an inline one on a diff line that can reply to another.
 type Comment struct {
 	ID int64
 	// Number is the pull request the comment is on, 0 where whoever made
@@ -46,8 +46,8 @@ type Comment struct {
 	Inline      bool
 	Path        string
 	Line        int
-	// Outdated is whether the lines an inline comment was made on have
-	// changed since, by a later push to the pull request.
+	// Outdated is whether a later push to the pull request changed the lines
+	// that an inline comment was made on.
 	Outdated bool
 	// InReplyTo is the root inline comment this one replies to, 0 for a
 	// root or a conversation comment.
@@ -74,7 +74,7 @@ type Issue struct {
 // first.
 type InlineComment struct {
 	Path string
-	// Line is the line the comment is on; with StartLine set, the last
+	// Line is the line the comment is on. With StartLine set, it is the last
 	// line of a range that starts there.
 	Line      int
 	StartLine int
@@ -87,7 +87,7 @@ type InlineComment struct {
 // its pull request did not reach. StatusError is for a review that reached
 // no verdict: canceled, timed out, ended by an agent that never submitted a
 // valid review, or left unscored where a score was asked for. That is not
-// a finding to weigh, and a success would read as one. StatusPending
+// a finding to weigh, and a success reads as one. StatusPending
 // stands from a review's start until its outcome replaces it.
 type StatusState string
 
@@ -156,10 +156,10 @@ var ErrUnsupported = errors.New("forge: not supported by this forge")
 
 // Client is one connection's access to its forge.
 type Client interface {
-	// MergeBase asks the forge for the merge-base of pull request number,
-	// of base (its base branch) and head (its head commit), the same way
-	// the forge computes the pull request's diff: GitHub compares the two,
-	// Forgejo reports the pull request's own.
+	// MergeBase asks the forge for the merge-base of pull request number, of
+	// base (its base branch) and head (its head commit). It asks the same way
+	// that the forge computes the pull request's diff: GitHub compares the
+	// two, Forgejo reports the pull request's own.
 	MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
 	// PullRequestDiff is pull request number's unified diff, from base,
 	// its merge-base, to head. Forgejo diffs the pull request as it stands,
@@ -173,7 +173,7 @@ type Client interface {
 	// that can only read repo. It reaches a pod that reads untrusted
 	// content and runs commands an agent chose.
 	GitToken(ctx context.Context, repo string) (string, error)
-	// BranchTip returns the commit a branch points at; an empty branch
+	// BranchTip returns the commit that a branch points at. An empty branch
 	// means the repository's default branch, whose name is also returned.
 	BranchTip(ctx context.Context, owner, repo, branch string) (sha, resolvedBranch string, err error)
 	// CommitSubject returns the first line of commit sha's message.
@@ -198,11 +198,11 @@ type Client interface {
 	// that names none, say one deleted since, is an error wrapping
 	// ErrNotFound.
 	UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error
-	// CreateReview posts a non-blocking review with inline comments pinned
-	// to headSHA and returns each comment's id, in order, 0 where the forge
-	// did not say. ids is nil when the review was not posted; a review
-	// posted whose comments could not be read back returns ids, all 0, and
-	// the error.
+	// CreateReview posts a non-blocking review with inline comments pinned to
+	// headSHA and returns each comment's id, in order, 0 where the forge did
+	// not say. ids is nil when the review was not posted. When the review was
+	// posted but CreateReview failed to read its comments back, it returns
+	// ids, all 0, and the error.
 	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) (ids []int64, err error)
 	// Approve posts an approving review of headSHA with body, unless the
 	// bot's approval of that head already stands, and reports whether one
@@ -225,15 +225,14 @@ type Client interface {
 	// number in the forge's web UI.
 	ThreadURL(owner, repo string, number int, id int64) string
 
-	// GetComment fetches comment id on pull request number; inline selects
-	// the review-comment namespace, which GitHub and Forgejo keep apart
-	// from conversation comments. GitLab addresses a note under its merge
-	// request alone, so the number is what finds one on a merge request
-	// since closed.
+	// GetComment fetches comment id on pull request number. inline selects
+	// the review-comment namespace, which GitHub and Forgejo keep apart from
+	// conversation comments. GitLab addresses a note under its merge request
+	// alone, so the number is what finds one on a merge request since closed.
 	GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (Comment, error)
-	// ListConversation returns the PR's conversation comments, oldest
-	// first. It and ListInline may stop short of the end of a pull request
-	// with thousands.
+	// ListConversation returns the PR's conversation comments, oldest first.
+	// It and ListInline can stop short of the end of a pull request with
+	// thousands.
 	ListConversation(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// ListInline returns the PR's inline review comments, oldest first.
 	ListInline(ctx context.Context, owner, repo string, number int) ([]Comment, error)
@@ -265,13 +264,13 @@ type Client interface {
 	// Found is false when the thread no longer exists.
 	ThreadResolved(ctx context.Context, owner, repo string, number int, id int64) (resolved, found bool, err error)
 
-	// ResolveThread resolves the review thread inline comment id opened,
+	// ResolveThread resolves the review thread that inline comment id opened,
 	// when it is still open, and reports whether it did. With onlyOwn, a
-	// thread someone else has written in is left open: it is a
-	// conversation, left to its people unless one of them asked.
+	// thread that someone else wrote in is left open: it is a conversation,
+	// left to its people unless one of them asked.
 	ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error)
 	// ListOpenPullRequests returns the open pull requests updated since a
-	// time, most recently updated first; the zero time lists them all.
+	// time, most recently updated first. The zero time lists them all.
 	ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]OpenPullRequest, error)
 	// PullRequest returns one pull request as it stands, open or closed. A
 	// missing one is an error wrapping ErrNotFound.
@@ -279,8 +278,8 @@ type Client interface {
 }
 
 // Reactions the bot leaves on a pull request it reviews and on a mention it
-// answers: the 👀 while it works, then the 👍 once it has answered or the
-// 😕 when it could not.
+// answers: the 👀 while it works, then the 👍 once it answers or the 😕 when it
+// fails to answer.
 const (
 	ReactionEyes   = "eyes"
 	ReactionDone   = "+1"

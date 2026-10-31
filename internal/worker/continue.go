@@ -15,17 +15,17 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Carrying on a conversation saves only while the provider still caches
-// it. OpenAI keeps a prompt's prefix for about 30 minutes after its last
-// use and Anthropic for 5; each window leaves a runner the minutes it
-// takes from the decision to its first step.
+// Carrying on a conversation saves only while the provider still caches it.
+// OpenAI keeps a prompt's prefix for about 30 minutes after its last use, and
+// Anthropic for 5. Each window leaves a runner the minutes it takes from the
+// decision to its first step.
 const (
 	continueWindow          = 25 * time.Minute
 	anthropicContinueWindow = 4 * time.Minute
 )
 
-// carryWindow is how recently a conversation on ref, whose provider is of
-// type t, must have been kept for a review to carry it on.
+// carryWindow is how recently a run must keep a conversation on ref, whose
+// provider is of type t, for a review to carry it on.
 func carryWindow(t configfile.ProviderType, ref configfile.ModelRef) time.Duration {
 	if t == configfile.ProviderAnthropic ||
 		(t == configfile.ProviderOpenRouter && strings.HasPrefix(strings.TrimPrefix(ref.Model(), "~"), "anthropic/")) {
@@ -34,14 +34,14 @@ func carryWindow(t configfile.ProviderType, ref configfile.ModelRef) time.Durati
 	return continueWindow
 }
 
-// continuation is the last review's conversation a review of head against
-// mergeBase may carry on, nil for none. The pull request must have moved
-// on from the head that review saw with its merge base where it was, so
-// the diff since shows all that changed, and that review's run must have
-// kept its conversation, on ref, recently enough that ref's provider, of
-// type t, likely still caches it. The runner starts afresh all the same
-// when the prompt it would send differs. A conversation that cannot be
-// read is not carried on.
+// continuation is the last review's conversation that a review of head
+// against mergeBase can carry on, nil for none. The pull request must be past
+// the head that review saw, with its merge base where it was. So the diff
+// since then shows all that changed. That review's run must keep its
+// conversation, on ref, recently enough that ref's provider, of type t,
+// likely still caches it. The runner starts afresh all the same when the
+// prompt that it is about to send differs. A conversation that cannot be read
+// is not carried on.
 func (w *Review) continuation(
 	ctx context.Context, logger *slog.Logger, accountID string, prior priorReview, head, mergeBase string,
 	ref configfile.ModelRef, t configfile.ProviderType,

@@ -28,21 +28,23 @@ import (
 )
 
 // Follow-up bounds: mentions answered per pull request per hour before a
-// single "limit reached" reply, thread messages kept in the prompt, and
-// replies the bot makes in one of its finding threads to replies that did
-// not address it, before it leaves the thread to a mention.
+// single "limit reached" reply, and thread messages kept in the prompt. The
+// last bound is replies that the bot makes in one of its finding threads to
+// replies that did not address it. Past that bound, it leaves the thread to a
+// mention.
 const (
 	followUpsPerHour = 5
 	threadMessages   = 20
 	repliesPerThread = 3
 )
 
-// FollowUp works the followup queue: one job answers one comment that
-// @-mentioned the bot, scoped to its thread, or, where the repository asks
-// for it, one that replied in a thread of one of the bot's findings
-// without mentioning it, when the reply needs an answer. A question is
-// answered by an agent in a runner, with a review's tools; the commands
-// (review, dismiss, pause, resume) are carried out here.
+// FollowUp works the followup queue. One job answers one comment that
+// @-mentioned the bot, scoped to its thread. Where the repository asks for
+// it, one job can instead answer a reply in a thread of one of the bot's
+// findings. That reply does not mention the bot, and the job answers it when
+// the reply needs an answer. An agent in a runner answers a question, with a
+// review's tools. The commands (review, dismiss, pause, resume) are carried
+// out here.
 type FollowUp struct {
 	river.WorkerDefaults[jobs.FollowUpArgs]
 	Base
@@ -61,8 +63,8 @@ type FollowUp struct {
 	awaitEvery     time.Duration
 }
 
-// finalError is a follow-up's failure once its runner has run: a retry
-// would pay the model for the same answer again, so the job ends with it.
+// finalError is a follow-up's failure once its runner ran: a retry pays the
+// model for the same answer again, so the job ends with it.
 type finalError struct{ error }
 
 func (e finalError) Unwrap() error { return e.error }
@@ -119,8 +121,8 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		logger.Error("follow-up failed", "error", err)
 		// An answered review request keeps its durable marker so a retry
 		// resumes polling. Any other failure is recorded on past the job's
-		// ctx, whose end may be the failure: River does not retry a job it
-		// cancelled, and the record is the mention's only trace.
+		// ctx, whose end can be the failure: River does not retry a job it
+		// canceled, and the record is the mention's only trace.
 		if outcome != store.FollowupAnswered {
 			rctx, cancel := detach(ctx)
 			if rerr := f.record(rctx, store.FollowupFailed, err.Error(), 0, ""); rerr != nil {
@@ -143,16 +145,16 @@ type followUp struct {
 	account  *configfile.Account
 	settings configfile.Settings
 	// eff is settings with the merge-base .kritika.yaml applied, and
-	// mergeBase that commit; repoConfig reads both.
+	// mergeBase is that commit. repoConfig reads both.
 	eff       Effective
 	mergeBase string
 	client    forge.Client
 	pr        *pullRequest
 	comment   forge.Comment
-	// asReply says the comment may be answered as a reply in one of the
-	// bot's finding threads when it does not mention the bot; once
-	// disqualified has qualified it as one, fingerprint is the finding the
-	// thread holds, and a mention it is not.
+	// asReply says the comment can be answered as a reply in one of the bot's
+	// finding threads when it does not mention the bot. Once disqualified
+	// qualifies it as such a reply, fingerprint is the finding that the
+	// thread holds, and the comment is not a mention.
 	asReply     bool
 	fingerprint string
 	owner       string
@@ -161,17 +163,16 @@ type followUp struct {
 	jobID       int64
 	// attempt is the job's, 1 the first time, and maxAttempts its last.
 	attempt, maxAttempts int
-	// requested is when the job was queued: a review that ended since may
-	// be the one a review request waits for.
+	// requested is when the job was queued: a review that ended since can be
+	// the one that a review request waits for.
 	requested time.Time
 	logger    *slog.Logger
 }
 
-// alreadyAnswered guards a retried job: once a reply is on the forge the
-// mention is done, whatever happened after posting. The record says so
-// first; on a retry, the forge is asked too, by the FollowUpMarker the
-// reply carries, since an attempt killed between posting and recording
-// left none.
+// alreadyAnswered guards a retried job: once a reply is on the forge, the
+// mention is done, whatever happened after posting. The record says so first.
+// On a retry, the forge is asked too, by the FollowUpMarker that the reply
+// carries. An attempt killed between posting and recording left no record.
 func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	var state store.FollowupState
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
@@ -199,9 +200,9 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	}
 	f.logger.Info("follow-up already answered on the forge", "reply", posted.ID)
 	f.unmark(ctx)
-	// A reply that conceded the finding says so to whoever reads it; the
-	// attempt that posted it may have ended before it dismissed the
-	// finding. The marker is kritika's own: the model's prose loses any it
+	// A reply that conceded the finding says so to whoever reads it. The
+	// attempt that posted it can end before it dismisses the finding. The
+	// marker is kritika's own: the model's prose loses any marker that it
 	// echoes, and only the thread's finding is conceded.
 	if fingerprint, ok := review.MarkedConcession(posted.Body); ok && f.asReply {
 		held, err := f.dismissedFinding(ctx)
@@ -226,7 +227,7 @@ func (f *followUp) unmark(ctx context.Context) {
 }
 
 // repliedOnForge returns the bot's reply to the comment, by its
-// FollowUpMarker, where the reply would be posted, or the zero comment.
+// FollowUpMarker, where the reply is posted, or the zero comment.
 func (f *followUp) repliedOnForge(ctx context.Context) (forge.Comment, error) {
 	var comments []forge.Comment
 	var err error
@@ -257,8 +258,8 @@ func markedReply(comments []forge.Comment, login string, commentID int64) forge.
 }
 
 // run qualifies the mention, or the reply, gathers the thread and the last
-// review's findings, has an agent answer, and posts the reply. Nothing
-// after the reply is posted may fail the job: a retry would answer twice.
+// review's findings, has an agent answer, and posts the reply. After the reply
+// is posted, the job must not fail: a retry will answer twice.
 func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) {
 	if reason := f.disqualified(ctx); reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
@@ -315,9 +316,9 @@ func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) 
 	if err != nil {
 		return store.FollowupFailed, finalError{err}
 	}
-	// The reply is posted even once the job's ctx has ended: the agent
-	// has been paid for it. A fenced job is the exception, since another
-	// replica may be answering it by now.
+	// The reply is posted even once the job's ctx ended: the agent is already
+	// paid for it. A fenced job is the exception, because another replica can
+	// be answering it by now.
 	if cause := context.Cause(jobFence(ctx)); errors.Is(cause, errJobFenced) {
 		return store.FollowupFailed, cause
 	}
@@ -356,10 +357,10 @@ func (f *followUp) failure(err error) outcome {
 // ask has an agent answer the thread's last message in a runner, as a
 // review's agent is run: against the pull request's head, with the
 // repository's commands, through the model gateway, which charges what it
-// spends as the follow-up's. It holds one of the review model's slots
-// while the runner works. It returns the agent's run, which submitted a
-// reply. A failure once the runner has run is a finalError, unless the
-// worker is stopping, when the job is retried.
+// spends as the follow-up's. It holds one of the review model's slots while
+// the runner works. It returns the agent's run, which submitted a reply. A
+// failure once the runner ran is a finalError, unless the worker is stopping,
+// when the job is retried.
 func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewRecord) (*store.AgentRunRow, error) {
 	ref := f.settings.Models.Review
 	if ref == "" {
@@ -409,10 +410,10 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 	return agent, err
 }
 
-// runAgent runs the follow-up's runner as run runID and reads the agent's
-// run back. answering, when set, is the models of the reviewer the prompt
-// names, which its steps are granted by its name, pinned as the review
-// model is.
+// runAgent runs the follow-up's runner as run runID and reads the agent's run
+// back. answering, when set, is the models of the reviewer that the prompt
+// names. Its steps are granted those models by the reviewer's name, pinned as
+// the review model is.
 func (f *followUp) runAgent(
 	ctx context.Context, runID, gitToken string, prompt *runspec.Prompt, thread []review.Message, rec reviewRecord,
 	answering *store.ReviewerGrant,
@@ -464,9 +465,9 @@ func (f *followUp) runAgent(
 		Deadline: deadline,
 	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
 	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr
-	// The run's record must land even once the job's ctx has ended. A
-	// record that cannot be written does not cost the agent's answer: the
-	// run is then ended by the sweep of runs whose job is over.
+	// The run's record must land even once the job's ctx ended. A record that
+	// cannot be written does not cost the agent's answer: the run is then
+	// ended by the sweep of runs whose job is over.
 	dctx, cancel := detach(ctx)
 	defer cancel()
 	if err := recordRun(dctx, f.w.Store, f.w.Metrics, f.account.Key(), f.account.ID(), runID, jobs.QueueFollowUp, res); err != nil {
@@ -479,7 +480,7 @@ func (f *followUp) runAgent(
 	case res.Err != nil && res.NeverStarted:
 		return nil, fmt.Errorf("worker: runner did not start: %w", res.Err)
 	// One whose pod Kubernetes disrupted did not fail on its own: the job is
-	// retried too, paying the model again for its answer.
+	// retried too, and it pays the model again for its answer.
 	case res.Err != nil && res.Disruption != "":
 		return nil, fmt.Errorf("worker: runner pod disrupted: %w", res.Err)
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
@@ -501,10 +502,10 @@ func (f *followUp) runAgent(
 	return agent, nil
 }
 
-// disqualified returns why the mention, or the reply, is not answered, or
-// "". A comment that mentions the bot is a mention, whatever thread it is
-// in; one that does not is a reply when the job allows it and the thread
-// is one of the bot's findings', still unresolved.
+// disqualified returns why the mention, or the reply, is not answered, or "".
+// A comment that mentions the bot is a mention, whatever thread it is in. A
+// comment that does not is a reply when the job allows it and the thread is
+// one of the bot's findings', still unresolved.
 func (f *followUp) disqualified(ctx context.Context) string {
 	if f.comment.AuthorIsBot || strings.EqualFold(f.comment.Author, f.botLogin) {
 		return "author is a bot"
@@ -534,12 +535,12 @@ func (f *followUp) disqualified(ctx context.Context) string {
 	return ""
 }
 
-// rateLimited records the mention limited once the pull request has had
-// its share of answers this hour, and the first it limits posts the limit
-// notice. The record is made before the post, in the transaction that
-// counts: a mention handled at the same time counts it, and a retry finds
-// it, so the notice, which carries no marker to find it by on the forge,
-// is posted at most once.
+// rateLimited records the mention as limited once the pull request got its
+// share of answers this hour. The first mention that it limits posts the
+// limit notice. The record is made before the post, in the transaction that
+// counts: a mention handled at the same time counts it, and a retry finds it.
+// So the notice, which carries no marker to find it by on the forge, is
+// posted at most once.
 func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	var answered, notices int
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
@@ -569,10 +570,10 @@ func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// thread returns the messages the model sees, the asking comment always
-// last, and how many replies the bot has made in the thread: its comments
-// that carry a FollowUpMarker, which a finding's own comment does not,
-// counted over the whole thread, not the messages kept.
+// thread returns the messages the model sees, the asking comment always last,
+// and how many replies the bot made in the thread: its comments that carry a
+// FollowUpMarker, which a finding's own comment does not, counted over the
+// whole thread, not the messages kept.
 func (f *followUp) thread(ctx context.Context) ([]review.Message, int, error) {
 	var comments []forge.Comment
 	var err error
@@ -630,7 +631,7 @@ type reviewRecord struct {
 }
 
 // reviewRecord loads the pull request's filter variables and the latest
-// completed review's findings; without a review the thread stands alone.
+// completed review's findings. Without a review, the thread stands alone.
 func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	var rec reviewRecord
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
@@ -647,10 +648,10 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	return rec, err
 }
 
-// diffBase is the commit the follow-up's runner diffs the head against:
-// the merge base, unless that is the head itself, as it is once a merge
-// has put the pull request's commits in its base branch. The last review's
-// merge base then still shows the change.
+// diffBase is the commit the follow-up's runner diffs the head against: the
+// merge base, unless that is the head itself, as it is once a merge puts the
+// pull request's commits in its base branch. The last review's merge base
+// then still shows the change.
 func (f *followUp) diffBase(rec reviewRecord) string {
 	if f.mergeBase == f.pr.headSHA && rec.mergeBase != "" {
 		return rec.mergeBase
@@ -659,8 +660,8 @@ func (f *followUp) diffBase(rec reviewRecord) string {
 }
 
 // repoConfig applies the .kritika.yaml at the pull request's merge base to
-// the follow-up's settings, so it answers with the repository's model,
-// agent settings and instructions. It returns why the file stops the
+// the follow-up's configuration, so it answers with the repository's model,
+// agent configuration, and instructions. It returns why the file stops the
 // follow-up, or "".
 func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.number, f.pr.baseRef, f.pr.headSHA)
@@ -679,10 +680,10 @@ func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 	return "", nil
 }
 
-// reply posts body, led by its FollowUpMarker, where the mention was made:
-// in its inline thread, or on the conversation. A post a fence cut fails
-// with errJobFenced rather than the cancellation, which River would take
-// for its stop and refund the attempt for.
+// reply posts body, led by its FollowUpMarker, where the mention was made: in
+// its inline thread, or on the conversation. A post that a fence cut fails
+// with errJobFenced rather than the cancellation, which River takes for its
+// stop and refunds the attempt for.
 func (f *followUp) reply(ctx context.Context, body string) (int64, error) {
 	body = review.FollowUpMarker(f.comment.ID) + "\n" + body
 	var id int64

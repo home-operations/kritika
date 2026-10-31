@@ -21,10 +21,10 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
-// TestThreadWorker: resolving one of the bot's finding threads dismisses
-// the finding, for a sender with write access only, unless the thread's
-// lines had changed by the time it was resolved; unresolving it takes the
-// dismissal back.
+// TestThreadWorker: resolving one of the bot's finding threads dismisses the
+// finding, for a sender with write access only. The exception is when the
+// thread's lines changed by the time it was resolved. Unresolving it takes
+// the dismissal back.
 func TestThreadWorker(t *testing.T) {
 	ctx := t.Context()
 	appStore := storetest.Open(t)
@@ -142,8 +142,8 @@ func TestThreadWorker(t *testing.T) {
 	}
 	lf.threadStates[root] = false
 	work(root, false, "onedr0p")
-	// The thread's lines had changed when it was resolved: that says
-	// "fixed", and records nothing.
+	// The thread's lines changed before it was resolved: that says "fixed",
+	// and records nothing.
 	lf.threadStates[root] = true
 	if err := w.Work(ctx, &river.Job[jobs.ThreadArgs]{Args: jobs.ThreadArgs{
 		AccountID: account.ID(), RepositoryID: repoID, Number: number, CommentID: root, Resolved: true, Outdated: true, Sender: "onedr0p",

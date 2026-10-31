@@ -2,8 +2,8 @@ package configfile
 
 import "testing"
 
-// TestPoliciesNameSettings checks every key of the table names a setting
-// the file's root has.
+// TestPoliciesNameSettings makes sure that every key of the table names a
+// setting that the file's root has.
 func TestPoliciesNameSettings(t *testing.T) {
 	for _, key := range Policies {
 		if _, ok := SpecValue(&Defaults{}, key); !ok {

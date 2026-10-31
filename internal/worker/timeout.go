@@ -10,17 +10,16 @@ import (
 	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
-// Timeout implements river.Worker: the runner's deadline, which the
-// agent's timeout may lengthen, plus the lease wait and the publish phase
-// around it.
+// Timeout implements river.Worker: the runner's deadline, which the agent's
+// timeout can lengthen, plus the lease wait and the publish phase around it.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, true)
 }
 
-// agentRunTimeout is the timeout of a job that runs an agent in a runner
-// for a repository of the account: a review, or a follow-up. A review may
-// be split, each part with the agent's timeout, and its size is read only
-// once the job runs, so its timeout allows for the most parts.
+// agentRunTimeout is the timeout of a job that runs an agent in a runner for
+// a repository of the account: a review, or a follow-up. A review can be
+// split, each part with the agent's timeout. Its size is read only once the
+// job runs, so its timeout allows for the most parts.
 func agentRunTimeout(file *configfile.File, accountID string, review bool) time.Duration {
 	account, _ := file.AccountByID(accountID)
 	deadline := file.RunnerDeadline()
@@ -47,8 +46,8 @@ func (w *FollowUp) Timeout(job *river.Job[jobs.FollowUpArgs]) time.Duration {
 	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, false)
 }
 
-// threadTimeout bounds a thread job: a few forge requests, each of which
-// may wait out a rate limit for up to a minute, River's default timeout.
+// threadTimeout bounds a thread job: a few forge requests, each of which can
+// wait out a rate limit for up to a minute, River's default timeout.
 const threadTimeout = 5 * time.Minute
 
 // Timeout implements river.Worker.

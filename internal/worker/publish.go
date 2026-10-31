@@ -24,8 +24,8 @@ import (
 )
 
 // publishPhase writes a prepared review's answer back to the forge and the
-// database. It returns the final review status and, for a failure the
-// caller should surface, the error.
+// database. It returns the final review status and, for a failure that the
+// caller is to surface, the error.
 type publishPhase struct {
 	w        *publicationWorker
 	file     *configfile.File
@@ -38,19 +38,19 @@ type publishPhase struct {
 	jobID    int64
 	// lease is the job's slot on the review model, nil when it holds none.
 	lease *store.Lease
-	// trigger is why the review ran; one a human asked for does not
-	// count towards the pull request's automatic reviews.
+	// trigger is why the review ran. One that a human asked for does not
+	// count toward the pull request's automatic reviews.
 	trigger string
-	// focus is what the review was asked to look hardest at, "" for
-	// nothing in particular; the summary's context names it.
+	// focus is what the review was asked to look hardest at, "" for nothing
+	// in particular. The summary's context names it.
 	focus string
 	// started is when the review's first job was picked up, which the
-	// duration the metric observes counts from; a checkpoint carries it
-	// to the stage that ends the review.
+	// duration the metric observes counts from. A checkpoint carries it to
+	// the stage that ends the review.
 	started time.Time
 	logger  *slog.Logger
-	// parse and templates are the repository's contract settings; the zero
-	// values are kritika's defaults.
+	// parse and templates are the repository's contract configuration. The
+	// zero values are kritika's defaults.
 	parse     review.ParseOptions
 	reviewers []string
 	templates review.Templates
@@ -58,14 +58,14 @@ type publishPhase struct {
 	// configuration files.
 	repoNotes []string
 	// prior is the last completed review, whose inline comments are not
-	// posted again; scope says how much of the change this review covers.
+	// posted again. scope says how much of the change this review covers.
 	prior priorReview
 	scope review.Scope
 	// agent is the review's agent run, whose usage the gateway recorded
 	// step by step.
 	agent *store.AgentRunRow
-	// statusReported is set once incomplete has written the head's commit
-	// status with its reason, which the job's ending then leaves alone.
+	// statusReported is set once incomplete writes the head's commit status
+	// with its reason, which the job's ending then leaves alone.
 	statusReported bool
 	invalidAnswer  bool
 	pending        json.RawMessage
@@ -87,8 +87,8 @@ type publishPhase struct {
 	resolved []priorFinding
 }
 
-// run publishes what the runner's agent submitted; the run's usage is
-// already recorded.
+// run publishes what the runner's agent submitted. The run's usage is already
+// recorded.
 func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if cause := context.Cause(job); cause != nil {
 		return store.ReviewPrepared, cause
@@ -224,8 +224,8 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	if err := p.preparationCurrent(ctx); err != nil {
 		return nil, err
 	}
-	// A finding on a line the diff does not show has no inline comment, but
-	// weighs on the score, the counts and the approval all the same.
+	// A finding on a line that the diff does not show has no inline comment.
+	// But it weighs on the score, the counts, and the approval all the same.
 	judged := review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}
 	if note := p.judge(ctx, judged, diff, changes.Changed, partNotes); note != "" {
 		notes = append(notes, note)
@@ -234,9 +234,9 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	return &publicationAnswer{Result: res, Unanchored: unanchored, Notes: notes, Model: run.Model}, nil
 }
 
-// autoReviewPauses returns the note the summary states when this review
-// is the last automatic one the repository allows the pull request, ""
-// otherwise; a review a human asked for is not counted.
+// autoReviewPauses returns the note the summary states when this review is
+// the last automatic one that the repository allows the pull request, ""
+// otherwise. A review that a human asked for is not counted.
 func (p *publishPhase) autoReviewPauses(ctx context.Context) (string, error) {
 	if p.trigger == jobs.TriggerManual {
 		return "", nil
@@ -297,12 +297,12 @@ func skipDescription(reason, filter string) string {
 	return desc
 }
 
-// incomplete replaces the sticky comment with one saying why this head was
+// incomplete replaces the sticky comment with one that says why this head was
 // not fully reviewed, in kritika's own template, and records the model.
-// incomplete posts that the review stopped short, for reason, as a
-// delivery posts: under the pull request's publication lock, and only
-// while the review is still the pull request's, so one a newer review
-// replaced or a newer head superseded posts nothing.
+// incomplete posts that the review stopped short, for reason, as a delivery
+// posts: under the pull request's publication lock, and only while the review
+// is still the pull request's. So a review that a newer review replaced or a
+// newer head superseded posts nothing.
 func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
 	return p.w.Store.WithPublicationLock(ctx, p.pr.id, func(ctx context.Context) error {
 		if err := p.preparationCurrent(ctx); err != nil {
@@ -341,10 +341,11 @@ func (p *publishPhase) countFindings(res review.Result) {
 	}
 }
 
-// splitDropped sorts what Parse dropped into the findings on lines the
-// diff does not show, which the summary lists since no inline comment can
-// carry them, a note naming the findings on files the review never read,
-// which it withheld, and a note counting the rest.
+// splitDropped sorts what Parse dropped into three results. The first is the
+// findings on lines that the diff does not show, which the summary lists
+// because no inline comment can carry them. The second is a note naming the
+// findings on files that the review never read, which it withheld. The third
+// is a note counting the rest.
 func splitDropped(dropped []review.Dropped) (unanchored []review.Finding, notes []string) {
 	byReason := map[review.DropReason]int{}
 	var unread []string
@@ -388,17 +389,18 @@ func splitHeld(findings []review.Finding, held func(review.Finding) bool) (kept,
 	return kept, back
 }
 
-// writeBack posts the sticky comment (created once, edited after), the
-// inline review, and the commit status. Only the sticky comment is
-// required: the other two are best effort and logged when they fail, so a
-// forge quirk cannot turn a finished review into a retry storm. A finding
-// the last review already posted inline, or any finding when inline
-// comments are off, is listed in the summary only. Once the inline review
-// is posted, the sticky comment is edited again to link each finding to
-// its thread. The returned comments say, per finding, those on the diff
-// then those off it, whether an inline comment for it is on the forge, and
-// its id there: a finding off the diff is never posted, but carries the
-// thread an earlier report of it opened.
+// writeBack posts the sticky comment (created once, edited after), the inline
+// review, and the commit status. Only the sticky comment is required: the
+// other two are best effort and logged when they fail, so a forge quirk
+// cannot turn a finished review into a retry storm. A finding the last review
+// already posted inline, or any finding when inline comments are off, is
+// listed in the summary only. Once the inline review is posted, the sticky
+// comment is edited again to link each finding to its thread.
+//
+// The returned comments cover the findings on the diff, then those off it.
+// They say, per finding, whether an inline comment for it is on the forge,
+// and its id there. A finding off the diff is never posted, but it carries
+// the thread that an earlier report of it opened.
 func (p *publishPhase) writeBack(
 	ctx context.Context, res review.Result, unanchored []review.Finding, modelName string, notes []string,
 ) (int64, []store.InlinePosted, error) {
@@ -435,8 +437,8 @@ func (p *publishPhase) writeBack(
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
 	for i, f := range res.Findings {
-		// A carried finding's line numbers are an earlier head's, which
-		// the diff may no longer show.
+		// A carried finding's line numbers are an earlier head's, and the
+		// diff can lack those lines.
 		if onForge[i].Posted || f.CarriedFrom != "" || !p.settings.Review.InlineComments {
 			continue
 		}
@@ -509,8 +511,8 @@ func (p *publishPhase) writeBack(
 	}
 	if linked || data.Approval != nil {
 		// The threads and the approval exist only now, so the summary is
-		// written a second time with the links and the verdict; losing
-		// them is not worth failing the review.
+		// written a second time with the links and the verdict. Losing them
+		// is not worth failing the review.
 		data.Result = res
 		body, _ = review.RenderSummary(ctx, p.templates, data)
 		defer p.timeStage("forge_summary_update")()
@@ -521,11 +523,11 @@ func (p *publishPhase) writeBack(
 	return commentID, onForge, nil
 }
 
-// markOnForge marks the findings whose inline comment the bot has already
-// posted on the pull request, by the FindingMarker each carries, which the
-// database may not know: an attempt that posted and then died before
-// recording them, or a review whose record failed to write. A forge that
-// cannot be read leaves delivery pending rather than risking duplicates.
+// markOnForge marks the findings whose inline comment the bot already posted
+// on the pull request, by the FindingMarker that each carries. The database
+// can miss them: an attempt that posted and then died before recording them,
+// or a review whose record failed to write. A forge that cannot be read
+// leaves delivery pending rather than risking duplicates.
 func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Finding, onForge []store.InlinePosted) error {
 	if !p.settings.Review.InlineComments || len(findings) == 0 {
 		return nil
@@ -548,12 +550,12 @@ func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Findin
 	return nil
 }
 
-// markedInline maps the fingerprint each of the bot's root inline comments
-// carries a FindingMarker for to the comment's id; a later comment for the
-// same finding wins, as the one a reader sees as current. An outdated
-// comment is passed over: a person may have resolved its thread as fixed,
-// and a finding raised again after the fix was lost needs a thread of its
-// own on the current lines.
+// markedInline maps a fingerprint to a comment's id, for each of the bot's
+// root inline comments that carries a FindingMarker for that fingerprint. A
+// later comment for the same finding wins, as the one that a reader sees as
+// current. An outdated comment is passed over: a person can resolve its
+// thread as fixed. A finding raised again after the fix was lost needs a
+// thread of its own on the current lines.
 func markedInline(comments []forge.Comment, login string) map[string]int64 {
 	posted := map[string]int64{}
 	for _, c := range comments {
@@ -568,12 +570,13 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 }
 
 // settlePrior sorts the last review's findings, made at head, that this
-// review did not report again, reported being its findings
-// on and off the diff: those whose ids it listed as resolved, and the rest,
-// which stay open, carried on unchecked from the head they were last
-// reported at. A finding is gone only when a review says so, so one the
-// model passed over, one a split review's unfinished part had, or one the
-// prompt had no room for is never taken as fixed.
+// review did not report again. reported is this review's findings on and off
+// the diff. settlePrior separates those whose ids the review listed as
+// resolved from the rest. The rest stay open, carried on unchecked from the
+// head they were last reported at. A finding is gone only when a review says
+// so. So these are never taken as fixed: a finding that the model passed
+// over, one that a split review's unfinished part had, or one that the prompt
+// had no room for.
 func settlePrior(prior []priorFinding, head string, reported []review.Finding, resolvedIDs []string) (
 	resolved []priorFinding, carried []review.Finding,
 ) {
@@ -596,10 +599,10 @@ func settlePrior(prior []priorFinding, head string, reported []review.Finding, r
 	return resolved, carried
 }
 
-// priorFindings is the last review's findings as this review's summary
-// lists them: those it listed as resolved, linked to their threads where
-// they have one, then the findings maintainers dismissed, each linked to
-// the comment that dismissed it.
+// priorFindings is the last review's findings as this review's summary lists
+// them. First come those it listed as resolved, linked to their threads where
+// they have one. Then come the findings that maintainers dismissed, each
+// linked to the comment that dismissed it.
 func (p *publishPhase) priorFindings() []review.PriorFinding {
 	owner, repo := p.pr.ownerRepo()
 	out := make([]review.PriorFinding, 0, len(p.resolved)+len(p.prior.dismissed))
@@ -665,8 +668,8 @@ func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
 	}
 }
 
-// upsertSticky edits the pull request's sticky comment to body, creating
-// it the first time, and returns its id.
+// upsertSticky edits the pull request's sticky comment to body and returns
+// its id. It creates the comment the first time.
 func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, error) {
 	var stored int64
 	// The row is a shortcut: no row, or a read that failed, leaves the
@@ -716,10 +719,10 @@ func (p *publishPhase) writeSticky(ctx context.Context, stored int64, body strin
 	return commentID, nil
 }
 
-// persist records the review: its summary and its findings on the diff
-// then off it, with the inline state of each as writeBack returned them,
-// so the next review is told of every finding and resolves the thread of
-// one found gone, wherever it was reported.
+// persist records the review: its summary and its findings on the diff then
+// off it, with the inline state of each as writeBack returned them. So the
+// next review is told of every finding and resolves the thread of one found
+// gone, wherever it was reported.
 func (p *publishPhase) persist(
 	ctx context.Context, res review.Result, unanchored []review.Finding, inline []store.InlinePosted, modelName string, commentID int64,
 ) error {
@@ -733,8 +736,8 @@ func (p *publishPhase) persist(
 }
 
 // headSubject is the head commit's subject line for the sticky comment's
-// footer, cut and escaped for Markdown, "" when the forge would not say:
-// the comment then names the commit by its hash.
+// footer, cut and escaped for Markdown, "" when the forge did not say: the
+// comment then names the commit by its hash.
 func (p *publishPhase) headSubject(ctx context.Context, owner, repo string) string {
 	subject, err := p.client.CommitSubject(ctx, owner, repo, p.pr.headSHA)
 	if err != nil {
@@ -743,9 +746,9 @@ func (p *publishPhase) headSubject(ctx context.Context, owner, repo string) stri
 	return review.FooterSubject(subject)
 }
 
-// reviews is how many reviews of the pull request this one makes, counted
-// now rather than when it started, since another head's review may have
-// completed in between.
+// reviews is how many reviews of the pull request this one makes. The count
+// is made now rather than when it started, because another head's review can
+// complete in between.
 func (p *publishPhase) reviews(ctx context.Context) int {
 	var completed int
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
@@ -759,9 +762,9 @@ func (p *publishPhase) reviews(ctx context.Context) int {
 	return completed + 1
 }
 
-// cost is what the pull request's reviews have cost together, this one's
-// calls included, formatted for the footer; "" where the repository does
-// not show it, or it could not be read.
+// cost is what the pull request's reviews cost together, this one's calls
+// included, formatted for the footer. It is "" where the repository does not
+// show it, or the read failed.
 func (p *publishPhase) cost(ctx context.Context) string {
 	if !p.settings.Review.Cost {
 		return ""
@@ -780,8 +783,8 @@ func (p *publishPhase) cost(ctx context.Context) string {
 	return review.FormatCost(cost, unpriced)
 }
 
-// dashboard is the dashboard's origin and the pull request's page on it,
-// both "" when the worker was given no web URL or the admin keeps the
+// dashboard is the dashboard's origin and the pull request's page on it. Both
+// are "" when the worker was given no web URL or the admin keeps the
 // dashboard out of the repository's comments. Repository templates get the
 // same values, so none can print the URL either.
 func (p *publishPhase) dashboard(owner, repo string) (web, pull string) {

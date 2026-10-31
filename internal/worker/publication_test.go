@@ -9,7 +9,7 @@ import (
 )
 
 // TestStartedAt: a checkpoint carries the review's first pickup, which a
-// resumed stage times the review from; one that cannot be read leaves the
+// resumed stage times the review from. One that cannot be read leaves the
 // stage's own.
 func TestStartedAt(t *testing.T) {
 	t.Parallel()

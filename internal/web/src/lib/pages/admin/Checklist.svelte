@@ -1,6 +1,6 @@
 <script lang="ts">
   // What the instance still lacks before it reviews, each step with what to
-  // set in the configuration file, and why the file's latest content was
+  // set in the configuration file. Also why the file's latest content was
   // refused, when it was.
   import { Resource } from '../../resource.svelte';
   import { checklist } from '../../setup';

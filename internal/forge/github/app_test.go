@@ -120,7 +120,7 @@ func TestInstallationTokensMintOnceAndRefresh(t *testing.T) {
 		t.Fatalf("first token = %q, %v", first, err)
 	}
 	// The first token expires within the refresh margin, so the next call
-	// mints again; the second token is good for an hour and is then cached.
+	// mints again. The second token is good for an hour and is then cached.
 	second, _ := tokens.Token(ctx)
 	third, _ := tokens.Token(ctx)
 	if second != "ghs_test2" || third != "ghs_test2" || mints != 2 {
@@ -196,9 +196,9 @@ func TestInstallationsAndUninstall(t *testing.T) {
 	}
 }
 
-// TestRepositories also checks the listing's token is the installation's
-// one: listed again, and through a client of the installation, nothing is
-// minted anew.
+// TestRepositories also makes sure that the listing's token is the
+// installation's one. Listed again, and through a client of the installation,
+// no token is minted anew.
 func TestRepositories(t *testing.T) {
 	_, pemKey := testKeyPEM(t)
 	mints := 0
@@ -243,8 +243,8 @@ func TestRepositories(t *testing.T) {
 	}
 }
 
-// TestReach: each account is installed or not, with the repositories its
-// installation reaches; a suspended installation reaches none and is not
+// TestReach: each account is installed or not, with the repositories that its
+// installation reaches. A suspended installation reaches none and is not
 // asked for them.
 func TestReach(t *testing.T) {
 	_, pemKey := testKeyPEM(t)
@@ -283,9 +283,9 @@ func TestReach(t *testing.T) {
 	}
 }
 
-// TestBaseTransportBoundsTheHeaderWait: a server that accepts a request
-// and never answers fails the request after responseHeaderTimeout, so a
-// caller with no deadline of its own does not wait for good.
+// TestBaseTransportBoundsTheHeaderWait: a server that accepts a request and
+// never answers fails the request after responseHeaderTimeout. So a caller
+// with no deadline of its own does not wait for good.
 func TestBaseTransportBoundsTheHeaderWait(t *testing.T) {
 	if baseTransport.ResponseHeaderTimeout != responseHeaderTimeout {
 		t.Fatalf("ResponseHeaderTimeout = %s, want %s", baseTransport.ResponseHeaderTimeout, responseHeaderTimeout)

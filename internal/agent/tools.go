@@ -31,8 +31,8 @@ const (
 // a checkout leaves it out.
 const MaxBlobBytes = 1 << 20
 
-// decodeInput unmarshals input into v, treating a nil or empty input as
-// "no fields set" rather than a JSON error.
+// decodeInput unmarshals input into v. It treats a nil or empty input as "no
+// fields set" rather than a JSON error.
 func decodeInput(input json.RawMessage, v any) error {
 	if len(input) == 0 {
 		return nil
@@ -236,8 +236,9 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 				continue
 			}
 			hits++
-			// Adjacent matches share context; each source line is returned
-			// once, so a match among the last window's lines is already there.
+			// Adjacent matches share context. The tool returns each source
+			// line once, so a match among the last window's lines is already
+			// there.
 			if i <= last {
 				matches[len(matches)-1-(last-i)].context = false
 			}
@@ -266,8 +267,8 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	}
 	out := render(true)
 	if contextLines > 0 && gt.maxBytes > 0 && len(out) > gt.maxBytes {
-		// Context is dropped before it costs a match its place under the
-		// cap; the note counts it as cut.
+		// The tool drops context before the context costs a match its place
+		// under the cap. The note counts it as cut.
 		bare := render(false)
 		return textcut.Cut(bare, gt.maxBytes, len(out)-len(bare)), nil
 	}

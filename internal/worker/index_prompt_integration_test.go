@@ -25,9 +25,9 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
-// TestIndexDocumentPrompt: the worker embeds every chunk led by the
-// document prompt, and the index it publishes records the prompt, so the
-// configuration that built it finds it and one without the prompt does not.
+// TestIndexDocumentPrompt: the worker embeds every chunk led by the document
+// prompt, and the index that it publishes records the prompt. So the
+// configuration that built it finds it, and one without the prompt does not.
 func TestIndexDocumentPrompt(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)

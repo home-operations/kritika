@@ -10,10 +10,11 @@ on:
         type: boolean
         required: true
 
-# No workflow-level permissions: they would apply to publish as well, capping it
-# at contents: read and starving actions/deploy-pages of pages: write and
-# id-token: write. publish inherits the caller's grant instead; build declares
-# its own reduction below, which is valid from either caller.
+# No workflow-level permissions. If this workflow sets them, they also apply
+# to publish, cap it at contents: read, and starve actions/deploy-pages of
+# pages: write and id-token: write. publish inherits the caller's grant
+# instead. build declares its own reduction below, which is valid from either
+# caller.
 
 jobs:
   build:
@@ -28,7 +29,7 @@ jobs:
           persist-credentials: false
 
       # withastro/action otherwise builds with its own default Node and the
-      # newest pnpm; mise's pins are the versions `mise run docs` uses locally.
+      # newest pnpm. mise's pins are the versions `mise run docs` uses locally.
       - name: Setup Mise
         uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
@@ -42,9 +43,9 @@ jobs:
 
       - name: Build docs site
         uses: withastro/action@a8b97df764791eb61fbf3338ef713b0e61ae05c5 # v6.1.4
-        # With an explicit package-manager the action never names the lockfile,
-        # so setup-node would hash all of docs/ for its cache key
-        # (withastro/action#98).
+        # With an explicit package-manager the action never names the lockfile.
+        # Without the override below, setup-node hashes all of docs/ for its
+        # cache key (withastro/action#98).
         env:
           LOCKFILE: pnpm-lock.yaml
         with:

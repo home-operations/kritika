@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Usage roles, matching the usage table's CHECK.
+// Usage roles. They match the usage table's CHECK.
 const (
 	RoleReview     = "review"
 	RoleEmbedding  = "embedding"

@@ -89,8 +89,8 @@ func TestSkipVerdict(t *testing.T) {
 }
 
 // TestCarryApproval: an unchanged patch's carried score is held to the
-// threshold and the risk ceiling asked for now, and decides kritika's
-// approval only where the repository has it approve.
+// threshold and the risk ceiling asked for now. It decides kritika's approval
+// only where the repository has it approve.
 func TestCarryApproval(t *testing.T) {
 	settings := func(approve bool, threshold int) configfile.Settings {
 		return configfile.Settings{
@@ -129,9 +129,9 @@ func TestCarryApproval(t *testing.T) {
 	}
 }
 
-// TestEarlierRisk: a review of a new head is given the risk the last
-// review was rated under the same instructions; a re-run of the same head,
-// a re-run asked for, a rating under other instructions and one a floor
+// TestEarlierRisk: a review of a new head is given the risk that the last
+// review was rated under the same instructions. A re-run of the same head, a
+// re-run asked for, a rating under other instructions, and one that a floor
 // held start afresh.
 func TestEarlierRisk(t *testing.T) {
 	rated := func(rubric string) *review.Confidence {

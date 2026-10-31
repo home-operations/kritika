@@ -146,9 +146,9 @@ func TestAuthenticationRedirects(t *testing.T) {
 	}
 }
 
-// A request sent again after a rate limit is authorized again, so it
-// carries the token the installation holds after the wait, not the one it
-// went out with.
+// A request sent again after a rate limit is authorized again. So it carries
+// the token that the installation holds after the wait, not the one it went
+// out with.
 func TestRateLimitRetryIsAuthorizedAgain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, pemKey := testKeyPEM(t)

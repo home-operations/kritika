@@ -20,10 +20,10 @@ import (
 const (
 	maxFailedSignIns   = 10
 	failedSignInWindow = 15 * time.Minute
-	// maxTrackedClients bounds the limiter's memory: at it, expired windows
-	// are dropped, and failing that the oldest one, so a flood of addresses
-	// costs the client it displaces its count rather than the process its
-	// memory.
+	// maxTrackedClients bounds the limiter's memory. At this bound, the
+	// limiter drops the expired windows. If that frees no room, it drops the
+	// oldest window. So a flood of addresses costs the displaced client its
+	// count, not the process its memory.
 	maxTrackedClients = 10_000
 )
 
@@ -44,12 +44,12 @@ func newAttempts(now func() time.Time) *attempts {
 	return &attempts{now: now, failed: map[string]window{}}
 }
 
-// try runs check, a password comparison, for client, unless its wrong
-// answers have exhausted its window, and records a wrong one. The check
-// runs under the lock, so concurrent attempts are judged one after
-// another, each seeing the failures recorded before it: none passes the
-// limit on the strength of a count that is still to grow, and a right
-// answer, or one still in flight, costs the client nothing.
+// try runs check, a password comparison, for client, unless its wrong answers
+// exhausted its window. It records a wrong answer. The check runs under the
+// lock, so concurrent attempts are judged one after another. Each attempt
+// sees the failures recorded before it. None passes the limit on the strength
+// of a count that is still to grow. A right answer, or one still in flight,
+// costs the client nothing.
 func (a *attempts) try(client string, check func() bool) (admitted, ok bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

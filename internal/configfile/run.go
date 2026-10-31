@@ -6,7 +6,7 @@ import (
 	"github.com/home-operations/kritika/internal/config"
 )
 
-// Run holds the application settings used by the workers.
+// Run holds the application configuration used by the workers.
 type Run = config.Settings
 
 // PollInterval is how often the leader polls, 0 when polling is off.
@@ -15,7 +15,7 @@ func (f *File) PollInterval() time.Duration { return f.Run.PollInterval }
 // PollLookback bounds how far back a first or long-idle poll looks.
 func (f *File) PollLookback() time.Duration { return f.Run.PollLookback }
 
-// OnboardWindow is how many onboarding index jobs may be queued or running.
+// OnboardWindow is how many onboarding index jobs can be queued or running.
 func (f *File) OnboardWindow() int { return f.Run.OnboardWindow }
 
 // DisabledIndexGrace is how long the index of a repository that stopped

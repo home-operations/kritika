@@ -76,7 +76,8 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 }
 
 // TestBuildEarlierFindings: a full re-review is shown the last review's
-// findings and notes to check again, without the incremental sections.
+// findings and notes to make sure again that they hold, without the
+// incremental sections.
 func TestBuildEarlierFindings(t *testing.T) {
 	in := incrementalInput()
 	in.Earlier = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: in.Incremental.Prior, Checked: []string{"util.go: u is pure"}}
@@ -96,11 +97,11 @@ func TestBuildEarlierFindings(t *testing.T) {
 	}
 }
 
-// TestBuildContinuation: a carried-on conversation's next turn says the
-// head moved, gives the diff since under the re-review's bar, lists the
-// last review's findings by id, the ones it carried on unchecked included,
-// repeats the dismissals and asks for the whole review again, its diagram
-// only when the summary draws one.
+// TestBuildContinuation: a carried-on conversation's next turn says that the
+// head moved and gives the diff since under the re-review's bar. It lists the
+// last review's findings by id, the ones that it carried on unchecked
+// included. It repeats the dismissals and asks for the whole review again,
+// its diagram only when the summary draws one.
 func TestBuildContinuation(t *testing.T) {
 	in := ContinueInput{
 		PriorHeadSHA: "0123456789abcdef0123456789abcdef01234567", HeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
@@ -154,9 +155,9 @@ func TestBuildContinuation(t *testing.T) {
 	}
 }
 
-// TestSameBrief: a carried-on conversation must have opened on the pull
-// request's title, description and linked issues as they are now; the
-// changed files and the diff may have moved since.
+// TestSameBrief: a carried-on conversation must be one that opened on the
+// pull request's title, description, and linked issues as they are now. The
+// changed files and the diff can move after it opens.
 func TestSameBrief(t *testing.T) {
 	then := incrementalInput()
 	then.Body, then.Issues, then.Incremental = "Adds z.", []Issue{{Number: 4, Title: "Add z", Body: "We need z."}}, nil
@@ -240,7 +241,7 @@ func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 		wantContextOmitted int
 	}{
 		{name: "everything fits", in: in, budgetChars: len(full) + 8, wantDelta: true, wantPrior: true},
-		// The context gives way first; both sections stay whole.
+		// The context gives way first. Both sections stay whole.
 		{name: "context gives way", in: in, budgetChars: contextAt + 16, wantDelta: true, wantPrior: true, wantContextOmitted: 1},
 		// The sections alone exceed what the diff left: the prior findings
 		// are cut at a finding and the delta gives way, and there is no
@@ -310,8 +311,8 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	if len(note) > omissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
 		t.Fatalf("note of %d bytes: %q", len(note), note)
 	}
-	// The diff took the room the delta would have had, so the model is
-	// told the delta existed rather than nothing at all; the earlier
+	// The diff took the room that the delta otherwise has, so the model is
+	// told that the delta existed rather than nothing at all. The earlier
 	// findings kept theirs.
 	if !strings.Contains(msg, deltaOmitted) || !strings.Contains(msg, priorPrefix("main.go", "y changed")) {
 		t.Fatalf("missing the delta's omission note or the earlier finding after %d omitted files:\n%s", len(omitted), msg[len(msg)-1500:])
@@ -321,9 +322,9 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	}
 }
 
-// TestBuildEarlierFindingsKeepTheirRoom: a re-review whose diff overruns
-// the budget is still shown the last review's findings, the diff giving
-// way to them up to a quarter of the budget.
+// TestBuildEarlierFindingsKeepTheirRoom: a re-review whose diff overruns the
+// budget is still shown the last review's findings. The diff gives way to
+// them up to a quarter of the budget.
 func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
 	var diff strings.Builder
 	for i := range 200 {
@@ -379,8 +380,9 @@ func TestBuildIncrementalNothingChanged(t *testing.T) {
 	}
 }
 
-// TestReReviewLeadOnlyWithADelta checks that the stricter re-review bar is
-// stated with the delta and not when nothing changed since the last review.
+// TestReReviewLeadOnlyWithADelta makes sure that the stricter re-review bar
+// is stated with the delta and not when nothing changed since the last
+// review.
 func TestReReviewLeadOnlyWithADelta(t *testing.T) {
 	const lead = "This is a re-review: the last review set the bar"
 	in := Input{Diff: "diff --git a/x b/x\n+1\n", Incremental: &IncrementalInput{PriorHeadSHA: "0123456789abcdef"}}
@@ -394,7 +396,7 @@ func TestReReviewLeadOnlyWithADelta(t *testing.T) {
 	}
 }
 
-// TestBuildIncrementalPriorDiagram checks that a re-review is shown the
+// TestBuildIncrementalPriorDiagram makes sure that a re-review is shown the
 // last review's diagram to keep or update, and only when there is one that
 // fits.
 func TestBuildIncrementalPriorDiagram(t *testing.T) {
@@ -439,7 +441,7 @@ func TestBuildIncrementalPriorDiagram(t *testing.T) {
 	}
 }
 
-// TestBuildIncrementalDiagramCannotCloseItsTags checks that text in the
+// TestBuildIncrementalDiagramCannotCloseItsTags makes sure that text in the
 // last review's diagram cannot end its section and pose as what follows.
 func TestBuildIncrementalDiagramCannotCloseItsTags(t *testing.T) {
 	in := incrementalInput()
@@ -453,8 +455,8 @@ func TestBuildIncrementalDiagramCannotCloseItsTags(t *testing.T) {
 	}
 }
 
-// TestBuildIncrementalDeltaBeforeDiagram checks that the last review's
-// diagram takes only the room the delta leaves, and is left out rather
+// TestBuildIncrementalDeltaBeforeDiagram makes sure that the last review's
+// diagram takes only the room that the delta leaves, and is left out rather
 // than cutting the delta.
 func TestBuildIncrementalDeltaBeforeDiagram(t *testing.T) {
 	const heading = "The last review's summary diagram"

@@ -74,8 +74,8 @@ Runner service account name.
 {{- end }}
 
 {{/*
-Container image reference. A digest pins immutably and wins when set;
-otherwise it's repository:tag, with tag defaulting to the chart appVersion.
+Container image reference. A digest pins immutably and wins when set.
+Otherwise, it is repository:tag, with tag defaulting to the chart appVersion.
 */}}
 {{- define "kritika.image" -}}
 {{- if .Values.image.digest -}}
@@ -150,7 +150,7 @@ In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 {{- end }}
 
 {{/*
-The application file, with deployment settings derived from chart values.
+The application file, with deployment configuration derived from chart values.
 */}}
 {{- define "kritika.configuration" -}}
 {{- if and .Values.existingConfigMap .Values.config -}}
@@ -191,7 +191,7 @@ runner:
 {{/*
 The variables the chart derives from its values: the kritika serve container's
 environment before `env`. Rendered as a list so the deployment can also refuse
-an `env` key that would duplicate one of them.
+an `env` key that duplicates one of them.
 */}}
 {{- define "kritika.serveEnv" -}}
 - name: KRITIKA_CONFIG_FILE
@@ -263,7 +263,7 @@ an `env` key that would duplicate one of them.
 {{- end }}
 {{- end }}
 
-{{/* Environment names corresponding to operational settings present in the file. */}}
+{{/* Environment names corresponding to the operational configuration present in the file. */}}
 {{- define "kritika.configEnv" -}}
 {{- $names := dict -}}
 {{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxEntrySize" "gatewayCacheStorage" "gatewayCacheS3Endpoint" "gatewayCacheS3Region" "gatewayCacheS3Bucket" "gatewayCacheS3Prefix" "gatewayCacheS3ForcePathStyle" "aquaRegistryUrl" "aquaRegistryRefresh" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}

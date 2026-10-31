@@ -14,10 +14,10 @@ import (
 )
 
 // TestDispatchRecordsVisibilityBeforeJudging: a pull request webhook records
-// what the forge says of a known repository, its visibility included,
-// whether or not the pull request is then reviewed; a payload without a
-// visibility keeps the known one; and the poller's synthetic events, which
-// carry what the store said when the poll read it, write nothing back.
+// what the forge says of a known repository, its visibility included, whether
+// or not the pull request is then reviewed. A payload without a visibility
+// keeps the known one. The poller's synthetic events, which carry what the
+// store said when the poll read it, write nothing back.
 func TestDispatchRecordsVisibilityBeforeJudging(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()

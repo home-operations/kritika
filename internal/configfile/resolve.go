@@ -53,10 +53,10 @@ func (f *File) ConnectionFor(a *Account) *Connection {
 	return nil
 }
 
-// Settings resolves the effective settings of account a's repositories:
+// Settings resolves the effective configuration of account a's repositories:
 // kritika's defaults under the file's root, with the account's limits over
-// the root's. A repository's own .kritika.yaml is laid over them by the
-// caller that has the checkout.
+// the root's. The caller that has the checkout lays a repository's own
+// .kritika.yaml over them.
 func (f *File) Settings(a *Account) Settings {
 	s := Settings{
 		Enabled:     true,
@@ -80,7 +80,7 @@ func (f *File) Settings(a *Account) Settings {
 // until unarchived. A newly discovered repository stays off until enabled
 // in the dashboard, whose choice takes precedence. A fork does not
 // otherwise run, since an account can reach many forks it never meant
-// kritika to spend on. Any other repository runs as the settings say.
+// kritika to spend on. Any other repository runs as the configuration says.
 func (f *File) Runs(a *Account, t RepoTraits) bool {
 	switch {
 	case t.Archived:
@@ -103,7 +103,7 @@ const (
 	SourceDefault Source = "default"
 	SourceEnv     Source = "env"
 	SourceFile    Source = "file"
-	// SourceDefaults is the file's own settings, at its root, and
+	// SourceDefaults is the file's own configuration, at its root, and
 	// SourceAccount an account's entry.
 	SourceDefaults Source = "defaults"
 	SourceAccount  Source = "account"
@@ -196,7 +196,7 @@ func (s *Settings) trigger(o *Overrides) {
 	}
 }
 
-// providerNames is the names of the providers account a may use, sorted.
+// providerNames is the names of the providers account a can use, sorted.
 func (f *File) providerNames(a *Account) []string {
 	names := slices.Collect(maps.Keys(f.Providers))
 	names = append(names, slices.Collect(maps.Keys(a.Providers))...)

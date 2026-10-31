@@ -112,12 +112,12 @@ func TestMergeParts(t *testing.T) {
 	}
 }
 
-// TestPartPrompts: each part is shown its own files' diff, told which part
-// it is, given the similar code of its own hunks and offered search_code,
-// given the rules of its own paths, and refused a finding on the other
-// part's file; the first part checks the earlier finding on a file no part
-// reviews. A split with no rules reports an empty list, not a nil one,
-// which the pack's rule_ids column would refuse.
+// TestPartPrompts: each part is shown its own files' diff and told which part
+// it is. It is given the similar code of its own hunks and offered
+// search_code. It is given the rules of its own paths and refused a finding
+// on the other part's file. The first part looks at the earlier finding on a
+// file that no part reviews. A split with no rules reports an empty list, not
+// a nil one, which the pack's rule_ids column will refuse.
 func TestPartPrompts(t *testing.T) {
 	asked := 0
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +172,7 @@ func TestPartPrompts(t *testing.T) {
 
 // TestPartPromptsContext: the context a split review returns for its pack
 // is what its parts' prompts hold, not the similar code that a part's
-// budget leaves out, which the summary's note counts instead.
+// budget leaves out. The summary's note counts that code instead.
 func TestPartPromptsContext(t *testing.T) {
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req contextpack.SimilarRequest
@@ -209,10 +209,10 @@ func TestPartPromptsContext(t *testing.T) {
 	}
 }
 
-// TestRunPartLoops: the parts run as many at once as Parallel allows, each
-// under its own part on the gateway and reading the head through the tools
-// they share, and the timeline lists their steps in part order whichever
-// part ends first.
+// TestRunPartLoops: the parts run as many at once as Parallel allows. Each
+// runs under its own part on the gateway and reads the head through the tools
+// they share. The timeline lists their steps in part order whichever part
+// ends first.
 func TestRunPartLoops(t *testing.T) {
 	answer := func(name, input string) string {
 		return `{"id":"x","object":"chat.completion","created":1,"model":"acme/large","choices":[{"index":0,"message":` +
@@ -249,8 +249,8 @@ func TestRunPartLoops(t *testing.T) {
 				most = max(most, running)
 				mu.Unlock()
 				if hold {
-					// The first parts to start answer once all of them have
-					// asked, which only parts running at once can.
+					// The first parts to start answer once all of them ask, which
+					// only parts running at once can.
 					select {
 					case <-together:
 					case <-time.After(5 * time.Second):
@@ -342,8 +342,8 @@ func TestLockedTool(t *testing.T) {
 }
 
 // TestLockToolsByResource: each tool waits for the lock of what it touches
-// and no other, so a part's command holds up another part's read of the
-// head no more; read_file over fetched files takes head or writes by the
+// and no other. So a part's command holds up another part's read of the
+// head no more. read_file over fetched files takes head or writes by the
 // path, and read_diff waits for nothing.
 func TestLockToolsByResource(t *testing.T) {
 	locks := newPartLocks()
@@ -386,7 +386,7 @@ func TestLockToolsByResource(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tool := lockTools([]agent.Tool{tt.tool}, locks)[0]
 			// Whatever the tool makes of its input, it runs while any other
-			// lock is held; the deadline fails a tool that waits for one
+			// lock is held. The deadline fails a tool that waits for one
 			// instead of stalling the test.
 			for name, lock := range held {
 				if name == tt.waits {
@@ -416,7 +416,7 @@ func TestLockToolsByResource(t *testing.T) {
 }
 
 // heldTool is a tool that runs until released, under head, as a slow read
-// of the head would.
+// of the head does.
 type heldTool struct{ entered, release chan struct{} }
 
 func (heldTool) Def() model.ToolDef { return model.ToolDef{Name: "held"} }
@@ -431,8 +431,8 @@ func (t heldTool) Run(ctx context.Context, _ json.RawMessage) (string, error) {
 	}
 }
 
-// TestPartLocksExclusion: a tool holds its lock for as long as it runs,
-// so another part's tool of the same lock waits for it to end, while one
+// TestPartLocksExclusion: a tool holds its lock for as long as it runs.
+// So another part's tool of the same lock waits for it to end, while one
 // of another lock runs meanwhile.
 func TestPartLocksExclusion(t *testing.T) {
 	trueBin, err := exec.LookPath("true")

@@ -1,16 +1,17 @@
-// Package repoconfig parses .kritika.yaml, the optional per-repository file
-// that lets a repository narrow how kritika reviews it (a filter ANDed with
-// the admin's own filter, path globs to ignore, which also skip a pull
-// request that changes nothing else),
-// add rules, context files and templates read from the repository itself,
-// and choose its models among what its account may use.
+// Package repoconfig parses .kritika.yaml, the optional per-repository file.
+// The file lets a repository narrow how kritika reviews it: a filter ANDed
+// with the admin's own filter, and path globs to ignore, which also skip a
+// pull request that changes nothing else. The file also lets a repository
+// add rules, context files, and templates read from the repository itself.
+// It also lets a repository choose its models among what its account can use.
 //
 // Everything here is read from the merge-base commit (the base branch history
-// a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
-// .kritika.yaml to weaken the review applied to it. The worker reads the
-// file itself and hands it to Merge; Collect's read callback is how the
-// runner reads the files it names from the same commit. This package only
-// decides which paths to read and how much of what comes back to keep.
+// that a PR cannot rewrite), never the PR's own tree. So a PR cannot use its
+// own .kritika.yaml to weaken the review applied to it. The worker reads the
+// file itself and hands it to Merge. Collect's read callback is how the
+// runner reads the files that .kritika.yaml names from the same commit. This
+// package only decides which paths to read and how much of what comes back
+// to keep.
 package repoconfig
 
 import (
@@ -30,13 +31,14 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// FileName is the repository-relative path of the per-repository config file.
+// FileName is the repository-relative path of the per-repository
+// configuration file.
 const FileName = ".kritika.yaml"
 
-// Byte budgets for Collect. A repository config is meant to point at a
-// handful of small instruction/template files, not embed arbitrary content;
-// these caps bound how much of the merge-base tree ends up in a review
-// prompt.
+// Byte budgets for Collect. A repository configuration is meant to point at
+// a handful of small instruction/template files, not embed arbitrary
+// content. These caps bound how much of the merge-base tree ends up in a
+// review prompt.
 const (
 	MaxFileBytes  = 256 << 10
 	MaxTotalBytes = 1 << 20
@@ -54,20 +56,21 @@ const (
 // summary and finding comment templates.
 type Comments struct {
 	Inline *bool `yaml:"inline,omitempty"`
-	// Summary and Finding replace the admin's; an empty path restores the
+	// Summary and Finding replace the admin's. An empty path restores the
 	// built-in template.
 	Summary *string `yaml:"summary,omitempty"`
 	Finding *string `yaml:"finding,omitempty"`
 }
 
-// Review is how the repository's reviews are done: the review model, or
-// routes that pick one per pull request, and the fallback model, each a
-// "<provider>/<model>" of a provider its account may use, how hard they
-// reason, whether a finding must carry a suggested fix,
-// whether a review that finds nothing at P0 or P1 approves the
-// pull request, and whether the summary draws the change's flow. Effort,
-// Approve and Diagram replace the admin's; an Effort written empty leaves
-// it to the provider.
+// Review is how the repository's reviews are done. It has the review model,
+// or routes that pick one per pull request, and the fallback model. Each is
+// a "<provider>/<model>" of a provider that its account can use. It also has
+// how hard they reason and whether a finding must carry a suggested fix. It
+// also has whether a review that finds nothing at P0 or P1 approves the pull
+// request, and whether the summary draws the change's flow.
+//
+// Effort, Approve, and Diagram replace the admin's. An Effort written empty
+// leaves it to the provider.
 type Review struct {
 	Model    configfile.ReviewModel `yaml:"model,omitempty"`
 	Fallback configfile.ModelRef    `yaml:"fallback,omitempty"`
@@ -75,26 +78,26 @@ type Review struct {
 	Fixes    *bool                  `yaml:"fixes,omitempty"`
 	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
 	Diagram  *bool                  `yaml:"diagram,omitempty"`
-	// Agents add agents of the repository's own, its own that replace the
-	// default pass replacing the admin's; under the name of an admin's
-	// specialist, they may only add rules and skill scopes to it.
+	// Agents add agents of the repository's own. Its own that replace the
+	// default pass replace the admin's. Under the name of an admin's
+	// specialist, they can only add rules and skill scopes to it.
 	Agents []configfile.Reviewer `yaml:"agents,omitempty"`
 }
 
-// ownAgents are r's agents but one under the default pass's name, which
-// Merge drops with a note, whatever it writes, rather than the file being
+// ownAgents are r's agents but one under the default pass's name. Merge
+// drops that one with a note, whatever it writes, rather than the file being
 // refused for it.
 func (r Review) ownAgents() []configfile.Reviewer {
 	return slices.DeleteFunc(slices.Clone(r.Agents), func(a configfile.Reviewer) bool { return a.Name == review.DefaultReviewer })
 }
 
-// Confidence is how the repository's reviews are judged: the model that
-// scores a reviewed pull request and the one that takes its call when it
-// fails, each a "<provider>/<model>" of a provider its account may use,
-// how hard they reason, as Review.Effort, the score it must reach and
-// whether the commit status fails under it, which all replace the
-// admin's, and the highest risk a change may carry and still be approved,
-// which may only lower the admin's.
+// Confidence is how the repository's reviews are judged. It has the model
+// that scores a reviewed pull request and the one that takes its call when
+// it fails. Each is a "<provider>/<model>" of a provider that its account can
+// use. It also has how hard they reason, as Review.Effort, the score that it
+// must reach, and whether the commit status fails under that score. All of
+// these replace the admin's. It also has the highest risk that a change can
+// carry and still be approved, which can only lower the admin's.
 type Confidence struct {
 	Model     configfile.ModelRef `yaml:"model,omitempty"`
 	Fallback  configfile.ModelRef `yaml:"fallback,omitempty"`
@@ -111,16 +114,16 @@ type Trigger struct {
 	configfile.Filters `yaml:",inline"`
 }
 
-// File is the decoded content of .kritika.yaml: the keys the
-// configuration's own settings take, without the admin's own. Nothing in
-// it is a secret or a reference to one.
+// File is the decoded content of .kritika.yaml: the keys of the
+// configuration's own values, without the admin's own. Nothing in it is a
+// secret or a reference to one.
 type File struct {
 	Enabled    *bool      `yaml:"enabled,omitempty"`
 	Review     Review     `yaml:"review,omitempty"`
 	Confidence Confidence `yaml:"confidence,omitempty"`
 	Trigger    Trigger    `yaml:"trigger,omitempty"`
 	Comments   Comments   `yaml:"comments,omitempty"`
-	// Rules are checks added after the admin's; one may not replace an
+	// Rules are checks added after the admin's. One cannot replace an
 	// admin's rule.
 	Rules []configfile.Rule `yaml:"rules,omitempty"`
 	// Context names files that explain the code, added after the admin's.
@@ -130,17 +133,18 @@ type File struct {
 	// Skills replace the directories the admin has skills looked for in,
 	// and add to the admin's scopes.
 	Skills configfile.SkillsSpec `yaml:"skills,omitempty"`
-	// Tools are the tools the repository's reviews may run, over the
+	// Tools are the tools the repository's reviews can run, over the
 	// image's.
 	Tools Tools `yaml:"tools,omitempty"`
 }
 
-// Parse decodes data as .kritika.yaml. A second document, unknown fields, invalid glob patterns
-// and a filter that fails to compile or that fails a smoke test against
-// configfile.SamplePR are rejected, as is any referenced path (a rule's
-// file, a template or a context file) that is absolute or escapes the
-// repository via "..". An empty document is valid (the file is optional) and yields a zero
-// File. The file's filters come back compiled.
+// Parse decodes data as .kritika.yaml. It rejects a second document, unknown
+// fields, invalid glob patterns, and a filter that fails to compile or that
+// fails a smoke test against configfile.SamplePR. It also rejects any
+// referenced path (a rule's file, a template, or a context file) that is
+// absolute or escapes the repository via "..". An empty document is valid
+// (the file is optional) and yields a zero File. The file's filters come
+// back compiled.
 func Parse(data []byte) (File, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -207,8 +211,8 @@ func Parse(data []byte) (File, error) {
 }
 
 // validateRefPath rejects a referenced path that is absolute or escapes
-// the repository root: every path is read through Collect's caller-supplied
-// read function, so an unbounded one would let a repository's own config
+// the repository root. Every path is read through Collect's caller-supplied
+// read function, so an unbounded path lets a repository's own configuration
 // read arbitrary files on the runner's checkout.
 func validateRefPath(p string) error {
 	if err := configfile.CheckRepoPath(p); err != nil {
@@ -248,15 +252,15 @@ func (f File) Referenced() []string {
 }
 
 // Files is the content the runner read from the merge-base tree, keyed by
-// repository-relative path. A path Collect could not obtain (missing,
-// oversized) is simply absent from the map.
+// repository-relative path. A path that Collect failed to obtain (missing,
+// oversized) is absent from the map.
 type Files map[string]string
 
 // Collect reads each of paths through read, which must return an error
-// satisfying errors.Is(err, fs.ErrNotExist) for a missing path. A path
-// that escapes the repository or is missing, and a file over MaxFileBytes
-// or one that would push the total over MaxTotalBytes, is left out and
-// reported in the returned notes rather than failing the call. Any other
+// satisfying errors.Is(err, fs.ErrNotExist) for a missing path. A path that
+// escapes the repository or is missing is left out and reported in the
+// returned notes rather than failing the call. So is a file over
+// MaxFileBytes, or one that pushes the total over MaxTotalBytes. Any other
 // read error is returned as-is.
 func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []string, error) {
 	files := Files{}
@@ -288,7 +292,7 @@ func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []
 	return files, notes, nil
 }
 
-// overTotal is the note for a file that would push the total over
+// overTotal is the note for a file that pushes the total over
 // MaxTotalBytes.
 func overTotal(name string) string {
 	return fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", name, MaxTotalBytes)
@@ -335,7 +339,7 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 // ActiveRules is the rules that apply to a change of the changed paths, in
 // order: each without paths, and each with them when a changed path
 // matches one. A rule's text counts against MaxRulesBytes and a file
-// rule's content, read from files, against MaxRuleFileBytes; left is how
+// rule's content, read from files, against MaxRuleFileBytes. left is how
 // many applied but did not fit. A file rule whose file files lacks or
 // holds nothing is left out, since reading it was already noted.
 func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left int) {
@@ -363,7 +367,7 @@ func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []
 // RulesFor is the rules that apply to the pull request with the filter
 // variables vars, in order: each without when conditions, and each one of
 // whose conditions holds. A condition that does not compile or evaluate
-// does not hold, as it could not say the rule applies.
+// does not hold, because it cannot say that the rule applies.
 func RulesFor(rules []configfile.Rule, vars map[string]any) []configfile.Rule {
 	var out []configfile.Rule
 	for _, r := range rules {

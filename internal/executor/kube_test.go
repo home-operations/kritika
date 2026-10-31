@@ -46,7 +46,8 @@ func spec() Spec {
 	}
 }
 
-// withImage is a pod template of the runner container alone, running image.
+// withImage is a pod template of the runner container alone. That container
+// runs image.
 func withImage(image string) PodTemplate {
 	return PodTemplate{Spec: PodTemplateSpec{Containers: []TemplateContainer{{Name: runnerRole, Image: image}}}}
 }
@@ -95,8 +96,8 @@ func TestJobSpec(t *testing.T) {
 }
 
 // TestJobSpecDefaults: templates that name the runner's image alone leave
-// the pod's runtime, resources, affinity and pull policy to the cluster,
-// and keep a finished Job for the default TTL.
+// the pod's runtime, resources, affinity and pull policy to the cluster.
+// They also keep a finished Job for the default TTL.
 func TestJobSpecDefaults(t *testing.T) {
 	j := (&Kube{Namespace: "kritika", PodTemplate: withImage("x")}).job(spec())
 	if pod := j.Spec.Template.Spec; pod.RuntimeClassName != nil || pod.Resources != nil || pod.Affinity != nil || pod.Containers[0].ImagePullPolicy != "" {
@@ -131,7 +132,7 @@ func TestJobSpecKeepsImagePath(t *testing.T) {
 }
 
 // checkProxyEnv asserts the runner is pointed at the gateway for both
-// schemes, with the run token the kubelet fills in as the password, and
+// schemes, with the run token the kubelet fills in as the password. It
 // excepts only loopback and the gateway's own model endpoint.
 func checkProxyEnv(t *testing.T, vars []corev1.EnvVar, gateway string) {
 	t.Helper()
@@ -276,8 +277,8 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 	}
 }
 
-// TestKubeRunDeletesTheJobWhenCancelled checks the Job is actually gone
-// after a plain cancellation, not only that a delete was sent.
+// TestKubeRunDeletesTheJobWhenCancelled makes sure that the Job is actually
+// gone after a plain cancellation, not only that a delete was sent.
 func TestKubeRunDeletesTheJobWhenCancelled(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := newKube(t, client)
@@ -318,9 +319,9 @@ func TestKubeRunReportsFailure(t *testing.T) {
 	}
 }
 
-// TestKubeRunGivesUpAJobWithNoPod: a Job the namespace never lets create
-// its pod is given up after StartGrace as a run that never started, with
-// the Job controller's latest FailedCreate refusal as the reason, and
+// TestKubeRunGivesUpAJobWithNoPod: a Job that the namespace never lets create
+// its pod is given up after StartGrace as a run that never started. The
+// reason is the Job controller's latest FailedCreate refusal. The Job is
 // deleted.
 func TestKubeRunGivesUpAJobWithNoPod(t *testing.T) {
 	client := fake.NewSimpleClientset()
@@ -379,7 +380,7 @@ func TestKubeRunJobFailedWithNoPod(t *testing.T) {
 	}
 }
 
-// runningStatus is a pod whose container has started.
+// runningStatus is a pod whose container started.
 var runningStatus = corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
 	State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 }}}
@@ -463,9 +464,9 @@ func TestEnded(t *testing.T) {
 	}
 }
 
-// TestKubeRunDisruptedPod: a pod Kubernetes disrupted is reported as such,
-// with its DisruptionTarget condition, or, once it is gone, with the
-// failure the Job's pod failure policy gave the Job.
+// TestKubeRunDisruptedPod: a pod that Kubernetes disrupted is reported as
+// such, with its DisruptionTarget condition. Once the pod is gone, it is
+// reported with the failure that the Job's pod failure policy gave the Job.
 func TestKubeRunDisruptedPod(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
@@ -512,7 +513,7 @@ func TestKubeRunDisruptedPod(t *testing.T) {
 
 // TestWhyNoPod: the latest FailedCreate Event of the Job names why it has
 // no pod, however it says when it was seen: as a series, an Event's time,
-// or the core API's last timestamp; with none to read, noPod alone.
+// or the core API's last timestamp. With none to read, noPod alone.
 func TestWhyNoPod(t *testing.T) {
 	now := time.Now()
 	client := fake.NewSimpleClientset()
@@ -544,8 +545,8 @@ func TestWhyNoPod(t *testing.T) {
 }
 
 // TestKubeRunGivesUpAMissingJob: a Job someone else deleted, gone from the
-// watch, is given up after maxMissing ticks, deleted in case it is still
-// there, so it does not run on beside the worker's retry.
+// watch, is given up after maxMissing ticks. It is deleted in case it is
+// still there, so it does not run on beside the worker's retry.
 func TestKubeRunGivesUpAMissingJob(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := newKube(t, client)
@@ -569,7 +570,7 @@ func TestKubeRunGivesUpAMissingJob(t *testing.T) {
 
 // TestKubeRunTakesNoOtherJobForItsOwn: a Job of the run's name the watch
 // still holds, not the one the run created by its UID, does not end the
-// run: the run gives its own up as missing, deleting that one alone.
+// run: the run gives its own up as missing and deletes that one alone.
 func TestKubeRunTakesNoOtherJobForItsOwn(t *testing.T) {
 	client := fake.NewSimpleClientset(&batchv1.Job{
 		Name: jobName(spec().Job.RunID), Namespace: "kritika", UID: "earlier",
@@ -631,7 +632,7 @@ func TestKubeRunRemembersAStartedPod(t *testing.T) {
 		done := make(chan Result, 1)
 		go func() { done <- k.Run(t.Context(), spec()) }()
 		j := waitJob(t, client, created)
-		// Run waits on its Job, then has seen its pod running.
+		// Run waits on its Job, and then it sees its pod running.
 		synctest.Wait()
 		pod := runnerPod(j.Name, runningStatus)
 		if _, err := client.CoreV1().Pods("kritika").Create(t.Context(), pod, metav1.CreateOptions{}); err != nil {
@@ -651,7 +652,7 @@ func TestKubeRunRemembersAStartedPod(t *testing.T) {
 	})
 }
 
-// newKube is an executor over client whose watch has started.
+// newKube is an executor over client whose watch started.
 func newKube(t *testing.T, client *fake.Clientset) *Kube {
 	t.Helper()
 	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
@@ -693,7 +694,7 @@ func awaitAction(t *testing.T, ch <-chan k8stesting.Action, what string) k8stest
 	}
 }
 
-// waitJob returns the Job once Run has created it, as the fake holds it.
+// waitJob returns the Job once Run creates it, as the fake holds it.
 func waitJob(t *testing.T, client *fake.Clientset, created <-chan k8stesting.Action) *batchv1.Job {
 	t.Helper()
 	name := awaitAction(t, created, "job creation").(k8stesting.CreateAction).GetObject().(*batchv1.Job).Name
@@ -752,7 +753,7 @@ func TestDeleteRun(t *testing.T) {
 }
 
 // TestKubeRunSecretLifecycle: the run's Secret, named by the whole run ID,
-// is created after its Job, with the Job as its owner from the start, and
+// is created after its Job, with the Job as its owner from the start. It is
 // never changed.
 func TestKubeRunSecretLifecycle(t *testing.T) {
 	client := fake.NewSimpleClientset()
@@ -785,7 +786,7 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 		t.Fatalf("run spec = %+v, %v", got, err)
 	}
 	// The run's commands get the admin's variables by name, the Secret's
-	// masked; the worker's own spec is left as it was.
+	// masked. The worker's own spec is left as it was.
 	if !slices.Equal(got.Agent.Env, []runspec.CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}}) || s.Job.Agent.Env != nil {
 		t.Fatalf("run spec env = %+v, worker's = %+v", got.Agent.Env, s.Job.Agent.Env)
 	}
@@ -811,9 +812,9 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	<-done
 }
 
-// TestKubeRunNeverStartsWhenSecretCreateFails: a Secret the API refuses
-// leaves a run that never started, its Job deleted rather than left waiting
-// for the Secret; a refusal is not sent again.
+// TestKubeRunNeverStartsWhenSecretCreateFails: a Secret that the API refuses
+// leaves a run that never started. Its Job is deleted, not left waiting for
+// the Secret. A refusal is not sent again.
 func TestKubeRunNeverStartsWhenSecretCreateFails(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	client.PrependReactor("create", "jobs", func(a k8stesting.Action) (bool, runtime.Object, error) {
@@ -840,10 +841,10 @@ func TestKubeRunNeverStartsWhenSecretCreateFails(t *testing.T) {
 	}
 }
 
-// TestKubeRunCannotSayASecretWasNotStored: a Secret whose creates both
-// failed without the API refusing them, the first stored all the same, may
-// have started the pod: the run, its Job deleted, is not one that never
-// started.
+// TestKubeRunCannotSayASecretWasNotStored: both creates of a Secret failed
+// without the API refusing them, and the first stored the Secret all the
+// same. That Secret possibly started the pod. So the run, with its Job
+// deleted, is not one that never started.
 func TestKubeRunCannotSayASecretWasNotStored(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	sent := 0
@@ -865,9 +866,9 @@ func TestKubeRunCannotSayASecretWasNotStored(t *testing.T) {
 	}
 }
 
-// TestKubeRunKeepsASecretStoredThoughItsCreateFailed: a Secret the API
-// stored though its create failed, the answer lost, is found by sending it
-// again, and the run goes on in the pod that may be using it already.
+// TestKubeRunKeepsASecretStoredThoughItsCreateFailed: the API stored a Secret
+// though its create failed, and the answer was lost. Sending it again finds
+// it. The run goes on in the pod that can be using it already.
 func TestKubeRunKeepsASecretStoredThoughItsCreateFailed(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	sent := 0
@@ -979,7 +980,7 @@ func TestKubeRunDeletesJobWhenCreateFailsOnCancel(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	ctx, cancel := context.WithCancel(t.Context())
 	client.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
-		// The server may have persisted the Job before the caller gave up.
+		// The server can persist the Job before the caller gives up.
 		cancel()
 		return true, nil, context.Canceled
 	})
@@ -1001,11 +1002,11 @@ func TestKubeRunDeletesJobWhenCreateFailsOnCancel(t *testing.T) {
 	}
 }
 
-// TestKubeRunCancelledInSetupSaysWhy: a run cancelled while it is set up
-// fails the step under way, and its error carries the cancellation's
-// cause beside the step's, so the run's Event says why it ended. A Secret
-// whose create was cut off may have been stored, so the run is not one
-// that surely never started.
+// TestKubeRunCancelledInSetupSaysWhy: a run canceled while it is set up
+// fails the step under way. Its error carries the cancellation's cause
+// beside the step's, so the run's Event says why it ended. A Secret whose
+// create was cut off was possibly stored, so the run is not one that surely
+// never started.
 func TestKubeRunCancelledInSetupSaysWhy(t *testing.T) {
 	cause := errors.New("cancelled from the dashboard")
 	ctx, cancel := context.WithCancelCause(t.Context())

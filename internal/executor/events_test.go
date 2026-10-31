@@ -12,8 +12,8 @@ import (
 )
 
 // TestEvents: an Event lands on the run's Job or on this replica's pod,
-// named by its UID, as kritika's, with its note cut to what an Event
-// holds; with no Job, no pod name, or off Kubernetes, there is none.
+// named by its UID, as kritika's. Its note is cut to what an Event holds.
+// With no Job, no pod name, or off Kubernetes, there is none.
 func TestEvents(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	e := NewEvents(client, "kritika", "kritika-7c9f5d6b8-xk2lp", "pod-uid", slog.New(slog.DiscardHandler))
@@ -48,8 +48,8 @@ func TestEvents(t *testing.T) {
 }
 
 // TestEventsLongNames: a pod whose name is over what an Event's reporting
-// instance or name may hold still gets its Events, the instance being its
-// UID and the name generated.
+// instance or name can hold still gets its Events. The instance is its UID,
+// and the name is generated.
 func TestEventsLongNames(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	pod := strings.Repeat("p", 250)

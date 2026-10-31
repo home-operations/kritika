@@ -51,8 +51,8 @@ func TestValidateCredentials(t *testing.T) {
 	}
 }
 
-// tokenEndpoint answers every refresh with status and body, keeping the
-// last form it was sent.
+// tokenEndpoint answers every refresh with status and body. It keeps the last
+// form it was sent.
 func tokenEndpoint(t *testing.T, status int, body string) (*httptest.Server, *url.Values) {
 	t.Helper()
 	form := &url.Values{}

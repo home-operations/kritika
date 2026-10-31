@@ -340,7 +340,7 @@ func TestChatGPTErrors(t *testing.T) {
 }
 
 // TestChatGPTStreamFailuresRetry: a server error or rate limit after the
-// stream opened is retried as the same failure before it would be.
+// stream opened is retried, as the same failure before the stream opened is.
 func TestChatGPTStreamFailuresRetry(t *testing.T) {
 	for _, code := range []string{"server_error", "rate_limit_exceeded"} {
 		for name, body := range map[string]string{

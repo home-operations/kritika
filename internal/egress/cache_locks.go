@@ -3,8 +3,8 @@ package egress
 import "sync"
 
 // keyLocks hands out one lock per key for as long as anyone holds or waits
-// for it, so the work on one entry, its fills or its uploads, goes one at a
-// time while other entries' work does not wait.
+// for it. So the work on one entry, its fills or its uploads, goes one at a
+// time, and the work on other entries does not wait.
 type keyLocks struct {
 	mu   sync.Mutex
 	held map[string]*keyLock
@@ -12,11 +12,11 @@ type keyLocks struct {
 
 type keyLock struct {
 	sync.Mutex
-	// users counts the holders and waiters; the lock goes once none remain.
+	// users counts the holders and waiters. The lock goes once none remain.
 	users int
 }
 
-// lock takes key's lock, waiting for its holder.
+// lock takes key's lock and waits for its holder.
 func (l *keyLocks) lock(key string) *keyLock {
 	l.mu.Lock()
 	if l.held == nil {

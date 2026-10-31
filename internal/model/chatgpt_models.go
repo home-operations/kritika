@@ -13,8 +13,8 @@ type chatGPTCatalogModel struct {
 	Visibility string `json:"visibility"`
 }
 
-// Pin implements Pinner. While the plan is paused, nothing is sent on it,
-// the catalog request included.
+// Pin implements Pinner. While the plan is paused, the adapter sends nothing
+// on it, the catalog request included.
 func (c *ChatGPT) Pin(ctx context.Context, id string, _ Effort) (string, error) {
 	if !Floating(id) {
 		return id, nil

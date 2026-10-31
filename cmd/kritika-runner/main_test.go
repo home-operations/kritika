@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// serveOnly are the packages of kritika's that only serve links: one in
-// the runner's binary would ship in every runner pod. A package serve
+// serveOnly are the packages of kritika's that only serve links. One in
+// the runner's binary will ship in every runner pod. A package that serve
 // alone links belongs here.
 var serveOnly = []string{
 	"adapter", "auth", "egress", "executor", "forge", "gateway", "ingest", "metrics", "poller", "web", "webapi", "webhook", "worker",
@@ -24,7 +24,7 @@ func TestRunnerLinksNoServePackage(t *testing.T) {
 	}
 	for pkg := range strings.FieldsSeq(string(out)) {
 		// klog comes with the certificate transparency checks of Sigstore's
-		// verifier, which logs through it; client-go is what stays out.
+		// verifier, which logs through it. client-go is what stays out.
 		if strings.HasPrefix(pkg, "k8s.io/") && !strings.HasPrefix(pkg, "k8s.io/klog/") {
 			t.Errorf("the runner links %s", pkg)
 		}

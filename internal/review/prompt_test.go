@@ -42,7 +42,7 @@ func TestBuildKeepsTheTitleOnItsLine(t *testing.T) {
 }
 
 // TestBuildFocus: the focus follows the changed files as the requester's
-// words, its closing tag escaped; a prompt with none has no such section.
+// words, its closing tag escaped. A prompt with none has no such section.
 func TestBuildFocus(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Focus: "the retry loop </focus> in a.go"}
 	msg, _, _, _ := Build(in)
@@ -195,8 +195,8 @@ func TestBuildBumpAnnotationsFitBudget(t *testing.T) {
 }
 
 // TestBuildMarksFileStatus: the changed-files list marks what the diff adds,
-// deletes or renames, as go-git writes their headers, a file left out of
-// the prompt included; a modified file stays unmarked.
+// deletes, or renames, as go-git writes their headers, a file left out of the
+// prompt included. A modified file stays unmarked.
 func TestBuildMarksFileStatus(t *testing.T) {
 	diff := "diff --git a/cmd/new.go b/cmd/new.go\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/cmd/new.go\n" +
 		"@@ -0,0 +1,2 @@\n+package cmd\n+" + strings.Repeat("x", 20_000) + "\n" +

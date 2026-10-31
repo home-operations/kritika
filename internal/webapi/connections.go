@@ -18,9 +18,9 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// registerConnections mounts the admin's view of the running connections
-// and of the accounts a GitHub App's connection is installed on, where an
-// installation no connection serves can be removed.
+// registerConnections mounts the admin's view of the running connections and
+// of the accounts that a GitHub App's connection is installed on. In that
+// view, an installation that no connection serves can be removed.
 func (s *Server) registerConnections(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/connections", s.admin(s.listConnections))
 	mux.HandleFunc("GET /api/v1/admin/connections/{name}/installations", s.admin(s.listInstallations))
@@ -66,10 +66,10 @@ func (s *Server) connectionApp(r *http.Request) (*configfile.Connection, *github
 	return in, app, nil
 }
 
-// appCache keeps one App per connection, by what it is built from, so the
-// admin's requests share the installation tokens it minted rather than
-// parsing the key and minting one per request. The configuration is read
-// once per process, so the cache holds at most one App per connection.
+// appCache keeps one App per connection, by what it is built from. So the
+// admin's requests share the installation tokens that it minted, and do not
+// parse the key and mint one per request. The configuration is read once per
+// process, so the cache holds at most one App per connection.
 type appCache struct {
 	mu   sync.Mutex
 	apps map[string]*github.App

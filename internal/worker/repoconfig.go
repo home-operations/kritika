@@ -23,9 +23,9 @@ import (
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
-// Effective is a repository's settings once its .kritika.yaml is applied.
-// Settings.Review names the files the runner reads from the merge base and
-// keeps in the review's context pack.
+// Effective is a repository's configuration once its .kritika.yaml is
+// applied. Settings.Review names the files the runner reads from the merge
+// base and keeps in the review's context pack.
 type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritika.yaml.
@@ -51,9 +51,8 @@ func readRepoConfig(ctx context.Context, client forge.Client, owner, repo, ref s
 }
 
 // effective applies doc, the merge-base .kritika.yaml or nil when there is
-// none, onto the admin's settings (see repoconfig.Merge). The notes say
-// which of the file's values were dropped, or why the whole file was
-// ignored.
+// none, onto the admin's configuration (see repoconfig.Merge). The notes say
+// which of the file's values were dropped, or why the whole file was ignored.
 func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
 	m, err := repoconfig.Merge(doc, settings)
 	notes := m.Dropped
@@ -63,12 +62,12 @@ func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
 	return Effective{Merged: m, Found: doc != nil}, notes
 }
 
-// narrowTo turns confidence scoring and its gate off for a pull request,
-// with the filter variables vars, that their conditions do not hold for.
-// One confidence.when's admin conditions leave out is reviewed as a
-// repository with no confidence model is; one only the repository file's
-// leave out is not approved either. One confidence.gate's leave out shows
-// its score and passes.
+// narrowTo turns confidence scoring and its gate off for a pull request, with
+// the filter variables vars, that their conditions do not hold for. A pull
+// request that confidence.when's admin conditions leave out is reviewed as a
+// repository with no confidence model is. One that only the repository file's
+// conditions leave out is not approved either. One that confidence.gate's
+// conditions leave out shows its score and passes.
 func (e *Effective) narrowTo(vars map[string]any) {
 	c := &e.Confidence
 	if !configfile.AnyHolds(c.GateWhen, vars) {
@@ -84,8 +83,8 @@ func (e *Effective) narrowTo(vars map[string]any) {
 }
 
 // pickRoute has eff's model routes pick the review's model for the pull
-// request with the filter variables vars, reading the forge's diff when
-// one of their conditions needs it. A diff the forge will not give leaves
+// request with the filter variables vars. It reads the forge's diff when one
+// of their conditions needs it. A diff that the forge will not give leaves
 // those conditions not holding, and the others are judged without it.
 func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
 	if len(eff.Models.Routes) == 0 {
@@ -105,9 +104,9 @@ func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDi
 	eff.Models = picked
 }
 
-// pickModels picks the review's model and judges its specialists: the
-// agent asked picks it when asked names one that replaces the default pass,
-// and otherwise the first of those that holds does (pickRoute); then the
+// pickModels picks the review's model and judges its specialists. The agent
+// asked picks the model when asked names one that replaces the default pass.
+// Otherwise the first of those that holds picks it (pickRoute). Then the
 // specialists are judged (judgeReviewers).
 func pickModels(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error), asked string) {
 	if i := slices.IndexFunc(eff.Models.Routes, func(r configfile.ModelRoute) bool { return r.Name == asked }); i >= 0 {
@@ -131,9 +130,9 @@ func pullDiff(logger *slog.Logger, eff *Effective, forgeDiff func() (string, err
 }
 
 // judgeReviewers judges, over the whole pull request, whether the when
-// conditions of each of eff's specialists that is on hold, reading the
-// forge's diff when a condition needs it, and gives each its models: its
-// own, or the default pass's as the agents picked them.
+// conditions of each of eff's specialists that is on hold. It reads the
+// forge's diff when a condition needs it. It gives each specialist its
+// models: its own, or the default pass's as the agents picked them.
 func judgeReviewers(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
 	var d *configfile.Diff
 	if slices.ContainsFunc(slices.Collect(maps.Values(eff.Reviewers)), configfile.Reviewer.NeedsDiff) {
@@ -169,8 +168,8 @@ func changedPaths(diff string) []string {
 }
 
 // repoFiles are the paths the runner reads from the merge base: the files
-// the settings and their reviewers name, and .kritika.yaml itself, which
-// the review's context pack keeps a copy of.
+// that the configuration and its reviewers name, and .kritika.yaml itself,
+// which the review's context pack keeps a copy of.
 func (e *Effective) repoFiles() []string {
 	paths := e.Review.Referenced()
 	for _, p := range configfile.ReviewerFiles(e.Reviewers) {
@@ -184,24 +183,25 @@ func (e *Effective) repoFiles() []string {
 	return paths
 }
 
-// templates are the repository's comment templates, read out of files,
-// what the runner read from the merge base; a named file it could not
+// templates are the repository's comment templates, read out of files, what
+// the runner read from the merge base. A named file that the runner failed to
 // read leaves the built-in template in use, as the pack's notes say.
 func (e *Effective) templates(files repoconfig.Files) review.Templates {
 	return review.Templates{Summary: files[e.Review.Templates.Summary], Inline: files[e.Review.Templates.Inline]}
 }
 
-// skipByRepo ends a review the merge-base .kritika.yaml disables or filters
-// out before a runner is spent on it, with a success status saying why. It
-// returns the filter variables it judged a review that goes on by, and
-// reports whether it ended the review, with the error of recording that.
+// skipByRepo ends a review that the merge-base .kritika.yaml disables or
+// filters out, before a runner is spent on it. It ends the review with a
+// success status that says why. It returns the filter variables by which it
+// judged a review that goes on. It reports whether it ended the review, with
+// the error of recording that.
 //
-// A label change that reaches ingest while this job is still to finish
-// queues nothing, the job being the head's review to come; one that lands
-// after the job read the labels would then go unjudged. So a skip is final
-// only once the labels are seen unchanged in the transaction that
-// completes the job, under the pull request's row lock that ingest's own
-// write waits on; labels that moved are judged again.
+// A label change that reaches ingest while this job is still to finish queues
+// nothing, because the job is the head's review to come. A label change that
+// lands after the job read the labels will otherwise go unjudged. So a skip
+// is final only once the labels are seen unchanged in the transaction that
+// completes the job. That transaction runs under the pull request's row lock
+// that ingest's own write waits on. Labels that moved are judged again.
 func (w *Review) skipByRepo(
 	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], eff *Effective,
 ) (map[string]any, bool, error) {
@@ -254,11 +254,11 @@ func (w *Review) skipByRepo(
 	}
 }
 
-// recordSkip records the skip for reason and says so on the head commit.
-// A skip the head's latest review already is, the same job judging again,
-// a retry, or a label change that left the head where it was, is not
-// recorded a second time; only its status is said again. A re-run someone
-// asked for is recorded all the same.
+// recordSkip records the skip for reason and says so on the head commit. A
+// skip that the head's latest review already is does not get recorded a
+// second time. Such a skip comes from the same job judging again, a retry, or
+// a label change that left the head where it was. Only its status is said
+// again. A re-run that someone asked for is recorded all the same.
 func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) error {
 	if e.args.Trigger != jobs.TriggerManual {
 		var repeat bool
@@ -271,7 +271,7 @@ func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) erro
 		}
 		if repeat {
 			e.logger.Info("review still skipped", "reason", reason)
-			// The skip stands, but the condition that decides it may be
+			// The skip stands, but the condition that decides it can be
 			// another one now, and the status names it.
 			e.skip = reason
 			state, desc := e.status(store.ReviewSkipped, "")

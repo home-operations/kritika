@@ -38,17 +38,18 @@ func (f *followUp) replyDisqualified(ctx context.Context) string {
 	return ""
 }
 
-// runReply answers a reply in one of the bot's finding threads that did
-// not address it, as run answers a mention, once the thread has had fewer
-// than repliesPerThread of the bot's, counted again before the reply is
-// posted: replies handled at once pass the first count together, and the
-// second leaves the window the posts themselves take. The agent may post
-// nothing, which is recorded as answered all the same, with why: the
-// model was paid, so it counts against the hour and is not asked again on
-// a retry. Or it may concede the finding, which dismisses it as "@<bot>
-// dismiss" would; a concession the store refuses fails the job, with the
-// reply up and marked answered, for a retry to find on the forge and
-// record.
+// runReply answers a reply in one of the bot's finding threads that did not
+// address it, as run answers a mention. It does so when the thread holds
+// fewer than repliesPerThread of the bot's replies, counted again before the
+// reply is posted. Replies handled at once pass the first count together, and
+// the second count leaves the window that the posts themselves take.
+//
+// The agent can post nothing, which is recorded as answered all the same,
+// with why. The model was paid, so it counts against the hour and is not
+// asked again on a retry. Or the agent can concede the finding, which
+// dismisses it as "@<bot> dismiss" does. A concession that the store refuses
+// fails the job, with the reply up and marked answered. That leaves the reply
+// for a retry to find on the forge and record.
 func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err error) {
 	reason, err := f.repoConfig(ctx)
 	if err != nil {
@@ -102,8 +103,8 @@ func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err er
 		f.logger.Info("reply not posted", "reason", reply.Silent, "model", agent.Model, "steps", agent.Steps, "cost_usd", agent.CostUSD)
 		return store.FollowupAnswered, f.record(pctx, store.FollowupAnswered, "nothing to add: "+reply.Silent, 0, agent.Model)
 	}
-	// The count is read again for the window since the first; a listing
-	// that fails leaves the reply, which the model was paid for, to post.
+	// The count is read again for the window since the first. A listing that
+	// fails leaves the reply, which the model was paid for, to post.
 	if _, replied, err := f.thread(pctx); err != nil {
 		f.logger.Warn("thread not counted again before the reply", "error", err)
 	} else if replied >= repliesPerThread {
@@ -135,10 +136,10 @@ func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err er
 }
 
 // recordConcession records the reply replyID, which conceded the finding
-// fingerprint, as answered, and the finding dismissed, in one transaction,
-// having resolved the thread; a finding no review of the pull request
-// holds is left alone. A dismissal replaces an earlier one of the same
-// finding, so a retry records it once.
+// fingerprint, as answered, and the finding as dismissed, in one transaction.
+// It does this after it resolves the thread. A finding that no review of the
+// pull request holds is left alone. A dismissal replaces an earlier one of
+// the same finding, so a retry records it once.
 func (f *followUp) recordConcession(ctx context.Context, replyID int64, modelName, fingerprint, reply string) error {
 	// Best effort, like the review's own thread resolution: the record
 	// and the reply stand either way.

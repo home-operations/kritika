@@ -234,8 +234,8 @@ func TestRenderSummaryFocus(t *testing.T) {
 	}
 }
 
-// TestRenderSummaryRoute: the footer names the route that picked the
-// model after it, escaped, since a glob's * would read as emphasis.
+// TestRenderSummaryRoute: the footer names the route that picked the model
+// after it, escaped, since a glob's * otherwise reads as emphasis.
 func TestRenderSummaryRoute(t *testing.T) {
 	d := sampleData()
 	d.Effort, d.Route = "high", FooterText("deep (db/migrations/**)")
@@ -263,9 +263,9 @@ func TestFormatCost(t *testing.T) {
 	}
 }
 
-// TestRenderSummaryApproval: a review that may approve says whether it
-// did, under the confidence line when there is one, with the reason the
-// score's line does not state already; one that may not says nothing.
+// TestRenderSummaryApproval: a review that can approve says whether it did,
+// under the confidence line when there is one. It gives the reason that the
+// score's line does not state already. One that cannot approve says nothing.
 func TestRenderSummaryApproval(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -345,9 +345,9 @@ func TestRenderSummaryLinks(t *testing.T) {
 	}
 }
 
-// TestRenderSummaryOutsideDiffOnly: findings the diff does not show are
-// listed under the findings like any other, so a review with only those
-// does not read as finding nothing.
+// TestRenderSummaryOutsideDiffOnly: findings that the diff does not show are
+// listed under the findings like any other. So a review with only those does
+// not read as finding nothing.
 func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings = nil
@@ -364,9 +364,9 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	}
 }
 
-// TestRenderSummaryCarried: an earlier finding a re-review carried on
-// unchecked is listed among the findings, linked at the head it was last
-// reported at, and says since when it was not checked again.
+// TestRenderSummaryCarried: an earlier finding that a re-review carried on
+// unchecked is listed among the findings, linked at the head that it was last
+// reported at. It says since when it was not checked again.
 func TestRenderSummaryCarried(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings = append(d.Result.Findings, Finding{Path: "old.go", Line: 3, Severity: SeverityP1, Category: CategoryReliability,
@@ -462,7 +462,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 		name     string
 		template string
 		want     []string
-		note     string // substring of the fallback note; empty means the template is used
+		note     string // substring of the fallback note. Empty means the template is used
 	}{
 		{
 			name:     "fields render",
@@ -653,7 +653,7 @@ func TestMeasureRecursesIntoData(t *testing.T) {
 	}
 }
 
-// TestLoopsAreAllGuarded checks that every range, wherever it sits, is
+// TestLoopsAreAllGuarded makes sure that every range, wherever it sits, is
 // charged to the iteration budget.
 func TestLoopsAreAllGuarded(t *testing.T) {
 	tests := []struct {
@@ -782,7 +782,7 @@ func TestRenderSummaryOverlaps(t *testing.T) {
 		t.Fatalf("body:\n%s", body)
 	}
 
-	// Past five, the rest are counted; one is singular.
+	// Past five, the rest are counted. One is singular.
 	d.Commands = Offered{}
 	d.Overlaps = nil
 	for i := range 7 {

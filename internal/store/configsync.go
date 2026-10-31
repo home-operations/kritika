@@ -93,7 +93,7 @@ func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error
 }
 
 // AppliedConfigHash returns the hash the leader last applied, or "" when no
-// configuration has ever been applied. Any role may call it.
+// configuration was ever applied. Any role can call it.
 func (s *Store) AppliedConfigHash(ctx context.Context) (string, error) {
 	var hash string
 	err := s.app.QueryRow(ctx, `SELECT applied_hash FROM config_state WHERE id = 1`).Scan(&hash)
@@ -106,8 +106,8 @@ func (s *Store) AppliedConfigHash(ctx context.Context) (string, error) {
 	return hash, nil
 }
 
-// upsertAccount enables a's row, creating it the first time a connection
-// serves a, and keeps the name as the configuration spells it.
+// upsertAccount enables a's row. It creates the row the first time that a
+// connection serves a, and it keeps the name as the configuration spells it.
 func upsertAccount(ctx context.Context, tx pgx.Tx, a *configfile.Account) error {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO accounts (id, forge, name) VALUES ($1, $2, $3)

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A review's status as an icon on a tinted tile and a word: colour where
+  // A review's status as an icon on a tinted tile and a word: color where
   // the status asks for attention, quiet where it does not.
   import type { ReviewStatus } from '../types';
   import { reviewTone } from '../format';

@@ -14,10 +14,11 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// TestListAccountFindings checks that a finding is listed once per pull
-// request and fingerprint, as its latest completed review reported it, is
-// addressed once a later completed review at another head drops it, and
-// is dismissed, not addressed, once a maintainer dismisses it.
+// TestListAccountFindings makes sure that a finding is listed once per pull
+// request and fingerprint, as its latest completed review reported it. It
+// also makes sure that the finding is addressed once a later completed review
+// at another head drops it. The finding is dismissed, not addressed, once a
+// maintainer dismisses it.
 func TestListAccountFindings(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -187,10 +188,11 @@ func TestListAccountFindings(t *testing.T) {
 	check("paged", append(page1, page2...), rows(all)[0], rows(all)[1], rows(all)[2])
 }
 
-// checkNarrowed checks that TestListAccountFindings's findings narrow to
-// the one whose comment drew a 👎, to the one under a directory or at a
-// path, to the one an agent raised, and by how their pull request
-// stands: pull 8 is closed here, merged first, then without merging.
+// checkNarrowed makes sure that TestListAccountFindings's findings narrow to
+// the one whose comment drew a 👎, and to the one under a directory or at a
+// path. They also narrow to the one that an agent raised, and by how their
+// pull request stands: pull 8 is closed here, merged first, then without
+// merging.
 func checkNarrowed(t *testing.T, s *Store, account string) {
 	close := func(merged bool) {
 		t.Helper()
@@ -233,7 +235,7 @@ func checkNarrowed(t *testing.T, s *Store, account string) {
 	}
 }
 
-// checkClosedUnmerged checks that pull 8, closed without merging, is
+// checkClosedUnmerged makes sure that pull 8, closed without merging, is
 // closed and not merged to the filter.
 func checkClosedUnmerged(t *testing.T, s *Store, account string) {
 	if err := s.WithAccount(t.Context(), account, func(tx pgx.Tx) error {
@@ -255,10 +257,10 @@ func checkClosedUnmerged(t *testing.T, s *Store, account string) {
 	}
 }
 
-// checkSummary checks TestListAccountFindings's findings summarized: each
-// counted once per pull request, a finding citing two rules in each of
-// their groups, the default pass naming a finding no agent raised, and a
-// file at the root in its repository's "" directory.
+// checkSummary makes sure that TestListAccountFindings's findings summarize
+// as follows. Each is counted once per pull request. A finding that cites two
+// rules is in each of their groups. The default pass names a finding that no
+// agent raised. A file at the root is in its repository's "" directory.
 func checkSummary(t *testing.T, s *Store, account string) {
 	t.Helper()
 	ctx := t.Context()
@@ -310,8 +312,8 @@ func checkSummary(t *testing.T, s *Store, account string) {
 	}
 }
 
-// TestDismissedFindings checks that a finding a maintainer dismissed is
-// listed dismissed with its reason, never addressed, whatever the reviews
+// TestDismissedFindings makes sure that a finding that a maintainer dismissed
+// is listed dismissed with its reason, never addressed, whatever the reviews
 // after it report.
 func TestDismissedFindings(t *testing.T) {
 	s := openStore(t)
@@ -341,7 +343,7 @@ func TestDismissedFindings(t *testing.T) {
 			if i == 0 {
 				earliest = id
 			}
-			// The second review drops naming, which would address it.
+			// The second review drops naming, which otherwise addresses it.
 			findings := [][2]string{{"nil deref", "fp-a"}, {"naming", "fp-b"}}[:2-i]
 			for _, f := range findings {
 				if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint)
@@ -397,8 +399,8 @@ func TestDismissedFindings(t *testing.T) {
 	}
 }
 
-// checkDismissedOwn checks that a review's own findings say naming was
-// dismissed, with its reason, and the other is still open.
+// checkDismissedOwn makes sure that a review's own findings say naming was
+// dismissed, with its reason, and that the other is still open.
 func checkDismissedOwn(ctx context.Context, t *testing.T, tx pgx.Tx, reviewID string) error {
 	t.Helper()
 	own, err := ListFindings(ctx, tx, reviewID)
@@ -424,9 +426,10 @@ func checkDismissedOwn(ctx context.Context, t *testing.T, tx pgx.Tx, reviewID st
 	return nil
 }
 
-// checkDismissedBy checks that TestDismissedFindings's dismissal is found
-// by its source alone, read back with it, counted in the summary, and
-// found by another source once the finding is dismissed again by it.
+// checkDismissedBy makes sure that TestDismissedFindings's dismissal is found
+// by its source alone, read back with it, and counted in the summary. It also
+// makes sure that the dismissal is found by another source once that source
+// dismisses the finding again.
 func checkDismissedBy(t *testing.T, s *Store, account, pull string) {
 	t.Helper()
 	ctx := t.Context()

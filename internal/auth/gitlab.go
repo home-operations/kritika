@@ -68,10 +68,10 @@ func (a gitlabAPI) identity(ctx context.Context, c apiClient) (Identity, error) 
 	}, nil
 }
 
-// member reports whether the user is a member of group, a top-level
-// group's full path: GitLab lists every group the user is a member of,
-// directly or through an ancestor, so a member of a subgroup alone is not
-// one of the group.
+// member reports whether the user is a member of group, which is the full
+// path of a top-level group. GitLab lists every group that the user is a
+// member of, directly or through an ancestor. So a member of a subgroup alone
+// is not a member of the group.
 func (a gitlabAPI) member(ctx context.Context, c apiClient, _ Identity, group string) (bool, error) {
 	u, err := a.userinfo(ctx, c)
 	if err != nil {

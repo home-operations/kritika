@@ -1,6 +1,6 @@
-// Package textcut shortens text without splitting a UTF-8 sequence, so a
-// cut string stays valid wherever valid UTF-8 is required, as it is in a
-// Postgres text column.
+// Package textcut shortens text without splitting a UTF-8 sequence. A cut
+// string stays valid wherever valid UTF-8 is required, as it is in a Postgres
+// text column.
 package textcut
 
 import (
@@ -20,11 +20,11 @@ func Prefix(s string, n int) string {
 	return s[:n]
 }
 
-// Truncate is Prefix with a note of how many bytes were cut appended, the
-// two together at most n bytes long when n has room for the note; a
-// non-positive n disables the cut. Fitting the note matters: a result over
-// n that is cut again would lose its note to one counting only the note's
-// own bytes.
+// Truncate is Prefix with a note appended that says how many bytes it cut. If
+// n has room for the note, the result is at most n bytes long, including the
+// note. A non-positive n disables the cut. The note must fit. If a result is
+// over n and something cuts it again, it loses its note. The new note counts
+// only the bytes of the old note.
 func Truncate(s string, n int) string { return Cut(s, n, 0) }
 
 // Cut is Truncate for s that has already lost dropped bytes: the note

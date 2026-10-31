@@ -21,7 +21,7 @@ import (
 
 // JobTemplate is what the configuration's runner.jobTemplate sets on every
 // runner Job, as a JobTemplateSpec spells it: labels and annotations, how
-// long the Job may run, and how long it is kept once it ends. Its retries,
+// long the Job can run, and how long it is kept once it ends. Its retries,
 // its pod failure policy and its pod stay the executor's.
 type JobTemplate struct {
 	Metadata TemplateMetadata `json:"metadata"`
@@ -43,12 +43,12 @@ type TemplateMetadata struct {
 }
 
 // PodTemplate is what the configuration's runner.podTemplate sets on every
-// runner pod, as a PodTemplateSpec spells it: labels and annotations,
-// resources for the whole pod, where it is scheduled and at what priority,
-// a runtime class and a user namespace of its own, and the runner
-// container's image. What keeps a runner isolated, its ServiceAccount, the
-// token it does not mount, its security contexts, its volumes and its
-// command, stays the executor's.
+// runner pod, as a PodTemplateSpec spells it. It sets labels and annotations,
+// resources for the whole pod, and where the pod is scheduled and at what
+// priority. It also sets a runtime class and a user namespace of its own, and
+// the runner container's image. What keeps a runner isolated stays the
+// executor's: its ServiceAccount, the token it does not mount, its security
+// contexts, its volumes, and its command.
 type PodTemplate struct {
 	Metadata TemplateMetadata `json:"metadata"`
 	Spec     PodTemplateSpec  `json:"spec"`
@@ -79,7 +79,7 @@ type TemplateContainer struct {
 }
 
 // commandEnv names the runner container's variables for the run tool's
-// commands, marking those a Secret's key sets.
+// commands and marks those that a Secret's key sets.
 func (t PodTemplate) commandEnv() []runspec.CommandEnvVar {
 	env := make([]runspec.CommandEnvVar, 0, len(t.runner().Env))
 	for _, e := range t.runner().Env {
@@ -103,9 +103,9 @@ func (t PodTemplate) runner() TemplateContainer {
 const appArmorAnnotation = "container.apparmor.security.beta.kubernetes.io/"
 
 // DecodeJobTemplate decodes the configuration's runner.jobTemplate, which
-// it keeps as the YAML written, refusing a field JobTemplate does not have
-// rather than dropping it, and a label or annotation kritika sets on its
-// Jobs.
+// it keeps as the YAML written. It refuses a field that JobTemplate does not
+// have and does not drop it. It also refuses a label or annotation that
+// kritika sets on its Jobs.
 func DecodeJobTemplate(m map[string]any) (JobTemplate, error) {
 	var t JobTemplate
 	if err := decodeTemplate(m, &t); err != nil {
@@ -130,10 +130,11 @@ func DecodeJobTemplate(m map[string]any) (JobTemplate, error) {
 	return t, nil
 }
 
-// DecodePodTemplate decodes the configuration's runner.podTemplate likewise,
-// refusing a label or annotation a runner's isolation rests on, and
-// requiring the one container, named runner, with its image, and its
-// variables named as none the runner keeps for the commands.
+// DecodePodTemplate decodes the configuration's runner.podTemplate likewise.
+// It refuses a label or annotation that a runner's isolation rests on. It
+// requires the one container, named runner, with its image. It also requires
+// that no variable of that container has a name that the runner keeps for
+// the commands.
 func DecodePodTemplate(m map[string]any) (PodTemplate, error) {
 	var t PodTemplate
 	if err := decodeTemplate(m, &t); err != nil {
@@ -175,7 +176,7 @@ func DecodePodTemplate(m map[string]any) (PodTemplate, error) {
 	return t, nil
 }
 
-// decodeTemplate decodes m into v, refusing a field v does not have.
+// decodeTemplate decodes m into v and refuses a field that v does not have.
 func decodeTemplate(m map[string]any, v any) error {
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -186,15 +187,16 @@ func decodeTemplate(m map[string]any, v any) error {
 	return dec.Decode(v)
 }
 
-// CheckJob has the API validate a runner Job, as the executor builds it
-// from the configuration's templates, created as a dry run, for what
-// decoding them cannot check: an enum, a required field, a label's syntax,
-// a cluster's admission policy, the chart's runner admission among them.
-// The Job is a run's, its name and deadline included, so a policy judges
-// it as it would theirs. One the API finds invalid stops serve at startup
-// rather than failing every run; any other refusal, such as a webhook that
-// cannot take a dry run, a quota, or a run's Job of the same name, is only
-// logged.
+// CheckJob has the API make sure that a runner Job is valid. The Job is as
+// the executor builds it from the configuration's templates, and it is
+// created as a dry run. This covers what decoding the templates cannot: an
+// enum, a required field, a label's syntax, a cluster's admission policy,
+// the chart's runner admission among them. The Job is a run's, its name and
+// deadline included, so a policy judges it as it judges theirs.
+//
+// A Job that the API finds invalid stops serve at startup, rather than
+// failing every run. Any other refusal is only logged. For example, a webhook
+// that cannot take a dry run, a quota, or a run's Job of the same name.
 func (k *Kube) CheckJob(ctx context.Context, deadline time.Duration) error {
 	job := k.job(Spec{Job: runspec.Spec{RunID: "00000000-0000-0000-0000-000000000000"}, Deadline: deadline})
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -209,11 +211,11 @@ func (k *Kube) CheckJob(ctx context.Context, deadline time.Duration) error {
 	return nil
 }
 
-// takenLabel reports whether key is a label the configuration may not set
-// on runner Jobs or pods: kritika's own, by which its watch and
-// NetworkPolicies select them; the instance label, by which kritika's
-// Services select the serve pods alone; or one the Job controller sets,
-// which the API refuses a Job's pods to carry otherwise.
+// takenLabel reports whether key is a label that the configuration cannot
+// set on runner Jobs or pods. One kind is kritika's own, by which its watch
+// and NetworkPolicies select them. Another is the instance label, by which
+// kritika's Services select the serve pods alone. The last is one that the
+// Job controller sets, which the API refuses a Job's pods to carry otherwise.
 func takenLabel(key string) bool {
 	switch key {
 	case "app.kubernetes.io/name", "app.kubernetes.io/component", "app.kubernetes.io/instance", jobNameLabel, "controller-uid":

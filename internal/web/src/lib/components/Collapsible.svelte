@@ -26,7 +26,7 @@
     </Collapsible.Trigger>
     {#if meta}<span class="collapsible-meta inline-flex items-center gap-1.5 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap pr-4">{@render meta()}</span>{/if}
   </div>
-  <!-- Bits UI keeps a closed body in the page, hidden; a body here may be a
+  <!-- Bits UI keeps a closed body in the page, hidden. A body here can be a
        transcript or a file, so it is rendered only while open. -->
   <Collapsible.Content class="collapsible-body py-3 px-4 border-t border-solid border-t-line flex flex-col gap-2">{#if open}{@render children()}{/if}</Collapsible.Content>
 </Collapsible.Root>

@@ -53,7 +53,7 @@
 
   $effect(() => { if (pullPath) void pull.load(); });
   $effect(() => { if (selectedId) void res.load(); });
-  // Events lack a PR identifier; review lifecycle changes can introduce a new run.
+  // Events lack a PR identifier. Review lifecycle changes can introduce a new run.
   $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), (dirty) => {
     if (dirty.has('followup')) activityDirty = true;
     if (dirty.has('review') || dirty.has('resync')) {

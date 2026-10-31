@@ -58,8 +58,8 @@ func applyStage(reg *prometheus.Registry) float64 {
 }
 
 // TestApplyConfig: a refusal for the configuration's content is logged,
-// raised on the gauge and recorded as an Event on the pod without ending
-// leadership, a database error ends it, and the onApplied error is
+// raised on the gauge, and recorded as an Event on the pod without ending
+// leadership. A database error ends leadership. The onApplied error is
 // returned as is.
 func TestApplyConfig(t *testing.T) {
 	for _, tt := range []struct {
@@ -282,8 +282,8 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 }
 
 // TestRiverConfig: the working client keeps River's reindexer off, which
-// the application role could never run, and gives a job its timeout cut
-// the headroom its detached end takes before calling it stuck.
+// the application role can never run. It gives a job that its timeout cut
+// the headroom that its detached end takes before calling it stuck.
 func TestRiverConfig(t *testing.T) {
 	c := riverConfig(&config.Config{}, river.NewWorkers(), nil, slog.New(slog.DiscardHandler))
 	if c.ReindexerIndexNames == nil || len(c.ReindexerIndexNames) != 0 {

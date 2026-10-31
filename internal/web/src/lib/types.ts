@@ -1,6 +1,6 @@
-// Mirrors internal/webapi/types.go field for field; the Go side pins the
+// Mirrors internal/webapi/types.go field for field. The Go side pins the
 // JSON names in internal/webapi/testdata/*.golden.json. Timestamps are
-// RFC 3339 strings; null means "none".
+// RFC 3339 strings. null means "none".
 
 // Where a connection is declared: the configuration file (or its
 // environment), or the dashboard.
@@ -13,8 +13,8 @@ export interface User {
   avatarUrl: string;
 }
 
-// admin administers the instance and every account; accounts are the slugs
-// ("<forge>/<name>") of the accounts the viewer may read.
+// admin administers the instance and every account. accounts are the slugs
+// ("<forge>/<name>") of the accounts the viewer can read.
 export interface Me {
   user: User;
   admin: boolean;
@@ -22,7 +22,7 @@ export interface Me {
   settings: UserSettings;
 }
 
-// What a user chose for their own dashboard; '' leaves the choice to the
+// What a user chose for their own dashboard. '' leaves the choice to the
 // browser. timeZone is an IANA zone name.
 export interface UserSettings {
   timeZone: string;
@@ -40,7 +40,7 @@ export interface SignInProvider {
 }
 
 // A keyset-paginated list: pass nextCursor back as ?cursor= for the next
-// page; it is null on the last one.
+// page. It is null on the last one.
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;
@@ -71,7 +71,7 @@ export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
 export type Forge = 'github' | 'forgejo' | 'gitlab' | 'gitea';
-// account groups the instance's usage by account; an account's own has no such group.
+// account groups the instance's usage by account. An account's own has no such group.
 export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role' | 'review' | 'account';
 export type JobState =
   | 'available'
@@ -82,15 +82,15 @@ export type JobState =
   | 'completed'
   | 'cancelled'
   | 'discarded';
-// Why a job's last attempt failed, where the server can tell; '' otherwise.
+// Why a job's last attempt failed, where the server can tell. '' otherwise.
 export type JobCause = 'forge_unavailable';
 export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call';
 export type TranscriptKind = 'agent_step' | 'followup' | 'confidence' | 'merge';
 export type MessageRole = 'user' | 'assistant';
 
-// reviews are the ones that completed this month, reviewCostUsd what they
-// cost together, medianReviewCostUsd the median cost of one, null when none
-// completed; both leave out the unpricedReviews, whose cost is not known.
+// reviews are the ones that completed this month. reviewCostUsd is what they
+// cost together. medianReviewCostUsd is the median cost of one, null when none
+// completed. Both leave out the unpricedReviews, whose cost is not known.
 export interface MonthUsage {
   tokens: number;
   costUsd: number;
@@ -123,9 +123,9 @@ export interface AccountSummary {
 
 // live is false for an entry of the instance spec no connection serves,
 // which conflict explains.
-// AdminUser is a user who has signed in, as an admin lists them. access is
-// what their newest session the configuration still honours lets them
-// read, null without one; sessions counts those sessions.
+// AdminUser is a user who signed in, as an admin lists them. access is
+// what their newest session the configuration still honors lets them
+// read, null without one. sessions counts those sessions.
 export interface AdminUser extends User {
   signIns: UserSignIn[];
   access: UserAccess | null;
@@ -150,7 +150,7 @@ export interface UserAccess {
 }
 
 // APIToken is a personal access token as its owner or an admin lists it,
-// never its value. accounts are the accounts it reads unless allAccounts;
+// never its value. accounts are the accounts it reads unless allAccounts.
 // owner is set in an admin's list alone.
 export interface APIToken {
   id: string;
@@ -188,7 +188,7 @@ export interface AdminAccount extends AccountSummary {
 
 // CredentialsSet says which of a connection's credentials are set: a
 // GitHub App's client id, a Forgejo integration's audience and the
-// read-only one runners fetch as, and the private key both sign with; a
+// read-only one runners fetch as, and the private key both sign with. A
 // GitLab service account's or Gitea bot user's token and the read-only one
 // runners fetch with.
 export interface CredentialsSet {
@@ -204,27 +204,27 @@ export interface CredentialsSet {
 export interface Connection {
   name: string;
   forge: Forge;
-  // host is the Forgejo, GitLab or Gitea instance a bot talks to; absent for GitHub.
+  // host is the Forgejo, GitLab or Gitea instance a bot talks to. It is absent for GitHub.
   host?: string;
   accounts: string[];
   credentials: CredentialsSet;
   hookPath: string;
   // lastWebhookAt is null until a webhook for the connection reaches
-  // kritika; until then kritika only polls it.
+  // kritika. Until then, kritika only polls it.
   lastWebhookAt: string | null;
   // lastUnsignedWebhookAt is when one last arrived with no signature, which
-  // an App with no webhook secret sends; null when none has.
+  // an App with no webhook secret sends. It is null when none arrived.
   lastUnsignedWebhookAt: string | null;
 }
 
 // effort is how hard the review model reasons, one of the providers'
-// levels; '' leaves it to the provider.
+// levels. '' leaves it to the provider.
 export interface Models {
   review: string;
   fallback: string;
   effort: string;
   // routes pick another model for a pull request one of whose conditions
-  // holds, the first that does winning; review is the default.
+  // holds. The first route that holds wins. review is the default.
   routes?: ModelRoute[];
 }
 
@@ -280,7 +280,7 @@ export interface IndexState {
   job: IndexJob | null;
   // backlog is the repository's place, from 1, among the account's
   // repositories waiting for the onboarding feeder to queue their first
-  // index; absent when it is not waiting.
+  // index. It is absent when it is not waiting.
   backlog?: number;
 }
 
@@ -295,7 +295,7 @@ export interface IndexJob {
   attemptedAt: string | null;
 }
 
-// What a repository's active index generation holds; indexed is false,
+// What a repository's active index generation holds. indexed is false,
 // with zero counts, when it has none. current is false when another
 // embedder than the applied one built it.
 export interface IndexContents {
@@ -349,7 +349,7 @@ export interface Repository {
   // visibility is public, private or internal as GitHub reports it, "" until it has.
   visibility: string;
   // turnedOn starts false for discovered repositories, then follows the
-  // admin's choice; null lets the configuration decide.
+  // admin's choice. null lets the configuration decide.
   turnedOn: boolean | null;
   index: IndexState;
   lastReview: ReviewRef | null;
@@ -443,7 +443,7 @@ export interface InstanceSetting {
 }
 
 // The repository's .kritika.yaml as the last review that ran read it, at
-// its merge base, applied to the admin's settings as they are now.
+// its merge base, applied to the admin's configuration as it is now.
 export interface RepoConfig {
   reviewId: string;
   commit: string;
@@ -471,7 +471,7 @@ export interface IndexRun {
 
 export interface RepoDetail extends Repository {
   settings: RepoSettings;
-  // Where each of the admin's settings comes from, by policy key.
+  // Where each setting in the admin's configuration comes from, by policy key.
   sources: Record<string, ConfigSource>;
   repoConfig: RepoConfig | null;
   indexRuns: IndexRun[];
@@ -525,7 +525,7 @@ export interface Pull {
   unpricedCalls?: number;
 }
 
-// The account's open pull requests that want a look, by why; one may count
+// The account's open pull requests that want a look, by why. One can count
 // under several.
 export interface Attention {
   failed: number;
@@ -653,10 +653,10 @@ export interface Finding {
   reactionsDown: number;
   // rules are the ids of the review rules it enforces.
   rules: string[];
-  // agents are the names of the agents that raised it; empty when the
-  // default pass alone did, and "default" may appear alongside others.
+  // agents are the names of the agents that raised it. It is empty when the
+  // default pass alone did, and "default" can appear alongside others.
   agents: string[];
-  // status is what became of it on its pull request; dismissReason is the
+  // status is what became of it on its pull request. dismissReason is the
   // reason a dismissed one was dismissed with, and dismissSource what
   // dismissed it.
   status: FindingStatus;
@@ -732,11 +732,11 @@ export type RuleKind = 'rule' | 'context';
 // repository is the repository's own .kritika.yaml.
 export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'repository';
 
-// Rule is one written rule or file reviews read, with where it is set, the
-// paths it applies to (every change when empty), and the repositories that
-// read it. id, text and when, the conditions on the pull request one of
-// which must hold for it to apply (always when empty), are a written
-// rule's, path and description a file's.
+// Rule is one written rule or file that reviews read. It says where it is
+// set, the paths it applies to (every change when empty), and the repositories
+// that read it. id, text and when are a written rule's. when is the conditions
+// on the pull request, one of which must hold for it to apply (always when
+// empty). path and description are a file's.
 export interface Rule {
   kind: RuleKind;
   id: string;
@@ -771,11 +771,11 @@ export interface FindingCounts {
   downvoted: number;
 }
 
-// FindingGroup is the findings that share a key, counted: a category, a
-// rule id, an agent's name ("default" for the default pass), or a
-// directory of repository one below the path filter, with a trailing
-// slash, the path filter itself ("" for none) for a file in no directory
-// below it.
+// FindingGroup is the findings that share a key, counted. The key is a
+// category, a rule id, or an agent's name ("default" for the default pass).
+// It can also be a directory of repository one below the path filter, with a
+// trailing slash. For a file in no directory below it, the key is the path
+// filter itself ("" for none).
 export interface FindingGroup extends FindingCounts {
   key: string;
   repository: string;
@@ -829,7 +829,7 @@ export interface Usage {
 
 export interface TimelineStep {
   index: number;
-  // part is the part of a split review the step was for, from 1; 0 when the review was not split.
+  // part is the part of a split review the step was for, from 1. It is 0 when the review was not split.
   part: number;
   tools: string[];
   durationMs: number;
@@ -841,16 +841,16 @@ export interface TimelineStep {
 export interface AgentRun {
   stopReason: string;
   // forcedBy is the limit that made the loop tell the agent to submit: steps,
-  // tokens or time; absent when it never did, and for a split review, whose
-  // parts each say.
+  // tokens or time. It is absent when it never did, and for a split review,
+  // whose parts each say.
   forcedBy?: string;
   steps: number;
   toolCalls: Record<string, number>;
   timeline: TimelineStep[];
   sources: string[];
-  // skillsOffered are the repository skills the agent could read, and
-  // skillsOpened the ones it did; commandsOffered and commandsRun the same
-  // for the run tool's commands.
+  // skillsOffered are the repository skills the agent was able to read, and
+  // skillsOpened the ones it did read. commandsOffered and commandsRun are the
+  // same for the run tool's commands.
   skillsOffered: string[];
   skillsOpened: string[];
   commandsOffered: string[];
@@ -861,22 +861,22 @@ export interface AgentRun {
   model: string;
   error: string;
   createdAt: string;
-  // The submitted review JSON; null unless the agent submitted.
+  // The submitted review JSON. null unless the agent submitted.
   result: unknown;
   // carriedReviewId is the review whose conversation the agent carried on, null when it started afresh.
   carriedReviewId: string | null;
-  // parts are how the parts of a split review ended, in part order; empty when it was not split.
+  // parts are how the parts of a split review ended, in part order. It is empty when the review was not split.
   parts: AgentPart[];
 }
 
 // AgentPart is one part of a split review: its files, why its agent stopped, with the error it ended on, and its steps.
 export interface AgentPart {
   reusedFrom?: string;
-  // agent is the named agent the part was for; absent for the default pass alone.
+  // agent is the named agent the part was for. It is absent for the default pass alone.
   agent?: string;
   // full is whether that agent reviewed the whole change, though the review was incremental.
   full?: boolean;
-  // costUsd is the part's model-call cost; absent when it is 0 or unknown.
+  // costUsd is the part's model-call cost. It is absent when it is 0 or unknown.
   costUsd?: number;
   paths: string[];
   stop: string;
@@ -925,7 +925,7 @@ export interface ContextPack {
   priorHeadSha: string | null;
   stages: Stage[];
   repoNotes: string[];
-  // ruleIds are the ids of the rules the review was given to check.
+  // ruleIds are the ids of the rules the review was given to apply.
   ruleIds: string[];
   repoFiles: RepoFile[];
   createdAt: string;
@@ -1001,8 +1001,8 @@ export interface Response {
 }
 
 // system and tools are non-null only on a turn that changed them from its
-// part's turn before, or, at a part's first turn, from the conversation's;
-// reset says messages is the whole request rather than what is new since
+// part's turn before. At a part's first turn, the comparison is with the
+// conversation's. reset says that messages is the whole request rather than what is new since
 // the previous turn of its run.
 export interface Turn {
   index: number;
@@ -1113,7 +1113,7 @@ export interface InstanceJob extends Job {
 }
 
 // How many of an account's concurrency slots for a model a running review
-// holds; slots is the account's limit, 0 for none.
+// holds. slots is the account's limit, 0 for none.
 export interface ModelSlots {
   account: string;
   model: string;
@@ -1128,8 +1128,8 @@ export interface InstanceQueue {
   slots: ModelSlots[];
 }
 
-// One server-sent event's data; the SSE event name is its kind, plus
-// "resync" (Resync) when the client should refetch everything it shows.
+// One server-sent event's data. The SSE event name is its kind, plus
+// "resync" (Resync) when the client must refetch everything it shows.
 export interface LiveEvent {
   kind: EventKind;
   account: string;
@@ -1139,14 +1139,14 @@ export interface LiveEvent {
 
 // The data of the resync event, which opens every stream. entry is the
 // path of the dashboard's entry script, "" when the server serves a UI
-// built without the manifest; a tab that booted from another script runs
+// built without the manifest. A tab that booted from another script runs
 // another build, and reloads instead.
 export interface Resync {
   entry: string;
 }
 
 // The management API: actions, connections and the audit log.
-// ErrorBody.code may also be one of these.
+// ErrorBody.code can also be one of these.
 export type ManagementErrorCode =
   | 'forbidden'
   | 'no_head'
@@ -1165,8 +1165,8 @@ export interface Accepted {
 }
 
 // One account a connection's GitHub App is installed on. served is whether
-// the connection lists the account; kritika reviews nothing on one it does
-// not, and an admin may uninstall the App there.
+// the connection lists the account. kritika reviews nothing on one it does
+// not, and an admin can uninstall the App there.
 export interface AppInstallation {
   id: number;
   account: string;

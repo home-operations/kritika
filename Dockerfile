@@ -16,9 +16,9 @@ ARG NODE_VERSION
 # The built UI is the same bytes on every platform, so it is built once, on
 # the build host, rather than per target under emulation.
 FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:${NODE_VERSION}-trixie-slim AS ui
-# PNPM_VERSION is supplied as the others are. The Node image ships no pnpm,
-# and its npm package's install script only swaps the wrappers that run it
-# through Node for its native binary, so it is installed without scripts.
+# PNPM_VERSION is supplied as the others are. The Node image ships no pnpm.
+# The install script of pnpm's npm package only swaps the wrappers that run it
+# through Node for its native binary. It is therefore installed without scripts.
 ARG PNPM_VERSION
 RUN npm install --global --ignore-scripts "pnpm@${PNPM_VERSION:?PNPM_VERSION is required}"
 WORKDIR /ui
@@ -71,13 +71,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ---- Runner tools root ------------------------------------------------------
 # The runner's root: Red Hat Hardened Images' core runtime, its bash,
-# coreutils, glibc and CA certificates, with curl, find, grep and jq,
-# libstdc++ for a repository's tools and the timezone database, legacy names
-# included, for a TZ the admin sets. The builder variant's dnf installs them
-# into a copy of it, so the image carries no package manager. Renovate bumps
-# both images' digests. core-runtime names no user 65532, which a runtime
-# that adds none to /etc/passwd leaves a tool unable to look up, so the
-# root gets a nonroot user and group of that id.
+# coreutils, glibc and CA certificates, with curl, find, grep and jq. It also
+# has libstdc++ for a repository's tools, and the timezone database, legacy
+# names included, for a TZ the admin sets. The builder variant's dnf installs
+# them into a copy of it, so the image carries no package manager. Renovate
+# bumps both images' digests. core-runtime names no user 65532. A runtime that
+# adds none to /etc/passwd leaves a tool unable to look up that user. The root
+# therefore gets a nonroot user and group of that id.
 FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:4163796d8b7f28021178093d31cb97c05336fd3f3a4d7006603a7fef29e997e7 AS core-runtime
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:ec42e5bba671b73f6656e6f9bda14f7d400b55dd7cdce369b41870dfadd00262 AS tools-root
 USER 0
@@ -87,8 +87,8 @@ RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak
  && dnf --installroot /rootfs --use-host-config clean all \
  && echo 'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin' >> /rootfs/etc/passwd \
  && echo 'nonroot:x:65532:' >> /rootfs/etc/group
-# gh as its release builds it, a static binary, checked against its
-# release's checksums.
+# gh as its release builds it, a static binary. The build makes sure that it
+# matches its release's checksums.
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=v2.103.3

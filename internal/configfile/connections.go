@@ -8,18 +8,22 @@ import (
 	"strings"
 )
 
-// ForgejoIntegration is the authorized integration a Forgejo connection
-// calls the instance as: the instance's host, the key kritika signs the
-// integration's tokens with, and the audience Forgejo gave the
-// integration, which is known only once it exists; until it is set the
-// connection serves its key and nothing else. RunnerAudience names a
-// second integration with read access alone that runners fetch as, so
-// the pod that reads untrusted content never holds a token that can
-// write; without one they fetch as the first. PreviousKey is a key being
-// rotated out: served for Forgejo to verify with, signing nothing, until
-// the last token it signed has expired and Forgejo's cache of the key set
-// has turned over. Bots are the logins on the instance that are bots:
-// Forgejo marks no account as one, and allows no "[bot]" in a login.
+// ForgejoIntegration is the authorized integration that a Forgejo connection
+// calls the instance as. It has the instance's host, the key that kritika
+// signs the integration's tokens with, and the audience that Forgejo gave
+// the integration. The audience is known only once the integration exists.
+// Until the audience is set, the connection serves its key and nothing else.
+//
+// RunnerAudience names a second integration, with read access alone, that
+// runners fetch as. So the pod that reads untrusted content never holds a
+// token that can write. Without one, they fetch as the first.
+//
+// PreviousKey is a key being rotated out. It is served so that Forgejo can
+// use it for verification, and it signs nothing. This lasts until the last
+// token it signed expires and Forgejo's cache of the key set turns over.
+//
+// Bots are the logins on the instance that are bots: Forgejo marks no
+// account as one, and allows no "[bot]" in a login.
 type ForgejoIntegration struct {
 	Host           string     `yaml:"host"`
 	Audience       ValueOrRef `yaml:"audience,omitempty"`
@@ -61,12 +65,13 @@ func (i *Connection) WebhookSecretValue() Secret {
 	return i.App.webhookSecret
 }
 
-// GitLabBot is the service account a GitLab connection calls the instance
-// as: the instance's host, a personal access token of the account with
-// the api scope, and RunnerToken, a second token of the account with the
-// read_repository scope alone that runners fetch with, so the pod that
-// reads untrusted content never holds a token that can write; without
-// one they fetch with the first. GitLab 19 or later is assumed.
+// GitLabBot is the service account that a GitLab connection calls the
+// instance as. It has the instance's host, a personal access token of the
+// account with the api scope, and RunnerToken. RunnerToken is a second token
+// of the account, with the read_repository scope alone, that runners fetch
+// with. So the pod that reads untrusted content never holds a token that can
+// write. Without one, they fetch with the first. GitLab 19 or later is
+// assumed.
 type GitLabBot struct {
 	Host          string    `yaml:"host"`
 	Token         SecretRef `yaml:"token"`
@@ -82,14 +87,16 @@ func (b GitLabBot) TokenValue() Secret { return b.token }
 // RunnerTokenValue returns the resolved runners' token, empty for none.
 func (b GitLabBot) RunnerTokenValue() Secret { return b.runnerToken }
 
-// GiteaBot is the bot user a Gitea connection calls the instance as: the
-// instance's host, an access token of the user with the read:user,
-// write:repository and write:issue scopes, and RunnerToken, a second
-// token of the user with read:repository alone that runners fetch with,
-// so the pod that reads untrusted content never holds a token that can
-// write; without one they fetch with the first. Gitea 28 or later is
-// assumed. Bots are logins on the instance that are bots beside the bot
-// users Gitea marks as such: an ordinary account a bot runs as is not.
+// GiteaBot is the bot user that a Gitea connection calls the instance as. It
+// has the instance's host, an access token of the user with the read:user,
+// write:repository, and write:issue scopes, and RunnerToken. RunnerToken is
+// a second token of the user, with read:repository alone, that runners fetch
+// with. So the pod that reads untrusted content never holds a token that can
+// write. Without one, they fetch with the first. Gitea 28 or later is
+// assumed.
+//
+// Bots are logins on the instance that are bots beside the bot users that
+// Gitea marks as such: an ordinary account that a bot runs as is not.
 type GiteaBot struct {
 	Host          string    `yaml:"host"`
 	Token         SecretRef `yaml:"token"`
@@ -141,8 +148,8 @@ func (b *GiteaBot) validate(where string) error {
 	return nil
 }
 
-// Bots are the logins the connection lists as bots, on a Forgejo or Gitea
-// instance; none elsewhere.
+// Bots are the logins that the connection lists as bots, on a Forgejo or
+// Gitea instance. There are none elsewhere.
 func (i *Connection) Bots() []string {
 	switch i.Forge {
 	case ForgeForgejo:
@@ -172,7 +179,7 @@ func (i *Connection) where() string {
 }
 
 // ForgeHosts are the hosts the connection's forge is reached at, which
-// every runner of its accounts may reach: GitHub and its API, or the
+// every runner of its accounts can reach: GitHub and its API, or the
 // Forgejo, GitLab or Gitea instance, whose API and clone URLs share its
 // host.
 func (i *Connection) ForgeHosts() []string {
@@ -261,11 +268,12 @@ func forgesServing(conns []Connection) map[string][]Forge {
 	return out
 }
 
-// validateConnections checks one layer's connections: names that are hook
-// paths; accounts listed; credentials that resolved; every account served
-// by one connection alone; and every GitHub App declared once. An App has
-// one webhook, so a second entry's accounts would be undeclared on the
-// first's hook path, and offered for uninstalling as not served.
+// validateConnections makes sure that one layer's connections are valid. It
+// requires names that are hook paths, accounts listed, credentials that
+// resolved, every account served by one connection alone, and every GitHub
+// App declared once. An App has one webhook, so a second entry's accounts
+// will be undeclared on the first's hook path, and offered for uninstalling
+// as not served.
 func validateConnections(conns []Connection) error {
 	served := map[string]string{}
 	apps := map[string]string{}
@@ -304,11 +312,11 @@ func validateConnections(conns []Connection) error {
 	return nil
 }
 
-// validateIssuer requires the dashboard's URL, which kritika's Forgejo
-// tokens name as their issuer and Forgejo reads the signing keys from, to
-// be HTTPS once a Forgejo connection exists: Forgejo fetches an issuer's
-// documents over HTTPS alone. A file parsed without the settings has no
-// URL to check.
+// validateIssuer requires the dashboard's URL to be HTTPS once a Forgejo
+// connection exists. kritika's Forgejo tokens name that URL as their issuer,
+// and Forgejo reads the signing keys from it. Forgejo fetches an issuer's
+// documents over HTTPS alone. A file parsed without the process
+// configuration has no URL to look at.
 func (f *File) validateIssuer() error {
 	if f.Run.WebURL == "" {
 		return nil

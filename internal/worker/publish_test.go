@@ -118,7 +118,7 @@ func TestSkipDescription(t *testing.T) {
 }
 
 // TestSettlePrior: an earlier finding not reported again is resolved only
-// when the review lists its id; any other stays open, carried on from the
+// when the review lists its id. Any other stays open, carried on from the
 // head it was last reported at.
 func TestSettlePrior(t *testing.T) {
 	prior := []priorFinding{
@@ -182,7 +182,7 @@ func TestSettlePrior(t *testing.T) {
 	}
 }
 
-// linkForge links files and threads as a forge would, for the summary's
+// linkForge links files and threads as a forge does, for the summary's
 // earlier findings.
 type linkForge struct{ forge.Client }
 
@@ -195,8 +195,9 @@ func (linkForge) ThreadURL(_, _ string, _ int, id int64) string {
 }
 
 // TestPriorFindings: the summary's earlier findings are the last review's
-// this one listed as resolved, linked at the head their line numbers are
-// from and to their threads, then the dismissed ones.
+// findings that this one listed as resolved. They are linked at the head that
+// their line numbers are from and to their threads. Then come the dismissed
+// ones.
 func TestPriorFindings(t *testing.T) {
 	p := &publishPhase{
 		client: linkForge{}, pr: &pullRequest{repository: "o/r", number: 1},
@@ -304,8 +305,8 @@ func TestWriteSticky(t *testing.T) {
 var errForge = errors.New("forge: forbidden")
 
 // TestDashboard: the comments get the dashboard's origin and the pull
-// request's page on it only from a worker with a web URL, and only where the
-// admin leaves the dashboard in the repository's comments.
+// request's page on it only from a worker with a web URL. They get them only
+// where the admin leaves the dashboard in the repository's comments.
 func TestDashboard(t *testing.T) {
 	t.Parallel()
 	web, err := url.Parse("https://kritika.example.com")
@@ -339,8 +340,8 @@ func TestDashboard(t *testing.T) {
 }
 
 // TestUnfinishedParts: each part of a split review that ended before it
-// submitted is named with its files, the first few of them, and none is
-// named for a review whose parts all submitted or one not split.
+// submitted is named with its files, the first few of them. None is named for
+// a review whose parts all submitted or one not split.
 func TestUnfinishedParts(t *testing.T) {
 	parts := []store.AgentPart{
 		{Paths: []string{"a/x.go"}, Stop: "submitted"},

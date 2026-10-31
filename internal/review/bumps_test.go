@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// TestBumps: a line rewritten with only a version-like token or two
-// changed is a bump, in any file but a lockfile, an address among them
-// since its shape is a version's; a line that moves anything else, or a
-// plain number, is not.
+// TestBumps: a line rewritten with only a version-like token or two changed
+// is a bump, in any file but a lockfile. An address counts among these
+// tokens, since its shape is a version's. A line that moves anything else, or
+// a plain number, is not a bump.
 func TestBumps(t *testing.T) {
 	file := func(path string, lines ...string) string {
 		diff := "diff --git a/" + path + " b/" + path + "\n--- a/" + path + "\n+++ b/" + path + "\n@@ -1,8 +1,8 @@\n"

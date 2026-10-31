@@ -4,9 +4,9 @@ import "time"
 
 // The shapes of the users an admin lists, which users.go serves.
 
-// AdminUser is a user who has signed in, as an admin lists them. Access is
-// what their newest session the configuration still honours lets them
-// read, nil without one; Sessions counts those sessions.
+// AdminUser is a user who signed in, as an admin lists them. Access is what
+// their newest session that the configuration still honors lets them read,
+// nil without one. Sessions counts those sessions.
 type AdminUser struct {
 	User
 	SignIns      []UserSignIn `json:"signIns"`

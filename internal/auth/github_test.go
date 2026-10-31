@@ -86,9 +86,9 @@ func TestGitHubGetOKNamesRateLimits(t *testing.T) {
 	}
 }
 
-// TestGitHubMemberRefusalCutShort: a refusal whose body the connection cut
-// cannot be told from a rate limit, so the membership check fails rather
-// than read it as no membership.
+// TestGitHubMemberRefusalCutShort: if the connection cut the body of a
+// refusal, the refusal cannot be told from a rate limit. So the membership
+// check fails and does not read the refusal as no membership.
 func TestGitHubMemberRefusalCutShort(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "200")

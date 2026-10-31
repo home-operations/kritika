@@ -18,9 +18,9 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// token creates a token with grant g for a new user named subject, which
-// expires at expires, nil for never; a grant without a key gets the
-// current configuration's.
+// token creates a token with grant g for a new user named subject. The token
+// expires at expires, nil for never. A grant without a key gets the current
+// configuration's.
 func (e *apiEnv) token(subject string, g store.SessionGrant, expires *time.Time) string {
 	e.t.Helper()
 	ctx, origin := context.Background(), "oidc:https://idp.example"
@@ -103,9 +103,9 @@ func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]
 	return string(raw)
 }
 
-// testMCP reads through the MCP endpoint with tokens: the tools report
-// what the dashboard does without cost or runner data, a token reads only
-// its own accounts, and nothing but a token that stands gets in.
+// testMCP reads through the MCP endpoint with tokens. The tools report what
+// the dashboard does without cost or runner data. A token reads only its own
+// accounts. Nothing but a token that stands gets in.
 func testMCP(t *testing.T, e *apiEnv) {
 	t.Run("refusals", func(t *testing.T) { testMCPRefusals(t, e) })
 	member := e.mcpSession(t, e.token("mcp-alice", memberOfAccounts("github/wa"), nil))
@@ -195,8 +195,8 @@ func testMCPRefusals(t *testing.T, e *apiEnv) {
 	})
 }
 
-// noLeaks fails for what a tool reported, raw, holding cost, usage or
-// runner data, or account B's rows.
+// noLeaks fails when what a tool reported, raw, holds cost, usage or runner
+// data, or account B's rows.
 func (e *apiEnv) noLeaks(t *testing.T, raw string) {
 	t.Helper()
 	for _, leak := range append([]string{`"costUsd"`, `"tokens"`, `"usage"`, `"logTail"`, `"runnerRun"`, `"agentRun"`, `"contextPack"`}, e.bMarkers()...) {

@@ -24,11 +24,11 @@ const (
 )
 
 // marks are the bot's reactions on what it works on, a pull request under
-// review or a mention it answers: forge.ReactionEyes while it works, then
-// forge.ReactionDone once it has answered or forge.ReactionFailed when it
-// could not. react and unreact add and remove one reaction there, and find
-// returns the id of the bot's reaction of a content there, 0 for none, so
-// the mark an earlier outcome left can come off.
+// review or a mention that it answers. They are forge.ReactionEyes while it
+// works, then forge.ReactionDone once it answered, or forge.ReactionFailed
+// when it failed to answer. react and unreact add and remove one reaction
+// there. find returns the id of the bot's reaction of a content there, 0 for
+// none. So the mark that an earlier outcome left can come off.
 type marks struct {
 	react   func(ctx context.Context, content string) (int64, error)
 	unreact func(ctx context.Context, id int64) error
@@ -36,15 +36,15 @@ type marks struct {
 	logger  *slog.Logger
 }
 
-// start leaves the eyes and returns what ends them: the eyes come off,
-// unless busy says another job still works on the same thing, and the
-// outcome's mark goes on as the other outcome's comes off. The forge keeps
-// one reaction of a kind per user, so the eyes are shared by every job on
-// the thing, and a forge hands back the eyes an earlier attempt left, so a
-// retry ends them too. Best effort: a forge that refuses a reaction, as
-// GitHub does on an issue or a conversation comment without write access
-// to issues, costs the marks and nothing else. The end lands even once the
-// job's ctx has ended.
+// start leaves the eyes and returns what ends them. The eyes come off, unless
+// busy says another job still works on the same thing. The outcome's mark
+// goes on as the other outcome's comes off. The forge keeps one reaction of a
+// kind per user, so the eyes are shared by every job on the thing. A forge
+// hands back the eyes that an earlier attempt left, so a retry ends them too.
+//
+// This is best effort. A forge can refuse a reaction, as GitHub does on an
+// issue or a conversation comment without write access to issues. That costs
+// the marks and nothing else. The end lands even once the job's ctx ended.
 func (m marks) start(ctx context.Context) (end func(o outcome, busy bool)) {
 	id, err := m.react(ctx, forge.ReactionEyes)
 	if err != nil {
@@ -63,7 +63,7 @@ func (m marks) start(ctx context.Context) (end func(o outcome, busy bool)) {
 	}
 }
 
-// settle puts the outcome's mark on and takes the other outcome's off;
+// settle puts the outcome's mark on and takes the other outcome's off.
 // unanswered changes neither.
 func (m marks) settle(ctx context.Context, o outcome) {
 	var on, off string
@@ -110,15 +110,15 @@ func (b *Base) otherReviewRunning(ctx context.Context, logger *slog.Logger, acco
 	return running
 }
 
-// reviewOutcome is what the marks say of a review once its job is done
-// with jobErr: answered when it posted, failed when it failed, or when
-// jobErr ended the last attempt and the review is left as it is, and
-// unanswered otherwise, as when it was superseded, skipped or canceled, or
-// its job is retried, whatever the retried attempt's review says. A
-// review a newer review speaks for (store.ReviewCeded), or a failure of a
-// head the pull request has moved past, is unanswered too: that review
-// speaks for the pull request, and may already have. Not knowing counts as
-// unanswered.
+// reviewOutcome is what the marks say of a review once its job is done with
+// jobErr. It is answered when the review posted. It is failed when the review
+// failed, or when jobErr ended the last attempt and the review is left as it
+// is. It is unanswered otherwise, as when the review was superseded, skipped,
+// or canceled, or its job is retried, whatever the retried attempt's review
+// says. A review that a newer review speaks for (store.ReviewCeded), or a
+// failure of a head that the pull request moved past, is unanswered too. That
+// review speaks for the pull request, and it possibly spoke already. Not
+// knowing counts as unanswered.
 func (b *Base) reviewOutcome(ctx context.Context, logger *slog.Logger, accountID, reviewID string, jobErr error, lastAttempt bool) outcome {
 	if jobErr != nil && !lastAttempt {
 		return unanswered

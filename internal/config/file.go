@@ -22,14 +22,16 @@ import (
 )
 
 // Document holds the original bytes for hashing and the policy nodes that
-// configfile decodes. Operational settings are consumed separately by koanf.
+// configfile decodes. koanf consumes the operational configuration
+// separately.
 type Document struct {
 	Source []byte
 	Policy yaml.Node
 }
 
-// LoadSettings reads defaults and operational environment settings, then the file.
-// The remaining document is checked for unknown fields by configfile.Parse.
+// LoadSettings reads defaults and the operational configuration in the
+// environment, then the file. configfile.Parse makes sure that the remaining
+// document has no unknown fields.
 func LoadSettings(raw []byte) (Settings, Document, error) {
 	s, err := env.ParseAs[Settings]()
 	if err != nil {
@@ -52,8 +54,9 @@ func envError[T any](err error) error {
 	return fmt.Errorf("config: %w", err)
 }
 
-// readFile reads the process settings from a complete application document.
-// A file and an environment variable cannot both supply the same setting.
+// readFile reads the process configuration from a complete application
+// document. A file and an environment variable cannot both supply the same
+// configuration value.
 func (s *Settings) readFile(raw []byte) (Document, error) {
 	runtime, doc, err := splitDocument(raw)
 	if err != nil {

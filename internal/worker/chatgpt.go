@@ -23,11 +23,11 @@ type ChatGPTRefresher struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Logger  *slog.Logger
-	// LeaderInterval is how often the leader pings its lock. The wait
-	// before the first refresh takes a previous leader to have pinged as
-	// often, which a rollout that shortens the interval breaks.
+	// LeaderInterval is how often the leader pings its lock. The wait before
+	// the first refresh assumes that a previous leader pinged as often. A
+	// rollout that shortens the interval breaks that assumption.
 	LeaderInterval time.Duration
-	// Client and TokenURL may point to a token endpoint in tests.
+	// Client and TokenURL can point to a token endpoint in tests.
 	Client   *http.Client
 	TokenURL string
 
@@ -38,11 +38,11 @@ type ChatGPTRefresher struct {
 }
 
 // Run refreshes near expiry until this leader's tenure ends. The first
-// refresh waits until a previous leader's last one must have ended: a leader
-// whose lock the server dropped goes on refreshing until it notices, and a
-// refresh it started by then runs on for at most chatGPTRefreshTimeout.
-// Refreshing alongside it would send the refresh token it just spent, and
-// the refusal signs the provider out.
+// refresh waits until a previous leader's last refresh must be over. A leader
+// whose lock the server dropped goes on refreshing until it notices. A
+// refresh that it started by then runs on for at most chatGPTRefreshTimeout.
+// A refresh alongside it sends the refresh token that it just spent, and the
+// refusal signs the provider out.
 func (r *ChatGPTRefresher) Run(ctx context.Context) {
 	after := time.After
 	if r.after != nil {
@@ -77,8 +77,8 @@ const chatGPTRefreshTimeout = time.Minute
 // before it is given up, a second apart and more each time.
 const chatGPTSaveAttempts = 4
 
-// Refresh renews due sessions, preserving credentials on transient failures
-// and clearing unusable tokens after a terminal refresh error.
+// Refresh renews due sessions. It preserves credentials on transient failures
+// and clears unusable tokens after a terminal refresh error.
 func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 	configured := r.configured()
 	if len(configured) == 0 {
@@ -117,8 +117,9 @@ func (r *ChatGPTRefresher) refresh(
 ) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(leading), chatGPTRefreshTimeout)
 	defer cancel()
-	// Checked once the timeout runs, so a refresh starts only while its
-	// leader leads and ends within chatGPTRefreshTimeout of that.
+	// refresh makes sure that its leader still leads once the timeout runs.
+	// So a refresh starts only while its leader leads, and ends within
+	// chatGPTRefreshTimeout of that.
 	if err := leading.Err(); err != nil {
 		return err
 	}

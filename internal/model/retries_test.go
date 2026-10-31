@@ -27,9 +27,9 @@ func failing(t *testing.T, status int) (*httptest.Server, *atomic.Int32) {
 	return srv, &n
 }
 
-// TestAdaptersSendOnce: an adapter built for a provider sends a request the
-// server failed once, since the gateway owns retrying; one built with
-// Retries sends it that many times more.
+// TestAdaptersSendOnce: an adapter built for a provider sends a request that
+// the server failed once, since the gateway owns retrying. An adapter built
+// with Retries sends it that many times more.
 func TestAdaptersSendOnce(t *testing.T) {
 	req := StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}}
 	t.Run("openai", func(t *testing.T) {

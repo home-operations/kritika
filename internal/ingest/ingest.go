@@ -1,7 +1,7 @@
-// Package ingest is the only surface a forge reaches. It looks the
-// connection up by hook path, verifies the signature with that
-// connection's secret, parses the payload into a forge-neutral event, and
-// hands it to a Dispatcher. It never does work itself.
+// Package ingest is the only surface that a forge reaches. It looks the
+// connection up by hook path. It does signature verification with that
+// connection's secret. It parses the payload into a forge-neutral event and
+// hands the event to a Dispatcher. It never does work itself.
 package ingest
 
 import (
@@ -46,14 +46,15 @@ const (
 )
 
 // Dispatcher turns a request into rows and jobs. The store-backed
-// implementation is Service; tests use a fake.
+// implementation is Service. Tests use a fake.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, req Request) (Outcome, error)
 }
 
-// DeliveryRecorder notes that a connection's webhook delivered a request
-// kritika verified, or one with no signature, which a GitHub App with no
-// webhook secret sends. The store-backed implementation is Service.
+// DeliveryRecorder notes that a connection's webhook delivered a request that
+// passed signature verification, or a request with no signature. A GitHub App
+// with no webhook secret sends a request with no signature. The store-backed
+// implementation is Service.
 type DeliveryRecorder interface {
 	RecordDelivery(ctx context.Context, connectionID string) error
 	RecordUnsigned(ctx context.Context, connectionID string) error
@@ -73,11 +74,11 @@ type Handler struct {
 	current *configfile.Current
 	disp    Dispatcher
 	logger  *slog.Logger
-	// Metrics may be nil.
+	// Metrics can be nil.
 	Metrics *metrics.Metrics
-	// Deliveries may be nil.
+	// Deliveries can be nil.
 	Deliveries DeliveryRecorder
-	// Authors may be nil, when no connection's webhooks leave a pull
+	// Authors can be nil, when no connection's webhooks leave a pull
 	// request's author out.
 	Authors Authors
 }
@@ -87,19 +88,19 @@ func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logge
 	return &Handler{current: current, disp: disp, logger: logger}
 }
 
-// ServeHTTP verifies, parses and dispatches. Status codes: 404 for an
-// unknown connection, 401 for a missing or bad signature, 400 for an unparsable
-// payload, 413 for an oversized one, 204 for a ping, 202 for anything
-// accepted (enqueued, skipped or ignored: the forge only needs to know the
-// delivery landed), 500 when the dispatcher failed and the forge should
-// redeliver.
+// ServeHTTP does signature verification, parses and dispatches. Status codes:
+// 404 for an unknown connection, 401 for a missing or bad signature, 400 for
+// an unparsable payload. 413 is for an oversized payload and 204 for a ping.
+// 202 is for anything accepted (enqueued, skipped or ignored: the forge only
+// needs to know that the delivery landed). 500 is for when the dispatcher
+// failed and the forge is expected to redeliver.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("connection")
 	file := h.current.Get()
 	in, ok := file.Connection(name)
 	if !ok {
-		// The name is the caller's, not ours: labelling by it would let any
-		// request mint a new series.
+		// The name is the caller's, not ours. Labeling by it lets any request
+		// mint a new series.
 		h.Metrics.Webhook("", "unknown_connection")
 		http.Error(w, "unknown connection", http.StatusNotFound)
 		return
@@ -167,8 +168,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	case account == nil:
-		// A public App can be installed by anyone; only the declared
-		// accounts are served. Accepted, so the forge does not retry.
+		// Anyone can install a public App. Only the declared accounts are
+		// served. Accepted, so the forge does not retry.
 		logger.Warn("webhook for an undeclared account ignored", "account", ev.Account)
 		h.Metrics.Webhook(name, "undeclared_account")
 		w.WriteHeader(http.StatusAccepted)
@@ -182,14 +183,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if n := pullNumber(ev); n != 0 {
 		logger = logger.With("pr", n)
 	}
-	// The forge gives up on a delivery after ten seconds and does not send
-	// it again, so a dispatch that outlasts the request still finishes: a
-	// comment or thread event that rolled back with it would be lost.
+	// The forge gives up on a delivery after ten seconds and does not send it
+	// again. So a dispatch that outlasts the request still finishes. A
+	// comment or thread event that rolls back with the request is lost.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), dispatchTimeout)
 	defer cancel()
-	// A pull request recorded with no author would lose the one it had, so
-	// one the payload does not name is read from the forge, or the
-	// delivery fails and polling brings the pull request in.
+	// A pull request recorded with no author loses the one it had. So an
+	// author that the payload does not name is read from the forge.
+	// Otherwise, the delivery fails and polling brings the pull request in.
 	if pr := ev.PullRequest; pr != nil && pr.Author == "" && ev.Repository != nil {
 		if h.Authors == nil {
 			logger.Error("webhook dispatch failed", "error", "the payload names no author and none can be read")
@@ -218,9 +219,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// pullNumber is the pull request ev concerns, whether the event is the
-// pull request's own, a comment on it or one of its review threads; 0
-// when it concerns none.
+// pullNumber is the pull request that ev concerns. The event can be the pull
+// request's own, a comment on it or one of its review threads. It is 0 when
+// ev concerns none.
 func pullNumber(ev webhook.Event) int {
 	switch {
 	case ev.PullRequest != nil:

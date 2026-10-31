@@ -103,9 +103,9 @@ func TestAppsRefuseAnotherForge(t *testing.T) {
 	}
 }
 
-// TestAppsBuildOnePerConnection: a connection's clients and listings
-// share one App, and with it its installation tokens; another connection
-// gets its own.
+// TestAppsBuildOnePerConnection: a connection's clients and listings share
+// one App, and with it its installation tokens. Another connection gets its
+// own.
 func TestAppsBuildOnePerConnection(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -152,9 +152,9 @@ func TestForgeCacheBuildsOnce(t *testing.T) {
 	}
 }
 
-// TestForgeCacheBuildsPerOwner: a GitHub App has a connection, and a
-// token, per account, so repositories of different owners get their own
-// client and repositories of one owner share one.
+// TestForgeCacheBuildsPerOwner: a GitHub App has a connection, and a token,
+// per account. So repositories of different owners get their own client, and
+// repositories of one owner share one.
 func TestForgeCacheBuildsPerOwner(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "pem")
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")
@@ -174,9 +174,9 @@ func TestForgeCacheBuildsPerOwner(t *testing.T) {
 	}
 }
 
-// TestForgeCacheBuildsOutsideItsLock: a build that hangs on the forge
-// holds up neither another connection's client nor a caller whose context
-// ends meanwhile, and the callers of its own key share the one build.
+// TestForgeCacheBuildsOutsideItsLock: a build that hangs on the forge holds
+// up neither another connection's client nor a caller whose context ends
+// meanwhile. The callers of its own key share the one build.
 func TestForgeCacheBuildsOutsideItsLock(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "pem")
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")
@@ -261,8 +261,8 @@ func TestForgeCacheBuildOutlivesItsFirstCaller(t *testing.T) {
 	if err := <-firstDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("the cancelled caller got %v, want its cancellation", err)
 	}
-	// The second caller may join the build or find it done; either way the
-	// build must not have seen the first caller's cancellation.
+	// The second caller can join the build or find it done. Either way, the
+	// build must not see the first caller's cancellation.
 	close(release)
 	if err := <-second; err != nil {
 		t.Fatalf("a caller sharing the build got %v", err)
@@ -313,9 +313,9 @@ func TestForgesBuildGitLabOnce(t *testing.T) {
 	}
 }
 
-// TestForgesBuildGiteaOnce: a Gitea connection's clients share one
-// client, whichever owner they are built for, calling with the bot's
-// access token, and runners fetch with the read-only one.
+// TestForgesBuildGiteaOnce: a Gitea connection's clients share one client,
+// whichever owner they are built for. That client calls with the bot's access
+// token, and runners fetch with the read-only one.
 func TestForgesBuildGiteaOnce(t *testing.T) {
 	t.Setenv("TEST_GT_TOKEN", "gitea-api")
 	t.Setenv("TEST_GT_READ", "gitea-read")

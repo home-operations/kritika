@@ -63,10 +63,10 @@ const (
 	maxMergeTake  = 1500
 )
 
-// BuildMerge renders the merge call's user message within budget tokens:
-// the pull request's title and description, the description cut to a
-// quarter of the budget, then each part's files and summary and then the
-// findings, one line each, while they fit.
+// BuildMerge renders the merge call's user message within budget tokens. It
+// holds the pull request's title and description, with the description cut to
+// a quarter of the budget. Then it holds each part's files and summary, and
+// then the findings, one line each, while they fit.
 func BuildMerge(title, body string, parts []MergePart, findings []Finding, budget int) string {
 	limit := budget * charsPerToken
 	var b strings.Builder
@@ -124,7 +124,7 @@ func mergeSection(i, n int, p MergePart) string {
 	return b.String()
 }
 
-// closingSummary matches every spelling of the closing tag a model might
+// closingSummary matches every spelling of the closing tag that a model can
 // read as one.
 var closingSummary = regexp.MustCompile(`(?i)<\s*/\s*summary\s*>`)
 

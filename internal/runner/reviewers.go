@@ -16,9 +16,8 @@ import (
 // partShare is what one part of a split review reviews: its files, its
 // place among its reviewer's parts, counted from 1, and the scope it
 // reviews them at. reviewer is the reviewer it is for in a review with
-// several, nil in a review with the default reviewer alone, and scoped
-// the changed files that reviewer reviews, every one for the default
-// reviewer.
+// several, nil in a review with the default reviewer alone. scoped is the
+// changed files that reviewer reviews, every one for the default reviewer.
 type partShare struct {
 	reviewer     *runspec.Reviewer
 	scoped       []string
@@ -61,7 +60,7 @@ func (s partShare) spec(p runspec.Spec) runspec.Spec {
 }
 
 // role is the share's reviewer as its system prompt gives it, its
-// instructions read from files when they are a file's, nil for the
+// instructions read from files when they are a file's. It is nil for the
 // default reviewer.
 func (s partShare) role(files repoconfig.Files) *review.Reviewer {
 	if !s.specialist() {
@@ -76,7 +75,7 @@ func (s partShare) role(files repoconfig.Files) *review.Reviewer {
 }
 
 // limits are the run's agent bounds with the share's reviewer's in place
-// of them, which the worker has kept within the run's.
+// of them, which the worker kept within the run's.
 func (s partShare) limits(a *runspec.AgentLimits) *runspec.AgentLimits {
 	if s.reviewer == nil || s.reviewer.Limits == nil {
 		return a
@@ -94,24 +93,28 @@ func (s partShare) limits(a *runspec.AgentLimits) *runspec.AgentLimits {
 	return &out
 }
 
-// reviewerPlan is how a review with reviewers is run: in shares, one or
-// more for each reviewer that applies, the default one's first; or, when
-// shares is nil, as a review with the default reviewer alone always has
-// been, at full scope when full is set.
+// reviewerPlan is how a review with reviewers is run. It runs in shares, one
+// or more for each reviewer that applies, the default one's first. When
+// shares is nil, it runs as a review with the default reviewer alone always
+// runs, at full scope when full is set.
 type reviewerPlan struct {
 	shares []partShare
 	full   bool
 }
 
 // planReviewers decides which of the spec's reviewers review the change
-// and how, scope being what the review builds on and deltaPaths the files
-// changed since the last review, less the ignored ones. A reviewer
-// applies when a file the change touches matches its paths, or it has
-// none, judged over the whole change as its when conditions were, so the
-// reviewers a pull request gets do not shift from push to push. A review
-// whose reviewers are the default one alone is not planned in shares. Each reviewer's files are cut into parts as a review's are,
-// within its share of the parts the run is granted, the diff since the
-// last review cut for a reviewer the last review ran.
+// and how. scope is what the review builds on, and deltaPaths is the files
+// changed since the last review, less the ignored ones.
+//
+// A reviewer applies when a file that the change touches matches its paths,
+// or it has none. This is judged over the whole change, as its when
+// conditions were. So the reviewers that a pull request gets do not shift
+// from push to push. A review whose reviewers are the default one alone is
+// not planned in shares.
+//
+// Each reviewer's files are cut into parts as a review's are, within its
+// share of the parts that the run is granted. The diff since the last review
+// is cut for a reviewer that the last review ran.
 func planReviewers(p runspec.Spec, res *gitfetch.Result, scope review.Scope, deltaPaths []string) reviewerPlan {
 	reviewers := p.Prompt.Reviewers
 	if reviewers == nil {
@@ -148,7 +151,7 @@ func planReviewers(p runspec.Spec, res *gitfetch.Result, scope review.Scope, del
 	switch {
 	case len(apply) == 0:
 		// The default pass always applies, but an agent asked for alone
-		// may not, as when every file it would read is ignored.
+		// can fail to apply, as when every file it is meant to read is ignored.
 		return reviewerPlan{}
 	case len(apply) == 1 && apply[0].reviewer.Name == review.DefaultReviewer:
 		return reviewerPlan{full: apply[0].reviewer.Full}
@@ -197,8 +200,8 @@ func siblings(shares []partShare, i int) [][]string {
 	return out
 }
 
-// others are the files shares[i]'s submission may not report on: its
-// reviewer's other parts' files, and the changed files its reviewer does
+// others are the files that shares[i]'s submission cannot report on: its
+// reviewer's other parts' files, and the changed files that its reviewer does
 // not review.
 func others(shares []partShare, i int, changed []string) []string {
 	out := slices.Concat(siblings(shares, i)...)
@@ -235,8 +238,8 @@ func reviewerNotes(shares []partShare) []string {
 const noteReviewerSplit = "%s reviewed in %d parts, each run apart"
 
 // followUpReviewer is the reviewer a follow-up answers for, the one its
-// spec carries, "" for the default reviewer and for a review's run, whose
-// parts name their own.
+// spec carries. It is "" for the default reviewer and for a review's run,
+// whose parts name their own.
 func followUpReviewer(p runspec.Spec) string {
 	if p.Kind != runspec.KindFollowUp || p.Prompt == nil || len(p.Prompt.Reviewers) == 0 {
 		return ""
@@ -245,8 +248,8 @@ func followUpReviewer(p runspec.Spec) string {
 }
 
 // followUpRole is the reviewer a follow-up answers for as its system
-// prompt gives it, with no categories, since a reply reports no findings;
-// nil for the default reviewer.
+// prompt gives it, with no categories, since a reply reports no findings.
+// It is nil for the default reviewer.
 func followUpRole(p runspec.Spec, files repoconfig.Files) *review.Reviewer {
 	if followUpReviewer(p) == "" {
 		return nil

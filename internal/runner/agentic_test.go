@@ -453,7 +453,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	if timeline[0].OutputBytes == 0 || !strings.Contains(string(mustJSON(t, timeline)), `"duration_ms"`) {
 		t.Fatalf("timeline = %s", mustJSON(t, timeline))
 	}
-	// The grep saw main.go but not the ignored vendor file; the strict
+	// The grep saw main.go but not the ignored vendor file. The strict
 	// contract, with the diagram the spec asks for, was offered as
 	// submit_review.
 	req := st.reqs[1]
@@ -640,7 +640,7 @@ func TestAgentPromptBudget(t *testing.T) {
 }
 
 // TestAgentPromptContext: a prompt holds the context its budget keeps,
-// the chunks before the first that does not fit, and those alone are the
+// the chunks before the first that does not fit. Those alone are the
 // context it was given.
 func TestAgentPromptContext(t *testing.T) {
 	chunk := func(stage, path string, size int) contextpack.Chunk {

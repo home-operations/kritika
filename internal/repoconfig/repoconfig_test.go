@@ -120,10 +120,10 @@ func TestActiveContext(t *testing.T) {
 	}
 }
 
-// TestActiveRules: a rule applies to a change its paths match, or to any
-// when it has none; a file rule carries its file's content, and one whose
-// file is missing or blank is left out; the rules past each cap are
-// counted, not listed.
+// TestActiveRules: a rule applies to a change that its paths match, or to
+// any change when it has none. A file rule carries its file's content, and
+// one whose file is missing or blank is left out. The rules past each cap
+// are counted, not listed.
 func TestActiveRules(t *testing.T) {
 	t.Parallel()
 	rules := []configfile.Rule{
@@ -184,9 +184,9 @@ func TestFile_Referenced(t *testing.T) {
 	}
 }
 
-// mapReader builds a Collect read function over an in-memory file set, using
-// fs.ErrNotExist for any path not present, the same as a real merge-base tree
-// reader would for a path that doesn't exist there.
+// mapReader builds a Collect read function over an in-memory file set. It
+// uses fs.ErrNotExist for any path not present, the same as a real
+// merge-base tree reader does for a path that does not exist there.
 func mapReader(files map[string][]byte) func(string) ([]byte, error) {
 	return func(p string) ([]byte, error) {
 		b, ok := files[p]
@@ -200,7 +200,7 @@ func mapReader(files map[string][]byte) func(string) ([]byte, error) {
 func TestCollect(t *testing.T) {
 	t.Parallel()
 	big := strings.Repeat("a", MaxFileBytes+1)
-	// Four of these fit under MaxTotalBytes; a fifth does not.
+	// Four of these fit under MaxTotalBytes. A fifth does not.
 	chunk := strings.Repeat("c", 220_000)
 	tests := []struct {
 		name      string

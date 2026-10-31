@@ -1,7 +1,7 @@
 // Package model is kritika's view of a language model and an embedder. A
-// Stepper performs one model turn over typed messages and tools; Completer,
-// a single tool call returning structured JSON, is built on it.
-// Adapters speak to the vendors' official SDKs.
+// Stepper performs one model turn over typed messages and tools. Completer, a
+// single tool call that returns structured JSON, is built on it. Adapters
+// speak to the vendors' official SDKs.
 package model
 
 import (
@@ -27,9 +27,9 @@ import (
 type ProviderType string
 
 // Provider types kritika implements. OpenRouter is the OpenAI adapter at
-// OpenRouter's URL with its server-side fallback and reported cost;
-// OpenCode is the OpenAI adapter at OpenCode Go's URL, naming the
-// conversation each step belongs to as the gateway asks.
+// OpenRouter's URL with its server-side fallback and reported cost. OpenCode
+// is the OpenAI adapter at OpenCode Go's URL. It names the conversation that
+// each step belongs to, as the gateway asks.
 const (
 	ProviderOpenRouter ProviderType = "openrouter"
 	ProviderOpenAI     ProviderType = "openai"
@@ -47,7 +47,7 @@ func (p ProviderType) Valid() bool {
 	return false
 }
 
-// Role is who authored a message. The system prompt is not a message; it
+// Role is who authored a message. The system prompt is not a message. It
 // travels in StepRequest.System.
 type Role string
 
@@ -75,8 +75,9 @@ type ToolResult struct {
 	IsError bool
 }
 
-// Message is one turn of a conversation. A user message carries Text and/or
-// ToolResults; an assistant message Text and/or ToolCalls.
+// Message is one turn of a conversation. A user message carries Text,
+// ToolResults, or both. An assistant message carries Text, ToolCalls, or
+// both.
 type Message struct {
 	Role        Role
 	Text        string
@@ -96,8 +97,9 @@ type ChatGPTOutput struct {
 	Items    []json.RawMessage `json:"items"`
 }
 
-// Kinds is the type of each item, in order, or nil for no output; an item
-// without one is "". It says what a turn with neither text nor a call held.
+// Kinds is the type of each item, in order, or nil for no output. An item
+// without a type is "". Kinds says what a turn with neither text nor a call
+// held.
 func (o *ChatGPTOutput) Kinds() []string {
 	if o == nil || len(o.Items) == 0 {
 		return nil
@@ -114,8 +116,8 @@ func (o *ChatGPTOutput) Kinds() []string {
 	return kinds
 }
 
-// ToolDef describes a tool the model may call. InputSchema is a JSON Schema
-// object.
+// ToolDef describes a tool that the model can call. InputSchema is a JSON
+// Schema object.
 type ToolDef struct {
 	Name        string
 	Description string
@@ -148,14 +150,14 @@ type ToolChoice struct {
 	Name string
 }
 
-// Effort is how hard a model reasons on a step, the reasoning effort of
-// the providers' APIs; the zero value leaves it to the provider's default.
+// Effort is how hard a model reasons on a step: the reasoning effort of the
+// providers' APIs. The zero value leaves it to the provider's default.
 type Effort string
 
-// Effort levels, lowest first. OpenRouter and OpenAI take them all; the
+// Effort levels, lowest first. OpenRouter and OpenAI take them all. The
 // Anthropic Messages API has no level under low, so its adapter sends
-// EffortNone and EffortMinimal as EffortLow. A level a model lacks is the
-// provider's to map or refuse.
+// EffortNone and EffortMinimal as EffortLow. A level that a model lacks is
+// the provider's to map or refuse.
 const (
 	EffortNone    Effort = "none"
 	EffortMinimal Effort = "minimal"
@@ -187,9 +189,9 @@ const (
 	StopOther     StopReason = "other"
 )
 
-// Usage is the tokens one or more steps spent. Input is the uncached part of
-// the prompt; CacheRead and CacheWrite are the cached parts, which providers
-// bill differently.
+// Usage is the tokens that one or more steps spent. Input is the uncached
+// part of the prompt. CacheRead and CacheWrite are the cached parts, which
+// providers bill differently.
 type Usage struct {
 	Input      int64
 	CacheRead  int64
@@ -212,10 +214,10 @@ func (u Usage) Prompt() int64 { return u.Input + u.CacheRead + u.CacheWrite }
 type StepRequest struct {
 	// Model is the primary model id in the provider's namespace.
 	Model string
-	// Session names the conversation the step belongs to, the same for
-	// every step of it: a review run's steps share one and a follow-up has
-	// its own. Adapters whose provider routes or caches by conversation
-	// send it; the others ignore it.
+	// Session names the conversation that the step belongs to. It is the same
+	// for every step of that conversation: a review run's steps share one and
+	// a follow-up has its own. Adapters whose provider routes or caches by
+	// conversation send it. The other adapters ignore it.
 	Session string
 	// Fallbacks are tried, in order, if Model fails: by OpenRouter itself,
 	// by the adapter for every other provider.
@@ -225,12 +227,12 @@ type StepRequest struct {
 	Tools     []ToolDef
 	// ToolChoice is ignored when Tools is empty.
 	ToolChoice ToolChoice
-	// MaxTokens bounds the answer; zero means the adapter's default.
+	// MaxTokens bounds the answer. Zero means the adapter's default.
 	MaxTokens int64
-	// Effort is how hard the model reasons; empty means the provider's
+	// Effort is how hard the model reasons. Empty means the provider's
 	// default.
 	Effort Effort
-	// Once says no later step reads this one's prompt back, so adapters
+	// Once says that no later step reads this one's prompt back. So adapters
 	// leave it out of the provider's prompt cache, whose writes cost more
 	// than an uncached prompt.
 	Once bool
@@ -282,7 +284,7 @@ type CompletionRequest struct {
 	Session string
 	// Fallbacks are tried, in order, if Model fails.
 	Fallbacks []string
-	// Schema is the JSON Schema the answer must satisfy; the response
+	// Schema is the JSON Schema that the answer must satisfy. The response
 	// carries the raw JSON.
 	Schema     json.RawMessage
 	SchemaName string
@@ -299,9 +301,9 @@ type CompletionResponse struct {
 	Model string
 	// Upstream is the provider that served the request, when known.
 	Upstream string
-	// InputTokens is the whole prompt, cached part included; CachedTokens
-	// is the part the provider served from its prompt cache, which it
-	// bills at a discount.
+	// InputTokens is the whole prompt, cached part included. CachedTokens is
+	// the part that the provider served from its prompt cache, which it bills
+	// at a discount.
 	InputTokens  int64
 	CachedTokens int64
 	OutputTokens int64
@@ -316,36 +318,37 @@ type Embedder interface {
 	Embed(ctx context.Context, inputs []string) (vectors [][]float32, tokens int64, err error)
 }
 
-// StepTimeout bounds one request to a provider for a step, long enough for
-// a step's whole output from a slow model. A provider that takes the
-// request and never answers fails the step as a timeout, which is
-// Transient, so the gateway's retries and its fallback provider still get
-// their turn. A variable for the tests.
+// StepTimeout bounds one request to a provider for a step. It is long enough
+// for a step's whole output from a slow model. If a provider takes the
+// request and never answers, the step fails as a timeout, which is Transient.
+// So the gateway's retries and its fallback provider still get their turn. A
+// variable for the tests.
 var StepTimeout = stepTimeout
 
 // stepTimeout is StepTimeout as it ships, which the gateway's budgets
 // below are derived from.
 const stepTimeout = 5 * time.Minute
 
-// GatewayStepBudget bounds what the gateway spends on one step, its
-// provider's attempts, their backoff and the fallback's together: two
-// provider timeouts and the waits between, of which a fallback on another
-// provider waits at most the first half for its turn. GatewayRequestTimeout
-// bounds the runner's request to the gateway for that step: the budget,
-// then the time the gateway may take to charge and record an answered
-// step, each bounded at two minutes on a context of its own, before it
-// writes the answer. So a provider that stalls is the gateway's to give up
-// on, retry or replace, and never the runner's to cut off first, and an
-// answered step is never abandoned while the gateway settles it.
+// GatewayStepBudget bounds what the gateway spends on one step: its
+// provider's attempts, their backoff, and the fallback's, all together. It is
+// two provider timeouts and the waits between them. A fallback on another
+// provider waits at most the first half of that for its turn.
+// GatewayRequestTimeout bounds the runner's request to the gateway for that
+// step. It covers the budget, then the time that the gateway can take to
+// charge and record an answered step before it writes the answer. The charge
+// and the record are each bounded at two minutes on a context of its own. So
+// the gateway gives up on, retries, or replaces a provider that stalls, and
+// the runner never cuts that provider off first. And the gateway never
+// abandons an answered step while it settles that step.
 const (
 	GatewayStepBudget     = 2*stepTimeout + 2*time.Minute
 	GatewayRequestTimeout = GatewayStepBudget + 5*time.Minute
 )
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
-// provider's default endpoint; headers and client may be nil. The adapter
-// sends each request once: the gateway and the workers retry a step with
-// the provider's retries (adapter.Step).
+// provider's default endpoint. headers and client can be nil. The adapter
+// sends each request once: the gateway and the workers retry a step with the
+// provider's retries (adapter.Step).
 func NewStepper(t ProviderType, baseURL, apiKey string, headers map[string]string, pricing Pricing, client *http.Client) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:
@@ -395,7 +398,7 @@ const (
 	OpenCodeBaseURL   = "https://opencode.ai/zen/go/v1"
 )
 
-// checkRequest rejects a request no provider could serve.
+// checkRequest rejects a request that no provider can serve.
 func checkRequest(req StepRequest) error {
 	if req.Model == "" {
 		return errors.New("model: request names no model")
@@ -418,15 +421,15 @@ func checkRequest(req StepRequest) error {
 	return nil
 }
 
-// Transient reports whether a step failed in a way another attempt may
-// not: the provider answered 408, 429 or a 5xx, or a 402 with a Retry-After
-// header, or the connection failed, timed out or was cut. A provider's
-// refusal of the request itself, any other 4xx, and a spent budget fail the
-// same way again.
+// Transient reports whether a step failed in a way that another attempt can
+// avoid. That is the case when the provider answered 408, 429, or a 5xx, or a
+// 402 with a Retry-After header. It is also the case when the connection
+// failed, timed out, or was cut. A provider's refusal of the request itself,
+// any other 4xx, and a spent budget fail the same way again.
 //
 // OpenRouter answers 402 with a Retry-After when the account's in-flight
-// requests would exceed its balance, and says to retry once they settle;
-// its 402 for an empty balance carries none.
+// requests exceed its balance, and says to retry after they settle. Its 402
+// for an empty balance carries no Retry-After.
 func Transient(err error) bool {
 	if err == nil || errors.Is(err, ErrBudget) {
 		return false
@@ -469,7 +472,7 @@ func RetryAfter(err error) time.Duration {
 }
 
 // retryWaitCeiling bounds a provider's wait before it becomes a Duration,
-// which a huge float would overflow; callers wait far less.
+// which a huge float overflows. Callers wait far less.
 const retryWaitCeiling = time.Hour
 
 // retryWait is secs as a Duration, zero unless it is a positive, finite
@@ -511,7 +514,7 @@ func providerResponse(err error) (int, *http.Response) {
 
 // eachModel calls step with Model, then each fallback in turn until one
 // succeeds, for providers without server-side fallback. It stops early when
-// ctx is done, since every further attempt would fail the same way.
+// ctx is done, since every further attempt fails the same way.
 func eachModel(ctx context.Context, req StepRequest, step func(modelID string) (StepResponse, error)) (StepResponse, error) {
 	var errs []error
 	for _, id := range append([]string{req.Model}, req.Fallbacks...) {

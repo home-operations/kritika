@@ -16,14 +16,15 @@ import (
 // with care. A review whose diff is larger is split into parts.
 const PartBytes = 64 << 10
 
-// SplitDiff cuts the files of a unified diff that no ignore glob matches
-// into the parts a review is split into, each the paths of its files: nil
-// when they fit in one part of size bytes, or maxParts is under two. Files
-// go by directory, a directory's own before its subdirectories', and a part
-// ends where a directory starts when the directory fits a part of its own;
-// a larger directory is cut between its files, and a file larger than a
-// part is a part alone. When the files need more than maxParts parts, the
-// parts grow until maxParts hold them, so no file is left out.
+// SplitDiff cuts the files of a unified diff that no ignore glob matches into
+// the parts that a review is split into. Each part is the paths of its files.
+// It returns nil when they fit in one part of size bytes, or maxParts is
+// under two. Files go by directory, a directory's own before its
+// subdirectories'. A part ends where a directory starts when the directory
+// fits a part of its own. A larger directory is cut between its files, and a
+// file larger than a part is a part alone. When the files need more than
+// maxParts parts, the parts grow until maxParts hold them, so no file is left
+// out.
 func SplitDiff(diff string, ignore []string, size, maxParts int) [][]string {
 	if diff == "" || maxParts < 2 {
 		return nil
@@ -51,8 +52,8 @@ func SplitDiff(diff string, ignore []string, size, maxParts int) [][]string {
 }
 
 // packParts packs files, sorted by directory, into parts of at most size
-// bytes, starting a part at a directory that would fit one of its own
-// rather than cutting it.
+// bytes. It starts a part at a directory that fits one of its own rather than
+// cutting it.
 func packParts(files []fileSection, size int) [][]string {
 	var parts [][]string
 	var part []string
@@ -88,8 +89,8 @@ type PartInput struct {
 	Index, Count int
 	// Paths are the files the part reviews.
 	Paths []string
-	// Reviewer is the reviewer the part is for in a review with several,
-	// whose own parts Index and Count count; "" in a review with one.
+	// Reviewer is the reviewer that the part is for in a review with several,
+	// whose own parts Index and Count count. It is "" in a review with one.
 	Reviewer string
 }
 
@@ -140,16 +141,16 @@ func PartDiff(diff string, paths []string) string {
 	return b.String()
 }
 
-// CheckPart is Check for a part of a split review whose files are own: a
+// CheckPart is Check for a part of a split review whose files are own. A
 // finding on a file in others, which another part reviews, is refused with
-// the part's own files named, so no two parts report one problem.
+// the part's own files named. So no two parts report one problem.
 func CheckPart(own, others []string) func(json.RawMessage) error {
 	return func(raw json.RawMessage) error {
 		if err := Check(raw); err != nil {
 			return err
 		}
 		var res Result
-		// Check has decoded the same input.
+		// Check decoded the same input.
 		_ = json.Unmarshal(raw, &res)
 		for _, f := range res.Findings {
 			if p := strings.TrimSpace(f.Path); slices.Contains(others, p) {
@@ -161,9 +162,9 @@ func CheckPart(own, others []string) func(json.RawMessage) error {
 }
 
 // MergeParts joins what the parts of a split review submitted into one
-// review: every part's findings and resolved ids, and a summary of the
-// first headline, the takes in part order, praise up to its cap and every
-// checked note, which Parse caps.
+// review. The review has every part's findings and resolved ids. It also has
+// a summary of the first headline, the takes in part order, praise up to its
+// cap, and every checked note. Parse caps those notes.
 func MergeParts(parts []Result) Result {
 	out := Result{Summary: Summary{Praise: []string{}}, Findings: []Finding{}}
 	var takes []string

@@ -15,13 +15,13 @@
   let open = $state(false);
   const id = $derived(`fu-${f.id}`);
   // The question is where it was asked, in a thread or on the conversation,
-  // and so is its answer; the notice that a limit was reached always goes on
+  // and so is its answer. The notice that a limit was reached always goes on
   // the conversation.
   const asked = $derived(f.inline ? threadUrl(slug, f.pullUrl, f.commentId) : commentUrl(slug, f.pullUrl, f.commentId));
   const answered = $derived(f.inline && f.status !== 'limited' ? threadUrl(slug, f.pullUrl, f.replyCommentId) : commentUrl(slug, f.pullUrl, f.replyCommentId));
 </script>
 
-<!-- The chevron is the keyboard's toggle; the card's whitespace is the pointer's, as in the tables. -->
+<!-- The chevron is the keyboard's toggle. The card's whitespace is the pointer's, as in the tables. -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <li class="followup row-toggles border-b border-solid border-b-line py-3 px-4 flex flex-col gap-1 cursor-pointer" onclick={(e) => { if (rowToggles(e) && !(e.target as Element).closest('.followup-transcript')) open = !open; }}>

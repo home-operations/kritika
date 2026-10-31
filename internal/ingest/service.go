@@ -57,17 +57,19 @@ const (
 )
 
 // pullRequestActions are the pull request actions that record the pull
-// request, each saying whether it also starts a review; ActionPoll and
+// request. Each one says whether it also starts a review. ActionPoll and
 // ActionBaseline are the poller's synthetic ones. The review job starts at
-// once. The record-only actions keep the title,
-// body, labels and draft state current between pushes: a review job reads
-// them when it builds its prompt, and the filter and the rules judge them,
-// so an edit that arrives after the push that queued the job, as
-// Renovate's title update does a second after its force-push, must land
-// on the row before the job reads it. A label change is recorded the same
-// way, and starts a review where its head has none a label could not
-// change (store.LabelSettled): a filter that reads labels may now let
-// through the head it kept out.
+// once.
+//
+// The record-only actions keep the title, body, labels and draft state
+// current between pushes. A review job reads them when it builds its prompt,
+// and the filter and the rules judge them. An edit can arrive after the push
+// that queued the job, as Renovate's title update does a second after its
+// force-push. That edit must land on the row before the job reads it.
+//
+// A label change is recorded the same way. It starts a review where its head
+// has no review that a label cannot change (store.LabelSettled): a filter
+// that reads labels can now let through the head that it kept out.
 var pullRequestActions = map[string]bool{
 	"opened":                true,
 	"reopened":              true,
@@ -138,13 +140,13 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if err != nil {
 		return Outcome{}, err
 	}
-	// The filter says what is reviewed, not what is recorded: an action
-	// that records only is not judged by it, or a draft's edit would leave
-	// the row behind under a filter that skips drafts. A label change it
-	// keeps out is recorded all the same, the labels being what it judges,
-	// and so is a fork's pull request: a maintainer asks for the review of
-	// one the filter keeps out with "@<bot> review", which needs the pull
-	// request known.
+	// The filter says what is reviewed, not what is recorded. It does not
+	// judge an action that records only. Otherwise, a draft's edit leaves the
+	// row behind under a filter that skips drafts. A label change that the
+	// filter keeps out is recorded all the same, because the labels are what
+	// it judges. So is a fork's pull request: a maintainer asks for the
+	// review of one that the filter keeps out with "@<bot> review", which
+	// needs the pull request known.
 	recorded := jobs.LabelChange(ev.Action) || pr.Fork
 	filtered := false
 	switch {
@@ -216,27 +218,27 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	return out, err
 }
 
-// review queues the review of the head a push, a poll or the pull request's
-// opening starts, unless the head has one already or one still to come. A
-// push's review waits settle to start: a burst of pushes then gets one
-// review, of the head that settles, since the earlier heads' jobs find the
-// head moved when their turn comes and start nothing.
+// review queues the review of the head that a push, a poll or the pull
+// request's opening starts. It queues nothing if the head has one already or
+// one still to come. A push's review waits settle to start. A burst of pushes
+// then gets one review, of the head that settles. The jobs of the earlier
+// heads find the head moved when their turn comes, and they start nothing.
 func (s *Service) review(
 	ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest, settle time.Duration,
 ) (Outcome, error) {
-	// A job with a Request of its own, a re-run's or a label change's, is
-	// the head's review to come though the unique key does not span it. It
-	// is looked for before the head's reviews: a job that finished in
-	// between has its review recorded by then.
+	// A job with a Request of its own, a re-run's or a label change's, is the
+	// head's review to come. But the unique key does not span it. It is
+	// looked for before the head's reviews: a job that finished in between
+	// has its review recorded by then.
 	queued, err := jobs.HeadQueued(ctx, tx, req.Account.ID(), rid, pr.Number, pr.HeadSHA)
 	if err != nil {
 		return Outcome{}, err
 	}
-	// A head a review has seen is not news: a poll lists a pull request
-	// whenever anything about it moved, a comment or a label included,
-	// and a webhook event may be delivered again, or reopen a pull
-	// request whose head stands reviewed. The queue's unique key alone
-	// would not say so once River has cleaned the earlier job up.
+	// A head that a review saw is not news. A poll lists a pull request
+	// whenever anything about it moved, a comment or a label included. A
+	// webhook event can be delivered again, or reopen a pull request whose
+	// head stands reviewed. The queue's unique key alone does not say so once
+	// River cleaned the earlier job up.
 	var reviewed bool
 	if req.Event.Action == ActionPoll {
 		reviewed, err = store.PollSettled(ctx, tx, rid, pr.Number, pr.HeadSHA)
@@ -267,9 +269,9 @@ func (s *Service) review(
 	return Outcome{Status: Enqueued, Job: jobReview}, nil
 }
 
-// labelChange queues the review a label change starts, unless the head has
-// one a label could not change or one still to come; the job is looked for
-// first, as in review.
+// labelChange queues the review that a label change starts. It queues nothing
+// if the head has a review that a label cannot change or one still to come.
+// The job is looked for first, as in review.
 func (s *Service) labelChange(ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest) (Outcome, error) {
 	queued, err := jobs.HeadQueued(ctx, tx, req.Account.ID(), rid, pr.Number, pr.HeadSHA)
 	if err != nil {
@@ -303,12 +305,12 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Action != "created" {
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	// The cheap gate: a bot never triggers a follow-up, and a comment with
-	// no mention at all is not one, unless it replies in an inline thread
-	// of a repository whose finding threads kritika answers replies in.
-	// The worker checks the mention against the connection's resolved bot
-	// identity, the thread against the bot's findings, and the author's
-	// access.
+	// The cheap gate: a bot never triggers a follow-up. A comment with no
+	// mention at all is not a follow-up. The exception is a comment that
+	// replies in an inline thread of a repository whose finding threads
+	// kritika answers replies in. The worker compares the mention with the
+	// connection's resolved bot identity and the thread with the bot's
+	// findings. It also makes sure that the author has access.
 	reply := c.Inline && c.InReplyTo != 0 && req.File.Settings(req.Account).Review.Replies
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") && !reply {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
@@ -337,10 +339,10 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	return out, err
 }
 
-// thread queues the thread a person resolved or unresolved for the worker,
-// which dismisses or restores the finding it holds. The bot resolves the
-// threads of the findings a review found gone and of the ones a mention
-// dismissed; neither is a person's decision.
+// thread queues the thread that a person resolved or unresolved for the
+// worker, which dismisses or restores the finding it holds. The bot resolves
+// the threads of the findings that a review found gone and of the ones that a
+// mention dismissed. Neither is a person's decision.
 func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
 	ev := req.Event
 	th := ev.Thread
@@ -398,8 +400,8 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 			return err
 		}
 		// A repository without an index waits for the leader's onboarding
-		// feeder, which paces full builds; a push would queue its full build
-		// ahead of every other repository's.
+		// feeder, which paces full builds. Otherwise, a push queues its full
+		// build ahead of every other repository's.
 		indexed, err := store.RepositoryIndexed(ctx, tx, rid)
 		if err != nil {
 			return err
@@ -461,11 +463,11 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 
 // repository records what the forge now says of a repository: that it was
 // created, archived, unarchived, made public or private, renamed or
-// transferred. A repository
-// deleted is disabled, and so is the row of the name one renamed or
-// transferred had, as one the App no longer reaches is. That row is the
-// old owner's, which kritika may not serve; a transfer to an account it
-// does not serve never reaches here.
+// transferred. A deleted repository is disabled. So is the row of the old
+// name of a renamed or transferred repository, as a repository that the App
+// no longer reaches is. That row is the old owner's, and kritika does not
+// always serve that owner. A transfer to an account that kritika does not
+// serve never reaches here.
 func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) {
 	ev := req.Event
 	if ev.Repository == nil {
@@ -505,9 +507,9 @@ func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) 
 }
 
 // ensureRepository names repo, with its default branch, and writes none of
-// what the event says of it beyond that: registerAndCheckRepository
-// recorded its traits in a transaction of its own, and a webhook since may
-// know better.
+// what the event says of it beyond that: registerAndCheckRepository recorded
+// its traits in a transaction of its own, and a webhook since then can know
+// better.
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
 	id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), reached(repo, nil))
 	return id, err
@@ -522,16 +524,16 @@ func reached(repo *webhook.Repository, traits *configfile.RepoTraits) store.Reac
 // polled reports whether action is one of the poller's synthetic actions.
 func polled(action string) bool { return action == ActionPoll || action == ActionBaseline }
 
-// registerAndCheckRepository discovers an unknown repository and records
-// what a webhook says of a known one, before the event is judged, so what
-// the forge says of a repository is kept whether or not the event is acted
-// on. It reports whether the repository runs, as the store then knows it:
-// the webhook's report, with the known visibility where the payload names
-// none, and the dashboard's choice. A synthetic event of the poller's
-// carries the traits the store had when the poll read them: it is judged by
-// what the store knows now, and writes none of them back, so a webhook
-// recorded since is not undone. Nor does a payload that names none of
-// them, as GitLab's.
+// registerAndCheckRepository discovers an unknown repository and records what
+// a webhook says of a known one, before the event is judged. So what the
+// forge says of a repository is kept whether or not the event is acted on. It
+// reports whether the repository runs, as the store then knows it: the
+// webhook's report, with the known visibility where the payload names none,
+// and the dashboard's choice. A synthetic event of the poller's carries the
+// traits that the store had when the poll read them. It is judged by what the
+// store knows now and writes none of them back, so a webhook recorded since
+// then is not undone. A payload that names none of them, as GitLab's does,
+// writes none of them back either.
 func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (bool, error) {
 	repo := req.Event.Repository
 	reported := &repo.RepoTraits

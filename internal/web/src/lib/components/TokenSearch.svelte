@@ -3,7 +3,7 @@
   // A search box that also takes filter tokens and suggests them: a
   // combobox whose list opens while the box has focus and something
   // matches. It reports the parsed text once typing pauses, so typing
-  // doesn't fire a request per keystroke.
+  // does not fire a request per keystroke.
   import { tick } from 'svelte';
   import { Combobox } from 'bits-ui';
   import { parseTokens, suggest, complete, type Parsed, type TokenSpec } from '../tokensearch';
@@ -24,7 +24,7 @@
     specs: readonly TokenSpec[];
     text?: string;
     input?: HTMLInputElement;
-    // Closed token values may depend on data that has not loaded yet.
+    // Closed token values can depend on data that has not loaded yet.
     ready?: boolean;
     onapply: (p: Parsed) => void;
   } = $props();
@@ -47,7 +47,7 @@
   async function accept(value: string): Promise<void> {
     text = value;
     apply();
-    // Completing a token key opens its values; completing a value offers
+    // Completing a token key opens its values. Completing a value offers
     // the next token while keeping the caret in the same input.
     await tick();
     selected = '';

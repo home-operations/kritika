@@ -25,8 +25,8 @@ func TestCollectRules(t *testing.T) {
 		// A .kritika.yaml that does not parse is ignored, as a review ignores it.
 		{name: "alpha/three", settings: settings(), sources: map[string]configfile.Source{}, doc: []byte("rules: {")},
 	}
-	// Written rules: the configuration's text and file rules, and a text
-	// and a file rule alpha/one's .kritika.yaml adds; one under the
+	// Written rules: the configuration's text and file rules, and a text and
+	// a file rule that alpha/one's .kritika.yaml adds. One under the
 	// configuration's id is dropped, as a review drops it.
 	wrap := configfile.Rule{ID: "wrap-errors", Rule: "Wrap errors."}
 	style := configfile.Rule{ID: "style", File: "docs/review.md"}
@@ -56,8 +56,8 @@ func TestCollectRules(t *testing.T) {
 }
 
 // TestCountCitations: a written rule counts the citations of its id in its
-// own repositories only, so two rules sharing an id keep their counts
-// apart; a file counts none.
+// own repositories only. So two rules that share an id keep their counts
+// apart. A file counts none.
 func TestCountCitations(t *testing.T) {
 	rules := []Rule{
 		{Kind: RuleContext, Path: "wrap-errors", Repositories: []string{"alpha/one"}},

@@ -1,12 +1,13 @@
-// Package runner is what a runner pod does: fetch the head and merge-base
-// (and the last reviewed head when there is one), diff them, compute the
-// patch id, decide what the review builds on and whether it is skipped,
-// write a context pack under its own run id, and run the review's agent
-// over it. A follow-up's run answers a comment with the same agent and
-// tools, and an index run chunks a tree. It works from
-// one versioned job document (Spec); its credentials, a git token for one
-// repository and for a review a token for the worker's model gateway,
-// arrive apart from it (Secrets). Its database role can only touch
+// Package runner is what a runner pod does. It fetches the head and
+// merge-base (and the last reviewed head when there is one), diffs them, and
+// computes the patch id. It decides what the review builds on and whether it
+// is skipped. It writes a context pack under its own run id and runs the
+// review's agent over it. A follow-up's run answers a comment with the same
+// agent and tools, and an index run chunks a tree.
+//
+// It works from one versioned job document (Spec). Its credentials arrive
+// apart from it (Secrets): a git token for one repository and, for a review,
+// a token for the worker's model gateway. Its database role can only touch
 // its own run.
 package runner
 
@@ -62,14 +63,14 @@ func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspe
 		run = runFollowUp
 	}
 	// The first thing either kind does is fetch through the gateway, which
-	// a runner started with the service may reach before its Service
+	// a runner started with the service can reach before its Service
 	// does.
 	err := waitForGateway(ctx, logger)
 	if err == nil {
 		err = run(ctx, st, spec, secrets, logger)
 	}
 	if err != nil {
-		// The worker still sees the Job fail; the row only loses why.
+		// The worker still sees the Job fail. The row only loses why.
 		if ferr := fail(ctx, st, spec.RunID, secrets, err); ferr != nil {
 			logger.Warn("run failure not recorded", "error", ferr)
 		}
@@ -78,15 +79,17 @@ func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspe
 }
 
 // maxPackDiffBytes is how much of a diff, and of a delta diff, a context
-// pack keeps: whole files in order, a file that would pass it left out. A
-// pull request that regenerates a large text file would otherwise put the
-// whole of it in the service's memory. The prompt's own budget is far
-// smaller, so the agent is sent no less for it.
+// pack keeps: whole files in order, with a file left out if it will pass the
+// limit.
+// A pull request that regenerates a large text file otherwise puts the whole
+// of it in the service's memory. The prompt's own budget is far smaller, so
+// the agent is sent no less for it.
 const maxPackDiffBytes = 4 << 20
 
-// priorDelta is the prior head the fetch brought, nil when none was asked
-// for or it could not be had, which tells the worker the delta is unknown,
-// not empty, and the paths of the delta since it less the ignored ones.
+// priorDelta is the prior head the fetch brought, and the paths of the delta
+// since it less the ignored ones. The prior head is nil when none was asked
+// for or the fetch failed to get it. That tells the worker the delta is
+// unknown, not empty.
 func priorDelta(res *gitfetch.Result, p runspec.Spec, logger *slog.Logger) (*string, []string) {
 	deltaPaths := []string{}
 	switch {
@@ -100,7 +103,7 @@ func priorDelta(res *gitfetch.Result, p runspec.Spec, logger *slog.Logger) (*str
 		return &p.PriorHead, deltaPaths
 	case p.PriorHead != "":
 		// Best effort: the review goes on in full. A force-push is the
-		// expected cause; the error tells it apart from auth or network.
+		// expected cause. The error tells it apart from auth or network.
 		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
 	}
 	return nil, deltaPaths
@@ -250,10 +253,10 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
 }
 
-// reviewShares is how a review that is not skipped runs, as
-// planReviewers plans it: its shares, nil to run it whole; and its scope,
-// full for the default reviewer alone when the last review did not run it,
-// with the reason.
+// reviewShares is how a review that is not skipped runs, as planReviewers
+// plans it. It returns its shares, nil to run it whole. It also returns its
+// scope, with the reason. The scope is full for the default reviewer alone
+// when the last review did not run it.
 func reviewShares(
 	p runspec.Spec, res *gitfetch.Result, scope review.Scope, reason string, deltaPaths []string,
 ) ([]partShare, review.Scope, string) {
@@ -270,9 +273,9 @@ func reviewShares(
 	return nil, scope, reason
 }
 
-// wholeContext is the context stages over the whole diff, or none for a
-// skipped review, which has no prompt, or one in parts, whose parts build
-// theirs from their own diffs.
+// wholeContext is the context stages over the whole diff. It is none for a
+// skipped review, which has no prompt, or for a review in parts, whose parts
+// build theirs from their own diffs.
 func wholeContext(
 	ctx context.Context, head, base *object.Tree, res *gitfetch.Result, ignore []string, skip string, inParts bool,
 	logger *slog.Logger,
@@ -290,10 +293,10 @@ func wholeContext(
 	return chunks, nil
 }
 
-// wholePrompt writes the prompt of a review that is not split, from the
-// whole diff and its context with the similar code that tools' search_code
-// is offered over, carrying on the last review's conversation where it
-// may. It returns the context the prompt was given.
+// wholePrompt writes the prompt of a review that is not split. It writes from
+// the whole diff and its context, with the similar code that tools'
+// search_code is offered over. It carries on the last review's conversation
+// where it can. It returns the context the prompt was given.
 func wholePrompt(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, res *gitfetch.Result, in promptInputs,
 	scope review.Scope, chunks []contextpack.Chunk, tools *agentTools, logger *slog.Logger,
@@ -351,7 +354,7 @@ func similarCodeFor(
 	return out, out.Indexed
 }
 
-// newSearchTool is search_code over the repository's index, leaving out
+// newSearchTool is search_code over the repository's index. It leaves out
 // the changed paths, which the prompt shows.
 func newSearchTool(p runspec.Spec, secrets runspec.Secrets, changed []string) *searchTool {
 	return &searchTool{
@@ -389,7 +392,7 @@ func stages(
 
 // heartbeat calls beat now and then every interval until ctx ends. A failed
 // beat is logged and retried on the next tick: one lost write must not end
-// a run the worker would otherwise see recover.
+// a run that the worker otherwise sees recover.
 func heartbeat(ctx context.Context, interval time.Duration, beat func(context.Context) error, logger *slog.Logger) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -406,7 +409,7 @@ func heartbeat(ctx context.Context, interval time.Duration, beat func(context.Co
 }
 
 // fail records cause as the run's error, with its secrets masked: a git or
-// provider error may carry a credential.
+// provider error can carry a credential.
 func fail(ctx context.Context, st *store.Store, runID string, secrets runspec.Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()

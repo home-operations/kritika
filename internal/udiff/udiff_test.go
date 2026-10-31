@@ -100,8 +100,8 @@ func TestParseReadsHeaders(t *testing.T) {
 }
 
 // TestParseUnquotesNames: git writes a name with a non-ASCII byte as a C
-// string, in its headers and on the "diff --git" line a rename alone has,
-// and the names come back as they are, the diff as it was.
+// string, in its headers and on the "diff --git" line that a rename alone
+// has. The names come back as they are, the diff as it was.
 func TestParseUnquotesNames(t *testing.T) {
 	const diff = `diff --git "a/db/\303\251.sql" "b/db/\303\251.sql"
 index 7898192..422c2b7 100644

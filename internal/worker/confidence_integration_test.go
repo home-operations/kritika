@@ -18,9 +18,9 @@ import (
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
-// TestCarriedConfidence: an unchanged patch keeps the score its last
+// TestCarriedConfidence: an unchanged patch keeps the score that its last
 // completed review got, judged by the threshold and held to the risk floors
-// asked for now, and may be skipped only where there is a score to keep or
+// asked for now. It can be skipped only where there is a score to keep or
 // none is asked for.
 func TestCarriedConfidence(t *testing.T) {
 	ctx := t.Context()
@@ -55,8 +55,8 @@ func TestCarriedConfidence(t *testing.T) {
 	type row struct{ status, confidence string }
 	tests := []struct {
 		name string
-		// rows are the pull request's reviews, oldest first; the last one's
-		// id is excluded when exclude is set, and changed the paths its
+		// rows are the pull request's reviews, oldest first. The last one's
+		// id is excluded when exclude is set. changed is the paths that its
 		// context pack records.
 		rows          []row
 		changed       []string

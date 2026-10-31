@@ -45,7 +45,7 @@ func (f *deliveryForge) SetStatus(ctx context.Context, _, _, _ string, _ forge.S
 }
 
 // The status request is joined before the publication lock is let go, even
-// once the inline review has returned and the job has been canceled.
+// once the inline review returned and the job was canceled.
 func TestInlineAndStatusWaitForStatus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := &deliveryForge{inline: make(chan struct{}), status: make(chan struct{}), release: make(chan struct{})}

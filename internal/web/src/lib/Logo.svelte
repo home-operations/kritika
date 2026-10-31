@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The mark, drawn inline so it takes the theme's colours: a magnifying
+  // The mark, drawn inline so it takes the theme's colors: a magnifying
   // glass over lines of text, one of them marked. During the brand's review
   // pass the glass tilts and settles while the lines redraw in turn, the
   // marked one last. public/favicon.svg is the same shape with less in the

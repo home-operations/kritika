@@ -56,9 +56,9 @@ func openStore(t testing.TB) *Store {
 	return s
 }
 
-// TestSchemaReadyWaitsForRiver: a River migration a release brings without
-// one of kritika's keeps the schema unready until the leader applies it and
-// grants the application role River's tables.
+// TestSchemaReadyWaitsForRiver: a River migration that a release brings
+// without one of kritika's keeps the schema unready. That lasts until the
+// leader applies it and grants the application role River's tables.
 func TestSchemaReadyWaitsForRiver(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -154,7 +154,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
-// twoAccounts serves alpha and beta; alphaAccount, alpha alone.
+// twoAccounts serves alpha and beta. alphaAccount serves alpha alone.
 const (
 	twoAccounts = `
 apps:
@@ -186,8 +186,8 @@ func parse(t *testing.T, yaml string) *configfile.File {
 }
 
 // listRepos records the repositories named, "owner/name", as the forge
-// would report them to the account named, turned on in the dashboard, so a
-// test's rows may hang off them.
+// reports them to the account named, turned on in the dashboard. So a
+// test's rows can hang off them.
 func listRepos(t *testing.T, s *Store, account string, names ...string) {
 	t.Helper()
 	ctx := t.Context()
@@ -361,7 +361,7 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 }
 
 // TestRepositoryTraits: a report that says whether a repository is
-// archived or a fork records it, and one that does not, as an installation
+// archived or a fork records it. One that does not, as an installation
 // event, keeps what was known.
 func TestRepositoryTraits(t *testing.T) {
 	s := openStore(t)
@@ -574,9 +574,9 @@ func TestMain(m *testing.M) {
 
 var _ = filepath.Join
 
-// TestEnsureIndexSchemaUsesVectorChord checks that the embedding index is a
-// vchordrq one and that the application role can turn on the prefilter the
-// similarity query sets.
+// TestEnsureIndexSchemaUsesVectorChord makes sure that the embedding index
+// is a vchordrq one. It also makes sure that the application role can turn on
+// the prefilter that the similarity query sets.
 func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
@@ -604,9 +604,8 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 }
 
 // TestEnsureIndexSchemaRebuildsForANewEmbedder: the same embedder leaves
-// the index alone, and another document prompt, model or dimension drops
-// every generation with the table and leaves each repository to onboard
-// afresh.
+// the index alone. Another document prompt, model or dimension drops every
+// generation with the table and leaves each repository to onboard afresh.
 func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
@@ -676,11 +675,11 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 	}
 }
 
-// TestSweepStoppedIndexes: a repository that stops running for any reason
-// (archived, turned off, off in the configuration, disabled or under an
-// account no App serves) starts its clock at the next sweep and loses its
-// index, left to onboard afresh, once the clock is past the grace; one
-// that runs again within it keeps its index, and a clock left on a
+// TestSweepStoppedIndexes: a repository can stop running for any reason:
+// archived, turned off, off in the configuration, disabled or under an
+// account that no App serves. It then starts its clock at the next sweep. It
+// loses its index, left to onboard afresh, once the clock is past the grace.
+// One that runs again within it keeps its index, and a clock left on a
 // repository with no index is cleared.
 func TestSweepStoppedIndexes(t *testing.T) {
 	ctx := t.Context()
@@ -717,9 +716,10 @@ func TestSweepStoppedIndexes(t *testing.T) {
 		}
 		return run
 	}
-	// check fails unless the repository still has run as its index and its
-	// clock is running as stopped says, or, when dropped, the run is
-	// superseded with no chunks and the repository has no clock.
+	// If dropped is false, check fails unless the repository still holds run
+	// as its index and its clock is running as stopped says. If dropped is
+	// true, check fails unless the run is superseded with no chunks and the
+	// repository has no clock.
 	check := func(what, name, run string, dropped, stopped bool) {
 		t.Helper()
 		var active, clock bool
@@ -798,7 +798,7 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	check("turned on within the grace", "alpha/two", two, false, false)
 
 	// alpha/one has no dashboard choice, so the configuration's enabled
-	// decides for it; alpha/two is turned on.
+	// decides for it. alpha/two is turned on.
 	exec(`UPDATE repositories SET turned_on = NULL, turned_at = NULL WHERE name = 'alpha/one'`)
 	sweep(off, 0)
 	check("off in the configuration, within the grace", "alpha/one", one, false, true)
@@ -869,8 +869,8 @@ func TestSweepStoppedIndexes(t *testing.T) {
 
 // TestSweepStoppedIndexesWaitsForARebuild: a sweep that starts while a
 // rebuild for a new embedder holds every repository's row waits for the
-// rebuild to commit, rather than holding the repositories table the
-// rebuild's DROP TABLE must take and deadlocking with it.
+// rebuild to commit. Otherwise it holds the repositories table that the
+// rebuild's DROP TABLE must take, and it deadlocks with the rebuild.
 func TestSweepStoppedIndexesWaitsForARebuild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -895,7 +895,7 @@ func TestSweepStoppedIndexesWaitsForARebuild(t *testing.T) {
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`); err != nil {
 		t.Fatalf("seed a generation: %v", err)
 	}
-	// waitFor returns the backend that waits for pid, polling until one does
+	// waitFor returns the backend that waits for pid. It polls until one does
 	// or done reports that what was to wait ended first.
 	waitFor := func(pid uint32, what string, done <-chan error) uint32 {
 		t.Helper()
@@ -1118,7 +1118,8 @@ func TestGatewayTokens(t *testing.T) {
 
 // checkReservations reserves against a token with 600 of its 1000 tokens
 // spent: a reservation succeeds while the run is under its budget, whatever
-// its size, and not once the run is at or over it; a refund brings it back.
+// its size. It does not succeed once the run is at or over its budget. A
+// refund brings it back.
 func checkReservations(t *testing.T, s *Store, token string) {
 	t.Helper()
 	ctx := t.Context()
@@ -1181,9 +1182,9 @@ func TestLeaderDutiesAreRetried(t *testing.T) {
 
 // TestSweepStoppedIndexesSeesARepositoryResume: a repository reported
 // running again between the sweep's first, unlocked read and its locked
-// one keeps its index, however long its clock had run, and its clock is
-// cleared. Unarchiving leaves the clock as it was, so the locked read
-// alone can tell the repository runs.
+// one keeps its index, however long its clock ran. Its clock is cleared.
+// Unarchiving leaves the clock as it was, so the locked read alone can tell
+// that the repository runs.
 func TestSweepStoppedIndexesSeesARepositoryResume(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)

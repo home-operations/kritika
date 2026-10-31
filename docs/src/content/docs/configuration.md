@@ -2,18 +2,18 @@
 title: Configuration
 ---
 
-For a first installation, use [Setup](/setup/). This page is the full settings
-reference.
+For a first installation, use [Setup](/setup/). This page is the full
+configuration reference.
 
 ## Where settings go
 
-| What you want to change                                 | Where to put it                                         |
-| ------------------------------------------------------- | ------------------------------------------------------- |
-| Sign-in, forge connections, providers and review policy | Helm's `config`, or the application YAML file.          |
-| Database connections, ingress and runner pods           | Helm values such as `database`, `ingress` and `runner`. |
-| Passwords and API keys                                  | Kubernetes Secrets, exposed through `env` or `envFrom`. |
-| Rules for one repository                                | An optional [`.kritika.yaml`](/repository-config/).     |
-| Enable or disable a repository                          | The dashboard's Repositories page.                      |
+| What you want to change                                            | Where to put it                                         |
+| ------------------------------------------------------------------ | ------------------------------------------------------- |
+| Sign-in, forge (Git host) connections, providers and review policy | Helm's `config`, or the application YAML file.          |
+| Database connections, ingress and runner pods                      | Helm values such as `database`, `ingress` and `runner`. |
+| Passwords and API keys                                             | Kubernetes Secrets, exposed through `env` or `envFrom`. |
+| Rules for one repository                                           | An optional [`.kritika.yaml`](/repository-config/).     |
+| Enable or disable a repository                                     | The dashboard's Repositories page.                      |
 
 Examples on this page use application YAML unless they show a `config` wrapper.
 For Helm, put that YAML under `config` in your values file.
@@ -23,43 +23,52 @@ values in the file. The [setup example](/setup/#deploy) shows the wiring.
 
 ## Applying changes
 
-kritika reads configuration at startup. Helm rolls pods when `config` changes.
-External ConfigMap changes and secret rotations need a restart or Reloader.
-Unknown keys, invalid values and duplicate file/environment settings fail
-startup. Use durations such as `10m`. Omit a setting to use its default.
-Explicit `false` and `0` are preserved.
+kritika reads configuration at startup. Helm rolls pods when `config`
+changes. External ConfigMap changes and secret rotations need a restart
+or Reloader.
 
-For an external ConfigMap, set `existingConfigMap` instead of `config`. It must
-contain `config.yaml` with `webUrl` and application settings. Omit the keys
-the chart owns:
+Unknown keys, invalid values and a setting in both the file and the
+environment fail startup. Use durations such as `10m`. Omit a setting to
+use its default. Explicit `false` and `0` are preserved.
 
-- `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
-  `databaseRunnerRole`, `executor` and `runner`;
-- when the chart's `gatewayCache.enabled` is set, the gateway cache keys it
-  sets: `gatewayCacheDir`, `gatewayCacheStorage`,
-  `gatewayCacheMaxEntrySize`, and `gatewayCacheMaxSize` for filesystem
-  storage or the `gatewayCacheS3*` keys for S3.
+For an external ConfigMap, set `existingConfigMap` instead of `config`.
+It must contain `config.yaml` with `webUrl` and the application
+configuration. Omit the keys that the chart owns: `addr`, `metricsAddr`,
+`gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`,
+`executor` and `runner`.
 
-Outside Helm, `KRITIKA_CONFIG_FILE` names the file and is required by `serve`
-and `chatgpt login`. Operational settings can also come from environment
-variables, but the same setting cannot appear in both sources. Application
-policy uses the file; environment variables supply only explicitly referenced
-values. CEL expression keys end in `Expr`, or use `expr` inside a condition.
+If the chart's `gatewayCache.enabled` is set, also omit the gateway
+cache keys that it sets. These keys are `gatewayCacheDir`,
+`gatewayCacheStorage` and `gatewayCacheMaxEntrySize`. For filesystem
+storage, they also include `gatewayCacheMaxSize`. For S3, they also
+include the `gatewayCacheS3*` keys.
+
+Outside Helm, `KRITIKA_CONFIG_FILE` names the file. `serve` and
+`chatgpt login` require it. Operational configuration can also come from
+environment variables, but the same setting cannot appear in both
+sources. Application policy uses the file. Environment variables supply
+only explicitly referenced values. CEL expression keys end in `Expr`, or
+use `expr` inside a condition.
 
 ### Checking a file before deploying
 
-`kritika config check [<file>]` loads a file, or `KRITIKA_CONFIG_FILE`'s, the
-way `serve` does at startup, and fails on what would fail startup: unknown
-keys, invalid values, a setting in both the file and the environment, and no
-way to sign in. It does not connect to the database or any forge, and does
-not need the database variables or the settings the chart passes besides the
-file, such as `gatewayUrl` with `existingConfigMap`. The dashboard's
-`webUrl` is still required, from the file or `KRITIKA_WEB_URL`. It decodes
-the runner templates as `serve` does, but leaves to startup the dry run in
-which the Kubernetes API validates a runner Job. It reads the environment,
-so each secret reference's variable must be set. Any value works except a
-GitLab `webhookSecret`, which must look like a signing token, `whsec_`
-followed by base64:
+`kritika config check [<file>]` loads a file, or
+`KRITIKA_CONFIG_FILE`'s, the way `serve` does at startup. It fails on
+what fails startup: unknown keys, invalid values, a setting in both the
+file and the environment, and no way to sign in.
+
+The command does not connect to the database or any forge. It does not
+need the database variables. It also does not need the configuration
+that the chart passes besides the file, such as `gatewayUrl` with
+`existingConfigMap`. The dashboard's `webUrl` is still required, from
+the file or `KRITIKA_WEB_URL`.
+
+The command decodes the runner templates as `serve` does, but it leaves
+the dry run to startup. In that dry run, the Kubernetes API makes sure
+that a runner Job is valid. The command reads the environment, so each
+secret reference's variable must be set. Any value works except a GitLab
+`webhookSecret`, which must look like a signing token, `whsec_` followed
+by base64:
 
 ```sh
 docker run --rm -v "$PWD/config.yaml:/config.yaml:ro" \
@@ -67,8 +76,9 @@ docker run --rm -v "$PWD/config.yaml:/config.yaml:ro" \
   ghcr.io/home-operations/kritika:<version> config check /config.yaml
 ```
 
-To check the `config` you give Helm, render the chart's ConfigMap and check
-its `config.yaml`, which also has the keys the chart derives:
+To run this check on the `config` that you give Helm, render the chart's
+ConfigMap. Then run the check on its `config.yaml`, which also has the
+keys that the chart derives:
 
 ```sh
 helm template kritika oci://ghcr.io/home-operations/charts/kritika -f values.yaml \
@@ -96,10 +106,10 @@ These inputs have no configuration-file equivalent:
 | Variable                              | Purpose                                                                                                                                         |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `KRITIKA_CONFIG_FILE`                 | Configuration file path, required by `serve` and `chatgpt login`, and `config check`'s file when it names none                                  |
-| `KRITIKA_DATABASE_URL`                | Application DSN for `serve`; runner DSN for `run`                                                                                               |
-| `KRITIKA_DATABASE_OWNER_URL`          | Owner DSN for migrations and leader work                                                                                                        |
-| `KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY` | S3 access key for serve only; paired with the secret key                                                                                        |
-| `KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY` | S3 secret key for serve only; when both keys are absent, use IAM credentials                                                                    |
+| `KRITIKA_DATABASE_URL`                | Application DSN (database connection string) for `serve`. Runner DSN for `run`                                                                  |
+| `KRITIKA_DATABASE_OWNER_URL`          | Owner DSN for migrations and leader work. The leader is the replica, one running kritika pod, that holds the leader lock                        |
+| `KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY` | S3 access key for serve only. Paired with the secret key                                                                                        |
+| `KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY` | S3 secret key for serve only. When both keys are absent, serve uses IAM credentials                                                             |
 | `KRITIKA_RUNNER_DATABASE_URL`         | Runner DSN for the local executor                                                                                                               |
 | `KRITIKA_RUN_SPEC_FILE`               | Per-run job document path                                                                                                                       |
 | `KRITIKA_GIT_TOKEN`                   | Per-run Git credential                                                                                                                          |
@@ -108,9 +118,10 @@ These inputs have no configuration-file equivalent:
 | `KRITIKA_POD_NAME`, `KRITIKA_POD_UID` | The serve pod's name and UID, from the downward API, which the pod's [Kubernetes Events](/metrics/#kubernetes-events) name. The chart sets both |
 | `GOMEMLIMIT`, `AUTOMEMLIMIT`          | Go's soft memory limit. The chart sets neither                                                                                                  |
 
-The service supplies per-run inputs to runner Jobs. Secret references such as
-`{ env: OPENROUTER_API_KEY }` can use any environment variable name. The file
-defines how that value is used.
+The service supplies per-run inputs to runner Jobs, one Job for each
+review, follow-up and index run. Secret references such as
+`{ env: OPENROUTER_API_KEY }` can use any environment variable name. The
+file defines how that value is used.
 
 `GOMEMLIMIT` and `AUTOMEMLIMIT`: unless `GOMEMLIMIT` is set or
 `AUTOMEMLIMIT` is `off`, kritika sets the soft memory limit itself. It uses
@@ -120,7 +131,7 @@ minute. A container with no memory limit gets no soft limit.
 
 ## `auth`
 
-`auth` sets how people sign in and what each may do. In Helm these keys
+`auth` sets how people sign in and what each can do. In Helm these keys
 belong under `config.auth`. Secret references read variables supplied from
 existing Kubernetes Secrets.
 
@@ -193,39 +204,39 @@ auth:
 A provider must allow the callback URL
 `<KRITIKA_WEB_URL>/auth/callback/<type>`, where `<type>` is `oidc`,
 `github`, `forgejo`, `gitea` or `gitlab`. The dashboard refuses to start
-with no way to sign in. The configuration is also refused when nothing
-could make an admin. To avoid that, set an admin password, or a
+with no way to sign in. kritika also refuses the configuration when
+nothing can make an admin. To avoid that, set an admin password, or a
 `roleMappingExpr` on a provider.
 
 ### Roles
 
-| Role   | What it may do                                                                                                                                                                                         |
+| Role   | What it can do                                                                                                                                                                                         |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Admin  | runs the instance from the dashboard: turns repositories on and off, queues re-runs, cancels and reindexes, and reads every account, the audit log and the [Settings page](/dashboard/#administration) |
 | Member | reads reviews, conversations and transcripts, with no write access: every account, or only the accounts that serve the forge accounts their sign-in gave them ([role mappings](#role-mappings))        |
 
-The Settings page lists the instance settings read-only, each with
-its source: the environment, the configuration file, or kritika's default.
+The Settings page lists the instance configuration read-only, each value
+with its source: the environment, the configuration file, or kritika's
+default.
 A secret shows only whether it is set, and a URL's credentials are hidden.
 Every admin write is audit-logged in the same transaction as the change it
 makes.
 
-A session holds the role its sign-in gave it. Editing a provider's role
-mapping, or rotating the admin password, ends the sessions it granted, so
-the next request signs in again under the new rules. Sessions from a
-Forgejo, Gitea or GitLab sign-in also end when the set of accounts served
-by that instance's connections changes, such as when an account moves to
-another instance.
+A session holds the role that its sign-in gave it. Editing a provider's
+role mapping, or rotating the admin password, ends the sessions that it
+granted. The next request then signs in again under the new rules.
+Sessions from a Forgejo, Gitea or GitLab sign-in also end when the set
+of accounts that the instance's connections serve changes. For example,
+an account can move to another instance.
 
 #### Role mappings
 
 A `roleMappingExpr` is a [CEL](https://cel.dev) expression evaluated at
-sign-in. It yields one of:
-
-- a role for every account: `"admin"`, `"member"` or `""` for none;
-- a map from forge account to `"member"`, such as
-  `{"github/org-1": "member"}`, which reads only the accounts serving
-  those forge accounts. `"*"` as a key stands for every account.
+sign-in. It yields one of two things. One is a role for every account:
+`"admin"`, `"member"` or `""` for none. The other is a map from forge
+account to `"member"`, such as `{"github/org-1": "member"}`. With a map,
+the user reads only the accounts that serve those forge accounts. `"*"`
+as a key stands for every account.
 
 CEL gives both branches of a conditional one type. An expression that
 yields a role on one branch and a map on the other wraps one of them in
@@ -233,23 +244,24 @@ yields a role on one branch and a map on the other wraps one of them in
 
 | Provider       | Variables the expression sees                                                                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OIDC           | `claims`, the ID token's claims merged with the UserInfo response; `roles`, the values of the claim that `rolesClaim` names, read from a list, a map's keys, or a single string |
-| GitHub         | `login`; `email`; `orgs`, the organizations the user is an active member of; `teams`, each as `"<org>/<team slug>"`                                                             |
-| Forgejo, Gitea | as GitHub's, except that a team is `"<org>/<team name>"`; `email` is empty unless the instance verified the address                                                             |
-| GitLab         | `login`; `email`, empty unless the instance verified the address; `groups`, the full paths of the groups the user is a member of, directly or through an ancestor group         |
+| OIDC           | `claims`: the ID token's claims merged with the UserInfo response. `roles`: the values of the claim that `rolesClaim` names, read from a list, a map's keys, or a single string |
+| GitHub         | `login` and `email`. `orgs`: the organizations that the user is an active member of. `teams`: each as `"<org>/<team slug>"`                                                     |
+| Forgejo, Gitea | as GitHub's, except that a team is `"<org>/<team name>"`. `email` is empty unless the instance verified the address                                                             |
+| GitLab         | `login`. `email`: empty unless the instance verified the address. `groups`: the full paths of the groups that the user is a member of, directly or through an ancestor group    |
 
-When the mapping places nobody:
+A mapping can place a user nowhere, with no role and no accounts. An
+OIDC sign-in is then refused, unless `defaultRole: member` lets it read
+every account. `defaultRole` defaults to `none`, so a wrong mapping
+fails closed.
 
-- An OIDC sign-in is refused, unless `defaultRole: member` lets it read
-  every account. `defaultRole` defaults to `none`, so a wrong mapping fails
-  closed.
-- A GitHub, Forgejo, Gitea or GitLab sign-in reads the accounts serving the
-  user's own account, or an organization they are an active member of (a
-  top-level group on GitLab). It is refused when there are none. Accounts
-  a mapping names are added to those. A sign-in on a Forgejo, Gitea or
-  GitLab instance reads only the accounts a connection serves on that
-  instance. An account of the same name on another instance is not the
-  user's.
+When the mapping places a user nowhere, a GitHub, Forgejo, Gitea or
+GitLab sign-in reads the accounts that serve the user's own account. It
+also reads the accounts that serve an organization that the user is an
+active member of, which is a top-level group on GitLab. It is refused
+when there are none. Accounts that a mapping names are added to those. A
+sign-in on a Forgejo, Gitea or GitLab instance reads only the accounts
+that a connection serves on that instance. An account of the same name
+on another instance is not the user's.
 
 A mapping that fails to evaluate refuses the sign-in.
 
@@ -271,8 +283,8 @@ apps:
 | Key             | What                                                                                                           |
 | --------------- | -------------------------------------------------------------------------------------------------------------- |
 | the entry's key | the app's name, which is its webhook path, `/hooks/<name>`                                                     |
-| `accounts`      | the users and organizations it serves; a webhook for any other is ignored, and an account is served by one app |
-| `clientId`      | the App's client ID, inline or as a reference like the secrets; an App is declared by one entry                |
+| `accounts`      | the users and organizations that it serves. kritika ignores a webhook for any other. One app serves an account |
+| `clientId`      | the App's client ID, inline or as a reference like the secrets. One entry declares an App                      |
 | `privateKey`    | the App's private key                                                                                          |
 | `webhookSecret` | the same value as the App's webhook secret                                                                     |
 
@@ -293,17 +305,17 @@ forgejo:
     webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
 ```
 
-| Key              | What                                                                                                                                                             |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name belongs to one connection only, under `apps`, `forgejo`, `gitlab` or `gitea`           |
-| `host`           | the instance's hostname, reached over HTTPS                                                                                                                      |
-| `accounts`       | the users and organizations it serves; an account is served by one connection on its forge                                                                       |
-| `audience`       | the audience Forgejo shows for the integration, inline or as a reference; until it is set, the connection only serves its key, so the integration can be created |
-| `runnerAudience` | optional: the audience of a second, read-only integration that runner pods fetch as, so the pod that reads untrusted content never holds a token that can write  |
-| `privateKey`     | the RSA key kritika signs the integration's tokens with; kritika serves its public half at `<webUrl>/forgejo/.well-known/keys`, and `webUrl` must be HTTPS       |
-| `previousKey`    | optional: a key being rotated out; it is served for Forgejo to verify with, and signs nothing                                                                    |
-| `webhookSecret`  | the secret of the webhooks added on each account                                                                                                                 |
-| `bots`           | optional: the logins on the instance that are bots, such as a Renovate user, whose pull requests and comments kritika treats as a bot's                          |
+| Key              | What                                                                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`. A name belongs to one connection only, under `apps`, `forgejo`, `gitlab` or `gitea`                     |
+| `host`           | the instance's hostname, reached over HTTPS                                                                                                                                |
+| `accounts`       | the users and organizations that it serves. One connection on its forge serves an account                                                                                  |
+| `audience`       | the audience that Forgejo shows for the integration, inline or as a reference. Until it is set, the connection only serves its key, so that you can create the integration |
+| `runnerAudience` | optional: the audience of a second, read-only integration that runner pods fetch as. The pod that reads untrusted content then never holds a token that can write          |
+| `privateKey`     | the RSA key that kritika signs the integration's tokens with. kritika serves its public half at `<webUrl>/forgejo/.well-known/keys`, and `webUrl` must be HTTPS            |
+| `previousKey`    | optional: a key being rotated out. kritika serves it for signature verification by Forgejo, and it signs nothing                                                           |
+| `webhookSecret`  | the secret of the webhooks added on each account                                                                                                                           |
+| `bots`           | optional: the logins on the instance that are bots, such as a Renovate user, whose pull requests and comments kritika treats as a bot's                                    |
 
 ## `gitlab`
 
@@ -324,9 +336,9 @@ gitlab:
 
 | Key             | What                                                                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name belongs to one connection only, under `apps`, `forgejo`, `gitlab` or `gitea` |
+| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`. A name belongs to one connection only, under `apps`, `forgejo`, `gitlab` or `gitea` |
 | `host`          | the instance's hostname, reached over HTTPS                                                                                                            |
-| `accounts`      | the top-level groups and users it serves; an account is served by one connection on its forge                                                          |
+| `accounts`      | the top-level groups and users that it serves. One connection on its forge serves an account                                                           |
 | `token`         | a personal access token of the service account with the `api` scope                                                                                    |
 | `runnerToken`   | optional: a token of the account with the `read_repository` scope alone, which runner pods fetch with                                                  |
 | `webhookSecret` | the signing token of the webhooks, `whsec_` followed by base64                                                                                         |
@@ -350,17 +362,17 @@ gitea:
 
 | Key             | What                                                                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name belongs to one connection only, under `apps`, `forgejo`, `gitlab` or `gitea` |
+| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`. A name belongs to one connection only, under `apps`, `forgejo`, `gitlab` or `gitea` |
 | `host`          | the instance's hostname, reached over HTTPS                                                                                                            |
-| `accounts`      | the users and organizations it serves; an account is served by one connection on its forge                                                             |
+| `accounts`      | the users and organizations that it serves. One connection on its forge serves an account                                                              |
 | `token`         | an access token of the bot user with the `read:user`, `write:repository` and `write:issue` scopes                                                      |
 | `runnerToken`   | optional: a token of the user with the `read:repository` scope alone, which runner pods fetch with                                                     |
 | `webhookSecret` | the secret of the webhooks added on each account                                                                                                       |
 | `bots`          | optional: the logins on the instance that are bots beside the bot users Gitea marks, whose pull requests and comments kritika treats as a bot's        |
 
-An entry under `accounts` names an account by its name alone, so it applies
-to the account of that name on the forge that serves it. A name served on
-two forges can have no entry.
+An entry under `accounts` names an account by its name alone. The entry
+applies to the account of that name on the forge that serves it. A name
+served on two forges cannot have an entry.
 
 ## `providers` and `embedding`
 
@@ -381,10 +393,10 @@ embedding:
 
 ## Repository settings
 
-The repository settings are written at the file's root and apply to every
-repository. A repository changes them for itself in its own
-[`.kritika.yaml`](/repository-config/). They come in five groups, with a
-few keys beside them:
+The repository configuration is written at the file's root and applies
+to every repository. A repository changes it for itself in its own
+[`.kritika.yaml`](/repository-config/). Its keys come in five groups,
+with a few keys beside them:
 
 | Group        | Keys                                                                                                     | What they set                              |
 | ------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -403,9 +415,10 @@ The agent can still read an ignored path with `read_file`, or its diff
 with `read_diff`. `ignore` is not an access restriction.
 
 Changing the effective ignore rules triggers a full rebuild on the next
-index run, including files whose contents have not changed. Editing
-instance configuration does not queue index jobs by itself. To apply new
-ignore rules immediately, reindex an idle repository from the dashboard.
+index run. The rebuild includes files whose contents did not change.
+Editing instance configuration does not queue index jobs by itself. To
+apply new ignore rules immediately, reindex an idle repository from the
+dashboard.
 
 ```yaml
 review:
@@ -426,10 +439,10 @@ skills:
       when: [{ expr: pr.headRef.startsWith("renovate/") }]
 ```
 
-Settings that differ between repositories belong in the repositories'
-`.kritika.yaml`, such as a model an organization's own key pays for, or a
-rule for one language. The instance file holds what every repository
-shares.
+Configuration that differs between repositories belongs in the
+repositories' `.kritika.yaml`. For example, this includes a model that
+an organization's own key pays for, or a rule for one language. The
+instance file holds what every repository shares.
 
 ### What only the admin sets
 
@@ -439,14 +452,14 @@ takes these keys, which are the admin's alone:
 
 | Key                       | What                                                                                                                                                                                                                                                           |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `confidence.instructions` | guidance to the scorer on rating risk ([risk](/confidence/#risk))                                                                                                                                                                                              |
+| `confidence.instructions` | guidance on rating risk to the scorer, the second model that scores each reviewed pull request ([risk](/confidence/#risk))                                                                                                                                     |
 | `confidence.floors`       | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](/confidence/#risk))                                                                                                                      |
-| `review.cost`             | `true` ends the summary's footer with what the pull request's reviews have cost together; off unless set                                                                                                                                                       |
-| `review.replies`          | `true` has kritika answer a reply in one of its finding threads that does not mention it, when the reply needs the reviewer; off unless set                                                                                                                    |
-| `comments.dashboard`      | `false` keeps the dashboard's URL out of the comments, which anyone can read on a public repository; on unless set                                                                                                                                             |
-| `review.incremental`      | how many files of the change may move since the last review before a re-review covers the whole pull request again; 25 unless set ([incremental reviews](#incremental-reviews))                                                                                |
-| `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them; unlimited unless set                                                                                                                                                                |
-| `trigger.settle`          | how long the review of a push waits to start, so a burst of pushes gets one review rather than one of each head; at once unless set, at most `1h` ([when a review runs](/reviews/#when-a-review-runs))                                                         |
+| `review.cost`             | `true` ends the summary's footer with what the pull request's reviews cost together. Off unless set                                                                                                                                                            |
+| `review.replies`          | `true` has kritika answer a reply in one of its finding threads that does not mention it. kritika answers when the reply needs the reviewer. Off unless set                                                                                                    |
+| `comments.dashboard`      | `false` keeps the dashboard's URL out of the comments, which anyone can read on a public repository. On unless set                                                                                                                                             |
+| `review.incremental`      | how many files of the change can move since the last review before a re-review covers the whole pull request again. 25 unless set ([incremental reviews](#incremental-reviews))                                                                                |
+| `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them. Unlimited unless set                                                                                                                                                                |
+| `trigger.settle`          | how long the review of a push waits to start. A burst of pushes then gets one review rather than one for each head, the pull request's latest commit. At once unless set, at most `1h` ([when a review runs](/reviews/#when-a-review-runs))                    |
 | `agent`                   | the bounds of a review's tool loop ([the agent](#the-agent))                                                                                                                                                                                                   |
 | `limits`                  | every account's limits, unless its entry sets its own ([`accounts`](#accounts))                                                                                                                                                                                |
 | `enabled`                 | the default for existing repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
@@ -462,23 +475,26 @@ is off unless set, since each answer is a model call nobody asked for by
 name.
 
 `comments.dashboard` set to `false` leaves the summary without a re-run
-badge, and shows each severity as its label in text rather than an image
-the dashboard serves. `@<app slug> review` still re-runs a review
-([commands](/reviews/#commands)).
+badge. It also shows each severity as its label in text rather than an
+image that the dashboard serves. `@<app slug> review` still re-runs a
+review ([commands](/reviews/#commands)).
 
 `trigger.limit` stops a long-lived pull request from spending on every
 push. The summary of the last automatic review says that reviews are
 paused. `@<app slug> review` and `resume` still work
 ([commands](/reviews/#commands)).
 
-`trigger.settle` holds the review a push starts for that long, such as
-`90s`. A push within the wait moves the review to the new head: the
-earlier head's job finds the head moved when its turn comes and starts
-nothing, so a burst of pushes costs one review instead of one started
-and replaced for each head. Opening a pull request is not held. A review
-someone asks for during the wait, with `@<app slug> review` or a re-run
-from the dashboard, takes the place of the one waiting and starts at
-once. A label change or a poll for the head leaves it waiting.
+`trigger.settle` holds the review that a push starts for that long, such
+as `90s`. A push within the wait moves the review to the new head. When
+its turn comes, the earlier head's job finds that the head moved and
+starts nothing. A burst of pushes therefore costs one review, instead of
+one started and replaced for each head. The review that opening a pull
+request starts is not held.
+
+Someone can ask for a review during the wait, with `@<app slug> review`
+or a re-run from the dashboard. That review takes the place of the one
+waiting and starts at once. A label change or a poll for the head leaves
+it waiting.
 
 A repository adds tools of its own through the
 [`tools`](/repository-config/#repository-tools) of its `.kritika.yaml`.
@@ -495,33 +511,32 @@ the root's, except:
 | Key                                  | From a `.kritika.yaml`                                                                                                        |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `ignore`                             | globs add up                                                                                                                  |
-| `rules`                              | added; a rule under an admin's id is dropped                                                                                  |
+| `rules`                              | added. A rule under an admin's id is dropped                                                                                  |
 | `context`                            | added                                                                                                                         |
-| `trigger.include`, `trigger.exclude` | judged beside the admin's lists; a name an admin's has is dropped                                                             |
+| `trigger.include`, `trigger.exclude` | judged beside the admin's lists. A name that an admin's list has is dropped                                                   |
 | `skills.paths`                       | replaces                                                                                                                      |
-| `skills.scope`                       | adds up by skill name; the file's entry wins                                                                                  |
-| `review.agents`                      | specialists added, and an admin's specialist gains only rules and skill scopes; agents without categories replace the admin's |
+| `skills.scope`                       | adds up by skill name. The file's entry wins                                                                                  |
+| `review.agents`                      | specialists added, and an admin's specialist gains only rules and skill scopes. Agents without categories replace the admin's |
 | `review.fixes`                       | can only turn it on                                                                                                           |
 | `confidence.risk`                    | can only lower it                                                                                                             |
-| `review.approve`'s `when`            | judged beside the admin's; `approve: true` keeps the admin's                                                                  |
-| `confidence.when`                    | judged beside the admin's; a pull request it alone leaves unscored is not approved where a score is asked for                 |
+| `review.approve`'s `when`            | judged beside the admin's. `approve: true` keeps the admin's                                                                  |
+| `confidence.when`                    | judged beside the admin's. A pull request that it alone leaves unscored is not approved where a score is asked for            |
 | `enabled`                            | can only turn it off                                                                                                          |
 
 ### Confidence and risk
 
-`confidence` sets a second model's score of each reviewed pull request,
-whether the commit status is gated on it, and how risky a change may be
-and still be approved. [Confidence and approvals](/confidence/) describes
-the keys, how a score is reached, the risk tables and how approvals follow
-them.
+`confidence` sets a second model's score of each reviewed pull request.
+It also sets whether the commit status is gated on that score, and how
+risky a change can be and still be approved. [Confidence and
+approvals](/confidence/) describes the keys, how a score is reached, the
+risk tables and how approvals follow them.
 
 ### Which pull requests are reviewed
 
 `trigger.include` and `trigger.exclude` decide which pull requests are
-reviewed. A pull request is reviewed when both of these are true:
-
-- one `include` condition holds, or there are none;
-- no `exclude` condition holds.
+reviewed. A pull request is reviewed when both of these are true. First,
+one `include` condition holds, or there are none. Second, no `exclude`
+condition holds.
 
 A condition has:
 
@@ -529,7 +544,7 @@ A condition has:
 | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `expr`  | a CEL expression over the pull request ([the `pr` variable](/repository-config/#include-and-exclude-recipes))              |
 | `paths` | globs that hold when a changed path matches one of them                                                                    |
-| `name`  | optional; names the condition in a skipped review's commit status; a repository's condition under the same name is dropped |
+| `name`  | optional: names the condition in a skipped review's commit status. A repository's condition under the same name is dropped |
 
 A condition takes an `expr`, `paths` or both. When it has both, both must
 hold.
@@ -544,60 +559,65 @@ trigger:
     - { name: migrations, paths: ["db/migrations/**"] }
 ```
 
-In an expression, `pr.lines` is the lines the pull request's diff adds
-and removes, leaving out paths the `ignore` globs match. A size limit is
-an exclusion on it:
+In an expression, `pr.lines` is the lines that the pull request's diff
+adds and removes. It leaves out paths that the `ignore` globs match. A
+size limit is an exclusion on it:
 
 ```yaml
 trigger:
   exclude: [{ name: too-large, expr: pr.lines > 2000 }]
 ```
 
-- **When it is decided:** a condition on the pull request alone is decided
-  at once, and a pull request it keeps out leaves no review behind. A
-  condition with `paths` or `pr.lines` is decided once the pull request is
-  fetched, before any model is called. A pull request it keeps out shows
-  as a skipped review. Its commit status names the exclusion that held,
-  when that exclusion has a name. The lists are then judged with the first
-  64 KiB of the description.
-- **Names:** a name may not be given twice in one list.
-- **A repository's lists:** a `.kritika.yaml` has lists of its own,
-  judged beside the admin's. A pull request must pass both. A condition in
-  the file is dropped when one of the admin's has the same name.
-- **Checked at startup:** an expression is compiled and smoke-tested
-  against a sample pull request, so a broken one fails startup.
-- **Forks:** a pull request from a fork is reviewed like any other unless
-  excluded, such as with `exclude: [{ name: forks, expr: pr.fork }]`.
-- **Asked-for reviews:** a review someone asks for, with
-  `@<app slug> review` or a re-run from the dashboard, passes the admin's
-  lists whatever they say. A `.kritika.yaml`'s lists still apply to it.
+- A condition on the pull request alone is decided at once, and a pull
+  request that it keeps out leaves no review behind. A condition with
+  `paths` or `pr.lines` is decided once the pull request is fetched,
+  before any model is called. A pull request that it keeps out shows as
+  a skipped review. Its commit status names the exclusion that held,
+  when that exclusion has a name. The lists are then judged with the
+  first 64 KiB of the description.
+- A name cannot be given twice in one list.
+- A `.kritika.yaml` has lists of its own, judged beside the admin's. A
+  pull request must pass both. A condition in the file is dropped when
+  one of the admin's has the same name.
+- At startup, an expression is compiled and smoke-tested against a
+  sample pull request, so a broken one fails startup.
+- A pull request from a fork is reviewed like any other unless excluded,
+  such as with `exclude: [{ name: forks, expr: pr.fork }]`.
+- A review that someone asks for, with `@<app slug> review` or a re-run
+  from the dashboard, passes the admin's lists whatever they say. A
+  `.kritika.yaml`'s lists still apply to it.
 
 ### Incremental reviews
 
 A later push is reviewed against what changed since the last review, as
-long as no more than `review.incremental` files of the change moved. Past
-that, the re-review covers the whole pull request again. What moves
-between the two heads outside the change's own paths is the base, under a
-merge or a rebase, and does not count. Nor does what the base gained in
-the change's own files since the last review, as long as the merge base
-that review was made against can still be fetched.
+long as no more than `review.incremental` files of the change moved.
+Past that, the re-review covers the whole pull request again.
+
+What moves between the two heads outside the change's own paths is the
+base (the target branch), under a merge or a rebase. It does not count.
+What the base gained in the change's own files since the last review
+also does not count. That is true as long as the merge base that the
+last review was made against can still be fetched. The merge base is the
+shared ancestor of the pull request and its target branch.
 
 These always cover the whole pull request:
 
-- a re-run at the head the last review saw;
-- a re-run someone asked for, with `@<app slug> review` or from the
-  dashboard;
-- a merge or rebase that leaves the change as it was.
+- A re-run at the head that the last review saw.
+- A re-run that someone asked for, with `@<app slug> review` or from the
+  dashboard.
+- A merge or rebase that leaves the change as it was.
 
 A re-review that covers the whole pull request is still shown the last
-review's findings, on the diff or off it, to report again those that
-still hold. The exceptions are a re-run at the head the last review saw
-and one someone asked for: these look afresh. Findings those fresh
-reviews omit stay open and counted, marked as not rechecked. A finding
-reported again keeps the inline thread its first report opened, however
-it is worded now. Each review also leaves notes on what it checked beyond
-the diff and found sound. No comment shows these notes. The next
-re-review is shown them beside the findings.
+review's findings, on the diff or off it. It reports again those that
+still hold. The exceptions are a re-run at the head that the last review
+saw and a re-run that someone asked for. These look afresh. Findings
+that those fresh reviews omit stay open and counted, marked as not
+rechecked. A finding reported again keeps the inline thread that its
+first report opened, however it is worded now.
+
+Each review also leaves notes on what it examined beyond the diff and
+found sound. No comment shows these notes. The next re-review is shown
+them beside the findings.
 
 When it can, an incremental re-review carries on the last review's
 conversation instead. The model then keeps what it read, and the provider
@@ -605,16 +625,16 @@ serves the earlier part of the conversation from its prompt cache. The
 re-review is told the head moved, shown the diff since, and asked for the
 whole review again. Carrying on takes all of these:
 
-- the merge base has not moved since the last review, so the diff since
-  shows everything that changed;
-- the last review's conversation was kept on the same review model less
-  than 25 minutes before, or 4 for an Anthropic model, whose cache lasts
-  5 minutes;
-- the conversation is under 100,000 tokens, since past that, reading it
-  again at every step costs more than starting afresh;
-- it is also under a quarter of the review's `agent.tokens`, or of what
-  the monthly cap leaves of them;
-- the review would send the same system prompt and tools, and the pull
+- The merge base did not move since the last review, so the diff since
+  shows everything that changed.
+- The last review's conversation was kept on the same review model less
+  than 25 minutes before. For an Anthropic model, whose cache lasts 5
+  minutes, the limit is 4.
+- The conversation is under 100,000 tokens. Past that size, it costs
+  more to read it again at every step than to start afresh.
+- The conversation is also under a quarter of the review's
+  `agent.tokens`, or of what the monthly cap leaves of them.
+- The review will send the same system prompt and tools, and the pull
   request's title, description and linked issues are as they were.
 
 Otherwise the re-review starts afresh, with the last review's findings
@@ -622,123 +642,138 @@ and notes. On the dashboard, a review that carried on names the review
 before it on its Timeline. Its Conversation starts where that review's
 left off, and links to it.
 
-An incremental re-review raises as new only what the new commits brought,
-at P0 or P1. It reports again each of the last review's findings that
-still holds, whatever its severity. Every review that is shown earlier
-findings, including a full re-review, names the ones that no longer hold.
-The summary lists those as resolved and resolves their threads. A finding
-the review neither reports again nor names stays open. The summary lists
-it among the findings as not rechecked since the head a review last
-reported it at. It counts toward the score, the status and the approval,
-and the next re-review is asked about it again.
+An incremental re-review raises as new only what the new commits
+brought, at P0 or P1. It reports again each of the last review's
+findings that still holds, whatever its severity. Every review that is
+shown earlier findings names the ones that no longer hold, and that
+includes a full re-review. The summary lists those as resolved and
+resolves their threads.
 
-A finding in the diff that the last review did not make, and that is more
-than 3 lines from every line changed since, is held back. The summary
-lists it folded away, with no inline comment. It counts toward nothing,
-the score, the status and the approval included. A file where one of the
-last review's findings went unreported is spared, since that finding may
-be back under a new title.
+A finding that the review neither reports again nor names stays open.
+The summary lists it among the findings as not rechecked since the head
+that a review last reported it at. It counts toward the score, the
+status and the approval, and the next re-review is asked about it again.
+
+Some findings in the diff are ones that the last review did not make. If
+such a finding is more than 3 lines from every line changed since, it is
+held back. The summary lists it folded away, with no inline comment. It
+counts toward nothing. That includes the score, the status and the
+approval. A file where one of the last review's findings went unreported
+is spared, since that finding can be back under a new title.
 
 ### The agent
 
-`agent` bounds a review's tool loop, and a follow-up's:
+`agent` bounds a review's tool loop, in which the model calls tools step
+by step, and a follow-up's:
 
-| Key              | Default              | What                                                                                                                                            |
-| ---------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `steps`          | 60                   | model calls the loop may make                                                                                                                   |
-| `output`         | 32768                | bytes one tool call may return; a command's output cut to it is kept whole beside the checkout                                                  |
-| `tokens`         | 6,000,000            | prompt and output tokens the review, or each part of a split one, may spend across its steps                                                    |
-| `prompt`         | 64000, at least 8000 | tokens of the prompt a review and a follow-up start from; the [confidence score](/confidence/#the-score) prompt budget defaults to 96000 tokens |
-| `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                                                                       |
-| `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                                                                             |
-| `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                                                                         |
-| `fetches`        | 8                    | repositories `fetch_repo` may fetch, and images `fetch_oci` may inspect, for a review; a split review's parts share them                        |
+| Key              | Default              | What                                                                                                                                                 |
+| ---------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `steps`          | 60                   | model calls that the loop can make                                                                                                                   |
+| `output`         | 32768                | bytes that one tool call can return. A command's output cut to it is kept whole beside the checkout                                                  |
+| `tokens`         | 6,000,000            | prompt and output tokens that the review, or each part of a split one, can spend across its steps                                                    |
+| `prompt`         | 64000, at least 8000 | tokens of the prompt that a review and a follow-up start from. The [confidence score](/confidence/#the-score) prompt budget defaults to 96000 tokens |
+| `parts`          | 8                    | the most parts that a review over 64 KiB of diff is split into. A value of 1 never splits                                                            |
+| `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                                                                                  |
+| `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                                                                              |
+| `fetches`        | 8                    | repositories that `fetch_repo` can fetch, and images that `fetch_oci` can inspect, for a review. A split review's parts share them                   |
 
-- **Submitting:** the last step is told to submit what the review has
-  found. So is any step once the review has spent nine tenths of its
-  `tokens`, or once its `timeout` is close. The `timeout` is close when
-  the time left is no more than twice the slowest step's answer. That
-  margin is at least two minutes, or a quarter of the time the loop was
-  given when that is less. For a part of a split review, the time the loop
-  was given can be under its `timeout`.
+- The last step is told to submit what the review found. So is any step
+  after the review spends nine tenths of its `tokens`, or once its
+  `timeout` is close. The `timeout` is close when the time left is no
+  more than twice the slowest step's answer. That margin is at least two
+  minutes, or a quarter of the time the loop was given when that is
+  less. For a part of a split review, the time the loop was given can be
+  under its `timeout`.
 
-  A step told to submit can fail to do so because the submission was
-  rejected, it answered in prose, or it called another tool, which is
-  refused. Such a step is told again, up to twice, so the steps spent
-  reading are not lost to one slip at the end. A review submitted this way
-  says in its summary that it may not cover all it meant to check.
+  A step told to submit can fail to do so in three ways. The submission
+  is rejected, the step answers in prose, or the step calls another
+  tool, which is refused. Such a step is told again, up to twice, so the steps spent
+  reading are not lost to one slip at the end. A review submitted this
+  way says in its summary that it possibly did not cover all it meant to
+  examine.
+
   `steps: 1` is the cheapest review. Its one step works over the same
-  prompt and must submit the findings, and the review is not taken as cut
-  short.
+  prompt and must submit the findings, and the review is not taken as
+  cut short.
 
-- **Evidence:** a finding must be on a file the review has read with
-  `read_file` or `read_diff`, in this review or in the conversation it
-  carries on; a `grep` match is not a read. A submission with a finding on
-  a file the review never read is sent back, naming the files, so the
-  review reads each around the finding's lines and confirms it or leaves
-  it out. On a step told to submit, where it can read nothing more, the
-  submission is taken, and such findings are withheld: not posted, counted
-  or scored, but named in the summary's notes. A submission is sent back
-  once per set of files read: one submitted again with nothing more read
-  is taken as a step told to submit would be. The system prompt tells the
-  review all this. A review of one step, which reads nothing, is not held
-  to this.
-- **Output per step:** a step may produce 16384 tokens, and a model
-  reasoning at a high [`review.effort`](/models/#effort) can spend them
-  all before it calls a tool. Such a step is told to go on rather than to
-  submit, up to twice in a row. A third in a row is taken as an answer in
-  prose.
-- **The prompt** holds the system prompt, the pull request, as much of the
+- A finding must be on a file that the review read with `read_file` or
+  `read_diff`. That read can be in this review or in the conversation
+  that it carries on. A `grep` match is not a read. A submission with a
+  finding on a file that the review never read is sent back, with the
+  files named. The review then reads each file around the finding's
+  lines. It makes sure that the finding holds, or it leaves it out.
+
+  On a step told to submit, the review can read nothing more. There, the
+  submission is taken, and such findings are withheld: not posted,
+  counted or scored, but named in the summary's notes. A submission is
+  sent back once per set of files read. One submitted again with nothing
+  more read is taken, as on a step told to submit. The system prompt
+  tells the review all this. A review of one step, which reads nothing,
+  is not held to this.
+
+- A step can produce 16384 tokens of output. A model that reasons at a
+  high [`review.effort`](/models/#effort) can spend them all before it
+  calls a tool. Such a step is told to go on rather than to submit, up
+  to twice in a row. A third in a row is taken as an answer in prose.
+- The prompt holds the system prompt, the pull request, as much of the
   diff as fits, whole files only, and then the context. A re-review's
-  earlier findings and notes take what the diff leaves, and the diff gives
-  way to them up to a quarter of the prompt. A file left out is named in
-  the review's notes. The agent of a review or a follow-up reads that
-  file's part of the diff with `read_diff`, which numbers each line as the
-  head has it. The scorer has no tools and never sees it.
+  earlier findings and notes take what the diff leaves, and the diff
+  gives way to them up to a quarter of the prompt. A file left out is
+  named in the review's notes. The agent of a review or a follow-up
+  reads that file's part of the diff with `read_diff`. That tool numbers
+  each line as the head has it. The scorer has no tools and never sees
+  that part of the diff.
 
-  The list of changed files marks each one the change adds, deletes or
-  renames. A review's findings may point at any line of the pull request's
-  diff, in a file left out as well as in one shown. A model with a larger
-  context window can take a larger prompt, so a large file's diff can be in
-  it from the start instead of read with `read_diff`. Every step sends the
-  prompt again and counts it against `tokens`. A larger `prompt` leaves the
-  agent fewer steps unless `tokens` is raised with it, and a prompt near
-  `tokens` leaves it none.
+  The list of changed files marks each one that the change adds, deletes
+  or renames. A review's findings can point at any line of the pull
+  request's diff, in a file left out as well as in one shown.
 
-- **Large reviews:** a review whose diff is over 64 KiB is split into parts
-  of about 64 KiB each, at most `parts` of them. The size counts only the
-  files no `ignore` glob matches, and the cuts fall at directory boundaries
-  where they can. Each part is reviewed by an agent of its own with the
-  bounds above, from its own files' diff and the context built from it. It
-  reports findings only on its own files, and can still read any other file.
+  A model with a larger context window can take a larger prompt. A large
+  file's diff can then be in the prompt from the start, instead of read
+  with `read_diff`. Every step sends the prompt again and counts it
+  against `tokens`. A larger `prompt` leaves the agent fewer steps
+  unless `tokens` is raised with it. A prompt near `tokens` leaves it
+  none.
+
+- A large review, one whose diff is over 64 KiB, is split into parts of
+  about 64 KiB each, at most `parts` of them. The size counts only the
+  files that no `ignore` glob matches, and the cuts fall at directory
+  boundaries where they can. Each part has an agent of its own, with the
+  bounds above. That agent reviews the part from the diff of its own
+  files and the context built from that diff. It reports findings only
+  on its own files, and can still read any other file.
 
   As many parts run at once as the review model has
-  [`concurrency`](#accounts) slots free when the review starts, counting
-  its own and those no other review holds. The rest run as those end. The
-  parts' tool calls run one at a time. They are published as one review.
-  One more call to the review model writes its summary from theirs. That
-  call is tried again and falls back as a review's step is
-  ([retries](/models/#retries)), and counts towards `tokensPerMonth`.
-  When it still fails, or the cap is reached, the summary joins the parts'
-  own.
+  [`concurrency`](#accounts) slots free when the review starts. The free
+  slots that count are the review's own and those that no other review
+  holds. The rest run as those end. The parts' tool calls run one at a
+  time. The parts are published as one review.
 
-  A part that ends before it submits leaves its files unreviewed, and the
-  summary names them. The review counts as incomplete for the commit
-  status and approves nothing, withdrawing an approval given before. No
-  later review builds on it. An incremental re-review splits only the diff
-  since the last review, when that is over 64 KiB. The token grant and the
-  Job deadline are sized for the parts from the pull request's size as the
-  forge reports it. The deadline is sized for running the parts in the
-  slots taken.
+  One more call to the review model writes the review's summary from the
+  parts' summaries. That call is tried again and falls back as a
+  review's step does ([retries](/models/#retries)), and it counts toward
+  `tokensPerMonth`. When it still fails, or the cap is reached, the
+  summary joins the parts' own.
 
-- **Commands:** the runner's `-tools` image offers `curl`, `find`, `gh`,
-  `grep` and `jq`. The [`tools`](/repository-config/#repository-tools) of
-  a repository's `.kritika.yaml`, read from the merge base, add packages
-  of the aqua registry for that repository, such as `helm` or `rg`, each
-  offering the commands the registry names for it. On a custom image, the
-  five default commands are offered when found on `PATH`, and a
-  repository's tools as on any image. Tool install and command resolution
-  failures also appear in the summary.
+  A part that ends before it submits leaves its files unreviewed, and
+  the summary names them. The review counts as incomplete for the commit
+  status and approves nothing. It also withdraws an approval given
+  before. No later review builds on it.
+
+  An incremental re-review splits only the diff since the last review,
+  when that is over 64 KiB. The token grant and the Job deadline are
+  sized for the parts from the pull request's size as the forge reports
+  it. The deadline is sized for running the parts in the slots taken.
+
+- The commands that the runner's `-tools` image offers are `curl`,
+  `find`, `gh`, `grep` and `jq`. The
+  [`tools`](/repository-config/#repository-tools) of a repository's
+  `.kritika.yaml` add packages of the aqua registry for that repository,
+  such as `helm` or `rg`. That file is read from the merge base. Each
+  package offers the commands that the registry names for it. On a
+  custom image, the five default commands are offered when found on
+  `PATH`, and a repository's tools are offered as on any image. Tool
+  install and command resolution failures also appear in the summary.
 
   The agent is told to use `gh` for GitHub. `gh` signs in with a token
   minted for the run, which can only read the repository under review and
@@ -751,45 +786,52 @@ be back under a new title.
 
 ### Configuration sources
 
-App and provider declarations, authentication settings, review policy, and
-embedding settings come from the file. For these sections, environment variables
-supply values only where the file explicitly references them, such as
+App and provider declarations, authentication configuration, review
+policy, and embedding configuration come from the file. For these
+sections, environment variables supply values only where the file
+explicitly references them, such as
 `auth.admin.password: { env: ADMIN_PASSWORD }` or
 `providers.openrouter.apiKey: { env: OPENROUTER_API_KEY }`.
 
 ### Which repositories run
 
-kritika registers every repository each connection reaches, once the
-configuration is applied and again on every poll. The Repositories page's
-"Resync from" button, which names the account's forge, does the same at
-once. Each of these also
-disables the repositories the connection no longer reaches, such as one
-deleted, renamed or transferred on the forge. A listing that fails or
-comes back empty disables nothing. Newly discovered repositories start
-**off**, even when the root sets `enabled: true`. Turn them on from the Repositories page to begin
-polling, indexing and reviews. Resyncs and webhooks preserve that choice.
-Existing repositories keep their current state. A rename webhook within
-the same account preserves enablement. A transfer to another account
-requires that account's admin to enable the repository. If a rename
-webhook is missed, a sync cannot link the old and new names, so the new
-name waits for enablement. Whether one runs is decided in this order:
+kritika registers every repository that each connection reaches, once
+the configuration is applied and again on every poll. The Repositories
+page's "Resync from" button, which names the account's forge, does the
+same at once. Each of these also disables the repositories that the
+connection no longer reaches, such as one deleted, renamed or
+transferred on the forge. A listing that fails or comes back empty
+disables nothing.
 
-1. an archived repository never runs: unarchive it on the forge, then
-   resync, then turn it on in the UI if it is off;
-2. a newly discovered repository stays off until an admin turns it on;
-   one an admin turned on or off on the Repositories page runs as they chose;
-3. a fork does not run, since an account can reach many forks it never
-   meant to review;
-4. any other runs as the root's `enabled` says: on unless it sets
-   `enabled: false`.
+Newly discovered repositories start turned off, even when the root sets
+`enabled: true`. To begin polling, indexing and reviews, turn them on
+from the Repositories page. Resyncs and webhooks preserve that choice.
+Existing repositories keep their current state.
 
-The dashboard owns a repository's on or off. The root's `enabled` applies
-only to existing repositories without a dashboard choice.
-A repository that is off, that its connection no longer reaches, or whose
-account no connection serves is neither reviewed, polled nor indexed. Its
-index is dropped once it has been off for `KRITIKA_INDEX_GRACE`, counted from the
-leader's hourly sweep that first finds it off. A repository that runs
-again before then keeps its index.
+A rename webhook within the same account preserves enablement. A
+transfer to another account requires that account's admin to enable the
+repository. If a rename webhook is missed, a sync cannot link the old
+and new names, so the new name waits for enablement.
+
+Whether a repository runs is decided in this order:
+
+1. An archived repository never runs. To run it, unarchive it on the
+   forge. Then resync. If it is off, turn it on in the UI.
+2. A newly discovered repository stays off until an admin turns it on. A
+   repository that an admin turned on or off on the Repositories page
+   runs as they chose.
+3. A fork does not run, since an account can reach many forks that it
+   never meant to review.
+4. Any other repository runs as the root's `enabled` says: on unless it
+   sets `enabled: false`.
+
+The dashboard owns whether a repository is on or off. The root's
+`enabled` applies only to existing repositories without a dashboard
+choice. A repository that is off, that its connection no longer reaches,
+or whose account no connection serves is neither reviewed, polled nor
+indexed. Its index is dropped after it is off for `KRITIKA_INDEX_GRACE`,
+counted from the leader's hourly sweep that first finds it off. A
+repository that runs again before then keeps its index.
 
 ## `accounts`
 
@@ -811,7 +853,7 @@ limits, and an account's entry replaces them key by key:
 
 | Key              | Default   | What                                                                                                                                                       |
 | ---------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `concurrency`    | 2         | how many model calls it runs at once; index runs hold all but one while they embed, so a review's similar-code lookup has a slot unless `concurrency` is 1 |
+| `concurrency`    | 2         | how many model calls it runs at once. Index runs hold all but one while they embed, so a review's similar-code lookup has a slot unless `concurrency` is 1 |
 | `reviewsPerDay`  | unlimited | reviews in a calendar day                                                                                                                                  |
 | `tokensPerMonth` | unlimited | input and output tokens in a calendar month                                                                                                                |
 
@@ -824,15 +866,16 @@ it as not served.
 
 ## `egress`
 
-`egress` is what runner pods may reach through kritika's gateway beyond
-the connections' forges. Those forges are `github.com` and
-`api.github.com` for an app, and the instance's host for a Forgejo,
-GitLab or Gitea connection. `allow` and `deny` list hosts, IP addresses
-and CIDRs, and `credentials` names hosts the gateway adds a token to.
-Once `gatewayCacheDir` is set, the gateway keeps the downloads a
-repository's lock pins there.
+`egress` is what runner pods can reach through kritika's gateway, a
+forward proxy, beyond the connections' forges. Those forges are
+`github.com` and `api.github.com` for an app, and the instance's host
+for a Forgejo, GitLab or Gitea connection. `allow` and `deny` list
+hosts, IP addresses and CIDRs, and `credentials` names hosts that the
+gateway adds a token to. Once `gatewayCacheDir` is set, the gateway
+keeps the downloads that a repository's lock pins there.
 [Security](/security/#the-egress-gateway) describes them with the
-gateway, and the cache with [runner tools](/security/#the-gateways-download-cache).
+gateway, and the cache with [runner
+tools](/security/#the-gateways-download-cache).
 
 ```yaml
 # The chart's gatewayCache.enabled sets this one.
@@ -846,41 +889,42 @@ egress:
 
 ## How kritika runs
 
-The following keys live at the file's root unless they start with `runner.`.
-Under Helm, root keys go under `config`, while runner settings go under the
-chart's top-level `runner`. Operational environment variables remain supported.
+The following keys live at the file's root unless they start with
+`runner.`. Under Helm, root keys go under `config`, while runner
+configuration goes under the chart's top-level `runner`. Operational
+environment variables remain supported.
 
-| File key                       | Environment variable                        | What                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pollInterval`                 | `KRITIKA_POLL_INTERVAL`                     | how often the leader lists each app's open pull requests, its backstop for missed webhooks, and once as it is elected; `0s` turns it off; 10m unless set                                                                                                                                                                                     |
-| `pollLookback`                 | `KRITIKA_POLL_LOOKBACK`                     | how far back a first or long-idle poll looks; 24h unless set                                                                                                                                                                                                                                                                                 |
-| `onboardWindow`                | `KRITIKA_ONBOARD_WINDOW`                    | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                                                                                                                                                                                                                      |
-| `indexGrace`                   | `KRITIKA_INDEX_GRACE`                       | how long the index of a repository that stopped running is kept; 720h unless set                                                                                                                                                                                                                                                             |
-| `transcriptRetention`          | `KRITIKA_TRANSCRIPT_RETENTION`              | how long a review's full model transcript is kept, with the hosts the gateway refused its runs and its settled model-call records, at least 24h; 720h unless set                                                                                                                                                                             |
-| `diffRetention`                | `KRITIKA_DIFF_RETENTION`                    | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set                                                                                                                                                                                                      |
-| `reviewWorkers`                | `KRITIKA_REVIEW_WORKERS`                    | jobs one replica runs at once in each of the separate review and follow-up queues; 2 per queue unless set                                                                                                                                                                                                                                    |
-| `threadWorkers`                | `KRITIKA_THREAD_WORKERS`                    | finding resolution/restoration jobs one replica runs at once, independently of model follow-ups; 1 unless set                                                                                                                                                                                                                                |
-| `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                                                                                                                            |
-| `leaderRetryInterval`          | `KRITIKA_LEADER_RETRY_INTERVAL`             | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                                                                                                                                           |
-| `gatewayTokenTtl`              | `KRITIKA_GATEWAY_TOKEN_TTL`                 | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                                                                                                                                     |
-| `gatewayCacheDir`              | `KRITIKA_GATEWAY_CACHE_DIR`                 | where the gateway keeps downloads, in a directory of its own. It keeps what a repository's lock pins, from any host the egress rules allow. Nothing is kept unless set; the chart's `gatewayCache.enabled` renders it ([the gateway's cache](/security/#the-gateways-download-cache))                                                        |
-| `gatewayCacheMaxSize`          | `KRITIKA_GATEWAY_CACHE_MAX_SIZE`            | filesystem backend only: the most the gateway's cache keeps, in bytes or with `Ki`, `Mi`, `Gi` or `Ti`, the least recently used downloads going first. Apart from that, it is the most its fetches under way may write; 2Gi unless set                                                                                                       |
-| `gatewayCacheStorage`          | `KRITIKA_GATEWAY_CACHE_STORAGE`             | `filesystem` (default) or `s3`; both require a private `gatewayCacheDir`, used for completed local fills                                                                                                                                                                                                                                     |
-| `gatewayCacheMaxEntrySize`     | `KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE`      | largest eligible download; 256Mi by default, at most 5Gi for S3                                                                                                                                                                                                                                                                              |
-| `gatewayCacheS3Endpoint`       | `KRITIKA_GATEWAY_CACHE_S3_ENDPOINT`         | S3 API origin including scheme and optional port; required for S3                                                                                                                                                                                                                                                                            |
-| `gatewayCacheS3Region`         | `KRITIKA_GATEWAY_CACHE_S3_REGION`           | signing region; required for S3                                                                                                                                                                                                                                                                                                              |
-| `gatewayCacheS3Bucket`         | `KRITIKA_GATEWAY_CACHE_S3_BUCKET`           | existing bucket; required for S3                                                                                                                                                                                                                                                                                                             |
-| `gatewayCacheS3Prefix`         | `KRITIKA_GATEWAY_CACHE_S3_PREFIX`           | instance-specific object prefix; `gateway/` by default                                                                                                                                                                                                                                                                                       |
-| `gatewayCacheS3ForcePathStyle` | `KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE` | use path-style bucket addressing; true by default                                                                                                                                                                                                                                                                                            |
-| `aquaRegistryUrl`              | `KRITIKA_AQUA_REGISTRY_URL`                 | the aqua registry the gateway keeps for runners to resolve a repository's `tools` against; aqua-registry's `registry.yaml` on its main branch unless set. A release's tag, such as `https://raw.githubusercontent.com/aquaproj/aqua-registry/v4.578.0/registry.yaml`, holds it still, and a mirror serves a cluster that cannot reach GitHub |
-| `aquaRegistryRefresh`          | `KRITIKA_AQUA_REGISTRY_REFRESH`             | how often the gateway asks for the registry again, conditionally, keeping the last one that parsed when a fetch fails; 1h unless set                                                                                                                                                                                                         |
-| `logLevel`                     | `KRITIKA_LOG_LEVEL`                         | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                                                                                                                                        |
-| `logFormat`                    | `KRITIKA_LOG_FORMAT`                        | `json` or `text`; `json` unless set                                                                                                                                                                                                                                                                                                          |
-| `runner.jobTemplate`           | `KRITIKA_RUNNER_JOB_TEMPLATE`               | what kritika sets on every runner Job, as a Job template spells it                                                                                                                                                                                                                                                                           |
-| `runner.podTemplate`           | `KRITIKA_RUNNER_POD_TEMPLATE`               | what kritika sets on every runner pod, as a pod template spells it                                                                                                                                                                                                                                                                           |
+| File key                       | Environment variable                        | What                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pollInterval`                 | `KRITIKA_POLL_INTERVAL`                     | how often the leader lists each app's open pull requests, its backstop for missed webhooks, and once as it is elected. `0s` turns it off. 10m unless set                                                                                                                                                                                          |
+| `pollLookback`                 | `KRITIKA_POLL_LOOKBACK`                     | how far back a first or long-idle poll looks. 24h unless set                                                                                                                                                                                                                                                                                      |
+| `onboardWindow`                | `KRITIKA_ONBOARD_WINDOW`                    | how many onboarding index jobs the leader keeps queued or running at once. 4 unless set                                                                                                                                                                                                                                                           |
+| `indexGrace`                   | `KRITIKA_INDEX_GRACE`                       | how long the index of a repository that stopped running is kept. 720h unless set                                                                                                                                                                                                                                                                  |
+| `transcriptRetention`          | `KRITIKA_TRANSCRIPT_RETENTION`              | how long a review's full model transcript is kept, with the hosts that the gateway refused its runs and its settled model-call records. At least 24h. 720h unless set                                                                                                                                                                             |
+| `diffRetention`                | `KRITIKA_DIFF_RETENTION`                    | how long a review keeps the diff that it was made from, the context that it read and the repository files that it named. At least 24h. 720h unless set                                                                                                                                                                                            |
+| `reviewWorkers`                | `KRITIKA_REVIEW_WORKERS`                    | jobs that one replica runs at once in each of the separate review and follow-up queues. 2 per queue unless set                                                                                                                                                                                                                                    |
+| `threadWorkers`                | `KRITIKA_THREAD_WORKERS`                    | finding resolution/restoration jobs that one replica runs at once, independently of model follow-ups. 1 unless set                                                                                                                                                                                                                                |
+| `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs that one replica runs at once. 1 unless set                                                                                                                                                                                                                                                                                            |
+| `leaderRetryInterval`          | `KRITIKA_LEADER_RETRY_INTERVAL`             | how often a replica retries the leader lock, and the holder makes sure that it still has it. 15s unless set                                                                                                                                                                                                                                       |
+| `gatewayTokenTtl`              | `KRITIKA_GATEWAY_TOKEN_TTL`                 | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first. 1h unless set                                                                                                                                                                                                                          |
+| `gatewayCacheDir`              | `KRITIKA_GATEWAY_CACHE_DIR`                 | where the gateway keeps downloads, in a directory of its own. It keeps what a repository's lock pins, from any host the egress rules allow. Nothing is kept unless set. The chart's `gatewayCache.enabled` renders it ([the gateway's cache](/security/#the-gateways-download-cache))                                                             |
+| `gatewayCacheMaxSize`          | `KRITIKA_GATEWAY_CACHE_MAX_SIZE`            | filesystem backend only: the most that the gateway's cache keeps, in bytes or with `Ki`, `Mi`, `Gi` or `Ti`. The least recently used downloads go first. Apart from that, it is the most that its fetches under way can write. 2Gi unless set                                                                                                     |
+| `gatewayCacheStorage`          | `KRITIKA_GATEWAY_CACHE_STORAGE`             | `filesystem` (default) or `s3`. Both require a private `gatewayCacheDir`, used for completed local fills                                                                                                                                                                                                                                          |
+| `gatewayCacheMaxEntrySize`     | `KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE`      | largest eligible download. 256Mi by default, at most 5Gi for S3                                                                                                                                                                                                                                                                                   |
+| `gatewayCacheS3Endpoint`       | `KRITIKA_GATEWAY_CACHE_S3_ENDPOINT`         | S3 API origin including scheme and optional port. Required for S3                                                                                                                                                                                                                                                                                 |
+| `gatewayCacheS3Region`         | `KRITIKA_GATEWAY_CACHE_S3_REGION`           | signing region. Required for S3                                                                                                                                                                                                                                                                                                                   |
+| `gatewayCacheS3Bucket`         | `KRITIKA_GATEWAY_CACHE_S3_BUCKET`           | existing bucket. Required for S3                                                                                                                                                                                                                                                                                                                  |
+| `gatewayCacheS3Prefix`         | `KRITIKA_GATEWAY_CACHE_S3_PREFIX`           | instance-specific object prefix. `gateway/` by default                                                                                                                                                                                                                                                                                            |
+| `gatewayCacheS3ForcePathStyle` | `KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE` | use path-style bucket addressing. True by default                                                                                                                                                                                                                                                                                                 |
+| `aquaRegistryUrl`              | `KRITIKA_AQUA_REGISTRY_URL`                 | the aqua registry that the gateway keeps for runners to resolve a repository's `tools` against. aqua-registry's `registry.yaml` on its main branch unless set. A release's tag, such as `https://raw.githubusercontent.com/aquaproj/aqua-registry/v4.578.0/registry.yaml`, holds it still, and a mirror serves a cluster that cannot reach GitHub |
+| `aquaRegistryRefresh`          | `KRITIKA_AQUA_REGISTRY_REFRESH`             | how often the gateway asks for the registry again, conditionally. When a fetch fails, the gateway keeps the last one that parsed. 1h unless set                                                                                                                                                                                                   |
+| `logLevel`                     | `KRITIKA_LOG_LEVEL`                         | `debug`, `info`, `warn` or `error`. `info` unless set                                                                                                                                                                                                                                                                                             |
+| `logFormat`                    | `KRITIKA_LOG_FORMAT`                        | `json` or `text`. `json` unless set                                                                                                                                                                                                                                                                                                               |
+| `runner.jobTemplate`           | `KRITIKA_RUNNER_JOB_TEMPLATE`               | what kritika sets on every runner Job, as a Job template spells it                                                                                                                                                                                                                                                                                |
+| `runner.podTemplate`           | `KRITIKA_RUNNER_POD_TEMPLATE`               | what kritika sets on every runner pod, as a pod template spells it                                                                                                                                                                                                                                                                                |
 
-A transcript may contain repository content the agent read, and every
-member of its account can read it. A review past the diff retention keeps
+A transcript can contain repository content that the agent read, and
+every member of its account can read it. A review past the diff retention keeps
 its findings, summary and what it read by name and size. The dashboard's
 diff and raw views say the bodies were not kept.
 
@@ -914,20 +958,23 @@ this release's `-tools` image unless it names one.
 
 ### Thread workers
 
-Finding resolution/restoration jobs use a dedicated `thread` queue, with one
-worker per replica by default. They call the forge and update the database;
-they do not launch runner pods or acquire model slots. The default reserves
-capacity during model follow-ups, but permits less parallelism than two idle
-follow-up workers. Increase `threadWorkers` if queue-delay metrics show
-it is needed. Database connections and forge API limits remain shared with
-reviews, so raising worker counts does not guarantee higher throughput.
+Finding resolution/restoration jobs use a dedicated `thread` queue, with
+one worker per replica by default. They call the forge and update the
+database. They do not launch runner pods or acquire model slots. The
+default reserves capacity during model follow-ups, but permits less
+parallelism than two idle follow-up workers. If queue-delay metrics show
+that it is needed, increase `threadWorkers`. Database connections and
+forge API limits remain shared with reviews, so raising worker counts
+does not guarantee higher throughput.
 
-Other file settings are `webUrl` (required public URL), `addr`, `metricsAddr`,
-`gatewayAddr`, `gatewayUrl`, `executor`, `databaseAppRole` and
-`databaseRunnerRole`. The chart derives all except `webUrl` from deployment
-values. The `runner` section also accepts `serviceAccount`, `databaseSecret`
-and `databaseSecretKey`; the chart derives these from its runner and
-database values. The runner image is
-`runner.podTemplate.spec.containers[0].image`. How long a finished Job is
-kept is `runner.jobTemplate.spec.ttlSecondsAfterFinished`. Database Secret
-names are references, not DSNs.
+Other keys in the file are `webUrl` (required public URL), `addr`,
+`metricsAddr`, `gatewayAddr`, `gatewayUrl`, `executor`,
+`databaseAppRole` and `databaseRunnerRole`. The chart derives all except
+`webUrl` from deployment values. The `runner` section also accepts
+`serviceAccount`, `databaseSecret` and `databaseSecretKey`. The chart
+derives these from its runner and database values.
+
+The runner image is `runner.podTemplate.spec.containers[0].image`. How
+long a finished Job is kept is
+`runner.jobTemplate.spec.ttlSecondsAfterFinished`. Database Secret names
+are references, not DSNs.

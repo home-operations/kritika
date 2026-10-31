@@ -1,12 +1,13 @@
 // Package egress is the worker's forward proxy: the one route out of the
 // cluster for runner pods, which reach it through HTTPS_PROXY and have no
-// other egress. A CONNECT to an allowed host on 443 is tunnelled without
-// inspection, which is how git, the model SDKs and curl reach TLS
-// endpoints; a plain http:// request to an allowed host is upgraded to
-// HTTPS here, with a configured credential added, so a runner can use an
-// API at a connection's rate limit without holding a token. Every other
-// destination is refused by hostname. The gateway admits a request to the
-// proxy by the runner's run token first; the proxy trusts what reaches it.
+// other egress. A CONNECT to an allowed host on 443 is tunneled without
+// inspection. That is how git, the model SDKs, and curl reach TLS endpoints.
+//
+// A plain http:// request to an allowed host is upgraded to HTTPS here, with
+// a configured credential added. So a runner can use an API at a connection's
+// rate limit without holding a token. Every other destination is refused by
+// hostname. The gateway admits a request to the proxy by the runner's run
+// token first. The proxy trusts what reaches it.
 package egress
 
 import (
@@ -38,14 +39,14 @@ const (
 
 // Proxy is the forward proxy handler.
 type Proxy struct {
-	// Rules returns the current rules; it is called per request.
+	// Rules returns the current rules. It is called per request.
 	Rules func() egresspolicy.Rules
-	// Resolver resolves a destination's name; nil means net.DefaultResolver.
+	// Resolver resolves a destination's name. nil means net.DefaultResolver.
 	Resolver Resolver
-	// Dial opens the upstream connection to an address the rules admit;
+	// Dial opens the upstream connection to an address the rules admit.
 	// nil means a net.Dialer with connectTimeout.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
-	// Transport sends upgraded requests; nil dials through the rules.
+	// Transport sends upgraded requests. nil dials through the rules.
 	Transport http.RoundTripper
 	// Cache, when set, keeps the downloads it admits and answers the same
 	// request again from what it kept.
@@ -54,7 +55,7 @@ type Proxy struct {
 	// http) and outcome.
 	Observe func(kind, outcome string)
 	// Refused, if set, is called once per refused request, before the
-	// refusal is answered, with the request's context, its kind, the
+	// refusal is answered. It gets the request's context, its kind, the
 	// destination as the client asked for it, host:port, and the reason.
 	Refused func(ctx context.Context, kind, host, reason string)
 	Logger  *slog.Logger
@@ -76,12 +77,12 @@ type refusal struct {
 
 func (r *refusal) Error() string { return "egress: " + r.host + ": " + r.reason }
 
-// dialContext dials addr, a host:port, as the rules admit: a name passes
-// the host rules and is resolved once, the addresses that pass the
-// address rules are tried in turn, and the one that connects is the one
-// that was checked, so a name cannot be re-resolved to somewhere else in
-// between. It is the transport dialer of upgraded requests and the dial
-// of a CONNECT.
+// dialContext dials addr, a host:port, as the rules admit. A name passes
+// the host rules and is resolved once. The addresses that pass the address
+// rules are tried in turn. The address that connects is one that passed
+// those rules, so a name cannot be re-resolved to somewhere else in between.
+// dialContext is the transport dialer of upgraded requests and the dial of
+// a CONNECT.
 func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -135,7 +136,7 @@ func (p *Proxy) refuse(ctx context.Context, w http.ResponseWriter, kind, host, r
 
 const (
 	connectTimeout = 15 * time.Second
-	// tunnelIdle ends a CONNECT tunnel neither side has used for this long.
+	// tunnelIdle ends a CONNECT tunnel that neither side used for this long.
 	tunnelIdle = 5 * time.Minute
 	// upgradeTimeout bounds one upgraded request, response body included.
 	upgradeTimeout = 2 * time.Minute
@@ -195,7 +196,7 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Written to the connection itself: a 200 through the ResponseWriter
-	// would carry a Transfer-Encoding, which a CONNECT response must not.
+	// carries a Transfer-Encoding, which a CONNECT response must not.
 	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		_ = client.Close()
 		p.observe("connect", OutcomeError)
@@ -243,7 +244,7 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 }
 
 // upgrade forwards an absolute-URI http:// request to the same host over
-// HTTPS, adding the host's credential.
+// HTTPS and adds the host's credential.
 func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	if !r.URL.IsAbs() || r.URL.Scheme != plainScheme {
 		p.observe("http", OutcomeRefused)
@@ -322,7 +323,8 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// httpTransport reuses connections while checking new destinations against the rules.
+// httpTransport reuses connections and makes sure that the rules admit new
+// destinations.
 func (p *Proxy) httpTransport() http.RoundTripper {
 	p.transportOnce.Do(func() {
 		if p.transport = p.Transport; p.transport != nil {

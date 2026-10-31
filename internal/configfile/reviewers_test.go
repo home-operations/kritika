@@ -9,8 +9,8 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// reviewersProvider is minimal with an openai provider p a reviewer's model
-// may name.
+// reviewersProvider is minimal with an openai provider p that a reviewer's
+// model can name.
 const reviewersProvider = "providers:\n  p:\n    type: openai\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n"
 
 func TestAgentsResolve(t *testing.T) {

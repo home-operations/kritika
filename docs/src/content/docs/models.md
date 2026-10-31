@@ -15,8 +15,8 @@ review:
   model: openrouter/vendor/large-model
 ```
 
-Replace `vendor/large-model` with the model you want to use. In Helm, put these
-settings under `config` and supply the key from a Secret as shown in [Setup](/setup/#deploy).
+Replace `vendor/large-model` with the model you want to use. In Helm, put this
+configuration under `config`. Supply the key from a Secret as shown in [Setup](/setup/#deploy).
 
 Everything else is optional:
 
@@ -38,8 +38,8 @@ Everything else is optional:
 | `apiKey`  | its key, required except for `chatgpt`, which uses a stored sign-in                                                                           |
 | `baseUrl` | its API's URL, the type's default unless set                                                                                                  |
 | `pricing` | the prices of a provider that reports no cost, keyed by model id or [floating alias](#floating-model-aliases) ([local models](#local-models)) |
-| `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries))                                             |
-| `headers` | headers sent with every request, keyed by name; each value is inline or a reference like `apiKey` ([headers](#headers))                       |
+| `retries` | how many more times a failed model step is tried, from 0 to 5, and 0 unless set ([retries](#retries))                                         |
+| `headers` | headers sent with every request, keyed by name. Each value is inline or a reference like `apiKey` ([headers](#headers))                       |
 
 Provider credentials never enter a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](/security/#the-model-endpoint)).
@@ -58,8 +58,8 @@ process. The warning names the requested model reference and the
 selected ID. This also covers fallbacks, repository overrides and new IDs
 selected by floating aliases.
 The APIs of `anthropic` and `openai` providers report no cost. At startup,
-kritika also warns for each model the configuration file sets on such a
-provider when `pricing` has no price under the model as written.
+kritika also warns for each model that the configuration file sets on such
+a provider. It warns when `pricing` has no price under the model as written.
 
 The dashboard labels these calls **Unpriced** and marks totals that
 contain them as incomplete. The summary footer does the same when
@@ -89,8 +89,8 @@ account's repositories runs on that key and the account pays for it:
 review: { model: org-1-key/vendor/large-model }
 ```
 
-A key's name may not be one the instance's providers use, and the
-instance's own settings may not name an account's key.
+A key's name cannot be one that the instance's providers use. The
+instance's own configuration cannot name an account's key.
 
 ### Headers
 
@@ -124,7 +124,7 @@ providers:
   - `Authorization`, `Host`, `Accept`, `Accept-Encoding`, `Content-Type`,
     `Content-Length`, `Content-Encoding`, `Transfer-Encoding` and
     `Connection`, which `apiKey`, the SDKs or Go's HTTP client set
-  - `X-Api-Key`, which would send a second key
+  - `X-Api-Key`, which will otherwise send a second key
   - `x-opencode-session` on a provider of type `opencode`, which sends
     its own
 - A `chatgpt` provider takes no `headers`, and the
@@ -133,27 +133,29 @@ providers:
 ### Floating model aliases
 
 Providers of type `anthropic`, `openai` and `chatgpt` accept
-`<provider>/~<family>-latest` in these settings:
+`<provider>/~<family>-latest` in these configuration keys:
 
 - `review.model` and `review.fallback`
 - `confidence.model` and `confidence.fallback`
 - the `model` and `fallback` of a `review.agents` entry
 
-For these provider types, the `~` makes the alias a kritika lookup. Model
-IDs without it, including a provider's own `*-latest` aliases, are sent
-unchanged.
+For these provider types, the `~` makes the alias a kritika lookup. kritika
+sends model IDs without it unchanged. This includes a provider's own
+`*-latest` aliases.
 
 OpenRouter resolves its own [aliases](#openrouter),
 `~<author>/<family>-latest`, on the server. OpenCode takes no floating
 aliases.
 
 The first kritika alias request after startup fetches the provider's catalog
-and waits for it; concurrent requests share one fetch. Each provider uses its
+and waits for it. Concurrent requests share one fetch. Each provider uses its
 catalog for five minutes. After that, the next alias request gets the
 cached catalog at once and starts a refresh. While refreshing fails,
 kritika keeps the cached catalog and tries again a minute later. There is
-no background polling. A failed first fetch, or a family with no model
-available, uses the usual [retries](#retries) and [fallback](#fallback).
+no background polling.
+
+A failed first fetch, or a family with no model available, uses the usual
+[retries](#retries) and [fallback](#fallback).
 
 A review or follow-up resolves its kritika aliases once, when its run starts.
 Every step of the run goes to the models they selected, whichever replica
@@ -163,7 +165,7 @@ when the run starts is resolved again at each step.
 
 Usage records the selected model ID. `pricing` prices that model under its
 own ID. If the model has no entry of its own, `pricing` uses the entry
-under the alias, so an entry keyed `~opus-latest` also prices models
+under the alias. So an entry keyed `~opus-latest` also prices models
 released later. With a [reasoning effort](#effort) set, an Anthropic alias
 skips models whose catalog entry lacks that level. The model an OpenAI or
 ChatGPT alias selects must support the level.
@@ -173,10 +175,10 @@ kritika's and OpenRouter's, apply to review and confidence calls. Use
 explicit IDs for embedding models, since an alias rollover does not
 trigger an index rebuild. Loading the configuration fails on:
 
-- an alias in `embedding.model`;
-- an `anthropic`, `openai` or `chatgpt` alias that is not `~<family>-latest`;
-- an `openrouter` alias that is not `~<author>/<family>-latest`;
-- an alias for an `opencode` provider.
+- An alias in `embedding.model`
+- An `anthropic`, `openai` or `chatgpt` alias that is not `~<family>-latest`
+- An `openrouter` alias that is not `~<author>/<family>-latest`
+- An alias for an `opencode` provider
 
 If you configured a ChatGPT alias such as `plan/sol-latest`, change it to
 `plan/~sol-latest` to keep kritika's floating selection.
@@ -192,12 +194,12 @@ review:
   fallback: openrouter/~google/gemini-flash-latest
 ```
 
-Kritika passes these aliases to OpenRouter without fetching a catalog or
+kritika passes these aliases to OpenRouter without fetching a catalog or
 pinning a version. OpenRouter chooses the model on each request, so the
 version can change between steps of a review. Usage records the concrete
 model returned by OpenRouter. A review carries on the last review's
-conversation while the alias is unchanged, even after OpenRouter has moved
-it to a newer model. The newer model has none of that conversation cached.
+conversation while the alias is unchanged, even after OpenRouter moves it
+to a newer model. The newer model has none of that conversation cached.
 
 #### Anthropic
 
@@ -218,10 +220,10 @@ confidence:
 ```
 
 An alias selects the first active model of the requested family in that
-API key's [model catalog](https://platform.claude.com/docs/en/api/models/list),
-using the catalog's `line` and `lifecycle` fields. The catalog lists newer
-models first. Release dates are not compared, since the catalog may not
-know one. The selection needs no mapping of model versions or families in
+API key's [model catalog](https://platform.claude.com/docs/en/api/models/list).
+It uses the catalog's `line` and `lifecycle` fields. The catalog lists newer
+models first. kritika does not compare release dates, since the catalog
+does not always know one. The selection needs no mapping of model versions or families in
 kritika. Models with no family, or marked deprecated or retired, are
 excluded.
 
@@ -283,7 +285,7 @@ kubectl -n kritika port-forward pod/POD_NAME 1455:1455 --address 127.0.0.1
 ```
 
 Leave the forward running. In another terminal, run the login command in
-the **same pod** and open the URL it prints in your browser:
+the same pod. Then open the URL that it prints in your browser:
 
 ```sh
 kubectl -n kritika exec -it POD_NAME -- /kritika chatgpt login plan
@@ -296,17 +298,18 @@ name before the provider name, for example:
 kubectl -n kritika exec -it POD_NAME -- /kritika chatgpt login github/acme plan
 ```
 
-The browser returns to `http://127.0.0.1:1455/auth/callback`; the forward
-delivers it to the command in the pod. Wait for the terminal to confirm
-the provider is connected, then stop the forward. No chart service or
+The browser returns to `http://127.0.0.1:1455/auth/callback`. The forward
+delivers it to the command in the pod. Wait for the terminal to say that
+the provider is connected. Then stop the forward. No chart service or
 ingress needs to expose the callback port. If the pod exits, repeat both
 commands against another pod.
 
 The command saves the registration and tokens in Postgres. Each replica
 reads the current access token and reuses it for up to a minute, or until
 it is due for renewal. Only the elected leader renews the rotating refresh
-token. The runner database role cannot read these credentials. A terminal
-refresh error clears the unusable tokens. Repeat the login command to
+token. The runner database role cannot read these credentials.
+
+A terminal refresh error clears the unusable tokens. Repeat the login command to
 reconnect with the saved client and host IDs. The client ID is saved as
 soon as the browser returns, so a first sign-in that fails after that is
 repeated as the same client. A returning sign-in must use the same ChatGPT
@@ -317,7 +320,9 @@ Use a concrete model ID to pin a version. A family alias such as
 version in that account's authenticated model catalog. Aliases compare
 numeric versions in `gpt-<version>-<family>` or `<family>-<version>` IDs
 and exclude preview suffixes. They work for any matching family without a
-mapping in kritika. The catalog follows the
+mapping in kritika.
+
+The catalog follows the
 [floating alias cache](#floating-model-aliases) and also refreshes when
 the access token changes. If no matching model is available, the request
 fails and a configured fallback can take over. Usage records the concrete
@@ -337,25 +342,29 @@ Calls report token usage and are marked as covered by a ChatGPT plan. The
 dashboard shows "ChatGPT plan" and "Included in plan" alongside their
 token counts. `pricing` is not accepted for this provider. API spend
 totals exclude subscription fees, but calls made through a paid fallback
-still contribute their API costs. The account's Usage page shows ChatGPT
-controls only when a ChatGPT provider is configured for that account. It
-can filter to plan calls and group token usage by hour or week. Review
-usage also totals ChatGPT calls and tokens by run. Usage outside a run,
-such as the embedding of a review's similar code, is labelled "Run not
-recorded". Token counts do not measure the
-percentage of a plan allowance consumed.
+still contribute their API costs.
+
+The account's Usage page shows ChatGPT controls only when a ChatGPT provider
+is configured for that account. It can filter to plan calls and group token
+usage by hour or week. Review usage also totals ChatGPT calls and tokens by
+run. Usage outside a run, such as the embedding of a review's similar code,
+is labeled "Run not recorded". Token counts do not measure the percentage of
+a plan allowance consumed.
 
 When OpenAI supplies quota headers or rate-limit events on an inference
-response, the dashboard shows the reported allowance windows, remaining
-percentages, reset times and observation time. Windows keep their upstream
-duration, which can differ from one hour. These snapshots update with model
-calls. A passed reset time is shown as awaiting an update, and connections
-without quota data show "Allowance data unavailable". The sign-in route may
-not expose this data. kritika does not estimate allowances from tokens.
+response, the dashboard shows the reported allowance windows. It also shows
+the remaining percentages, reset times and observation time. Windows keep
+their upstream duration, which can differ from one hour. These snapshots
+update with model calls.
+
+A passed reset time is shown as awaiting an update, and connections
+without quota data show "Allowance data unavailable". The sign-in route
+does not always expose this data. kritika does not estimate allowances
+from tokens.
 
 After a plan usage limit, each replica pauses that provider for 15 minutes and a
 configured fallback can take over. This delay is a retry pause, not a
-prediction of when the plan's allowance resets. Check your allowance in
+prediction of when the plan's allowance resets. See your allowance in
 [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage).
 
 #### Tradeoffs and limitations
@@ -363,25 +372,27 @@ prediction of when the plan's allowance resets. Check your allowance in
 A ChatGPT plan can cover review calls within its included allowance. Compared
 with API-key providers, consider these tradeoffs:
 
-- **Shared capacity.** Reviews share the plan's allowance with other apps
-  using that plan. Available capacity depends on the plan, model and task;
-  kritika does not receive a separate allowance. Check OpenAI's
+- Capacity is shared. Reviews share the plan's allowance with other apps
+  that use that plan. Available capacity depends on the plan, model and
+  task. kritika does not receive a separate allowance. See OpenAI's
   [current plan limits](https://learn.chatgpt.com/docs/pricing) and
   [app usage settings](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions#tracking-usage).
-- **Sign-in maintenance.** Initial setup requires a browser login. Tokens
+- Sign-in needs maintenance. Initial setup requires a browser login. Tokens
   refresh automatically, but a revoked or unusable session requires an
   admin to repeat the login command. API keys are simpler to provision for
   an unattended service.
-- **Model availability.** Only models in the signed-in account's catalog
-  are available. A family alias selects among those models; it cannot make
-  an unavailable model accessible. Other vendors need another provider.
-- **Request controls.** The plan route does not accept an output-token
-  cap, and this provider cannot serve embeddings. OpenAI documents further
+- Model availability is limited. Only models in the signed-in account's
+  catalog are available. A family alias selects among those models. It
+  cannot make an unavailable model accessible. Other vendors need another
+  provider.
+- Request controls are limited. The plan route does not accept an
+  output-token cap, and this provider cannot serve embeddings. OpenAI
+  documents further
   [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
-- **Usage accounting.** Per-review and per-run token counts cannot reliably
-  predict how much plan allowance a review consumes. Allowance snapshots
-  depend on quota data OpenAI supplies and may be unavailable or stale.
-  API spend totals exclude the subscription fee.
+- Usage accounting has limits. Per-review and per-run token counts cannot
+  reliably predict how much plan allowance a review consumes. Allowance
+  snapshots depend on quota data that OpenAI supplies and can be unavailable
+  or stale. API spend totals exclude the subscription fee.
 
 Configure `review.fallback` with an API-key provider so it can take over
 when the plan is exhausted or unavailable. If the scorer uses ChatGPT,
@@ -389,25 +400,26 @@ configure `confidence.fallback` the same way. Paid fallback calls still
 incur API charges.
 For sustained team workloads, consider an API-key provider as the primary.
 
-Providers and embedding settings are declared in the configuration file.
-API keys use environment references such as `{ env: OPENROUTER_API_KEY }`.
-Setting an environment variable alone does not declare a provider or embedder.
+You declare providers and the embedding configuration in the configuration
+file. API keys use environment references such as
+`{ env: OPENROUTER_API_KEY }`. Setting an environment variable alone does not
+declare a provider or embedder.
 
 ## Retries
 
 `retries` is how many more times a call is tried when the provider fails
-it in a way another attempt may get past. It applies to a review's model
+it in a way that another attempt can get past. It applies to a review's model
 step, the scorer's call and a split review's summary call. The failures
 it covers are a 5xx, a 429, a timeout, a cut connection, and a 402 that
-carries a `Retry-After`. That 402 is OpenRouter's answer while the
-account's in-flight requests would exceed its balance.
+carries a `Retry-After`. That 402 is OpenRouter's answer when the
+account's in-flight requests, with this request, exceed its balance.
 
 - kritika waits up to a second, then up to twice as long each time, to at
   most 30 seconds. It waits out a longer `Retry-After` the provider sends,
   up to a minute.
 - It never retries a refusal of the request itself, such as a prompt over
   the model's input limit, or a spent budget.
-- A request the provider has not answered in five minutes counts as a
+- A request that the provider does not answer in five minutes counts as a
   timeout.
 - The provider's client sends nothing again on its own, so `retries` is
   every attempt a step gets.
@@ -418,8 +430,8 @@ account's in-flight requests would exceed its balance.
 - The scorer's call has the two minutes a score gets
   ([confidence](/confidence/#the-score)), shared the same way.
 - A split review's summary call has 100 seconds, and the review model's
-  attempts may take all of them. That is about one slow answer, which
-  half of the 100 seconds would cut short.
+  attempts can take all of them. That is about one slow answer. Half of the
+  100 seconds cuts such an answer short.
 
 `retries` earns its keep behind a routing proxy that picks a model per
 request: a step the proxy routed badly is answered on the next attempt. A
@@ -429,7 +441,7 @@ sends a failed request again twice on its own.
 A step that still fails that way after the provider's `retries` and the
 fallback are spent does not end the review. The runner keeps the
 conversation and sends the step again after 30 seconds, then after one,
-two and four minutes, while the agent's
+two and four minutes. It does this while the agent's
 [`timeout`](/configuration/#the-agent) allows. Only a step that fails
 after the last of those ends the review as failed.
 
@@ -439,22 +451,24 @@ A `review.fallback` on the review model's provider is handed to the
 provider with the request, as OpenRouter's server-side fallback is. The
 provider or the adapter tries it when the review model fails.
 
-A fallback on another provider is tried by the gateway itself. Once a
-review's step has failed on the review model, and its provider's
-`retries` or half of the step's 12 minutes are spent, the same step goes
-to the fallback. The fallback gets that provider's own `retries`, and the
-review carries on there. The step's usage is recorded under the model
-that answered. A follow-up's steps fall back the same way, and so does a
-split review's summary call ([large reviews](/configuration/#the-agent)).
+The gateway itself tries a fallback on another provider. The same step
+goes to the fallback once both of these are true: a review's step failed
+on the review model, and its provider's `retries` or half of the step's
+12 minutes are spent. The fallback gets that provider's own `retries`, and
+the review carries on there. The step's usage is recorded under the model
+that answered. A follow-up's steps fall back the same way, and so does a split
+review's summary call ([large reviews](/configuration/#the-agent)).
 
 `confidence.fallback` does the same for the scorer's call. On the
 confidence model's provider, it goes to the provider with the call. On
 another provider, it gets the call once the confidence model's attempts
-are spent, and those attempts get at most half of the time the score has
-left. The call is recorded, charged and counted under the model that
-answered. `confidence.fallback` is set wherever `confidence.model` is,
-including a repository's `.kritika.yaml`, under the same provider rules.
-`confidence.effort` applies to it too.
+are spent. Those attempts get at most half of the time that remains for
+the score. The call is recorded, charged and counted under the model that
+answered.
+
+`confidence.fallback` is set wherever `confidence.model` is.
+This includes a repository's `.kritika.yaml`, under the same provider
+rules. `confidence.effort` applies to it too.
 
 ## Effort
 
@@ -477,20 +491,20 @@ confidence:
   effort: low
 ```
 
-| Where                                | What it sets                                                                                                          |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| nothing                              | the provider's default, for both                                                                                      |
-| the file's root or a `.kritika.yaml` | its level, like any [repository setting](/configuration/#repository-settings); a `.kritika.yaml` replaces the admin's |
-| a `.kritika.yaml`, `effort: ""`      | the provider's default again, where the admin set a level                                                             |
+| Where                                | What it sets                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| nothing                              | the provider's default, for both                                                                                          |
+| the file's root or a `.kritika.yaml` | its level, like any [repository setting](/configuration/#repository-settings), and a `.kritika.yaml` replaces the admin's |
+| a `.kritika.yaml`, `effort: ""`      | the provider's default again, where the admin set a level                                                                 |
 
 Each provider type gets the level in its own form:
 
 | Type                 | Sent as                | Notes                                                                                               |
 | -------------------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | `openrouter`         | `reasoning.effort`     | OpenRouter maps a level a model lacks to the nearest it takes, for each model in the request's list |
-| `openai`, `opencode` | `reasoning_effort`     | a model that takes no reasoning effort refuses the request; leave its effort unset                  |
+| `openai`, `opencode` | `reasoning_effort`     | a model that takes no reasoning effort refuses the request. Leave its effort unset                  |
 | `chatgpt`            | `reasoning.effort`     | the model must support the chosen level                                                             |
-| `anthropic`          | `output_config.effort` | the Messages API runs from `low` to `max`, so `none` and `minimal` go out as `low`; unset as above  |
+| `anthropic`          | `output_config.effort` | the Messages API runs from `low` to `max`, so `none` and `minimal` go out as `low`. Unset as above  |
 
 Both are set in the configuration file. In Helm, use
 `config.review.effort` and `config.confidence.effort`. The dashboard's
@@ -518,7 +532,7 @@ review:
         - { name: large, expr: pr.lines > 800 }
 ```
 
-An agent with `categories` reviews beside the default pass instead; see
+An agent with `categories` reviews beside the default pass instead. See
 [agents](/repository-config/#agents).
 
 - An agent's `when` takes the same conditions as `trigger.include`
@@ -545,33 +559,34 @@ An agent with `categories` reviews beside the default pass instead; see
   default pass on that agent's model, whatever its conditions.
 - A repository's `.kritika.yaml` that writes `review.model`, or agents of
   this kind, replaces the instance's agents of this kind as a whole. Every
-  model they name must be of a provider the account may use, or they are
-  all dropped ([repository models](/repository-config/#models)).
+  model they name must be of a provider that the account can use, or they
+  are all dropped ([repository models](/repository-config/#models)).
 - An agent's model waits for its own [`concurrency`](/configuration/#accounts)
   slots, as a repository's own model does. Follow-ups run on the default.
 
 Since `paths` holds when any changed file matches, these agents suit
 picking a stronger model for what a change touches. A pull request that
-no agent picks gets the default, as it would without them. An agent for
-pull requests that change only some paths, such as documentation alone,
-cannot be written.
+no agent picks gets the default, as it does without them. You cannot write
+an agent for pull requests that change only some paths, such as
+documentation alone.
 
 ## The embedder
 
 | Key              | Default | What                                                                                                                                               |
 | ---------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`          |         | a model of one of the instance's `openrouter` or `openai` providers; the embedder uses that provider's key and its endpoint, or the type's default |
-| `dims`           |         | the model's dimension, at most 4000; it must be what the model returns                                                                             |
+| `model`          |         | a model of one of the instance's `openrouter` or `openai` providers. The embedder uses that provider's key and its endpoint, or the type's default |
+| `dims`           |         | the model's dimension, at most 4000. It must be what the model returns                                                                             |
 | `maxBatch`       | 64      | inputs in one request                                                                                                                              |
 | `maxBatchChars`  | 200,000 | characters in one request                                                                                                                          |
 | `maxItemChars`   | 16,000  | characters in one input                                                                                                                            |
-| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs to be offered as similar code; required with a [prompt](#prompts)                                        |
-| `similarMargin`  | 0.1     | how far below the best match of its query a chunk may score and still be offered                                                                   |
+| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs to be offered as similar code. Required with a [prompt](#prompts)                                        |
+| `similarMargin`  | 0.1     | how far below the best match of its query a chunk can score and still be offered                                                                   |
 | `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query                                                                                  |
 | `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                                                       |
 
-With an embedder, a review's prompt carries the index's chunks nearest the
-change, and the agent gets a `search_code` tool over the same index. Both
+An embedder builds each repository's similar-code index. With an embedder,
+a review's prompt carries the index's chunks (pieces of files) nearest the
+change. The agent gets a `search_code` tool over the same index. Both
 keep a chunk only when it scores at least `similarFloor` and no more than
 `similarMargin` below the best match of its query. A query is either a
 hunk of the diff or a `search_code` query.
@@ -580,10 +595,10 @@ How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and
 one of varied code scores lower. The hunks of one diff differ too. The
 margin follows each query's own best match, so one setting holds across
-repositories where a floor can't. Keep the floor low, under the weakest
+repositories where a floor cannot. Keep the floor low, under the weakest
 match worth showing anywhere, and narrow the margin to keep fewer.
 
-Without an embedder, indexing is off and reviews run without similar code.
+Indexing is off without an embedder, and reviews run without similar code.
 The index holds one model, dimension and document prompt. A configuration
 that changes any of them drops every repository's index. The leader then
 builds each index again, a few at a time, as `KRITIKA_ONBOARD_WINDOW`
@@ -646,7 +661,7 @@ index, as a new model does.
 
 ## Local models
 
-A model served in your own network is a provider of type `openai` whose
+A model served in your own network is a provider of type `openai`. Its
 `baseUrl` is the server's OpenAI-compatible API, such as vLLM, Ollama or
 llama.cpp's server. For a server that speaks the Anthropic API, it is a
 provider of type `anthropic`. Either type can serve reviews, but only an
@@ -692,7 +707,9 @@ per-conversation header, `x-opencode-session`, and refuses a request
 without one. A provider of type `opencode` sends that header. In it, a
 review's steps name their run, or the run whose conversation they carry
 on ([incremental reviews](/configuration/#incremental-reviews)). A
-follow-up names its mention. The provider's `baseUrl` is Go's,
+follow-up names its mention.
+
+The provider's `baseUrl` is Go's,
 `https://opencode.ai/zen/go/v1`, unless set. Zen is the same type at
 `https://opencode.ai/zen/v1`.
 
@@ -708,8 +725,9 @@ providers:
 review: { model: opencode/glm-5.3, fallback: zen/qwen3.8-max }
 ```
 
-- Only the models the gateway serves on `/v1/chat/completions` can be
-  used; its endpoint tables say which. Models it serves on
-  `/v1/responses` or `/v1/messages` cannot.
-- A response that reports no cost leaves the call unpriced unless
-  `pricing` gives the model's prices, as for a local model.
+Only the models that the gateway serves on `/v1/chat/completions` can be
+used. Its endpoint tables say which. Models that it serves on
+`/v1/responses` or `/v1/messages` cannot be used.
+
+A response that reports no cost leaves the call unpriced unless
+`pricing` gives the model's prices, as for a local model.

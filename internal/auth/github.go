@@ -121,8 +121,8 @@ func (githubAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (map
 	return vars, nil
 }
 
-// githubPages calls fn with each page of the list at path, which must end
-// in "?" or carry a query, until a page comes back short.
+// githubPages calls fn with each page of the list at path until a page comes
+// back short. The path must end in "?" or carry a query.
 func githubPages(ctx context.Context, c apiClient, path string, fn func(json.RawMessage) error) error {
 	sep := "&"
 	if strings.HasSuffix(path, "?") {
@@ -164,8 +164,9 @@ func githubGetOK(ctx context.Context, c apiClient, path string, v any) error {
 
 // githubRateLimited reports whether an answer is GitHub's primary or
 // secondary rate limit, rather than a refusal such as one to disclose
-// membership. A 403 for the secondary limit need not carry Retry-After; its
-// body's documentation URL names it, as go-github reads it.
+// membership. A 403 for the secondary limit need not carry Retry-After. The
+// documentation URL in its body names the limit, which is how go-github reads
+// it.
 func githubRateLimited(status int, h http.Header, refusal []byte) bool {
 	switch {
 	case status == http.StatusTooManyRequests:

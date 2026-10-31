@@ -1,30 +1,29 @@
 // Package review turns a context pack into a prompt, a model answer into
-// findings, and findings into the comments kritika posts. It knows nothing
-// about forges or models beyond their interfaces.
+// findings, and findings into the comments that kritika posts. It knows
+// nothing about forges or models beyond their interfaces.
 //
 // # Templates
 //
-// Comments are rendered from Go text/template templates that a repository
-// may replace, with the go-sprout/sprout helpers that tuppr and chaski
-// expose: the std, strings, conversion, encoding, numeric, slices, maps,
-// regex, time, semver and reflect registries, less set and unset. Not
-// available: env, filesystem, network, random, uniqueid, checksum and
-// crypto, and the template, define and block actions, so a template can
-// read no file and call no other template. Rendering is bounded, and a
-// template that steps outside a bound falls back to kritika's default with
-// a note:
+// Comments are rendered from Go text/template templates that a repository can
+// replace, with the go-sprout/sprout helpers that tuppr and chaski expose:
+// the std, strings, conversion, encoding, numeric, slices, maps, regex, time,
+// semver, and reflect registries, less set and unset. Not available: env,
+// filesystem, network, random, uniqueid, checksum, and crypto, and the
+// template, define, and block actions. So a template can read no file and
+// call no other template. Rendering is bounded, and a template that steps
+// outside a bound falls back to kritika's default with a note:
 //
-//   - output of 64 KiB, marker included;
-//   - 20,000 loop iterations per render, charged when a loop starts;
-//   - 256 KiB per function call, counting its arguments, its result and,
+//   - Output of 64 KiB, marker included.
+//   - 20,000 loop iterations per render, charged when a loop starts.
+//   - 256 KiB per function call. This counts its arguments, its result and,
 //     for repeat, indent, nindent, join, replace, regexReplaceAll,
-//     regexReplaceAllLiteral, seq, until, untilStep and printf, an estimate
-//     of what it allocates; printf refuses a width or precision given as *;
-//   - two seconds per render; identifiers starting with __kritika_ are
+//     regexReplaceAllLiteral, seq, until, untilStep, and printf, an estimate
+//     of what it allocates. printf refuses a width or precision given as *.
+//   - Two seconds per render. Identifiers that start with __kritika_ are
 //     reserved.
 //
 // The summary template's dot is a RenderData, the inline template's a
-// Finding; see templates/ for the defaults.
+// Finding. See templates/ for the defaults.
 package review
 
 import (
@@ -42,7 +41,7 @@ import (
 // Severity of a finding, in the order the summary lists them.
 type Severity string
 
-// Severities a finding may carry.
+// Severities a finding can carry.
 const (
 	SeverityP0 Severity = "p0"
 	SeverityP1 Severity = "p1"
@@ -54,7 +53,7 @@ var severities = []Severity{SeverityP0, SeverityP1, SeverityP2}
 // Valid reports whether s is one of the severities.
 func (s Severity) Valid() bool { return slices.Contains(severities, s) }
 
-// Rank orders severities most serious first; an invalid one sorts last.
+// Rank orders severities most serious first. An invalid one sorts last.
 func (s Severity) Rank() int {
 	if i := slices.Index(severities, s); i >= 0 {
 		return i
@@ -66,7 +65,7 @@ func (s Severity) Rank() int {
 // review it comes from, apart from how serious it is.
 type Category string
 
-// Categories a finding may carry.
+// Categories a finding can carry.
 const (
 	CategoryCorrectness     Category = "correctness"
 	CategorySecurity        Category = "security"
@@ -86,28 +85,29 @@ func Categories() []Category { return slices.Clone(categories) }
 // Valid reports whether c is one of the categories.
 func (c Category) Valid() bool { return slices.Contains(categories, c) }
 
-// maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
+// maxPraise bounds Summary.Praise. The schema says so and Parse enforces it.
 const maxPraise = 3
 
-// maxChecked bounds Summary.Checked; the schema says so and Parse enforces
+// maxChecked bounds Summary.Checked. The schema says so and Parse enforces
 // it, as it cuts each note to one line.
 const maxChecked = 10
 
-// maxDiagramBytes bounds Summary.Diagram. A diagram over it is dropped
-// rather than cut, since a cut one would not render.
+// maxDiagramBytes bounds Summary.Diagram. A diagram over it is dropped rather
+// than cut, since a cut one does not render.
 const maxDiagramBytes = 4 << 10
 
-// diagramKinds are the Mermaid diagram types a summary may draw, by the
-// keyword its source opens with.
+// diagramKinds are the Mermaid diagram types that a summary can draw, by the
+// keyword that its source opens with.
 var diagramKinds = []string{"flowchart", "graph", "sequenceDiagram"}
 
-// Finding is one thing the reviewer wants a human to look at, anchored to a
-// line on the head side of the diff, or to the range Line through EndLine.
+// Finding is one thing that the reviewer wants a human to look at. It is
+// anchored to a line on the head side of the diff, or to the range Line
+// through EndLine.
 type Finding struct {
 	Path     string   `json:"path"`
 	Line     int      `json:"line"`
 	Severity Severity `json:"severity"`
-	// Category is what kind of problem it is; see Category.
+	// Category is what kind of problem it is. See Category.
 	Category     Category `json:"category"`
 	Title        string   `json:"title"`
 	Explanation  string   `json:"explanation"`
@@ -115,27 +115,28 @@ type Finding struct {
 	// EndLine is the last line of the range the finding covers, 0 when it
 	// covers Line alone.
 	EndLine int `json:"end_line,omitempty"`
-	// Replacement is what lines Line through EndLine should read instead,
-	// raw code the forge offers as a one-click suggestion.
+	// Replacement is the proposed text of lines Line through EndLine, raw
+	// code that the forge offers as a one-click suggestion.
 	Replacement string `json:"replacement,omitempty"`
-	// InsertAfter is the lines a fix adds right after Line, changing none.
-	// Parse folds it into Replacement, Line kept as the diff shows it, so
-	// the model never reproduces an existing line; it is empty after Parse.
+	// InsertAfter is the lines that a fix adds right after Line. The fix
+	// changes no line. Parse folds it into Replacement, with Line kept as the
+	// diff shows it, so that the model never reproduces an existing line. It
+	// is empty after Parse.
 	InsertAfter string `json:"insert_after,omitempty"`
-	// AgentPrompt is plain text telling a coding agent how to apply the fix,
-	// with any lines to write on lines of their own, as the file indents
-	// them; it renders in a code fence, so its line breaks survive.
+	// AgentPrompt is plain text that tells a coding agent how to apply the
+	// fix. Any lines to write are on lines of their own, as the file indents
+	// them. It renders in a code fence, so its line breaks survive.
 	AgentPrompt string `json:"agent_prompt,omitempty"`
-	// Rules are the ids of the review rules the finding enforces; Parse
-	// keeps only those the review was given.
+	// Rules are the ids of the review rules that the finding enforces. Parse
+	// keeps only those that the review was given.
 	Rules []string `json:"rules,omitempty"`
 	// Quote is the passage of a cited rule the finding enforces, copied
 	// from the rule: CheckQuotes holds it to be one, and Parse drops a
 	// finding that cites a rule without one, and the quote of one that
 	// cites none.
 	Quote string `json:"quote,omitempty"`
-	// Prior is the id of the last review's finding this one reports again,
-	// as the prompt listed it; Parse resolves it into Fingerprint and
+	// Prior is the id of the last review's finding that this one reports
+	// again, as the prompt listed it. Parse resolves it into Fingerprint and
 	// clears it.
 	Prior string `json:"prior,omitempty"`
 	// Fingerprint is the finding's fingerprint when it is known apart from
@@ -144,23 +145,23 @@ type Finding struct {
 	// prefers it, so a finding reported again in other words keeps the
 	// thread its first wording opened.
 	Fingerprint string `json:"fingerprint,omitempty"`
-	// CarriedFrom is the head a review last reported the finding at, whose
-	// line numbers it uses, on one a re-review carried on unchecked; ""
-	// otherwise. kritika sets it; Parse clears any the model sent.
+	// CarriedFrom is set on a finding that a re-review carried on unchecked.
+	// It is the head that a review last reported the finding at, whose line
+	// numbers it uses. It is "" otherwise. kritika sets it. Parse clears any
+	// that the model sent.
 	CarriedFrom string `json:"carried_from,omitempty"`
-	// Unread marks a finding on a file the review never read with
-	// read_file or read_diff: the runner sets it once the review has
-	// submitted, and Parse drops the finding as DropUnread. The model
-	// cannot set it: Check refuses the key, which the contract does not
-	// define.
+	// Unread marks a finding on a file that the review never read with
+	// read_file or read_diff. The runner sets it once the review submits, and
+	// Parse drops the finding as DropUnread. The model cannot set it: Check
+	// refuses the key, which the contract does not define.
 	Unread bool `json:"unread,omitempty"`
-	// Agents name the reviewers that raised the finding, the first the
-	// one whose finding was kept when several raised it; none is
-	// DefaultReviewer alone. The runner sets them on a part's findings;
-	// Parse keeps only those the review ran.
+	// Agents name the reviewers that raised the finding, the first the one
+	// whose finding was kept when several raised it. None means
+	// DefaultReviewer alone. The runner sets them on a part's findings. Parse
+	// keeps only those that the review ran.
 	Agents []string `json:"agents,omitempty"`
-	// URL links the finding's lines at the head commit. kritika sets it
-	// when rendering; the model never does.
+	// URL links the finding's lines at the head commit. kritika sets it when
+	// rendering. The model never does.
 	URL string `json:"-"`
 	// ThreadURL links the finding's inline comment thread on the forge,
 	// "" when it has none. kritika sets it when rendering.
@@ -266,25 +267,25 @@ type Dropped struct {
 type ParseOptions struct {
 	// RequireSuggestedFix drops findings that carry no suggested fix.
 	RequireSuggestedFix bool
-	// Diagram keeps the summary's diagram; without it the diagram is
+	// Diagram keeps the summary's diagram. Without it, the diagram is
 	// dropped, whatever the model sent.
 	Diagram bool
-	// Rules are the ids of the rules the review was given, the only ones a
-	// finding may cite.
+	// Rules are the ids of the rules that the review was given, the only ones
+	// that a finding can cite.
 	Rules []string
 	// Repository is the "owner/repo" under review, whose references the
-	// model's text keeps; RedirectReferences rewrites the others.
+	// model's text keeps. RedirectReferences rewrites the others.
 	Repository string
-	// Prior are the last review's findings, as the prompt listed them: a
+	// Prior are the last review's findings, as the prompt listed them. A
 	// finding on one's path that names its id, or that has its path and
-	// title, carries its fingerprint on, as the first such finding only.
+	// title, carries its fingerprint on. Only the first such finding does so.
 	Prior []Finding
-	// Reviewers are the reviewers the review ran, the only ones a finding
-	// may name; none is DefaultReviewer alone.
+	// Reviewers are the reviewers that the review ran, the only ones that a
+	// finding can name. None means DefaultReviewer alone.
 	Reviewers []string `json:",omitempty"`
-	// Categories are, by reviewer, the categories it may report; a
-	// reviewer not named may report any. A finding none of whose
-	// reviewers may report its category is dropped as DropBadCategory.
+	// Categories are, by reviewer, the categories that it can report. A
+	// reviewer not named can report any. A finding none of whose reviewers
+	// can report its category is dropped as DropBadCategory.
 	Categories map[string][]Category `json:",omitempty"`
 }
 
@@ -328,8 +329,8 @@ type jsonSchema struct {
 	Required    []string               `json:"required,omitempty"`
 	MaxItems    int                    `json:"maxItems,omitempty"`
 	// AdditionalProperties is false on an object that takes no key beyond
-	// Properties, so a provider that enforces the schema refuses a
-	// misspelled key before Check has to.
+	// Properties. So a provider that enforces the schema refuses a misspelled
+	// key before Check has to.
 	AdditionalProperties *bool `json:"additionalProperties,omitempty"`
 }
 
@@ -486,11 +487,11 @@ func contractKeys() (top, summary, finding []string) {
 		slices.Sorted(maps.Keys(s.Properties[keyFindings].Items.Properties))
 }
 
-// Check says why raw is not a review in the contract's shape: a field of
-// the wrong type, a key the contract does not define, or no summary take.
-// It is what the agent loop answers a submit_review call with, so the
-// model can correct it before the review ends; Parse applies the rest of
-// the contract to the submission that ended it.
+// Check says why raw is not a review in the contract's shape: a field of the
+// wrong type, a key that the contract does not define, or no summary take. It
+// is what the agent loop answers a submit_review call with, so that the model
+// can correct it before the review ends. Parse applies the rest of the
+// contract to the submission that ended it.
 func Check(raw json.RawMessage) error {
 	var res Result
 	if err := json.Unmarshal(raw, &res); err != nil {
@@ -510,11 +511,11 @@ func Check(raw json.RawMessage) error {
 	return nil
 }
 
-// unknownKeys lists the keys raw carries that the contract does not
-// define, each with its path, so one error names them all and the model
-// can correct every one in a single resubmission. A value under a
-// misspelled key is otherwise dropped on decoding and the finding posts
-// without it, with nothing to say so.
+// unknownKeys lists the keys that raw carries and the contract does not
+// define, each with its path. So one error names them all, and the model can
+// correct every one in a single resubmission. A value under a misspelled key
+// is otherwise dropped on decoding, and the finding posts without it, with
+// nothing to say so.
 func unknownKeys(raw json.RawMessage) []string {
 	var out []string
 	eachLevel(raw, func(name string, m map[string]json.RawMessage, defined []string) {
@@ -535,11 +536,11 @@ func knownKeys(raw json.RawMessage) json.RawMessage {
 	})
 }
 
-// eachLevel calls visit with each object of raw the contract defines keys
-// at, the top, then the summary, then each finding, named as unknownKeys
-// names a key under it, with the keys defined there, and returns raw with
-// what visit did to them encoded back; raw itself when it is not an
-// object.
+// eachLevel calls visit with each object of raw that the contract defines
+// keys at: the top, then the summary, then each finding. Each is named as
+// unknownKeys names a key under it, with the keys defined there. eachLevel
+// returns raw with what visit did to them encoded back, or raw itself when it
+// is not an object.
 func eachLevel(raw json.RawMessage, visit func(name string, m map[string]json.RawMessage, defined []string)) json.RawMessage {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
@@ -584,33 +585,34 @@ func defines(keys []string, k string) bool {
 // define wraps.
 var errUnknownKeys = errors.New("unknown keys")
 
-// Lenient says whether check refused raw for keys the contract does not
-// define and accepts it once they are dropped, as Parse drops them on
-// decoding: a submission refused for those keys alone is still a review,
-// which the agent loop falls back on rather than end with none. The
-// refusal must be for those keys because knownKeys keeps only the last
-// of a repeated key, which can hide a type error Check found in an
-// earlier one, and Check reports a type error before any unknown key.
+// Lenient says whether check refused raw for keys that the contract does not
+// define and accepts it once they are dropped. Parse also drops them on
+// decoding. A submission refused for those keys alone is still a review,
+// which the agent loop falls back on rather than end with none. The refusal
+// must be for those keys because knownKeys keeps only the last of a repeated
+// key. That can hide a type error that Check found in an earlier one, and
+// Check reports a type error before any unknown key.
 func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
 	return func(raw json.RawMessage) bool {
 		return errors.Is(check(raw), errUnknownKeys) && check(knownKeys(raw)) == nil
 	}
 }
 
-// Parse decodes the model's JSON and drops findings kritika cannot post: an
-// unknown severity or category, a category none of the finding's reviewers
-// may report, a missing field, a missing fix when opts
-// require one, a cited rule with no quote, a file the review never read
-// (see Finding.Unread), or a line the diff
-// does not add or keep. Dropped findings are returned
-// with the reason so they can be logged and counted, never silently lost.
-// anchors maps a path to the head-side lines the diff covers, each with
-// its text. Findings different reviewers raised about the same thing are
-// merged (see MergeReviewers). A range or a replacement the diff does not wholly cover is
-// cleared rather than the finding dropped, and an insertion becomes a
-// replacement of its line by that line plus the added ones. Kept findings
-// are ordered most severe first, then by path and line. The summary keeps
-// its diagram only when opts ask for one and it is one diagram allows.
+// Parse decodes the model's JSON and drops findings that kritika cannot post.
+// It drops a finding with an unknown severity or category, or with a category
+// that none of the finding's reviewers can report. It drops a finding with a
+// missing field, a missing fix when opts require one, or a cited rule with no
+// quote. It drops a finding on a file that the review never read (see
+// Finding.Unread). It drops a finding on a line that the diff does not add or
+// keep. Dropped findings are returned with the reason so that they can be
+// logged and counted, never silently lost. anchors maps a path to the
+// head-side lines that the diff covers, each with its text. Findings that
+// different reviewers raised about the same thing are merged (see
+// MergeReviewers). A range or a replacement that the diff does not wholly
+// cover is cleared rather than the finding dropped. An insertion becomes a
+// replacement of its line by that line plus the added ones. Kept findings are
+// ordered most severe first, then by path and line. The summary keeps its
+// diagram only when opts ask for one and it is one that diagram allows.
 func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Result, []Dropped, error) {
 	var res Result
 	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw)))
@@ -657,8 +659,8 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 			reason = DropUnanchored
 		}
 		// A finding off the diff is reported all the same and keeps its
-		// thread; one dropped as malformed claims no prior finding's, which
-		// a later finding may then carry on.
+		// thread. A finding dropped as malformed claims no prior finding's
+		// thread, which a later finding can then carry on.
 		if reason == "" || reason == DropUnanchored {
 			f.Fingerprint = prior.inherit(f)
 		}
@@ -668,7 +670,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 			continue
 		}
 		if f.InsertAfter != "" {
-			// A replacement given too says what the line becomes; an
+			// A replacement given too says what the line becomes. An
 			// insertion alone keeps the line as the diff shows it.
 			if f.Replacement == "" {
 				f.EndLine, f.Replacement = 0, text+"\n"+f.InsertAfter
@@ -706,9 +708,9 @@ func prose(s, repository string) string {
 	return RedirectReferences(strings.TrimSpace(stripMarkers(s)), repository)
 }
 
-// stripFences drops the fence lines a model wraps replacement code in and
-// any stray fence line inside it, since the template puts the code in a
-// suggestion fence of its own.
+// stripFences drops the fence lines that a model wraps replacement code in
+// and any stray fence line inside it. It drops them since the template puts
+// the code in a suggestion fence of its own.
 func stripFences(code string) string {
 	lines := strings.Split(strings.Trim(code, "\n"), "\n")
 	kept := lines[:0]
@@ -721,10 +723,10 @@ func stripFences(code string) string {
 }
 
 // diagram is the model's Mermaid source without its fences, or "" when it
-// does not open with one of diagramKinds or is over maxDiagramBytes: the
-// forge would show a render error, or a diagram too big to read, in its
-// place. A titled front matter block and comment lines may precede the
-// kind, as Mermaid allows; diagramHeader says what is refused.
+// does not open with one of diagramKinds or is over maxDiagramBytes. If such
+// a diagram reaches the forge, the forge shows a render error, or a diagram
+// too big to read, in its place. A titled front matter block and comment lines
+// can precede the kind, as Mermaid allows. diagramHeader says what is refused.
 func diagram(src string) string {
 	src = stripFences(strings.TrimSpace(src))
 	if len(src) > maxDiagramBytes {
@@ -766,11 +768,11 @@ func diagramHeader(src string) string {
 	return ""
 }
 
-// Anchors reads a unified diff and returns, per head-side path, the
-// new-file lines the diff shows (added and context lines) with their text.
-// A finding may only be attached to one of these, which is also the set of
-// lines GitHub accepts an inline comment on; the text is what an insertion
-// keeps above the lines it adds.
+// Anchors reads a unified diff and returns, per head-side path, the new-file
+// lines that the diff shows (added and context lines) with their text. A
+// finding can only be attached to one of these, which is also the set of
+// lines that GitHub accepts an inline comment on. The text is what an
+// insertion keeps above the lines it adds.
 func Anchors(diff string) map[string]map[int]string {
 	return contextpack.ShownLines(diff)
 }

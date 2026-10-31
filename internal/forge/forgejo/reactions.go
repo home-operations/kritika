@@ -8,9 +8,9 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 )
 
-// reactionIDs stand in for the ids a forge gives reactions: Forgejo has
-// none, it holds one reaction of a content per user, so the content is the
-// identity, and the number React returns is the content's.
+// reactionIDs stand in for the ids that a forge gives reactions. Forgejo has
+// none: it holds one reaction of a content per user. So the content is the
+// identity, and the number that React returns is the content's.
 var reactionIDs = map[string]int64{forge.ReactionEyes: 1, forge.ReactionDone: 2, forge.ReactionFailed: 3}
 
 func reactionID(content string) (int64, error) {

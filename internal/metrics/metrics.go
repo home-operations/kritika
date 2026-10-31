@@ -1,6 +1,6 @@
 // Package metrics is every Prometheus series kritika exports beyond the Go
 // runtime. One Metrics value is registered per process and shared by its
-// parts; a nil *Metrics records nothing, so tests need not register one.
+// parts. A nil *Metrics records nothing, so tests need not register one.
 package metrics
 
 import (
@@ -12,8 +12,8 @@ import (
 )
 
 // Metrics holds the collectors. Labels are bounded by configuration
-// (accounts, connections, models) or by fixed vocabularies (status,
-// stage, outcome); nothing per PR or per commit is ever a label.
+// (accounts, connections, models) or by fixed vocabularies (status, stage,
+// outcome). Nothing per PR or per commit is ever a label.
 type Metrics struct {
 	cache          cacheMetrics
 	webhooks       *prometheus.CounterVec
@@ -258,7 +258,7 @@ func (m *Metrics) ContextChunks(account, stage string, n int) {
 	}
 }
 
-// RunnerRun counts a finished runner Job; took is zero when unknown.
+// RunnerRun counts a finished runner Job. took is zero when unknown.
 func (m *Metrics) RunnerRun(account, kind, outcome string, took time.Duration) {
 	if m != nil {
 		m.runnerRuns.WithLabelValues(account, kind, outcome).Inc()
@@ -283,18 +283,19 @@ func (m *Metrics) ReviewSnoozed(account, model string) {
 	}
 }
 
-// JobRescued counts a job of a dead replica handed back to the queue by
-// the leader, by job kind and the state it was handed back in.
+// JobRescued counts a job of a dead replica that the leader handed back to
+// the queue. It counts by job kind and the state that the job was handed back
+// in.
 func (m *Metrics) JobRescued(kind, state string) {
 	if m != nil {
 		m.jobsRescued.WithLabelValues(kind, state).Inc()
 	}
 }
 
-// ModelCall records one call: outcome is ok or error; tokens and cost are
-// added only for ok. cachedTokens is the part of inputTokens the provider
-// served from its prompt cache; unpriced says nothing gave the call a
-// cost, so costUSD is no measure of it.
+// ModelCall records one call: outcome is ok or error. Tokens and cost are
+// added only for ok. cachedTokens is the part of inputTokens that the
+// provider served from its prompt cache. unpriced says that nothing gave the
+// call a cost, so costUSD is no measure of it.
 func (m *Metrics) ModelCall(
 	account, model, role, outcome string, inputTokens, cachedTokens, outputTokens int64, costUSD float64, unpriced bool,
 ) {
@@ -322,9 +323,10 @@ func (m *Metrics) ModelCall(
 	}
 }
 
-// ForgeRateLimited counts a response the forge refused for a rate limit:
-// outcome is waited when the request waited the limit out and was sent
-// again, refused when the wait was too long or the request could not be.
+// ForgeRateLimited counts a response that the forge refused for a rate limit.
+// outcome is waited when the request waited the limit out and was sent again.
+// outcome is refused when the wait was too long or the request cannot be sent
+// again.
 func (m *Metrics) ForgeRateLimited(connection, outcome string) {
 	if m != nil {
 		m.forgeLimits.WithLabelValues(connection, outcome).Inc()
@@ -359,7 +361,8 @@ func (m *Metrics) TranscriptWrite(kind, outcome string) {
 	}
 }
 
-// QueueWait records time spent eligible for pickup, excluding intentional delays.
+// QueueWait records time spent eligible for pickup. It leaves out intentional
+// delays.
 func (m *Metrics) QueueWait(queue string, took time.Duration) {
 	if m != nil {
 		m.queueWait.WithLabelValues(queue).Observe(took.Seconds())
@@ -376,7 +379,7 @@ func (m *Metrics) InitVectorSearch(account string) {
 	}
 }
 
-// VectorSearch records the database phase; outcome is ok, error or canceled.
+// VectorSearch records the database phase. outcome is ok, error or canceled.
 func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
 	if m != nil {
 		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
@@ -390,7 +393,8 @@ func (m *Metrics) ReviewStage(account, stage string, took time.Duration) {
 	}
 }
 
-// ReviewSlotWait observes an actual snooze interval, including an early wake.
+// ReviewSlotWait observes an actual snooze interval. This includes an early
+// wake.
 func (m *Metrics) ReviewSlotWait(account, model string, took time.Duration) {
 	if m != nil {
 		m.reviewSlotWait.WithLabelValues(account, model).Observe(max(0, took.Seconds()))

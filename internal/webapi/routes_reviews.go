@@ -15,8 +15,8 @@ import (
 	"github.com/home-operations/kritika/internal/transcript"
 )
 
-// reviewRecord is a review and what its newest runner run left behind;
-// run and agent are nil where there is none.
+// reviewRecord is a review and what its newest runner run left behind. run
+// and agent are nil where there is none.
 type reviewRecord struct {
 	review store.ReviewRow
 	run    *store.RunnerRunRow

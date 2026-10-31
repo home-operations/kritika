@@ -10,8 +10,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// TestFindingFilter: each filter reaches the store's, and a value the
-// store would refuse is a bad request naming the allowed ones.
+// TestFindingFilter: each filter reaches the store's, and a value that the
+// store refuses is a bad request that names the allowed ones.
 func TestFindingFilter(t *testing.T) {
 	for _, tc := range []struct {
 		name, query string
@@ -49,10 +49,10 @@ func TestFindingFilter(t *testing.T) {
 	}
 }
 
-// TestFindingsMarkdown: an export names the account and the filters, says
-// when the filters keep more than it holds, and gives each finding a
-// heading, where it is, what became of it and its explanation quoted, so
-// a heading in an explanation cannot end it.
+// TestFindingsMarkdown: an export names the account and the filters, and says
+// when the filters keep more than it holds. It gives each finding a heading,
+// where it is, what became of it and its explanation quoted. So a heading in
+// an explanation cannot end it.
 func TestFindingsMarkdown(t *testing.T) {
 	pull := PullRef{Repository: "alpha/one", Number: 7, Title: "Add\nwidgets", URL: "https://git.example/alpha/one/pulls/7"}
 	dismissed := AccountFinding{

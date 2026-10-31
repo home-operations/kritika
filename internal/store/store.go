@@ -1,8 +1,8 @@
 // Package store owns kritika's Postgres access: the two connection pools,
 // the startup assertion that keeps row-level security honest, schema
-// migrations, the leader lock, account-scoped transactions, and applying
-// the running configuration, the file's and the dashboard's, to the rows
-// it declares.
+// migrations, the leader lock, and account-scoped transactions. It also
+// applies the running configuration, the file's and the dashboard's, to the
+// rows that it declares.
 package store
 
 import (
@@ -29,21 +29,21 @@ type Store struct {
 }
 
 // Pool ceilings when the URI sets no pool_max_conns. pgx's own default is
-// the node's CPU count, and a serve pod has no CPU limit, so on a large
-// node two replicas alone could take most of Postgres's 100 connections.
+// the node's CPU count, and a serve pod has no CPU limit. So on a large
+// node, two replicas alone can take most of Postgres's 100 connections.
 // The application pool carries River's fetchers, a handful of jobs and the
-// requests runner pods and the dashboard make; the owner pool only the
-// leader's duties. Connections open on demand, so a ceiling costs an idle
-// process nothing.
+// requests that runner pods and the dashboard make. The owner pool carries
+// only the leader's duties. Connections open on demand, so a ceiling costs an
+// idle process nothing.
 const (
 	appPoolMaxConns   = 16
 	ownerPoolMaxConns = 4
 )
 
-// appStatementTimeout bounds every statement on the application pool. The
-// pool is shared by River, webhook ingest, the gateway and the dashboard,
-// so a dashboard query over a large account that ran unbounded could hold
-// its connections and stall the rest; nothing the pool runs is meant to
+// appStatementTimeout bounds every statement on the application pool. River,
+// webhook ingest, the gateway and the dashboard share the pool. So a
+// dashboard query over a large account that runs unbounded can hold its
+// connections and stall the rest. Nothing that the pool runs is meant to
 // take anywhere near this long.
 const appStatementTimeout = time.Minute
 
@@ -55,11 +55,11 @@ const appStatementTimeout = time.Minute
 // seconds is generous for a server that is up.
 const pingTimeout = 5 * time.Second
 
-// newPool opens a pool with server-side TCP keepalives, so Postgres drops
+// newPool opens a pool with server-side TCP keepalives. So Postgres drops
 // the session of a client that died without closing it (a node lost, a pod
-// killed) within about a minute, and with it any advisory lock the session
-// held. Postgres's own defaults leave that to the kernel's two hours. The
-// pool's own ping of an idle connection is bounded by pingTimeout, so a
+// killed) within about a minute. Any advisory lock that the session held goes
+// with it. Postgres's own defaults leave that to the kernel's two hours. The
+// pool's own ping of an idle connection is bounded by pingTimeout. So a
 // server that died the same way costs a client seconds, not the kernel's
 // retransmissions. A statement timeout, when given, bounds every statement
 // on the pool.
@@ -72,9 +72,9 @@ func newPool(ctx context.Context, url, application string, statementTimeout time
 }
 
 // poolConfig is newPool's configuration. maxConns is the pool's ceiling
-// and pingTimeout its ping bound unless the URI names its own with
-// pool_max_conns or pool_ping_timeout, which pgx has already read by the
-// time the config is parsed.
+// and pingTimeout is its ping bound, unless the URI names its own with
+// pool_max_conns or pool_ping_timeout. pgx already read those by the time
+// that the configuration is parsed.
 func poolConfig(url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
@@ -101,18 +101,19 @@ func poolConfig(url, application string, statementTimeout time.Duration, maxConn
 type Options struct {
 	// AppURL is the application role's DSN. Required.
 	AppURL string
-	// OwnerURL is the owner role's DSN. Optional; without it the process can
-	// never become leader.
+	// OwnerURL is the owner role's DSN. It is optional. Without it, the process
+	// can never become leader.
 	OwnerURL string
-	// ExpectedRole requires the login to inherit this role; empty skips the check.
+	// ExpectedRole requires the login to inherit this role. Empty skips that
+	// requirement.
 	ExpectedRole string
 	Logger       *slog.Logger
 }
 
 // Open connects both pools and runs the startup assertions. It fails, rather
-// than serving, when the application DSN would bypass row-level security or
-// the vector extension is missing, because either would be invisible at
-// runtime and wrong.
+// than serving, when the application DSN can bypass row-level security or
+// the vector extension is missing. Either one is invisible at runtime and
+// wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
 	app, err := newPool(ctx, opts.AppURL, "kritika-app", appStatementTimeout, appPoolMaxConns)
 	if err != nil {
@@ -140,7 +141,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return nil, err
 	}
 	if opts.OwnerURL != "" {
-		// Migrations may build an index for minutes; anything longer on the
+		// Migrations can build an index for minutes. Anything longer on the
 		// owner connection is a hang worth breaking.
 		owner, err := newPool(ctx, opts.OwnerURL, "kritika-owner", 10*time.Minute, ownerPoolMaxConns)
 		if err != nil {
@@ -165,12 +166,12 @@ func (s *Store) Close() {
 	}
 }
 
-// App exposes the application pool for account-scoped work; prefer
+// App exposes the application pool for account-scoped work. Prefer
 // [Store.WithAccount].
 func (s *Store) App() *pgxpool.Pool { return s.app }
 
 // Now is the database's clock, for a time a query will compare a row's
-// clock_timestamp() against: the application's clock may run ahead of or
+// clock_timestamp() against: the application's clock can run ahead of or
 // behind it.
 func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	var now time.Time
@@ -196,7 +197,7 @@ func (s *Store) PoolStats() map[string]func() *pgxpool.Stat {
 // ErrDatabaseRole is a login that does not inherit the configured role.
 var ErrDatabaseRole = errors.New("store: database login does not have the configured role")
 
-// ErrIsolationOff is a database role that could bypass row-level security.
+// ErrIsolationOff is a database role that can bypass row-level security.
 var ErrIsolationOff = errors.New("store: application role would bypass row-level security")
 
 // assertApplicationRole refuses a DSN whose role is a superuser, has
@@ -239,11 +240,11 @@ func assertOwnerRole(ctx context.Context, owner *pgxpool.Pool) error {
 	return nil
 }
 
-// OpenWhenReady opens the store once the database answers, retrying until
-// it does, because in a fresh deployment Postgres is usually still
+// OpenWhenReady opens the store once the database answers. It retries until
+// the database does, because in a fresh deployment Postgres is usually still
 // bootstrapping when the pod starts. A configuration error (a DSN that
-// would bypass row-level security, no vector extension) is returned at
-// once: waiting would not change it.
+// can bypass row-level security, no vector extension) is returned at
+// once: waiting does not change it.
 func OpenWhenReady(ctx context.Context, opts Options) (*Store, error) {
 	const retry = 5 * time.Second
 	for {
@@ -264,8 +265,8 @@ func OpenWhenReady(ctx context.Context, opts Options) (*Store, error) {
 }
 
 // IsConfigurationError reports whether err is one of the startup assertions,
-// which no amount of retrying will fix, as opposed to a database that is
-// not reachable yet.
+// as opposed to a database that is not reachable yet. No amount of retrying
+// will fix a startup assertion.
 func IsConfigurationError(err error) bool {
 	return errors.Is(err, ErrDatabaseRole) || errors.Is(err, ErrIsolationOff) ||
 		errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser)
@@ -302,14 +303,14 @@ func (s *Store) WithRunnerJob(ctx context.Context, runID string, fn func(pgx.Tx)
 }
 
 // WithAccount runs fn in a transaction on the application pool with the
-// account set transaction-locally, so every policy resolves to that account
+// account set transaction-locally. So every policy resolves to that account
 // and nothing survives on the pooled connection after commit or rollback.
 func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
 	return s.withSetting(ctx, "app.account_id", accountID, "store: set account", fn)
 }
 
 // withSetting runs fn in a transaction on the application pool with the
-// setting key set to value transaction-locally; setErr prefixes a failure
+// setting key set to value transaction-locally. setErr prefixes a failure
 // to set it.
 func (s *Store) withSetting(ctx context.Context, key, value, setErr string, fn func(pgx.Tx) error) error {
 	tx, err := s.app.Begin(ctx)

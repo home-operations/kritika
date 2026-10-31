@@ -11,7 +11,7 @@ import (
 // uniqueFields returns the river:"unique" struct tag value for every field of
 // v's type that carries one, keyed by field name. It mirrors, at the level a
 // unit test can reach, what river's insert_opts.go hashes for ByArgs
-// uniqueness: only tagged fields, nothing else.
+// uniqueness: only tagged fields and nothing else.
 func uniqueFields(v any) map[string]bool {
 	out := make(map[string]bool)
 	for f := range reflect.TypeOf(v).Fields() {
@@ -42,11 +42,11 @@ func TestThreadArgsUniqueTags(t *testing.T) {
 }
 
 // TestJobArgs pins each job's kind, queue and ByArgs uniqueness, and
-// whether "request" is in the JSON River hashes: a non-manual review
+// whether "request" is in the JSON that River hashes. A non-manual review
 // (Request left empty) must serialize with no "request" key at all, not an
-// empty string, or it would perturb the hash relative to jobs enqueued
-// before the field existed; a manual re-run must carry it, or two re-runs
-// of the same head would collide.
+// empty string. Otherwise it perturbs the hash relative to jobs enqueued
+// before the field existed. A manual re-run must carry it. Otherwise two
+// re-runs of the same head collide.
 func TestJobArgs(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -120,10 +120,11 @@ func TestLabelChange(t *testing.T) {
 	}
 }
 
-// TestIndexArgsUniqueTags pins the key an index job is unique on: the
-// repository, not the commit, so a burst of pushes is one job; and Full, so
-// a forced rebuild is never folded into an update. CatchUp keeps the
-// rebuild's follow-up distinct from pushes that may publish before it.
+// TestIndexArgsUniqueTags pins the key that an index job is unique on. The
+// key holds the repository, not the commit, so a burst of pushes is one job.
+// It also holds Full, so a forced rebuild is never folded into an update.
+// CatchUp keeps the rebuild's follow-up distinct from pushes that can publish
+// before it.
 func TestIndexArgsUniqueTags(t *testing.T) {
 	got := uniqueFields(IndexArgs{})
 	want := map[string]bool{"RepositoryID": true, "Full": true, "CatchUp": true}

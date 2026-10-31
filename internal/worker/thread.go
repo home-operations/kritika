@@ -16,15 +16,16 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Thread works a review thread someone resolved or unresolved on the
-// forge. Resolving one of the bot's finding threads dismisses the finding,
-// as "@<bot> dismiss" does, unless a push had changed the lines it was made
-// on by the time it was resolved: then the person is saying "fixed", not
-// "wrong", and nothing is recorded, so a later review may raise the
-// finding again should the fix be lost. Unresolving a thread takes a
-// dismissal back. Both take write access, as the mention does: the forge
-// lets a pull request's author resolve the threads on their own pull
-// request, which must not silence the reviewer.
+// Thread works a review thread that someone resolved or unresolved on the
+// forge. Resolving one of the bot's finding threads dismisses the finding, as
+// "@<bot> dismiss" does. The exception is when a push changed the lines it
+// was made on by the time it was resolved. Then the person is saying "fixed",
+// not "wrong", and nothing is recorded. So a later review can raise the
+// finding again if the fix is lost.
+//
+// Unresolving a thread takes a dismissal back. Both take write access, as the
+// mention does: the forge lets a pull request's author resolve the threads on
+// their own pull request, which must not silence the reviewer.
 type Thread struct {
 	river.WorkerDefaults[jobs.ThreadArgs]
 	Base
@@ -58,10 +59,10 @@ func (w *Thread) Work(ctx context.Context, job *river.Job[jobs.ThreadArgs]) erro
 		return err
 	}
 	// Who asked, and whether the thread is one of the bot's findings, are
-	// settled before the pull request's publication lock is taken, so the
-	// events that end ignored never hold it, and the rest hold it for the
-	// state read and its dismissal write alone, which share it so that
-	// another replica restoring the thread cannot overtake this change.
+	// settled before the pull request's publication lock is taken. So the
+	// events that end ignored never hold it. The rest hold it for the state
+	// read and its dismissal write alone. Those two share it so that another
+	// replica restoring the thread cannot overtake this change.
 	fingerprint, outcome, err := w.check(ctx, client, pr, args, logger)
 	if err == nil && outcome == "" {
 		err = w.Store.WithPublicationLock(ctx, pr.id, func(ctx context.Context) error {
@@ -83,9 +84,9 @@ func (w *Thread) Work(ctx context.Context, job *river.Job[jobs.ThreadArgs]) erro
 	return nil
 }
 
-// check is the fingerprint of the finding the thread holds, when the
-// sender may change it and the thread is one of the bot's finding
-// threads; otherwise the outcome is threadIgnored.
+// check is the fingerprint of the finding that the thread holds. That applies
+// when the sender can change it and the thread is one of the bot's finding
+// threads. Otherwise the outcome is threadIgnored.
 func (w *Thread) check(
 	ctx context.Context, client forge.Client, pr *pullRequest, args jobs.ThreadArgs, logger *slog.Logger,
 ) (fingerprint, outcome string, err error) {

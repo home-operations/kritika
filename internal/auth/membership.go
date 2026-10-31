@@ -37,10 +37,10 @@ var (
 	ErrRoleMapping = errors.New("auth: role mapping")
 )
 
-// grant decides what a sign-in allows: the sign-in's role mapping,
-// evaluated over facts, and for a forge the served accounts the person
-// belongs to; where both speak, the higher role wins. The grant's key binds
-// the session to the configuration that decided it.
+// grant decides what a sign-in allows: the sign-in's role mapping, evaluated
+// over facts, and for a forge the served accounts that the person belongs to.
+// Where both speak, the higher role wins. The grant's key binds the session
+// to the configuration that decided it.
 func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id Identity, facts Facts) (store.SessionGrant, error) {
 	var mapped rolemap.Result
 	if prg := s.Mapping(); prg != nil {
@@ -133,15 +133,17 @@ func forgeAccounts(
 	return out, nil
 }
 
-// GrantKey fingerprints what decides a sign-in's grants, the key a session
-// through provider must carry to be honoured under file: for the local
-// admin its name and password, and for a provider its role mapping and
-// what the mapping reads, and for a sign-in on a forge instance the
-// accounts that instance's connections serve, since an account's grant
-// rests on the instance serving it. A session whose sign-in's key has
-// changed since is not honoured, so editing a mapping, rotating the
-// password, or moving an account to another instance ends the sessions it
-// granted. ok is false when the sign-in is not configured.
+// GrantKey fingerprints what decides a sign-in's grants. This is the key that
+// a session through provider must carry to be honored under file. For the
+// local admin, the key covers the admin's name and password. For a provider,
+// it covers the role mapping and what the mapping reads. For a sign-in on a
+// forge instance, it also covers the accounts that the connections of that
+// instance serve. An account's grant rests on the instance that serves it.
+//
+// A session is not honored if the key of its sign-in changed after the
+// session began. So editing a mapping, rotating the password, or moving an
+// account to another instance ends the sessions that it granted. ok is false
+// when the sign-in is not configured.
 func GrantKey(file *configfile.File, provider string) (key string, ok bool) {
 	a := file.Auth
 	var parts []string
@@ -165,7 +167,7 @@ func GrantKey(file *configfile.File, provider string) (key string, ok bool) {
 	h := sha256.New()
 	h.Write([]byte(provider))
 	for _, p := range parts {
-		// Length-prefixed, so no two different part lists hash alike; a
+		// Length-prefixed, so no two different part lists hash alike. A
 		// hash's Write never fails.
 		_, _ = fmt.Fprintf(h, "\x00%d:%s", len(p), p)
 	}

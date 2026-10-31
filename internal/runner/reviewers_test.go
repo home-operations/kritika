@@ -126,9 +126,9 @@ func TestPlanReviewersSplit(t *testing.T) {
 	}
 }
 
-// TestPartPromptsReviewers: a reviewer's part is given its role, its rules
-// rather than the default reviewer's, the last review's findings it
-// raised, a schema of its categories, and a check that refuses a finding
+// TestPartPromptsReviewers: a reviewer's part gets its role, its rules
+// rather than the default reviewer's, the last review's findings it raised,
+// and a schema of its categories. It also gets a check that refuses a finding
 // outside them or its files.
 func TestPartPromptsReviewers(t *testing.T) {
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -291,8 +291,8 @@ func TestDefaultReviewPriorOwnership(t *testing.T) {
 }
 
 // TestRoleWithinBudget: a reviewer's instructions are part of the system
-// prompt the user message is budgeted against, so long ones leave less of
-// the diff in it rather than passing the opening prompt's bound.
+// prompt that the user message is budgeted against. So long ones leave less
+// of the diff in it rather than passing the opening prompt's bound.
 func TestRoleWithinBudget(t *testing.T) {
 	s := reviewSpec()
 	s.Agent.MaxPromptTokens = 12_000

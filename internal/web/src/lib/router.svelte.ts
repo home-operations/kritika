@@ -2,9 +2,9 @@
 // refresh / browser back. Every account-scoped route carries the account's
 // slug (from Me.accounts[].slug) so switching accounts is just a URL rewrite.
 //
-// `Route`/`REVIEW_TABS`/`parse`/`href` are pure and live in routes.ts (no
-// runes, so they're importable outside Svelte's compiler -- see
-// tests/routes.spec.ts for the round-trip and malformed-hash coverage).
+// `Route`/`REVIEW_TABS`/`parse`/`href` are pure and live in routes.ts. They
+// have no runes, so they are importable outside Svelte's compiler. See
+// tests/routes.spec.ts for the round-trip and malformed-hash coverage.
 // This file is just the `$state` wiring around them, which is why it needs
 // the .svelte.ts extension.
 
@@ -63,7 +63,7 @@ export function replace(to: Route): void {
     history.replaceState({ ...history.state, kritikaOrigin: $state.snapshot(router.origin) }, '', href(to));
   } catch {
     // Safari rate-limits replaceState (SecurityError past ~100 calls/30s).
-    // The in-memory route is already updated; the URL syncs on the next call.
+    // The in-memory route is already updated. The URL syncs on the next call.
   }
 }
 

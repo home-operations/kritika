@@ -64,32 +64,38 @@ ingress:
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
 ```
 
-`config` is the application's YAML configuration: `webUrl`, logging, workers,
-polling, retention, `auth`, `apps`, `providers`, review policy and account settings.
-It has the same structure as the configuration file and is evaluated with
-`tpl`, so `webUrl: "https://{{ "{{ .Release.Name }}" }}.example.com"` uses the release name. Omitted values use operational env settings or application defaults; zero and false are preserved.
-The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
+`config` is the application's YAML configuration: `webUrl`, logging,
+workers, polling, retention, `auth`, `apps`, `providers`, review policy
+and account configuration. It has the same structure as the
+configuration file. Helm evaluates it with `tpl`, so
+`webUrl: "https://{{ "{{ .Release.Name }}" }}.example.com"` uses the
+release name. Omitted values use the operational configuration from the
+environment, or application defaults. Zero and false are preserved. The
+chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
 - Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
 - Runner Jobs are configured under `runner`: `runner.jobTemplate` and
   `runner.podTemplate` set what kritika takes from a Job's and a pod's
-  template, such as the deadline, resources, placement and runtime class.
-  The chart derives application settings from runner, database and service
-  values and rejects duplicates under `config`.
+  template, such as the deadline, resources, placement and runtime
+  class. The chart derives application configuration from runner,
+  database and service values. It rejects duplicates under `config`.
 - A checksum of the rendered file rolls pods when configuration changes. The
   ConfigMap carries `reloader.stakater.com/ignore`, so Reloader does not roll
   them a second time.
-- `existingConfigMap` supplies an external `config.yaml` instead of `config`;
-  setting both is an error. Put `webUrl` in that file and omit chart-owned
-  deployment settings. The chart supplies those through environment variables.
-  External ConfigMap and Secret changes need a restart or Reloader.
-- Operational settings such as logging, worker counts and polling support
-  `env` and `envFrom`, but a file setting and its environment variable cannot
-  both be set. Chart-managed environment variables are reserved.
+- `existingConfigMap` supplies an external `config.yaml` instead of
+  `config`. Setting both is an error. Put `webUrl` in that file. Omit
+  chart-owned deployment configuration. The chart supplies it through
+  environment variables. External ConfigMap and Secret changes need a
+  restart or Reloader.
+- Operational configuration such as logging, worker counts and polling
+  supports `env` and `envFrom`, but a file setting and its environment
+  variable cannot both be set. Chart-managed environment variables are
+  reserved.
 - Auth, apps, providers, embedding and review policy are declared in the file.
   Their environment values must be explicitly referenced with `{ env: NAME }`.
-- The config path, database DSNs and per-run credentials/spec path are env-only.
-  The chart supplies the config path and database DSNs from its deployment values.
+- The configuration file path, database DSNs and per-run
+  credentials/spec path are env-only. The chart supplies the
+  configuration file path and database DSNs from its deployment values.
 
 The
 [setup guide](https://kritika.home-operations.com/setup/)
@@ -98,8 +104,8 @@ what a fresh instance still lacks.
 
 ### Database
 
-The chart requires three Postgres roles, and kritika checks them at
-start:
+The chart requires three Postgres roles, and kritika makes sure that
+they are valid at start:
 
 | Role        | Values                                                   | What it does                                             | kritika refuses one that                        |
 | ----------- | -------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
@@ -112,23 +118,26 @@ extensions must exist before the first start, and `vchord` must be in
 `shared_preload_libraries`.
 
 The owner and application connections must reach Postgres directly, or
-through a pooler in session mode. The leader is whichever replica holds a
-session advisory lock on its owner connection, and the dashboard's live
+through a pooler in session mode. The leader is whichever replica holds
+a session advisory lock on its owner connection. The dashboard's live
 updates and the job queue's notifications `LISTEN` on the application
-connection. A transaction-mode pooler, such as PgBouncer or a CloudNativePG
-`Pooler` with `poolMode: transaction`, hands a session to other clients
-between transactions, which breaks both. `kritika_leader` is 1 on the replica
-that holds the lock.
+connection. A transaction-mode pooler, such as PgBouncer or a
+CloudNativePG `Pooler` with `poolMode: transaction`, hands a session to
+other clients between transactions. That breaks both. `kritika_leader`
+is 1 on the replica that holds the lock.
 
 The chart supports the database as a CloudNativePG cluster in the same
-Kubernetes cluster: the chart's NetworkPolicies let kritika serve and
-runner pods reach the Postgres port only on the pods
+Kubernetes cluster. The chart's NetworkPolicies let kritika serve and
+runner pods reach the Postgres port only on the pods that
 `networkPolicy.postgres` selects.
-[Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
-sets this up end to end: a two-instance cluster with VectorChord mounted as
-an image volume extension, the extensions through a `Database` resource, the
-application and runner roles as `DatabaseRole` resources, the Secrets with
-their `uri` key for `database.*.existingSecret`, failover and backups.
+
+[Postgres with
+CloudNativePG](https://kritika.home-operations.com/database/) sets this
+up end to end. It covers a two-instance cluster with VectorChord mounted
+as an image volume extension, and the extensions through a `Database`
+resource. It also covers the application and runner roles as
+`DatabaseRole` resources, the Secrets with their `uri` key for
+`database.*.existingSecret`, failover and backups.
 
 ### Security
 
@@ -136,49 +145,58 @@ Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
 - `networkPolicy.enabled`, on by default, keeps a runner pod to the
-  cluster's DNS, the database `networkPolicy.postgres` locates and the
-  egress gateway kritika serve runs on `service.gatewayPort`, which allows
-  what the configuration file's `egress` lists and is the runner's only
-  way to its model. With the Cilium flavor, it may look up only the names
-  of the cluster's Services.
+  cluster's DNS, the database that `networkPolicy.postgres` locates and
+  the egress gateway. kritika serve runs that gateway on
+  `service.gatewayPort`. The gateway allows what the configuration
+  file's `egress` lists, and it is the runner's only way to its model.
+  With the Cilium flavor, the runner pod can look up only the names of
+  the cluster's Services.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
-- The review's run tool executes the five programs the runner image
-  carries, `curl`, `find`, `gh`, `grep` and `jq`, in a root with bash but
-  no package manager, and those the `tools` of a repository's
-  `.kritika.yaml` add from the aqua registry, each download checked
-  against its digest or checksum and, where the runner verifies its form,
-  the signature the registry declares, with whatever arguments the model
-  gives: the pod's bounds confine a command, not a check of its arguments.
-- `runner.podTemplate` puts runner pods under a sandboxed runtime such as
-  gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
-  with `resources`, and keeps runner pods on nodes of their own, and in a
-  user namespace with `hostUsers: false`.
-- `runner.admissionPolicy.enabled`, on by default, has the cluster refuse,
-  from kritika serve's ServiceAccount, any Job but a runner Job and any
-  Secret but a run's, with ValidatingAdmissionPolicies: cluster-scoped
-  objects the chart's installer must be allowed to create.
+- The review's run tool executes the five programs that the runner image
+  carries: `curl`, `find`, `gh`, `grep` and `jq`. It runs them in a root
+  with bash but no package manager. It also executes those that the
+  `tools` of a repository's `.kritika.yaml` add from the aqua registry.
+  The runner makes sure that each download matches its digest or
+  checksum. If the runner verifies the form of signature that the
+  registry declares, it also verifies that signature. The run tool
+  executes each program with whatever arguments
+  the model gives: the pod's bounds confine a command, not a check of
+  its arguments.
+- `runner.podTemplate` puts runner pods under a sandboxed runtime such
+  as gVisor with `runtimeClassName`. It keeps a runaway run in its own
+  cgroup with `resources`. It also keeps runner pods on nodes of their
+  own, and in a user namespace with `hostUsers: false`.
+- `runner.admissionPolicy.enabled`, on by default, has the cluster
+  refuse, from kritika serve's ServiceAccount, any Job but a runner Job
+  and any Secret but a run's. It uses ValidatingAdmissionPolicies:
+  cluster-scoped objects that the chart's installer must be allowed to
+  create.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
 
 ### Topology
 
-The chart runs one Deployment of `kritika serve`, one replica by default.
-Its rolling update surges a new pod and takes the old one down only once the
-new one is ready, so a rollout, such as the one a changed `config`
-starts, keeps one serving on its own: a pod is ready only once its database
-answers and it serves webhooks. Every replica serves webhooks and
-the dashboard and works jobs, and one holds the leader lock at a time, so
-`replicas: 2` keeps one serving while a pod or node is lost; the chart then
-adds a PodDisruptionBudget so a drain takes one at a time. Until a lost
-replica is back, webhooks are refused; the next poll picks up the pull
-requests they missed, though not the mentions, which only a webhook
-delivers. Runner pods are the Jobs `kritika serve` creates, one per review,
-follow-up and index run, running `kritika run`. A replica that stops drains its jobs
-first; one that dies outright leaves them to the leader, which hands them
-back to the queue within a few minutes and deletes the runner Jobs they
-left, and a remaining replica works them.
+The chart runs one Deployment of `kritika serve`, one replica by
+default. Its rolling update surges a new pod and takes the old one down
+only once the new one is ready. A rollout, such as the one that a
+changed `config` starts, therefore keeps one serving on its own. A pod
+is ready only once its database answers and it serves webhooks.
+
+Every replica serves webhooks and the dashboard and works jobs, and one
+holds the leader lock at a time. `replicas: 2` therefore keeps one
+serving while a pod or node is lost. The chart then adds a
+PodDisruptionBudget so that a drain takes one at a time. Until a lost
+replica is back, webhooks are refused. The next poll picks up the pull
+requests that they missed, though not the mentions, which only a webhook
+delivers.
+
+Runner pods are the Jobs that `kritika serve` creates, one per review,
+follow-up and index run. They run `kritika run`. A replica that stops
+drains its jobs first. A replica that dies outright leaves them to the
+leader. The leader hands them back to the queue within a few minutes and
+deletes the runner Jobs that they left. A remaining replica works them.
 
 {{ template "chart.maintainersSection" . }}
 

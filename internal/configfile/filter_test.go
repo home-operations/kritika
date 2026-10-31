@@ -108,7 +108,7 @@ func TestFilterCompile(t *testing.T) {
 	tests := []struct {
 		name   string
 		filter Filter
-		want   string // the error; empty means it compiles
+		want   string // the error, and empty means it compiles
 	}{
 		{name: "paths only", filter: Filter{Paths: []string{"src/**", "*.go"}}},
 		{name: "expr only", filter: Filter{Expr: "pr.draft"}},
@@ -165,7 +165,7 @@ func TestFiltersCompile(t *testing.T) {
 	tests := []struct {
 		name    string
 		filters Filters
-		want    string // substring of the error; empty means it compiles
+		want    string // substring of the error, and empty means it compiles
 	}{
 		{name: "empty lists"},
 		{name: "the same name in both lists", filters: Filters{Include: []Filter{{Name: "a", Expr: "true"}}, Exclude: []Filter{{Name: "a", Expr: "true"}}}},

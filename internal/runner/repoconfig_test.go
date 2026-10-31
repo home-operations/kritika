@@ -120,7 +120,7 @@ func TestRepoFiles(t *testing.T) {
 }
 
 // A tree can name a blob the store does not hold, as after a partial
-// fetch; reading it is fs.ErrNotExist, like a path the tree lacks.
+// fetch. Reading it is fs.ErrNotExist, like a path the tree lacks.
 func TestTreeReaderMissingBlob(t *testing.T) {
 	st := memory.NewStorage()
 	obj := st.NewEncodedObject()

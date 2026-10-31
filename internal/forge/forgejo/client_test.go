@@ -24,8 +24,8 @@ type fakeForge struct {
 	mux    *http.ServeMux
 	srv    *httptest.Server
 	issuer *Issuer
-	// token is the Gitea access token every call must carry; empty for
-	// Forgejo, whose calls carry a token the issuer signed.
+	// token is the Gitea access token that every call must carry. It is empty
+	// for Forgejo, whose calls carry a token that the issuer signed.
 	token string
 
 	mu    sync.Mutex
@@ -51,7 +51,7 @@ func startFake(t *testing.T, apiToken string) *fakeForge {
 	f.issuer = testIssuer(t)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Every call carries a token of the integration, signed by the
-		// issuer, as Forgejo checks it, or Gitea's access token.
+		// issuer, as Forgejo expects it, or Gitea's access token.
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		switch {
 		case !ok:
@@ -332,10 +332,10 @@ func TestConversationComments(t *testing.T) {
 	}
 }
 
-// reviews is a pull request with two reviews: the bot's, holding two code
-// comments, one resolved, and dev's reply to the first in that review, and
-// dev's own single-comment review on the same line, a conversation of its
-// own.
+// reviews is a pull request with two reviews. One is the bot's, which holds
+// two code comments, one of them resolved, and dev's reply to the first in
+// that review. The other is dev's own single-comment review on the same line,
+// a conversation of its own.
 func reviews(f *fakeForge) {
 	f.json("GET", "/api/v1/user", 200, map[string]any{"login": "kritika-bot"})
 	f.json("GET", repoAPI+"/pulls/7/reviews", 200, []map[string]any{
@@ -366,10 +366,10 @@ func TestInlineComments(t *testing.T) {
 	if err != nil || len(inline) != 7 || inline[0].ID != 10 || inline[2].ID != 12 || inline[6].ID != 13 || !inline[1].Inline || inline[1].Path != "b.go" || inline[1].Line != 5 {
 		t.Fatalf("ListInline = %+v, %v; want oldest first across reviews", inline, err)
 	}
-	// dev's comment in the bot's review on a.go line 3 replies to the
-	// bot's, the oldest of that conversation; dev's own review on the same
-	// line is a conversation of its own, as are a comment on the old side
-	// and two ranges from one line to different last lines.
+	// dev's comment in the bot's review on a.go line 3 replies to the bot's,
+	// the oldest of that conversation. dev's own review on the same line is a
+	// conversation of its own. So is a comment on the old side, and so are
+	// two ranges from one line to different last lines.
 	for i, want := range map[int]int64{0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 10} {
 		if inline[i].InReplyTo != want {
 			t.Fatalf("comment %d replies to %d, want %d; a conversation is one review's comments on one line of one side", inline[i].ID, inline[i].InReplyTo, want)
@@ -490,7 +490,8 @@ func TestApprovals(t *testing.T) {
 	if posted, _ := c.Approve(t.Context(), "acme", "widgets", 7, "old", "LGTM"); posted {
 		t.Fatal("an approval of the head that stands must not be repeated")
 	}
-	// The one standing approval, of old, is dismissed; the dismissed one is not.
+	// The one standing approval, of old, is dismissed. The dismissed one is
+	// not.
 	if n, err := c.DismissApprovals(t.Context(), "acme", "widgets", 7, "stale"); err != nil || n != 1 {
 		t.Fatalf("DismissApprovals = %d, %v", n, err)
 	}
@@ -631,9 +632,9 @@ func TestRepositories(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(page)
 	})
 	// A total count alone paces the walk by pages, measured by the largest
-	// page seen: the instance caps a page at 2 here, under what is asked,
-	// and leaves one page empty of what the bot cannot see; the walk reads
-	// past the emptied page and ends once the pages read cover the count.
+	// page seen. The instance caps a page at 2 here, under what is asked, and
+	// leaves one page empty of what the bot cannot see. The walk reads past
+	// the emptied page and ends once the pages read cover the count.
 	f.mux.HandleFunc("GET /api/v1/users/dev/repos", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Total-Count", "6")
 		page := []map[string]any{}

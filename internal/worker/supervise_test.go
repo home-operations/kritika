@@ -16,8 +16,8 @@ import (
 	"github.com/home-operations/kritika/internal/executor"
 )
 
-// fakeState is a run as the database would report it, changed by the test
-// while the fake executor blocks.
+// fakeState is a run as the database reports it, changed by the test while
+// the fake executor blocks.
 type fakeState struct {
 	mu       sync.Mutex
 	started  bool
@@ -76,7 +76,7 @@ func (l *eventLog) recorded() []string {
 	return slices.Clone(l.events)
 }
 
-// blockingExecutor runs until its context ends, as a Job would until the
+// blockingExecutor runs until its context ends, as a Job does until the
 // executor deletes it.
 type blockingExecutor struct {
 	started chan struct{}
@@ -101,7 +101,7 @@ func TestSupervise(t *testing.T) {
 		name      string
 		checkHead bool
 		exec      executor.Executor
-		// change is applied once the run has started.
+		// change is applied once the run started.
 		change    func(*fakeState)
 		wantCause error
 		// wantEvent is the Event recorded on the run's Job, if any.
@@ -178,9 +178,9 @@ func TestSupervise(t *testing.T) {
 	}
 }
 
-// TestRunEnd: kritika names why it ended a run for the Event on its Job by
-// the cause the executor stopped the run with, whatever cause landed
-// since, and records nothing of a run that ended on its own.
+// TestRunEnd: kritika names why it ended a run for the Event on its Job. It
+// names it by the cause that the executor stopped the run with, whatever
+// cause landed since. It records nothing of a run that ended on its own.
 func TestRunEnd(t *testing.T) {
 	failed := errors.New("executor: job kritika-run-x failed: Error")
 	for _, tt := range []struct {
@@ -236,8 +236,8 @@ func TestRunEnd(t *testing.T) {
 
 // TestSuperviseRecordsWhatStoppedTheRun: a cancel from the dashboard that
 // lands while supervision is still reading whether the review was replaced
-// stops the run, and its Event says so, though supervision then settles on
-// the replacement.
+// stops the run. Its Event says so, though supervision then settles on the
+// replacement.
 func TestSuperviseRecordsWhatStoppedTheRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		state := &fakeState{gate: make(chan struct{})}

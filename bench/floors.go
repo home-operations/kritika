@@ -12,13 +12,14 @@ import (
 	"slices"
 )
 
-// Floors are the least a run may measure before the bench fails, per
-// mode: the recall of the must-find cases, and two collapse floors that
-// trip when the engine breaks rather than on noise, the mean findings and
-// the mean tool calls per case, set at about half of what runs measured.
-// They are pinned to the judge that scored the runs they were set from,
-// since a judge scores differently from lines alone and from another
-// judge: a run scored otherwise is not held to them.
+// Floors are the least that a run can measure per mode before the bench
+// fails. They are the recall of the must-find cases and two collapse floors:
+// the mean findings and the mean tool calls per case. The collapse floors
+// trip when the engine breaks rather than on noise, and they are set at
+// about half of what runs measured. Floors are pinned to the judge that
+// scored the runs they were set from. A judge scores differently from lines
+// alone and from another judge, so a run scored otherwise is not held to
+// them.
 type Floors struct {
 	// Judge is the judge the floors were set with, as judge.Name says,
 	// "" for lines alone.
@@ -34,15 +35,16 @@ type ModeFloors struct {
 }
 
 // floorSigmas is how many standard deviations under the mean of the runs
-// a recall floor is set, Kodus's figure, so two runs that differ by noise
-// set a floor under both.
+// a recall floor is set. This is Kodus's figure. With it, two runs that
+// differ by noise set a floor under both.
 const floorSigmas = 2.2
 
 // collapseShare is the share of the measured mean a collapse floor is set
 // at.
 const collapseShare = 0.5
 
-// LoadFloors reads the floors at path; none when the file is absent.
+// LoadFloors reads the floors at path. It returns none when the file is
+// absent.
 func LoadFloors(path string) (Floors, bool, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -58,9 +60,9 @@ func LoadFloors(path string) (Floors, bool, error) {
 	return f, true, nil
 }
 
-// Check says what of rep is under its floor, one line each; nothing when
-// rep was scored by another judge than the floors were set with, which
-// gated says.
+// Check says what of rep is under its floor, one line each. It says nothing
+// when rep was scored by a judge other than the one that the floors were
+// set with, and gated says so.
 func (f Floors) Check(rep report) (under []string, gated bool) {
 	if rep.Judge != f.Judge {
 		return nil, false
@@ -86,11 +88,11 @@ func (f Floors) Check(rep report) (under []string, gated bool) {
 	return under, true
 }
 
-// FloorsFrom sets floors from runs scored by one judge: a mode's recall
-// floor is the mean over the runs less floorSigmas standard deviations,
-// at least 0, and its collapse floors are collapseShare of the means.
-// Every run must be live and have been scored by the same judge, and a
-// mode is set from the runs that ran it.
+// FloorsFrom sets floors from runs scored by one judge. A mode's recall
+// floor is the mean over the runs less floorSigmas standard deviations, at
+// least 0. Its collapse floors are collapseShare of the means. Every run
+// must be live and scored by the same judge. A mode is set from the runs
+// that ran it.
 func FloorsFrom(runs ...report) (Floors, error) {
 	if len(runs) == 0 {
 		return Floors{}, errors.New("bench: no runs to set floors from")
@@ -142,6 +144,6 @@ func meanSigma(xs []float64) (mean, sigma float64) {
 }
 
 // down3 is x to the thousandth under it, so a floor written out is never
-// over the measure it was set from, as rounding to the nearest could put
-// 0.667 over a recall of two thirds.
+// over the measure it was set from. Rounding to the nearest can put 0.667
+// over a recall of two thirds.
 func down3(x float64) float64 { return math.Floor(x*1000) / 1000 }

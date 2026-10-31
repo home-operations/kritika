@@ -16,8 +16,8 @@ export function wholeNumber(n: number): string {
   return whole.format(n);
 }
 
-// usd renders a dollar cost; sub-cent amounts keep enough precision to read
-// as non-zero since a single model call commonly costs a fraction of a cent.
+// usd renders a dollar cost. Sub-cent amounts keep enough precision to read
+// as non-zero, since a single model call commonly costs a fraction of a cent.
 export function usd(n: number): string {
   if (n === 0) return '$0';
   if (Math.abs(n) < 0.01) return `$${n.toFixed(4)}`;
@@ -30,7 +30,7 @@ export function costTotal(n: number, unpricedCalls = 0): string {
 }
 
 // reviewsLeftOut says how many reviews a per-review figure leaves out for
-// their unpriced calls, whose cost is not known; empty for none.
+// their unpriced calls, whose cost is not known. It is empty for none.
 export function reviewsLeftOut(unpricedReviews = 0): string {
   return unpricedReviews ? ` · ${wholeNumber(unpricedReviews)} with unpriced calls left out` : '';
 }
@@ -159,8 +159,8 @@ export const DISMISSED_BY: Record<DismissSource, string> = {
   conceded: 'Dismissed when kritika conceded it in its thread',
 };
 
-// isActive reports whether a review is still moving, i.e. its page should
-// follow live events.
+// isActive reports whether a review is still moving, that is, whether its
+// page must follow live events.
 export function isActive(s: ReviewStatus): boolean {
   return s === 'running' || s === 'prepared';
 }
@@ -176,8 +176,8 @@ export function splitRepo(fullName: string): { owner: string; repo: string } {
   return i < 0 ? { owner: fullName, repo: '' } : { owner: fullName.slice(0, i), repo: fullName.slice(i + 1) };
 }
 
-// pretty renders a JSON value indented; strings that are themselves JSON are
-// left as-is so a raw passthrough doesn't get double-quoted.
+// pretty renders a JSON value indented. Strings that are themselves JSON are
+// left as-is so that a raw passthrough does not get double-quoted.
 export function pretty(v: unknown): string {
   if (typeof v === 'string') return v;
   try {
@@ -188,9 +188,9 @@ export function pretty(v: unknown): string {
 }
 
 // change is how now differs from before, for a delta chip: a signed
-// percentage, or with points the difference of two percentages; nothing
-// when either has no value, when both are zero, or when a relative change
-// would be against zero and there is nothing to compare with.
+// percentage, or with points the difference of two percentages. It is nothing
+// when either has no value or when both are zero. It is also nothing when a
+// relative change is against zero and there is nothing to compare with.
 export function change(now: number | null, before: number | null, points = false): { text: string; dir: -1 | 0 | 1 } | undefined {
   if (now === null || before === null || (now === 0 && before === 0)) return undefined;
   const dir = now > before ? 1 : now < before ? -1 : 0;

@@ -90,11 +90,11 @@ type subject struct {
 	open   func() (io.ReadCloser, error)
 }
 
-// verify checks each signature s declares of f, failing on the first that
-// does not verify. One of a kind the runner does not check, a detached
-// signature and certificate, a key-signed one or provenance outside a
-// Sigstore bundle, is passed over, and the log says so: the checksum alone
-// then stands for the file.
+// verify makes sure that each signature that s declares of f is valid. It
+// fails on the first that does not verify. A signature of a kind that the
+// runner has no check for is passed over. That is a detached signature and
+// certificate, a key-signed one, or provenance outside a Sigstore bundle. The
+// log says so, and the checksum alone then stands for the file.
 func (in *Installer) verify(ctx context.Context, p *Package, s signatures, f subject) error {
 	for _, c := range []struct {
 		kind    string
@@ -125,11 +125,11 @@ func (in *Installer) verify(ctx context.Context, p *Package, s signatures, f sub
 	return nil
 }
 
-// cosign checks f against the Sigstore bundle c names, held to the
-// identity its options name. A key-signed file, or a signature and
-// certificate apart from a bundle, is passed over; an option that is none
-// of those, or of the identity, fails it, since it may narrow the identity
-// in a way the runner would not.
+// cosign makes sure that f is valid against the Sigstore bundle that c names,
+// held to the identity that its options name. A key-signed file, or a
+// signature and certificate apart from a bundle, is passed over. An option
+// that is none of those, or of the identity, fails it. Such an option can
+// narrow the identity in a way that the runner does not.
 func (in *Installer) cosign(ctx context.Context, p *Package, c *registry.Cosign, f subject) (string, error) {
 	switch {
 	case c.Key != nil:
@@ -155,9 +155,9 @@ func (in *Installer) cosign(ctx context.Context, p *Package, c *registry.Cosign,
 	return "", verifyBundle(b, f.sha256, identity, nil)
 }
 
-// cosignIdentity is the certificate identity cosign's options, as
-// `cosign verify-blob` takes them, hold a signature to; skipped says why
-// they do not name a keyless signature in a bundle.
+// cosignIdentity is the certificate identity that cosign's options, as
+// `cosign verify-blob` takes them, hold a signature to. skipped says why they
+// do not name a keyless signature in a bundle.
 func cosignIdentity(opts []string) (_ verify.CertificateIdentity, skipped string, _ error) {
 	var san, sanRegexp, issuer, issuerRegexp string
 	var ext certificate.Extensions
@@ -244,11 +244,11 @@ func (in *Installer) bundle(ctx context.Context, p *Package, d *registry.Downloa
 	return parseBundle(bytes.TrimSpace(data))
 }
 
-// parseBundle reads data as a Sigstore bundle, and whether it is one, by
-// the media type of the JSON value it starts with, so provenance of
-// several JSON lines reads as a form the runner passes over. Data that is
-// no JSON at all, or a bundle that does not parse, fails: a corrupted
-// bundle is never taken for a form the runner passes over.
+// parseBundle reads data as a Sigstore bundle, and whether it is one, by the
+// media type of the JSON value it starts with. So provenance of several JSON
+// lines reads as a form that the runner passes over. Data that is no JSON at
+// all, or a bundle that does not parse, fails. A corrupted bundle is never
+// taken for a form that the runner passes over.
 func parseBundle(data []byte) (*bundle.Bundle, bool, error) {
 	var probe struct {
 		MediaType string `json:"mediaType"`
@@ -266,9 +266,9 @@ func parseBundle(data []byte) (*bundle.Bundle, bool, error) {
 	return b, true, nil
 }
 
-// verifyBundle checks b is a signature of the file whose SHA-256 is
-// digest, by identity, and, when predicateTypes are given, attests a
-// statement of one of them.
+// verifyBundle makes sure that b is a signature of the file whose SHA-256 is
+// digest, by identity. When predicateTypes are given, it also makes sure that
+// b attests a statement of one of them.
 func verifyBundle(b *bundle.Bundle, digest []byte, identity verify.CertificateIdentity, predicateTypes []string) error {
 	v, err := sigstoreVerifier()
 	if err != nil {
@@ -284,8 +284,8 @@ func verifyBundle(b *bundle.Bundle, digest []byte, identity verify.CertificateId
 	return nil
 }
 
-// minisign checks f against the minisign signature m names, with the
-// public key the registry pins.
+// minisign makes sure that f is valid against the minisign signature that m
+// names, with the public key that the registry pins.
 func (in *Installer) minisign(ctx context.Context, p *Package, m *registry.Minisign, f subject) (string, error) {
 	if m.PublicKey == "" {
 		return "", errors.New("the registry names no public key")
@@ -316,12 +316,13 @@ const signerWorkflowRef = `@(refs/.*|[0-9a-fA-F]+)`
 // workflowHost tells a signer workflow that names its host, as gh does.
 var workflowHost = regexp.MustCompile(`^[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+.*$`)
 
-// attestations checks f against GitHub's artifact attestations of it,
-// held to the identity gh holds them to: the signer workflow or repository
-// the registry names, else any workflow of the attestations' repository,
-// with GitHub Actions' issuer and the source the registry names. One that
-// verifies is enough; they are passed over only when every one is by
-// GitHub's own Sigstore instance.
+// attestations makes sure that f is valid against GitHub's artifact
+// attestations of it, held to the identity that gh holds them to. That
+// identity is the signer workflow or repository that the registry names, else
+// any workflow of the attestations' repository. It also has GitHub Actions'
+// issuer and the source that the registry names. One that verifies is enough.
+// They are passed over only when every one is by GitHub's own Sigstore
+// instance.
 func (in *Installer) attestations(ctx context.Context, p *Package, a *registry.GitHubArtifactAttestations, f subject) (string, error) {
 	if a.SignerRepo != "" && a.SignerWorkflow() != "" {
 		return "", errors.New("the registry names both a signer repository and a signer workflow, which gh refuses")
@@ -458,12 +459,12 @@ func githubInstance(b *bundle.Bundle) bool {
 	return cert != nil && slices.Contains(cert.Issuer.Organization, "GitHub, Inc.")
 }
 
-// slsa checks f against the SLSA provenance s names, a Sigstore bundle
-// slsa-github-generator signed, held to a builder at a release's tag,
-// GitHub Actions' issuer, and the source repository and tag the registry
-// names, the package's own and its version unless it names others; a tag
-// of "-" is not checked. Provenance outside a Sigstore bundle is passed
-// over.
+// slsa makes sure that f is valid against the SLSA provenance that s names, a
+// Sigstore bundle that slsa-github-generator signed. The provenance is held
+// to a builder at a release's tag, GitHub Actions' issuer, and the source
+// repository and tag that the registry names. Those are the package's own and
+// its version, unless the registry names others. The check skips a tag of
+// "-". Provenance outside a Sigstore bundle is passed over.
 func (in *Installer) slsa(ctx context.Context, p *Package, s *registry.SLSAProvenance, f subject) (string, error) {
 	file := s.ToDownloadedFile()
 	if file.RepoOwner == "" {

@@ -16,7 +16,7 @@ import (
 )
 
 // TestJudgeApproval: a pull request held closed is out of approval's reach
-// whether or not review.approve has conditions; an open one with none is in
+// whether or not review.approve has conditions. An open one with none is in
 // scope.
 func TestJudgeApproval(t *testing.T) {
 	ctx := t.Context()

@@ -60,9 +60,9 @@ func TestContextChunksGiven(t *testing.T) {
 		}
 		return got
 	}
-	// reviewed has review start a review and wait for it to end, checks it
-	// ended with want, and returns its pack and the context sections of its
-	// opening request, which the pack must match.
+	// reviewed has review start a review and wait for it to end. It makes
+	// sure that the review ended with want. It returns the review's pack and
+	// the context sections of its opening request, which the pack must match.
 	reviewed := func(want string, review func() (id, status string)) (store.ContextPackRecord, map[string]int) {
 		t.Helper()
 		h.sm.reset(scriptSubmit)

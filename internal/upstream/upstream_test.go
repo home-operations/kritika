@@ -28,11 +28,11 @@ import (
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
-// source is the repository the tests fetch, as a bare repository under
-// root named repo.git. At v1, an annotated tag that the annotated tag
-// v1-again names, it has a README, a symlink to it, a file over the
-// tests' blob limit and two packages; at v2, a lightweight tag that main
-// also points at, pkg/a/a.go gains a function, pkg/a/old.go is renamed to
+// source is the repository that the tests fetch, as a bare repository under
+// root named repo.git. v1 is an annotated tag that the annotated tag v1-again
+// names. At v1, the repository has a README, a symlink to it, a file over the
+// tests' blob limit and two packages. v2 is a lightweight tag that main also
+// points at. At v2, pkg/a/a.go gains a function, pkg/a/old.go is renamed to
 // pkg/a/new.go unchanged, and pkg/b/b.go and the large file change.
 type source struct {
 	root   string
@@ -131,10 +131,10 @@ type server struct {
 	filters bool
 }
 
-// servers serves src with go-git's own server, which cannot filter, and,
-// where git is installed, with git http-backend, which can and which, as
-// GitHub does, sends none of the blobs under a commit the client says it
-// has.
+// servers serves src with go-git's own server, which cannot filter. Where git
+// is installed, it also serves src with git http-backend, which can filter.
+// As GitHub does, git http-backend sends none of the blobs under a commit
+// that the client says it has.
 func servers(t *testing.T, src source) []server {
 	t.Helper()
 	gogit := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(src.root), false)))
@@ -289,7 +289,7 @@ func TestFetchLimits(t *testing.T) {
 	if _, err := fetch(Limits{WireBytes: 100, WriteBytes: 1 << 20, BlobBytes: 1 << 10, DiffBytes: 1 << 20}, Request{Ref: "v1"}); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("over the wire cap: err = %v, want ErrTooLarge", err)
 	}
-	// README.md sorts first and fits; the next file does not.
+	// README.md sorts first and fits. The next file does not.
 	res, err := fetch(Limits{WireBytes: 1 << 20, WriteBytes: 12, BlobBytes: 1 << 10, DiffBytes: 1 << 20}, Request{Ref: "v1"})
 	if err != nil || !res.Truncated || res.Files != 1 || res.Bytes != int64(len("upstream\n")) {
 		t.Fatalf("over the write cap: %+v, %v", res, err)
@@ -388,11 +388,11 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	return r.base.RoundTrip(req)
 }
 
-// TestBackfillSendsNoHaves checks what keeps GitHub sending the blobs a
-// filtered fetch left out: a server told the client has a commit sends
-// none of the blobs under it, so the fetch of the blobs claims to have
-// nothing. git itself sends them either way, so the requests are what is
-// checked.
+// TestBackfillSendsNoHaves makes sure that the fetch of the blobs that a
+// filtered fetch left out claims to have nothing. This keeps GitHub sending
+// those blobs: a server told that the client has a commit sends none of the
+// blobs under it. git itself sends them either way, so the test looks at the
+// requests.
 func TestBackfillSendsNoHaves(t *testing.T) {
 	srvs := servers(t, newSource(t))
 	if len(srvs) < 2 {

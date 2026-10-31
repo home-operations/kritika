@@ -95,7 +95,7 @@ func TestLoginStateConsumedOnce(t *testing.T) {
 	}
 }
 
-// Unauthenticated sign-in starts each leave a row; past the cap they are
+// Unauthenticated sign-in starts each leave a row. Past the cap they are
 // refused until rows expire, rather than growing the table without bound.
 func TestCreateLoginStateCap(t *testing.T) {
 	s := openStore(t)
@@ -121,9 +121,9 @@ func TestCreateLoginStateCap(t *testing.T) {
 }
 
 // TestListUsers: users are listed with their sign-ins and the sessions
-// still live, the most recently signed in first, and signing one out
-// everywhere ends their sessions, expired ones included, but keeps when
-// they last signed in.
+// still live, the most recently signed in first. Signing one out everywhere
+// ends their sessions, expired ones included, but keeps when they last
+// signed in.
 func TestListUsers(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -169,8 +169,8 @@ func TestListUsers(t *testing.T) {
 	}
 }
 
-// listTwo returns users a and b as ListUsers lists them at now, failing
-// unless it lists both, a first.
+// listTwo returns users a and b as ListUsers lists them at now. It fails
+// unless ListUsers lists both, a first.
 func listTwo(t *testing.T, s *Store, now time.Time, a, b string) (UserSummary, UserSummary) {
 	t.Helper()
 	users, err := s.ListUsers(t.Context(), now)
@@ -185,9 +185,9 @@ func listTwo(t *testing.T, s *Store, now time.Time, a, b string) (UserSummary, U
 	return users[ia], users[ib]
 }
 
-// endSessions signs the user out everywhere, as an admin would, after
-// checking GetUser finds them and no one else, and returns how many
-// sessions it ended.
+// endSessions signs the user out everywhere, as an admin does, and returns
+// how many sessions it ended. It first makes sure that GetUser finds them
+// and no one else.
 func endSessions(t *testing.T, s *Store, userID string) int64 {
 	t.Helper()
 	ctx := t.Context()

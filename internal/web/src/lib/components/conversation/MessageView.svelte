@@ -5,7 +5,7 @@
   import CodeBlock from '../CodeBlock.svelte';
   import ToolCallView from './ToolCallView.svelte';
 
-  // toolNames maps a tool-call id to the tool it invoked, so a result can say
+  // toolNames maps a tool-call id to the tool it invoked. A result can then say
   // what it answers even when the call was in an earlier turn.
   let { m, toolNames }: { m: Message; toolNames: Map<string, string> } = $props();
 </script>

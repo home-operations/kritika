@@ -14,11 +14,11 @@ import (
 )
 
 // scripted is a model that answers from the corpus rather than from a
-// provider: a review request gets a submission with a finding on every
-// expected range of the case it was told, and a judge request a match.
-// It stands in for the vendor so a run exercises every other line of the
-// bench and of the review code it calls, fetch to report, with no key and
-// at no cost: the wiring smoke CI runs.
+// provider. A review request gets a submission with a finding on every
+// expected range of the case it was told. A judge request gets a match.
+// It stands in for the vendor, with no key and at no cost. A run then
+// exercises every other line of the bench and of the review code it calls,
+// from fetch to report. This is the wiring smoke that CI runs.
 type scripted struct {
 	mu   sync.Mutex
 	c    Case

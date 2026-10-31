@@ -52,7 +52,8 @@ func testIssuer(t *testing.T) *Issuer {
 	return i
 }
 
-// verify checks a token against the issuer's key and returns its claims.
+// verify makes sure that a token is valid against the issuer's key and
+// returns its claims.
 func verify(t *testing.T, i *Issuer, token string) (jwt.Claims, string) {
 	t.Helper()
 	parsed, err := jwt.ParseSigned(token, []jose.SignatureAlgorithm{jose.RS256})
@@ -86,9 +87,9 @@ func TestIssuerToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	claims, kid := verify(t, i, token)
-	// Issued and valid from a minute ago: Forgejo refuses a token issued
-	// in its own future and allows no leeway, so a clock a little ahead
-	// must not make every fresh token fail.
+	// Issued and valid from a minute ago: Forgejo refuses a token issued in
+	// its own future and allows no leeway. So a clock a little ahead must not
+	// make every fresh token fail.
 	if claims.Issuer != i.URL() || claims.Subject != "kritika" || len(claims.Audience) != 1 || claims.Audience[0] != "aud-1" || claims.ID == "" ||
 		!claims.Expiry.Time().Equal(now.Add(10*time.Minute)) || !claims.IssuedAt.Time().Equal(now.Add(-skew)) || !claims.NotBefore.Time().Equal(now.Add(-skew)) {
 		t.Fatalf("claims = %+v", claims)

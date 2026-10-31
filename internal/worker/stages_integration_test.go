@@ -164,9 +164,9 @@ func TestReviewStageHandoff(t *testing.T) {
 		t.Fatalf("review = %s: %s", status, why)
 	}
 	checkPublishedTiming(t, reg)
-	// The duration spans the runner's hold and the stages between, which a
-	// clock restarted by the publish job would not; one restarted from zero
-	// would pass the test's own time.
+	// The duration spans the runner's hold and the stages between. A clock
+	// restarted by the publish job does not span them. A clock restarted from
+	// zero passes the test's own time.
 	checkReviewDuration(t, reg, held+stagesStarted.Sub(runnerDone), time.Since(before))
 }
 
@@ -261,9 +261,9 @@ func checkPublishedTiming(t *testing.T, reg *prometheus.Registry) {
 	t.Fatal("agent timestamp did not survive preparation and publication handoffs")
 }
 
-// TestPreparationFailureSettlesMarks: a preparation stage that ends the
-// review itself, with no job error for River, still takes the eyes off the
-// pull request and marks it failed, as the runner job did before it handed
+// TestPreparationFailureSettlesMarks: a preparation stage can end the review
+// itself, with no job error for River. It still takes the eyes off the pull
+// request and marks it failed. The runner job did the same before it handed
 // preparation off.
 func TestPreparationFailureSettlesMarks(t *testing.T) {
 	h := newAgenticHarness(t, 1101)
@@ -280,12 +280,12 @@ func TestPreparationFailureSettlesMarks(t *testing.T) {
 	})
 }
 
-// TestStageAfterCloseReplacesStatus: a pull request closed once its runner
-// is done still gets the review's outcome in place of the pending status it
-// set, as it did when one job carried the review through; only a review
-// that began after the close sets none. The worker read the pull request
-// open just before the review row was made, so a close that lands in
-// between is one the review began under all the same.
+// TestStageAfterCloseReplacesStatus: a pull request closed once its runner is
+// done still gets the review's outcome in place of the pending status it set.
+// It got that outcome too when one job carried the review through. Only a
+// review that began after the close sets none. The worker read the pull
+// request open just before the review row was made. So a close that lands in
+// between is one that the review began under all the same.
 func TestStageAfterCloseReplacesStatus(t *testing.T) {
 	for _, tt := range []struct {
 		name     string

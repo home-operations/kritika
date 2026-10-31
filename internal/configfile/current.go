@@ -22,7 +22,7 @@ func (c *Current) Get() *File {
 }
 
 // Set replaces the configuration. The service never calls it after
-// startup; tests swap configurations with it.
+// startup. Tests swap configurations with it.
 func (c *Current) Set(f *File) {
 	c.file.Store(f)
 }

@@ -21,14 +21,15 @@ const (
 	Issuer   = "https://auth.openai.com"
 	TokenURL = Issuer + "/api/accounts/oauth/token"
 	Resource = "https://api.openai.com/v1"
-	// PlanScope is the scope that lets an app's requests draw on the plan;
-	// a sign-in without it is an identity and nothing to review with.
+	// PlanScope is the scope that lets an app's requests draw on the plan. A
+	// sign-in without it is an identity and nothing to review with.
 	PlanScope = "chatgpt.tokens.use.direct"
 )
 
-// Credentials is one sign-in's record: the client the sign-in registered,
-// its tokens and the account they are for. The access token lasts an hour; the
-// refresh token thirty days, and every refresh replaces it.
+// Credentials is one sign-in's record: the client that the sign-in
+// registered, its tokens, and the account they are for. The access token
+// lasts an hour. The refresh token lasts thirty days, and every refresh
+// replaces it.
 type Credentials struct {
 	Email        string    `json:"email,omitempty"`
 	Issuer       string    `json:"issuer"`
@@ -44,7 +45,7 @@ type Credentials struct {
 	SavedAt      time.Time `json:"saved_at"`
 }
 
-// Validate checks that c names its client, carries both tokens and was
+// Validate makes sure that c names its client, carries both tokens, and was
 // granted plan usage.
 func (c Credentials) Validate() error {
 	switch {
@@ -66,8 +67,8 @@ func (c Credentials) Expiry() time.Time {
 	return c.SavedAt.Add(time.Duration(c.ExpiresIn) * time.Second)
 }
 
-// RefreshLead is how long before the access token expires it is renewed,
-// so a step's request never goes out with a token about to lapse under it.
+// RefreshLead is how long before the access token expires it is renewed. So a
+// step's request never goes out with a token about to lapse under it.
 const RefreshLead = 5 * time.Minute
 
 // Due reports whether the access token is within RefreshLead of expiry at
@@ -87,11 +88,11 @@ var signedOutCodes = []string{
 	"invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused",
 }
 
-// Refresh trades c's refresh token for a new token set at tokenURL, with
-// c's other fields kept and SavedAt set to now. A refresh token OpenAI
-// refuses is ErrSignedOut; any other failure leaves c as it was, usable
-// until its access token expires. Two refreshes of one session race its
-// rotating token, so a caller serializes them.
+// Refresh trades c's refresh token for a new token set at tokenURL, with c's
+// other fields kept and SavedAt set to now. A refresh token that OpenAI
+// refuses is ErrSignedOut. Any other failure leaves c as it was, usable until
+// its access token expires. Two refreshes of one session race its rotating
+// token, so a caller serializes them.
 func Refresh(ctx context.Context, client *http.Client, tokenURL string, c Credentials, now time.Time) (Credentials, error) {
 	form := url.Values{
 		"grant_type": {"refresh_token"}, "client_id": {c.ClientID}, "refresh_token": {c.RefreshToken}, "resource": {Resource},
@@ -115,8 +116,8 @@ func Refresh(ctx context.Context, client *http.Client, tokenURL string, c Creden
 		var oauthErr struct {
 			Code string `json:"error"`
 		}
-		// Error descriptions and raw bodies may echo credentials. Report only
-		// the OAuth code; non-OAuth responses still carry their HTTP status.
+		// Error descriptions and raw bodies can echo credentials. Report only
+		// the OAuth code. Non-OAuth responses still carry their HTTP status.
 		_ = json.Unmarshal(body, &oauthErr)
 		if slices.Contains(signedOutCodes, oauthErr.Code) {
 			return c, fmt.Errorf("%w: %s", ErrSignedOut, oauthErr.Code)

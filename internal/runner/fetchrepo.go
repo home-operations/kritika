@@ -23,15 +23,17 @@ import (
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
-// What fetch_repo may take: a run makes at most the spec's fetches and writes
-// at most fetchWriteBytes of their files, beside its checkout, a budget
-// the run tool's kept outputs share; one fetch takes at most
-// fetchWireBytes from the server and fetchTimeout of wall time, and keeps
-// at most fetchDiffBytes of a diff, as a kept output is. A run also lists tags
-// at most listMax times, counting the listing a fetch that names a missing
-// ref makes to name the closest; an answer shows at most tagsShown names,
-// such an error at most closestMax, and a diff's answer names at most
-// changedShown of the paths it changes before the patches.
+// What fetch_repo can take: a run makes at most the spec's fetches and writes
+// at most fetchWriteBytes of their files, beside its checkout. The run tool's
+// kept outputs share that budget. One fetch takes at most fetchWireBytes from
+// the server and fetchTimeout of wall time. It keeps at most fetchDiffBytes
+// of a diff, the same as for a kept output.
+//
+// A run also lists tags at most listMax times. That count includes the
+// listing that a fetch naming a missing ref makes to name the closest. An
+// answer shows at most tagsShown names, and such an error at most closestMax.
+// A diff's answer names at most changedShown of the paths it changes before
+// the patches.
 const (
 	fetchWriteBytes = 256 << 20
 	fetchWireBytes  = 128 << 20
@@ -44,7 +46,7 @@ const (
 )
 
 // upstreamDir is the scratch directory fetch_repo writes to, beside the
-// checkout, where the run tool keeps a cut output too, and upstreamRel the
+// checkout, where the run tool keeps a cut output too. upstreamRel is the
 // same directory as the run tool's commands see it from the checkout.
 const (
 	upstreamDir = "upstream"
@@ -75,24 +77,24 @@ var fetchRepoSchema = json.RawMessage(`{
 }`)
 
 // fetchRepoTool is fetch_repo: it fetches a repository other than the one
-// under review at a ref, and writes its files under dir, beside the
-// checkout, for read_file to read and the run tool's commands to search,
-// with the diff from an earlier ref when asked.
+// under review at a ref. It writes its files under dir, beside the checkout,
+// for read_file to read and the run tool's commands to search. When asked,
+// it also writes the diff from an earlier ref.
 type fetchRepoTool struct {
 	dir string
-	// transport carries the fetches; nil is upstream's default, through the
+	// transport carries the fetches. nil is upstream's default, through the
 	// pod's proxy.
 	transport http.RoundTripper
-	// budget is what the review may still write beside the checkout.
+	// budget is what the review can still write beside the checkout.
 	budget *agent.WriteBudget
-	// fetchMax is how many fetches the review may make.
+	// fetchMax is how many fetches the review can make.
 	fetchMax int
 	// maxBytes is the loop's cap on a tool's answer, which a diff is cut to
-	// here so the note after the cut, naming the file that holds it whole,
-	// survives; zero leaves the cut to the loop.
+	// here. So the note after the cut survives, and that note names the file
+	// that holds the diff whole. Zero leaves the cut to the loop.
 	maxBytes int
-	// hosts name what the gateway lets a fetch reach, for the description;
-	// empty leaves them unnamed.
+	// hosts name what the gateway lets a fetch reach, for the description.
+	// Empty leaves them unnamed.
 	hosts []string
 
 	fetches  int
@@ -127,7 +129,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		From  string   `json:"from"`
 		Paths []string `json:"paths"`
 		// Tags is set, to "" for every tag, when the call lists tags. A
-		// model may send every property, the ones it does not mean empty,
+		// model can send every property, the ones it does not mean empty,
 		// so beside a ref an empty one asks for nothing.
 		Tags *string `json:"tags"`
 	}
@@ -136,7 +138,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 			return "", fmt.Errorf("agent: fetch_repo: %w", err)
 		}
 	}
-	// A model that sends every property may send paths as [""], which
+	// A model that sends every property can send paths as [""], which
 	// asks for no path.
 	in.Paths = slices.DeleteFunc(in.Paths, func(p string) bool { return strings.TrimSpace(p) == "" })
 	switch {
@@ -179,9 +181,9 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 }
 
 // answer is the answer to a fetch of req, asked for as asked, that found
-// res: where the files are, what a ref stood in for, and the diff, cut to
-// the tool's cap after the paths it changes, with the file that holds it
-// whole named on both sides of the cut.
+// res: where the files are, what a ref stood in for, and the diff. The diff
+// is cut to the tool's cap after the paths it changes. The file that holds
+// the diff whole is named on both sides of the cut.
 func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result) (string, error) {
 	t.budget.Spend(res.Bytes)
 	page := "tree/" + req.Ref
@@ -227,8 +229,8 @@ func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result
 		b.WriteString(".")
 		return b.String(), nil
 	}
-	// The paths come before the patches, so a cut answer still says what
-	// the diff touches and the agent can ask for the files it needs.
+	// The paths come before the patches. So a cut answer still says what
+	// the diff touches, and the agent can ask for the files it needs.
 	shown := res.Changed[:min(len(res.Changed), changedShown)]
 	fmt.Fprintf(&b, ":\n%s\n", strings.Join(shown, "\n"))
 	if rest := len(res.Changed) - len(shown); rest > 0 {
@@ -300,11 +302,11 @@ func tagList(rawURL, match string, tags []string, order string) string {
 }
 
 // fetch fetches req to its directory under t.dir, as fetch n, and returns
-// the request as fetched. When a ref names a version the repository tags
-// under another name, v1.2.3 or chart-1.2.3 for 1.2.3, the fetch is made
-// again with the one tag with that version in its place; the tags are
-// listed once for that, counted among the listings, and name the closest
-// in the error when no tag stands in.
+// the request as fetched. A ref can name a version that the repository tags
+// under another name, v1.2.3 or chart-1.2.3 for 1.2.3. Then the fetch is made
+// again with the one tag with that version in its place. The tags are listed
+// once for that, counted among the listings. They name the closest in the
+// error when no tag stands in.
 func (t *fetchRepoTool) fetch(ctx context.Context, f *upstream.Fetcher, req upstream.Request) (*upstream.Result, upstream.Request, error) {
 	res, err := t.fetchTo(ctx, f, req)
 	if !errors.Is(err, upstream.ErrNoRef) {
@@ -327,9 +329,9 @@ func (t *fetchRepoTool) fetch(ctx context.Context, f *upstream.Fetcher, req upst
 	return nil, req, fmt.Errorf("%w.%s", err, hint)
 }
 
-// versioned are the refs of req a tag could stand in for, those with a
-// version in their names, which the listing asks the server for as
-// branches: one the repository has as a branch is not missing.
+// versioned are the refs of req that a tag can stand in for, those with a
+// version in their names. The listing asks the server for them as branches:
+// one the repository has as a branch is not missing.
 func versioned(req upstream.Request) []string {
 	var out []string
 	for _, ref := range []string{req.Ref, req.From} {
@@ -354,8 +356,9 @@ func (t *fetchRepoTool) fetchTo(ctx context.Context, f *upstream.Fetcher, req up
 }
 
 // resolveRefs is req with each ref the repository has neither as a tag nor
-// as a branch replaced by the one tag with its version, and whether any
-// was. A ref without a version, a branch's name or HEAD, is kept as given.
+// as a branch replaced by the one tag with its version. It also returns
+// whether any was. A ref without a version, a branch's name or HEAD, is kept
+// as given.
 func resolveRefs(req upstream.Request, refs upstream.Refs) (upstream.Request, bool) {
 	changed := false
 	for _, ref := range []*string{&req.Ref, &req.From} {
@@ -369,9 +372,9 @@ func resolveRefs(req upstream.Request, refs upstream.Refs) (upstream.Request, bo
 	return req, changed
 }
 
-// tagFor is the one tag of tags with ref's version in it, "" when ref has
-// no version or the tags have none or several with it: between v1.2.3 and
-// chart-1.2.3 for 1.2.3 is the agent's to choose.
+// tagFor is the one tag of tags with ref's version in it. It is "" when ref
+// has no version or the tags have none or several with it: between v1.2.3
+// and chart-1.2.3 for 1.2.3 is the agent's to choose.
 func tagFor(ref string, tags []string) string {
 	v := versionOf(ref)
 	if v == "" {
@@ -474,9 +477,9 @@ func dirName(n int, rawURL, ref string) string {
 	return name[:min(len(name), dirNameMax)]
 }
 
-// fetchedReadFile is read_file that also reads the files fetch_repo and
-// the run tool wrote to dir, at the paths their notes name under
-// upstreamRel, and hands every other path to the read_file it wraps, over
+// fetchedReadFile is read_file that also reads the files fetch_repo and the
+// run tool wrote to dir, at the paths that their notes name under
+// upstreamRel. It hands every other path to the read_file it wraps, over
 // the head commit.
 type fetchedReadFile struct {
 	agent.Tool
@@ -531,7 +534,7 @@ func (r fetchedReadFile) Run(ctx context.Context, input json.RawMessage) (string
 // readFetched reads the file at rel under dir. The read stays inside dir
 // whatever rel or a link in it says. A fetch writes no file over
 // MaxBlobBytes, but keeps a diff of up to fetchDiffBytes, as the run tool
-// keeps an output, which is read in line ranges.
+// keeps an output. Such a file is read in line ranges.
 func readFetched(dir, rel string) (string, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

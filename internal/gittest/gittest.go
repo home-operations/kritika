@@ -8,11 +8,11 @@ import (
 	"github.com/go-git/go-git/v6/config"
 )
 
-// Unsigned turns commit and tag signing off in r's own configuration.
-// go-git reads commit.gpgSign and tag.gpgSign from the global and system
-// configuration too, and fails a commit or an annotated tag it has no
-// signer for, so a test that makes one would otherwise fail wherever the
-// developer signs theirs.
+// Unsigned turns commit and tag signing off in r's own configuration. go-git
+// reads commit.gpgSign and tag.gpgSign from the global and system
+// configuration too, and fails a commit or an annotated tag it has no signer
+// for. Otherwise, a test that makes one fails wherever the developer signs
+// theirs.
 func Unsigned(t testing.TB, r *git.Repository) {
 	t.Helper()
 	cfg, err := r.Config()

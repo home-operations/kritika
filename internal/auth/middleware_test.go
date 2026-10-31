@@ -197,7 +197,7 @@ func TestPrincipalFor(t *testing.T) {
 }
 
 // TestHonoured: a session stands while its sign-in is configured, points
-// where it did, and would decide grants as it did.
+// where it did, and decides grants as it did.
 func TestHonoured(t *testing.T) {
 	auth := "auth:\n  admin: { password: { env: TEST_AUTH_SECRET } }\n  oidc:\n    issuer: https://id.example.com\n    clientId: k\n" +
 		"    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMappingExpr: '\"a\" in roles ? \"admin\" : \"\"'\n"

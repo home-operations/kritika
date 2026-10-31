@@ -1,8 +1,8 @@
 // Package aqua resolves packages of the aqua registry
-// (github.com/aquaproj/aqua-registry), as aqua itself would for the
-// platform the runner runs on, and installs them: it downloads a package, checks the download against a
-// checksum published apart from it, and unpacks it, running nothing of
-// aqua's or the package's.
+// (github.com/aquaproj/aqua-registry), as aqua itself does for the platform
+// that the runner runs on, and installs them. It downloads a package, makes
+// sure that the download matches a checksum published apart from it, and
+// unpacks it. It runs nothing of aqua's or the package's.
 package aqua
 
 import (
@@ -50,7 +50,7 @@ type Registry struct {
 	config *registry.Config
 }
 
-// FetchRegistry fetches the registry at url with client, sending header.
+// FetchRegistry fetches the registry at url with client, and sends header.
 func FetchRegistry(ctx context.Context, client *http.Client, url string, header http.Header) (*Registry, error) {
 	data, err := get(ctx, client, url, header, maxRegistryBytes)
 	if err != nil {
@@ -65,8 +65,8 @@ func Parse(data []byte) (*Registry, error) {
 	if err := yaml.Unmarshal(data, r.config); err != nil {
 		return nil, fmt.Errorf("aqua: registry: %w", err)
 	}
-	// The index by name is built on first use and kept; building it here
-	// leaves lookups only reading it, so they may run at once.
+	// The index by name is built on first use and kept. Building it here
+	// leaves lookups only reading it, so they can run at once.
 	r.config.Packages(discard)
 	return r, nil
 }
@@ -101,9 +101,9 @@ type Package struct {
 	// Files are the package's commands, each with its path in the unpacked
 	// download.
 	Files []File
-	// ChecksumURL is where the registry has the download's checksum
-	// published apart from it, and ChecksumAlgorithm what it is; "" when
-	// the registry names none the runner reads.
+	// ChecksumURL is where the registry has the download's checksum published
+	// apart from it, and ChecksumAlgorithm is what it is. They are "" when
+	// the registry names none that the runner reads.
 	ChecksumURL, ChecksumAlgorithm string
 	checksum                       *registry.Checksum
 	// tmpl renders the registry's templates for the package, its
@@ -119,8 +119,7 @@ type File struct {
 	Src string
 }
 
-// commandName is what a command's name may be: a file name, as PATH finds
-// it.
+// commandName is what a command's name can be: a file name, as PATH finds it.
 var commandName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
 // Resolve resolves the package name at version for p.

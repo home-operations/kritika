@@ -42,9 +42,9 @@ func (t *Tools) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// toolPackage is what an aqua registry package's name may be: its
+// toolPackage is what an aqua registry package's name can be: its
 // repository's owner and name, with a path below them for one of several
-// tools a repository releases.
+// tools that a repository releases.
 var toolPackage = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~-]*(/[A-Za-z0-9~][A-Za-z0-9._~-]*)+$`)
 
 // toolVersion is what a version must look like to name one release: a
@@ -52,8 +52,8 @@ var toolPackage = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~-]*(/[A-Za-z0-9~]
 // a download URL that takes the version reads as whatever is newest.
 var toolVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+/-]*$`)
 
-// checkTool is why version, the version of the tool declared as name, may
-// not be run, nil when it may.
+// checkTool is why version, the version of the tool declared as name, cannot
+// be run, or nil when it can.
 func checkTool(name, version string) error {
 	pkg, ok := strings.CutPrefix(name, ToolPrefix)
 	switch {
@@ -70,7 +70,7 @@ func checkTool(name, version string) error {
 	return nil
 }
 
-// check is why one of the tools may not be run, nil when all may.
+// check is why one of the tools cannot be run, or nil when all can.
 func (t Tools) check() error {
 	for _, name := range slices.Sorted(maps.Keys(t)) {
 		if err := checkTool(name, t[name]); err != nil {

@@ -1,5 +1,5 @@
 // Who is signed in and what the server allows, shared by every page that
-// shows or hides a control on it. App.svelte loads both; pages only read.
+// shows or hides a control on it. App.svelte loads both. Pages only read.
 import { getJSON, sendJSON } from './api.svelte';
 import { describe } from './manage';
 import { toast } from './toast.svelte';
@@ -9,7 +9,7 @@ import type { Me, Meta, UserSettings } from './types';
 
 export const session = $state<{ me: Me | undefined; meta: Meta | undefined }>({ me: undefined, meta: undefined });
 
-// loadMeta fetches /api/v1/meta once; it needs no session. A failure leaves
+// loadMeta fetches /api/v1/meta once. It needs no session. A failure leaves
 // meta unset, which reads as management off.
 export async function loadMeta(): Promise<void> {
   if (session.meta) return;

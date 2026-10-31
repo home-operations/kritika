@@ -1,10 +1,10 @@
-// Package transcript records model calls for the dashboard's transcript
-// view. An agent run's request is the whole conversation so far, so each
-// step is stored as a delta against what the run has already recorded,
-// and the first step of a run that carries on another's conversation as a
-// delta against what that run recorded; a follow-up's call is a delta
-// against nothing. Rows are masked and size-capped before they are
-// encoded, and Rebuild turns stored rows back into one turn per call.
+// Package transcript records model calls for the dashboard's transcript view.
+// An agent run's request is the whole conversation so far, so each step is
+// stored as a delta against what the run already recorded. The first step of
+// a run that carries on another's conversation is stored as a delta against
+// what that run recorded. A follow-up's call is a delta against nothing. Rows
+// are masked and size-capped before they are encoded, and Rebuild turns
+// stored rows back into one turn per call.
 package transcript
 
 import (
@@ -77,11 +77,11 @@ type Tool struct {
 	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
 }
 
-// State is what a run has recorded so far, carried from one step's row to
-// the next. MessagesSHA is the cumulative hash of the first MessagesEnd
-// messages (see Delta); SystemSHA and ToolsSHA hash the system prompt and
-// tool list last stored; a zero hash means nothing is recorded. Bytes is
-// the encoded size of every row the run has stored.
+// State is what a run recorded so far, carried from one step's row to the
+// next. MessagesSHA is the cumulative hash of the first MessagesEnd messages
+// (see Delta). SystemSHA and ToolsSHA hash the system prompt and tool list
+// last stored. A zero hash means nothing is recorded. Bytes is the encoded
+// size of every row that the run stored.
 type State struct {
 	MessagesEnd int
 	MessagesSHA [32]byte
@@ -91,8 +91,8 @@ type State struct {
 }
 
 // Row is one call ready to be masked and encoded. System and Tools are nil
-// when unchanged from the run's previous row. Reset says the request did
-// not extend what the run had recorded, so Messages is the whole request.
+// when unchanged from the run's previous row. Reset says that the request did
+// not extend what the run recorded, so Messages is the whole request.
 type Row struct {
 	MessagesFrom int
 	Messages     []Message
@@ -110,17 +110,17 @@ type Row struct {
 // When req is shorter than what was recorded, or its first MessagesEnd
 // messages hash differently, the row holds every message from 0.
 //
-// mask (nil for none) is applied to the system prompt, tool descriptions
-// and schemas, and every text, tool input and tool result first, so
+// mask (nil for none) is applied first to the system prompt, tool
+// descriptions and schemas, and every text, tool input and tool result. So
 // nothing stored, hashes included, is a function of a secret. Masking
-// precedes the caps in Encode: a cut made first could leave part of a
-// secret that mask no longer recognises.
+// precedes the caps in Encode: a cut made first can leave part of a secret
+// that mask no longer recognizes.
 //
-// The messages hash is SHA-256 over, for each masked message in order, its
-// JSON encoding as a Message (encoding/json, tool input compacted)
+// The messages hash is SHA-256. For each masked message in order, it covers
+// its JSON encoding as a Message (encoding/json, tool input compacted)
 // followed by a newline. It is taken before the caps, so a cut tool result
-// does not break the chain; a secret rotated mid-run changes the masked
-// text of earlier messages only if they held it, and then costs one reset.
+// does not break the chain. A secret rotated mid-run changes the masked text
+// of earlier messages only if they held it, and then costs one reset.
 func Delta(prev State, req model.StepRequest, mask func(string) string) Row {
 	if mask == nil {
 		mask = func(s string) string { return s }

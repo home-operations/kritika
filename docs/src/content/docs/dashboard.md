@@ -6,7 +6,7 @@ Open the address set in `config.webUrl` and sign in. The dashboard shows review
 progress, findings and costs for the accounts you can access.
 
 Use the forge to discuss findings. Use the dashboard to inspect reviews and manage
-the service. Application settings live in the [configuration file](/configuration/).
+the service. The application configuration lives in the [configuration file](/configuration/).
 
 ## First run
 
@@ -18,8 +18,8 @@ shows what is missing:
 3. A default model in `review.model`.
 4. An optional embedder in `embedding` for finding similar code.
 
-**Newly discovered repositories start off.** Open the account's
-**Repositories** page and enable the ones you want reviewed.
+Newly discovered repositories start disabled. Open the account's
+**Repositories** page and enable the ones that you want reviewed.
 
 ## Navigation
 
@@ -31,7 +31,7 @@ The account switcher selects one account or **All accounts**. Press
 | Overview      | See running work and problems that need attention.                  |
 | Pull requests | Read reviews, inspect findings and open their threads on the forge. |
 | Queue         | Find waiting, running, retrying or failed jobs.                     |
-| Repositories  | Enable repositories and inspect their settings and code index.      |
+| Repositories  | Enable repositories and inspect their configuration and code index. |
 | Analytics     | Compare review activity, findings and spending over time.           |
 | Usage & costs | Inspect costs by account, repository, model or review.              |
 | Follow-ups    | Read questions and the bot's replies.                               |
@@ -45,12 +45,14 @@ activity and usage across accounts you can read.
 ### Pull requests
 
 Open a pull request for its summary, findings and activity. Expand a finding
-for its explanation and suggested fix. A finding an
-[agent](/repository-config/#agents) raised carries the agent's name; one
-without a name is the default pass's. **Run details** contains the timeline,
-model conversation, usage and raw data for troubleshooting. When agents ran,
-the timeline lists each agent's parts with their cost, and the cost of each
-agent. The default pass is listed as `default`.
+for its explanation and suggested fix. A finding that an
+[agent](/repository-config/#agents) raised carries the agent's name. A finding
+without a name is from the default pass, which runs kritika's own instructions.
+
+**Run details** contains the timeline, model conversation, usage and raw data
+for troubleshooting. When agents ran, the timeline lists each agent's parts
+with their cost, and the cost of each agent. The default pass is listed as
+`default`.
 
 Search accepts plain text and filters:
 
@@ -59,31 +61,32 @@ Search accepts plain text and filters:
 | Pull requests | `repo:owner/name`, `author:login`, `status:failed`, `is:paused`, `is:p0`                                                                                                        |
 | Findings      | `repo:owner/name`, `severity:p1`, `category:security`, `status:open`, `dismissed:conceded`, `rule:wrap-errors`, `agent:security`, `path:internal/`, `pr:merged`, `is:downvoted` |
 
-Filters are suggested as you type. `agent:` is offered once a finding on the
-page names an agent; `agent:default` finds the default pass's. Expand a list row to preview its latest
-review without leaving the list.
+The dashboard suggests filters as you type. It offers `agent:` once a finding
+on the page names an agent. `agent:default` finds the findings of the default
+pass. Expand a list row to preview its latest review without leaving the list.
 
 ### Findings
 
-**Common findings** counts the findings the filters keep, and how many of
-them a later review found addressed, were dismissed, or drew a 👎. Group
-them by category, rule, agent or directory, and select a group to narrow
-the list to it; a directory then shows the directories below it. A group that keeps
-coming back is worth an instruction in `AGENTS.md` or a skill, so the
-change's author gets it right the first time. A group that is often
-dismissed or drew a 👎 is worth a [rule](/repository-config/#rules)
-telling reviews what not to report. Like the analytics, 👎 counts come
+**Common findings** counts the findings that the filters keep. It also counts
+how many of them a later review found addressed, were dismissed, or drew a 👎.
+Group them by category, rule, agent or directory. Select a group to narrow the
+list to it. A directory then shows the directories below it.
+
+A group that keeps coming back is worth an instruction in `AGENTS.md` or a
+skill, so the change's author gets it right the first time. A group that is
+often dismissed or drew a 👎 is worth a [rule](/repository-config/#rules)
+that tells reviews what not to report. Like the analytics, 👎 counts come
 from GitHub alone and need polling enabled.
 
 `path:` keeps the findings under a path, and `is:downvoted` keeps those
 that drew a 👎. `pr:` keeps those whose pull request is `open`, `merged`,
-or `closed` without merging: `pr:merged status:open` lists what pull
-requests were merged with still open, the findings their authors left
-for later or never saw, which is where a rule or an instruction pays off
-most. `dismissed:` keeps those dismissed one way:
+or `closed` without merging. For example, `pr:merged status:open` lists the
+findings that were still open when their pull requests merged. Those are the
+findings that their authors left for later or never saw. A rule or an
+instruction pays off most there. `dismissed:` keeps those dismissed one way:
 
-- `command`, with `@<bot> dismiss`;
-- `resolved`, by resolving the thread;
+- `command`, with `@<bot> dismiss`.
+- `resolved`, by resolving the thread.
 - `conceded`, when kritika agreed in the thread that the finding was wrong.
 
 Hover a dismissed finding's status to see which.
@@ -97,7 +100,7 @@ only when it is listed under [`context`](/repository-config/#context).
 
 Start with **Needs attention** to find retrying or discarded jobs and workers
 whose heartbeat is overdue. Expand a row to see attempts, timing and the full
-error. An overdue heartbeat can recover; it does not always mean a failed job.
+error. An overdue heartbeat can recover. It does not always mean a failed job.
 
 Retryable jobs resume automatically. Admins can cancel active reviews, re-run
 canceled or discarded reviews, and reindex after a failed index job.
@@ -112,8 +115,9 @@ Choose a period to compare reviews, findings, duration, tokens and API spending.
 The page also shows addressed findings and reactions to inline comments.
 Reactions are counted on GitHub alone and need polling enabled.
 
-**Refused hosts** shows destinations blocked by the egress gateway. Review why
-a host was blocked before adding it to [`egress.allow`](/security/#the-egress-gateway).
+**Refused hosts** shows destinations blocked by the egress gateway, the forward
+proxy for runner Jobs. Review why a host was blocked before adding it to
+[`egress.allow`](/security/#the-egress-gateway).
 
 In **Usage & costs**, select a repository, model or review to inspect spending.
 **Unpriced** means a call has no known price and totals are incomplete. API
@@ -121,25 +125,26 @@ spending excludes subscription fees. Cache details depend on transcript retentio
 
 ### Rules
 
-The Rules page lists configured rules and context files, their source and
-scope, and findings that cite each rule, with how many of those were
-addressed, dismissed, or drew a 👎. A rule whose findings are often
-dismissed may need rewording. Edit rules in the
+The Rules page lists configured rules and context files, with their source
+and scope. It also lists findings that cite each rule, with how many of those
+were addressed, dismissed, or drew a 👎. A rule whose findings are often
+dismissed can need rewording. Edit rules in the
 [configuration file](/configuration/) or [repository settings](/repository-config/#rules).
 
 ### Your settings
 
 Use **Settings** in the user menu to change theme, time zone and clock format.
-Daily charts use UTC. If the top bar says **Reconnecting…**, live data may be
+Daily charts use UTC. If the top bar says **Reconnecting…**, live data can be
 out of date until the connection returns.
 
 Under **API tokens**, create a personal access token for an agent that reads
 through kritika's [MCP endpoint](/mcp/). Name it, and choose whether it
 reads everything you can read or only some of those accounts. Then choose
-when it expires: in 7, 30 or 90 days, a year, or never. Its value is shown
-once. A token never changes anything. It stops reading once it expires, is
-revoked, or the sign-in it came from changes; the list then marks it
-**expired** or **stale**. See
+when it expires: in 7, 30 or 90 days, a year, or never.
+
+The dashboard shows its value once. A token never changes anything. It stops
+reading once it expires, is revoked, or the sign-in it came from changes. The
+list then marks it **expired** or **stale**. See
 [personal access tokens](/security/#personal-access-tokens).
 
 ## Repositories
@@ -156,35 +161,38 @@ Click a column header to sort the repositories loaded so far by it, and again
 to reverse the order. The **Index** column sorts what is indexing first, then
 what is queued or waiting.
 
-A repository's first index is queued by the leader a few at a time,
-[`onboardWindow`](/configuration/#how-kritika-runs) of them queued or running
-at once, and index jobs run one at a time on each replica unless
-`indexWorkers` says otherwise. So after you turn on many repositories, most
-of them wait: the **Index** column shows each one's place in line, such as
-**Waiting · #3**, and the leader queues the next as each first index ends. A
-reindex goes ahead of the first indexes still waiting.
+The leader, which is the elected replica, queues repositories' first indexes a
+few at a time. It keeps [`onboardWindow`](/configuration/#how-kritika-runs) of
+them queued or running at once. Index jobs run one at a time on each replica
+unless `indexWorkers` says otherwise. So after you turn on many repositories,
+most of them wait. The **Index** column shows each one's place in line, such as
+**Waiting · #3**. The leader queues the next as each first index ends.
+
+A reindex goes ahead of the first indexes still waiting.
 
 A repository's page shows its index jobs queued or running, and keeps them
-current while there are any. **Reindex** reads **Reindex queued** while one
-is. Expand **Repository settings** to inspect effective settings, **Index
-runs** to investigate indexing failures, or **Index contents** to see what
-the similar-code index holds: the commit and embedder it was built at, and
-its files and their chunks. Only admins see a chunk's text. The paths the
-indexer skipped, such as those an ignore rule matches, are not recorded, so
-they are not listed. See [which repositories run](/configuration/#which-repositories-run)
+current while there are any. The **Reindex** button reads **Reindex queued**
+while a reindex is queued. Expand **Repository settings** to inspect the
+effective configuration. Expand **Index runs** to investigate indexing
+failures. Expand **Index contents** to see what the similar-code index holds:
+the commit and embedder it was built at, and its files and their chunks.
+
+Only admins see a chunk's text. The paths that the indexer skipped, such as
+those an ignore rule matches, are not recorded, so they are not listed. See
+[which repositories run](/configuration/#which-repositories-run)
 for how dashboard choices and configured defaults interact.
 
 ## Administration
 
 Admins run the instance from **All accounts**, under **Configuration**:
 
-| Page        | Use it to…                                                                                                                                                                  |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accounts    | Follow the setup checklist while something is missing, and see the accounts the instance serves.                                                                            |
-| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves.                                                             |
-| Users       | See everyone who has signed in, how they sign in, what their newest session reads and when they last signed in; sign someone out everywhere, and revoke anyone's API token. |
-| Settings    | Find each effective setting and where it is set, the egress gateway's **Download cache** settings and the **Most used tools** of recent runs.                               |
-| Audit log   | Inspect management actions across accounts.                                                                                                                                 |
+| Page        | Use it to…                                                                                                                                                              |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accounts    | Follow the setup checklist while something is missing, and see the accounts the instance serves.                                                                        |
+| Connections | Inspect GitHub Apps and forge bots and their installations, and uninstall an App from an account nobody serves.                                                         |
+| Users       | See everyone who signed in, how they sign in, what their newest session reads and when they last signed in. Sign someone out everywhere, and revoke anyone's API token. |
+| Settings    | Find each effective configuration value and where it is set, the egress gateway's **Download cache** configuration and the **Most used tools** of recent runs.          |
+| Audit log   | Inspect management actions across accounts.                                                                                                                             |
 
 These pages do not edit the configuration file. Change the file and roll out
 the deployment. External ConfigMap changes and secret rotations require a
@@ -194,15 +202,15 @@ restart or a controller such as Reloader.
 
 Admins can:
 
-- re-run a pull request, or select several open pull requests to re-run;
-- cancel a review;
-- reindex a repository;
-- enable or disable repositories;
-- resync repository access from the account's forge;
-- uninstall an App from an account the configuration does not serve;
-- sign a user out everywhere, which ends every session of theirs, an
-  admin's own included;
-- revoke anyone's API token.
+- Re-run a pull request, or select several open pull requests to re-run.
+- Cancel a review.
+- Reindex a repository.
+- Enable or disable repositories.
+- Resync repository access from the account's forge.
+- Uninstall an App from an account that the configuration does not serve.
+- Sign a user out everywhere, which ends every session of theirs, an
+  admin's own included.
+- Revoke anyone's API token.
 
 Re-run, cancel and reindex requests queue work. A duplicate review or index
 request can be refused while one is already queued or running.

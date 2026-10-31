@@ -103,10 +103,10 @@ apps:
 }
 
 // TestCallDo: a call is answered by its model, tried again with its
-// provider's retries, and, once those are spent, by the fallback on another
-// provider with its own, unless the call's ctx is done; the route that
-// answered or failed last is reported with every failure the call went on
-// from.
+// provider's retries. Once those are spent, it is answered by the fallback on
+// another provider with its own retries, unless the call's ctx is done. The
+// route that answered or failed last is reported with every failure the call
+// went on from.
 func TestCallDo(t *testing.T) {
 	transient := &openai.Error{StatusCode: http.StatusBadGateway}
 	final := &openai.Error{StatusCode: http.StatusBadRequest}
@@ -179,9 +179,9 @@ func TestCallDo(t *testing.T) {
 	}
 }
 
-// TestCallHalve: a model that never answers spends half the call's time
-// when a fallback on another provider waits for its turn, and all of it
-// otherwise, when the fallback would fail the same way.
+// TestCallHalve: a model that never answers spends half the call's time when
+// a fallback on another provider waits for its turn. It spends all of it
+// otherwise, when the fallback will fail the same way.
 func TestCallHalve(t *testing.T) {
 	hang := model.StepperFunc(func(ctx context.Context, _ model.StepRequest) (model.StepResponse, error) {
 		<-ctx.Done()

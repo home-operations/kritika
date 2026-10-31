@@ -1,7 +1,7 @@
 <script lang="ts">
   // Every finding of the account, once per pull request however many of
-  // its reviews repeated it, and whether a later review found it addressed
-  // or a maintainer dismissed it.
+  // its reviews repeated it. For each, whether a later review found it
+  // addressed or a maintainer dismissed it.
   import { tick, untrack } from 'svelte';
   import { href, replace } from '../router.svelte';
   import { DISMISS_SOURCES, FINDING_IS, FINDING_PULLS, FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
@@ -77,8 +77,8 @@
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
     { key: 'dismissed', hint: 'by command, resolved or conceded', values: DISMISS_SOURCES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
-    // A finding no named agent raised is the default agent's, so the default agent is offered only with a named one on the page;
-    // a agent filter in force keeps its token whatever the page holds, so editing the box does not drop it.
+    // A finding no named agent raised is the default agent's, so the default agent is offered only with a named one on the page.
+    // An agent filter in force keeps its token whatever the page holds, so editing the box does not drop it.
     ...(filter?.agent || paged.items.some((f) => f.agents.length)
       ? [{
           key: 'agent',
@@ -87,7 +87,7 @@
           open: true,
         }]
       : []),
-    // No suggestions: a suggestion would replace a path typed in another case, which names another path.
+    // No suggestions: a suggestion replaces a path typed in another case, which names another path.
     { key: 'path', hint: 'a path the findings are under', values: [], open: true },
     { key: 'pr', hint: 'open, merged, or closed without merging', values: FINDING_PULLS },
     { key: 'is', hint: 'downvoted: its comment drew a thumbs down', values: FINDING_IS },
@@ -256,7 +256,7 @@
             </thead>
             <tbody>
               {#each paged.items as f, i (f.id)}
-                <!-- The title opens the inspector; the row is a larger pointer target. -->
+                <!-- The title opens the inspector. The row is a larger pointer target. -->
                 <tr class="finding-row cursor-pointer" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
                   <td class="finding-main">
                     <a class="finding-link block overflow-hidden text-ellipsis text-ink text-ui-md [font-weight:550]" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>

@@ -15,7 +15,7 @@ import (
 )
 
 // insertRiverJob puts a running job into River's table as a worker that
-// claimed it ago would have left it, and removes it when the test ends.
+// claimed it ago leaves it, and removes it when the test ends.
 func insertRiverJob(t *testing.T, ctx context.Context, s *Store, kind, state string, attempt, maxAttempts int, ago time.Duration, metadata string) int64 {
 	t.Helper()
 	var id int64
@@ -33,7 +33,7 @@ func insertRiverJob(t *testing.T, ctx context.Context, s *Store, kind, state str
 }
 
 // insertRun creates a runner run of job for a review, or for an index
-// generation when review is "", and returns the run's and the parent's id.
+// generation when review is "". It returns the run's and the parent's id.
 func insertRun(t *testing.T, ctx context.Context, s *Store, account, review string, job int64) (runID, parentID string) {
 	t.Helper()
 	err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
@@ -198,7 +198,7 @@ func TestRescueJob(t *testing.T) {
 		t.Fatalf("the rescued job's review = %s %q, want failed with the reason", status, errText)
 	}
 
-	// The beats of jobs no longer running go; a running job keeps its own.
+	// The beats of jobs no longer running go. A running job keeps its own.
 	if n, err := s.SweepJobHeartbeats(ctx); err != nil || n != 2 {
 		t.Fatalf("SweepJobHeartbeats = %d, %v; want the rescued and the completed job's beats swept", n, err)
 	}
@@ -343,8 +343,8 @@ func TestJobHead(t *testing.T) {
 }
 
 // TestRecordEndedReviewOncePerJob: a job ends a head's review before its
-// runner once, whatever its retry ends it as, while a review it started a
-// runner for, another head and another job each record their own; a second
+// runner once, whatever its retry ends it as. A review that it started a
+// runner for, another head and another job each record their own. A second
 // record of the job waits for the first's transaction.
 func TestRecordEndedReviewOncePerJob(t *testing.T) {
 	s := openStore(t)
@@ -411,8 +411,8 @@ func TestRecordEndedReviewOncePerJob(t *testing.T) {
 }
 
 // TestRecordRunnerRunLeavesUnknownTimesNull records a run whose pod never
-// scheduled or started, in a session whose time zone is not UTC, and
-// checks the times it never learned are NULL rather than the zero time.
+// scheduled or started, in a session whose time zone is not UTC. It makes
+// sure that the times it never learned are NULL rather than the zero time.
 func TestRecordRunnerRunLeavesUnknownTimesNull(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()

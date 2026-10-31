@@ -34,12 +34,12 @@ const (
 // contextpack.SimilarQueryChars, with room for their encoding.
 const maxSimilarBody = 256 << 10
 
-// similarCode searches the run's repository index for the request's
-// queries: stage 4 of the review, asked once over the diff's hunks before
+// similarCode searches the run's repository index for the request's queries.
+// It serves stage 4 of the review, asked once over the diff's hunks before
 // the agent starts, and the agent's own search_code tool. The embedding is
 // reserved against the run's budget at four characters a token before it
-// runs; what it returns is code of the repository the runner has already
-// checked out.
+// runs. What similarCode returns is code of the repository that the runner
+// already checked out.
 func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)
@@ -103,7 +103,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		c.logger.Error("gateway: similar code not charged", "error", cerr)
 	}
 	if err != nil {
-		// The embedder's error may carry its key or URL; the runner only
+		// The embedder's error can carry its key or URL. The runner only
 		// learns that the search failed.
 		c.logger.Warn("gateway: similar code failed", "error", err)
 		refuse(w, http.StatusBadGateway, "upstream_error", "similar-code retrieval failed")
@@ -129,17 +129,17 @@ type similarRequest struct {
 	jobID int64
 	slots int
 	// queries are the texts to embed: the embedder's query prompt, then a
-	// query cut to contextpack.SimilarQueryChars; exclude are the paths left
+	// query cut to contextpack.SimilarQueryChars. exclude are the paths left
 	// out of the answer.
 	queries []string
 	exclude []string
 }
 
-// similar searches the repository's active index generation for the
-// chunks nearest each query, excluding the given paths. indexed is false,
-// with no chunks, when the instance has no embedder or the repository no
-// completed generation built with it. It returns the tokens the embedding
-// spent, recorded as the review's usage.
+// similar searches the repository's active index generation for the chunks
+// nearest each query and leaves out the given paths. indexed is false, with
+// no chunks, when the instance has no embedder or the repository has no
+// completed generation built with it. It returns the tokens that the
+// embedding spent, recorded as the review's usage.
 func (g *Server) similar(
 	ctx context.Context, file *configfile.File, r similarRequest, logger *slog.Logger,
 ) (chunks []contextpack.Chunk, tokens int64, indexed bool, err error) {
@@ -215,11 +215,11 @@ func (g *Server) similar(
 	return chunks, tokens, true, nil
 }
 
-// keepSimilar is the hits at or above floor and within margin of the best
-// hit of their query, each chunk once, the most similar first and at most
-// similarMax of them, each labelled with its similarity. Each query's
-// scores sit at a height of their own, set by the code it is near, so one
-// floor cuts one query's good matches and keeps another's noise; the
+// keepSimilar is the hits at or above floor and within margin of the best hit
+// of their query. It keeps each chunk once, the most similar first and at
+// most similarMax of them, and labels each with its similarity. Each query's
+// scores sit at a height of their own, set by the code that it is near. So
+// one floor cuts one query's good matches and keeps another's noise. The
 // margin is measured from each query's best instead.
 func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.Chunk {
 	best := map[int]float64{}

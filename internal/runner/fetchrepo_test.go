@@ -156,7 +156,7 @@ func TestFetchRepoMissingPaths(t *testing.T) {
 }
 
 // TestFetchRepoSourcesRead: only a fetch that found files or a diff is a
-// source; a tag listing and a fetch that found nothing are not.
+// source. A tag listing and a fetch that found nothing are not.
 func TestFetchRepoSourcesRead(t *testing.T) {
 	url, tool := servedRepo(t)
 	for _, in := range []map[string]any{
@@ -181,8 +181,8 @@ func TestFetchRepoSourcesRead(t *testing.T) {
 	}
 }
 
-// TestFetchRepoDiffPastBudget: a diff that would take the files written
-// past the review's budget is returned but not kept in a file.
+// TestFetchRepoDiffPastBudget: a diff that, if kept, will take the files
+// written past the review's budget is returned but not kept in a file.
 func TestFetchRepoDiffPastBudget(t *testing.T) {
 	url, tool := servedRepo(t)
 	tool.budget = agent.NewWriteBudget(int64(len("package pkg\n\nfunc A() {}\n")))
@@ -195,8 +195,8 @@ func TestFetchRepoDiffPastBudget(t *testing.T) {
 	}
 }
 
-// TestFetchRepoDiffCut: a diff over the tool's cap is cut by the tool, the
-// changed paths before it kept, and the note after the cut names the file
+// TestFetchRepoDiffCut: a diff over the tool's cap is cut by the tool, with
+// the changed paths before it kept. The note after the cut names the file
 // that holds it whole.
 func TestFetchRepoDiffCut(t *testing.T) {
 	url, tool := servedRepo(t)
@@ -326,7 +326,7 @@ func TestFetchRepoTags(t *testing.T) {
 }
 
 // TestFetchRepoResolvesVersion: a ref that names a version the repository
-// tags under another name is fetched as that tag, for one listing; a
+// tags under another name is fetched as that tag, for one listing. A
 // version tagged twice is left to the agent, and a ref without a version
 // is taken as given.
 func TestFetchRepoResolvesVersion(t *testing.T) {

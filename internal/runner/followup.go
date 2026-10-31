@@ -17,15 +17,15 @@ const submitReplyDescription = "Submit the reply and end the run. The input is t
 	"Call it exactly once, when you are done."
 
 // submitIfNeededDescription is submitReplyDescription for a reply in a
-// finding thread, which may post nothing.
+// finding thread, which can post nothing.
 const submitIfNeededDescription = "Submit the reply, or none and why, and end the run. The reply is posted whole in the " +
 	"thread. Call it exactly once, when you are done."
 
-// runFollowUp answers the last comment of the spec's thread: it fetches the
-// head and merge-base as a review does, shows the agent the diff, the
-// findings kritika posted and the thread, and runs it with a review's
-// tools until it submits the reply, which the worker posts. It writes no
-// context pack: nothing builds on a follow-up.
+// runFollowUp answers the last comment of the spec's thread. It fetches the
+// head and merge-base as a review does, and it shows the agent the diff, the
+// findings kritika posted, and the thread. It runs the agent with a review's
+// tools until the agent submits the reply, which the worker posts. It writes
+// no context pack: nothing builds on a follow-up.
 func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := st.SetRunnerPhase(ctx, p.RunID, "fetching"); err != nil {
 		return err
@@ -48,7 +48,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets r
 	if err != nil {
 		return fmt.Errorf("runner: base tree: %w", err)
 	}
-	// A follow-up has no summary to state what could not be kept in.
+	// A follow-up has no summary to state what was not kept in.
 	files, _, err := repoFiles(baseTree, p.RepoFiles)
 	if err != nil {
 		return err

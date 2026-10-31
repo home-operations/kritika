@@ -31,8 +31,8 @@ type fakeUser struct {
 	ID            int64
 	Login, Email  string
 	EmailVerified bool
-	// Orgs maps a lowercase organization to "admin", "member", or for
-	// GitHub "pending"; absent means not a member.
+	// Orgs maps a lowercase organization to "admin", "member", or for GitHub
+	// "pending". An absent organization means that the user is not a member.
 	Orgs map[string]string
 	// Groups is the OIDC groups claim.
 	Groups []string
@@ -42,8 +42,8 @@ type fakeUser struct {
 	UserInfoGroups []string
 }
 
-// pendingAuth is what the fake's authorize step would have recorded for a
-// code: the PKCE challenge and nonce the browser was sent with.
+// pendingAuth is what the fake's authorize step records for a code: the PKCE
+// challenge and nonce that the browser was sent with.
 type pendingAuth struct {
 	challenge, nonce string
 	user             *fakeUser
@@ -63,7 +63,7 @@ type fakeOAuth struct {
 }
 
 // authorize records that user approved a sign-in whose authorize URL was
-// location, and returns the code the provider would redirect back with.
+// location, and returns the code that the provider redirects back with.
 func (f *fakeOAuth) authorize(location string, user *fakeUser, nonceOverride string) string {
 	f.t.Helper()
 	u := mustParseURL(f.t, location)

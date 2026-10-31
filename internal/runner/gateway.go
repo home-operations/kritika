@@ -14,11 +14,12 @@ import (
 // gatewayWait bounds how long a runner waits for its proxy, the gateway,
 // to answer before it fetches. A runner started as the service comes up
 // can beat the gateway's Service endpoints by the readiness probe's
-// period and a little propagation; much longer than that is an outage the
-// run should report rather than sit out.
+// period and a little propagation. Much longer than that is an outage, and
+// the run reports it and does not sit it out.
 const gatewayWait = 90 * time.Second
 
-// gatewayPoll is how often the wait tries again; a variable for the tests.
+// gatewayPoll is how often the wait tries again. It is a variable for the
+// tests.
 var gatewayPoll = 2 * time.Second
 
 // waitForGateway blocks until the HTTPS proxy the pod was handed answers a

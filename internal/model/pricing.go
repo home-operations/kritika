@@ -18,8 +18,9 @@ func (p Price) Cost(u Usage) float64 {
 // namespace.
 type Pricing map[string]Price
 
-// cost is what u costs on modelID, priced under alias, the floating alias
-// that selected it, when it has no price of its own; unpriced without either.
+// cost is what u costs on modelID. If modelID has no price of its own, cost
+// prices it under alias, the floating alias that selected it. Without either
+// price, u is unpriced.
 func (p Pricing) cost(modelID, alias string, u Usage) (cost float64, unpriced bool) {
 	price, ok := p[modelID]
 	if !ok {

@@ -1,10 +1,10 @@
 <script lang="ts">
   import PageHeader from '../components/PageHeader.svelte';
   import HelpPopover from '../components/HelpPopover.svelte';
-  // What the account's reviews check: rules written in the configuration,
-  // as text or a file, and context files that explain the code, with where
-  // each is set and the repositories that read it. Read-only: rules are set
-  // in the configuration or a repository's .kritika.yaml.
+  // What the account's reviews look for: rules written in the configuration,
+  // as text or a file, and context files that explain the code. Each comes
+  // with where it is set and the repositories that read it. Read-only: rules
+  // are set in the configuration or a repository's .kritika.yaml.
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';

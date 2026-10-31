@@ -34,8 +34,8 @@ type Pinner interface {
 // Floating reports whether id is meant as a floating alias.
 func Floating(id string) bool { return strings.HasPrefix(id, "~") }
 
-// TakesAliases reports whether providers of type p resolve floating
-// aliases; the others would send one as a model ID.
+// TakesAliases reports whether providers of type p resolve floating aliases.
+// The others send an alias as a model ID.
 func (p ProviderType) TakesAliases() bool {
 	return p == ProviderAnthropic || p == ProviderOpenAI || p == ProviderChatGPT
 }
@@ -144,11 +144,11 @@ type modelCatalog[T any] struct {
 	fetch     singleflight.Group
 }
 
-// get returns key's catalog. Only a key with none yet waits for a fetch:
-// an expired catalog is returned while one fetch refreshes it, and stays
-// in use while refreshing fails, so neither a slow catalog nor its outage
-// holds up alias steps. Concurrent callers share one bounded fetch, which
-// keeps running if a caller stops waiting.
+// get returns key's catalog. Only a key with no catalog yet waits for a
+// fetch. An expired catalog is returned while one fetch refreshes it, and it
+// stays in use while refreshing fails. So neither a slow catalog nor its
+// outage holds up alias steps. Concurrent callers share one bounded fetch,
+// which keeps running if a caller stops waiting.
 func (c *modelCatalog[T]) get(
 	ctx context.Context, key string, now func() time.Time, fetch func(context.Context) ([]T, error),
 ) ([]T, error) {

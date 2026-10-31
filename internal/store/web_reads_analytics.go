@@ -28,16 +28,16 @@ func (g AnalyticsGroup) Valid() bool {
 }
 
 // AnalyticsTotals is what an account's reviews came to over a window.
-// Reviews and pull requests count completed reviews; findings count each
-// pull request's finding once, in the window it was first reported,
-// Addressed how many of those a later review no longer reported, and the
-// reactions the ones posted inline drew.
+// Reviews and pull requests count completed reviews. Findings count each
+// pull request's finding once, in the window it was first reported.
+// Addressed counts how many of those a later review no longer reported. The
+// reactions count what the ones posted inline drew.
 type AnalyticsTotals struct {
 	PullRequests int
 	Reviews      int
 	Failed       int
 	Findings     SeverityCounts
-	// Categories counts the same findings by category; a finding
+	// Categories counts the same findings by category. A finding
 	// recorded before it had one is under none of them.
 	Categories    map[review.Category]int
 	Addressed     int

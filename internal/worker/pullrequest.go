@@ -73,18 +73,20 @@ func closedReason(row store.ReviewPullRequest) string {
 	return ""
 }
 
-// refreshPullRequest asks the forge whether pr, which the store holds
-// open, still is, and records it closed when it is not, returning why it
-// takes no more reviews as loadPullRequest would, or "". A job trusts the
-// row the event that queued it wrote only until it first turns to the
-// forge: anything may have happened in between, a replica down while the
-// closed event came among it, and the row is all the job otherwise reads
-// the state from. The forge is not asked for a pull request the store
-// already holds closed, and one it does not know is left for the poll to
-// sort out. One that cannot be reached fails the attempt, as the job's
-// own forge calls would. The reason is the row's once the close is
-// recorded: a reopening the row already knows of, newer than what the
-// forge answered, keeps it open.
+// refreshPullRequest asks the forge whether pr, which the store holds open,
+// is still open. If it is not, refreshPullRequest records it as closed and
+// returns the reason that it takes no more reviews, as loadPullRequest does.
+// Otherwise it returns "". A job trusts the row from the event that queued it
+// only until the job first contacts the forge. Anything can happen in
+// between: for example, a replica can be down when the closed event arrives.
+// Otherwise, the row is the only place from which the job reads the state.
+//
+// The forge is not asked for a pull request that the store already holds
+// closed. A pull request that the forge does not know is left for the poll to
+// sort out. One that cannot be reached fails the attempt, as the job's own
+// forge calls do. The reason is the row's once the close is recorded: a
+// reopening that the row already knows of, newer than what the forge
+// answered, keeps it open.
 func (b *Base) refreshPullRequest(
 	ctx context.Context, client forge.Client, accountID string, pr *pullRequest, logger *slog.Logger,
 ) (string, error) {
@@ -123,14 +125,14 @@ func (b *Base) refreshPullRequest(
 }
 
 // skipClosed ends e's review, of a pull request merged or closed since the
-// event that queued it, as skipped: an automatic review has nothing left to
-// do, and no status is set on a head that merges no more, unless an earlier
-// attempt of the job set one (see closedUnderJob). client is the forge
-// client the caller has, nil before one is built. The end is written under
-// the pull request's publication lock, which a review's start holds while
-// it sets its own pending status, with the job's ownership of the status
-// checked inside it: a newer review that starts meanwhile, on a pull
-// request reopened since, keeps the status it set.
+// event that queued it, as skipped. An automatic review has nothing left to
+// do. No status is set on a head that merges no more, unless an earlier
+// attempt of the job set one (see closedUnderJob). client is the forge client
+// that the caller has, nil before one is built. The end is written under the
+// pull request's publication lock, which a review's start holds while it sets
+// its own pending status. skipClosed makes sure inside that lock that the job
+// owns the status: a newer review that starts meanwhile, on a pull request
+// reopened since, keeps the status it set.
 func (w *Review) skipClosed(
 	ctx context.Context, e earlyEnd, jobID int64, client forge.Client, file *configfile.File, account *configfile.Account,
 ) error {
@@ -144,12 +146,12 @@ func (w *Review) skipClosed(
 }
 
 // closedUnderJob gives e the client to report its end on the head when an
-// earlier attempt of the job started a review there: a review of an open
-// pull request, whose pending status a replica that died left on the head,
-// and which the pull request closed under before the retry. The retry's
-// skip is then what replaces the status, and the eyes the earlier attempt
-// left come off with it, unless another review of the pull request runs.
-// A job whose earlier attempts started nothing sets no status on a head
+// earlier attempt of the job started a review there. That is a review of an
+// open pull request, whose pending status a replica that died left on the
+// head. The pull request closed under that review before the retry. The
+// retry's skip is then what replaces the status. The eyes that the earlier
+// attempt left come off with it, unless another review of the pull request
+// runs. A job whose earlier attempts started nothing sets no status on a head
 // that merges no more.
 func (w *Review) closedUnderJob(
 	ctx context.Context, e *earlyEnd, jobID int64, client forge.Client, file *configfile.File, account *configfile.Account,

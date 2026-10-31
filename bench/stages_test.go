@@ -21,7 +21,7 @@ type stageCase struct {
 }
 
 // Stop and Text are the step's when it made no answer to extract, as when
-// an output budget cut the call off; Response then carries what it cost.
+// an output budget cut the call off. Response then carries what it cost.
 type stageResult struct {
 	ID         string                   `json:"id"`
 	Request    model.CompletionRequest  `json:"request"`

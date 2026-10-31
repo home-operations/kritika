@@ -41,8 +41,8 @@ type Pull struct {
 	UpdatedAt  time.Time    `json:"updatedAt"`
 	Labels     []Label      `json:"labels"`
 	LastReview *ReviewBrief `json:"lastReview"`
-	// ReviewCount is how many of its reviews completed; CostUSD is what
-	// all of them spent, the ones that did not complete included.
+	// ReviewCount is how many of its reviews completed. CostUSD is what all
+	// of them spent, the ones that did not complete included.
 	ReviewCount   int     `json:"reviewCount"`
 	CostUSD       float64 `json:"costUsd"`
 	UnpricedCalls int64   `json:"unpricedCalls,omitzero"`
@@ -54,9 +54,9 @@ type InstancePull struct {
 	Account string `json:"account"`
 }
 
-// Attention counts the account's open pull requests that want a look, by
-// why: their newest review failed, hit a cap or found a P0,
-// or their automatic reviews are paused. One may count under several.
+// Attention counts the account's open pull requests that want a look, by why:
+// their newest review failed, hit a cap or found a P0, or their automatic
+// reviews are paused. One can count under several.
 type Attention struct {
 	Failed int `json:"failed"`
 	Capped int `json:"capped"`
@@ -77,8 +77,8 @@ type Confidence struct {
 	Threshold int    `json:"threshold"`
 	Passed    bool   `json:"passed"`
 	Reason    string `json:"reason"`
-	// Risk is how much a mistake in the change would cost: low, medium,
-	// high or critical.
+	// Risk is how much a mistake in the change costs: low, medium, high or
+	// critical.
 	Risk  review.Risk `json:"risk"`
 	Model string      `json:"model"`
 }
@@ -102,10 +102,10 @@ type Followup struct {
 	CreatedAt      time.Time            `json:"createdAt"`
 }
 
-// PullDetail is a pull request with every review and follow-up. Job is
-// its review job that has not finished, nil when there is none: a review
-// row only exists once a job got as far as starting the review, so a job
-// that waits or keeps failing before that shows nowhere else.
+// PullDetail is a pull request with every review and follow-up. Job is its
+// review job that is not finished, nil when there is none. A review row only
+// exists once a job got as far as starting the review. So a job that waits or
+// keeps failing before that shows nowhere else.
 type PullDetail struct {
 	Pull      Pull       `json:"pull"`
 	Reviews   []Review   `json:"reviews"`

@@ -11,7 +11,8 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 )
 
-// AuthorizeRunner verifies the database capability before any runner work.
+// AuthorizeRunner makes sure that the database capability is valid before
+// any runner work.
 func (s *Store) AuthorizeRunner(ctx context.Context, runID string) error {
 	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
 		var id string
@@ -46,8 +47,8 @@ func setRunnerPhase(ctx context.Context, tx pgx.Tx, runID, phase string) error {
 	return nil
 }
 
-// RecordRunnerFailure accepts an already redacted error. Only the executor may
-// write finished_at; a runner can report its phase and error alone.
+// RecordRunnerFailure accepts an already redacted error. Only the executor can
+// write finished_at. A runner can report its phase and error alone.
 func (s *Store) RecordRunnerFailure(ctx context.Context, runID, cause string) error {
 	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`, runID, cause); err != nil {
@@ -88,7 +89,7 @@ func (s *Store) WriteRunnerContext(ctx context.Context, runID string, p RunnerCo
 }
 
 // RunnerAgentRecord is a redacted agent result and optional retained conversation.
-// JSON fields carry the runner's encoded payloads; nil Result is SQL NULL.
+// JSON fields carry the runner's encoded payloads. A nil Result is SQL NULL.
 type RunnerAgentRecord struct {
 	Stop, ForcedBy               string
 	Result                       json.RawMessage

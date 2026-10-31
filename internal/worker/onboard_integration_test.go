@@ -18,8 +18,9 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
-// TestOnboarderKeepsToItsWindow checks the feeder queues onboarding jobs up
-// to its window and no further, and fills a place a finished job leaves.
+// TestOnboarderKeepsToItsWindow makes sure that the feeder queues onboarding
+// jobs up to its window and no further, and fills a place that a finished job
+// leaves.
 func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
@@ -27,8 +28,8 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	// An account of its own: the feeder offers only repositories of the
-	// accounts the configuration serves, so the repositories other suites
-	// turned on in the shared database stay out of the count.
+	// accounts that the configuration serves. So the repositories that other
+	// suites turned on in the shared database stay out of the count.
 	file, err := configfiletest.Parse(t, strings.ReplaceAll(configYAML, "onedr0p", "onboard-window"))
 	if err != nil {
 		t.Fatal(err)

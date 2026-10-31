@@ -14,8 +14,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// SSE tuning: how often an idle stream carries a comment so proxies and
-// the browser keep it open, and how many events a slow client may fall
+// SSE tuning: how often an idle stream carries a comment so that proxies and
+// the browser keep it open. Also, how many events a slow client can fall
 // behind before it is told to resync instead.
 const (
 	heartbeatInterval = 25 * time.Second
@@ -36,14 +36,14 @@ type hub struct {
 	// when it missed events.
 	resyncFrame []byte
 	// stands, when set, is asked at every heartbeat whether the stream's
-	// session still stands; a stream whose session ended is closed, and
-	// the browser's reconnect is refused.
+	// session still stands. A stream whose session ended is closed, and the
+	// browser's reconnect is refused.
 	stands func(*http.Request) bool
 
 	mu      sync.Mutex
 	clients map[*client]struct{}
-	// done is closed once the store listener has stopped: no event will
-	// arrive again, so every stream ends.
+	// done is closed once the store listener stops: no event will arrive
+	// again, so every stream ends.
 	done      chan struct{}
 	closeOnce sync.Once
 }
@@ -98,9 +98,9 @@ func (h *hub) slug(accountID string) (string, bool) {
 	return a.Slug(), true
 }
 
-// publish delivers e to every client that may read its account, without
-// ever blocking: a client whose buffer is full is sent a resync instead.
-// It runs on the store listener's single callback goroutine.
+// publish delivers e to every client that can read its account, without ever
+// blocking: a client whose buffer is full is sent a resync instead. It runs
+// on the store listener's single callback goroutine.
 func (h *hub) publish(e store.Event) {
 	slug, ok := h.slug(e.AccountID)
 	if !ok {
@@ -141,8 +141,8 @@ func (c *client) requestResync() {
 // serve streams events to one client until the request ends.
 func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
-	// A server-wide write timeout would cut a stream that never finishes;
-	// instead each write gets its own deadline.
+	// A server-wide write timeout cuts a stream that never finishes. Instead,
+	// each write gets its own deadline.
 	extend := func() bool {
 		err := rc.SetWriteDeadline(time.Now().Add(writeTimeout))
 		return err == nil || errors.Is(err, http.ErrNotSupported)

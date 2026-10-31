@@ -14,7 +14,7 @@ import (
 )
 
 // answering is a stepper that answers every structured call with raw, or
-// fails with err, recording the last request.
+// fails with err. It records the last request.
 func answering(raw string, err error) (model.Stepper, *model.StepRequest) {
 	var last model.StepRequest
 	return model.StepperFunc(func(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
@@ -107,8 +107,8 @@ func TestJudgeReplacement(t *testing.T) {
 	}
 }
 
-// TestScoreJudged: a judge is asked only about an expected range no
-// finding landed on, and only about the findings in its file; its match
+// TestScoreJudged: a judge is asked only about an expected range that no
+// finding landed on, and only about the findings in its file. Its match
 // counts, once, and is told apart from a hit by line.
 func TestScoreJudged(t *testing.T) {
 	c := Case{Expected: []Expected{

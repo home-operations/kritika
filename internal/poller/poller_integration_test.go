@@ -45,8 +45,8 @@ func (baseForge) PullRequest(context.Context, string, string, int) (forge.OpenPu
 	return forge.OpenPullRequest{}, forge.ErrNotFound
 }
 
-// The reactions of reviews other suites left on the shared database are
-// read with the poll; a fake with no comments answers them.
+// The reactions of reviews that other suites left on the shared database
+// are read with the poll. A fake with no comments answers them.
 func (baseForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
 	return nil, nil
 }
@@ -55,7 +55,7 @@ func (baseForge) ListConversation(context.Context, string, string, int) ([]forge
 	return nil, nil
 }
 
-// listForge answers only the listing call; the poller needs nothing else.
+// listForge answers only the listing call. The poller needs nothing else.
 type listForge struct {
 	baseForge
 
@@ -130,7 +130,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	// Start from no poll state, no pull requests 7 or 8 and home-ops as
 	// the one enabled repository, whatever earlier suites left behind.
 	// home-ops stands for a repository known before dashboard enablement,
-	// with no choice recorded, so turning it on does not catch up on the
+	// with no choice recorded. So turning it on does not catch up on the
 	// pull requests from before the account was known.
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE account_id = $1`, account.ID()); err != nil {
@@ -298,9 +298,10 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) 
 	return d.Dispatcher.Dispatch(ctx, req)
 }
 
-// TestPollerIndexesAMovedDefaultBranch: a connection no webhook reaches
-// has its indexed repositories' default branches checked, and an index job
-// queued when one moved; one that webhooks reach does not.
+// TestPollerIndexesAMovedDefaultBranch: for a connection that no webhook
+// reaches, the poll looks at the default branches of its indexed
+// repositories. It queues an index job when one moved. For a connection
+// that webhooks reach, it does not.
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
@@ -404,12 +405,12 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	}
 }
 
-// TestSyncRepositories: the repositories a running connection's App reaches
-// are registered on the accounts it serves, with what the forge says of
-// them, and a second sync adds none; an account it does not serve gets
-// nothing. A repository the listing no longer has is disabled, but not one
-// a webhook named while the listing ran, and a listing that fails or comes
-// back empty disables nothing.
+// TestSyncRepositories: the repositories that a running connection's App
+// reaches are registered on the accounts it serves, with what the forge says
+// of them. A second sync adds none. An account that it does not serve gets
+// nothing. A repository that the listing no longer has is disabled, but not
+// one that a webhook named while the listing ran. A listing that fails or
+// comes back empty disables nothing.
 func TestSyncRepositories(t *testing.T) {
 	ctx := t.Context()
 	var logs bytes.Buffer
@@ -667,7 +668,7 @@ func TestPollerReadsReactions(t *testing.T) {
 }
 
 // skipForge lists one pull request for every repository but fails the
-// listing of the one named failing, and has no inline comments to read
+// listing of the one named failing. It has no inline comments to read
 // reactions from.
 type skipForge struct {
 	baseForge
@@ -688,9 +689,9 @@ func (f *skipForge) ListOpenPullRequests(_ context.Context, _, name string, _ ti
 	}}, nil
 }
 
-// TestPollerPollsPastAFailingRepository: a repository the forge will not
-// list is skipped, the others are still polled, and the poll state is left
-// for the next pass to cover the skipped one.
+// TestPollerPollsPastAFailingRepository: a repository that the forge will
+// not list is skipped, and the others are still polled. The poll state is
+// left for the next pass to cover the skipped one.
 func TestPollerPollsPastAFailingRepository(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -712,8 +713,8 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	// A webhook reached the connection lately, so no default branch is
-	// checked: this poll is about the listing alone.
+	// A webhook reached the connection lately, so the poll looks at no default
+	// branch. This poll is about the listing alone.
 	if err := st.RecordWebhookDelivery(ctx, in.ID()); err != nil {
 		t.Fatal(err)
 	}
@@ -834,10 +835,10 @@ func TestPollerRunCutsAPollAtItsInterval(t *testing.T) {
 	}
 }
 
-// TestPollerClosesAPullRequestWhoseEventWasMissed: a pull request kritika
-// holds open that the forge no longer lists as open is asked for by number
-// and recorded closed, merged or not; one the forge still has open, and one
-// it does not know, are left as they are.
+// TestPollerClosesAPullRequestWhoseEventWasMissed: a pull request that
+// kritika holds open and that the forge no longer lists as open is asked for
+// by number. It is recorded closed, merged or not. One that the forge still
+// has open, and one that it does not know, are left as they are.
 func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -882,7 +883,7 @@ func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
 	merged.State, merged.Merged, merged.ClosedAt = "closed", true, &closedAt
 	closed.State, closed.ClosedAt = "closed", &closedAt
 	// 933 is still open on the forge though the listing lacks it, as one
-	// opened since the listing would be; 934 the forge does not know.
+	// opened since the listing is. The forge does not know 934.
 	lf := &listForge{byNumber: map[int]forge.OpenPullRequest{931: merged, 932: closed, 933: open(933)}}
 	p := &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: svc, Logger: slog.New(slog.DiscardHandler),
@@ -890,8 +891,8 @@ func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
 	if _, err := p.Poll(ctx, file, account, in); err != nil {
 		t.Fatalf("Poll: %v", err)
 	}
-	// The one the forge did not know is not asked for again, so it cannot
-	// use up a poll's checks for good; the others are asked each poll.
+	// The one that the forge did not know is not asked for again, so it cannot
+	// use up a poll's checks for good. The others are asked each poll.
 	lf.mu.Lock()
 	lf.asked = nil
 	lf.mu.Unlock()

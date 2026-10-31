@@ -24,10 +24,9 @@ type readDescriptionTool struct {
 	maxBytes int
 }
 
-// ReadDescriptionTool returns the pull request description whole, or the
-// body of one of the linked issues, by number, where the prompt shows
-// each only up to its share of the budget. Its output is capped at
-// maxBytes.
+// ReadDescriptionTool returns the pull request description whole, or the body
+// of one of the linked issues, by number. The prompt shows each of these only
+// up to its share of the budget. The tool caps its output at maxBytes.
 func ReadDescriptionTool(body string, issues map[int]string, maxBytes int) Tool {
 	return &readDescriptionTool{body: body, issues: issues, maxBytes: maxBytes}
 }

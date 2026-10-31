@@ -7,9 +7,9 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// TestCutShort: a review whose agent the loop told to submit says so, by
-// the limit that made it, as does each part of a split review that
-// submitted so; a part that never submitted is unfinishedParts' to name.
+// TestCutShort: a review whose agent the loop told to submit says so, by the
+// limit that made it. Each part of a split review that submitted so does too.
+// A part that never submitted is unfinishedParts' to name.
 func TestCutShort(t *testing.T) {
 	tests := []struct {
 		name string

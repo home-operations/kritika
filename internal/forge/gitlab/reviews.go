@@ -65,9 +65,9 @@ func position(v *diffVersion, files []udiff.File, path string, line int) *gl.Pos
 	return p
 }
 
-// inlineBody is the comment's body for a range: GitLab anchors a comment
-// on one line, so a range is anchored on its last, and a suggestion fence
-// is given the lines above it to cover, as GitLab's syntax has it.
+// inlineBody is the comment's body for a range. GitLab anchors a comment on
+// one line, so a range is anchored on its last. A suggestion fence is given
+// the lines above it to cover, as GitLab's syntax has it.
 func inlineBody(cm forge.InlineComment) string {
 	if cm.StartLine <= 0 || cm.StartLine >= cm.Line {
 		return cm.Body
@@ -81,14 +81,13 @@ func normalized(body string) string {
 	return strings.TrimRight(strings.ReplaceAll(body, "\r", ""), " \t\n")
 }
 
-// CreateReview implements forge.Client with draft notes published at
-// once, which GitLab notifies of as one review. Publishing answers with
-// no notes, so they are listed after and matched by path and body, in
-// order, among the ones that were not there before. Publishing publishes
-// every pending draft of the bot's on the merge request, so any left by
-// a review that failed before are discarded first; two reviews of one
-// merge request at once would publish each other's, which the worker's
-// publication lock rules out.
+// CreateReview implements forge.Client with draft notes published at once,
+// which GitLab notifies of as one review. Publishing answers with no notes.
+// So they are listed after and matched by path and body, in order, among the
+// ones that were not there before. Publishing publishes every pending draft
+// of the bot's on the merge request. So any left by a review that failed
+// before are discarded first. Two reviews of one merge request at once
+// publish each other's, which the worker's publication lock rules out.
 func (c *Client) CreateReview(
 	ctx context.Context, owner, repo string, number int, headSHA string, comments []forge.InlineComment,
 ) ([]int64, error) {
@@ -162,7 +161,7 @@ func (c *Client) CreateReview(
 }
 
 // discardTimeout bounds the discarding of a failed review's drafts, which
-// runs on even when the review's context has ended.
+// runs on even after the review's context ends.
 const discardTimeout = 30 * time.Second
 
 // discardDrafts deletes the draft notes of a review that was not
@@ -191,10 +190,10 @@ func (c *Client) approved(ctx context.Context, pid string, number int) (bool, er
 	}), nil
 }
 
-// Approve implements forge.Client. An approval names the head it is of,
-// so a push after it is not approved; one standing is left as it is,
-// since GitLab withdraws approvals on push unless the project keeps them.
-// GitLab's approval carries no body, so one is posted as a note first.
+// Approve implements forge.Client. An approval names the head it is of, so a
+// push after it is not approved. One standing is left as it is, since GitLab
+// withdraws approvals on push unless the project keeps them. GitLab's
+// approval carries no body, so one is posted as a note first.
 func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
 	pid := project(owner, repo)
 	standing, err := c.approved(ctx, pid, number)
@@ -269,10 +268,10 @@ func (c *Client) discussions(ctx context.Context, owner, repo string, number int
 	return out, nil
 }
 
-// comment maps a note, replying to root, 0 when it is one. A diff note
-// is outdated when its position names other refs than the merge request
-// now has: GitLab moves a note's position with a push that keeps its
-// lines, so one left behind was on lines the push changed.
+// comment maps a note that replies to root, 0 when it is one. A diff note is
+// outdated when its position names other refs than the merge request now has.
+// GitLab moves a note's position with a push that keeps its lines, so one
+// left behind was on lines that the push changed.
 func (c *Client) comment(ctx context.Context, n *gl.Note, number int, root int64, refs gl.MergeRequestDiffRefs) forge.Comment {
 	out := forge.Comment{
 		ID: n.ID, Number: number, Author: n.Author.Username, Body: n.Body, CreatedAt: timeOf(n.CreatedAt), InReplyTo: root,
@@ -300,10 +299,10 @@ func discussionResolved(d *gl.Discussion) bool {
 	return resolvable
 }
 
-// comments is the merge request's notes, oldest first, the inline ones or
-// the conversation's, each with the root of its discussion, and which
-// roots open a resolved discussion. System notes, which record events,
-// are left out.
+// comments is the merge request's notes, oldest first, the inline ones or the
+// conversation's, each with the root of its discussion. It also says which
+// roots open a resolved discussion. System notes, which record events, are
+// left out.
 func (c *Client) comments(ctx context.Context, owner, repo string, number int, inline bool) ([]forge.Comment, map[int64]bool, error) {
 	discussions, err := c.discussions(ctx, owner, repo, number)
 	if err != nil {
@@ -341,10 +340,10 @@ func (c *Client) inlineComments(ctx context.Context, owner, repo string, number 
 	return c.comments(ctx, owner, repo, number, true)
 }
 
-// GetComment implements forge.Client, reading the note under merge
-// request number. GitLab numbers every note of a merge request alike, so
-// one not among the kind asked for is looked for among the other: a
-// webhook tells a diff note by fields it may leave out.
+// GetComment implements forge.Client. It reads the note under merge request
+// number. GitLab numbers every note of a merge request alike, so one not
+// among the kind asked for is looked for among the other: a webhook tells a
+// diff note by fields it can leave out.
 func (c *Client) GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (forge.Comment, error) {
 	for _, kind := range []bool{inline, !inline} {
 		comments, _, err := c.comments(ctx, owner, repo, number, kind)

@@ -8,7 +8,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// Load parses doc as the configuration file, failing the test on any
+// Load parses doc as the configuration file and fails the test on any
 // error.
 func Load(t testing.TB, doc string) *configfile.File {
 	t.Helper()

@@ -36,8 +36,8 @@ func reviewSpec() Spec {
 	}
 }
 
-// followUpSpec is reviewSpec as a follow-up's: the same agent, answering a
-// thread.
+// followUpSpec is reviewSpec as a follow-up's: the same agent, which answers
+// a thread.
 func followUpSpec() Spec {
 	s := reviewSpec()
 	s.Kind = KindFollowUp

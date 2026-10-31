@@ -22,14 +22,16 @@ const (
 // because the call that writes one from them failed.
 const mergeFailedNote = "The summary joins the parts' own: writing one from them failed"
 
-// mergeSummary writes a split review's summary from its parts' with one
-// call to the review model at its effort, recorded and charged as the
-// review's, and the findings they reported; the parts' checked notes, which
-// res already carries, are kept, and with one part's summary there is
-// nothing to merge. It returns the answer carriedDiagram reads: the merge
-// call's, shaped as the agent's, when it wrote the summary, answer
-// otherwise; and the note the summary states when the call failed and res
-// keeps the parts' summaries joined, "" otherwise.
+// mergeSummary writes a split review's summary from its parts' summaries and
+// the findings they reported, with one call to the review model at its
+// effort. That call is recorded and charged as the review's. The parts'
+// checked notes, which res already carries, are kept. With one part's
+// summary, there is nothing to merge.
+//
+// mergeSummary returns the answer that carriedDiagram reads. That is the
+// merge call's answer, shaped as the agent's, when it wrote the summary, and
+// answer otherwise. It also returns the note the summary states when the call
+// failed and res keeps the parts' summaries joined, "" otherwise.
 func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart, answer json.RawMessage, res *review.Result,
 	findings []review.Finding,
 ) (json.RawMessage, string) {
@@ -76,17 +78,18 @@ func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart
 // mergedAnswer is the merge call's answer, a summary, shaped as the agent's.
 func mergedAnswer(raw string) json.RawMessage { return json.RawMessage(`{"summary":` + raw + `}`) }
 
-// merge asks the review model for the summary of a split review's parts,
-// recording the call against the review and charging it to the account,
-// and returns its answer.
+// merge asks the review model for the summary of a split review's parts. It
+// records the call against the review, charges it to the account, and returns
+// its answer.
 func (p *publishPhase) merge(ctx context.Context, parts []review.MergePart, findings []review.Finding) (string, error) {
 	if err := p.checkMonthCap(ctx); err != nil {
 		return "", err
 	}
 	ref := p.settings.Models.Review
-	// The review model's attempts may take all of the call's time: that is
-	// about one slow answer at the review's effort, which half of it would
-	// cut, and a merge that fails only joins the parts' summaries.
+	// The review model's attempts can take all of the call's time. That is
+	// about enough for one slow answer at the review's effort. Half that time
+	// will cut the answer off. A merge that fails only joins the parts'
+	// summaries.
 	call, err := p.structured(ref, p.settings.Models.Fallback, store.ModelCallMerge, store.RoleReview, "merge", false)
 	if err != nil {
 		return "", err

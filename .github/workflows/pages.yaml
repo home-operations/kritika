@@ -8,7 +8,7 @@ on:
       - main
   workflow_dispatch:
 
-# Serialize Pages deploys (matches the official GitHub Pages flow); never cancel
+# Serialize Pages deploys (matches the official GitHub Pages flow). Never cancel
 # an in-flight deploy.
 concurrency:
   group: github-pages

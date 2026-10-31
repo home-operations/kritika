@@ -4,22 +4,22 @@ import (
 	"strconv"
 )
 
-// FileLayer is what the configuration file sets for the
-// instance: its providers, the models and the other settings every
+// FileLayer is what the configuration file sets for the instance: its
+// providers, the models and the other configuration values that every
 // repository inherits, and the embedder, each with where it comes from.
 type FileLayer struct {
 	Providers map[string]FileProvider
 	Review    FileValue
 	Fallback  FileValue
-	// Defaults are the other settings it writes: review effort, approve,
-	// fixes, incremental, diagram,
-	// the confidence model, fallback, effort, threshold, gate and risk,
-	// and limit, in that order, by their policy keys.
+	// Defaults are the other configuration values that it writes: review
+	// effort, approve, fixes, incremental, diagram, the confidence model,
+	// fallback, effort, threshold, gate and risk, and limit, in that order, by
+	// their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
 
-// FileDefault is one of the settings the file sets
+// FileDefault is one of the configuration values that the file sets
 // other than the models, by its policy key.
 type FileDefault struct {
 	Key string
@@ -33,7 +33,7 @@ type FileProvider struct {
 	Source  Source
 }
 
-// FileValue is a setting the file sets; the zero
+// FileValue is a configuration value that the file sets. The zero
 // FileValue is none.
 type FileValue struct {
 	Value  string

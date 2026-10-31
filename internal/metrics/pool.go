@@ -6,12 +6,12 @@ import (
 )
 
 // PoolCollector reports each connection pool's live state on every scrape:
-// how many connections it holds and in what state, its ceiling, and how
-// many acquires had to wait for one to free. Jobs and requests queue
-// inside the pool without a sign otherwise, and the pool's ceiling is
-// the one the database's connection limit is shared out by. One
-// collector covers every pool: the registry refuses a second collector
-// that describes the same metrics.
+// how many connections it holds and in what state, its ceiling, and how many
+// acquires had to wait for one to free. Otherwise, jobs and requests queue
+// inside the pool without a sign. The pool's ceiling is the one that the
+// database's connection limit is shared out by. One collector covers every
+// pool: the registry refuses a second collector that describes the same
+// metrics.
 type PoolCollector struct {
 	stats map[string]func() *pgxpool.Stat
 }

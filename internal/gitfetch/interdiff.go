@@ -7,9 +7,10 @@ import (
 )
 
 // hunkKeys counts the hunks of a unified diff by their path and their added
-// and removed lines, with everything positional left out as PatchID leaves
-// it out: a hunk the base gained sits at other lines, under other context,
-// in the diff since the prior head than in the diff between the merge bases.
+// and removed lines. It leaves everything positional out, as PatchID does. A
+// hunk that the base gained is in two diffs: the diff since the prior head
+// and the diff between the merge bases. It sits at different lines, under
+// different context, in each.
 func hunkKeys(diff string) map[string]int {
 	keys := map[string]int{}
 	for _, f := range udiff.Parse(diff) {
@@ -21,8 +22,8 @@ func hunkKeys(diff string) map[string]int {
 }
 
 // withoutHunks is one file's diff less as many hunks of each key as drop
-// counts, each one dropped taken off drop, "" when none of its hunks
-// remain: the change may make an edit the base made too, and that one
+// counts. Each one dropped is taken off drop. It is "" when none of its hunks
+// remain. The change can make an edit that the base made too, and that one
 // stays. A file diff with no hunks, a rename or a mode change alone, stands.
 func withoutHunks(f udiff.File, drop map[string]int) string {
 	var b strings.Builder
@@ -42,8 +43,8 @@ func withoutHunks(f udiff.File, drop map[string]int) string {
 	return b.String()
 }
 
-// hunkKey is a hunk's path and its added and removed lines, trailing
-// whitespace trimmed; context, the hunk header and a no-newline note are
+// hunkKey is a hunk's path and its added and removed lines, with trailing
+// whitespace trimmed. Context, the hunk header, and a no-newline note are
 // left out.
 func hunkKey(path string, h udiff.Hunk) string {
 	var b strings.Builder

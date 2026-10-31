@@ -15,7 +15,7 @@
     body: string;
     path: string;
     danger?: boolean;
-    // done names the result, e.g. "Re-run queued".
+    // done names the result, for example "Re-run queued".
     done: string;
     // already, when set, is what to say when the server answers that the
     // same job is already queued, which is no failure.

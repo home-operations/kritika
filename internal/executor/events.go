@@ -19,15 +19,16 @@ import (
 )
 
 // Events records Kubernetes Events, which kubectl describe and kubectl
-// events show and event collectors gather: on a runner Job, why kritika
-// ended its run; on this replica's own pod, what its leader did. It writes
-// each Event itself rather than through client-go's broadcaster, which
-// aggregates the floods a controller of many objects emits; kritika emits a
-// few. Recording is best effort: a refused Event is logged, never an error.
+// events show and event collectors gather. On a runner Job, an Event says why
+// kritika ended its run. On this replica's own pod, an Event says what its
+// leader did. Events writes each Event itself and not through client-go's
+// broadcaster. That broadcaster aggregates the floods that a controller of
+// many objects emits, and kritika emits a few. Recording is best effort: a
+// refused Event is logged, never an error.
 type Events struct {
 	client    kubernetes.Interface
 	namespace string
-	// pod is this replica's pod, its Name empty outside one; instance names
+	// pod is this replica's pod, its Name empty outside one. instance names
 	// the replica as the Events' reporting instance.
 	pod      corev1.ObjectReference
 	instance string
@@ -38,7 +39,7 @@ type Events struct {
 
 // Fields of every Event kritika records: the controller it names as
 // reporting it, the longest reporting instance and note one holds, and how
-// long its write may take.
+// long its write can take.
 const (
 	eventController    = "kritika"
 	eventInstanceBytes = 128

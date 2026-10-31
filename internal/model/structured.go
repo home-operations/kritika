@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// Structured implements Completer on a Stepper by offering one tool named
-// SchemaName whose input schema is the answer's and telling the model to
-// answer by calling it; the call's input is the answer. The call is asked
-// for in the prompt rather than forced through tool_choice, which the
-// newest models reject. It makes one step, which no other reads back.
+// Structured implements Completer on a Stepper. It offers one tool named
+// SchemaName, whose input schema is the answer's, and tells the model to
+// answer by calling it. The call's input is the answer. The prompt asks for
+// the call rather than forcing it through tool_choice, which the newest
+// models reject. It makes one step, which no other step reads back.
 type Structured struct {
 	Stepper Stepper
 }

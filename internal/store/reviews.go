@@ -42,17 +42,20 @@ type Started struct {
 }
 
 // StartReview records a running review and its runner run. The last review
-// to start owns the pull request: every older review of it still active,
+// to start owns the pull request. Every older review of it still active,
 // running or prepared, whatever its head, is canceled and points at the
-// new one (replaced_by_review_id), and the starts of one pull request are
-// serialized on its row, so two at once have one unambiguous winner. The
-// row lock also orders a start against ingest's head updates: a review of
-// a head that moved is ErrHeadMoved, so a stale head's queued job cannot
-// take the pull request from its current head's review. An earlier attempt
-// of the same job that never finished its review (a write that failed and
-// was retried, a worker that died) left it running, and a running review
-// blocks every re-run of its head, so it is ended failed first; one a newer
-// review replaced is ErrReviewReplaced, so the job does not revive it.
+// new one (replaced_by_review_id). The starts of one pull request are
+// serialized on its row, so two at once have one unambiguous winner.
+//
+// The row lock also orders a start against ingest's head updates. A review
+// of a head that moved is ErrHeadMoved, so a stale head's queued job cannot
+// take the pull request from its current head's review.
+//
+// An earlier attempt of the same job that never finished its review left it
+// running. The cause is a write that failed and was retried, or a worker
+// that died. A running review blocks every re-run of its head, so it is
+// ended failed first. One that a newer review replaced is ErrReviewReplaced,
+// so the job does not revive it.
 func StartReview(ctx context.Context, tx pgx.Tx, r NewReview) (Started, error) {
 	var head string
 	if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1 FOR UPDATE`, r.PullRequestID).Scan(&head); err != nil {
@@ -113,8 +116,8 @@ func JobReviewReplaced(ctx context.Context, tx pgx.Tx, pullRequestID string, job
 // ReviewCeded reports whether the review no longer speaks for its pull
 // request, whose commit status, approval and marks are then a newer
 // review's to set: a newer review replaced it (see StartReview), or a newer
-// review of the pull request, of its head or another, has started since.
-// ErrNotFound when there is no such review.
+// review of the pull request, of its head or another, started since. It
+// returns ErrNotFound when there is no such review.
 func ReviewCeded(ctx context.Context, tx pgx.Tx, reviewID string) (bool, error) {
 	var ceded bool
 	err := tx.QueryRow(ctx, `SELECT r.replaced_by_review_id IS NOT NULL OR EXISTS (
@@ -154,9 +157,9 @@ type EndedReview struct {
 	SkipReason string
 	// JobID is the River job that ended it.
 	JobID int64
-	// CreatedAt dates the review, now() when zero: a review asked for
+	// CreatedAt dates the review, now() when zero. A review asked for
 	// whose head moved before it started is dated by its job, when it was
-	// asked, so it orders among the pull request's reviews as the request
+	// asked. So it orders among the pull request's reviews as the request
 	// does (see ReviewOwed).
 	CreatedAt time.Time
 }
@@ -209,12 +212,12 @@ type ReviewEnd struct {
 	PatchID    string
 	SkipReason string
 	Error      string
-	// OnlyUnfinished ends the review only if nothing has ended it yet.
+	// OnlyUnfinished ends the review only if nothing ended it yet.
 	OnlyUnfinished bool
 }
 
 // EndReview ends the review and reports whether it did: false only when
-// end.OnlyUnfinished is set and the review had ended already.
+// end.OnlyUnfinished is set and the review already ended.
 func EndReview(ctx context.Context, tx pgx.Tx, reviewID string, end ReviewEnd) (bool, error) {
 	tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = CASE WHEN $3 = '' THEN patch_id ELSE $3 END,
 		skip_reason = CASE WHEN $4 = '' THEN skip_reason ELSE $4 END, error = left($5, 2000), finished_at = now(),
@@ -302,7 +305,7 @@ type RunnerResult struct {
 }
 
 // RecordRunnerRun writes what the executor learned about a runner Job. A
-// failed Job ends the run failed; a successful one leaves the phase the
+// failed Job ends the run failed. A successful one leaves the phase that the
 // runner set.
 func RecordRunnerRun(ctx context.Context, tx pgx.Tx, runID string, r RunnerResult) error {
 	// A time the executor never learned, a pod that never scheduled or
@@ -334,7 +337,7 @@ type ContextPackRecord struct {
 	// SkipReason is why the runner ran no agent, "" when it did, and
 	// SkipDetail the name of the condition that decided a filtered one.
 	SkipReason, SkipDetail string
-	// RuleIDs are the rules the prompt was given; Notes what the summary
+	// RuleIDs are the rules the prompt was given. Notes is what the summary
 	// states about the repository's files.
 	RuleIDs, Notes []string
 	Files          repoconfig.Files
@@ -377,9 +380,9 @@ type InlinePosted struct {
 }
 
 // ReviewResult is what a published review records: its findings, each with
-// whether it is inline on the forge, the summary, the model that answered,
-// the sticky comment's id and, where the review was scored, its
-// confidence.
+// whether it is inline on the forge. It also records the summary, the model
+// that answered, the sticky comment's id and, where the review was scored,
+// its confidence.
 type ReviewResult struct {
 	AccountID, ReviewID, PullRequestID string
 	Result                             review.Result

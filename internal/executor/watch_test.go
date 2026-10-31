@@ -40,7 +40,7 @@ func TestKubeStartNeedsTheWatch(t *testing.T) {
 }
 
 // TestKubeStartBoundsAStalledWatch: a trial watch the API never answers
-// fails Start once watchSync has passed, though ctx has no deadline.
+// fails Start once watchSync passes, though ctx has no deadline.
 func TestKubeStartBoundsAStalledWatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		client, err := kubernetes.NewForConfig(&rest.Config{Host: "https://kube.invalid", Transport: stalled{}})
@@ -68,7 +68,7 @@ func (stalled) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // TestKubeStartBoundsTheFirstLists: lists the API never answers fail Start
-// once watchSync has passed, with the wait's cause and every kind not
+// once watchSync passes, with the wait's cause and every kind not
 // listed.
 func TestKubeStartBoundsTheFirstLists(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -127,8 +127,8 @@ func TestKubeStartWatchesRunnersAlone(t *testing.T) {
 	}
 }
 
-// TestKubeWatchOutlastsStart: the watch goes on after Start's ctx, which a
-// signal ends while runs still drain, has ended, until Stop.
+// TestKubeWatchOutlastsStart: the watch goes on after Start's ctx ends, until
+// Stop. A signal ends that ctx while runs still drain.
 func TestKubeWatchOutlastsStart(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}

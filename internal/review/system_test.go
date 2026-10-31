@@ -67,9 +67,9 @@ func TestSystemPrompt(t *testing.T) {
 	}
 }
 
-// TestSystemPromptRules: the rules end the prompt, each by its id, a rule
-// over several lines indented under its item; a review's findings are told
-// to cite them, a follow-up is not.
+// TestSystemPromptRules: the rules end the prompt, each by its id, with a
+// rule over several lines indented under its item. A review's findings are
+// told to cite them, and a follow-up is not.
 func TestSystemPromptRules(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors.\nWith the package name."}, {ID: "no-tokens", Text: " Never log a token. "}}
 	section := func(lead string) string {
@@ -236,8 +236,8 @@ func TestSystemRules(t *testing.T) {
 }
 
 // TestSystemPromptFileRules: a file rule follows the written ones as a
-// heading of its id and file over its content, and a section of file
-// rules alone has no empty list.
+// heading of its id and file over its content. A section of file rules alone
+// has no empty list.
 func TestSystemPromptFileRules(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}, {ID: "house-style", Text: " Short names.\n", File: ".kritika/style.md"}}
 	want := "into quote, verbatim.\n\n- wrap-errors: Wrap errors.\n\n### house-style (.kritika/style.md)\n\nShort names."
@@ -249,9 +249,9 @@ func TestSystemPromptFileRules(t *testing.T) {
 	}
 }
 
-// TestSystemPromptSkills: the skills come last, after the rules, each listed by its name with its description, or given
-// whole under its name when it has text; with none the prompt has no such
-// section.
+// TestSystemPromptSkills: the skills come last, after the rules, each listed
+// by its name with its description, or given whole under its name when it has
+// text. With none, the prompt has no such section.
 func TestSystemPromptSkills(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}}
 	skills := []Skill{{Name: "review-go", Description: "How Go is reviewed here."}, {Name: "migrations", Description: "What a migration must keep."}}

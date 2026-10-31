@@ -12,7 +12,7 @@ import (
 )
 
 // TestAPITokens: a token is looked up by its value until it expires or is
-// deleted, records its use at most once a minute, and only its owner, or
+// deleted. It records its use at most once a minute. Only its owner, or
 // anyone when no owner is given, deletes it.
 func TestAPITokens(t *testing.T) {
 	s := openStore(t)
@@ -61,9 +61,9 @@ func TestAPITokens(t *testing.T) {
 	}
 }
 
-// checkLookupRefusals checks that a lookup within a minute of the last use
-// leaves the use alone, and that an expired, unknown or empty value finds
-// no token.
+// checkLookupRefusals makes sure that a lookup within a minute of the last
+// use leaves the use alone. It also makes sure that an expired, unknown or
+// empty value finds no token.
 func checkLookupRefusals(t *testing.T, s *Store, live, old string, now time.Time) {
 	t.Helper()
 	if again, err := s.LookupAPIToken(t.Context(), live, now.Add(30*time.Second)); err != nil || !again.LastUsedAt.Equal(now) {
@@ -90,9 +90,9 @@ func checkLookupRefusals(t *testing.T, s *Store, live, old string, now time.Time
 	}
 }
 
-// checkTokenOwnership checks that a user lists their own tokens alone,
-// newest first, that another user cannot delete them, and that their
-// owner, or anyone when no owner is given, does.
+// checkTokenOwnership makes sure that a user lists their own tokens alone,
+// newest first, and that another user cannot delete them. It also makes sure
+// that their owner, or anyone when no owner is given, deletes them.
 func checkTokenOwnership(t *testing.T, s *Store, owner, other, liveID, oldID string) {
 	t.Helper()
 	ctx := t.Context()

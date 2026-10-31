@@ -23,22 +23,22 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// Forgejo authenticates an authorized integration by a JWT the integration
-// signs, which it checks against the issuer's OpenID discovery document
-// and the JSON Web Key Set that names, both fetched from the issuer's URL
-// over HTTPS and cached. kritika is the issuer: it signs each connection's
-// tokens with that connection's key and serves the two documents under
-// its own URL.
+// Forgejo authenticates an authorized integration by a JWT that the
+// integration signs. Forgejo makes sure that the JWT is valid against the
+// issuer's OpenID discovery document and the JSON Web Key Set that the
+// document names. Forgejo fetches both from the issuer's URL over HTTPS and
+// caches them. kritika is the issuer: it signs each connection's tokens with
+// that connection's key and serves the two documents under its own URL.
 
 // issuerPath is where the documents live under the dashboard's URL, so
 // the issuer is one URL for every connection.
 const issuerPath = "/forgejo"
 
-// tokenTTL is how long a token kritika calls the API with lasts, and
-// runnerTokenTTL one a runner fetches with, which is read once a run
-// starts but may wait in a queue first. skew is how far a token's issue
-// and not-before times are set back, since Forgejo refuses a token issued
-// in its future and allows no leeway.
+// tokenTTL is how long a token that kritika calls the API with lasts.
+// runnerTokenTTL is how long a token that a runner fetches with lasts. That
+// token is read once a run starts, but it can wait in a queue first. skew is
+// how far a token's issue and not-before times are set back. Forgejo refuses
+// a token issued in its future and allows no leeway.
 const (
 	tokenTTL       = 10 * time.Minute
 	runnerTokenTTL = time.Hour
@@ -76,16 +76,16 @@ func NewIssuer(issuerURL, privateKeyPEM string) (*Issuer, error) {
 // URL is the issuer's URL, the iss claim of its tokens.
 func (i *Issuer) URL() string { return i.url }
 
-// PublicKey is the key that verifies the issuer's tokens, as the JWKS
-// lists it: the key id is the key's thumbprint, so a rotated key gets a
-// new id and both can be served while Forgejo's cache of the set lasts.
+// PublicKey is the key that verifies the issuer's tokens, as the JWKS lists
+// it. The key id is the key's thumbprint. So a rotated key gets a new id, and
+// both can be served while Forgejo's cache of the set lasts.
 func (i *Issuer) PublicKey() jose.JSONWebKey {
 	return jose.JSONWebKey{Key: i.key.Public(), KeyID: i.kid, Algorithm: string(jose.RS256), Use: "sig"}
 }
 
-// Token signs a token for audience, the integration's, lasting ttl from
-// now, issued skew ago. The subject is kritika, which a claim rule on the
-// integration can pin.
+// Token signs a token for audience, the integration's. The token lasts ttl
+// from now and is issued skew ago. The subject is kritika, which a claim rule
+// on the integration can pin.
 func (i *Issuer) Token(audience string, ttl time.Duration, now time.Time) (string, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: i.key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", i.kid))
@@ -127,10 +127,10 @@ func parseRSAKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
-// Keys is the key set Discovery serves for file: every Forgejo
-// connection's signing key and the one it is rotating out, as kritika's
-// tokens are verified against; a key that does not parse is left out and
-// logged.
+// Keys is the key set that Discovery serves for file: every Forgejo
+// connection's signing key and the one that it is rotating out. kritika's
+// tokens are verified against these keys. A key that does not parse is left
+// out and logged.
 func Keys(issuerURL string, file *configfile.File, logger *slog.Logger) []jose.JSONWebKey {
 	var out []jose.JSONWebKey
 	for i := range file.Connections {
@@ -153,11 +153,11 @@ func Keys(issuerURL string, file *configfile.File, logger *slog.Logger) []jose.J
 	return out
 }
 
-// Discovery serves the issuer's two documents under issuerURL's path:
-// .well-known/openid-configuration, naming the issuer, the key set's URL
-// and the signing algorithm, and .well-known/keys, the set of every
-// connection's public key as keys lists them when asked, so a key added
-// or rotated in the configuration is served on the next request.
+// Discovery serves the issuer's two documents under issuerURL's path.
+// .well-known/openid-configuration names the issuer, the key set's URL, and
+// the signing algorithm. .well-known/keys is the set of every connection's
+// public key, as keys lists them when asked. So a key added or rotated in the
+// configuration is served on the next request.
 func Discovery(issuerURL string, keys func() []jose.JSONWebKey) http.Handler {
 	base, _ := url.Parse(issuerURL)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

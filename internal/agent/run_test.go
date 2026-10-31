@@ -25,9 +25,9 @@ import (
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
-// helperEnv makes the test binary act as a command for the run tool, so
-// the tests run a real process without depending on what the host has on
-// its PATH.
+// helperEnv makes the test binary act as a command for the run tool. So the
+// tests run a real process and do not depend on what the host has on its
+// PATH.
 const helperEnv = "KRITIKA_AGENT_TEST_HELPER"
 
 func TestMain(m *testing.M) {
@@ -37,15 +37,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// helper is the command: "exit N" exits N, "sleep" outlives any test
-// timeout, "flood N" writes N bytes, "fail-after N" writes N bytes and then
-// an error to stderr, "unknown X" fails as gh does for a command X it lacks
-// and "quote X" prints the same and succeeds, "spawn" starts a "sleep" of
-// its own, apart from its output, prints its pid and exits, "spawn wait"
-// then outlives any test timeout itself, "spawn inherit" hands the sleep
-// its output, and "spawn setsid" also puts it in a session of its own,
-// "--fail-test ..." fails, and anything else prints the working
-// directory, the environment and the arguments.
+// helper is the command. "exit N" exits N. "sleep" outlives any test timeout.
+// "flood N" writes N bytes. "fail-after N" writes N bytes and then an error
+// to stderr. "unknown X" fails as gh does for a command X that it lacks.
+// "quote X" prints the same and succeeds. "spawn" starts a "sleep" of its
+// own, apart from its output, prints its pid, and exits. "spawn wait" then
+// outlives any test timeout itself. "spawn inherit" hands the sleep its
+// output. "spawn setsid" also puts it in a session of its own. "--fail-test
+// ..." fails. Anything else prints the working directory, the environment,
+// and the arguments.
 func helper(args []string) int {
 	switch {
 	case len(args) > 0 && args[0] == "--fail-test":
@@ -80,7 +80,7 @@ func helper(args []string) int {
 	case len(args) == 2 && args[0] == "fail-after":
 		n, _ := strconv.Atoi(args[1])
 		fmt.Print(strings.Repeat("x", n))
-		// Long enough for the run tool to have read stdout first.
+		// Long enough for the run tool to read stdout first.
 		time.Sleep(200 * time.Millisecond)
 		fmt.Fprintln(os.Stderr, "failed: the end")
 		return 1
@@ -193,10 +193,10 @@ func TestRunToolSetupErrors(t *testing.T) {
 }
 
 // TestRunToolPrepare: Prepare runs once, before the first command and not
-// before the tool is used, and its note opens every command's result,
-// within the output's cut; a Prepare that failed fails every command, with
-// one note for each, and is not run again, unless the run's context ended
-// it, when the next command runs it again.
+// before the tool is used. Its note opens every command's result, within the
+// output's cut. A Prepare that failed fails every command, with one note for
+// each, and does not run again. The exception is when the run's context ended
+// it: then the next command runs it again.
 func TestRunToolPrepare(t *testing.T) {
 	t.Run("once, before the first command", func(t *testing.T) {
 		rt, _ := newTestRunTool(t, false)
@@ -288,7 +288,7 @@ func TestRunTool(t *testing.T) {
 			!slices.Contains(lines, "arg=*.go") {
 			t.Fatalf("out = %q", out)
 		}
-		// The temp dir may sit behind a symlink (macOS's /var).
+		// The temp dir can sit behind a symlink (macOS's /var).
 		real, _ := filepath.EvalSymlinks(dir)
 		if !slices.Contains(lines, "wd="+dir) && !slices.Contains(lines, "wd="+real) {
 			t.Fatalf("out = %q, want wd=%s", out, dir)
@@ -461,7 +461,7 @@ func TestRunToolRecordsRan(t *testing.T) {
 		`{"command":"rg","args":["y"]}`,
 		`{"command":"fd","args":["x"]}`,
 	} {
-		// The unoffered call fails, which the loop reports to the model; only
+		// The unoffered call fails, which the loop reports to the model. Only
 		// what ran is recorded.
 		_, _ = rt.Run(t.Context(), json.RawMessage(input))
 	}
@@ -511,8 +511,8 @@ func TestRunToolGH(t *testing.T) {
 	if got := rt.Sources(); !slices.Equal(got, []string{"https://api.github.com/repos/a/b/compare/v1...v2"}) {
 		t.Fatalf("sources = %q", got)
 	}
-	// gh's list of every command gives way to the call it likely meant;
-	// another command's output is its own.
+	// gh's list of every command gives way to the call that it likely meant.
+	// Another command's output is its own.
 	hint, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["unknown","repos/a/b"]}`))
 	if err != nil || hint != `exit code 1`+"\n"+`unknown command "repos/a/b" for gh: its first argument is one of its commands, such as api, `+
 		"release, pr, issue or repo. A REST path is read with api before it: gh api repos/a/b." {
@@ -521,7 +521,7 @@ func TestRunToolGH(t *testing.T) {
 	if out, _ := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["unknown","repos/a/b"]}`)); !strings.Contains(out, "Available commands") {
 		t.Fatalf("rg's output was rewritten: %q", out)
 	}
-	// A call that succeeded printed what it read, which may quote the error.
+	// A call that succeeded printed what it read, which can quote the error.
 	if out, _ := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["quote","repos/a/b"]}`)); !strings.Contains(out, "Available commands") {
 		t.Fatalf("a successful gh call's output was rewritten: %q", out)
 	}
@@ -739,11 +739,11 @@ func TestStderrTail(t *testing.T) {
 	}
 }
 
-// TestRunToolKeepsCutOutput: a cut output, even one cut only because its
-// first line takes it past the limit, is kept whole, masked, in a file
-// numbered by the call, which a note after the cut's names; one that fits
-// writes no file, and one over what a file may hold or past the budget is
-// not kept, which the note says instead.
+// TestRunToolKeepsCutOutput: a cut output is kept whole, masked, in a file
+// numbered by the call. This is true even for an output cut only because its
+// first line takes it past the limit. A note after the cut names that file.
+// An output that fits writes no file. An output over what a file can hold or
+// past the budget is not kept, which the note says instead.
 func TestRunToolKeepsCutOutput(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {

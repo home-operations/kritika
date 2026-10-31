@@ -24,15 +24,15 @@ import (
 const issuedClient = "oaiapp_1"
 
 // fakeOpenAI is OpenAI's authorization server as the login sees it:
-// discovery, JWKS and a token endpoint that checks the exchange and
-// issues an RS256 ID token for issuedClient.
+// discovery, JWKS, and a token endpoint that makes sure that the exchange is
+// valid and issues an RS256 ID token for issuedClient.
 type fakeOpenAI struct {
 	srv  *httptest.Server
 	sign func(claims map[string]any) string
-	// challenge is the PKCE challenge the authorize URL carried, which the
-	// token endpoint checks the verifier against.
+	// challenge is the PKCE challenge that the authorize URL carried. The
+	// token endpoint makes sure that the verifier matches it.
 	challenge string
-	// nonce is what the ID token carries; "" means the authorize URL's.
+	// nonce is what the ID token carries. "" means the authorize URL's.
 	nonce string
 	// scope is what the token response grants.
 	scope   string
@@ -132,9 +132,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// signIn runs the login and plays the browser: it reads the printed URL,
-// then calls the callback with query, which may override the state and
-// client the browser would bring. It returns what Run returned.
+// signIn runs the login and plays the browser. It reads the printed URL, then
+// calls the callback with query, which can override the state and client that
+// the browser brings. It returns what Run returned.
 func signIn(t *testing.T, f *fakeOpenAI, current Credentials, query url.Values) (Credentials, string, error) {
 	t.Helper()
 	var out output
@@ -284,8 +284,8 @@ func TestLoginRefuses(t *testing.T) {
 		setup func(*fakeOpenAI)
 		query url.Values
 		want  string
-		// registered is whether the callback had issued a client, which a
-		// later attempt signs in as.
+		// registered is whether the callback issued a client, which a later
+		// attempt signs in as.
 		registered bool
 	}{
 		{"plan usage not granted", func(f *fakeOpenAI) { f.scope = "openid profile email" }, nil, "did not grant " + PlanScope, true},

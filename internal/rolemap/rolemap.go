@@ -1,12 +1,13 @@
-// Package rolemap compiles and evaluates a sign-in's role mapping: a CEL
-// expression over what the identity provider says about a person, whose
-// value decides what that person may do in the dashboard.
+// Package rolemap compiles and evaluates a sign-in's role mapping. That is a
+// CEL expression over what the identity provider says about a person. Its
+// value decides what that person can do in the dashboard.
 //
-// The expression yields either an instance-wide role, "admin", "member" or
-// "" for none, or a map from forge account ("github/<name>", or "*" for
-// every account) to "member", which scopes a sign-in to those accounts.
-// CEL unifies the branches of a conditional, so an expression that yields a
-// string on one branch and a map on the other wraps one in dyn().
+// The expression yields one of two things. One is an instance-wide role:
+// "admin", "member", or "" for none. The other is a map from forge account
+// ("github/<name>", or "*" for every account) to "member", which scopes a
+// sign-in to those accounts. CEL unifies the branches of a conditional. So an
+// expression that yields a string on one branch and a map on the other wraps
+// one in dyn().
 package rolemap
 
 import (
@@ -21,7 +22,7 @@ import (
 	"cel.dev/cel-go/interpreter"
 )
 
-// Role is an instance-wide role a mapping may yield.
+// Role is an instance-wide role that a mapping can yield.
 type Role string
 
 // Roles. RoleNone is a mapping that does not place the person.
@@ -52,8 +53,8 @@ const (
 )
 
 // evalCostLimit bounds one evaluation. The expression is the admin's and its
-// inputs come from the identity provider, so this is a guard against an
-// accident rather than an attack; no real mapping comes near it.
+// inputs come from the identity provider. So this is a guard against an
+// accident rather than an attack. No real mapping comes near it.
 const evalCostLimit = 1_000_000
 
 // Program is a compiled, type-checked role mapping.
@@ -94,10 +95,10 @@ var (
 	})
 )
 
-// Compile parses and type-checks expr for kind. It fails when the
-// expression is not valid CEL, names a variable kind does not have, cannot
-// yield a string or a map, or gives matches() a constant pattern that is not
-// a valid regular expression.
+// Compile parses and type-checks expr for kind. It fails when the expression
+// is not valid CEL, names a variable that kind does not have, or cannot yield
+// a string or a map. It also fails when the expression gives matches() a
+// constant pattern that is not a valid regular expression.
 func Compile(kind Kind, expr string) (*Program, error) {
 	var newEnv func() (*cel.Env, error)
 	switch kind {

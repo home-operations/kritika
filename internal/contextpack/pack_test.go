@@ -334,7 +334,7 @@ func TestDiffEdges(t *testing.T) {
 			t.Errorf("ChangedLines(ignore %v) = %d, want %d", tt.ignore, got, tt.want)
 		}
 	}
-	// A removed line touches the head line that now follows it; a deleted
+	// A removed line touches the head line that now follows it. A deleted
 	// file has no head lines to touch.
 	if touched := TouchedLines(diff); len(touched) != 2 || !slices.Equal(touched["new.go"], []int{1, 2}) ||
 		!slices.Equal(touched["q.sql"], []int{2, 2}) {
@@ -352,8 +352,8 @@ func TestDiffEdges(t *testing.T) {
 	}
 }
 
-// TestOverlayReadsARenamedFilesBase: the lines a diff removed from a
-// renamed file are read from the base tree under the old name, so the
+// TestOverlayReadsARenamedFilesBase: the lines that a diff removed from a
+// renamed file are read from the base tree under the old name. So the
 // identifiers they carry are looked up like any removed line's.
 func TestOverlayReadsARenamedFilesBase(t *testing.T) {
 	fs := memfs.New()

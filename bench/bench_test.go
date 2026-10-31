@@ -178,10 +178,12 @@ func TestBench(t *testing.T) {
 	}
 }
 
-// benchStepper is the model a run answers with: the corpus's own script,
-// none for a dry run, else the OpenRouter model at opts's effort; the
-// same model with no effort of its own, for the judge to set its; the
-// script, when it is the model; and the model's name for the report.
+// benchStepper returns four values. The first is the model that a run answers
+// with: the corpus's own script, none for a dry run, or otherwise the
+// OpenRouter model at opts's effort. The second is the same model with no
+// effort of its own, so that the judge can set its effort. The third is the
+// script, when the script is the model. The fourth is the model's name for
+// the report.
 func benchStepper(t *testing.T, opts benchOptions, key, modelID string, dry, script bool) (stepper, raw model.Stepper, scripts *scripted, name string) {
 	t.Helper()
 	switch {
@@ -214,15 +216,15 @@ func checkScripted(t *testing.T, rep report) {
 	}
 }
 
-// maxErrorShare is the share of a mode's cases that may fail to run and
-// the mode still be judged against its floors: past it the measures are
-// of too few cases to mean anything, as Kodus leaves such a run
-// unmeasured rather than passed.
+// maxErrorShare is the share of a mode's cases that can fail to run while
+// the bench still judges the mode against its floors. Past this share, the
+// measures are of too few cases to mean anything. Kodus also leaves such a
+// run unmeasured rather than passed.
 const maxErrorShare = 0.05
 
-// gate fails the test for what rep measures under floors, when they
-// apply to a run scored as rep was, and for a mode too many of whose
-// cases did not run to be measured.
+// gate fails the test for what rep measures under floors, when the floors
+// apply to a run scored as rep was. It also fails the test for a mode in
+// which too many cases did not run to be measured.
 func gate(t *testing.T, floors Floors, rep report) {
 	t.Helper()
 	under, held := floors.Check(rep)
@@ -287,10 +289,11 @@ func runCase(ctx context.Context, t *testing.T, cr *caseResult, c Case, opts ben
 	}
 }
 
-// score counts the expected ranges cr's findings hit, on their lines or,
-// when j is set, by its verdict on each finding in the file that landed
-// on no range, since a finding identifies one defect; and the findings
-// that land on one.
+// score counts the expected ranges that cr's findings hit. A finding hits a
+// range on its lines. When j is set, a finding in the file that landed on no
+// range can also hit it by j's verdict. j judges only such findings, because
+// a finding identifies one defect. score also counts the findings that land
+// on a range.
 func score(ctx context.Context, cr *caseResult, c Case, j *judge) {
 	landed := func(f review.Finding) bool {
 		return slices.ContainsFunc(c.Expected, func(e Expected) bool { return e.Matches(f.Path, f.Line) })

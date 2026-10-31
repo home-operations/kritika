@@ -88,8 +88,8 @@ type NewIndexRun struct {
 	// JobID is the River job working the run.
 	JobID int64
 	// StrayAfter is how old a run other than the active generation must be
-	// before its chunks are dropped as left behind by a job that could not
-	// clear them.
+	// before its chunks are dropped. They count as left behind by a job that
+	// failed to clear them.
 	StrayAfter time.Duration
 }
 
@@ -118,9 +118,9 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 }
 
 // FinishIndexRun ends an index run as status. Checkpoints own the chunk count
-// until successful publication; failure bookkeeping cannot overwrite it.
-// Publication requires a running run; failure cleanup leaves terminal runs
-// unchanged so a lost COMMIT acknowledgement cannot overwrite a published run.
+// until successful publication. Failure bookkeeping cannot overwrite it.
+// Publication requires a running run. Failure cleanup leaves terminal runs
+// unchanged, so a lost COMMIT acknowledgment cannot overwrite a published run.
 func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRunStatus, chunks int, errText string) error {
 	tag, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2,
 		chunk_count = CASE WHEN $2 = 'completed' THEN $3 ELSE chunk_count END,
@@ -139,15 +139,15 @@ func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRu
 }
 
 // IndexPack is what an index runner wrote: the mode it built in, which
-// may be full where an incremental step was asked for, and the paths that
+// can be full where an incremental step was asked for, and the paths that
 // changed since the base.
 type IndexPack struct {
 	Mode, Base   string
 	ChangedPaths []string
 }
 
-// ReadIndexPack reads the index pack a runner run wrote and records its
-// mode on the run, since the runner may have fallen back to a full build.
+// ReadIndexPack reads the index pack that a runner run wrote and records
+// its mode on the run. The runner can fall back to a full build.
 func ReadIndexPack(ctx context.Context, tx pgx.Tx, runID, runnerRunID string) (IndexPack, error) {
 	var p IndexPack
 	if err := tx.QueryRow(ctx, `SELECT mode, base_sha, changed_paths FROM index_packs WHERE runner_run_id = $1`, runnerRunID).
@@ -233,10 +233,10 @@ func lockActiveGeneration(ctx context.Context, tx pgx.Tx, repositoryID string) (
 	return *active, nil
 }
 
-// ActivateGeneration makes a full build the active generation, superseding
-// whichever generation is active when it publishes and dropping its chunks.
-// A full build replaces every chunk, so it does not depend on the
-// generation it started from.
+// ActivateGeneration makes a full build the active generation. It supersedes
+// whichever generation is active when it publishes, and it drops the chunks
+// of that generation. A full build replaces every chunk, so it does not
+// depend on the generation it started from.
 func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID string) error {
 	previous, err := lockActiveGeneration(ctx, tx, repositoryID)
 	if err != nil {
@@ -259,8 +259,8 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 }
 
 // AdvanceGeneration moves an incremental step's chunks into the active
-// generation in place of the changed paths' chunks, and moves the
-// generation to the commit the step indexed. It returns
+// generation in place of the changed paths' chunks. It also moves the
+// generation to the commit that the step indexed. It returns
 // ErrGenerationChanged unless active is still the active generation at
 // the same commit.
 func AdvanceGeneration(

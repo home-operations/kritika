@@ -2,7 +2,7 @@
 
 # kritika
 
-**Repository-aware AI pull request review for GitHub, Forgejo, GitLab and Gitea.**
+Repository-aware AI pull request review for GitHub, Forgejo, GitLab and Gitea.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/home-operations/kritika/ci.yaml?branch=main&label=ci)](https://github.com/home-operations/kritika/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/actions/workflow/status/home-operations/kritika/release.yaml?branch=main&label=release)](https://github.com/home-operations/kritika/actions/workflows/release.yaml)
@@ -17,8 +17,9 @@ a follow-up question or request another review.
 **[Get started](https://kritika.home-operations.com/setup/)** · [Documentation](https://kritika.home-operations.com/)
 
 > [!WARNING]
-> kritika is under active development. Check the [changelog](CHANGELOG.md)
-> before upgrading; configuration and APIs can change between releases.
+> kritika is under active development. Before you upgrade, read the
+> [changelog](CHANGELOG.md). Configuration and APIs can change between
+> releases.
 
 ## What it does
 

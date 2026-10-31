@@ -18,14 +18,15 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // --host 127.0.0.1 pins the preview server to IPv4 loopback: with no
+    // --host 127.0.0.1 pins the preview server to IPv4 loopback. With no
     // --host, vite preview binds the bare string "localhost", which Node can
-    // resolve IPv6-first (::1), so a v4-only 127.0.0.1 client (Playwright's
-    // own webServer readiness probe, and baseURL above) would otherwise time
-    // out with connection refused despite the server being up. --strictPort
-    // fails fast instead of silently picking another port if 4173 is busy.
-    // Vite is called by name, found on the PATH pnpm or npx sets up, since
-    // the Playwright image ui-test-container runs this in has no pnpm.
+    // resolve IPv6-first (::1). A v4-only 127.0.0.1 client (Playwright's own
+    // webServer readiness probe, and baseURL above) then times out with
+    // connection refused even though the server is up. If 4173 is busy,
+    // --strictPort fails fast instead of silently picking another port.
+    // The command calls Vite by name and finds it on the PATH that pnpm or npx
+    // sets up. The Playwright image that ui-test-container runs this in has no
+    // pnpm.
     command: 'vite build && vite preview --port 4173 --host 127.0.0.1 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,

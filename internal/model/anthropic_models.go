@@ -12,9 +12,8 @@ func (a *Anthropic) Pin(ctx context.Context, id string, effort Effort) (string, 
 	return pin(id, func(family string) (string, error) { return a.resolveLatest(ctx, family, effort) })
 }
 
-// resolveLatest selects the first active model of family that takes
-// effort: the catalog lists newer models first, and a release date may be
-// unknown.
+// resolveLatest selects the first active model of family that takes effort:
+// the catalog lists newer models first, and a release date can be unknown.
 func (a *Anthropic) resolveLatest(ctx context.Context, family string, effort Effort) (string, error) {
 	models, err := a.catalog(ctx)
 	if err != nil {
@@ -31,9 +30,9 @@ func (a *Anthropic) resolveLatest(ctx context.Context, family string, effort Eff
 	return "", fmt.Errorf("model: anthropic: no active %s model is available to this API key", family)
 }
 
-// takesEffort reports whether m takes effort as the Messages API is sent
-// it (anthropicEffort). Only a catalog entry that says a model lacks it
-// rules the model out: a gateway's catalog may say nothing.
+// takesEffort reports whether m takes effort as the Messages API is sent it
+// (anthropicEffort). Only a catalog entry that says a model lacks it rules
+// the model out: a gateway's catalog can say nothing.
 func takesEffort(m anthropic.ModelInfo, effort Effort) bool {
 	c := m.Capabilities.Effort
 	if effort == "" {

@@ -413,7 +413,7 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
   const settings = page.locator('#repo-settings').locator('../..');
   const rc = g.repoDetail.repoConfig!;
-  // The golden file chose another review model; the admin's is shown beside it.
+  // The golden file chose another review model. The admin's is shown beside it.
   await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
   await expect(settings).toContainText(`(.kritika.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
   await expect(settings).toContainText(`Review effort ${rc.settings.models.effort} (default)`);
@@ -800,7 +800,7 @@ test.describe('findings', () => {
     await expect(rows).toHaveCount(s.categories.length);
     await expect(rows.first()).toHaveText(new RegExp(`${c.key}\\s*${c.findings}\\s*${c.addressed}\\s*${c.dismissed}\\s*${c.downvoted}`));
 
-    // Without a repository filter, a directory names its repository; the
+    // Without a repository filter, a directory names its repository. The
     // files in no directory below the path filter are no path to narrow to.
     await panel.getByRole('radio', { name: 'Directories' }).click();
     const [dir, root] = s.directories;
@@ -1813,8 +1813,8 @@ test('a stream from a server running another build reloads the page instead of r
     }
   });
   let opens = 0;
-  // The first stream, once the page has fetched, comes from a server that
-  // runs another build; the page reloads into the build it serves.
+  // The first stream, once the page fetches, comes from a server that
+  // runs another build. The page reloads into the build it serves.
   await page.route('**/api/events', async (route) => {
     const first = ++opens === 1;
     if (first) await firstFetch;

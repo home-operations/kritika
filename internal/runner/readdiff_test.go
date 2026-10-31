@@ -77,7 +77,7 @@ func TestReadDiff(t *testing.T) {
 }
 
 // TestReadDiffPages: a diff longer than a page comes in pages cut at line
-// ends, which together are the whole, so a page that starts inside a hunk
+// ends, which together are the whole. So a page that starts inside a hunk
 // still leads each line with its number.
 func TestReadDiffPages(t *testing.T) {
 	tool := newReadDiffTool(readDiffSample, pageNoteRoom+80)

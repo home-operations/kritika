@@ -15,7 +15,7 @@ import (
 )
 
 // TestEnsureRepositoryVisibility: a report that says what a repository's
-// visibility is records it, and one that does not, an installation event's
+// visibility is records it. One that does not, an installation event's
 // or an older forge's, keeps the known one.
 func TestEnsureRepositoryVisibility(t *testing.T) {
 	s := openStore(t)
@@ -118,8 +118,8 @@ func TestListReposPublic(t *testing.T) {
 
 // TestRepositoryTraitsWritesOnlyChanges: a webhook's report of a known
 // repository is recorded when it changes the row and leaves it unstamped
-// when it does not, keeps the known visibility when the payload names
-// none, and a nil report reads without writing.
+// when it does not. It keeps the known visibility when the payload names
+// none. A nil report reads without writing.
 func TestRepositoryTraitsWritesOnlyChanges(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -194,7 +194,7 @@ func TestRepositoryTraitsWritesOnlyChanges(t *testing.T) {
 }
 
 // TestRegisterRepositoriesLeavesNewerTraits: a listing taken before a
-// webhook wrote the row does not undo what the webhook said; one taken
+// webhook wrote the row does not undo what the webhook said. One taken
 // after it does.
 func TestRegisterRepositoriesLeavesNewerTraits(t *testing.T) {
 	s := openStore(t)
@@ -259,10 +259,10 @@ func TestRegisterRepositoriesLeavesNewerTraits(t *testing.T) {
 	}
 }
 
-// TestRegisterRepositoriesLeavesNewerDisable: a repository a webhook
+// TestRegisterRepositoriesLeavesNewerDisable: a repository that a webhook
 // disabled after a listing was taken, its transaction begun before it,
-// stays disabled, its index sweep's clock kept, when that listing is
-// registered; a listing taken since enables it again, whatever else was
+// stays disabled when that listing is registered. Its index sweep's clock
+// is kept. A listing taken since enables it again, whatever else was
 // written to it meanwhile.
 func TestRegisterRepositoriesLeavesNewerDisable(t *testing.T) {
 	s := openStore(t)

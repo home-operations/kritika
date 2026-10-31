@@ -30,21 +30,21 @@ import (
 // embedBatch is how many staged chunks are embedded and inserted at once.
 const embedBatch = 128
 
-// indexSlots is how many of an account's embed slots index runs may hold
-// at once: all but one, so a review's similar-code lookup, which takes a
-// slot for one short call, always has one to take while an onboarding
-// wave holds the rest for the length of a repository's embedding pass. An
-// account with one slot has none to spare.
+// indexSlots is how many of an account's embed slots index runs can hold at
+// once: all but one. So a review's similar-code lookup, which takes a slot
+// for one short call, always has one to take. That is true while an
+// onboarding wave holds the rest for the length of a repository's embedding
+// pass. An account with one slot has none to spare.
 func indexSlots(concurrency int) int { return max(1, concurrency-1) }
 
 // Index works the index queue: one job builds or advances a repository's
-// embedding index to a commit. The runner Job chunks the tree; this worker
+// embedding index to a commit. The runner Job chunks the tree. This worker
 // embeds the chunks and swaps or advances the active generation.
 type Index struct {
 	river.WorkerDefaults[jobs.IndexArgs]
 	Base
 	Executor executor.Executor
-	// Embedders resolves the instance's embedder; a generation built with
+	// Embedders resolves the instance's embedder. A generation built with
 	// another model or dimension is rebuilt in full.
 	Embedders *adapter.Embedders
 	// GatewayTokenTTL is how long the run token that admits an index run
@@ -200,11 +200,11 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if args.Full {
 		return nil
 	}
-	// A push while this ran was absorbed into this job: if the branch has
-	// moved, index again at once, as a snooze that is not an attempt. A
-	// tip the forge would not give is asked for again the same way: the
-	// index is published, so the job must not fail over it and lose the
-	// push, nor spend an attempt on it.
+	// A push while this ran was absorbed into this job. If the branch moved,
+	// index again at once, as a snooze that is not an attempt. A tip that the
+	// forge did not give is asked for again the same way. The index is
+	// published, so the job must not fail over it and lose the push, nor
+	// spend an attempt on it.
 	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
 	if err != nil {
 		logger.Warn("index tip not checked after publication, checking again", "error", err, "in", tipCheckWait)
@@ -217,27 +217,29 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	return nil
 }
 
-// appliedEmbedderWait is how long an index job waits on a pod whose
-// embedder the leader has not applied before it is tried again, and
-// tipCheckWait how long one waits to ask the forge for the branch tip
-// again after it would not give it.
+// appliedEmbedderWait is how long an index job waits on a pod whose embedder
+// the leader did not apply, before it is tried again. tipCheckWait is how
+// long one waits to ask the forge for the branch tip again after the forge
+// did not give it.
 const (
 	appliedEmbedderWait = time.Minute
 	tipCheckWait        = time.Minute
 )
 
-// embedderApplied reports whether emb is the embedder the leader applied,
-// which index_schema records once it has applied one. A pod on another, as
-// during a rollout, would build an index the gateway never queries, or
-// take one another embedder built for current.
+// embedderApplied reports whether emb is the embedder that the leader
+// applied, which index_schema records once the leader applies one. A pod on
+// another embedder, as during a rollout, will otherwise build an index that
+// the gateway never queries, or take an index that another embedder built for
+// current.
 func embedderApplied(ctx context.Context, tx pgx.Tx, emb *configfile.Embedding) (bool, error) {
 	appliedModel, appliedDims, appliedPrompt, ok, err := store.IndexSchemaIn(ctx, tx)
 	return ok && appliedModel == emb.Model && appliedDims == emb.Dims && appliedPrompt == emb.DocumentPrompt, err
 }
 
 // waitForAppliedEmbedder snoozes the job, as its error, unless emb is the
-// embedder the leader applied, leaving it to a pod on that one before
-// this pod asks the forge anything or takes an index for current.
+// embedder that the leader applied. It leaves the job to a pod on that
+// embedder before this pod asks the forge anything or takes an index for
+// current.
 func (w *Index) waitForAppliedEmbedder(ctx context.Context, accountID string, emb *configfile.Embedding, logger *slog.Logger) error {
 	var applied bool
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -307,15 +309,15 @@ func (w *Index) finish(
 	})
 }
 
-// embed turns the staged chunks into index_chunks rows under the run, a
-// batch at a time with no transaction open while the embedder works, then
-// swaps them in and ends the run as completed with one short transaction,
-// so a review never sees a half-built index and a retry never finds an
-// active generation still running: a full build makes its run the active
-// generation, and an incremental step moves its chunks into the active
-// generation, in place of the changed paths' chunks.
-// For a forced rebuild, this transaction also completes the River job;
-// that completion takes precedence over any later Work error or snooze.
+// embed turns the staged chunks into index_chunks rows under the run, a batch
+// at a time, with no transaction open while the embedder works. It then swaps
+// them in and ends the run as completed with one short transaction. So a
+// review never sees a half-built index, and a retry never finds an active
+// generation still running. A full build makes its run the active generation.
+// An incremental step moves its chunks into the active generation, in place
+// of the changed paths' chunks.
+// For a forced rebuild, this transaction also completes the River job. That
+// completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
 	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings,
@@ -410,8 +412,9 @@ func (w *Index) embed(
 			return err
 		}
 		if args.Full {
-			// Check the tip after publication even if a push already published
-			// and is still running. The catch-up and generation commit together.
+			// The catch-up job reads the tip after publication, even if a push
+			// already published and is still running. The catch-up and
+			// generation commit together.
 			_, err := river.ClientFromContext[pgx.Tx](ctx).InsertTx(ctx, tx, jobs.IndexArgs{
 				AccountID: args.AccountID, RepositoryID: args.RepositoryID, Trigger: jobs.TriggerPush, CatchUp: runID,
 			}, nil)
@@ -431,8 +434,9 @@ func indexMatches(g *store.Generation, emb *configfile.Embedding, ignoreHash str
 	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.DocumentPrompt == emb.DocumentPrompt && g.IgnoreHash == ignoreHash
 }
 
-// indexIgnoreHash treats ignore rules as a set; order and duplicates do not
-// change which files the index covers. An empty stored hash requires a rebuild.
+// indexIgnoreHash treats ignore rules as a set. Order and duplicates do not
+// change which files the index covers. An empty stored hash requires a
+// rebuild.
 func indexIgnoreHash(ignore []string) string {
 	patterns := slices.Clone(ignore)
 	slices.Sort(patterns)
@@ -440,9 +444,9 @@ func indexIgnoreHash(ignore []string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%q", patterns))))
 }
 
-// embedText is what the embedder sees: the embedder's document prompt,
-// then the path and symbol, which give the vector a little of the file's
-// identity, the way a reader would know where a snippet came from.
+// embedText is what the embedder sees: the embedder's document prompt, then
+// the path and symbol. They give the vector a little of the file's identity,
+// the way a reader knows where a snippet came from.
 func embedText(prompt string, c store.StagedChunk) string {
 	head := c.Path
 	if c.Symbol != "" {
@@ -499,6 +503,6 @@ func indexResumeKey(commit, mode, base string, active *store.Generation, emb *co
 		Dims, ItemChars                                      int
 		DocumentPrompt                                       string `json:",omitempty"`
 	}{1, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars, emb.DocumentPrompt}
-	data, _ := json.Marshal(identity) // Only strings and integers; encoding cannot fail.
+	data, _ := json.Marshal(identity) // Only strings and integers, so encoding cannot fail.
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }

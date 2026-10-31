@@ -4,7 +4,7 @@
   import PageHeader from '../components/PageHeader.svelte';
   import QueueHelp from '../components/QueueHelp.svelte';
   // The queue of every account the viewer can read, and the model slots
-  // each account's running reviews hold, which is why a job of it waits.
+  // each account's running reviews hold. Those slots are why a job of it waits.
   import { href } from '../router.svelte';
   import { Resource, pollJobs } from '../resource.svelte';
   import type { InstanceQueue } from '../types';

@@ -17,9 +17,9 @@ type SeverityCounts struct {
 }
 
 // AnalyticsTotals is what the account's reviews came to over a window:
-// completed reviews and the pull requests they reviewed, failed reviews,
-// the findings first reported in it and how many were addressed since,
-// the reactions to those posted inline, spend, the median time a
+// completed reviews and the pull requests they reviewed, failed reviews, and
+// the findings first reported in it and how many were addressed since. It
+// also holds the reactions to those posted inline, spend, the median time a
 // completed review took, and the median time from opening to merging.
 type AnalyticsTotals struct {
 	PullRequests int            `json:"pullRequests"`
@@ -53,8 +53,8 @@ type AnalyticsPoint struct {
 // RepoActivity is what one repository's reviews came to over the window.
 type RepoActivity struct {
 	Repository string `json:"repository"`
-	// Account is set in the instance's list, where a row may be any
-	// readable account's.
+	// Account is set in the instance's list, where a row can be any readable
+	// account's.
 	Account   string         `json:"account,omitzero"`
 	Reviews   int            `json:"reviews"`
 	Findings  SeverityCounts `json:"findings"`
@@ -69,8 +69,8 @@ type RepoActivity struct {
 type EgressRefusal struct {
 	// Repository is the full name, "" for runs without one.
 	Repository string `json:"repository"`
-	// Account is set in the instance's list, where a row may be any
-	// readable account's.
+	// Account is set in the instance's list, where a row can be any readable
+	// account's.
 	Account string `json:"account,omitzero"`
 	Host    string `json:"host"`
 	// Count is the refusals and Runs the distinct runs they came from.
@@ -81,10 +81,10 @@ type EgressRefusal struct {
 	LastSeenAt time.Time        `json:"lastSeenAt"`
 }
 
-// Analytics is the account's reviews in [From, To), against the window of
-// the same length before it, bucketed by Group, the repositories with the
-// most reviews, and the hosts the gateway refused its runs, the most
-// refused first.
+// Analytics is the account's reviews in [From, To), against the window of the
+// same length before it, bucketed by Group. It also holds the repositories
+// with the most reviews and the hosts that the gateway refused its runs, the
+// most refused first.
 type Analytics struct {
 	Group        store.AnalyticsGroup `json:"group"`
 	From         time.Time            `json:"from"`

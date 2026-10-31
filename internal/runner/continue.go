@@ -60,18 +60,21 @@ func conversationOf(ctx context.Context, gatewayURL, token string) (*agent.Conve
 }
 
 // carryShare bounds the conversation a run carries on to a share of its
-// token budget: every step reads the whole of it again, and a budget the
-// monthly cap cut short would leave the agent too few steps to work in.
+// token budget. Every step reads the whole of it again. Without this bound, a
+// budget that the monthly cap cut short will leave the agent too few steps to
+// work in.
 const carryShare = 4
 
 // carryOn is prompt carrying on the last review's conversation, which the
-// worker let the run carry on and the gateway serves it, when this review
-// would send it the system prompt and tools it was sent with, byte for
-// byte, so that the provider's cache still holds it, when it opened on the
-// pull request's title, description and linked issues as they are now, and
-// when it takes at most a carryShare of the run's budget. Otherwise it is
-// prompt, which starts afresh with the last review's findings and notes.
-// tools are every tool the agent is offered.
+// worker let the run carry on and the gateway serves it. It does this when
+// all of these hold. This review's system prompt and tools match those of the
+// conversation, byte for byte, so that the provider's cache still holds it.
+// The conversation opened on the pull request's title, description, and
+// linked issues as they are now. It takes at most a carryShare of the run's
+// budget.
+//
+// Otherwise, carryOn is prompt, which starts afresh with the last review's
+// findings and notes. tools are every tool the agent is offered.
 func carryOn(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, prompt agentPrompt, tools []agent.Tool,
 	diff, delta string, logger *slog.Logger,

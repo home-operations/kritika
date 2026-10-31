@@ -102,7 +102,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// readable lists the running accounts p may read, in order.
+// readable lists the running accounts that p can read, in order.
 func readable(file *configfile.File, p *auth.Principal) []*configfile.Account {
 	var out []*configfile.Account
 	for i := range file.Accounts {
@@ -357,8 +357,8 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	return nil
 }
 
-// repoConfig applies the .kritika.yaml a review read to the admin's
-// settings as they are now; nil when no review has read one.
+// repoConfig applies the .kritika.yaml that a review read to the admin's
+// configuration as it is now. It is nil when no review read one.
 func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfig {
 	if row == nil {
 		return nil
@@ -378,7 +378,7 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 	return out
 }
 
-// repoSettings is s as the API serves it; the slices the dashboard reads
+// repoSettings is s as the API serves it. The slices that the dashboard reads
 // are never null, and each skill scope's load is the one it applies.
 func repoSettings(s configfile.Settings) RepoSettings {
 	return RepoSettings{
@@ -469,9 +469,9 @@ func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// instanceSettings are the settings no account owns: this process's
-// environment, then the connections, sign-in, and the instance defaults,
-// each with where it comes from.
+// instanceSettings are the configuration that no account owns: this process's
+// environment, then the connections, sign-in, and the instance defaults, each
+// with where it comes from.
 func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting {
 	out := []InstanceSetting{}
 	add := func(section, key, value string, source configfile.Source) {
@@ -549,7 +549,7 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 }
 
 // withoutCredentials is s with the credentials of a URL it is removed: an
-// endpoint may carry its password.
+// endpoint can carry its password.
 func withoutCredentials(s string) string {
 	u, err := url.Parse(s)
 	if err != nil || u.User == nil {

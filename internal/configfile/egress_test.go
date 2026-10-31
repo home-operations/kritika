@@ -24,8 +24,8 @@ func TestEgressRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The fixture names a GitHub connection, whose forge must be allowed
-	// without being listed, and an OpenRouter provider, which runners reach
-	// only through the gateway's model endpoint.
+	// without being listed. It also names an OpenRouter provider, which runners
+	// reach only through the gateway's model endpoint.
 	rules := f.EgressRules()
 	if !rules.Allows("github.com") || !rules.Allows("api.github.com") {
 		t.Errorf("implicit GitHub hosts not allowed; allow = %v", rules.Allow.Hosts)
@@ -52,7 +52,7 @@ func TestEgressRules(t *testing.T) {
 	if rules.Credentials["api.github.com"] != "Bearer ghp_x" {
 		t.Fatalf("credentials = %v", rules.Credentials)
 	}
-	// "*" allows every host but the denied ones, and a credential may name
+	// "*" allows every host but the denied ones, and a credential can name
 	// any host under it. Addresses and CIDRs are prefixes, not hosts.
 	any, err := loadBytes(t, []byte("egress:\n  allow: [\"*\", 10.0.0.0/8, \"2001:db8::1\", \"::ffff:198.51.100.0/120\"]\n  deny: [\"*.pastebin.com\", 10.0.5.0/24, 10.0.0.9, \"::ffff:203.0.113.7\"]\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n"+minimal))
 	if err != nil {
@@ -131,8 +131,8 @@ func TestEgressRejects(t *testing.T) {
 	}
 }
 
-// TestEgressCache: the cache's settings and what it never keeps come from
-// the same file, and a cache directory alone keeps what a lock pins.
+// TestEgressCache: the cache's configuration and what it never keeps come
+// from the same file, and a cache directory alone keeps what a lock pins.
 func TestEgressCache(t *testing.T) {
 	minimalEnv(t)
 	f, err := loadBytes(t, []byte("gatewayCacheDir: /var/cache/kritika\ngatewayCacheMaxSize: 512Mi\n"+minimal))

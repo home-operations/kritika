@@ -21,7 +21,7 @@ type OpenAIEmbedder struct {
 	client openai.Client
 	model  string
 	dims   int64
-	// MaxBatch, MaxBatchChars and MaxItemChars bound one request; servers
+	// MaxBatch, MaxBatchChars and MaxItemChars bound one request. Servers
 	// differ widely in what they accept.
 	MaxBatch, MaxBatchChars, MaxItemChars int
 }
@@ -39,8 +39,8 @@ const (
 const embedTimeout = time.Minute
 
 // NewOpenAIEmbedder builds an embedder. dims is sent to the server so the
-// vectors match the table; models that ignore it return their native size
-// and the caller must check.
+// vectors match the table. Models that ignore it return their native size,
+// and the caller must make sure that the size is right.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
 	opts := append(withoutEnvironment(), option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
 		option.WithRequestTimeout(embedTimeout))
@@ -53,8 +53,8 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder 
 	}
 }
 
-// Embed implements Embedder, splitting inputs into batches that respect the
-// limits and truncating over-long items rather than failing the batch.
+// Embed implements Embedder. It splits inputs into batches that respect the
+// limits. It truncates over-long items rather than failing the batch.
 func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float32, int64, error) {
 	out := make([][]float32, 0, len(inputs))
 	var tokens int64

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The 👍 and 👎 a finding's inline comment drew on GitHub; nothing when
+  // The 👍 and 👎 that a finding's inline comment drew on GitHub. Nothing when
   // it drew none.
   import Icon from '../Icon.svelte';
   import { mdiThumbUpOutline, mdiThumbDownOutline } from '../icons';

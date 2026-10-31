@@ -34,13 +34,13 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 	return out
 }
 
-// registerReached records every repository connection r names reaches on
-// an account it serves, so they appear in the dashboard for enablement
-// before any webhook names them, and disables the ones an
+// registerReached records every repository that the connection named by r
+// reaches on an account that it serves. So they appear in the dashboard for
+// enablement before any webhook names them. It also disables the ones that an
 // account's listing no longer has, as the leader's sync does.
 func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
-	// The listing's time is the database's, which stamps the rows a webhook
-	// names meanwhile; this process's clock may differ from it.
+	// The listing's time is the database's, which stamps the rows that a
+	// webhook names meanwhile. This process's clock can differ from it.
 	listedAt, err := s.store.Now(r.Context())
 	if err != nil {
 		return err

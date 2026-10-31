@@ -1,7 +1,7 @@
 <script lang="ts">
   // What a repository's similar-code index holds: the generation's commit
   // and embedder, its counts, and its files, each opening onto its chunks.
-  // A chunk's text comes to an admin alone; the server leaves it out for
+  // A chunk's text comes to an admin alone. The server leaves it out for
   // anyone else.
   import { Paged, Resource } from '../resource.svelte';
   import { shortSha, wholeNumber } from '../format';
@@ -21,7 +21,7 @@
     void summary.load();
   });
 
-  // query is the path filter as typed; q follows it once typing pauses.
+  // query is the path filter as typed. q follows it once typing pauses.
   let query = $state('');
   let q = $state('');
   $effect(() => {

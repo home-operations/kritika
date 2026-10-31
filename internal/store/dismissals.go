@@ -10,9 +10,9 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// Dismissal is a finding a maintainer dismissed on a pull request, by the
-// fingerprint it keeps across the pull request's reviews, as the finding
-// last read, with the reason they gave.
+// Dismissal is a finding that a maintainer dismissed on a pull request, by
+// the fingerprint that it keeps across the pull request's reviews. It holds
+// the finding as it last read, with the reason that they gave.
 type Dismissal struct {
 	AccountID, PullRequestID string
 	Fingerprint              string
@@ -41,7 +41,7 @@ func (s DismissalSource) Valid() bool {
 	return s == DismissedByCommand || s == DismissedByResolution || s == DismissedByConcession
 }
 
-// RecordDismissal records a dismissal, replacing an earlier one of the
+// RecordDismissal records a dismissal. It replaces an earlier one of the
 // same finding.
 func RecordDismissal(ctx context.Context, tx pgx.Tx, d Dismissal) error {
 	f := d.Finding

@@ -15,14 +15,14 @@ type Bump struct {
 	Path     string
 	Line     int
 	Old, New string
-	// positions identifies the changed tokens by their one-based offsets;
-	// distinct tokens on one line can have the same version. Zero is unused.
+	// positions identifies the changed tokens by their one-based offsets.
+	// Distinct tokens on one line can have the same version. Zero is unused.
 	positions [maxBumpTokens]int
 }
 
-// maxBumpTokens is how many tokens of one line may move for the line to be
-// a bump: a tag and the digest pinned beside it, or a pinned action's
-// commit and the version comment after it.
+// maxBumpTokens is how many tokens of one line can move for the line to be a
+// bump: a tag and the digest pinned beside it, or a pinned action's commit
+// and the version comment after it.
 const maxBumpTokens = 2
 
 // bumpToken is what a version-like token is made of: a version, a tag, a
@@ -59,10 +59,10 @@ func Bumps(diff string) []Bump {
 	return bumps
 }
 
-// changeBlock is the run of removed lines starting at i, the run of added
-// lines that follows it, and the index after both; a line of another kind
-// at i yields empty runs and i+1. A "No newline at end of file" note
-// between the runs is passed over, since it parts a last line from its
+// changeBlock is the run of removed lines that starts at i, the run of added
+// lines that follows it, and the index after both. A line of another kind at
+// i yields empty runs and i+1. changeBlock passes over a "No newline at end
+// of file" note between the runs, since the note parts a last line from its
 // replacement.
 func changeBlock(lines []udiff.Line, i int) (removed, added []udiff.Line, next int) {
 	for i < len(lines) && lines[i].Kind == '-' {
@@ -82,10 +82,10 @@ func changeBlock(lines []udiff.Line, i int) (removed, added []udiff.Line, next i
 	return removed, added, i
 }
 
-// movedTokens is the version-like tokens an edit from old to now moved,
-// each side's joined by spaces, when the two lines split into the same
-// tokens except for at most maxBumpTokens of them and every one that
-// differs is version-like on both sides.
+// movedTokens is the version-like tokens that an edit from old to now moved,
+// each side's joined by spaces. It applies when the two lines split into the
+// same tokens except for at most maxBumpTokens of them. Every token that
+// differs must also be version-like on both sides.
 func movedTokens(old, now string) (bump Bump, ok bool) {
 	a, b := bumpTokens(old), bumpTokens(now)
 	if len(a) != len(b) {

@@ -1,5 +1,5 @@
-// Client-side column sorting for a list table: the rows the page has
-// loaded, in the column a header button picked, a second click reversing
+// Client-side column sorting for a list table: the rows that the page
+// loaded, in the column a header button picked. A second click reverses
 // it. Empty values sort last whichever way.
 export type SortDir = 'asc' | 'desc';
 export type SortValue = string | number | null | undefined;

@@ -8,7 +8,7 @@ import (
 )
 
 // MintRunnerToken replaces the database capability for one run. Only its
-// hash is stored; public run IDs and notifications convey no authority.
+// hash is stored. Public run IDs and notifications convey no authority.
 func (s *Store) MintRunnerToken(ctx context.Context, accountID, runID string) (string, error) {
 	token := RandomToken()
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -28,7 +28,7 @@ func (s *Store) MintRunnerToken(ctx context.Context, accountID, runID string) (s
 }
 
 // ForRunner returns a view sharing s's pools with a run's credential.
-// The caller must not close the view; the original store owns the pools.
+// The caller must not close the view. The original store owns the pools.
 func (s *Store) ForRunner(token string) *Store {
 	view := *s
 	view.runnerToken = token

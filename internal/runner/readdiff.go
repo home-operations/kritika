@@ -25,10 +25,10 @@ var readDiffSchema = json.RawMessage(`{
 }`)
 
 // readDiffTool is read_diff: one changed file's part of the pull request's
-// diff, for a file the prompt left out to fit its budget, whose head alone
-// read_file shows. Each line the head has is led by its number there, the
-// one a finding anchors to, so a page that starts inside a hunk still says
-// where its lines are.
+// diff, for a file the prompt left out to fit its budget. read_file shows
+// only the head of that file. Each line the head has is led by its number
+// there, the one a finding anchors to. So a page that starts inside a hunk
+// still says where its lines are.
 type readDiffTool struct {
 	files    map[string]string
 	maxBytes int
@@ -80,9 +80,9 @@ func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, er
 }
 
 // numberDiff leads each line of a file section's hunks with the line's
-// number in the head and a tab, a removed line, which the head lacks, with
-// a tab alone. The section's header and its hunk headers are kept as they
-// are.
+// number in the head and a tab. A removed line, which the head lacks, is led
+// with a tab alone. The section's header and its hunk headers are kept as
+// they are.
 func numberDiff(section string) string {
 	var b strings.Builder
 	for _, f := range udiff.Parse(section) {

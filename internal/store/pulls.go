@@ -33,10 +33,10 @@ type PullRequestRow struct {
 }
 
 // UpsertPullRequest records a pull request with what the forge says of it,
-// and reports whether it did: an event the forge changed the pull request
-// after, by its UpdatedAt, is stale and leaves the row alone, so a delivery
-// that arrives late or again cannot rewind the head. An event with no
-// UpdatedAt always applies.
+// and reports whether it did. An event that the forge changed the pull
+// request after, by its UpdatedAt, is stale and leaves the row alone. So a
+// delivery that arrives late or again cannot rewind the head. An event with
+// no UpdatedAt always applies.
 func UpsertPullRequest(ctx context.Context, tx pgx.Tx, p PullRequestRow) (bool, error) {
 	var opened, updated any
 	if !p.OpenedAt.IsZero() {
@@ -66,8 +66,8 @@ func UpsertPullRequest(ctx context.Context, tx pgx.Tx, p PullRequestRow) (bool, 
 }
 
 // ClosePullRequest records a pull request as closed, merged or not, when
-// the forge says it closed; a nil closedAt is now. A zero updatedAt always
-// applies; otherwise, as with UpsertPullRequest, an event older than the
+// the forge says it closed. A nil closedAt is now. A zero updatedAt always
+// applies. Otherwise, as with UpsertPullRequest, an event older than the
 // row leaves it alone.
 func ClosePullRequest(
 	ctx context.Context, tx pgx.Tx, repositoryID string, number int, merged bool, closedAt *time.Time, updatedAt time.Time,
@@ -110,8 +110,8 @@ func PullRequestPaused(ctx context.Context, tx pgx.Tx, repositoryID string, numb
 	return paused, nil
 }
 
-// PausePullRequest pauses or resumes the pull request's automatic reviews;
-// resuming starts its count of automatic reviews over.
+// PausePullRequest pauses or resumes the pull request's automatic reviews.
+// Resuming starts its count of automatic reviews over.
 func PausePullRequest(ctx context.Context, tx pgx.Tx, pullRequestID string, paused bool) error {
 	if _, err := tx.Exec(ctx, `UPDATE pull_requests SET paused = $2, auto_reviews = CASE WHEN $2 THEN auto_reviews ELSE 0 END,
 		updated_at = now() WHERE id = $1`, pullRequestID, paused); err != nil {
@@ -121,8 +121,8 @@ func PausePullRequest(ctx context.Context, tx pgx.Tx, pullRequestID string, paus
 }
 
 // AutoReviewPauses reports whether counting one more automatic review of
-// the pull request would pause it: it is not paused yet, and the count
-// would reach maxAuto, when that is positive. What CountAutoReview would
+// the pull request will pause it: it is not paused yet, and the count will
+// reach maxAuto, when that is positive. This is what CountAutoReview will
 // report, read before the review is posted so its summary can say so.
 func AutoReviewPauses(ctx context.Context, tx pgx.Tx, pullRequestID string, maxAuto int) (bool, error) {
 	var pauses bool
@@ -135,10 +135,10 @@ func AutoReviewPauses(ctx context.Context, tx pgx.Tx, pullRequestID string, maxA
 
 // CountAutoReview counts one automatic review of the pull request, and
 // pauses it when pause is set: when the review's summary announced the
-// pause AutoReviewPauses foretold. Two reviews counted at once may both
-// have been told no pause; the count then passes the limit unpaused, and
-// the next review announces the pause rather than one going unannounced.
-// It reports whether this review paused the pull request.
+// pause that AutoReviewPauses foretold. Two reviews counted at once can both
+// get told no pause. The count then passes the limit unpaused, and the next
+// review announces the pause rather than one going unannounced. It reports
+// whether this review paused the pull request.
 func CountAutoReview(ctx context.Context, tx pgx.Tx, pullRequestID string, pause bool) (bool, error) {
 	var pausedNow bool
 	if err := tx.QueryRow(ctx, `WITH before AS (SELECT id, paused FROM pull_requests WHERE id = $1 FOR UPDATE)
@@ -155,16 +155,16 @@ func CountAutoReview(ctx context.Context, tx pgx.Tx, pullRequestID string, pause
 var ReviewedStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped}
 
 // pollSettledStatuses are the review statuses under which a head's latest
-// review settles it for a poll: a skip the repository's own settings
-// decided, and a cancellation someone asked for, each only until a later
-// review of the head ends otherwise.
+// review settles it for a poll: a skip that the repository's own
+// configuration decided, and a cancellation that someone asked for. Each
+// holds only until a later review of the head ends otherwise.
 var pollSettledStatuses = []ReviewStatus{ReviewSkipped, ReviewCanceled}
 
 // pollFailedReviews is how many failed reviews of a head settle it for a
-// poll. A failed review's own comment moves the pull request, so the next
-// poll lists it again and makes up for a failure that does not repeat; one
-// that does is the review's own, and would otherwise run on every poll
-// until the day's cap.
+// poll. A failed review's own comment moves the pull request. So the next
+// poll lists it again and makes up for a failure that does not repeat. A
+// failure that does repeat is the review's own, and otherwise runs on every
+// poll until the day's cap.
 const pollFailedReviews = 2
 
 // headReviews selects the statuses of the reviews of a pull request's head,
@@ -204,8 +204,8 @@ func PollSettled(ctx context.Context, tx pgx.Tx, repositoryID string, number int
 
 // LabelSettled reports whether the pull request's head needs nothing from a
 // label change: a review of it completed or was capped, or its latest one
-// was canceled or skipped for anything but the repository's filter, the
-// one skip a label can lift.
+// was canceled or skipped for anything but the repository's filter. That
+// filter is the one skip that a label can lift.
 func LabelSettled(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string) (bool, error) {
 	var settled bool
 	if err := tx.QueryRow(ctx, `WITH head AS (`+headReviews+`)
@@ -229,10 +229,10 @@ func RepositoryIndexed(ctx context.Context, tx pgx.Tx, repositoryID string) (boo
 	return indexed, nil
 }
 
-// DisableForgeRepositories disables the repositories the App no longer
+// DisableForgeRepositories disables the repositories that the App no longer
 // reaches: the one named by repositoryID, or every one of the account when
 // repositoryID is "". disabled_at is when it was last disabled, at the
-// write rather than the transaction's start, so no listing taken before
+// write rather than the transaction's start. So no listing taken before
 // the write enables it again (see RegisterRepositories).
 func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, repositoryID string) error {
 	if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = clock_timestamp(), updated_at = now()
@@ -351,14 +351,15 @@ func RecordReactions(ctx context.Context, tx pgx.Tx, pullRequestID string, react
 }
 
 // OverlappingPullRequests lists the repository's other open pull requests
-// that change a path the review of runner run runnerRunID's pull request
-// changes, by their own last context pack, most shared paths first and
-// then lowest number first. A pull request a bot opened is left out, since
-// it rebases itself, and so is one stacked with the reviewed one, a branch
-// built on the other's, which shares files by design: a base is always a
-// branch of the repository, so only a head that is not a fork's names one.
-// A pull request kritika never fetched has no pack and is absent. The run
-// of no review lists nothing.
+// that change a path that the review of runner run runnerRunID's pull request
+// changes. It goes by their own last context pack. It lists the most shared
+// paths first and then the lowest number first. A pull request that a bot
+// opened is left out, since it rebases itself. So is one stacked with the
+// reviewed one, a branch built on the other's, which shares files by design.
+//
+// A base is always a branch of the repository, so only a head that is not a
+// fork's names one. A pull request that kritika never fetched has no pack and
+// is absent. The run of no review lists nothing.
 func OverlappingPullRequests(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]review.Overlap, error) {
 	rows, err := tx.Query(ctx, `
 		WITH me AS (

@@ -34,10 +34,10 @@
   // here is a directory group of the files in no directory below the path
   // filter, which a path cannot narrow to.
   const here = (g: FindingGroup) => kind === 'directories' && g.key === (filter?.path ?? '');
-  // blocked says why no filter keeps g's findings alone: the list filters
-  // by one rule and one agent, so with one set another rule's or agent's
-  // group holds only the findings citing both, and the search box would
-  // split a path that holds a space.
+  // blocked says why no filter keeps g's findings alone. The list filters
+  // by one rule and one agent, so with one set, another rule's or agent's
+  // group holds only the findings that cite both. The search box splits a
+  // path that holds a space.
   function blocked(g: FindingGroup): string | undefined {
     if (kind === 'rules' && filter?.rule) return 'The list already filters by a rule';
     if (kind === 'agents' && filter?.agent) return 'The list already filters by an agent';

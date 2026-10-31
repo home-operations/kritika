@@ -66,7 +66,7 @@ func (s *Store) CompleteModelInvocation(ctx context.Context, id string, u Usage,
 
 // SettleModelInvocation atomically settles a known outcome's reservation and
 // usage. The row lock and stable usage ID make retries safe after a lost commit
-// acknowledgement. Revoked tokens need no budget update; usage still survives.
+// acknowledgment. Revoked tokens need no budget update. Usage still survives.
 func (s *Store) SettleModelInvocation(ctx context.Context, accountID, id string) (bool, error) {
 	settled := false
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -114,9 +114,9 @@ func (s *Store) SettleModelInvocation(ctx context.Context, accountID, id string)
 
 // SweepModelInvocations deletes every account's model invocations settled
 // more than olderThan ago, a batch at a time, and returns how many it
-// deleted. A settled call's accounting is its usage row, and its record
-// has only to keep a late outcome from settling it twice, which none that
-// old can; reserved, completed and uncertain calls stay for the rescuer.
+// deleted. A settled call's accounting is its usage row. Its record has only
+// to keep a late outcome from settling it twice, which no outcome that old
+// can do. Reserved, completed and uncertain calls stay for the rescuer.
 // Owner connection, leader only, like SweepModelCalls.
 func (s *Store) SweepModelInvocations(ctx context.Context, olderThan time.Duration) (int64, error) {
 	if s.owner == nil {

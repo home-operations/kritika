@@ -15,10 +15,10 @@ var whenForced = map[string]string{
 	string(agent.ForcedByTime):   "as its time ran out",
 }
 
-// cutShort is what the summary states when the loop told the review's
-// agent to submit what it had found before it chose to, or, in a split
-// review, each part's agent that submitted so: the review may have missed
-// what it had yet to read.
+// cutShort is what the summary states when the loop told the review's agent
+// to submit what it found before it chose to. In a split review, it covers
+// each part's agent that submitted so. The review can miss what it did not
+// read yet.
 func cutShort(run store.AgentRunRow) []string {
 	const missed = "so it may not cover all it meant to check"
 	if len(run.Parts) == 0 {

@@ -13,11 +13,11 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// defaultUsageWindow is the span a usage series covers without ?from=, and
-// maxUsageWindow the most ?from= and ?to= may span: the series are read
-// from every row in the span, and the analytics page reads the span
-// before it too, so a span of years would scan the account's history
-// twice on one request.
+// defaultUsageWindow is the span that a usage series covers without ?from=.
+// maxUsageWindow is the most that ?from= and ?to= can span. The series are
+// read from every row in the span, and the analytics page reads the span
+// before it too. So a span of years scans the account's history twice on one
+// request.
 const (
 	defaultUsageWindow = 30 * 24 * time.Hour
 	maxUsageWindow     = 366 * 24 * time.Hour
@@ -150,8 +150,8 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 		for _, j := range rows {
 			out.Jobs = append(out.Jobs, InstanceJob{Job: jobItem(j), Account: t.Slug()})
 		}
-		// The account's own review model always shows, busy or not; another
-		// model, a repository's choice, only while it holds a slot.
+		// The account's own review model always shows, busy or not. Another
+		// model, a repository's choice, shows only while it holds a slot.
 		settings := file.Settings(t)
 		own := string(settings.Models.Review)
 		if _, ok := held[own]; !ok && own != "" {

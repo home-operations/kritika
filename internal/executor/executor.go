@@ -1,6 +1,6 @@
 // Package executor runs a runner for one review: as a Kubernetes Job in
 // production, in-process for tests and local development. The worker owns
-// the run row either way; the executor reports how the run ended.
+// the run row either way. The executor reports how the run ended.
 package executor
 
 import (
@@ -45,8 +45,8 @@ type Result struct {
 	// lost sight of the Job: it went missing from the executor's watch.
 	Abandoned bool
 	// Disruption says why Kubernetes stopped the run's pod for its own
-	// reasons, a node drain, a preemption or an eviction, from the pod's
-	// DisruptionTarget condition; empty when it did not.
+	// reasons: a node drain, a preemption, or an eviction. It comes from the
+	// pod's DisruptionTarget condition. It is empty when Kubernetes did not.
 	Disruption string
 	// Err is set when the run did not complete successfully.
 	Err error

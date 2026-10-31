@@ -1,11 +1,13 @@
-// Package gateway is the worker's listener for runner pods: the egress
-// proxy they reach the outside through, each with its run token, and the
-// model, similar-code and conversation endpoints a review's runner calls
-// with the same token, and the aqua registry it resolves tools against. No
-// provider key enters a runner pod: the gateway reserves each call
-// against the run's budget and checks the account's monthly cap, answers
-// it through the account's provider, and records what it spent where the
-// caps see it.
+// Package gateway is the worker's listener for runner pods. It holds the
+// egress proxy that they reach the outside through, each with its run token.
+// It holds the model, similar-code and conversation endpoints that a review's
+// runner calls with the same token. It also holds the aqua registry that the
+// runner resolves tools against.
+//
+// No provider key enters a runner pod. The gateway reserves each call against
+// the run's budget and makes sure that the account is under its monthly cap.
+// It answers the call through the account's provider and records what the
+// call spent where the caps see it.
 package gateway
 
 import (
@@ -36,14 +38,14 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// ModelName is the name a runner calls its run's model by; the gateway maps
-// it to the provider model the run was granted.
+// ModelName is the name that a runner calls its run's model by. The gateway
+// maps it to the provider model that the run was granted.
 const ModelName = "review"
 
-// Drain is how long a stopping gateway lets model steps in flight finish.
-// A step it cuts is paid for and not recorded, and the runner's retry is
-// paid for again, so it covers a long step rather than the usual few
-// seconds; the chart's grace period outlasts it.
+// Drain is how long a stopping gateway lets model steps in flight finish. A
+// step that it cuts is paid for and not recorded, and the runner's retry is
+// paid for again. So Drain covers a long step, not the usual few seconds. The
+// chart's grace period outlasts it.
 const Drain = 2 * time.Minute
 
 // Server serves the gateway listener.
@@ -51,16 +53,16 @@ type Server struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Logger  *slog.Logger
-	// Metrics may be nil.
+	// Metrics can be nil.
 	Metrics *metrics.Metrics
 	// Proxy serves CONNECT and absolute-URI requests.
 	Proxy    http.Handler
 	Steppers *adapter.Steppers
-	// Embedders resolves the instance's embedder for similar code; nil
-	// serves none.
+	// Embedders resolves the instance's embedder for similar code. A nil
+	// value serves none.
 	Embedders *adapter.Embedders
-	// AquaRegistry is the aqua registry runners read at
-	// runspec.AquaRegistryPath; nil serves none.
+	// AquaRegistry is the aqua registry that runners read at
+	// runspec.AquaRegistryPath. A nil value serves none.
 	AquaRegistry *AquaRegistry
 }
 
@@ -68,8 +70,8 @@ type Server struct {
 // tool output in it capped.
 const maxBody = 16 << 20
 
-// detachTimeout bounds the writes that settle a step once the provider has
-// answered, which must land even if the request's ctx ends.
+// detachTimeout bounds the writes that settle a step once the provider
+// answers. These writes must land even if the request's ctx ends.
 const detachTimeout = 2 * time.Minute
 
 // detach is ctx without its cancellation, bounded by detachTimeout.
@@ -101,14 +103,15 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in the request's context, for Refused.
 type grantKey struct{}
 
-// admitProxy authenticates a proxy request by the run token a runner is
-// handed as the password of its proxy URL, which git, gh and curl send as
-// Proxy-Authorization, and returns the request with its run's grant in
-// the context, marked egress.ForDigest when it names the digest of the
-// body it asks for in runspec.DigestHeader, or refuses the request and
-// reports false. Only a live run reaches the outside through the gateway, and the
-// credentials it adds, so the port is no relay for whatever else can
-// reach it.
+// admitProxy authenticates a proxy request by the run token that a runner is
+// handed as the password of its proxy URL. git, gh and curl send that
+// password as Proxy-Authorization. admitProxy then returns the request, or
+// refuses the request and reports false. A returned request has its run's
+// grant in the context. It is marked egress.ForDigest when it names, in
+// runspec.DigestHeader, the digest of the body that it asks for.
+//
+// Only a live run reaches the outside through the gateway and the credentials
+// that it adds. So the port is no relay for whatever else can reach it.
 func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	kind := "http"
 	if r.Method == http.MethodConnect {
@@ -139,20 +142,20 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 	return r.WithContext(ctx), true
 }
 
-// What Refused keeps of a refused destination: the host alone, within
-// what a name may be, and how long its write may take, bounded so a
-// looping agent's refusals are answered at the pace of the database and
-// no slower.
+// What Refused keeps of a refused destination: the host alone, within what a
+// name can be, and how long its write can take. The write time is bounded so
+// that a looping agent's refusals are answered at the pace of the database
+// and no slower.
 const (
 	refusedHostBytes    = 253
 	refusedWriteTimeout = 5 * time.Second
 )
 
 // Refused records a refused proxy request against the run whose token
-// admitted it, for the dashboard: the proxy's Refused hook. The host is
-// kept as the agent asked for it, lowercased and without its port, and
-// never an address the name resolved to, so a private address stays out
-// of the dashboard. A record that fails is logged; the refusal is
+// admitted it, for the dashboard. It is the proxy's Refused hook. Refused
+// keeps the host as the agent asked for it, lowercased and without its port.
+// It never keeps an address that the name resolved to, so a private address
+// stays out of the dashboard. A record that fails is logged. The refusal is
 // answered either way.
 func (g *Server) Refused(ctx context.Context, kind, host, reason string) {
 	grant, ok := ctx.Value(grantKey{}).(store.GatewayGrant)
@@ -217,8 +220,8 @@ func stepPart(h string) (int, error) {
 }
 
 // promptEstimate is a step's prompt at four characters a token of its
-// request, leaving out replayed ChatGPT output: it repeats its turn's text
-// and calls, and its encrypted reasoning is no measure of tokens.
+// request. It leaves out replayed ChatGPT output: that output repeats its
+// turn's text and calls, and its encrypted reasoning is no measure of tokens.
 func promptEstimate(body []byte, req model.StepRequest) int64 {
 	size := len(body)
 	for _, m := range req.Messages {
@@ -231,10 +234,10 @@ func promptEstimate(body []byte, req model.StepRequest) int64 {
 	return int64(max(size, 0)) / 4
 }
 
-// refuse answers a step with an error. Only a 500, the gateway's own
-// trouble reaching its database, is worth the runner's retry; every other
-// refusal is final: the provider was already retried, the budget is spent,
-// or the request is wrong.
+// refuse answers a step with an error. Only a 500, the gateway's own trouble
+// reaching its database, is worth the runner's retry. Every other refusal is
+// final: the provider was already retried, the budget is spent, or the
+// request is wrong.
 func refuse(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	if status != http.StatusInternalServerError {
@@ -272,8 +275,8 @@ func (c runCall) usageReview() string {
 }
 
 // admit authenticates r by its run token, finds the run's account in the
-// configuration and checks the account's monthly cap, or refuses r and
-// reports false.
+// configuration, and makes sure that the account is under its monthly cap.
+// Otherwise, it refuses r and reports false.
 func (g *Server) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
 	ctx := r.Context()
 	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -373,10 +376,11 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
 		return
 	}
-	// A run's steps are one conversation, whichever provider answers, and
-	// one that carries on an earlier run's keeps its session; a
-	// follow-up's is its mention's, which a retried run carries on. The
-	// effort is the grant's, as the model is: a runner chooses neither.
+	// A run's steps are one conversation, whichever provider answers. A
+	// conversation that carries on an earlier run's conversation keeps its
+	// session. A follow-up's session is its mention's, which a retried run
+	// carries on. The effort is the grant's, as the model is: a runner
+	// chooses neither.
 	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, cmp.Or(c.grant.Session, c.grant.RunID), model.Effort(granted.Effort)
 	if id := c.grant.FollowupCommentID; id != 0 {
 		req.Session = "followup-" + strconv.FormatInt(id, 10)
@@ -390,7 +394,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if limit := agent.DefaultLimits.MaxOutputTokensPerStep; req.MaxTokens <= 0 || req.MaxTokens > limit {
 		req.MaxTokens = limit
 	}
-	// The step is reserved before it runs; its actual spend replaces the
+	// The step is reserved before it runs. Its actual spend replaces the
 	// estimate once the provider answers.
 	reserved := promptEstimate(body, req) + req.MaxTokens
 	call.Recorder = adapter.Recorder{Store: g.Store, Metrics: g.Metrics}
@@ -401,11 +405,10 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	call.Usage = store.Usage{AccountID: c.grant.AccountID, RepositoryID: c.grant.RepositoryID, ReviewID: c.usageReview(),
 		Role: c.role(), RunnerRunID: c.grant.RunID}
 	call.Reservation = &adapter.Reservation{Token: c.token, Tokens: reserved}
-	// The step, its retries and its fallback share one budget, inside
-	// which the runner waits for the answer. With a fallback on another
-	// provider, the review model's attempts get at most half of it, so a
-	// model that hangs, or a long Retry-After, still leaves the fallback a
-	// turn.
+	// The step, its retries and its fallback share one budget, inside which
+	// the runner waits for the answer. With a fallback on another provider,
+	// the review model's attempts get at most half of it. So a model that
+	// hangs, or a long Retry-After, still leaves the fallback a turn.
 	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
 	defer cancel()
 	if err := call.Begin(sctx); err != nil {
@@ -422,9 +425,9 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	resp, err := call.Step(sctx, req)
 	served := call.Served
 	if err != nil {
-		// The provider's error goes to a pod that reads untrusted content;
-		// it must not carry the key, or credentials in the provider's URL,
-		// if the provider or the SDK echoed them.
+		// The provider's error goes to a pod that reads untrusted content. It
+		// must not carry the key, or credentials in the provider's URL, if
+		// the provider or the SDK echoed them.
 		msg := adapter.Mask(c.file, served.Provider)(err.Error())
 		c.logger.Warn("gateway: step failed", "error", msg)
 		status, code := upstreamStatus(err)
@@ -442,12 +445,13 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// conversation serves a review's run the conversation its token lets it
-// carry on, as the runner that kept it encoded it. That is the text the
-// provider was sent, unmasked, which a cache hit needs, so one that holds
-// the provider's key, credentials in its URL, an egress credential or the
-// run's token is not served, nor one kept under a model other than the
-// run's. Not found refuses the run nothing: it starts afresh.
+// conversation serves a review's run the conversation that its token lets it
+// carry on, as the runner that kept it encoded it. That is the text that the
+// provider was sent, unmasked, which a cache hit needs. So a conversation is
+// not served if it holds the provider's key, credentials in its URL, an
+// egress credential or the run's token. A conversation kept under a model
+// other than the run's is not served either. Not found refuses the run
+// nothing: it starts afresh.
 func (g *Server) conversation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)
@@ -486,10 +490,11 @@ func (g *Server) conversation(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(text))
 }
 
-// upstreamStatus is the status and code a step its provider failed is
-// refused with. They tell the runner's loop apart what model.Transient
-// does: a provider's outage, which it may wait out and send the step again,
-// from a provider's refusal of the request, which would fail the same way.
+// upstreamStatus is the status and code with which the gateway refuses a step
+// that its provider failed. They tell the runner's loop apart what
+// model.Transient does. One is a provider's outage, which the loop can wait
+// out before it sends the step again. The other is a provider's refusal of
+// the request, which fails the same way if sent again.
 func upstreamStatus(err error) (int, string) {
 	if model.Transient(err) {
 		return http.StatusBadGateway, "upstream_error"

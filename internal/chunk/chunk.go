@@ -54,10 +54,11 @@ const defaultMaxBytes = 1 << 20
 // parseTimeout stops a pathological parse.
 const parseTimeout = 5 * time.Second
 
-// parseMemoryBudget bounds one parse's arena and scratch memory, where the
-// library's default, the larger of 512 MiB and 512 bytes per input byte,
-// is past a runner pod's memory limit for a file of the size defaultMaxBytes
-// lets through. A parse it stops falls back to fixed windows.
+// parseMemoryBudget bounds one parse's arena and scratch memory. The
+// library's default is the larger of 512 MiB and 512 bytes per input byte.
+// That default is past a runner pod's memory limit for a file of the size
+// that defaultMaxBytes lets through. A parse that it stops falls back to
+// fixed windows.
 const parseMemoryBudget = 256 << 20
 
 // parseStackDepthLimit stops a parse whose stack runs deep, as a long run of
@@ -81,7 +82,7 @@ type languageParser struct {
 	outliner *gotreesitter.Outliner
 }
 
-// Language names the grammar a path would parse with, and whether that
+// Language names the grammar a path parses with, and whether that
 // grammar can outline declarations. Detection is by extension and
 // filename, the same table the indexer uses.
 func Language(path string) (name string, declarations bool) {
@@ -104,10 +105,10 @@ type File struct {
 	tree *gotreesitter.Tree
 }
 
-// Parse cuts src into declarations. A path with no grammar, a grammar with
-// no tags query, a file over the byte limit, or a failed parse all return
-// a File with no declarations and a nil error: those are the fixed-window
-// cases, not failures.
+// Parse cuts src into declarations. Some cases return a File with no
+// declarations and a nil error. They are a path with no grammar, a grammar
+// with no tags query, a file over the byte limit, and a failed parse. Those
+// are the fixed-window cases, not failures.
 func (p *Parser) Parse(path string, src []byte) *File {
 	f := &File{Path: path, Source: src}
 	if len(src) == 0 || len(src) > cmp.Or(p.Limits.MaxBytes, defaultMaxBytes) || bytes.IndexByte(src, 0) >= 0 {
@@ -134,9 +135,9 @@ func (p *Parser) Parse(path string, src []byte) *File {
 	return f
 }
 
-// Close gives the parse tree's memory back to the library's pool, which
-// a parse takes a fresh arena from otherwise. The declarations and the
-// source stay; Identifiers, which walks the tree, finds none afterwards.
+// Close gives the parse tree's memory back to the library's pool, which a
+// parse takes a fresh arena from otherwise. The declarations and the source
+// stay. Identifiers, which walks the tree, finds none afterward.
 func (f *File) Close() {
 	if f.tree != nil {
 		f.tree.Release()
@@ -172,10 +173,11 @@ func (p *Parser) language(path string) *languageParser {
 	return lp
 }
 
-// declarations merges two views of the tree: the outline (named symbols
-// from the grammar's tags query, nested where the language nests them) and
-// the root's named children (every top-level statement, so a type or
-// constant block the tags query does not cover still becomes a chunk).
+// declarations merges two views of the tree. One is the outline: named
+// symbols from the grammar's tags query, nested where the language nests
+// them. The other is the root's named children: every top-level statement, so
+// a type or constant block that the tags query does not cover still becomes a
+// chunk.
 func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Decl {
 	root := tree.RootNode()
 	var out []Decl
@@ -237,8 +239,8 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	return out
 }
 
-// nodeAt finds the node with exactly the given byte range, descending
-// from root; nil when no node has it.
+// nodeAt finds the node with exactly the given byte range. It descends from
+// root, and returns nil when no node has it.
 func nodeAt(root *gotreesitter.Node, start, end uint32) *gotreesitter.Node {
 	n := root
 	for n != nil {
@@ -258,9 +260,9 @@ func nodeAt(root *gotreesitter.Node, start, end uint32) *gotreesitter.Node {
 	return nil
 }
 
-// nameOf returns a node's declared name and scope from the grammar's
-// "name" and "receiver" fields, falling back to the first identifier
-// inside a one-declaration block (Go's type and const groups).
+// nameOf returns a node's declared name and scope from the grammar's "name"
+// and "receiver" fields. It falls back to the first identifier inside a
+// one-declaration block (Go's type and const groups).
 func nameOf(n *gotreesitter.Node, lang *gotreesitter.Language, src []byte) (name, scope string) {
 	if nn := n.ChildByFieldName("name", lang); nn != nil {
 		name = strings.TrimSpace(nn.Text(src))
@@ -275,7 +277,7 @@ func nameOf(n *gotreesitter.Node, lang *gotreesitter.Language, src []byte) (name
 	}
 	if name == "" {
 		// A block of specs (Go's const and type groups) takes its first
-		// member's name; a bare identifier child is the name itself.
+		// member's name. A bare identifier child is the name itself.
 		for i := range n.NamedChildCount() {
 			c := n.NamedChild(i)
 			if strings.Contains(c.Type(lang), "identifier") && c.ChildCount() == 0 {
@@ -417,8 +419,8 @@ func (f *File) Text(startLine, endLine int) string {
 }
 
 // Windows cuts a file with no declarations into fixed-size pieces for the
-// index: size lines each, overlapping by overlap lines so a boundary does
-// not hide a match. Lines are 1-based, inclusive.
+// index. Each piece is size lines, and the pieces overlap by overlap lines so
+// a boundary does not hide a match. Lines are 1-based, inclusive.
 func Windows(src []byte, size, overlap int) []Decl {
 	lines := lineCount(src)
 	if lines == 0 || size <= 0 {
@@ -438,9 +440,9 @@ func Windows(src []byte, size, overlap int) []Decl {
 	return out
 }
 
-// Matches reports whether path matches any of the doublestar globs. Every
-// glob a setting or repository file takes is validated where it is read, so
-// they are not validated again here.
+// Matches reports whether path matches any of the doublestar globs. The code
+// that reads a glob from the configuration or a repository file makes sure
+// that the glob is valid. So Matches does not do that again.
 func Matches(globs []string, path string) bool {
 	for _, g := range globs {
 		if doublestar.MatchUnvalidated(g, path) {

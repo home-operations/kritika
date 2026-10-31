@@ -47,8 +47,9 @@ func TestWithDismissals(t *testing.T) {
 func TestDropDismissed(t *testing.T) {
 	a := review.Finding{Path: "a.go", Line: 3, Title: "Unchecked error"}
 	b := review.Finding{Path: "b.go", Line: 9, Title: "stale COMMENT"}
-	// c was first reported as "Nil map write", and dismissed after a later
-	// review reported it again in other words, carrying that fingerprint on.
+	// c was first reported as "Nil map write". It was dismissed after a later
+	// review reported it again in other words and carried that fingerprint
+	// on.
 	c := review.Finding{Path: "c.go", Line: 4, Title: "Assignment panics"}
 	dismissed := []store.Dismissal{
 		{Fingerprint: review.Fingerprint(review.Finding{Path: "b.go", Title: "Stale comment"})},

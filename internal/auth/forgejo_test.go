@@ -134,7 +134,7 @@ func TestForgejoMappingVars(t *testing.T) {
 	if strings.Join(orgs, ",") != "org-1,org-2,org-3" || strings.Join(teams, ",") != "org-1/Owners" || vars["login"] != "alice" {
 		t.Fatalf("vars = %v", vars)
 	}
-	// An address the instance has not verified is not the mapping's to
+	// An address that the instance did not verify is not the mapping's to
 	// grant on.
 	if vars["email"] != "" {
 		t.Fatalf("email = %q, want none for an unverified address", vars["email"])
@@ -159,8 +159,9 @@ func TestForgejoMappingVarsTooMany(t *testing.T) {
 }
 
 // TestForgejoSessionEndsWhenAnAccountMoves: a session of a Forgejo sign-in
-// rests on the accounts its instance serves, so moving one to another
-// instance ends it; a change on another instance does not.
+// rests on the accounts that its instance serves. So moving one of those
+// accounts to another instance ends the session. A change on another instance
+// does not end it.
 func TestForgejoSessionEndsWhenAnAccountMoves(t *testing.T) {
 	key, _ := GrantKey(forgejoFile(t), "forgejo")
 	moved := configfiletest.Load(t, forgejoSignIn+strings.NewReplacer("[acme, alice]", "[alice]", "[initech]", "[initech, acme]").Replace(forgejoInstances))
@@ -173,9 +174,9 @@ func TestForgejoSessionEndsWhenAnAccountMoves(t *testing.T) {
 	}
 }
 
-// TestGrantForgejoInstance: a Forgejo sign-in places a person on the
-// accounts its own instance's connections serve, never on another
-// instance's account of a name they also belong to.
+// TestGrantForgejoInstance: a Forgejo sign-in places a person on the accounts
+// that the connections of its own instance serve. It never places them on
+// another instance's account of a name that they also belong to.
 func TestGrantForgejoInstance(t *testing.T) {
 	file := forgejoFile(t)
 	s, _ := file.Auth.SignInByType(configfile.SignInForgejo)

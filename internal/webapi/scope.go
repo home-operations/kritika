@@ -10,7 +10,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// accountScope is a request resolved to one account its principal may read.
+// accountScope is a request resolved to one account that its principal can
+// read.
 type accountScope struct {
 	file      *configfile.File
 	account   *configfile.Account
@@ -18,8 +19,8 @@ type accountScope struct {
 }
 
 // resolveAccount finds the running account name on forge for p. An account
-// p may not read is reported exactly like one that does not exist, so the
-// API never confirms an account to someone outside it.
+// that p cannot read is reported exactly like one that does not exist. So the
+// API never tells someone outside an account that the account exists.
 func resolveAccount(file *configfile.File, p *auth.Principal, forge, name string) (*accountScope, error) {
 	t, ok := file.Account(configfile.Forge(forge), name)
 	if !ok || !p.CanRead(t.ID()) {
@@ -52,8 +53,8 @@ func (s *Server) handler(h func(w http.ResponseWriter, r *http.Request) error) h
 	}
 }
 
-// admin adapts a handler only an admin may call: to anyone else its route
-// does not exist.
+// admin adapts a handler that only an admin can call: to anyone else its
+// route does not exist.
 func (s *Server) admin(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
 	return s.handler(func(w http.ResponseWriter, r *http.Request) error {
 		if !auth.PrincipalFrom(r.Context()).Admin {

@@ -264,7 +264,7 @@ func with(pr map[string]any, k string, v any) map[string]any {
 	return out
 }
 
-// minimal is the smallest valid file; cases mutate it.
+// minimal is the smallest valid file. Cases mutate it.
 var minimal = githubMinimal("clientId: Iv1.acme, ")
 
 // aliasProviders declares providers with locally resolved and provider-owned
@@ -324,9 +324,9 @@ confidence: { model: or/%[2]s, fallback: or/%[1]s }
 	}
 }
 
-// TestUnpricedModels: the models the file's root sets for providers whose
-// API reports no cost are listed where pricing has no price under them as
-// written; providers that report a cost are not.
+// TestUnpricedModels: the models that the file's root sets for providers
+// whose API reports no cost are listed where pricing has no price under them
+// as written. Providers that report a cost are not.
 func TestUnpricedModels(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -346,7 +346,7 @@ confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
 		t.Fatal(err)
 	}
 	// Priced by its alias and by its id, the confidence model and the
-	// review fallback are not listed, nor is an agent's openrouter model,
+	// review fallback are not listed. Nor is an agent's openrouter model,
 	// whose API reports its cost.
 	want := []UnpricedModel{
 		{Setting: "review.model", Ref: "a/~opus-latest"},
@@ -357,7 +357,7 @@ confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
 	}
 }
 
-// githubMinimal is the smallest configuration: one app serving acme;
+// githubMinimal is the smallest configuration: one app serving acme.
 // clientFields is spliced into the app's entry.
 func githubMinimal(clientFields string) string {
 	return `
@@ -381,9 +381,9 @@ func loadBytes(t *testing.T, raw []byte) (*File, error) {
 	return load(t, string(raw))
 }
 
-// TestEnabledDefault checks enabled resolves like the other settings: the
-// file's root sets the fallback for a repository without a dashboard
-// choice.
+// TestEnabledDefault makes sure that enabled resolves like the other
+// configuration values: the file's root sets the fallback for a repository
+// without a dashboard choice.
 func TestEnabledDefault(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -404,9 +404,9 @@ func TestEnabledDefault(t *testing.T) {
 	}
 }
 
-// TestRuns checks which repositories run once the forge says what they
-// are: an archived one never, one an admin turned on or off as they chose,
-// a fork not otherwise, and the rest as enabled resolves.
+// TestRuns makes sure that the right repositories run once the forge says
+// what they are: an archived one never, one that an admin turned on or off
+// as they chose, a fork not otherwise, and the rest as enabled resolves.
 func TestRuns(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -662,9 +662,10 @@ func TestParseRejects(t *testing.T) {
 	}
 }
 
-// TestJobTimeoutBounds checks that runner.activeDeadlineSeconds and
-// agent.timeout are accepted up to the point where River's job timeout cap
-// would otherwise cut the runner or the review short, and rejected past it.
+// TestJobTimeoutBounds makes sure that runner.activeDeadlineSeconds and
+// agent.timeout are accepted up to a point, and rejected past it. At that
+// point, River's job timeout cap otherwise cuts the runner or the review
+// short.
 func TestJobTimeoutBounds(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -676,7 +677,7 @@ func TestJobTimeoutBounds(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
-		want string // substring of the error; empty means the config must be accepted
+		want string // substring of the error, and empty means the configuration must be accepted
 	}{
 		{"agent timeout at the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout.Seconds())), ""},
 		{"agent timeout past the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout.Seconds()) + 1), "agent.timeout must not exceed"},
@@ -697,9 +698,9 @@ func TestJobTimeoutBounds(t *testing.T) {
 	}
 }
 
-// TestRootSettings: the file's root sets every repository's settings over
-// kritika's defaults, and an account's limits lay over the root's, a zero
-// written there clearing the root's value.
+// TestRootSettings: the file's root sets every repository's configuration
+// over kritika's defaults, and an account's limits lay over the root's. A
+// zero written there clears the root's value.
 func TestRootSettings(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -752,8 +753,8 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 }
 
-// TestReviewPresentation checks every finding goes inline, and the comments
-// carry the dashboard's URL, unless the file turns either off.
+// TestReviewPresentation makes sure that every finding goes inline, and the
+// comments carry the dashboard's URL, unless the file turns either off.
 func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -775,8 +776,8 @@ func TestReviewPresentation(t *testing.T) {
 	}
 }
 
-// TestSettingsProviders: a repository's settings name the providers its
-// account may use, the instance's and its own, sorted.
+// TestSettingsProviders: a repository's configuration names the providers
+// that its account can use, the instance's and its own, sorted.
 func TestSettingsProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

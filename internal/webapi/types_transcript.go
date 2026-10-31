@@ -47,16 +47,16 @@ type Response struct {
 
 // Turn is one model call: the messages new in its request from index
 // MessagesFrom, and the answer. System and Tools are set when the call
-// changed them from its part's call before, or, at a part's first call,
-// from the conversation's, and null otherwise; Reset says Messages is the
-// whole request.
+// changed them from its part's call before. At a part's first call, they are
+// set when the call changed them from the conversation's. They are null
+// otherwise. Reset says that Messages is the whole request.
 type Turn struct {
 	Index int             `json:"index"`
 	ID    string          `json:"id"`
 	Kind  transcript.Kind `json:"kind"`
 	Step  int             `json:"step"`
-	// Part is the part of a split review the call stepped for, from 1; 0
-	// when it was not split.
+	// Part is the part of a split review that the call stepped for, from 1.
+	// It is 0 when the review was not split.
 	Part         int        `json:"part"`
 	Model        string     `json:"model"`
 	Upstream     string     `json:"upstream"`

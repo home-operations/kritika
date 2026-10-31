@@ -13,7 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/transcript"
 )
 
-// ModelCallKind is what made a model call; see transcript.Kind.
+// ModelCallKind is what made a model call. See transcript.Kind.
 type ModelCallKind = transcript.Kind
 
 // Model call kinds, as model_calls.kind spells them.
@@ -32,7 +32,7 @@ type ModelCall struct {
 	ReviewID          string
 	RunnerRunID       string
 	FollowupCommentID int64
-	// Carries is the run whose conversation RunnerRunID may carry on, ""
+	// Carries is the run whose conversation RunnerRunID can carry on, ""
 	// for none: an agent step's first row is then a delta against that
 	// run's transcript, so the conversation is not recorded twice. Record
 	// keeps it on that row alone, as carried_from, and clears it on any
@@ -105,12 +105,11 @@ func ModelStepsBegun(ctx context.Context, tx pgx.Tx, runnerRunID string) (bool, 
 	return begun, nil
 }
 
-// AgentState returns what part of the run has recorded so far and the
-// number of its next agent step, both zero before its first; the bytes are
-// the whole run's, which its cap bounds whatever its parts. It takes a
-// transaction lock on the run's transcript, so two steps recorded at once
-// are recorded one after the other rather than as deltas against the same
-// state.
+// AgentState returns what part of the run recorded so far and the number of
+// its next agent step, both zero before its first. The bytes are the whole
+// run's, which its cap bounds whatever its parts. It takes a transaction lock
+// on the run's transcript. So two steps recorded at once are recorded one
+// after the other rather than as deltas against the same state.
 func AgentState(ctx context.Context, tx pgx.Tx, runnerRunID string, part int) (transcript.State, int, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritika-transcript:' || $1, 0))`, runnerRunID); err != nil {
 		return transcript.State{}, 0, fmt.Errorf("store: lock transcript: %w", err)
@@ -159,19 +158,20 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	return r, err
 }
 
-// Rows one statement of a retention sweep takes. A sweep is many such
-// statements, each committed on its own, so a backlog too large for the
+// Rows that one statement of a retention sweep takes. A sweep is many such
+// statements, each committed on its own. So a backlog too large for the
 // owner connection's statement timeout is worked off rather than rolled
 // back whole every time. A context pack carries a diff and a conversation
-// a whole exchange, so their batch is the smaller. Variables for the tests.
+// carries a whole exchange, so their batch is the smaller. These are
+// variables for the tests.
 var (
 	modelCallSweepBatch = 5000
 	diffSweepBatch      = 200
 )
 
 // sweepBatches runs stmt, which sweeps at most $2 rows older than $1
-// seconds, until it finds fewer than a batch, and returns how many rows
-// were swept, counting those before an error.
+// seconds, until it finds fewer than a batch. It returns how many rows
+// were swept, and that count includes those before an error.
 func (s *Store) sweepBatches(ctx context.Context, stmt string, olderThan time.Duration, batch int) (int64, error) {
 	var total int64
 	for {
@@ -225,10 +225,10 @@ func (s *Store) SweepConversations(ctx context.Context, olderThan time.Duration)
 }
 
 // SweepDiffs empties the bodies of every account's context packs written
-// more than olderThan ago, the diffs, the stage texts and the repository
-// files, keeping the metadata, a batch at a time, and returns how many
-// packs it swept. A swept pack is stamped so the next sweep passes it over.
-// Owner connection, leader only, like SweepModelCalls.
+// more than olderThan ago: the diffs, the stage texts and the repository
+// files. It keeps the metadata, works a batch at a time, and returns how
+// many packs it swept. A swept pack is stamped so the next sweep passes it
+// over. Owner connection, leader only, like SweepModelCalls.
 func (s *Store) SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error) {
 	if s.owner == nil {
 		return 0, errors.New("store: SweepDiffs needs the owner connection")

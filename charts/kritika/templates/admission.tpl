@@ -23,9 +23,10 @@
 {{- /* The image's repository: what precedes its tag, whose colon follows the last slash, and its digest. */}}
 {{- $repository := regexReplaceAll "^([^@]+?)(:[^:/@]+)?(@.+)?$" $image "${1}" }}
 # The Role lets kritika serve create Jobs and Secrets in its namespace, and
-# a Job's pod is not checked against its creator's permissions: the cluster
-# refuses, from kritika serve's ServiceAccount, any Job that is not a runner
-# Job as the executor builds it, and any Secret that is not a run's.
+# the cluster does not compare a Job's pod with its creator's permissions. The
+# cluster therefore refuses, from kritika serve's ServiceAccount, any Job that
+# is not a runner Job as the executor builds it. It also refuses any Secret
+# that is not a run's.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -148,9 +149,9 @@ spec:
         kubernetes.io/metadata.name: {{ .Release.Namespace }}
 ---
 # A Job deleted any other way than in the foreground, as kritika deletes
-# its runs', would leave its run's Secret, orphaned or not yet collected,
-# to a new Job of the same name: a deletion that names no propagation
-# orphans a Job's dependents.
+# its runs', leaves its run's Secret behind, orphaned or not yet collected.
+# A new Job of the same name then gets that Secret. A deletion that names no
+# propagation orphans a Job's dependents.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

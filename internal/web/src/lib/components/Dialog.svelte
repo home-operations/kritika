@@ -1,8 +1,8 @@
 <script lang="ts">
-  // A modal dialog, on Bits UI's: it traps focus, locks the page behind it,
-  // closes on Escape (or a click outside for ordinary dialogs), and renders only while
-  // open, so an input inside (a password, say) never outlives it. Focus
-  // returns to whatever opened it.
+  // A modal dialog, on Bits UI's. It traps focus, locks the page behind it,
+  // and closes on Escape (or a click outside for ordinary dialogs). It renders
+  // only while open, so an input inside (a password, say) never outlives it.
+  // Focus returns to whatever opened it.
   import { tick, type Snippet } from 'svelte';
   import { Dialog, AlertDialog } from 'bits-ui';
 
@@ -12,9 +12,9 @@
     children: Snippet;
     footer?: Snippet;
     onclose?: () => void;
-    // Where focus goes on close when the opener is gone from the page (a
-    // save that remounted it, or a disabled button that dropped focus to
-    // the body): a selector, by default the page title.
+    // Where focus goes on close when the opener is gone from the page: a
+    // selector, by default the page title. For example, a save remounted the
+    // opener, or a disabled button dropped focus to the body.
     fallback?: string;
     // A moving selection can return to a different target than the opener.
     returnFocus?: string;

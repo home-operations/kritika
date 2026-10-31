@@ -19,12 +19,13 @@ type SkillsSpec struct {
 	Scope map[string]SkillScope `yaml:"scope,omitempty"`
 }
 
-// SkillScope narrows when a skill is offered to a review: with Paths only
-// when a changed path matches one of them, and with When only to a pull
-// request one of those conditions holds for. Load, when set, says whether
-// a review the skill applies to is given its instructions in the system
-// prompt, rather than its name to read with load_skill; unset, Loads
-// decides from Paths and When.
+// SkillScope narrows when a skill is offered to a review. With Paths, it is
+// offered only when a changed path matches one of them. With When, it is
+// offered only to a pull request that one of those conditions holds for.
+// Load, when set, is for a review that the skill applies to. It says whether
+// that review is given the skill's instructions in the system prompt, rather
+// than its name to read with load_skill. Unset, Loads decides from Paths and
+// When.
 type SkillScope struct {
 	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 	When  []When   `yaml:"when,omitempty" json:"when,omitempty"`
@@ -67,7 +68,7 @@ func (s Skills) overlay(o SkillsSpec) Skills {
 }
 
 // CheckSkills rejects skill directories outside the repository and scopes
-// with a glob that is not valid or a condition a rule's could not be. The
+// with a glob that is not valid or a condition a rule's cannot be. The
 // error starts with the key, as skills.paths[i] or skills.scope.name.
 func CheckSkills(paths []string, scope map[string]SkillScope) error {
 	for i, p := range paths {

@@ -16,15 +16,15 @@ import (
 // FormatRaw is a download that is the executable itself.
 const FormatRaw = "raw"
 
-// formatExtensions are the archive and compression formats aqua tells from
-// a file name's extension, in the order it tries them, so tar.gz is found
-// before gz (aqua's pkg/asset.RemoveExtFromAsset).
+// formatExtensions are the archive and compression formats that aqua tells
+// from a file name's extension, in the order it tries them. So tar.gz is
+// found before gz (aqua's pkg/asset.RemoveExtFromAsset).
 var formatExtensions = []string{
 	"tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2", "tgz", "tlz4", "tsz", "txz",
 	"tar.zst", "zip", "gz", "bz2", "lz4", "sz", "xz", "zst", "dmg", "pkg", "rar", "tar",
 }
 
-// The algorithms of a checksum the runner checks a download against.
+// The algorithms of a checksum that the runner makes sure a download matches.
 const (
 	algorithmSHA256 = "sha256"
 	algorithmSHA512 = "sha512"
@@ -170,9 +170,9 @@ func (t templater) file(f *registry.File, asset, format string) (File, error) {
 	return File{Name: f.Name, Src: path.Clean(src)}, nil
 }
 
-// checksumURL is where the checksum file the registry names for asset,
-// downloaded from url, is; "" when it names one of a type the runner does
-// not fetch.
+// checksumURL is where the checksum file that the registry names for asset,
+// downloaded from url, is. It is "" when the registry names one of a type
+// that the runner does not fetch.
 func (t templater) checksumURL(asset, url string) (string, error) {
 	c := t.info.Checksum
 	data := t.data(t.info.GetChecksumReplacements())

@@ -68,7 +68,7 @@ func (n names) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, err
 }
 
 // upstream is a TLS server the proxy reaches, whatever address the rules
-// admitted; dialed records the addresses the proxy dialed.
+// admitted. dialed records the addresses the proxy dialed.
 func upstream(t *testing.T) (*httptest.Server, func(context.Context, string, string) (net.Conn, error), *[]string) {
 	t.Helper()
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +116,7 @@ func newProxy(t *testing.T, rules egresspolicy.Rules) (*httptest.Server, map[str
 	return srv, outcomes, dialed
 }
 
-// viaProxy is a client that sends everything through the proxy, trusting
+// viaProxy is a client that sends everything through the proxy and trusts
 // the test upstream's certificate for CONNECT tunnels.
 func viaProxy(proxy *httptest.Server) *http.Client {
 	pu, _ := url.Parse(proxy.URL)
@@ -213,7 +213,7 @@ func TestConnectTunnelsAllowedHosts(t *testing.T) {
 	if outcomes["connect/allowed"] != 1 {
 		t.Fatalf("outcomes = %v", outcomes)
 	}
-	// The tunnel is dialed to the address that was checked, not the name.
+	// The tunnel is dialed to the address that passed the rules, not the name.
 	if !slices.Equal(*dialed, []string{"140.82.112.6:443"}) {
 		t.Fatalf("dialed %v", *dialed)
 	}
@@ -257,7 +257,7 @@ func TestRefusesPrivateAddresses(t *testing.T) {
 	if outcomes["http/refused"] != 10 || outcomes["connect/refused"] != 10 || outcomes["http/error"]+outcomes["connect/error"] != 0 {
 		t.Fatalf("outcomes = %v", outcomes)
 	}
-	// A split-horizon name is dialed at its public address alone; an
+	// A split-horizon name is dialed at its public address alone. An
 	// address literal an allow prefix covers is dialed as given.
 	for _, u := range []string{"http://split.example/", "https://split.example/", "http://198.51.100.9/", "https://198.51.100.9/", "http://10.0.0.7/"} {
 		resp, err := viaProxy(proxy).Get(u)

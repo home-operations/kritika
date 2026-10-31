@@ -13,16 +13,16 @@ import (
 const describeQuote = "The passage of a cited rule this finding enforces, copied verbatim from the Review rules section, " +
 	"at least 12 characters of it or the whole rule when it is shorter; required when rules is set, omitted otherwise."
 
-// minQuoteChars is the least a quote may have once normalized, unless it
-// is a rule's whole text: a shorter one could be in a rule by chance.
+// minQuoteChars is the least that a quote can have once normalized, unless it
+// is a rule's whole text: a shorter one can be in a rule by chance.
 const minQuoteChars = 12
 
-// Markdown a quote may carry or leave out and still be the rule's text:
-// links, which keep their text, heading, quote and list markers at the
-// start of a line, nested or not, emphasis marks in pairs around a span,
-// and backticks, whose content stays as it is: a mark in code, such as
-// the star of a pointer type or the underscores of a dunder, is part of
-// the text, and so is a mark on its own.
+// Markdown that a quote can carry or leave out and still be the rule's text:
+// links, which keep their text, and heading, quote, and list markers at the
+// start of a line, nested or not. It also covers emphasis marks in pairs
+// around a span, and backticks, whose content stays as it is. A mark in code,
+// such as the star of a pointer type or the underscores of a dunder, is part
+// of the text. So is a mark on its own.
 var (
 	quoteLinks    = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 	quoteMarkers  = regexp.MustCompile(`(?m)^[ \t]{0,3}(?:(?:#{1,6}|>|[-*+]|\d+[.)])[ \t]+)+`)
@@ -30,16 +30,16 @@ var (
 	quoteMarks    = strings.NewReplacer("`", "", "“", `"`, "”", `"`, "‘", "'", "’", "'")
 )
 
-// codeStandIn stands for a code span while the link, marker and emphasis
-// passes run, so its content is none of theirs, and an emphasized span may
+// codeStandIn stands for a code span while the link, marker, and emphasis
+// passes run. So its content is none of theirs, and an emphasized span can
 // hold it. A literal one in the text is dropped first, so every one left
 // stands for a span.
 const codeStandIn = "\uE000"
 
-// setAsideCode is s with each code span, a run of backticks to the next
-// run of the same length as CommonMark reads them, replaced by
-// codeStandIn, and the spans' contents in order. A run with no closing
-// run is text.
+// setAsideCode is s with each code span replaced by codeStandIn, and the
+// spans' contents in order. A code span is a run of backticks to the next run
+// of the same length, as CommonMark reads them. A run with no closing run is
+// text.
 func setAsideCode(s string) (string, []string) {
 	var b strings.Builder
 	var code []string
@@ -90,10 +90,10 @@ func restoreCode(s string, code []string) string {
 	return b.String()
 }
 
-// emphasisPatterns matches each mark in pairs around a span that starts
-// and ends on something other than space or the mark, holds no mark, and
-// is bounded by something other than a letter, a digit or an underscore,
-// so the underscores of an identifier are never a pair; longest marks
+// emphasisPatterns matches each mark in pairs around a span. The span starts
+// and ends on something other than space or the mark, and holds no mark. It
+// is bounded by something other than a letter, a digit, or an underscore, so
+// the underscores of an identifier are never a pair. Longest marks come
 // first. The bounds are the first and third groups, the span the second.
 func emphasisPatterns(marks ...string) []*regexp.Regexp {
 	out := make([]*regexp.Regexp, len(marks))
@@ -104,8 +104,8 @@ func emphasisPatterns(marks ...string) []*regexp.Regexp {
 	return out
 }
 
-// citedRules is the ids of cited that given lists, once each, in the
-// order cited; nil for none.
+// citedRules is the ids of cited that given lists, once each, in the order
+// cited. It is nil for none.
 func citedRules(cited, given []string) []string {
 	var out []string
 	for _, id := range cited {
@@ -127,15 +127,15 @@ func (f Finding) BlockQuote() string {
 }
 
 // normalizeQuote is s as a quote is compared: its markdown stripped,
-// lowercased, its whitespace collapsed and the punctuation at its ends
-// dropped, so a passage copied without the rule's formatting, or its
-// final stop, still matches it.
+// lowercased, its whitespace collapsed, and the punctuation at its ends
+// dropped. So a passage copied without the rule's formatting, or its final
+// stop, still matches it.
 func normalizeQuote(s string) string {
 	s, code := setAsideCode(s)
 	s = quoteLinks.ReplaceAllString(s, "$1")
 	s = quoteMarkers.ReplaceAllString(s, "")
 	for _, re := range quoteEmphasis {
-		// A match takes the bound after its span, which the next span may
+		// A match takes the bound after its span, which the next span can
 		// need before its own: the pass goes again until nothing changes.
 		for prev := ""; prev != s; {
 			prev, s = s, re.ReplaceAllString(s, "$1$2$3")
@@ -158,14 +158,14 @@ func quotes(text, quote string) bool {
 // and the rest of its review is worth more than the citations.
 const MaxQuoteRefusals = 2
 
-// QuoteGate holds a run's submissions to what a finding that cites one
-// of its rules must carry: a quote that is a passage of a rule it cites,
-// as quotes says. Check refuses a submission with such a finding, naming
-// every one so a run told to submit can correct them all in the steps it
-// has left, up to MaxQuoteRefusals times; Drop then removes them from
-// the submission the run ends with. A finding that enforces a rule the
-// model made up, or misread, so goes back to the model rather than to
-// the author, and never posts.
+// QuoteGate holds a run's submissions to what a finding that cites one of its
+// rules must carry: a quote that is a passage of a rule it cites, as quotes
+// says. Check refuses a submission with a finding that lacks this quote. It
+// names every such finding so that a run told to submit can correct them all
+// in the steps left to it. It does this up to MaxQuoteRefusals times. Drop
+// then removes them from the submission that the run ends with. So a finding
+// that enforces a rule that the model made up, or misread, goes back to the
+// model rather than to the author. It never posts.
 type QuoteGate struct {
 	rules   []Rule
 	refused int
@@ -211,16 +211,16 @@ func (g *QuoteGate) misquoted(raw json.RawMessage) (at []int, why []string) {
 	return at, why
 }
 
-// Check wraps check with the gate: a submission check accepts is refused
-// while it has a misquoted finding and the gate has refusals left, each
-// refusal counting one. It is the loop's Validate; Peek is for what else
-// judges a submission, such as the fallback, which must not spend them.
+// Check wraps check with the gate. A submission that check accepts is refused
+// while it has a misquoted finding and the gate has refusals left. Each
+// refusal counts one. It is the loop's Validate. Peek is for what else judges
+// a submission, such as the fallback, which must not spend them.
 func (g *QuoteGate) Check(check func(json.RawMessage) error) func(json.RawMessage) error {
 	return g.wrap(check, true)
 }
 
-// Peek is Check without the count: it refuses what Check would refuse
-// now, and spends no refusal doing so.
+// Peek is Check without the count: it refuses what Check refuses now, and
+// spends no refusal doing so.
 func (g *QuoteGate) Peek(check func(json.RawMessage) error) func(json.RawMessage) error {
 	return g.wrap(check, false)
 }
@@ -246,8 +246,8 @@ func (g *QuoteGate) wrap(check func(json.RawMessage) error, count bool) func(jso
 	}
 }
 
-// Drop is raw, the submission a run ended with, without its misquoted
-// findings, which are named; raw itself when there are none.
+// Drop is raw, the submission that a run ended with, without its misquoted
+// findings, which are named. It is raw itself when there are none.
 func (g *QuoteGate) Drop(raw json.RawMessage) (json.RawMessage, []string, error) {
 	if g == nil {
 		return raw, nil, nil

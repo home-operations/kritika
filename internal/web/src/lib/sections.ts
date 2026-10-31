@@ -1,9 +1,9 @@
 // The dashboard's two scopes and their navigation destinations. A route that
-// names an account is in that account's scope, whose tabs are its sections;
-// any other is in the instance's, whose tabs are the pages about every
-// account at once. No tab chooses an account: one is entered by the scope
-// switcher or a link that names it. Rune-free, like routes.ts, so tests can
-// import it.
+// names an account is in that account's scope, whose tabs are its sections.
+// Any other route is in the instance's scope, whose tabs are the pages about
+// every account at once. No tab chooses an account: a user enters one through
+// the scope switcher or a link that names it. Rune-free, like routes.ts, so
+// tests can import it.
 import { analyticsFilter, pullFilter, usageFilter, type Route } from './routes';
 import { mdiAccountMultipleOutline, mdiChartBoxOutline, mdiCogOutline, mdiCurrencyUsd, mdiDomain, mdiPowerPlugOutline, mdiSourcePull, mdiTextBoxOutline, mdiTrayFull, mdiViewGridOutline } from './icons';
 
@@ -40,7 +40,7 @@ export function sectionOf(r: Route): Section | undefined {
   return NAV_GROUPS.flatMap((g) => g.sections).find((s) => SECTIONS[s].names.includes(r.name));
 }
 
-// Reporting dates travel between analytics and usage; repository and model
+// Reporting dates travel between analytics and usage. Repository and model
 // selections stay on their own page and account.
 export function reportingRoute(to: Route, from: Route): Route {
   if (from.name !== 'analytics' && from.name !== 'usage') return to;
@@ -94,9 +94,9 @@ export function scopeOf(r: Route): string | undefined {
 
 // pageIn is the page r shows, in the account slug: the same list or
 // settings page, and for a record, which the other account does not have,
-// the list it belongs to. Account-specific filters stay behind; reporting
+// the list it belongs to. Account-specific filters stay behind. Reporting
 // dates, metrics and grouping carry across. Portable pull and queue filters
-// follow scope; a global repository query is retained when narrowing it.
+// follow scope. A global repository query is retained when narrowing it.
 export function pageIn(r: Route, slug: string): Route {
   switch (r.name) {
     case 'analytics':
@@ -128,7 +128,7 @@ export function pageIn(r: Route, slug: string): Route {
     case 'instanceAnalytics':
       return { name: 'analytics', slug, ...(r.filter ? { filter: r.filter } : {}) };
     case 'instanceUsage': {
-      // By account is the instance's grouping; the period, metric and other groupings travel.
+      // By account is the instance's grouping. The period, metric and other groupings travel.
       const filter = usageFilter({ days: r.filter?.days, metric: r.filter?.metric, group: r.filter?.group });
       return { name: 'usage', slug, ...(filter ? { filter } : {}) };
     }

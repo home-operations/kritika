@@ -15,10 +15,11 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// insertReview creates a pull_requests row (with a randomised, collision-safe
-// number, matching the convention TestGatewayTokens already established for
-// this UNIQUE(repository_id, number) constraint) and a reviews row on top of
-// it, both owned by account. It returns the review's id.
+// insertReview creates a pull_requests row and a reviews row on top of it,
+// both owned by account. The pull_requests row has a randomized,
+// collision-safe number. This matches the convention that TestGatewayTokens
+// already established for this UNIQUE(repository_id, number) constraint.
+// insertReview returns the review's id.
 func insertReview(t *testing.T, ctx context.Context, s *Store, account string) string {
 	t.Helper()
 	var reviewID string
@@ -58,7 +59,7 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 	listenCtx := t.Context()
 	go s.Listen(listenCtx, ListenHandlers{OnEvent: func(e Event) { events <- e }})
 	// Postgres only delivers NOTIFY to sessions already LISTENing at commit
-	// time; give Listen's connection a moment to register before the write.
+	// time. Give Listen's connection a moment to register before the write.
 	time.Sleep(250 * time.Millisecond)
 
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
@@ -78,10 +79,10 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 	}
 }
 
-// TestListenSkipsRunnerRunHeartbeatOnlyUpdates checks the WHEN clause on
-// kritika_notify_runner_run: a heartbeat-only update must not notify, while a
-// phase change (the positive control, proving the listener itself works)
-// must, and must not fire more than once for it.
+// TestListenSkipsRunnerRunHeartbeatOnlyUpdates makes sure that the WHEN clause
+// on kritika_notify_runner_run works. A heartbeat-only update must not notify.
+// A phase change (the positive control, which proves that the listener itself
+// works) must notify, and must not fire more than once for it.
 func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -129,7 +130,7 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 		t.Fatal("no runner_run event received for the phase change (listener not working?)")
 	}
 	// The phase change above must produce exactly one event, not a spurious
-	// second one (e.g. a stray heartbeat notification re-delivered).
+	// second one (for example, a stray heartbeat notification re-delivered).
 	select {
 	case e := <-events:
 		t.Fatalf("unexpected second event after the phase change: %+v", e)
@@ -137,7 +138,7 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	}
 }
 
-// TestModelCallsRowLevelSecurity checks that model_calls, the one new web
+// TestModelCallsRowLevelSecurity makes sure that model_calls, the one new web
 // table that is account content, gets the same account_isolation treatment as
 // every other account-scoped table.
 func TestModelCallsRowLevelSecurity(t *testing.T) {
@@ -184,13 +185,13 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 	}
 }
 
-// TestRunnerRoleCannotTouchWebTables checks that the web dashboard's
-// instance-level tables (no RLS; access control lives in web code) are not
-// among the tables grant() gives the runner role, since a compromised
-// runner container should never be able to read or write users,
-// sessions, or any other dashboard table.
+// TestRunnerRoleCannotTouchWebTables makes sure that the web dashboard's
+// instance-level tables are not among the tables that grant() gives the
+// runner role. These tables have no RLS, and access control lives in web
+// code. A compromised runner container must never be able to read or write
+// users, sessions, or any other dashboard table.
 func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
-	openStore(t) // ensures Migrate/grant() have run against this schema
+	openStore(t) // makes sure that Migrate/grant() ran against this schema
 	ctx := t.Context()
 	runner, err := Open(ctx, Options{
 		AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"),
@@ -230,8 +231,8 @@ func TestLastRepoFiles(t *testing.T) {
 	listRepos(t, s, "beta", "beta/files")
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	// pack records a review of the repository whose context pack, written
-	// age ago, read doc as the repository's file, or none for nil, and
-	// returns the review's id.
+	// age ago, read doc as the repository's file, or none for nil. It returns
+	// the review's id.
 	pack := func(account, repo string, doc *string, age time.Duration) string {
 		t.Helper()
 		var reviewID string

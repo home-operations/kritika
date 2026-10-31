@@ -6,12 +6,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// namespace roots every deterministic identifier kritika derives. Accounts
-// and connections get their ids from their names so that any role can
-// address them without a lookup that row-level security would forbid before
-// the account is known: the webhook listener derives the account id from the
-// repository owner a webhook names and opens the account transaction
-// directly.
+// namespace roots every deterministic identifier that kritika derives.
+// Accounts and connections get their ids from their names, so that any role
+// can address them without a lookup. Row-level security forbids such a
+// lookup before the account is known. The webhook listener derives the
+// account id from the repository owner that a webhook names and opens the
+// account transaction directly.
 var namespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://github.com/home-operations/kritika"))
 
 // ID is the account's stable identifier, derived from its forge and name.
@@ -37,9 +37,9 @@ func (i *Connection) ID() string {
 }
 
 // RepositoryID is the stable identifier of a repository of an account,
-// derived from the account's id and the repository's full name, lowercased
-// since GitHub names are not case sensitive, so ingest can upsert it
-// without first reading it back, however a name is spelled.
+// derived from the account's id and the repository's full name. The name is
+// lowercased because GitHub names are not case sensitive. So ingest can
+// upsert it without first reading it back, however a name is spelled.
 func RepositoryID(accountID, fullName string) string {
 	return uuid.NewSHA1(namespace, []byte("repository:"+accountID+":"+strings.ToLower(fullName))).String()
 }

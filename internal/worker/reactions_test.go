@@ -77,7 +77,7 @@ func TestMarks(t *testing.T) {
 			if !slices.Equal(f.reacted, tt.reacted[:min(len(tt.reacted), 1)]) || len(f.removed) != 0 {
 				t.Fatalf("after start: reacted %v, removed %v", f.reacted, f.removed)
 			}
-			// The end lands once the job's ctx has ended.
+			// The end lands once the job's ctx ended.
 			cancel()
 			end(tt.outcome, tt.busy)
 			if !slices.Equal(f.reacted, tt.reacted) || !slices.Equal(f.removed, tt.removed) {

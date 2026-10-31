@@ -21,7 +21,7 @@ import (
 // whose installation-token minting, both hit srv. It mirrors
 // TestInstallationTokensMintOnceAndRefresh's server setup but leaves the
 // caller free to install its own handler for the actual API request under
-// test; the token mint itself is answered directly here since callers don't
+// test. The token mint itself is answered directly here since callers do not
 // care about it.
 func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
 	t.Helper()
@@ -310,7 +310,7 @@ func TestWriteBackCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := f.bodies["POST /api/v3/repos/o/r/statuses/abc"].(map[string]any)
-	// GitHub's limit is 140 characters, not bytes; the ellipsis is 3 bytes.
+	// GitHub's limit is 140 characters, not bytes. The ellipsis is 3 bytes.
 	if status["context"] != forge.StatusContext || utf8.RuneCountInString(status["description"].(string)) != 140 {
 		t.Fatalf("status body = %v", status)
 	}
@@ -324,7 +324,7 @@ func TestWriteBackCalls(t *testing.T) {
 }
 
 // TestChangesRequested: a reviewer stands where their latest approval,
-// request for changes or dismissal left them; a comment after it changes
+// request for changes, or dismissal left them. A comment after it changes
 // nothing, and the bot's own reviews do not count.
 func TestChangesRequested(t *testing.T) {
 	tests := []struct {
@@ -376,7 +376,7 @@ func TestApproveAndDismissApprovals(t *testing.T) {
 		t.Fatalf("review body = %v; must be an APPROVE review pinned to the head", review)
 	}
 	delete(f.bodies, "POST /api/v3/repos/o/r/pulls/7/reviews")
-	// The bot's approval of old stands; a human's of abc, and the bot's
+	// The bot's approval of old stands. A human's of abc, and the bot's
 	// dismissed and comment reviews, do not count.
 	if posted, err := c.Approve(t.Context(), "o", "r", 7, "old", "clean"); err != nil || posted {
 		t.Fatalf("Approve = %v, %v; want the standing approval left as it is", posted, err)
@@ -411,7 +411,7 @@ func TestListInlineReactions(t *testing.T) {
 }
 
 // TestGetCommentOutdated: GitHub nulls the line of an inline comment once a
-// push changes the lines it was made on; a current one keeps it.
+// push changes the lines it was made on. A current one keeps it.
 func TestGetCommentOutdated(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/pulls/comments/2", 200, `{"id":2,"body":"inline","path":"a.go","line":4,"original_line":4,"user":{"login":"b[bot]","type":"Bot"}}`)
@@ -475,9 +475,9 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	}
 }
 
-// TestPullRequestByNumber: the zero time lists every open pull request,
-// and one asked for by number comes back as it stands, closed included and
-// with its size, a missing one as forge.ErrNotFound.
+// TestPullRequestByNumber: the zero time lists every open pull request. One
+// asked for by number comes back as it stands, closed included and with its
+// size. A missing one comes back as forge.ErrNotFound.
 func TestPullRequestByNumber(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/pulls", 200, openPullsJSON)
@@ -592,9 +592,9 @@ func TestPullRequestReactions(t *testing.T) {
 	}
 }
 
-// TestFindReactions: the bot's own reaction of a content is found among
-// the reactions of that content on a comment or a pull request, and none
-// of someone else's counts.
+// TestFindReactions: the bot's own reaction of a content is found among the
+// reactions of that content on a comment or a pull request. None of someone
+// else's counts.
 func TestFindReactions(t *testing.T) {
 	const listed = `[{"id":70,"content":"confused","user":{"login":"someone"}},{"id":71,"content":"confused","user":{"login":"kritika[bot]"}}]`
 	tests := []struct {

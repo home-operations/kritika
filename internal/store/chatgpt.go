@@ -21,11 +21,11 @@ type ChatGPTSession struct {
 	SignedOutReason string
 }
 
-// SignedOut reports whether the renewable session has ended.
+// SignedOut reports whether the renewable session ended.
 func (s ChatGPTSession) SignedOut() bool { return !s.SignedOutAt.IsZero() }
 
 // PrepareChatGPTSession persists a host ID before OAuth begins. Repeated
-// attempts reuse the registration, including after a terminal refresh error.
+// attempts reuse the registration, also after a terminal refresh error.
 func (s *Store) PrepareChatGPTSession(ctx context.Context, key string) (ChatGPTSession, error) {
 	c := chatgpt.Credentials{Issuer: chatgpt.Issuer, HostID: "urn:uuid:" + uuid.NewString()}
 	raw, err := json.Marshal(c)
@@ -40,10 +40,10 @@ func (s *Store) PrepareChatGPTSession(ctx context.Context, key string) (ChatGPTS
 	return session, err
 }
 
-// RegisterChatGPTClient saves the client ID a first sign-in's callback
-// issued, before the code exchange, so an attempt that fails after it
-// signs in again as that client rather than registering another. A
-// concurrent first registration must not overwrite a different client.
+// RegisterChatGPTClient saves the client ID that a first sign-in's callback
+// issued, before the code exchange. So an attempt that fails after the save
+// signs in again as that client rather than registering another. A concurrent
+// first registration must not overwrite a different client.
 func (s *Store) RegisterChatGPTClient(ctx context.Context, key, clientID string) error {
 	tag, err := s.app.Exec(ctx, `UPDATE chatgpt_sessions
 		SET credentials = credentials || jsonb_build_object('client_id', $2::text), updated_at = now()
@@ -57,8 +57,9 @@ func (s *Store) RegisterChatGPTClient(ctx context.Context, key, clientID string)
 	return nil
 }
 
-// ConnectChatGPTSession saves a validated sign-in. A concurrent first
-// registration must not overwrite a different client established meanwhile.
+// ConnectChatGPTSession saves a sign-in that passed validation. A concurrent
+// first registration must not overwrite a different client established
+// meanwhile.
 func (s *Store) ConnectChatGPTSession(ctx context.Context, key string, c chatgpt.Credentials, wasClientID string) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -164,7 +165,7 @@ func (s *Store) ExpireChatGPTSession(ctx context.Context, key, token string) err
 
 // UpdateChatGPTAllowances retains the newest observation of each quota
 // bucket. A provider keeps its account across refreshes and sign-ins, so a
-// response on a token since replaced still counts; a signed-out provider
+// response on a token since replaced still counts. A signed-out provider
 // takes none.
 func (s *Store) UpdateChatGPTAllowances(ctx context.Context, key string, allowances []chatgpt.Allowance) error {
 	updates := make(map[string]chatgpt.Allowance, len(allowances))

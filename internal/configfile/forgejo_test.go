@@ -71,7 +71,7 @@ func TestParseForgejoPreviousKey(t *testing.T) {
 }
 
 // TestParseForgejoNeedsHTTPS: Forgejo reads kritika's keys over HTTPS
-// alone, so a Forgejo connection needs an https web URL; a GitHub App
+// alone, so a Forgejo connection needs an https web URL. A GitHub App
 // does not.
 func TestParseForgejoNeedsHTTPS(t *testing.T) {
 	forgejoEnv(t)
@@ -99,7 +99,7 @@ func TestParseForgejoWithoutAudience(t *testing.T) {
 func TestParseBothForges(t *testing.T) {
 	forgejoEnv(t)
 	// The same login on both forges is two accounts, each its
-	// connection's; an entry keyed by the name alone cannot say which.
+	// connection's. An entry keyed by the name alone cannot say which.
 	both := minimal + forgejoMinimal("")
 	f := mustLoad(t, both)
 	if len(f.Connections) != 2 || len(f.Accounts) != 2 {
@@ -156,7 +156,7 @@ func TestParseForgejoRejects(t *testing.T) {
 }
 
 // TestParseForgeBots: a Forgejo or Gitea connection lists the logins on its
-// instance that are bots, matched in any case; other forges take none.
+// instance that are bots, matched in any case. Other forges take none.
 func TestParseForgeBots(t *testing.T) {
 	forgejoEnv(t)
 	giteaEnv(t)

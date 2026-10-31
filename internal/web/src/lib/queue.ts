@@ -3,7 +3,7 @@ import type { Job } from './types';
 export const waiting = (j: Job) => ['available', 'scheduled', 'retryable', 'pending'].includes(j.state);
 
 // An overdue heartbeat is a signal to investigate, not proof that a runner
-// has stopped. Its worker can recover or be rescued between queue polls.
+// stopped. Its worker can recover or be rescued between queue polls.
 export const overdue = (j: Job): boolean => j.heartbeatOverdue ?? false;
 export const attention = (j: Job): boolean => !!j.recentFailure || j.state === 'retryable' || overdue(j);
 

@@ -19,9 +19,9 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// reviewers is the agents a review runs, as its job document carries
-// them, and the note its summary states when only named no agent that is
-// on.
+// reviewers is the agents that a review runs, as its job document carries
+// them. It also holds the note its summary states when only named no agent
+// that is on.
 type reviewers struct {
 	specs []runspec.Reviewer
 	note  string
@@ -39,17 +39,21 @@ func (r reviewers) notes() []string {
 // deadline are sized for: one for the default pass alone.
 func (r reviewers) count() int { return max(1, len(r.specs)) }
 
-// chooseReviewers is the agents a review of a pull request with the filter
-// variables vars runs, settings being the repository's: the default pass,
-// on the model the agents that replace it picked, then each specialist
-// that is on and whose when conditions judgeReviewers found to hold, by
-// name. only, when it names a specialist, is the one a review someone
-// asked for runs alone, whatever its paths and conditions; when it names
-// the default pass or an agent that replaces it, that pass runs alone, on
-// the agent's model (see pickModels); one that names no agent that is on
-// runs them all, with a note. An agent the last review, prior, did not run
-// is marked to review the whole change. specs is nil when the default
-// pass runs alone and the last review ran it, as a review always has.
+// chooseReviewers is the agents that a review of a pull request with the
+// filter variables vars runs. settings is the repository's. The agents are
+// the default pass, on the model that the agents that replace it picked. Then
+// come, by name, each specialist that is on and whose when conditions
+// judgeReviewers found to hold.
+//
+// only, when it names a specialist, is the one that a review someone asked
+// for runs alone, whatever its paths and conditions. When it names the
+// default pass or an agent that replaces it, that pass runs alone, on the
+// agent's model (see pickModels). When it names no agent that is on, the
+// review runs them all, with a note.
+//
+// An agent that the last review, prior, did not run is marked to review the
+// whole change. specs is nil when the default pass runs alone and the last
+// review ran it, as a review always does.
 func chooseReviewers(settings Effective, vars map[string]any, prior priorReview, only string, maxTokens int64) reviewers {
 	var out reviewers
 	names := slices.Sorted(maps.Keys(settings.Reviewers))
@@ -92,9 +96,9 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 	return out
 }
 
-// reviewerLimits are the bounds r's agent runs within, where they are
-// lower than the repository's agent settings and maxTokens, its budget a
-// part; nil where r sets none.
+// reviewerLimits are the bounds that r's agent runs within, where they are
+// lower than the repository's agent configuration and maxTokens, its budget a
+// part. It is nil where r sets none.
 func reviewerLimits(r configfile.Reviewer, agent configfile.AgentSettings, maxTokens int64) *runspec.ReviewerLimits {
 	if r.Agent == (configfile.ReviewerAgent{}) {
 		return nil
@@ -104,9 +108,9 @@ func reviewerLimits(r configfile.Reviewer, agent configfile.AgentSettings, maxTo
 	return &runspec.ReviewerLimits{MaxSteps: b.MaxSteps, MaxTokens: b.MaxTokens, TimeoutSeconds: int(b.Timeout / time.Second)}
 }
 
-// reviewerGrants are the models of the reviewers other than the default
-// one the run may run, by name: each one's own, or the repository's where
-// it sets none, pinned as pinModels pins the review's.
+// reviewerGrants are the models of the reviewers other than the default one
+// that the run can run, by name: each one's own, or the repository's where it
+// sets none, pinned as pinModels pins the review's.
 func (w *Review) reviewerGrants(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings,
 	specs []runspec.Reviewer,
@@ -154,8 +158,8 @@ func fullReviewers(parts []store.AgentPart) []string {
 	return out
 }
 
-// reviewerCategories are the categories the reviewers other than the
-// default one may report, by name, those that name any.
+// reviewerCategories are the categories that the reviewers other than the
+// default one can report, by name, those that name any.
 func reviewerCategories(reviewers map[string]configfile.Reviewer) map[string][]review.Category {
 	var out map[string][]review.Category
 	for name, r := range reviewers {
@@ -170,9 +174,9 @@ func reviewerCategories(reviewers map[string]configfile.Reviewer) map[string][]r
 	return out
 }
 
-// readPull reads the pull request prID once for a review started by
-// trigger, so the reviewers it runs and its prompt judge the same row, and
-// returns it with its filter variables.
+// readPull reads the pull request prID once for a review started by trigger,
+// so the reviewers it runs and its prompt judge the same row. It returns the
+// pull request with its filter variables.
 func (w *Review) readPull(ctx context.Context, accountID, prID, trigger string) (repoconfig.PullRequest, map[string]any, error) {
 	var pull repoconfig.PullRequest
 	if err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -188,16 +192,17 @@ func (w *Review) readPull(ctx context.Context, accountID, prID, trigger string) 
 	return pull, vars, err
 }
 
-// asked is the reviewer a re-run someone asked for names, or the word they
-// wrote that names none, which chooseReviewers states it ran every
-// reviewer in place of; "" for a review of every reviewer.
+// asked is the reviewer that a re-run someone asked for names, or the word
+// they wrote that names none. chooseReviewers states that it ran every
+// reviewer in place of that word. asked is "" for a review of every reviewer.
 func asked(args jobs.ReviewArgs) string { return cmp.Or(args.Reviewer, args.Requested) }
 
-// mayRun is eff's settings with their specialists cut to those a review
-// asked for as args may run, whose models it holds slots on: the one asked
-// for alone, when one that runs alone is, none when the default pass or an
-// agent that replaces it is, and otherwise each that is on and whose when
-// conditions judgeReviewers found to hold.
+// mayRun is eff's configuration with its specialists cut to those that a
+// review asked for as args can run, whose models it holds slots on. The
+// result is the one asked for alone, when one that runs alone is asked for.
+// It is none when the default pass or an agent that replaces it is asked for.
+// Otherwise it is each that is on and whose when conditions judgeReviewers
+// found to hold.
 func mayRun(eff Effective, args jobs.ReviewArgs) configfile.Settings {
 	s := eff.Settings
 	asked := args.Reviewer
@@ -216,9 +221,9 @@ func mayRun(eff Effective, args jobs.ReviewArgs) configfile.Settings {
 	return s
 }
 
-// runsAlone reports whether name is an agent a review asked for runs
-// alone, settings being the repository's as they are now: the default
-// pass, an agent on that replaces it, or a specialist that is on.
+// runsAlone reports whether name is an agent that a review asked for runs
+// alone: the default pass, an agent on that replaces it, or a specialist that
+// is on. settings is the repository's as it is now.
 func runsAlone(settings configfile.Settings, name string) bool {
 	r, specialist := settings.Reviewers[name]
 	return name == review.DefaultReviewer || specialist && r.On() ||

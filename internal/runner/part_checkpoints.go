@@ -28,9 +28,9 @@ type partCheckpoint struct {
 }
 
 // partInputHash includes every part's prompt so a changed partition or retrieved
-// context invalidates the whole plan. Run identity, scheduling and the token
-// budget the month left this attempt do not change the input a part reviews,
-// nor does the last review's conversation, which no part carries on.
+// context invalidates the whole plan. Run identity, scheduling, and the token
+// budget the month left this attempt do not change the input a part reviews.
+// Neither does the last review's conversation, which no part carries on.
 func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string, error) {
 	p.RunID = ""
 	if p.Agent != nil {
@@ -68,7 +68,7 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 	return hex.EncodeToString(hash[:]), nil
 }
 
-// loadParts reads the parts the run may reuse. A checkpoint that cannot be
+// loadParts reads the parts the run can reuse. A checkpoint that cannot be
 // reused is left out, so its part runs again rather than failing every
 // retry that copies it.
 func loadParts(
@@ -118,7 +118,7 @@ func restorePart(row store.PartCheckpoint, parts []reviewPart) (partCheckpoint, 
 }
 
 // savePart stores only a submitted answer, the limit that forced it, and
-// provenance. Usage stays on the source run; reusing an answer performs no
+// provenance. Usage stays on the source run. Reusing an answer performs no
 // model steps or commands.
 func savePart(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, hash string, part int, res agent.Result,
 	tools agentTools,

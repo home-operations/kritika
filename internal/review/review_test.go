@@ -135,7 +135,7 @@ func TestLenient(t *testing.T) {
 		{name: "unknown keys and a blank take", raw: `{"summary":{"take":" ","praise":[],"mood":"ok"},"findings":[]}`},
 		{name: "unknown keys and a field of the wrong type", raw: `{"summary":{"take":"Fine.","praise":"clear","mood":"ok"}}`},
 		// Decoding into a map keeps only the last of a repeated key, so
-		// dropping the unknown keys would hide the type error.
+		// dropping the unknown keys hides the type error.
 		{name: "a repeated key whose first value is of the wrong type", raw: `{"summary":{"take":"Fine.","praise":[]},
 			"findings":[{"path":"a","line":"bad","line":3,"mood":"ok"}]}`},
 		{name: "a repeated key of the wrong type and no unknown key", raw: `{"summary":{"take":"Fine.","praise":[]},
@@ -316,8 +316,8 @@ func TestParse(t *testing.T) {
 			if !slices.Equal(kept, tt.kept) {
 				t.Errorf("kept = %q, want %q", kept, tt.kept)
 			}
-			// The fix fields a kept finding ends up with, by title; a title
-			// not listed is not checked.
+			// The fix fields that a kept finding ends up with, by title. The
+			// test does not compare a title that is not listed.
 			fixes := map[string]Finding{
 				"ranged":     {EndLine: 12, Replacement: "a\nb"},
 				"off range":  {},
@@ -527,8 +527,8 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	}
 }
 
-// TestParseReply: an answer to a reply in a finding thread posts a reply,
-// or nothing and why; conceding the finding takes a reply that says so.
+// TestParseReply: an answer to a reply in a finding thread posts a reply, or
+// nothing and why. Conceding the finding takes a reply that says so.
 func TestParseReply(t *testing.T) {
 	tests := []struct {
 		name, raw string
@@ -611,7 +611,7 @@ func TestBuildRendersDescriptionAsData(t *testing.T) {
 		}
 	})
 	t.Run("a description over its share is cut on a rune boundary with a note of what was left out", func(t *testing.T) {
-		in.BudgetTokens = 1_000 // 4,000 characters, a quarter of which the description may take
+		in.BudgetTokens = 1_000 // 4,000 characters, a quarter of which the description can take
 		in.Body = strings.Repeat("x", 999) + "é" + strings.Repeat("y", 500)
 		msg, _, _, _ := Build(in)
 		want := strings.Repeat("x", 999) + "\n[The description was cut here to fit the prompt budget: 502 more bytes.]\n</description>"
@@ -873,11 +873,11 @@ func TestBuildLargerBudgetKeepsALargeFile(t *testing.T) {
 	}
 }
 
-// TestParsePrior: a finding on a prior finding's path that names its id,
-// or that has its path and title, carries that finding's fingerprint on
-// whatever its wording now, so it keeps the thread; one that names an
+// TestParsePrior: a finding on a prior finding's path that names its id, or
+// that has its path and title, carries that finding's fingerprint on. It does
+// this whatever its wording now, so it keeps the thread. One that names an
 // unknown id or another path's is its own, as is one whose prior finding an
-// earlier one carried on. A severity a model wrote into a title, once or
+// earlier one carried on. A severity that a model wrote into a title, once or
 // more, is dropped, and a prior finding's title written with one matches.
 func TestParsePrior(t *testing.T) {
 	first := Finding{Path: "main.go", Title: "Publish the chart tag"}
@@ -929,10 +929,9 @@ func TestParseResolved(t *testing.T) {
 	}
 }
 
-// TestParsePriorDroppedClaimsNone: a finding dropped as malformed claims
-// no prior finding's fingerprint, so a later finding that names the same
-// one carries it on; one off the diff, reported all the same, does claim
-// it.
+// TestParsePriorDroppedClaimsNone: a finding dropped as malformed claims no
+// prior finding's fingerprint. So a later finding that names the same one
+// carries it on. One off the diff, reported all the same, does claim it.
 func TestParsePriorDroppedClaimsNone(t *testing.T) {
 	prior := Finding{Path: "main.go", Line: 11, Severity: SeverityP1, Title: "Chart tag is not published", Explanation: "e"}
 	finding := func(severity, title string, line int) string {

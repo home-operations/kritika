@@ -28,12 +28,12 @@ type Base struct {
 	Current *configfile.Current
 	Forges  forge.Clients
 	Logger  *slog.Logger
-	// Metrics may be nil.
+	// Metrics can be nil.
 	Metrics *metrics.Metrics
 }
 
-// account finds the job's account in the current file. An account that has
-// been removed cancels the job: it will not come back by retrying.
+// account finds the job's account in the current file. An account that was
+// removed cancels the job: it will not come back by retrying.
 func (b *Base) account(file *configfile.File, id string) (*configfile.Account, error) {
 	if t, ok := file.AccountByID(id); ok {
 		return t, nil
@@ -51,8 +51,8 @@ func (b *Base) client(ctx context.Context, file *configfile.File, account *confi
 	return b.Forges.For(ctx, in, repo)
 }
 
-// runnerLabels are put on a runner Job for kubectl and Grafana; pr is 0
-// for a run that is of no pull request.
+// runnerLabels are put on a runner Job for kubectl and Grafana. pr is 0 for a
+// run that is of no pull request.
 func runnerLabels(account, repository, kind string, pr int) map[string]string {
 	labels := map[string]string{"account": account, "repository": repository, "kind": kind}
 	if pr != 0 {
@@ -71,15 +71,15 @@ func runnerAnnotations(jobID int64, sha string) map[string]string {
 const releaseTimeout = 10 * time.Second
 
 // detachTimeout bounds work that runs on past the job's ctx once the model
-// has answered: publishing, and ending a review whose job ended. It must
-// still finish then, but a hung forge or database call must not hold the
-// job forever.
+// answers: publishing, and ending a review whose job ended. It must still
+// finish then, but a hung forge or database call must not hold the job
+// forever.
 const detachTimeout = 2 * time.Minute
 
-// completeJob completes job in tx while River still runs this attempt of
-// it. River returns a row no longer running unchanged, and completes
-// whichever attempt is running, so either way what tx holds of this
-// attempt must not commit.
+// completeJob completes job in tx while River still runs this attempt of it.
+// River returns a row that is no longer running unchanged, and it completes
+// whichever attempt is running. So either way, what tx holds of this attempt
+// must not commit.
 func completeJob[T river.JobArgs](ctx context.Context, tx pgx.Tx, job *river.Job[T]) error {
 	completed, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 	if err != nil {
@@ -117,9 +117,9 @@ func detachUnlessFenced(ctx context.Context) (context.Context, context.CancelFun
 	}
 }
 
-// withLease runs fn while holding one of the account's slots on key,
-// records the wait, and releases the slot afterwards even when the job's
-// context has been cancelled.
+// withLease runs fn while it holds one of the account's slots on key, and
+// records the wait. It releases the slot afterward, even when the job's
+// context is canceled.
 func (b *Base) withLease(
 	ctx context.Context, account *configfile.Account, key string, slots int, jobID int64, fn func(ctx context.Context) error,
 ) error {
@@ -133,10 +133,10 @@ func (b *Base) withLease(
 	return fn(ctx)
 }
 
-// releaseLease releases l on a context of its own, since the job's has
-// usually ended by the time a lease is let go, and logs a failure, and the
-// snoozed review the freed slot woke, to logger, which carries whatever the
-// caller knows of the job.
+// releaseLease releases l on a context of its own, because the job's context
+// is usually over by the time a lease is let go. It logs a failure, and the
+// snoozed review that the freed slot woke, to logger. logger carries whatever
+// the caller knows of the job.
 func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *store.Lease, key string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()

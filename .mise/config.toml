@@ -1,11 +1,11 @@
 # mise is the single source of truth for the Go toolchain (and project tools)
 # across developer shells, CI, and the container build. The `go` version here
-# is the toolchain that builds and tests; go.mod's `go` directive is pinned to
+# is the toolchain that builds and tests. go.mod's `go` directive is pinned to
 # the lowest patch of the same minor and is expected to lag behind (see
 # AGENTS.md). The Dockerfile and release workflow read `tools.go` with
 # `mise config get tools.go`.
 #
-# `mise tasks` lists tasks; `mise run <task>` runs one.
+# `mise tasks` lists tasks. `mise run <task>` runs one.
 
 # The oldest mise working here takes.
 min_version = "2026.10.13"
@@ -191,11 +191,11 @@ run = "go run ./cmd/kritika serve"
 # --- Cluster development loop -------------------------------------------
 # Everything cluster-specific lives in the gitignored .private/ folder: the
 # kustomization (.private/deploy), the KUBECONFIG pointer
-# (.private/mise.local.toml, symlinked from the repo root as .mise.local.toml;
-# a local file inside .mise/ would make `mise lock` prune this file's lock)
+# (.private/mise.local.toml, symlinked from the repo root as .mise.local.toml)
 # and the last pushed image references (.private/image and
-# .private/runner-image). KRITIKA_DEV_REGISTRY, set in the same file, names a
-# registry the cluster pulls from to push to instead of ttl.sh.
+# .private/runner-image). A local file inside .mise/ makes `mise lock` prune
+# this file's lock. KRITIKA_DEV_REGISTRY, set in the same file as the KUBECONFIG
+# pointer, names a registry the cluster pulls from to push to instead of ttl.sh.
 
 [tasks.image-push]
 description = "Build the image and its -tools runner image and push both to KRITIKA_DEV_REGISTRY, or to ttl.sh (24h TTL) when unset, under a fresh name; the references land in .private/image and .private/runner-image"
@@ -232,7 +232,7 @@ set -e
 image="$(cat .private/image)"
 runner="$(cat .private/runner-image)"
 kubectl apply --server-side --field-manager kritika-dev -k .private/deploy
-# Split at the last colon: a registry host may carry a port.
+# Split at the last colon: a registry host can carry a port.
 helm upgrade --install kritika charts/kritika -n kritika --values .private/values.yaml \
   --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
   --set 'runner.podTemplate.spec.containers[0].name=runner' --set "runner.podTemplate.spec.containers[0].image=$runner" \

@@ -412,7 +412,7 @@ func TestMergeContextCollision(t *testing.T) {
 }
 
 // TestPullRequestVarsMatchSample: the stored pull request's variables are
-// the keys the sample conditions are checked against, but pr.lines.
+// the keys that the sample conditions are tested against, but pr.lines.
 func TestPullRequestVarsMatchSample(t *testing.T) {
 	t.Parallel()
 	vars, err := PullRequest{}.Vars()
@@ -453,8 +453,8 @@ func TestMergeReplacesAdminGate(t *testing.T) {
 
 // TestMergeAgentRoutes: a file's agents that replace the default pass
 // replace the admin's, whole, or are dropped whole when one of their
-// models may not be taken, and a file's own model replaces the admin's
-// routes too.
+// models cannot be taken. A file's own model replaces the admin's routes
+// too.
 func TestMergeAgentRoutes(t *testing.T) {
 	t.Parallel()
 	doc := "review:\n  model: own/small\n  agents:\n" +
@@ -505,10 +505,10 @@ func TestMergeAgentRoutes(t *testing.T) {
 	}
 }
 
-// TestMergeAgents: a file adds specialists of its own, their models among
-// the account's, and only rules and skill scopes to an admin's specialist,
-// whose other keys it cannot touch; an agent under the name of an admin's
-// agent of the other kind is dropped.
+// TestMergeAgents: a file adds specialists of its own, with their models
+// among the account's. It adds only rules and skill scopes to an admin's
+// specialist, whose other keys it cannot touch. An agent under the name of
+// an admin's agent of the other kind is dropped.
 func TestMergeAgents(t *testing.T) {
 	t.Parallel()
 	op := adminSettings()
@@ -609,8 +609,8 @@ func TestReferencedAgents(t *testing.T) {
 }
 
 // TestMergeAgentRoutesWritten: a file's agents that replace the default
-// pass replace the admin's when written, though every one is off, and the
-// cap counts the routes the review ends with, not the admin's.
+// pass replace the admin's when written, though every one is off. The cap
+// counts the routes that the review ends with, not the admin's.
 func TestMergeAgentRoutesWritten(t *testing.T) {
 	t.Parallel()
 	admin := func(specialists int, routes ...string) configfile.Settings {

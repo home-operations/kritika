@@ -23,14 +23,14 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// Source bounds: how many URLs one run records, and how long each may be.
+// Source bounds: how many URLs one run records, and how long each can be.
 const (
 	maxSources     = 50
 	maxSourceBytes = 2048
 )
 
-// sourceEscaper percent-encodes what would end a Markdown autolink or a
-// code span early, so a recorded URL renders as one link and nothing else.
+// sourceEscaper percent-encodes what can end a Markdown autolink or a code
+// span early, so that a recorded URL renders as one link and nothing else.
 var sourceEscaper = strings.NewReplacer(" ", "%20", "<", "%3C", ">", "%3E", "`", "%60")
 
 // RunConfig configures the run tool.
@@ -41,20 +41,21 @@ type RunConfig struct {
 	Env []string
 	// CommandEnv adds variables to one command's environment, by name.
 	CommandEnv map[string][]string
-	// Commands map each name the model may run to the binary it runs.
+	// Commands map each name that the model can run to the binary that it
+	// runs.
 	Commands map[string]string
-	// Resolve, when set, finds the binary a command runs and the
-	// environment it runs with at the time of the call, installing the
-	// command's tool first when it is not yet; Commands then only names
-	// what is offered. Its error is returned to the model.
+	// Resolve, when set, finds the binary that a command runs and the
+	// environment that it runs with, at the time of the call. It installs the
+	// command's tool first when the tool is not installed yet. Commands then
+	// only names what is offered. Resolve's error is returned to the model.
 	Resolve func(ctx context.Context, command string) (bin string, env []string, err error)
-	// Prepare, when set, writes Dir before the first command runs, so a
-	// review that runs none never pays for it. It runs once: its note,
-	// when any, opens every command's result, since the tool's description
-	// went out before it was known, and its error is returned to the model
-	// for that command and every later one. One it returns because ctx
-	// ended is not kept: the next command, with a context of its own, runs
-	// it again, so Dir must be fit to write again after a failure.
+	// Prepare, when set, writes Dir before the first command runs, so that a
+	// review that runs none never pays for it. It runs once. Its note, when
+	// any, opens every command's result, since the tool's description went
+	// out before the note was known. Its error is returned to the model for
+	// that command and every later one. An error that it returns because ctx
+	// ended is not kept: the next command, with a context of its own, runs it
+	// again. So Dir must be fit to write again after a failure.
 	Prepare func(ctx context.Context) (note string, err error)
 	// Timeout bounds one command.
 	Timeout time.Duration
@@ -67,16 +68,16 @@ type RunConfig struct {
 	Hosts   []string
 	// Note, when set, is appended to the tool's description.
 	Note string
-	// Mask, when set, is applied to a command's output and setup errors before the model
-	// sees it, to keep a credential a command printed out of the
-	// conversation.
+	// Mask, when set, is applied to a command's output and setup errors
+	// before the model sees it. This keeps a credential that a command
+	// printed out of the conversation.
 	Mask func(string) string
 	// Keep, when set, says where a cut output is kept whole.
 	Keep *Kept
-	// Logger, when set, logs each command as it starts, its arguments
-	// masked, since the pod's own log is not. A step is logged when it
-	// completes, so a runner killed mid-command, as by the memory limit,
-	// would otherwise leave no trace of what it was running.
+	// Logger, when set, logs each command as it starts, its arguments masked,
+	// since the pod's own log is not. A step is logged when it completes.
+	// Without this log, a runner killed mid-command, as by the memory limit,
+	// leaves no trace of what it was running.
 	Logger *slog.Logger
 }
 
@@ -92,9 +93,9 @@ type Kept struct {
 	Budget *WriteBudget
 }
 
-// WriteBudget is what the tools may write beside the checkout between
-// them, in bytes: fetch_repo its fetched files and diffs, the run tool its
-// kept outputs. The loop calls tools one at a time, so it is not locked.
+// WriteBudget is what the tools can write beside the checkout between them,
+// in bytes: fetch_repo its fetched files and diffs, the run tool its kept
+// outputs. The loop calls tools one at a time, so it is not locked.
 type WriteBudget struct {
 	left int64
 }
@@ -102,16 +103,16 @@ type WriteBudget struct {
 // NewWriteBudget is a budget of n bytes.
 func NewWriteBudget(n int64) *WriteBudget { return &WriteBudget{left: n} }
 
-// Left is what may still be written.
+// Left is what can still be written.
 func (b *WriteBudget) Left() int64 { return b.left }
 
 // Spend counts n bytes written.
 func (b *WriteBudget) Spend(n int64) { b.left -= n }
 
 // RunTool executes one allowlisted binary with the model's arguments,
-// directly and without a shell, in a checkout of the head commit, and
-// records as a source the review consulted every http(s) URL curl is given
-// and what each gh call reads, and which commands it ran.
+// directly and without a shell, in a checkout of the head commit. It records,
+// as a source that the review consulted, every http(s) URL that curl is given
+// and what each gh call reads. It also records which commands it ran.
 type RunTool struct {
 	cfg        RunConfig
 	names      []string
@@ -127,8 +128,8 @@ type RunTool struct {
 	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
 	calls int
-	// prepared is set once Prepare ran, prepareNote and prepareErr to what
-	// it returned; the loop calls tools one at a time, so none is locked.
+	// prepared is set once Prepare ran, prepareNote and prepareErr to what it
+	// returned. The loop calls tools one at a time, so none is locked.
 	prepared    bool
 	prepareNote string
 	prepareErr  error
@@ -182,8 +183,8 @@ func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...)
 // nil.
 func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
 
-// Executions counts processes started, including nonzero exits and timeouts,
-// but excluding rejected commands and installation or process-start failures.
+// Executions counts processes started, nonzero exits and timeouts included.
+// It excludes rejected commands and installation or process-start failures.
 func (rt *RunTool) Executions() map[string]int { return maps.Clone(rt.executions) }
 
 // Errors are masked command setup failures, the first per command, for
@@ -335,17 +336,17 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	defer cancel()
 	out := &cappedBuffer{max: rt.cfg.MaxOutputBytes, keep: rt.cfg.MaxOutputBytes}
 	if k := rt.cfg.Keep; k != nil {
-		// An output that would not be kept is not buffered past the cut.
+		// An output that will not be kept is not buffered past the cut.
 		out.keep = max(out.max, int(min(int64(k.FileBytes), k.Budget.Left())))
 	}
 	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
-	// The command and the processes it starts form a process group of their
-	// own, which is stopped as a whole when the command times out and once
-	// it has exited (stopGroupOnExit), so nothing it started outlives the
-	// call. The command is reaped only after that, so the group's id stays
-	// its own while it is signalled.
+	// The command and the processes that it starts form a process group of
+	// their own. The group is stopped as a whole when the command times out
+	// and once it exits (stopGroupOnExit), so nothing that it started
+	// outlives the call. The command is reaped only after that, so the
+	// group's id stays its own while the group is signaled.
 	var group groupSignals
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return group.kill(cmd.Process) }
@@ -393,14 +394,14 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 }
 
 // groupSignals is what signals a command's process group, a timeout, until
-// the command is about to be reaped, which may free the group's id for
-// another: from then on it signals nothing, or the command alone, which
-// os.Process signals safely after the reap too. A kill in flight finishes
-// before either.
+// the command is about to be reaped. The reap can free the group's id for
+// another group. From then on, it signals nothing, or the command alone,
+// which os.Process signals safely after the reap too. A kill in flight
+// finishes before either.
 type groupSignals struct {
 	mu sync.Mutex
-	// exited says the command's exit was seen and its group stopped, and
-	// leader that the exit could not be seen before the reap.
+	// exited says that the command's exit was seen and its group stopped.
+	// leader says that the exit was not seen before the reap.
 	exited, leader bool
 }
 
@@ -417,7 +418,7 @@ func (g *groupSignals) kill(p *os.Process) error {
 	return syscall.Kill(-p.Pid, syscall.SIGKILL)
 }
 
-// exit says the command's exit has been seen and its group stopped.
+// exit says the command's exit was seen and its group stopped.
 func (g *groupSignals) exit() {
 	g.mu.Lock()
 	g.exited = true
@@ -432,9 +433,9 @@ func (g *groupSignals) leaderOnly() {
 	g.mu.Unlock()
 }
 
-// prepare runs Prepare before the first command and returns its note, as
-// a line of its own, for every command; its failure stands for every
-// command after it, unless ctx ended it.
+// prepare runs Prepare before the first command and returns its note, as a
+// line of its own, for every command. Its failure stands for every command
+// after it, unless ctx ended it.
 func (rt *RunTool) prepare(ctx context.Context) (string, error) {
 	if rt.cfg.Prepare == nil {
 		return "", nil
@@ -459,13 +460,13 @@ const (
 	stderrLead  = "\n[the end of stderr, from the part cut above:]\n"
 )
 
-// result is a command's result cut to MaxOutputBytes with its note, which
-// counts the bytes the buffer dropped as well, so the loop's own cut to the
-// same limit leaves it whole. A cut output is then kept whole in a file,
-// which a note after the cut's names, from out. stderr is the end of the
-// stderr the buffer dropped, where an error printed after a long output
-// lands: it follows the notes, the rest cut shorter to make room, unless
-// it would take more than a quarter of the limit.
+// result is a command's result cut to MaxOutputBytes with its note. The note
+// also counts the bytes that the buffer dropped, so the loop's own cut to the
+// same limit leaves the result whole. A cut output is then kept whole in a
+// file, from out. A note after the cut's note names that file. stderr is the
+// end of the stderr that the buffer dropped, where an error printed after a
+// long output lands. It follows the notes, with the rest cut shorter to make
+// room, unless it takes more than a quarter of the limit.
 func (rt *RunTool) result(s string, out *cappedBuffer, dropped int, stderr string) string {
 	var tail string
 	// An output that fits the buffer is still cut when its first line
@@ -482,9 +483,10 @@ func (rt *RunTool) result(s string, out *cappedBuffer, dropped int, stderr strin
 	return textcut.Cut(s, rt.cfg.MaxOutputBytes-len(tail), dropped) + tail
 }
 
-// keep writes the whole output in out, masked, to the file for this call
-// and returns the note naming it, or saying why it is not kept: the output
-// is over what one file may hold, or past what the review may write.
+// keep writes the whole output in out, masked, to the file for this call. It
+// returns the note, which names the file or says why the output is not kept:
+// the output is over what one file can hold, or past what the review can
+// write.
 func (rt *RunTool) keep(out *cappedBuffer) string {
 	k := rt.cfg.Keep
 	whole, ok := out.whole()
@@ -574,7 +576,7 @@ func (b *cappedBuffer) write(p []byte) int {
 	return len(p) - shown
 }
 
-// String is the output the result returns as valid UTF-8; dropped counts
+// String is the output that the result returns as valid UTF-8. dropped counts
 // the rest.
 func (b *cappedBuffer) String() string {
 	return strings.ToValidUTF8(string(b.buf.Bytes()[:min(b.buf.Len(), b.max)]), "�")
@@ -597,8 +599,8 @@ type stderrTail struct {
 	out  *cappedBuffer
 	max  int
 	tail []byte
-	// before is the stderr byte just before the tail, and last the last
-	// one written; '\n' stands for the start of the stream.
+	// before is the stderr byte just before the tail, and last the last one
+	// written. '\n' stands for the start of the stream.
 	before, last byte
 	started      bool
 }
@@ -624,10 +626,10 @@ func (s *stderrTail) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// String is the kept end of stderr from its first whole line, as valid
-// UTF-8. A line cut at its start is left out: the mask applied to it
-// recognises only whole credentials, and the start of one cut there would
-// leave the rest of it unmasked.
+// String is the kept end of stderr from its first whole line, as valid UTF-8.
+// A line cut at its start is left out: the mask applied to it recognizes only
+// whole credentials. If the start of a credential is cut there, the rest of
+// it stays unmasked.
 func (s *stderrTail) String() string {
 	t := s.tail
 	if s.before != '\n' {

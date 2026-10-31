@@ -14,31 +14,30 @@ import (
 )
 
 // A replica's liveness on the River jobs it works: a beat every
-// jobHeartbeatInterval, and a job whose last beat is older than
-// jobAbandonedAfter belongs to a replica that died. Six missed beats, as a
-// runner's heartbeat gets, so a slow database alone never has a live job
-// rescued and run twice. A replica that cannot write a beat for
-// jobFenceAfter fences itself: it ends the job's context an interval
-// before the leader may hand the job to another replica, so a replica cut
-// off from the database alone, its runner pod still working, never has
-// its job worked twice either.
+// jobHeartbeatInterval. A job whose last beat is older than jobAbandonedAfter
+// belongs to a replica that died. That is six missed beats, as a runner's
+// heartbeat gets, so a slow database alone never has a live job rescued and
+// run twice. A replica that cannot write a beat for jobFenceAfter fences
+// itself: it ends the job's context an interval before the leader can hand
+// the job to another replica. So a replica cut off from the database alone,
+// its runner pod still working, never has its job worked twice either.
 const (
 	jobHeartbeatInterval = jobtimeout.HeartbeatInterval
 	jobAbandonedAfter    = jobtimeout.HeartbeatAbandonedAfter
 	jobFenceAfter        = jobAbandonedAfter - jobHeartbeatInterval
 )
 
-// errJobFenced is the cause a job's context ends with when its replica
-// could not write the job's heartbeat for jobFenceAfter.
+// errJobFenced is the cause a job's context ends with when its replica failed
+// to write the job's heartbeat for jobFenceAfter.
 var errJobFenced = errors.New("worker: job heartbeat not written; the job is handed back")
 
 // jobFenceKey carries, in the context of a job JobHeartbeat works, a
 // context only a fence of the job ends.
 type jobFenceKey struct{}
 
-// jobFence is a context a fence of the job ends, with errJobFenced as its
-// cause, even after River ended the job's own context, whose cause then
-// stays River's. Outside JobHeartbeat it is ctx itself.
+// jobFence is a context that a fence of the job ends, with errJobFenced as
+// its cause. A fence ends it even after River ended the job's own context,
+// whose cause then stays River's. Outside JobHeartbeat, it is ctx itself.
 func jobFence(ctx context.Context) context.Context {
 	if f, ok := ctx.Value(jobFenceKey{}).(context.Context); ok {
 		return f
@@ -51,11 +50,11 @@ type jobHeartbeater interface {
 	HeartbeatJob(ctx context.Context, jobID int64) error
 }
 
-// JobHeartbeat is River middleware that stamps a heartbeat on every job
-// this replica works, once before the job starts and then every
-// jobHeartbeatInterval until Work returns, so the leader's Rescuer can tell
-// a job whose replica died from one still being worked. A replica that
-// stops drains its own jobs; this covers one that does not get to.
+// JobHeartbeat is River middleware that stamps a heartbeat on every job this
+// replica works. It stamps once before the job starts and then every
+// jobHeartbeatInterval until Work returns. So the leader's Rescuer can tell a
+// job whose replica died from one still being worked. A replica that stops
+// drains its own jobs. This covers one that does not get to.
 type JobHeartbeat struct {
 	river.MiddlewareDefaults
 	Store  jobHeartbeater
@@ -63,11 +62,11 @@ type JobHeartbeat struct {
 }
 
 // Work implements rivertype.WorkerMiddleware. A first beat that cannot be
-// written fails the attempt: a job nobody could tell was alive must not
-// start. Later beats go on past ctx, which a timeout or a cancel ends
-// while the job is still this replica's to finish on detached contexts.
-// The job gets a context of its own, which beats that cannot be written
-// for jobFenceAfter end with errJobFenced, as they end its jobFence.
+// written fails the attempt: a job that nobody can tell is alive must not
+// start. Later beats go on past ctx, which a timeout or a cancel ends while
+// the job is still this replica's to finish on detached contexts. The job
+// gets a context of its own, which beats that cannot be written for
+// jobFenceAfter end with errJobFenced, as they end its jobFence.
 func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
 	if err := h.Store.HeartbeatJob(ctx, job.ID); err != nil {
 		return fmt.Errorf("worker: first heartbeat of job %d: %w", job.ID, err)
@@ -90,10 +89,10 @@ func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner 
 }
 
 // beat writes the job's heartbeat every interval until ctx ends, or until
-// none could be written for jobFenceAfter: then it fences the job and
-// stops, since a beat written later would have the leader take the job
-// for alive after this replica cut it. A beat gets only what is left of
-// that window: one stuck waiting for a connection, or on one the network
+// none was written for jobFenceAfter. Then it fences the job and stops,
+// because a beat written later has the leader take the job for alive after
+// this replica cut it. A beat gets only what is left of that window. A beat
+// stuck waiting for a connection, or on a connection that the network
 // dropped, must not hold the fence back.
 func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.CancelCauseFunc, done chan<- struct{}) {
 	defer close(done)

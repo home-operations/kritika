@@ -24,11 +24,11 @@ type FindingCounts struct {
 	Downvoted int `json:"downvoted"`
 }
 
-// FindingGroup is the findings that share a key, counted: a category, a
-// rule id, an agent's name, "default" for the default pass, or a
-// directory of Repository one below the path filter, with a trailing
-// slash, the path filter itself ("" for none) for a file in no directory
-// below it.
+// FindingGroup is the findings that share a key, counted. The key is a
+// category, a rule id, an agent's name, "default" for the default pass, or a
+// directory of Repository. A directory key is one below the path filter, with
+// a trailing slash. For a file in no directory below the path filter, the key
+// is the path filter itself ("" for none).
 type FindingGroup struct {
 	Key        string `json:"key"`
 	Repository string `json:"repository"`
@@ -46,9 +46,9 @@ type FindingSummary struct {
 	Directories []FindingGroup `json:"directories"`
 }
 
-// FindingExport is the findings the list's filters keep, newest first, as
-// an export serves them as JSON; Truncated says the filters keep more than
-// it holds.
+// FindingExport is the findings that the list's filters keep, newest first,
+// as an export serves them as JSON. Truncated says that the filters keep more
+// than it holds.
 type FindingExport struct {
 	Items     []AccountFinding `json:"items"`
 	Truncated bool             `json:"truncated"`

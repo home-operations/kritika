@@ -19,14 +19,14 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Forges holds one GitHub App, Forgejo, Gitea or GitLab client per connection, built on
-// first use and kept for the life of the process, as the configuration
-// is, so the clients and the listings of a connection share its
-// credentials: an App's installation tokens are minted once an hour each,
-// however often the connection is polled.
+// Forges holds one GitHub App, Forgejo, Gitea or GitLab client per
+// connection. Each client is built on first use and kept for the life of the
+// process, as the configuration is. So the clients and the listings of a
+// connection share its credentials: an App's installation tokens are minted
+// once an hour each, however often the connection is polled.
 type Forges struct {
-	// Metrics may be nil. Rate limits the forge answers with are logged
-	// and counted on it.
+	// Metrics can be nil. Rate limits the forge answers with are logged and
+	// counted on it.
 	Metrics *metrics.Metrics
 	// Issuer is the URL kritika's Forgejo tokens name as their issuer,
 	// forgejo.IssuerURL of the dashboard's.
@@ -142,9 +142,10 @@ func (a *Forges) Build(ctx context.Context, in *configfile.Connection, repo stri
 	}
 }
 
-// Reach lists the repositories connection in reaches, those its App is
-// installed on or its bot can see, by the lowercased login of the account
-// each is under, as the store registers them: the poller's Reach.
+// Reach lists the repositories that connection in reaches: those that its App
+// is installed on or its bot can see. It lists them by the lowercased login
+// of the account that each is under, as the store registers them. This is the
+// poller's Reach.
 func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
 	out := make(map[string][]store.ReachedRepository, len(in.Accounts))
 	switch in.Forge {
@@ -227,7 +228,7 @@ type ForgeCache struct {
 const forgeBuildTimeout = time.Minute
 
 // For implements forge.Clients. A caller whose ctx ends while a build is
-// under way returns with ctx's error; the build goes on for the others,
+// under way returns with ctx's error. The build goes on for the others,
 // whichever caller started it.
 func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
 	owner, _, _ := strings.Cut(repo, "/")
@@ -239,9 +240,9 @@ func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo st
 		return client, nil
 	}
 	results := c.building.DoChan(key, func() (any, error) {
-		// A caller that missed the cache may only get here once the build
-		// it would have joined is over and forgotten: it takes that
-		// build's client instead of building another.
+		// A caller that missed the cache can get here after the build that it
+		// was to join is over and forgotten. It then takes that build's client
+		// instead of building another.
 		c.mu.Lock()
 		client, ok := c.clients[key]
 		c.mu.Unlock()

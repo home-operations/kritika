@@ -1,6 +1,6 @@
 // Theme: auto (follow OS), light, or dark. The chosen theme drives a `light`/
 // `dark` class on <html>, which the design tokens key off. The preference
-// persists in localStorage, which theme.js reads before the first paint; a
+// persists in localStorage, which theme.js reads before the first paint. A
 // light or dark kept with the user (their settings) is written there too
 // when they sign in, so it holds in any browser.
 
@@ -8,7 +8,7 @@ export type ThemePref = 'auto' | 'light' | 'dark';
 
 const KEY = 'kritika-theme';
 // Guarded so importing this module never throws outside a browser (tests, a
-// future SSR build); in that case the app behaves as auto/light until init.
+// future SSR build). In that case, the app behaves as auto/light until init.
 const mq = typeof window === 'undefined' ? null : window.matchMedia('(prefers-color-scheme: dark)');
 
 function load(): ThemePref {
@@ -43,8 +43,8 @@ export function setTheme(pref: ThemePref): void {
   try {
     localStorage.setItem(KEY, theme.pref);
   } catch {
-    // Private browsing / storage quota -- the in-memory preference still
-    // applies for this session, it just won't survive a reload.
+    // Private browsing / storage quota: the in-memory preference still
+    // applies for this session, but it does not survive a reload.
   }
   applyTheme();
 }

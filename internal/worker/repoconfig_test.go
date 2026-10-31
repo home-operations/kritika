@@ -45,7 +45,7 @@ func TestEffective(t *testing.T) {
 
 	tests := []struct {
 		name string
-		// doc is the merge-base .kritika.yaml, none when empty; files are
+		// doc is the merge-base .kritika.yaml, none when empty. files are
 		// what the runner read.
 		doc          string
 		files        repoconfig.Files
@@ -176,7 +176,7 @@ func TestEffectiveSkip(t *testing.T) {
 	}
 }
 
-// fileForge is a forge whose only call is FileAt, answering from files, or
+// fileForge is a forge whose only call is FileAt. It answers from files, or
 // with err when set.
 type fileForge struct {
 	forge.Client
@@ -339,9 +339,9 @@ func TestNarrowToGate(t *testing.T) {
 }
 
 // TestPickRoute: model routes read the forge's diff only when a condition
-// needs it, see a deleted file by its base-side path and pr.lines without
-// the ignored paths, and leave a pull request whose diff the forge will
-// not give on the default model.
+// needs it. They see a deleted file by its base-side path, and pr.lines
+// without the ignored paths. They leave a pull request whose diff the forge
+// will not give on the default model.
 func TestPickRoute(t *testing.T) {
 	t.Parallel()
 	const diff = "diff --git a/db/0042.sql b/db/0042.sql\n--- a/db/0042.sql\n+++ b/db/0042.sql\n@@ -1 +1,2 @@\n x\n+y\n" +

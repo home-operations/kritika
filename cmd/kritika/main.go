@@ -1,7 +1,8 @@
 // Command kritika reviews GitHub pull requests against an index of the
-// repository. "kritika serve" runs the service; each review, follow-up and
-// index run it makes runs in a runner Job of cmd/kritika-runner's.
-// "kritika config check" checks a configuration file without serving it.
+// repository. "kritika serve" runs the service. Each review, follow-up, and
+// index run that it makes runs in a runner Job of cmd/kritika-runner's.
+// "kritika config check" makes sure that a configuration file is valid
+// without serving it.
 package main
 
 import (
@@ -105,16 +106,17 @@ func run() (err error) {
 	)
 
 	// Graceful shutdown on the usual termination signals. stop() runs as soon
-	// as the first signal arrives so a second signal restores default handling
-	// and force-terminates instead of being swallowed during a slow drain.
+	// as the first signal arrives. A second signal then restores default
+	// handling and force-terminates instead of being swallowed during a slow
+	// drain.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	context.AfterFunc(ctx, stop)
 	// GOMEMLIMIT at 90% of the container's cgroup memory limit, unless
-	// GOMEMLIMIT is set or AUTOMEMLIMIT=off: the GC is otherwise unaware of
-	// the limit, so a parse of a large repository could OOM-kill the pod
-	// before it reclaims. On Linux it is refreshed, for a pod resized in
-	// place; elsewhere there is no cgroup, and each refresh would log its
+	// GOMEMLIMIT is set or AUTOMEMLIMIT=off. Otherwise the GC is unaware of the
+	// limit, so a parse of a large repository can OOM-kill the pod before the
+	// GC reclaims. On Linux, the limit is refreshed, for a pod resized in
+	// place. Elsewhere there is no cgroup, and each refresh will log its
 	// failure. Set logs its own failure, which leaves the limit as it was.
 	memOpts := []memlimit.Option{memlimit.WithLogger(logger)}
 	if runtime.GOOS == "linux" {
@@ -129,12 +131,12 @@ func run() (err error) {
 	// database is still starting.
 	mgmt := server.NewManagement(cfg.MetricsAddr, version, commit, logger)
 	g, ctx := errgroup.WithContext(ctx)
-	// Whatever ends run ends the group's goroutines first, and run waits
-	// for them before the store closes: the close waits for every
-	// connection, and the leader holds its lock connection for its tenure,
-	// so an error returned while the group runs would otherwise hang it,
-	// liveness still answering. An error of the group's own that run does
-	// not return, a listener a runner's exit cut, is worth a line.
+	// Whatever ends run ends the group's goroutines first, and run waits for
+	// them before the store closes. The close waits for every connection, and
+	// the leader holds its lock connection for its tenure. Without this order,
+	// an error returned while the group runs will hang the close while liveness
+	// still answers. An error of the group's own that run does not return, such
+	// as a listener that a runner's exit cut, is worth a line.
 	ctx, cancel := context.WithCancel(ctx)
 	var st *store.Store
 	defer func() {
@@ -148,15 +150,14 @@ func run() (err error) {
 	}()
 	g.Go(func() error { return mgmt.Run(ctx) })
 
-	// serve's public listener comes up next, before the database answers,
-	// so a request that reaches the pod directly meanwhile sees that
-	// kritika is starting. The replica is not ready until the database
-	// answers and the webhooks and the dashboard are served: a rollout
-	// takes the previous pod down only once this one can hold a delivery,
-	// since the forge does not send one again. The configuration file is
-	// read before that, so a file that does not load ends the process
-	// before the replica is ever ready, and a rollout stops at it with the
-	// previous pods serving.
+	// serve's public listener comes up next, before the database answers, so
+	// a request that reaches the pod directly meanwhile sees that kritika is
+	// starting. The replica is not ready until the database answers and the
+	// webhooks and the dashboard are served. A rollout takes the previous pod
+	// down only once this one can hold a delivery, because the forge does not
+	// send one again. The configuration file is read before that, so a file
+	// that does not load ends the process before the replica is ever ready. A
+	// rollout then stops at it with the previous pods serving.
 	var file *configfile.File
 	var public *server.Switch
 	if command == config.CommandServe {
@@ -169,9 +170,9 @@ func run() (err error) {
 		})
 	}
 
-	// serve connects with the application DSN and refuses to start if it
-	// could bypass row-level security or the vector extension is missing;
-	// it also opens the owner DSN, to lead.
+	// serve connects with the application DSN and refuses to start if it can
+	// bypass row-level security or the vector extension is missing. It also
+	// opens the owner DSN, to lead.
 	st, err = store.OpenWhenReady(ctx, storeOptions(cfg, logger))
 	if err != nil {
 		return err
@@ -190,10 +191,11 @@ func run() (err error) {
 	return nil
 }
 
-// serve starts the service on g: the configuration read at startup, the
-// leader duties on the replica holding the leader lock, the webhooks and
-// the dashboard on public, the gateway and the job queues. When it
-// returns, public serves the webhooks and the dashboard.
+// serve starts the service on g. The service has the configuration read at
+// startup and the leader duties on the replica that holds the leader lock.
+// It also has the webhooks and the dashboard on public, the gateway, and
+// the job queues. When serve returns, public serves the webhooks and the
+// dashboard.
 func serve(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, file *configfile.File, public *server.Switch,
 	reg *prometheus.Registry, logger *slog.Logger,
@@ -225,8 +227,8 @@ func serve(
 			return fmt.Errorf("unset %s: %w", name, err)
 		}
 	}
-	// current is the configuration read at startup; the leader applies it
-	// on election, the other replica only compares hashes.
+	// current is the configuration read at startup. The leader applies it on
+	// election, and the other replica only compares hashes.
 	current := configfile.NewCurrent(file)
 	g.Go(func() error {
 		return reportDrift(ctx, st, current, drift, driftInterval, logger)
@@ -236,13 +238,13 @@ func serve(
 		return err
 	}
 	// Insert-only client: the webhooks, the dashboard and the leader
-	// enqueue jobs with it; startWorker's own client works the queues.
+	// enqueue jobs with it. startWorker's own client works the queues.
 	inserter, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
-	// One App or bot per connection and one forge client per connection
-	// and account, shared by the workers and the leader's poll, so an
+	// One App or bot per connection and one forge client per connection and
+	// account. The workers and the leader's poll share them, so an
 	// installation's token is minted once.
 	apps := &worker.Forges{Metrics: m, Issuer: forgejo.IssuerURL(cfg.WebURLParsed())}
 	forges := &worker.ForgeCache{Build: apps.Build}
@@ -274,7 +276,8 @@ func serve(
 // in, which serve refuses to start with.
 var errNoSignIn = errors.New("the dashboard has no way to sign in: configure auth in the configuration file")
 
-// loadConfig validates policy from the same startup snapshot as the process settings.
+// loadConfig makes sure that the policy is valid. It uses the same startup
+// snapshot as the process configuration.
 func loadConfig(cfg *config.Config) (*configfile.File, error) {
 	f, err := configfile.FromConfig(cfg)
 	if err != nil {
@@ -286,14 +289,16 @@ func loadConfig(cfg *config.Config) (*configfile.File, error) {
 	return f, nil
 }
 
-// checkConfig loads the configuration file args name, or else
-// KRITIKA_CONFIG_FILE's, as serve does at startup, and says on out that
-// serve would accept it. The environment is read as serve reads it, the
-// variables the file's secret references name among them, but the
-// database is not, and nothing is connected to: the settings a deployment
-// gives serve besides the file, such as the chart's gatewayUrl, are not
-// required. The runner templates are decoded as the executor decodes
-// them, but the API's dry run of a runner Job is left to startup.
+// checkConfig loads the configuration file that args name, or else the file
+// that KRITIKA_CONFIG_FILE names, as serve does at startup. It says on out
+// that serve will accept the file. It reads the environment as serve reads
+// it. That includes the variables that the file's secret references name. It
+// does not read the database, and it connects to nothing. The configuration
+// that a deployment gives serve besides the file, such as the chart's
+// gatewayUrl, is not required.
+//
+// checkConfig decodes the runner templates as the executor decodes them, but
+// it leaves the API's dry run of a runner Job to startup.
 func checkConfig(args []string, out io.Writer) error {
 	path := os.Getenv("KRITIKA_CONFIG_FILE")
 	if len(args) > 0 {
@@ -351,9 +356,9 @@ func startPublic(
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: inserter}, Env: cfg.Env(),
 	})
 	g.Go(func() error { return api.Run(server.Lingering(ctx, linger)) })
-	// The keys every Forgejo connection's tokens are verified with, read
-	// from the configuration on each request so a rotated key is served
-	// at once.
+	// The keys for the verification of every Forgejo connection's tokens. They
+	// are read from the configuration on each request, so a rotated key is
+	// served at once.
 	issuerURL := forgejo.IssuerURL(cfg.WebURLParsed())
 	keys := func() []jose.JSONWebKey { return forgejo.Keys(issuerURL, current.Get(), logger) }
 	public.Set(server.Public(cfg.WebBasePath(), hooks, forgejo.Discovery(issuerURL, keys), api.Handler()))
@@ -369,9 +374,9 @@ func startWorker(
 	steppers := &adapter.Steppers{Build: adapter.StepperBuilder(st)}
 	workers := river.NewWorkers()
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
-	// The gateway: runner pods' one route out, allowed by the hosts the
-	// current configuration names, and the model and similar-code endpoints
-	// a review's runner calls with its run token.
+	// The gateway is the one route out of runner pods, allowed by the hosts
+	// that the current configuration names. It also has the model and
+	// similar-code endpoints that a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
 	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
 	gw.AquaRegistry = &gateway.AquaRegistry{
@@ -419,9 +424,9 @@ func startWorker(
 	river.AddWorker(workers, &worker.Index{
 		Base: base, Executor: exec, Embedders: embedders, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})
-	// Every job this replica works carries its heartbeat, so the leader can
+	// Every job this replica works carries its heartbeat. So the leader can
 	// hand back the jobs of a replica that dies without a soft stop long
-	// before River's rescuer may.
+	// before River's rescuer can.
 	middleware := []rivertype.Middleware{
 		&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}, &worker.ForgeRateLimit{Logger: logger},
 	}
@@ -457,7 +462,7 @@ func startWorker(
 	return nil
 }
 
-// queueDrain is how long a stopping serve lets running jobs finish; a
+// queueDrain is how long a stopping serve lets running jobs finish. A
 // review still running then is cut and retried. queueStopHeadroom covers
 // what a cut review does before it hands its job back, each step at its
 // own bound: deleting the runner Job and reading its pod (20s each),
@@ -465,6 +470,7 @@ func startWorker(
 // still at it when the process is killed is not recorded by River and
 // waits on the rescuer instead. Completed runner answers are checkpointed
 // before merge and confidence calls, so rescue can resume those answers.
+//
 // eventsDrain then lets the Events of the runs the stop cut be written. The
 // three waits fit in the chart's 200s termination grace period.
 const (
@@ -473,7 +479,7 @@ const (
 	eventsDrain       = 5 * time.Second
 )
 
-// validate checks what command needs of cfg beyond the common set.
+// validate makes sure that cfg has what command needs beyond the common set.
 func validate(command config.Command, cfg *config.Config) error {
 	if command == config.CommandChatGPTLogin {
 		if cfg.ConfigFile == "" {
@@ -491,9 +497,9 @@ func storeOptions(cfg *config.Config, logger *slog.Logger) store.Options {
 }
 
 // linger is how long the public listener and the gateway keep accepting
-// connections once serve is told to stop: Kubernetes and the proxies in
-// front of it take a moment to stop routing to a terminating pod, and a
-// connection refused meanwhile is a webhook lost, since GitHub does not
+// connections once serve is told to stop. Kubernetes and the proxies in
+// front of it take a moment to stop routing to a terminating pod. A
+// connection refused meanwhile is a webhook lost, because GitHub does not
 // redeliver on its own, or a runner's model step retried.
 const linger = 5 * time.Second
 
@@ -507,19 +513,20 @@ func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivert
 	return &river.Config{
 		Logger: logger,
 		// Review and index workers set their own timeouts from the
-		// runner deadline; rescue must wait out the longest of them.
+		// runner deadline. Rescue must wait out the longest of them.
 		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
 		// ctx ending starts a soft stop: running jobs get this long before
 		// their contexts end.
 		SoftStopTimeout: queueDrain,
-		// A job its timeout cut ends its run on detached contexts, as a
-		// stopping one does, which queueStopHeadroom covers in the usual
-		// case: River would call every such job stuck after ten seconds.
+		// A job that its timeout cut ends its run on detached contexts, as a
+		// stopping job does. queueStopHeadroom covers this in the usual case.
+		// Without this value, River calls every such job stuck after ten
+		// seconds.
 		JobStuckThreshold: queueStopHeadroom,
-		// River's reindexer would run REINDEX on this pool, whose role owns
-		// none of River's indexes and has no MAINTAIN on its tables, so it
-		// could never succeed: an empty list keeps it off, where nil is
-		// River's default set.
+		// If enabled, River's reindexer runs REINDEX on this pool. The role of
+		// this pool owns none of River's indexes and has no MAINTAIN on its
+		// tables, so REINDEX can never succeed. An empty list keeps the
+		// reindexer off, where nil is River's default set.
 		ReindexerIndexNames: []string{},
 		Middleware:          middleware,
 		Queues:              workerQueues(cfg),
@@ -540,9 +547,9 @@ func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 
 // workQueues works the job queues until ctx ends, then waits for River's
 // soft stop to let running jobs finish or cut them. The queue's tables come
-// from migrations, which the leader runs; on a fresh database that may be
-// this very process a moment from now, or another replica, so it waits for
-// the schema rather than racing it.
+// from migrations, which the leader runs. On a fresh database, the leader
+// can be this very process a moment from now, or another replica. So
+// workQueues waits for the schema rather than racing it.
 func workQueues(
 	ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], cfg *config.Config, events *executor.Events, logger *slog.Logger,
 ) error {
@@ -557,8 +564,8 @@ func workQueues(
 	<-ctx.Done()
 	select {
 	case <-queue.Stopped():
-		// Every worker has returned, so no run records an Event now; those
-		// of the runs the stop cut may still be on their way.
+		// Every worker returned, so no run records an Event now. The Events of
+		// the runs that the stop cut can still be on their way.
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), eventsDrain)
 		defer cancel()
 		events.Wait(wctx)
@@ -589,11 +596,12 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 	return fmt.Errorf("river: start: %w", err)
 }
 
-// newExecutor builds the runner executor the configuration selects. A
-// Kubernetes one's templates decode first, then a runner Job built from
-// them is checked by the API: the Kubernetes types that read them are the
-// executor's, not the configuration's, so this is the earliest a bad value
-// can be refused rather than failing every Job.
+// newExecutor builds the runner executor that the configuration selects.
+// The templates of a Kubernetes executor decode first. Then the API makes
+// sure that a runner Job built from them is valid. The Kubernetes types
+// that read the templates are the executor's, not the configuration's. So
+// this is the earliest that a bad value can be refused rather than failing
+// every Job.
 func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
 	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
@@ -625,20 +633,20 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 		return nil, fmt.Errorf("runner.jobTemplate, runner.podTemplate: %w", err)
 	}
 	// The watch outlasts ctx, which a signal ends while runs still drain:
-	// startWorker stops it once the queues have stopped.
+	// startWorker stops it once the queues stop.
 	if err := kube.Start(ctx); err != nil {
 		return nil, err
 	}
 	return kube, nil
 }
 
-// lead runs for as long as this replica holds the leader lock: migrate,
-// apply the configuration and register the repositories its Apps reach,
-// then keep the backstop poll, onboarding and retention going. While the
-// configuration has an embedder it also keeps the index schema to it and
-// enqueues an onboarding index job for every repository that has none.
-// events, nil off Kubernetes, records on this replica's pod what became of
-// the configuration.
+// lead runs for as long as this replica holds the leader lock. It migrates,
+// applies the configuration, and registers the repositories that its Apps
+// reach. It then keeps the backstop poll, onboarding, and retention going.
+// While the configuration has an embedder, lead also keeps the index schema
+// to that embedder and enqueues an onboarding index job for every repository
+// that has none. events, which is nil off Kubernetes, records on this
+// replica's pod what became of the configuration.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
 	svc *ingest.Service, apps *worker.Forges, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
@@ -647,9 +655,10 @@ func lead(
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
 	}
-	// Every leader duty ends before lead returns and the lock is released,
-	// so the next leader never runs one alongside this replica's, unless the
-	// server dropped the lock: that goes unnoticed until the next ping.
+	// Every leader duty ends before lead returns and the lock is released, so
+	// the next leader never runs one alongside this replica's. The exception
+	// is when the server dropped the lock, which goes unnoticed until the next
+	// ping.
 	pollCtx, stopPoll := context.WithCancel(ctx)
 	var duties sync.WaitGroup
 	defer duties.Wait()
@@ -672,10 +681,10 @@ func lead(
 		rescuer.Runs = kube
 	}
 	duties.Go(func() { rescuer.Run(pollCtx) })
-	// And so is retention: model-call transcripts past their configured
-	// window and the indexes of repositories stopped past their grace
-	// (owner pool, bypassing row-level security), and expired dashboard
-	// sessions (app pool).
+	// And so is retention. It covers model-call transcripts past their
+	// configured window and the indexes of repositories stopped past their
+	// grace (owner pool, which bypasses row-level security). It also covers
+	// expired dashboard sessions (app pool).
 	retention := &worker.Retention{Store: st, Current: current, Logger: logger}
 	duties.Go(func() { retention.Run(pollCtx) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
@@ -697,11 +706,11 @@ func lead(
 	return nil
 }
 
-// ensureIndexSchema keeps the index table to the configuration's embedder,
-// rebuilding it, and so every repository's index, when the model,
-// dimension or document prompt changed: the dashboard asked the admin to
-// confirm that before saving it, and a configuration file edit makes it
-// without asking. Without an embedder the table is left as it is.
+// ensureIndexSchema keeps the index table to the configuration's embedder.
+// It rebuilds the table, and so every repository's index, when the model,
+// dimension, or document prompt changed. The dashboard asked the admin to
+// confirm that before saving it, and a configuration file edit makes the
+// change without asking. Without an embedder, the table is left as it is.
 func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *configfile.Embedding, logger *slog.Logger) error {
 	if e == nil {
 		return nil
@@ -715,13 +724,13 @@ func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *
 }
 
 // applyConfig applies f to the store once, on election, and calls
-// onApplied on success. A configuration the store refuses for its content
-// (store.IsConfigContentError) must not end leadership, or every replica
-// would crash-loop on it in turn: it is logged, raised on the gauge and
-// recorded as an Event on this replica's pod, the last applied state
-// stays, and the same content would be refused again, so it is not retried
-// before a restart. Any other error is returned, which ends this tenure:
-// the lock is released and competed for again.
+// onApplied on success. A configuration that the store refuses for its
+// content (store.IsConfigContentError) must not end leadership, or every
+// replica will crash-loop on it in turn. Such a configuration is logged,
+// raised on the gauge, and recorded as an Event on this replica's pod. The
+// last applied state stays. The same content will be refused again, so it
+// is not retried before a restart. Any other error is returned, which ends
+// this tenure: the lock is released and competed for again.
 func applyConfig(
 	ctx context.Context, f *configfile.File, apply func(context.Context, *configfile.File) error,
 	onApplied func(context.Context) error, gauge *server.ConfigErrorGauge, events *executor.Events, logger *slog.Logger,

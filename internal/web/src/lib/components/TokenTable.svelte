@@ -10,9 +10,9 @@
   import Pill from './Pill.svelte';
   import Time from './Time.svelte';
 
-  // revokePath is where a token's revocation is sent; onrevoked reloads the
-  // list after one; fallback is where focus goes once the dialog closes,
-  // when the token's row has gone with its Revoke button.
+  // revokePath is where a token's revocation is sent. onrevoked reloads the
+  // list after one. fallback is where focus goes once the dialog closes,
+  // when the token's row is gone with its Revoke button.
   let { tokens, owners = false, revokePath, onrevoked, fallback }: {
     tokens: APIToken[];
     owners?: boolean;
@@ -36,9 +36,9 @@
     confirmOpen = true;
   }
 
-  // After a revocation the list reloads before the dialog closes, so that
-  // focus goes to the fallback, not to a Revoke button about to leave with
-  // its row. One that fails leaves the list, and a token's reveal, as they
+  // After a revocation, the list reloads before the dialog closes. Focus then
+  // goes to the fallback, not to a Revoke button about to leave with its row.
+  // A revocation that fails leaves the list, and a token's reveal, as they
   // were.
   async function revoke(): Promise<void> {
     const t = revoking;

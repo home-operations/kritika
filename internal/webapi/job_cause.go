@@ -9,9 +9,9 @@ import (
 // the error: what the dashboard says in place of the error's own text.
 type JobCause string
 
-// CauseForgeUnavailable is GitHub not answering a call, or answering it
-// with a server error: nothing kritika or its admin can fix, and the job's
-// next attempt may well pass.
+// CauseForgeUnavailable is GitHub not answering a call, or answering it with
+// a server error: nothing kritika or its admin can fix, and the job's next
+// attempt can pass.
 const CauseForgeUnavailable JobCause = "forge_unavailable"
 
 // forgeServerError is go-github's text for a 5xx response: the request,

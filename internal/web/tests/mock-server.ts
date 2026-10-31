@@ -1,11 +1,11 @@
 // A dashboard to click through without a Go backend: serves a build of the
 // dashboard and answers the API from the same goldens the Playwright suite
-// mocks with, as an admin of the golden account. `mise run ui-mock` builds
-// into dist-mock/ (its own directory, so a test run rebuilding dist/ cannot
-// pull the files out from under an open page) and serves this on port 5544
-// for every interface, so a phone or laptop on the LAN can open it; `mise
-// watch ui-mock -r` rebuilds and restarts it on every source change. Writes
-// are accepted and forgotten, except the viewer's settings.
+// mocks with. The viewer is an admin of the golden account. `mise run
+// ui-mock` builds into dist-mock/ (its own directory, so a test run rebuilding
+// dist/ cannot pull the files out from under an open page). It serves this on
+// port 5544 for every interface, so a phone or laptop on the LAN can open it.
+// `mise watch ui-mock -r` rebuilds and restarts it on every source change.
+// Writes are accepted and forgotten, except the viewer's settings.
 import { createServer, type ServerResponse } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join } from 'node:path';

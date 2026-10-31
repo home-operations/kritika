@@ -18,7 +18,7 @@
   }: { file: DiffFile; findings: Finding[]; slug: string; pullUrl: string; open?: boolean; id: string } = $props();
   const contentId = $props.id();
 
-  // Findings keyed by the new-side line they point at; anything that points
+  // Findings keyed by the new-side line they point at. Anything that points
   // outside the hunks shown is listed under the file header instead.
   const byLine = $derived.by(() => {
     const m = new Map<number, Finding[]>();
@@ -28,8 +28,8 @@
   const shownLines = $derived(new Set(file.lines.map((l) => l.newNo).filter((n) => n !== null)));
   const orphans = $derived(findings.filter((f) => !shownLines.has(f.line)));
 
-  // The lines' tokens, once the file is open and its language has loaded;
-  // plain text until then, and for a language that is not highlighted.
+  // The lines' tokens, once the file is open and its language loads.
+  // Plain text until then, and for a language that is not highlighted.
   const tokens = new Highlighted(
     () => file,
     (f) => highlightDiff(f.lines, languageOf(f.path)),

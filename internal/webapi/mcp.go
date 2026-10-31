@@ -91,16 +91,16 @@ func (w noStore) Write(b []byte) (int, error) {
 
 func (w noStore) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// tool adapts read, which reads the account its arguments name, to a tool
-// handler: it resolves that account for the token's principal, and reports
-// an error as the dashboard's routes would answer it, logging one that is
-// unexpected.
+// tool adapts read, which reads the account that its arguments name, to a
+// tool handler. It resolves that account for the token's principal. It
+// reports an error as the dashboard's routes answer it, and it logs one that
+// is unexpected.
 func tool[In interface{ scope() scopeArgs }, Out any](
 	s *Server, read func(context.Context, *accountScope, In) (Out, error),
 ) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		// The SDK keeps a tool's context from ending with its request before
-		// protocol version 2026-07-28; a stateless request can deliver no
+		// protocol version 2026-07-28. A stateless request can deliver no
 		// answer once it ends, so its reads stop then, as a route's do.
 		if r, ok := ctx.Value(requestKey{}).(context.Context); ok {
 			var cancel context.CancelFunc
@@ -142,9 +142,9 @@ type repoArgs struct {
 func (a repoArgs) scope() scopeArgs { return scopeArgs{Repository: a.Repository, Forge: a.Forge} }
 
 // scopeAccount resolves the account a names for p: the account, or the
-// repository's owner, on a.Forge, or else on the one forge where p reads
-// an account of that name. As resolveAccount does, it reports an account
-// p may not read as missing.
+// repository's owner, on a.Forge, or else on the one forge where p reads an
+// account of that name. As resolveAccount does, it reports an account that p
+// cannot read as missing.
 func scopeAccount(file *configfile.File, p *auth.Principal, a scopeArgs) (*accountScope, error) {
 	name := a.Account
 	if a.Repository != "" {
@@ -201,7 +201,7 @@ func (a pageArgs) page() (store.Page, error) {
 	return p, nil
 }
 
-// findingFilterArgs narrow findings; each one left out keeps them all.
+// findingFilterArgs narrow findings. Each one left out keeps them all.
 type findingFilterArgs struct {
 	Severity  string `json:"severity,omitempty" jsonschema:"p0, p1 or p2"`
 	Category  string `json:"category,omitempty" jsonschema:"correctness, security, performance, reliability, maintainability or tests"`

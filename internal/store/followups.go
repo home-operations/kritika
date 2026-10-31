@@ -29,9 +29,9 @@ func FindFollowup(ctx context.Context, tx pgx.Tx, prID string, commentID int64, 
 	return state, nil
 }
 
-// RecentFollowupCounts counts answers and limit notices in the last hour,
-// using the same database clock that timestamps their rows. It holds the
-// pull request's follow-up lock until tx ends, so mentions handled at once
+// RecentFollowupCounts counts answers and limit notices in the last hour.
+// It uses the same database clock that timestamps their rows. It holds the
+// pull request's follow-up lock until tx ends. So mentions handled at once
 // count in turn, each after what the one before it recorded in its tx.
 func RecentFollowupCounts(ctx context.Context, tx pgx.Tx, prID string) (answered, notices int, err error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritika-followups:' || $1, 0))`, prID); err != nil {
@@ -60,8 +60,8 @@ type FollowupResult struct {
 
 // RecordFollowup keeps an existing reply when an update has no new reply ID.
 // The original creation time remains the basis for the hourly limit, but a
-// mention limited on a retry counts from then, as RecentFollowupCounts'
-// notices must for the limit notice to be posted once an hour.
+// mention limited on a retry counts from then. RecentFollowupCounts' notices
+// must count from then for the limit notice to be posted once an hour.
 // A failed attempt cannot overwrite an acknowledgment whose commit succeeded
 // even if its caller received an error from Commit.
 func RecordFollowup(ctx context.Context, tx pgx.Tx, r FollowupResult) error {

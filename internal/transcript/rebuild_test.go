@@ -151,9 +151,9 @@ func TestDecodeToolsNullIsUnchanged(t *testing.T) {
 	}
 }
 
-// TestRebuildParts: each part of a split review is a conversation of its
-// own, so its first step is no reset of the run's, and a part's later step
-// that starts over is one.
+// TestRebuildParts: each part of a split review is a conversation of its own.
+// So its first step is no reset of the run's, and a part's later step that
+// starts over is one.
 func TestRebuildParts(t *testing.T) {
 	part := func(n, step int, req model.StepRequest) StoredRow {
 		t.Helper()
@@ -170,10 +170,9 @@ func TestRebuildParts(t *testing.T) {
 		t.Fatalf("turns = %+v; want only part 1's second step reset", turns)
 	}
 
-	// Parts with prompts of their own, interleaved: part 2's first step
-	// shows its prompt, which differs from the conversation's, and part 1's
-	// second step leaves out the prompt it sent before, which its part had
-	// already.
+	// Parts with prompts of their own, interleaved: part 2's first step shows
+	// its prompt, which differs from the conversation's. Part 1's second step
+	// leaves out the prompt it sent before, which its part already had.
 	first := delta(State{}, stepReq("sys A", user("one")))
 	first.Response = Response{Text: "step", Stop: model.StopToolUse}
 	e := first.Encode()

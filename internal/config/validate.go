@@ -22,7 +22,8 @@ func init() {
 	validate.AddCustomType(func(field reflect.Value) any { return field.Int() }, ByteSize(0))
 }
 
-// Validate checks runtime bounds shared by the process and file loaders.
+// Validate makes sure that values meet the runtime bounds that the process
+// and file loaders share.
 func (s Settings) Validate() error {
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)
@@ -84,8 +85,8 @@ func (s Settings) Validate() error {
 	return validationError(v, extra...)
 }
 
-// checkS3Bucket checks where the gateway cache's bucket is, without
-// contacting the object store.
+// checkS3Bucket makes sure that the location of the gateway cache's bucket
+// is valid, without contacting the object store.
 func checkS3Bucket(endpoint, region, bucket string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Hostname() == "" || (u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP) ||
@@ -101,13 +102,14 @@ func checkS3Bucket(endpoint, region, bucket string) error {
 	return nil
 }
 
-// ValidateServe checks what serve needs beyond the common set.
+// ValidateServe makes sure that c has what serve needs beyond the common set.
 func (c *Config) ValidateServe() error {
 	v := validate.Struct(c)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
 	v.AddRule("ConfigFile,WebURL,GatewayURL", "required")
-	// Executor is a named string type; requiredIf compares it to a plain string.
+	// Executor is a named string type. requiredIf compares it to a plain
+	// string.
 	v.AddRule("RunnerDatabaseSecret,RunnerDatabaseSecretKey", "required").SetBeforeFunc(func(*validate.Validation) bool {
 		return c.Executor == ExecutorKubernetes
 	})

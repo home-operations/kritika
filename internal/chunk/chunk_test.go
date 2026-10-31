@@ -116,7 +116,7 @@ func TestParseGoDeclarations(t *testing.T) {
 		}
 	}
 	if _, ok := byName["Small"]; !ok {
-		// The const block is one declaration; its first name is the symbol.
+		// The const block is one declaration. Its first name is the symbol.
 		t.Errorf("const block not chunked: %+v", f.Decls)
 	}
 	if d := f.Enclosing([]int{21}, 100); d == nil || d.Symbol != "Build" {
@@ -202,9 +202,9 @@ func contains(ss []string, s string) bool {
 	return slices.Contains(ss, s)
 }
 
-// TestParseBounds: every parser has its memory budget, and a file built to
-// drive the parse stack deep falls back to fixed windows within the parse
-// timeout, which alone does not stop it.
+// TestParseBounds: every parser has its memory budget. A file built to drive
+// the parse stack deep falls back to fixed windows within the parse timeout,
+// which alone does not stop it.
 func TestParseBounds(t *testing.T) {
 	var p Parser
 	for _, path := range []string{"x.go", "x.js"} {

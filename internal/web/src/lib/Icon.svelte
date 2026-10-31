@@ -1,10 +1,10 @@
 <script lang="ts">
-  // Renders a 24×24 SVG path (from @mdi/js) inline, inheriting
+  // Renders a 24×24 SVG path (from @mdi/js) inline. The icon inherits
   // the surrounding text color. Tree-shaken: only imported icon paths ship.
   interface Props {
     path: string;
     size?: number;
-    label?: string; // when set, the icon is meaningful (role=img); otherwise decorative
+    label?: string; // when set, the icon is meaningful (role=img). Otherwise, it is decorative.
   }
   let { path, size = 18, label }: Props = $props();
 </script>

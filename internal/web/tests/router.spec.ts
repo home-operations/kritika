@@ -1,5 +1,5 @@
 // router.svelte.ts's module-level `$state` only compiles through Vite's
-// Svelte pipeline, so `parse()` can't be unit-tested by importing it into a
+// Svelte pipeline, so `parse()` cannot be unit-tested by importing it into a
 // plain Node/Playwright-test context. Instead we drive it end-to-end through
 // the browser: navigate to a hash and read back what the app actually parsed
 // it into, via the page host's `data-route` attribute

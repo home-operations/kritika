@@ -50,8 +50,8 @@ func checkRebuildOverUpdate(
 				return err
 			}
 			running.Store(push.Job.ID)
-			// Another replica has published its update but has yet to return
-			// from Work, so River still includes it in the live unique key.
+			// Another replica published its update but did not yet return
+			// from Work. So River still includes it in the live unique key.
 			if _, err := tx.Exec(ctx, `UPDATE river_job SET state = 'running', attempted_at = now(), attempt = 1 WHERE id = $1`, push.Job.ID); err != nil {
 				return err
 			}
@@ -129,7 +129,7 @@ func checkRebuildQueueFailure(
 			t.Error(err)
 		}
 	})
-	// Reject only catch-up inserts; the rebuild job and its error updates
+	// Reject only catch-up inserts. The rebuild job and its error updates
 	// must still reach River normally. Existing completed jobs are exempt.
 	if _, err := owner.Exec(ctx, `ALTER TABLE river_job ADD CONSTRAINT test_reject_index_catch_up
     CHECK (kind <> 'index' OR args->>'trigger' <> 'push') NOT VALID`); err != nil {
@@ -244,7 +244,7 @@ func checkUpdateOverRebuild(
     VALUES ($1, $2, $3, $4, $5, 'full', 'running', $6) RETURNING id`, account, repository, active.Commit, active.Model, active.Dims, active.IgnoreHash).Scan(&rebuilt); err != nil {
 				return err
 			}
-			// The rebuild covers the whole tree, as a full build would; only
+			// The rebuild covers the whole tree, as a full build does. Only
 			// its main.go is told apart.
 			if _, err := tx.Exec(ctx, `INSERT INTO index_chunks
     (account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding)
@@ -294,10 +294,10 @@ func indexJobDone(ctx context.Context, t *testing.T, st *store.Store, id int64) 
 	return attempt, snoozes
 }
 
-// checkIndexAt checks that run is the active generation at commit with
-// want in main.go, that no chunk is staged or outside it, and that two
-// embedding passes recorded their usage after since. It returns main.go's
-// text.
+// checkIndexAt makes sure that run is the active generation at commit with
+// want in main.go. It also makes sure that no chunk is staged or outside it,
+// and that two embedding passes recorded their usage after since. It returns
+// main.go's text.
 func checkIndexAt(
 	ctx context.Context, t *testing.T, st *store.Store, account, repository string, since time.Time, run, commit, want string,
 ) string {

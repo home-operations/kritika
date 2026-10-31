@@ -32,7 +32,7 @@ func RemainingParts(ctx context.Context, tx pgx.Tx, runID string) (*int, error) 
 }
 
 // ReportRemainingParts reports unfinished work and reads worker-owned capacity.
-// A runner may update remaining work, but cannot grant itself slots.
+// A runner can update remaining work, but cannot grant itself slots.
 func ReportRemainingParts(ctx context.Context, tx pgx.Tx, runID string, remaining int) (int, error) {
 	var slots int
 	err := tx.QueryRow(ctx, `UPDATE runner_runs SET parts_remaining = $2 WHERE id = $1 RETURNING part_slots`, runID, remaining).Scan(&slots)

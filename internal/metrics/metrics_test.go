@@ -156,9 +156,9 @@ func TestInitVectorSearch(t *testing.T) {
 	}
 }
 
-// TestDurationBucketsReachTheirLongest: the longest a review job, a runner
-// and an index job's wait for a model slot may take lands in a bucket, not
-// only in +Inf.
+// TestDurationBucketsReachTheirLongest: a review job, a runner, and an index
+// job's wait for a model slot each have a longest time that they can take.
+// That time lands in a bucket, not only in +Inf.
 func TestDurationBucketsReachTheirLongest(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := New(reg)

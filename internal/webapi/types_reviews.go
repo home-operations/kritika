@@ -94,8 +94,8 @@ type RunnerRun struct {
 	LogTail           string     `json:"logTail"`
 }
 
-// TimelineStep is one agent step. Part is the part of a split review it
-// was for, from 1; 0 when the review was not split.
+// TimelineStep is one agent step. Part is the part of a split review that it
+// was for, from 1. It is 0 when the review was not split.
 type TimelineStep struct {
 	Index        int      `json:"index"`
 	Part         int      `json:"part"`
@@ -106,15 +106,15 @@ type TimelineStep struct {
 	OutputTokens int64    `json:"outputTokens"`
 }
 
-// AgentRun is a review's tool loop. Result is the submitted
-// review JSON, null unless the agent submitted. SkillsOffered are the
-// repository skills the agent could read, SkillsOpened the ones it did;
-// CommandsOffered and CommandsRun the same for the run tool's commands.
+// AgentRun is a review's tool loop. Result is the submitted review JSON, null
+// unless the agent submitted. SkillsOffered are the repository skills that
+// the agent can read, SkillsOpened the ones it did read. CommandsOffered and
+// CommandsRun are the same for the run tool's commands.
 type AgentRun struct {
 	StopReason string `json:"stopReason"`
 	// ForcedBy is the limit that made the loop tell the agent to submit:
-	// steps, tokens or time; absent when it never did, and for a split
-	// review, whose parts each say.
+	// steps, tokens or time. It is absent when the loop never did, and for a
+	// split review, whose parts each say.
 	ForcedBy        string          `json:"forcedBy,omitzero"`
 	Steps           int             `json:"steps"`
 	ToolCalls       map[string]int  `json:"toolCalls"`
@@ -134,16 +134,16 @@ type AgentRun struct {
 	// CarriedReviewID is the review whose conversation the agent carried
 	// on, nil when it started afresh.
 	CarriedReviewID *string `json:"carriedReviewId"`
-	// Parts are how the parts of a split review ended, in part order;
-	// empty when it was not split.
+	// Parts are how the parts of a split review ended, in part order. It is
+	// empty when the review was not split.
 	Parts []AgentPart `json:"parts"`
 }
 
-// AgentPart is one part of a split review: its files, why its agent
-// stopped, with the error it ended on, its steps, and what its model calls
-// cost, 0 once they are swept. Reviewer is the reviewer it was for in a
-// review with several, and Full says it reviewed the whole change of a
-// review that built on the last one.
+// AgentPart is one part of a split review: its files, why its agent stopped,
+// with the error it ended on, its steps, and what its model calls cost, 0
+// once they are swept. Reviewer is the reviewer that it was for in a review
+// with several. Full says that it reviewed the whole change of a review that
+// built on the last one.
 type AgentPart struct {
 	ReusedFrom string   `json:"reusedFrom,omitzero"`
 	Agent      string   `json:"agent,omitzero"`
@@ -219,9 +219,9 @@ type ReviewDetail struct {
 	ContextPack *ContextPack `json:"contextPack"`
 }
 
-// ReviewDiff is a review's diff and, for an incremental one, the diff
-// since the prior review's head. Swept says the retention sweep has
-// emptied both. Pending means an active review has not written its pack yet.
+// ReviewDiff is a review's diff and, for an incremental one, the diff since
+// the prior review's head. Swept says that the retention sweep emptied both.
+// Pending means that an active review did not write its pack yet.
 type ReviewDiff struct {
 	Pending   bool   `json:"pending,omitzero"`
 	Diff      string `json:"diff"`
@@ -243,9 +243,10 @@ type ContextChunk struct {
 	Text      string `json:"text"`
 }
 
-// ReviewRaw is the review's inputs and output as stored: the repository
-// files and context the runner gathered, the agent's submitted review
-// (null for a review that did not submit one), and the runner's log tail.
+// ReviewRaw is the review's inputs and output as stored: the repository files
+// and context that the runner gathered, the agent's submitted review, and the
+// runner's log tail. The submitted review is null for a review that did not
+// submit one.
 type ReviewRaw struct {
 	RepoFiles map[string]string `json:"repoFiles"`
 	Stages    []ContextChunk    `json:"stages"`

@@ -69,10 +69,10 @@ func run() (err error) {
 	defer stop()
 	context.AfterFunc(ctx, stop)
 	// GOMEMLIMIT at 90% of the container's cgroup memory limit, unless
-	// GOMEMLIMIT is set or AUTOMEMLIMIT=off: the GC is otherwise unaware of
-	// the limit, so a parse of a large repository could OOM-kill the pod
-	// before it reclaims. On Linux it is refreshed, for a pod resized in
-	// place; elsewhere there is no cgroup, and each refresh would log its
+	// GOMEMLIMIT is set or AUTOMEMLIMIT=off. Otherwise the GC is unaware of the
+	// limit, so a parse of a large repository can OOM-kill the pod before the
+	// GC reclaims. On Linux, the limit is refreshed, for a pod resized in
+	// place. Elsewhere there is no cgroup, and each refresh will log its
 	// failure. Set logs its own failure, which leaves the limit as it was.
 	memOpts := []memlimit.Option{memlimit.WithLogger(logger)}
 	if runtime.GOOS == "linux" {
@@ -99,13 +99,13 @@ func run() (err error) {
 	g.Go(func() error { return mgmt.Run(ctx) })
 
 	// A runner pod gets the runner role's DSN under KRITIKA_DATABASE_URL:
-	// Open refuses one that could bypass row-level security or does not
+	// Open refuses one that can bypass row-level security or does not
 	// inherit that role.
 	st, err = store.OpenWhenReady(ctx, store.Options{AppURL: cfg.DatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
 	if err != nil {
 		return err
 	}
-	// A runner does one thing and exits; it never becomes ready.
+	// A runner does one thing and exits. It never becomes ready.
 	return runner.Run(ctx, st, spec, runspec.Secrets{
 		GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken, DatabaseToken: cfg.DatabaseToken,
 	}, logger)

@@ -16,9 +16,9 @@ type diffLines struct {
 	removed map[string][]int
 }
 
-// diffLine is one line of a hunk: its kind ('+', '-' or ' '), its text
-// without the marker, the paths of the file's two sides ("" for a side
-// that does not exist) and the line's number on each side.
+// diffLine is one line of a hunk: its kind ('+', '-' or ' ') and its text
+// without the marker. It also has the paths of the file's two sides ("" for a
+// side that does not exist) and the line's number on each side.
 type diffLine struct {
 	kind             byte
 	text             string
@@ -46,8 +46,8 @@ func walkDiff(diff string, fn func(diffLine)) {
 }
 
 // parseDiff walks a unified diff once. Paths are head-side for added and
-// shown, base-side for removed; a rename therefore keys the two sides
-// differently, which is what the two trees need.
+// shown, base-side for removed. So a rename keys the two sides differently,
+// which is what the two trees need.
 func parseDiff(diff string) diffLines {
 	d := diffLines{added: map[string][]int{}, shown: map[string]map[int]string{}, removed: map[string][]int{}}
 	walkDiff(diff, func(l diffLine) {
@@ -123,7 +123,7 @@ func (d *diffLines) show(path string, line int, text string) {
 	d.shown[path][line] = text
 }
 
-// runs groups sorted line numbers into ranges, merging neighbours closer
+// runs groups sorted line numbers into ranges. It merges neighbors closer
 // than gap lines.
 func runs(lines []int, gap int) [][2]int {
 	var out [][2]int
@@ -137,10 +137,10 @@ func runs(lines []int, gap int) [][2]int {
 	return out
 }
 
-// Hunks returns the head-side text of each hunk in a unified diff: added
-// and context lines, without the removed ones, so each string reads like
-// the region as it now is. Hunks are keyed by their head path; a deleted
-// file's have none and are left out.
+// Hunks returns the head-side text of each hunk in a unified diff: added and
+// context lines, without the removed ones, so each string reads like the
+// region as it now is. Hunks are keyed by their head path. A deleted file's
+// have none and are left out.
 func Hunks(diff string) []Hunk {
 	var out []Hunk
 	last := -1

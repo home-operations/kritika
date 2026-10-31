@@ -1,7 +1,7 @@
 // Package worker consumes River jobs. The review worker owns a review from
-// the moment its job starts until the runner answer is checkpointed: it
-// checks the head, spawns a runner, and hands preparation and delivery to
-// their own durable jobs.
+// the moment its job starts until the runner answer is checkpointed: it makes
+// sure that the head is current, spawns a runner, and hands preparation and
+// delivery to their own durable jobs.
 package worker
 
 import (
@@ -34,15 +34,15 @@ type Review struct {
 	Base
 	Executor executor.Executor
 	// Steppers reach the model that scores a review's confidence, and the
-	// review model that writes a split review's summary from its parts';
-	// they also pin the models a run is granted (pinModels).
+	// review model that writes a split review's summary from its parts'. They
+	// also pin the models that a run is granted (pinModels).
 	Steppers *adapter.Steppers
 	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
 	// long its run token outlives the Job's deadline.
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
-	// WebURL is the dashboard's origin, which the summary comment links
-	// back to for a re-run; nil leaves the link out.
+	// WebURL is the dashboard's origin, which the summary comment links back
+	// to for a re-run. nil leaves the link out.
 	WebURL *url.URL
 
 	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
@@ -56,7 +56,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	file := w.Current.Get()
 	logger := w.Logger.With("account", args.AccountID, "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
-	// River refunds shutdown attempts, so a checkpoint may exist on attempt one.
+	// River refunds shutdown attempts, so a checkpoint can exist on attempt
+	// one.
 	if resumed, err := w.publication().resumePublication(ctx, job, file, logger); resumed {
 		return err
 	}
@@ -80,10 +81,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	defer w.release(ctx, logger, admitted, settings.Models.Review)
 
-	// The status says the review is under way until its outcome replaces
-	// it, so a head is never silent while its runner works. It is set under
-	// the lock the start holds, so it never lands over the result of a
-	// newer review, which cannot start until it is set.
+	// The status says the review is under way until its outcome replaces it,
+	// so a head is never silent while its runner works. It is set under the
+	// lock that the start holds. So it never lands over the result of a newer
+	// review, which cannot start until it is set.
 	s, prior, err := w.start(ctx, args, pr, mergeBase, b.early.forgePatch, job.ID, func(ctx context.Context) {
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusPending, "kritika: review running"); err != nil {
 			logger.Warn("commit status not set", "error", err)
@@ -110,8 +111,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
 	publicationHandled := false
-	// An error on the last attempt has River discard the job, so nothing
-	// would replace the pending status.
+	// An error on the last attempt has River discard the job. Without the
+	// report below, nothing then replaces the pending status.
 	defer func() {
 		if publicationHandled || !reviewAttemptFailed(context.Cause(ctx), err, job.Attempt >= job.MaxAttempts) {
 			return
@@ -120,10 +121,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		defer cancel()
 		w.reportEnd(sctx, ended, reviewFailedDescription)
 	}()
-	// The pull request carries the bot's eyes while a review of it runs,
-	// then its thumbs up once one is posted or its confused face when one
-	// failed. An error on the last attempt leaves the review as it is, so
-	// it counts as failed here as the commit status says.
+	// The pull request carries the bot's eyes while a review of it runs. It
+	// then carries the bot's thumbs up once one is posted, or its confused
+	// face when one failed. An error on the last attempt leaves the review as
+	// it is, so it counts as failed here as the commit status says.
 	end := pullMarks(client, owner, repo, args.Number, logger).start(ctx)
 	defer func() {
 		if publicationHandled {
@@ -156,7 +157,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	chosen := chooseReviewers(eff, vars, prior, asked(args), admitted.maxTokens)
 	b.notes = append(b.notes, chosen.notes()...)
-	// Each reviewer may be split as the review alone could be; the run is sized for all of them.
+	// Each reviewer can be split as the review alone can be. The run is sized
+	// for all of them.
 	perReviewer := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
 	parts := perReviewer * chosen.count()
 	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID,
@@ -211,8 +213,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return err
 	}
 	if err != nil {
-		// Cancellation and timeout still reach afterRun; the review
-		// ends rather than staying running while River retries the job.
+		// Cancellation and timeout still reach afterRun. The review ends
+		// rather than staying running while River retries the job.
 		return w.finishEnded(ctx, ended, err)
 	}
 	phase := &publishPhase{
@@ -245,11 +247,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	return nil
 }
 
-// reviewBase is the commit a review of pr diffs its head against: the
-// merge base with its base branch. A merge commit or a fast-forward puts
-// the head in the base branch, where the merge base is the head itself and
-// shows no change; the one the pull request's last completed review used
-// still does, and is "" when there is none.
+// reviewBase is the commit that a review of pr diffs its head against: the
+// merge base with its base branch. A merge commit or a fast-forward puts the
+// head in the base branch, where the merge base is the head itself and shows
+// no change. The one that the pull request's last completed review used still
+// shows the change, and is "" when there is none.
 func reviewBase(ctx context.Context, st *store.Store, client forge.Client, accountID string, pr *pullRequest) (string, error) {
 	owner, repo := pr.ownerRepo()
 	base, err := client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA)
@@ -291,9 +293,9 @@ type earlyEnd struct {
 	// filter is the name of the exclusion that filtered the review out, ""
 	// for one without a name or a review no inclusion let in.
 	filter string
-	// carried is the confidence an unchanged patch keeps from its last
-	// review, nil when the repository asks for no score, and gate whether
-	// the repository has it fail the status.
+	// carried is the confidence that an unchanged patch keeps from its last
+	// review, nil when the repository asks for no score. gate is whether the
+	// repository has it fail the status.
 	carried *review.Confidence
 	gate    bool
 	started time.Time
@@ -301,17 +303,17 @@ type earlyEnd struct {
 	// created dates the review the end records, now when zero.
 	created time.Time
 	logger  *slog.Logger
-	// client reports the end on the head commit, under owner/repo; nil
-	// until begin has built it, when a superseded head is the only end.
+	// client reports the end on the head commit, under owner/repo. It is nil
+	// until begin builds it, when a superseded head is the only end.
 	client      forge.Client
 	owner, repo string
 }
 
-// end records a review that never ran as status, for reason, counts it,
-// and says so on the head commit, so a head no runner was spent on does
-// not read as one still waiting for its review. A failed one marks the
-// pull request as one whose review ran does. A retry of its job that ends
-// it the same way records and counts nothing new, but says so again.
+// end records a review that never ran as status, for reason, counts it, and
+// says so on the head commit. So a head that no runner was spent on does not
+// read as one still waiting for its review. A failed one marks the pull
+// request as one whose review ran does. A retry of its job that ends it the
+// same way records and counts nothing new, but says so again.
 func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus, reason string) error {
 	var recorded bool
 	err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
@@ -362,14 +364,13 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 	return "", ""
 }
 
-// skipUnchangedBot ends a bot's review whose rebase changed nothing,
-// before a lease or a runner is spent on it; the runner's own patch check
-// stays the backstop for what the forge cannot tell. A manual re-run is
-// never skipped, nor is a review the pull request owes someone (see
-// store.ReviewOwed): a push that replaced the run they asked for leaves
-// their request to this one. It returns the forge patch id the review
-// records, and whether it ended the review, with the error of recording
-// that.
+// skipUnchangedBot ends a bot's review whose rebase changed nothing, before a
+// lease or a runner is spent on it. The runner's own patch check stays the
+// backstop for what the forge cannot tell. A manual re-run is never skipped,
+// nor is a review that the pull request owes someone (see store.ReviewOwed):
+// a push that replaced the run they asked for leaves their request to this
+// one. It returns the forge patch id that the review records, and whether it
+// ended the review, with the error of recording that.
 func (w *Review) skipUnchangedBot(
 	ctx context.Context, e earlyEnd, forgeDiff func() (string, error), settings configfile.Settings,
 ) (string, bool, error) {
@@ -412,10 +413,10 @@ func (w *Review) skipUnchangedBot(
 }
 
 // begun is a review job past everything before its admission: its pull
-// request is current, a model slot was free when it looked, the forge
-// answered, the repository's .kritika.yaml is applied and does not skip it,
-// and it is not an unchanged bot rebase. notes are what the review's
-// summary says about the file.
+// request is current, a model slot was free when it looked, and the forge
+// answered. The repository's .kritika.yaml is applied and does not skip it,
+// and it is not an unchanged bot rebase. notes are what the review's summary
+// says about the file.
 type begun struct {
 	early              earlyEnd
 	eff                Effective
@@ -426,13 +427,13 @@ type begun struct {
 
 // begin takes a review job up to its admission, or ends it: superseded,
 // replaced, snoozed while every model slot is held, or skipped by the
-// merge-base .kritika.yaml or as an unchanged bot rebase.
-// The admin's model's slots are checked before any forge call, so a job
-// snoozed through a busy spell costs the forge nothing each time it wakes;
-// a repository, or a model route, that chooses another model then waits
-// for that model's slots too. Where the admin writes model routes, only
-// the model they pick is checked, once they are judged. It reports whether it ended the job, with
-// the error of that or of getting this far.
+// merge-base .kritika.yaml or as an unchanged bot rebase. begin reads the
+// slots of the admin's model before any forge call. So a job snoozed through
+// a busy spell costs the forge nothing each time it wakes. A repository, or a
+// model route, that chooses another model then waits for that model's slots
+// too. Where the admin writes model routes, begin reads the slots of only the
+// model that they pick, once they are judged. It reports whether it ended the
+// job, with the error of that or of getting this far.
 func (w *Review) begin(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
 	logger *slog.Logger, started time.Time,
@@ -448,23 +449,23 @@ func (w *Review) begin(
 		return begun{}, true, w.endHeadMoved(ctx, e, job)
 	}
 	// A retry of a job whose review a newer review replaced starts none in
-	// its place; start would refuse it too, after the forge calls below.
+	// its place. start also refuses it, after the forge calls below.
 	if replaced, err := w.jobReviewReplaced(ctx, args.AccountID, pr.id, job.ID); err != nil || replaced {
 		if replaced {
 			err = river.JobCancel(store.ErrReviewReplaced)
 		}
 		return begun{}, true, err
 	}
-	// A job queued while the pull request was open may only run, after a
-	// retry or a wait for a slot, once it is merged or closed. Only a
-	// review someone asked for runs; the store's word is taken before the
-	// forge's, which costs a slot wait nothing.
+	// A retry or a wait for a slot can delay a job queued while the pull
+	// request was open until after the pull request is merged or closed.
+	// Only a review that someone asked for then runs. The store's word is
+	// taken before the forge's, which costs a slot wait nothing.
 	if pr.closed != "" && args.Trigger != jobs.TriggerManual {
 		return begun{}, true, w.skipClosed(ctx, e, job.ID, nil, file, account)
 	}
 	settings := file.Settings(account)
-	// With routes the review's model is known only once they are judged,
-	// and a busy default must not hold back one routed to a free model.
+	// With routes, the review's model is known only once they are judged. A
+	// busy default must not hold back one routed to a free model.
 	routed := len(settings.Models.Routes) > 0
 	if !routed {
 		if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
@@ -529,11 +530,11 @@ func (w *Review) begin(
 }
 
 // endHeadMoved ends a review whose head moved before it started as
-// superseded. One someone asked for is owed to them until a review
-// completes (see store.ReviewOwed), and is dated by its job, when it was
-// asked: a job that wakes to find the head moved records its review
-// late, after the review that answered it or a newer request may have
-// started, and the date keeps it from outranking them.
+// superseded. A review that someone asked for is owed to them until a review
+// completes (see store.ReviewOwed). It is dated by its job, when it was
+// asked. A job that wakes to find the head moved records its review late,
+// possibly after the review that answered it or a newer request started. The
+// date keeps it from outranking them.
 func (w *Review) endHeadMoved(ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs]) error {
 	if e.args.Trigger == jobs.TriggerManual {
 		e.created = job.CreatedAt
@@ -545,12 +546,11 @@ func (w *Review) endHeadMoved(ctx context.Context, e earlyEnd, job *river.Job[jo
 // begin saw one free.
 var errNoSlot = errors.New("worker: every model slot is held")
 
-// admit settles what a review may spend before its runner starts: its
-// runner spends against the model through the gateway, so it takes its
-// model lease and passes the account's caps (see agentAdmit), and is
-// snoozed if the slot begin saw free has been taken since. It reports
-// whether it ended the job, with the error of admitting or of recording
-// that.
+// admit settles what a review can spend before its runner starts. Its runner
+// spends against the model through the gateway, so it takes its model lease
+// and passes the account's caps (see agentAdmit). It is snoozed if the slot
+// that begin saw free was taken since. It reports whether it ended the job,
+// with the error of admitting or of recording that.
 func (w *Review) admit(
 	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
 	settings configfile.Settings,
@@ -573,8 +573,8 @@ func (w *Review) admit(
 }
 
 // slotsHeld snoozes the job when every one of the account's slots on the
-// review model settings name is held, and reports whether it did, with the
-// error that snoozes it. Slots it cannot count let the review go on.
+// review model that settings names is held. It reports whether it did, with
+// the error that snoozes it. Slots that it cannot count let the review go on.
 func (w *Review) slotsHeld(
 	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], accountID string, settings configfile.Settings,
 ) (bool, error) {
@@ -590,12 +590,12 @@ func (w *Review) slotsHeld(
 	return true, w.snooze(ctx, e, job, ref)
 }
 
-// A review that has not started its runner is snoozed while every model
-// slot is held, between snoozeMin and snoozeMax, and gives its worker back
-// to the queue meanwhile. A slot let go before then wakes it (see
-// store.SlotWaitKey and SlotWake); the snooze bounds the wait when none
-// is, as when a holder died and its lease expired, or River dropped the
-// event of the saved snooze.
+// A review that did not start its runner is snoozed while every model slot is
+// held, between snoozeMin and snoozeMax. It gives its worker back to the
+// queue meanwhile. A slot let go before then wakes it (see store.SlotWaitKey
+// and SlotWake). The snooze bounds the wait when no slot is let go. For
+// example, a holder died and its lease expired, or River dropped the event of
+// the saved snooze.
 const (
 	snoozeMin = 5 * time.Second
 	snoozeMax = time.Minute
@@ -625,10 +625,10 @@ func (w *Review) snooze(ctx context.Context, e earlyEnd, job *river.Job[jobs.Rev
 	return river.JobSnooze(d)
 }
 
-// clearSlotWait clears the mark an earlier snooze for a slot left on the
-// job, so a release does not wake it while it waits out a retry or a
-// publication in place of a review that waits for a slot. snooze sets it again
-// when this attempt finds every slot held.
+// clearSlotWait clears the mark that an earlier snooze for a slot left on the
+// job. So a release does not wake the job while it waits out a retry or a
+// publication instead of a slot. snooze sets it again when this attempt finds
+// every slot held.
 func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs.ReviewArgs]) {
 	var meta map[string]any
 	if json.Unmarshal(job.Metadata, &meta) != nil || meta[store.SlotWaitKey] == nil {
@@ -642,11 +642,10 @@ func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs
 	}
 }
 
-// botPatch is the patch id of a bot pull request's diff as its forge
-// reports it, and whether the pull request's last completed
-// review had the same one. A diff the forge will not give, or a review
-// before it without one, tells nothing: the pull request is then reviewed
-// as usual.
+// botPatch is the patch id of a bot pull request's diff as its forge reports
+// it. It also says whether the pull request's last completed review had the
+// same one. A diff that the forge will not give, or a review before it
+// without one, tells nothing: the pull request is then reviewed as usual.
 func (w *Review) botPatch(
 	ctx context.Context, logger *slog.Logger, forgeDiff func() (string, error), accountID string, pr *pullRequest,
 ) (patch string, unchanged bool) {
@@ -670,18 +669,18 @@ func (w *Review) botPatch(
 
 // publishWait is how long a review whose start found the pull request's
 // publication lock held waits before it tries again: the older review is
-// posting, which is brief, and ends completed or not before the new one
-// may cancel it.
+// posting, which is brief, and ends completed or not before the new one can
+// cancel it.
 const publishWait = 5 * time.Second
 
-// start records the review and its runner run, canceling the pull
-// request's older active reviews (see store.StartReview), and reads the
-// last completed review the new one may build on. It holds the pull
-// request's publication lock meanwhile, so an older review posting its
-// result either finishes before the new one starts or never posts: it is
-// store.ErrPublicationBusy while one does. started, when not nil, runs
-// under the lock once the review is recorded, for what the new review
-// says of its head before any newer one may start.
+// start records the review and its runner run, and cancels the pull request's
+// older active reviews (see store.StartReview). It reads the last completed
+// review that the new one can build on. It holds the pull request's
+// publication lock meanwhile. So an older review posting its result either
+// finishes before the new one starts or never posts: it is
+// store.ErrPublicationBusy while one does. started, when not nil, runs under
+// the lock once the review is recorded. It is for what the new review says of
+// its head before any newer one can start.
 func (w *Review) start(
 	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase, forgePatchID string, jobID int64,
 	started func(context.Context),

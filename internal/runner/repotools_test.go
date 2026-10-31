@@ -130,10 +130,10 @@ func TestPlainHTTP(t *testing.T) {
 	}
 }
 
-// TestRepoToolsInstallThroughCache: a repository's tool, its download
-// checked against the digest the GitHub API keeps of it, reaches the
-// gateway as a plain HTTP request naming that digest; should the install
-// fail there, it is made once more over HTTPS around the cache. Without a
+// TestRepoToolsInstallThroughCache: a repository's tool reaches the gateway
+// as a plain HTTP request naming a digest. The runner makes sure that the
+// download matches that digest, which the GitHub API keeps. If the install
+// fails there, it is made once more over HTTPS around the cache. Without a
 // cache, the tool installs over HTTPS alone. Home is read-only again after.
 func TestRepoToolsInstallThroughCache(t *testing.T) {
 	useTestRegistry(t)
@@ -316,11 +316,11 @@ func TestLockTree(t *testing.T) {
 	}
 }
 
-// standInGateway is the gateway for a repository tool's install: it
-// answers the GitHub API for acme/repo-tool's release, whose asset has
-// payload's digest, hands serve a request for the tool's download and
-// every CONNECT, and refuses the rest. env is the commands' environment
-// with it as both proxies.
+// standInGateway is the gateway for a repository tool's install. It answers
+// the GitHub API for acme/repo-tool's release, whose asset has payload's
+// digest. It hands serve a request for the tool's download and every CONNECT,
+// and it refuses the rest. env is the commands' environment with it as both
+// proxies.
 func standInGateway(t *testing.T, payload []byte, serve func(w http.ResponseWriter, r *http.Request)) (env []string) {
 	t.Helper()
 	release := map[string]any{"assets": []any{map[string]any{"name": "repo-tool", "digest": fmt.Sprintf("sha256:%x", sha256.Sum256(payload))}}}
@@ -384,7 +384,7 @@ func TestRepoToolsLinkFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A file where bin should be fails every link.
+	// A file where bin must be fails every link.
 	if err := os.Remove(r.bin); err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestRepoToolsCanceledAsInstalled(t *testing.T) {
 }
 
 // cancelOnClose ends a context once a response's body is closed, as the
-// download is when the install has read it.
+// download is after the install reads it.
 type cancelOnClose struct {
 	base   http.RoundTripper
 	cancel context.CancelFunc

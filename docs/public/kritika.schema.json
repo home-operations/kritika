@@ -8,7 +8,7 @@
   "properties": {
     "enabled": {
       "type": "boolean",
-      "description": "false stops reviews, follow-ups and indexing; true cannot turn a disabled repository on."
+      "description": "false stops reviews, follow-ups and indexing. true cannot turn a disabled repository on."
     },
     "review": {
       "type": "object",
@@ -17,19 +17,19 @@
       "properties": {
         "model": {
           "$ref": "#/$defs/model",
-          "description": "The model the default pass runs on; replaces the admin's, and the admin's agents that replace the default pass with it. An agent of review.agents without categories picks another for some pull requests."
+          "description": "The model the default pass runs on. It replaces the admin's model, and with it the admin's agents that replace the default pass. An agent of review.agents without categories picks another model for some pull requests."
         },
         "fallback": { "$ref": "#/$defs/model" },
         "effort": {
           "$ref": "#/$defs/effort",
-          "description": "How hard the review model, and the fallback that takes its step, reasons; replaces the admin's."
+          "description": "How hard the review model, and the fallback that takes its step, reasons. It replaces the admin's value."
         },
         "fixes": {
           "type": "boolean",
-          "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
+          "description": "true requires a suggested fix on every finding. false cannot lift the admin's requirement."
         },
         "approve": {
-          "description": "true approves a pull request whose review finds nothing at P0 or P1, or, with a confidence score, whose score reaches the threshold and whose risk is within confidence.risk; a later review that no longer allows it dismisses the approval; replaces the admin's. A block with when approves only a pull request one of its conditions holds for, beside the admin's conditions.",
+          "description": "true approves a pull request whose review finds nothing at P0 or P1. With a confidence score, true approves one whose score reaches the threshold and whose risk is within confidence.risk. A later review that no longer allows it dismisses the approval. It replaces the admin's value. A block with when approves only a pull request that one of its conditions holds for, beside the admin's conditions.",
           "anyOf": [
             { "type": "boolean" },
             {
@@ -40,7 +40,7 @@
                 "when": {
                   "type": "array",
                   "minItems": 1,
-                  "description": "Conditions, one of which a pull request must hold for to be approved, as a rule's; an approval of one they stop holding for is dismissed.",
+                  "description": "Conditions, as a rule's. One of them must hold for a pull request to be approved. An approval of a pull request that they stop holding for is dismissed.",
                   "items": { "$ref": "#/$defs/when" }
                 }
               }
@@ -49,11 +49,11 @@
         },
         "diagram": {
           "type": "boolean",
-          "description": "true has the summary draw the flow the change adds or alters as a Mermaid diagram; replaces the admin's."
+          "description": "true has the summary draw the flow that the change adds or alters as a Mermaid diagram. It replaces the admin's value."
         },
         "agents": {
           "type": "array",
-          "description": "Agents of the repository's own. One with categories reviews for them beside the default pass and the admin's agents; under the name of an admin's, it only adds rules and skills to it. One without replaces the default pass when its conditions hold, the first that holds doing; the file's replace the admin's, whole.",
+          "description": "Agents of the repository's own. An agent with categories reviews for them beside the default pass and the admin's agents. Under the name of an admin's agent, it only adds rules and skills to that agent. An agent without categories replaces the default pass when its conditions hold, and the first that holds does so. The file's agents of this kind replace the admin's, whole.",
           "maxItems": 8,
           "items": {
             "type": "object",
@@ -102,7 +102,7 @@
               },
               "categories": {
                 "type": "array",
-                "description": "The only finding categories the agent may report: written, it reviews beside the default pass; unset, it replaces the default pass.",
+                "description": "The only finding categories that the agent can report. When written, the agent reviews beside the default pass. When unset, it replaces the default pass.",
                 "uniqueItems": true,
                 "items": {
                   "enum": [
@@ -117,19 +117,19 @@
               },
               "model": {
                 "$ref": "#/$defs/model",
-                "description": "The agent's model; a specialist's unset is the default pass's, as the agents picked it. An agent without categories needs one."
+                "description": "The agent's model. When unset, a specialist's model is the default pass's, as the agents picked it. An agent without categories needs one."
               },
               "fallback": {
                 "$ref": "#/$defs/model",
-                "description": "The model that takes a step the agent's model fails; when unset, review.fallback's for an agent without categories, and for a specialist the default pass's, as the agents picked it."
+                "description": "The model that takes a step that the agent's model fails. When unset, it is review.fallback's for an agent without categories, and the default pass's for a specialist, as the agents picked it."
               },
               "effort": {
                 "$ref": "#/$defs/effort",
-                "description": "How hard the agent's models reason; when unset, review.effort's for an agent without categories, and for a specialist the default pass's, as the agents picked it."
+                "description": "How hard the agent's models reason. When unset, it is review.effort's for an agent without categories, and the default pass's for a specialist, as the agents picked it."
               },
               "paths": {
                 "type": "array",
-                "description": "The changed files a specialist reads, every one when unset; a pull request that changes none of them is not reviewed by it.",
+                "description": "The changed files that a specialist reads, every one when unset. The specialist does not review a pull request that changes none of them.",
                 "items": { "$ref": "#/$defs/glob" }
               },
               "when": {
@@ -152,7 +152,7 @@
               "agent": {
                 "type": "object",
                 "additionalProperties": false,
-                "description": "Bounds of a specialist's agent, each part of it in a split review; they may lower the repository's and never raise them.",
+                "description": "Bounds of a specialist's agent, each part of it in a split review. They can lower the repository's bounds and never raise them.",
                 "properties": {
                   "steps": { "type": "integer", "minimum": 1 },
                   "tokens": { "type": "integer", "minimum": 1 },
@@ -174,24 +174,24 @@
       "properties": {
         "model": {
           "$ref": "#/$defs/model",
-          "description": "The model that scores a reviewed pull request, replacing the admin's."
+          "description": "The model that scores a reviewed pull request. It replaces the admin's model."
         },
         "fallback": {
           "$ref": "#/$defs/model",
-          "description": "The model that takes the scorer's call when the confidence model fails, replacing the admin's."
+          "description": "The model that takes the scorer's call when the confidence model fails. It replaces the admin's model."
         },
         "effort": {
           "$ref": "#/$defs/effort",
-          "description": "How hard the confidence model, and the fallback that takes its call, reasons; replaces the admin's."
+          "description": "How hard the confidence model, and the fallback that takes its call, reasons. It replaces the admin's value."
         },
         "threshold": {
           "type": "integer",
           "minimum": 0,
           "maximum": 5,
-          "description": "The score a pull request must reach to be approved and, with gate, for its commit status to pass, replacing the admin's."
+          "description": "The score that a pull request must reach to be approved and, with gate, for its commit status to pass. It replaces the admin's value."
         },
         "gate": {
-          "description": "true fails the commit status under the threshold, so it can be a required check; replaces the admin's. A block with when gates only a pull request one of its conditions holds for; another shows its score and passes.",
+          "description": "true fails the commit status under the threshold, so it can be a required check. It replaces the admin's value. A block with when gates only a pull request that one of its conditions holds for. Another pull request shows its score and passes.",
           "anyOf": [
             { "type": "boolean" },
             {
@@ -202,7 +202,7 @@
                 "when": {
                   "type": "array",
                   "minItems": 1,
-                  "description": "Conditions, one of which a pull request must hold for to be gated, as a rule's.",
+                  "description": "Conditions, as a rule's. One of them must hold for a pull request to be gated.",
                   "items": { "$ref": "#/$defs/when" }
                 }
               }
@@ -211,11 +211,11 @@
         },
         "risk": {
           "enum": ["low", "medium", "high", "critical"],
-          "description": "The highest risk a change may be rated and still be approved; it may only lower the admin's."
+          "description": "The highest risk that a change can be rated and still be approved. It can only lower the admin's value."
         },
         "when": {
           "type": "array",
-          "description": "Conditions, one of which a pull request must hold for to be scored, as a rule's, beside the admin's; one they leave unscored is reviewed without a score and, where the admin asks for one, not approved.",
+          "description": "Conditions, as a rule's, beside the admin's. One of them must hold for a pull request to be scored. A pull request that they leave unscored is reviewed without a score and, where the admin asks for a score, not approved.",
           "items": { "$ref": "#/$defs/when" }
         }
       }
@@ -239,7 +239,7 @@
     },
     "ignore": {
       "type": "array",
-      "description": "Globs of paths kritika leaves out of a review's context and of the index, added to the admin's; a pull request that changes only ignored paths is skipped.",
+      "description": "Globs of paths that kritika leaves out of a review's context and of the index, added to the admin's. A pull request that changes only ignored paths is skipped.",
       "items": { "$ref": "#/$defs/glob" }
     },
     "comments": {
@@ -253,17 +253,17 @@
         },
         "summary": {
           "anyOf": [{ "const": "" }, { "$ref": "#/$defs/path" }],
-          "description": "A repository file, read from the merge base, that replaces the summary comment's template; \"\" restores the built-in one where the admin set a template."
+          "description": "A repository file, read from the merge base, that replaces the summary comment's template. \"\" restores the built-in one where the admin set a template."
         },
         "finding": {
           "anyOf": [{ "const": "" }, { "$ref": "#/$defs/path" }],
-          "description": "A repository file, read from the merge base, that replaces an inline finding's template; \"\" restores the built-in one where the admin set a template."
+          "description": "A repository file, read from the merge base, that replaces an inline finding's template. \"\" restores the built-in one where the admin set a template."
         }
       }
     },
     "rules": {
       "type": "array",
-      "description": "Checks the review makes, added after the admin's. A rule may not reuse the id of an admin's.",
+      "description": "Checks the review makes, added after the admin's. A rule cannot reuse the id of an admin's rule.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -323,12 +323,12 @@
       "properties": {
         "paths": {
           "type": "array",
-          "description": "The directories whose folders each hold a skill, replacing the admin's; .agents/skills and .claude/skills when no one sets them, and an empty list turns skills off.",
+          "description": "The directories whose folders each hold a skill. They replace the admin's. They are .agents/skills and .claude/skills when no one sets them, and an empty list turns skills off.",
           "items": { "$ref": "#/$defs/path" }
         },
         "scope": {
           "type": "object",
-          "description": "Narrows when a skill is offered, by the skill's name; added to the admin's, a skill named in both taking this file's.",
+          "description": "Narrows when a skill is offered, by the skill's name. It is added to the admin's scopes, and a skill named in both takes this file's.",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
@@ -354,7 +354,7 @@
     },
     "tools": {
       "type": "object",
-      "description": "The tools the repository's reviews may run, over the image's commands: packages of the aqua registry (https://github.com/aquaproj/aqua-registry), each named aqua:<package>, such as aqua:home-operations/flate, with the tag of the release to run. A tool installs on its first use, checked first against the digest GitHub keeps of the release's asset, else the checksum file the registry names. Only packages that download a release's asset or a file at a URL are offered; one that builds from source, or whose download nothing published apart from it gives a checksum for, is not.",
+      "description": "The tools that the repository's reviews can run, over the image's commands. These are packages of the aqua registry (https://github.com/aquaproj/aqua-registry), each named aqua:<package>, such as aqua:home-operations/flate, with the tag of the release to run. A tool installs on its first use. The runner first makes sure that the download matches the digest GitHub keeps of the release's asset, else the checksum file that the registry names. Only packages that download a release's asset or a file at a URL are offered. A package that builds from source is not offered. A package is also not offered when nothing published apart from its download gives a checksum for that download.",
       "propertyNames": {
         "pattern": "^aqua:[A-Za-z0-9][A-Za-z0-9._~-]*(/[A-Za-z0-9~][A-Za-z0-9._~-]*)+$"
       },
@@ -375,7 +375,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "What the condition is called where a skip or an agent names it. In a trigger list it is unique in the list, and may not be one an admin's condition has."
+          "description": "What the condition is called where a skip or an agent names it. In a trigger list it is unique in the list, and cannot be one that an admin's condition has."
         },
         "expr": {
           "type": "string",
@@ -411,7 +411,7 @@
     },
     "effort": {
       "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", ""],
-      "description": "A reasoning effort, lowest first, or \"\" to leave it to the provider. Every provider takes low to max; the Anthropic Messages API has no level under low and gets none and minimal as low."
+      "description": "A reasoning effort, lowest first, or \"\" to leave it to the provider. Every provider takes low to max. The Anthropic Messages API has no level under low and gets none and minimal as low."
     },
     "path": {
       "type": "string",

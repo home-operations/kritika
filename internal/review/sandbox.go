@@ -36,42 +36,42 @@ const (
 	// maxIterations is the render-wide budget of loop iterations, charged
 	// in full when a loop starts, so nested loops cannot multiply it.
 	maxIterations = 20_000
-	// maxCallBytes bounds one function call: its arguments plus an
-	// estimate of what it allocates, computed from them before the call
-	// runs so amplifying functions fail before they allocate, and its
-	// result.
+	// maxCallBytes bounds one function call: its arguments plus an estimate
+	// of what it allocates, and its result. The estimate is computed from the
+	// arguments before the call runs, so that amplifying functions fail
+	// before they allocate.
 	maxCallBytes = 4 * MaxRenderBytes
-	// maxMeasureDepth bounds how deep a value is measured; anything deeper
+	// maxMeasureDepth bounds how deep a value is measured. Anything deeper
 	// counts as one node.
 	maxMeasureDepth = 64
-	// nodeBytes is what a slice element, map entry or struct field is
-	// counted as beyond its contents, so a large shared structure is
-	// refused as if it were copied.
+	// nodeBytes is what a slice element, map entry, or struct field is
+	// counted as beyond its contents. So a large shared structure is refused
+	// as if it were copied.
 	nodeBytes = 8
 )
 
-// Names the sandbox adds to every template. Templates may not use
-// identifiers with this prefix, so they cannot call the guards themselves.
+// Names the sandbox adds to every template. Templates cannot use identifiers
+// with this prefix, so they cannot call the guards themselves.
 const (
 	reservedPrefix = "__kritika_"
 	iterName       = reservedPrefix + "iter"
 	templateName   = "template"
 )
 
-// baseFuncs are the functions a template may call: sprout's registries
-// less those that reach outside the render (env, filesystem, network),
-// that make a render unrepeatable (random, uniqueid) or that have no use
-// in a comment (checksum, crypto), and less those that change a dict in
-// place (set, unset and the merges), which could make it contain itself:
-// printing such a dict overflows the stack, which no recover survives.
-// The time registry stays, for formatting dates, though its now and
-// dateAgo read the clock.
-// printf, print and println are redefined so the guard sees them like any
-// other function.
+// baseFuncs are the functions that a template can call: sprout's registries
+// less some. This leaves out those that reach outside the render (env,
+// filesystem, network) and those that make a render unrepeatable (random,
+// uniqueid). It leaves out those that have no use in a comment (checksum,
+// crypto). It also leaves out those that change a dict in place (set, unset
+// and the merges), which can make it contain itself: printing such a dict
+// overflows the stack, which no recover survives. The time registry stays,
+// for formatting dates, though its now and dateAgo read the clock. printf,
+// print, and println are redefined so that the guard sees them like any other
+// function.
 var baseFuncs = func() template.FuncMap {
-	// sprout's notices, a warning on each call of a deprecated function,
-	// would go to a text handler of its own on stdout, as often as a
-	// template loops.
+	// sprout's notices are a warning on each call of a deprecated function.
+	// Without this logger, they go to a text handler of its own on stdout, as
+	// often as a template loops.
 	h := sprout.New(sprout.WithLogger(slog.New(slog.DiscardHandler)))
 	if err := h.AddRegistries(
 		std.NewRegistry(),
@@ -96,8 +96,8 @@ var baseFuncs = func() template.FuncMap {
 	return fm
 }()
 
-// execute parses src, hardens it and renders it against data in a
-// sandbox, writing at most limit bytes.
+// execute parses src, hardens it, and renders it against data in a sandbox.
+// It writes at most limit bytes.
 func execute(ctx context.Context, src string, data any, limit int) (string, error) {
 	g := &guard{ctx: ctx}
 	t, err := template.New(templateName).Funcs(g.funcs()).Parse(src)
@@ -219,9 +219,9 @@ func (g *guard) funcs() template.FuncMap {
 	return fm
 }
 
-// wrap returns fn behind a check of the deadline, of its arguments and of
-// its result. A failed check panics; text/template recovers a panic in a
-// function call into an execution error.
+// wrap returns fn behind a check of the deadline, of its arguments and of its
+// result. A failed check panics. text/template recovers a panic in a function
+// call into an execution error.
 func (g *guard) wrap(name string, fn reflect.Value) any {
 	t := fn.Type()
 	estimate := estimates[name]
@@ -408,20 +408,20 @@ func length(v reflect.Value) int {
 	return 0
 }
 
-// printfVerb consumes the whole directive so %% is not read as the start
-// of another verb, capturing the argument index that may precede the
-// width (1), the precision (3) or the verb (5), the width (2) and the
-// precision (4) themselves, and the verb (6).
+// printfVerb consumes the whole directive so that %% is not read as the start
+// of another verb. It captures the argument index that can precede the width
+// (1), the precision (3), or the verb (5). It also captures the width (2) and
+// the precision (4) themselves, and the verb (6).
 var printfVerb = regexp.MustCompile(`(?s)%[-+# 0]*(?:\[(\d+)\])?(\*|\d+)?(?:\.(?:\[(\d+)\])?(\*|\d+)?)?(?:\[(\d+)\])?(.)`)
 
-// printfAllocation is what printf writes beyond its arguments: for each
-// verb, its argument's bytes once more, since the output holds them, and
-// the verb's width and precision for every leaf of the argument, since
-// fmt pads each element of a composite. Verbs take the arguments in
-// turn, an index choosing one outright, so an argument used twice is
-// charged twice; a * width or precision takes its value from an argument
-// the estimate cannot see, so it is refused. Each argument is measured
-// once, and its leaves counted only under a width.
+// printfAllocation is what printf writes beyond its arguments. For each verb,
+// this is its argument's bytes once more, since the output holds them. It is
+// also the verb's width and precision for every leaf of the argument, since
+// fmt pads each element of a composite. Verbs take the arguments in turn, an
+// index choosing one outright, so an argument used twice is charged twice. A
+// * width or precision takes its value from an argument that the estimate
+// cannot see, so it is refused. Each argument is measured once, and its
+// leaves counted only under a width.
 func printfAllocation(a []reflect.Value) int {
 	args := a[1]
 	sizes := make([]int, args.Len())

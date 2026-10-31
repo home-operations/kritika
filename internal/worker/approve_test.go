@@ -113,9 +113,9 @@ func TestApprove(t *testing.T) {
 }
 
 // TestApproveOutOfScope: a pull request review.approve's conditions do not
-// hold for is never approved, whatever its verdict: an approval the bot
-// gave it is dismissed and said to be, and one it never had gets no word.
-// Conditions that could not be judged leave the approval as it stands.
+// hold for is never approved, whatever its verdict: an approval the bot gave
+// it is dismissed and said to be, and one it never had gets no word.
+// Conditions that kritika failed to judge leave the approval as it stands.
 func TestApproveOutOfScope(t *testing.T) {
 	t.Parallel()
 	const reason = "review.approve's conditions no longer hold for this pull request"

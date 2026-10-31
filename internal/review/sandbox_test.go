@@ -11,8 +11,8 @@ import (
 
 func TestPrintfAllocation(t *testing.T) {
 	// items is a list whose bytes fit the call twice over but not three
-	// times, so a width charged against its leaves instead of the scalar
-	// it pads would refuse the call. deep is a small value nested past
+	// times. So a width charged against its leaves instead of the scalar that
+	// it pads refuses the call. deep is a small value nested past
 	// maxMeasureDepth.
 	items := make([]int, 12000)
 	for i := range items {

@@ -1,8 +1,8 @@
 //go:build bench
 
 // Command floors sets the bench's floors from the reports of two or more
-// runs on the same commit, scored by the same judge, as bench.FloorsFrom
-// does, and writes them where the bench reads them.
+// runs on the same commit, scored by the same judge. It does this as
+// bench.FloorsFrom does. It writes the floors where the bench reads them.
 //
 //	go run -tags bench ./bench/cmd/floors -out bench/floors.json bench/results/a.json bench/results/b.json
 package main

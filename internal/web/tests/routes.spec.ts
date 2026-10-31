@@ -1,7 +1,7 @@
 // Pure round-trip and malformed-input coverage for parse()/href() in
-// routes.ts. These are plain functions with no Svelte runes, so -- unlike
-// router.spec.ts, which exercises the $state-based router.svelte.ts through
-// a real page -- this file calls them directly and needs no browser.
+// routes.ts. These are plain functions with no Svelte runes, so this file
+// calls them directly and needs no browser. router.spec.ts differs: it
+// exercises the $state-based router.svelte.ts through a real page.
 import { test, expect } from '@playwright/test';
 import { href, parse, type Route } from '../src/lib/routes';
 import { change } from '../src/lib/format';
@@ -71,12 +71,12 @@ const MALFORMED: [string, Route][] = [
   ['#/a/', { name: 'overview' }],
   ['#/a//repos', { name: 'overview' }],
   ['#/a//acme', { name: 'overview' }],
-  // A slug is a forge and a name; either alone is no account.
+  // A slug is a forge and a name. Either alone is no account.
   ['#/a/github', { name: 'overview' }],
   ['#/a/github/', { name: 'overview' }],
   ['#/a/github//repos', { name: 'overview' }],
   // A single trailing slash is tolerated and parses like its absence, even
-  // on a bare account slug -- this is no longer "malformed" so much as an
+  // on a bare account slug. This is no longer "malformed" so much as an
   // accepted alternate spelling.
   ['#/a/github/acme/', { name: 'account', slug: 'github/acme' }],
   ['#/a/github/acme/repos/only-owner', { name: 'account', slug: 'github/acme' }],

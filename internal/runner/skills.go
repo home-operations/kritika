@@ -84,9 +84,9 @@ var skillSchema = json.RawMessage(`{
 
 // skillTool is load_skill: it returns a skill the review was offered, or a
 // file of the skill's folder, from the merge base. The agent's file tools
-// read the head, where the pull request under review may have rewritten
-// the skill. opened starts with the skills the system prompt gives whole:
-// the review has read those before its first step.
+// read the head, where the pull request under review can rewrite the
+// skill. opened starts with the skills the system prompt gives whole:
+// the review reads those before its first step.
 type skillTool struct {
 	base     *object.Tree
 	skills   []repoconfig.Skill
@@ -139,8 +139,8 @@ func (s *skillTool) Run(_ context.Context, input json.RawMessage) (string, error
 	}
 	s.mu.Unlock()
 	if len(data) > s.maxBytes {
-		// Within maxBytes with its note, or the loop's cut to the same limit
-		// would replace the note.
+		// Within maxBytes with its note. Otherwise, the loop's cut to the
+		// same limit replaces the note.
 		const cut = "\n[cut: the file is longer]"
 		return textcut.Prefix(string(data), max(s.maxBytes-len(cut), 0)) + cut, nil
 	}
@@ -148,7 +148,7 @@ func (s *skillTool) Run(_ context.Context, input json.RawMessage) (string, error
 }
 
 // names lists the skills the tool offers, and Opened the ones the review
-// has read, given whole or returned, each in the order first seen, never
+// read, given whole or returned. Each is in the order first seen and never
 // nil: the run's row takes no NULL for either.
 func (s *skillTool) names() []string { return skillNames(s.skills) }
 

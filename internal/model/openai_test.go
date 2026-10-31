@@ -18,8 +18,9 @@ type capture struct {
 	body   map[string]any
 }
 
-// fakeProvider answers every request with status and body and records what
-// it was sent, so an adapter's wire behaviour is checked without a network.
+// fakeProvider answers every request with status and body and records what it
+// was sent. So a test can make sure that the wire behavior of an adapter is
+// correct without a network.
 func fakeProvider(t *testing.T, status int, body string) (*httptest.Server, *capture) {
 	t.Helper()
 	got := &capture{}
@@ -373,9 +374,9 @@ func TestOpenAIErrors(t *testing.T) {
 	}
 }
 
-// TestOpenRouterInFlightBudgetIsTransient: OpenRouter's 402 for the
-// account's in-flight requests, which says when to come back, is waited out
-// and sent again; its 402 for an empty balance is a refusal.
+// TestOpenRouterInFlightBudgetIsTransient: OpenRouter's 402 for the account's
+// in-flight requests says when to come back. That request is waited out and
+// sent again. Its 402 for an empty balance is a refusal.
 func TestOpenRouterInFlightBudgetIsTransient(t *testing.T) {
 	const inFlight = `{"error":{"message":"This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.","code":402,"metadata":{"reason":"in_flight_budget_exhausted","headers":{"Retry-After":"120"}}}}`
 	const empty = `{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}`
@@ -458,7 +459,7 @@ func TestNewOpenAIRejects(t *testing.T) {
 }
 
 // TestOpenAIOpenRouterCaching: an OpenRouter request asks for automatic
-// prompt caching and usage accounting at the top level; a plain OpenAI
+// prompt caching and usage accounting at the top level. A plain OpenAI
 // request, whose API rejects unknown fields, sends neither.
 func TestOpenAIOpenRouterCaching(t *testing.T) {
 	body := chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, "")
@@ -588,10 +589,10 @@ func TestOpenAISessionHeader(t *testing.T) {
 	}
 }
 
-// TestOpenAIConfiguredHeaders: a provider's headers reach every request,
-// the catalog's too, and replace kritika's own; one naming the session
-// carries the step's, and a request without one leaves it off, or sends
-// kritika's own header of that name.
+// TestOpenAIConfiguredHeaders: a provider's headers reach every request, the
+// catalog's too, and replace kritika's own. A header that names the session
+// carries the step's session. A request without a session leaves the session
+// off, or sends kritika's own header of that name.
 func TestOpenAIConfiguredHeaders(t *testing.T) {
 	srv, got := fakeProvider(t, http.StatusOK, chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""))
 	c, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "k", Headers: map[string]string{
@@ -628,9 +629,9 @@ func TestOpenAIConfiguredHeaders(t *testing.T) {
 }
 
 // TestRequestTimeoutOverrides: a client built with its own request timeout
-// gives up on a stalled server by it, not by StepTimeout; and the gateway's
-// budgets nest, so the runner always outlasts the gateway, which outlasts
-// one provider request.
+// gives up on a stalled server by that timeout, not by StepTimeout. The
+// gateway's budgets nest, so the runner always outlasts the gateway, which
+// outlasts one provider request.
 func TestRequestTimeoutOverrides(t *testing.T) {
 	if GatewayRequestTimeout <= GatewayStepBudget || GatewayStepBudget <= StepTimeout {
 		t.Fatalf("timeouts do not nest: request %s, budget %s, step %s", GatewayRequestTimeout, GatewayStepBudget, StepTimeout)
@@ -650,8 +651,8 @@ func TestRequestTimeoutOverrides(t *testing.T) {
 	}
 }
 
-// TestOpenAIPartHeader: a client made for a part of a split review names it
-// on every request; one made for none sends no header.
+// TestOpenAIPartHeader: a client made for a part of a split review names that
+// part on every request. A client made for no part sends no header.
 func TestOpenAIPartHeader(t *testing.T) {
 	for _, tt := range []struct {
 		part int
@@ -671,9 +672,9 @@ func TestOpenAIPartHeader(t *testing.T) {
 	}
 }
 
-// TestOpenAIClientsDropEnvironmentHeaders: the headers openai-go would add
-// from OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS never
-// leave kritika, whichever OpenAI client sends the request.
+// TestOpenAIClientsDropEnvironmentHeaders: the headers that openai-go adds
+// from OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS never leave
+// kritika, whichever OpenAI client sends the request.
 func TestOpenAIClientsDropEnvironmentHeaders(t *testing.T) {
 	t.Setenv("OPENAI_ORG_ID", "org-env")
 	t.Setenv("OPENAI_PROJECT_ID", "proj-env")

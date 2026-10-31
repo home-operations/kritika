@@ -117,10 +117,10 @@ type IndexFileRow struct {
 	Chunks   int
 }
 
-// ListIndexFiles returns a page of the files the generation runID holds,
-// those whose path contains q in any case when it is not empty, ordered
-// by path. The cursor's ID is the generation's, which the keyset does not
-// read: a page after the generation changed goes on from the same path.
+// ListIndexFiles returns a page of the files that the generation runID holds,
+// ordered by path. When q is not empty, it returns those whose path contains
+// q in any case. The cursor's ID is the generation's, which the keyset does
+// not read: a page after the generation changed goes on from the same path.
 func ListIndexFiles(ctx context.Context, tx pgx.Tx, runID, q string, p Page) ([]IndexFileRow, *Cursor, error) {
 	if err := p.check(); err != nil {
 		return nil, nil, err

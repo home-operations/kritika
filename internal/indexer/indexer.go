@@ -1,6 +1,6 @@
-// Package indexer cuts a repository tree into the chunks the embedding
-// index stores. It runs in the runner pod, which holds the fetched trees
-// and no model key; the worker embeds what it stages.
+// Package indexer cuts a repository tree into the chunks that the embedding
+// index stores. It runs in the runner pod, which holds the fetched trees and
+// no model key. The worker embeds what it stages.
 package indexer
 
 import (
@@ -32,15 +32,15 @@ type Chunk struct {
 
 // Options bound the work.
 type Options struct {
-	// MaxDeclLines is the largest declaration stored whole; larger ones
-	// are represented by their nested declarations, or windowed.
+	// MaxDeclLines is the largest declaration stored whole. Larger ones are
+	// represented by their nested declarations, or windowed.
 	MaxDeclLines int
 	// WindowLines and WindowOverlap cut files that have no declarations.
 	WindowLines, WindowOverlap int
 	// MaxChunkBytes truncates one chunk's text.
 	MaxChunkBytes int
-	// MaxFileBytes skips larger files; MaxFiles, MaxBytes and MaxChunks
-	// stop the walk.
+	// MaxFileBytes skips larger files. MaxFiles, MaxBytes and MaxChunks stop
+	// the walk.
 	MaxFileBytes, MaxFiles, MaxBytes, MaxChunks int
 }
 
@@ -58,10 +58,10 @@ type Stats struct {
 	Elapsed                time.Duration
 }
 
-// Build chunks head. With base set, only the paths that differ between
-// base and head are chunked, and Changed lists every differing path, the
-// deleted ones included, so the worker can drop their old chunks. With
-// base nil the whole tree is chunked and Changed is nil.
+// Build chunks head. With base set, only the paths that differ between base
+// and head are chunked. Changed lists every differing path, the deleted ones
+// included, so the worker can drop their old chunks. With base nil the whole
+// tree is chunked and Changed is nil.
 func Build(
 	ctx context.Context, head, base *object.Tree, ignore []string, opts Options,
 ) (chunks []Chunk, changed []string, stats Stats, err error) {
@@ -155,8 +155,8 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Skipped++
 		return nil
 	}
-	// Read once, as bytes: a binary file, which holds a NUL, is skipped,
-	// and so is one that is not UTF-8, which would fail the staging insert
+	// Read once, as bytes: a binary file, which holds a NUL, is skipped. So
+	// is one that is not UTF-8, which will otherwise fail the staging insert
 	// and so the whole run, since Postgres text holds valid UTF-8 only.
 	src, err := readBlob(f)
 	if err != nil || len(src) == 0 || bytes.IndexByte(src, 0) >= 0 || !utf8.Valid(src) {
@@ -202,7 +202,7 @@ func readBlob(f *object.File) ([]byte, error) {
 }
 
 // pieces picks the declarations to store: the outermost ones that fit
-// MaxDeclLines, descending into an oversized declaration's nested ones. A
+// MaxDeclLines. It descends into an oversized declaration's nested ones. A
 // file with no declarations is cut into windows.
 func pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
@@ -219,8 +219,8 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 			lastEnd = d.EndLine
 			continue
 		}
-		// Too big: take its nested declarations that fit; windows for
-		// the rest would mostly repeat them, so the remainder is dropped.
+		// Too big: take its nested declarations that fit. Windows for the
+		// rest mostly repeat them, so the remainder is dropped.
 		nested := false
 		for _, n := range f.Decls {
 			if n.StartLine > d.StartLine && n.EndLine <= d.EndLine && n.Lines() <= opts.MaxDeclLines && n.StartLine > lastEnd {

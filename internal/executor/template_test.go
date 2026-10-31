@@ -233,8 +233,8 @@ func templatedJob(t *testing.T) *batchv1.Job {
 }
 
 // TestJobSpecTemplateMetadata: the Job template marks the runner Job and
-// the pod template its pod, each beside kritika's own labels and
-// annotations, and the Job keeps the run's deadline.
+// the pod template marks its pod, each beside kritika's own labels and
+// annotations. The Job keeps the run's deadline.
 func TestJobSpecTemplateMetadata(t *testing.T) {
 	j := templatedJob(t)
 	if j.Labels["team"] != "reviews" || j.Labels["kritika.home-operations.com/role"] != "runner" ||
@@ -261,7 +261,7 @@ func TestJobSpecTemplateMetadata(t *testing.T) {
 
 // TestJobSpecPodTemplate: the pod template places the runner pod and sets
 // its resources and image beside, never instead of, the executor's own
-// settings.
+// configuration.
 func TestJobSpecPodTemplate(t *testing.T) {
 	ps := templatedJob(t).Spec.Template.Spec
 	if ps.Resources == nil || ps.Resources.Limits.Memory().String() != "2Gi" || ps.RuntimeClassName == nil || *ps.RuntimeClassName != "gvisor" ||
@@ -277,8 +277,8 @@ func TestJobSpecPodTemplate(t *testing.T) {
 		t.Fatalf("runner container = %+v, want the template's image and pull policy, and the pod's resources alone", c)
 	}
 	// The admin's variables come before kritika's, whose values a $(NAME)
-	// in theirs then cannot take in, and under the prefix the runner hands
-	// on, so none of them configures the runner itself.
+	// in theirs then cannot take in. They are under the prefix that the runner
+	// hands on, so none of them configures the runner itself.
 	want := slices.Clone(adminEnv)
 	for i := range want {
 		want[i].Name = runspec.CommandEnvPrefix + want[i].Name
@@ -293,9 +293,9 @@ func TestJobSpecPodTemplate(t *testing.T) {
 	}
 }
 
-// TestKubeCheckJob: a runner Job built from the templates is checked by the
-// API, created as a dry run; one the API finds invalid stops serve, any
-// other refusal does not.
+// TestKubeCheckJob: the API makes sure that a runner Job built from the
+// templates is valid, created as a dry run. One the API finds invalid stops
+// serve. Any other refusal does not.
 func TestKubeCheckJob(t *testing.T) {
 	invalid := apierrors.NewInvalid(schema.GroupKind{Group: "batch", Kind: "Job"}, "kritika-run-00000000", field.ErrorList{
 		field.NotSupported(field.NewPath("spec", "template", "spec", "tolerations").Index(0).Child("operator"), "Exist", []string{"Equal", "Exists"}),

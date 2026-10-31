@@ -32,10 +32,9 @@ func TestAttempts(t *testing.T) {
 	}
 }
 
-// TestAttemptsStayBounded: a flood of failures from distinct addresses,
-// none of whose windows has expired, cannot grow the tracker past its cap;
-// the oldest window gives way, and a client already tracked keeps its
-// count.
+// TestAttemptsStayBounded: a flood of failures from distinct addresses, with
+// no expired window among them, cannot grow the tracker past its cap. The
+// oldest window gives way, and a client already tracked keeps its count.
 func TestAttemptsStayBounded(t *testing.T) {
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
@@ -48,7 +47,7 @@ func TestAttemptsStayBounded(t *testing.T) {
 	if len(a.failed) > maxTrackedClients {
 		t.Fatalf("%d clients tracked, cap is %d", len(a.failed), maxTrackedClients)
 	}
-	// "first" and the 100 oldest flood addresses gave way; the next survives.
+	// "first" and the 100 oldest flood addresses gave way. The next survives.
 	if _, ok := a.failed["first"]; ok {
 		t.Fatal("the oldest window was not the one dropped")
 	}
@@ -63,8 +62,8 @@ func TestAttemptsStayBounded(t *testing.T) {
 }
 
 // TestAttemptsRightAnswersAreFree: a right password never counts, however
-// many come at once, and a client whose answers were all right is not
-// tracked; wrong ones after it still fill the window.
+// many come at once. A client whose answers were all right is not tracked.
+// Wrong answers after it still fill the window.
 func TestAttemptsRightAnswersAreFree(t *testing.T) {
 	a := newAttempts(time.Now)
 	for range maxFailedSignIns * 2 {
@@ -109,8 +108,8 @@ func TestAttemptsJudgeOneAtATime(t *testing.T) {
 	}
 }
 
-// TestLocalSignInRefuses covers every way the password form says no before
-// it would touch the store.
+// TestLocalSignInRefuses covers every way that the password form says no
+// without touching the store.
 func TestLocalSignInRefuses(t *testing.T) {
 	h := testHandler(t, "https://kritika.example.com", testFile(t, "auth:\n"+adminPassword))
 	mux := http.NewServeMux()

@@ -33,7 +33,7 @@ type Templates struct {
 	Summary, Inline string
 }
 
-// RenderData is what the summary template sees as its dot; the inline
+// RenderData is what the summary template sees as its dot. The inline
 // template's dot is one Finding.
 type RenderData struct {
 	Number  int
@@ -57,9 +57,9 @@ type RenderData struct {
 	// Cost is what the pull request's reviews have cost together, as
 	// FormatCost writes it, "" where the repository does not show it.
 	Cost string
-	// AuthorIsBot is whether a bot opened the pull request; the default
-	// template then leaves out the praise, which a mechanical change
-	// earns nothing by.
+	// AuthorIsBot is whether a bot opened the pull request. The default
+	// template then leaves out the praise, which a mechanical change earns
+	// nothing by.
 	AuthorIsBot  bool
 	Result       Result
 	Counts       Counts
@@ -79,20 +79,20 @@ type RenderData struct {
 	// HeldBack are the findings in the diff an incremental re-review held
 	// back (see HoldBack): listed only, neither posted, counted nor scored.
 	HeldBack []Finding
-	// Incomplete, when set, says why the head was not fully reviewed; the
+	// Incomplete, when set, says why the head was not fully reviewed. The
 	// default template then states that instead of a verdict.
 	Incomplete string
 	// Sources are links to what the review's commands fetched, from
 	// the runner's record rather than the model's answer, as SourceLinks
 	// gives them.
 	Sources []string
-	// Agents are the reviewers the review ran, in the order it ran
-	// them; the default template lists them unless the default reviewer
-	// ran alone (see NamedAgents).
+	// Agents are the reviewers that the review ran, in the order it ran them.
+	// The default template lists them unless the default reviewer ran alone
+	// (see NamedAgents).
 	Agents []string
-	// Skills are the repository's skills the review was offered and the
-	// ones it read; Commands the run tool's commands it was offered and
-	// the ones it ran. Each is zero when none were offered.
+	// Skills are the repository's skills that the review was offered and the
+	// ones that it read. Commands are the run tool's commands that it was
+	// offered and the ones that it ran. Each is zero when none were offered.
 	Skills, Commands Offered
 	// Confidence is the score a second model gave the pull request, nil
 	// when the repository asks for none or the scorer did not answer.
@@ -100,13 +100,13 @@ type RenderData struct {
 	// Approval is what became of kritika's approval of the head, nil
 	// where the repository does not have it approve.
 	Approval *Approval
-	// WebURL is the dashboard's origin, without a trailing slash, and
-	// PullURL the pull request's page on it, where an admin can re-run
-	// the review; both "" when the dashboard has no public URL. The
-	// default template then leaves the re-run badge out.
+	// WebURL is the dashboard's origin, without a trailing slash. PullURL is
+	// the pull request's page on it, where an admin can re-run the review.
+	// Both are "" when the dashboard has no public URL. The default template
+	// then leaves the re-run badge out.
 	WebURL, PullURL string
-	// Overlaps are the repository's other open pull requests that change
-	// a path this change does, most shared paths first; the default
+	// Overlaps are the repository's other open pull requests that change a
+	// path that this change does, most shared paths first. The default
 	// template lists them in the review context.
 	Overlaps []Overlap
 }
@@ -119,8 +119,8 @@ type Overlap struct {
 	URL string
 	// Shared are the paths both change, sorted.
 	Shared []string
-	// Stale is whether the pull request's head has moved since the review
-	// whose paths Shared are.
+	// Stale is whether the pull request's head moved since the review whose
+	// paths Shared are.
 	Stale bool
 }
 
@@ -155,9 +155,9 @@ func (o Overlap) MoreShared() int {
 	return max(len(o.Shared)-maxNamedShared, 0)
 }
 
-// Spans are NamedShared as Markdown code spans, each read back as the
-// path whatever it holds: a Git path may contain backticks or line
-// breaks, which a single backtick on each side would not survive.
+// Spans are NamedShared as Markdown code spans, each read back as the path
+// whatever it holds: a Git path can contain backticks or line breaks, which a
+// single backtick on each side does not survive.
 func (o Overlap) Spans() []string {
 	named := o.NamedShared()
 	spans := make([]string, len(named))
@@ -167,11 +167,11 @@ func (o Overlap) Spans() []string {
 	return spans
 }
 
-// codeSpan is s as a CommonMark code span: between runs of backticks
-// longer than any in s, line breaks made spaces, and a space inside each
-// end when s starts or ends with a backtick, or starts and ends with a
-// space without being all spaces: a reader strips one space from each
-// end of such content, so the padding goes and s stays.
+// codeSpan is s as a CommonMark code span: between runs of backticks longer
+// than any in s, with line breaks made spaces. It adds a space inside each
+// end when s starts or ends with a backtick. It does the same when s starts
+// and ends with a space without being all spaces. A reader strips one space
+// from each end of such content, so the padding goes and s stays.
 func codeSpan(s string) string {
 	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
 	longest, run := 0, 0
@@ -204,9 +204,9 @@ type Offered struct {
 	Names, Used []string
 }
 
-// maxNamedUsed is how many used names the default template writes before
-// it counts the rest; a repository can offer far more commands than a
-// comment should list.
+// maxNamedUsed is how many used names the default template writes before it
+// counts the rest. A repository can offer far more commands than a comment
+// needs to list.
 const maxNamedUsed = 10
 
 // Named is the used names the default template writes: sorted, and at
@@ -229,8 +229,8 @@ type Approval struct {
 	Reason   string
 }
 
-// FormatUSD writes an amount in dollars to the cent, and under a cent to
-// the hundredth of one so a small review does not read as free.
+// FormatUSD writes an amount in dollars to the cent. Under a cent, it writes
+// to the hundredth of one, so that a small review does not read as free.
 func FormatUSD(amount float64) string {
 	switch {
 	case amount == 0:
@@ -241,9 +241,9 @@ func FormatUSD(amount float64) string {
 	return fmt.Sprintf("$%.2f", amount)
 }
 
-// FormatCost writes amount as FormatUSD does, marked as incomplete when
-// unpricedCalls of the calls it sums had no cost reported or configured,
-// so a total missing their spend does not read as all of it.
+// FormatCost writes amount as FormatUSD does. It marks it as incomplete when
+// unpricedCalls of the calls that it sums had no cost reported or configured.
+// So a total missing their spend does not read as all of it.
 func FormatCost(amount float64, unpricedCalls int64) string {
 	switch {
 	case unpricedCalls == 0:
@@ -257,10 +257,10 @@ func FormatCost(amount float64, unpricedCalls int64) string {
 // footerSubjectRunes is how much of a commit subject the footer shows.
 const footerSubjectRunes = 40
 
-// FooterSubject cuts a commit subject to one line of footerSubjectRunes,
-// marking the cut with an ellipsis, and escapes what Markdown would read
-// as markup, since a pull request's author writes the subject and it
-// lands inside the footer's link text.
+// FooterSubject cuts a commit subject to one line of footerSubjectRunes and
+// marks the cut with an ellipsis. It also escapes what Markdown reads as
+// markup, since a pull request's author writes the subject and it lands
+// inside the footer's link text.
 func FooterSubject(subject string) string {
 	subject, _, _ = strings.Cut(subject, "\n")
 	subject = strings.TrimSpace(subject)
@@ -270,8 +270,8 @@ func FooterSubject(subject string) string {
 	return FooterText(subject)
 }
 
-// FooterText escapes what Markdown would read as markup in s, which the
-// footer shows as it is written: a route's condition may hold a glob's *.
+// FooterText escapes what Markdown reads as markup in s, which the footer
+// shows as it is written: a route's condition can hold a glob's *.
 func FooterText(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -317,8 +317,8 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	}
 	out, err := render(context.WithoutCancel(ctx), defaultSummary, d, limit)
 	if err != nil {
-		// The default renders data kritika bounds itself; failing here is a
-		// bug, but the comment must still carry the marker and the take.
+		// The default renders data that kritika bounds itself. Failing here
+		// is a bug, but the comment must still carry the marker and the take.
 		out = textcut.Prefix(fmt.Sprintf("## Kritika Review\n\n%s\n", d.Result.Summary.Take), limit)
 	}
 	return marker + out, notes
@@ -334,8 +334,8 @@ func (s Severity) Label() string {
 }
 
 // Badge renders the severity for a comment: its badge image, which the
-// dashboard serves under webURL, with the label as the image's text, or
-// the label alone in bold where the dashboard has no public URL.
+// dashboard serves under webURL, with the label as the image's text. Where
+// the dashboard has no public URL, it renders the label alone in bold.
 func (s Severity) Badge(webURL string) string {
 	label := s.Label()
 	switch {
@@ -356,8 +356,7 @@ type InlineData struct {
 }
 
 // RenderInline renders one finding as an inline review comment, led by its
-// FindingMarker, falling back to the default template as RenderSummary
-// does.
+// FindingMarker. It falls back to the default template as RenderSummary does.
 func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []string) {
 	marker := FindingMarker(Fingerprint(d.Finding)) + "\n"
 	limit := MaxRenderBytes - len(marker)
@@ -388,8 +387,8 @@ func fallbackNote(which string, err error) string {
 }
 
 // render parses and executes src in a sandbox, bounded by ctx and
-// renderTimeout. A render that outlives its deadline is abandoned; the
-// guards make it stop at its next loop, call or write.
+// renderTimeout. A render that outlives its deadline is abandoned. The guards
+// make it stop at its next loop, call, or write.
 func render(ctx context.Context, src string, data any, limit int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	defer cancel()

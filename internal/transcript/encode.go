@@ -11,9 +11,8 @@ import (
 const (
 	// ToolResultCap bounds one tool result's content.
 	ToolResultCap = 64 << 10
-	// RowCap bounds one row's encoded messages; a row over it keeps its
-	// messages' structure with Placeholder for every text, content and
-	// input.
+	// RowCap bounds one row's encoded messages. A row over it keeps its
+	// messages' structure with Placeholder for every text, content and input.
 	RowCap = 1 << 20
 	// RunCap bounds what a run records: once its rows exceed it, later rows
 	// keep only the response and usage.
@@ -23,7 +22,7 @@ const (
 // Placeholder stands in for content a row over RowCap dropped.
 const Placeholder = "[omitted: the row exceeded its size cap]"
 
-// SystemCap bounds a stored system prompt; one over it is cut, on a rune
+// SystemCap bounds a stored system prompt. One over it is cut, on a rune
 // boundary, and ends in SystemTruncated.
 const SystemCap = RowCap
 
@@ -74,7 +73,7 @@ func maskRaw(raw json.RawMessage, fn func(string) string) json.RawMessage {
 	return validJSON([]byte(fn(string(raw))))
 }
 
-// Encode applies the caps and encodes r, replacing NUL with the Unicode
+// Encode applies the caps and encodes r. It replaces NUL with the Unicode
 // replacement character because PostgreSQL text and jsonb cannot store it.
 func (r Row) Encode() Encoded {
 	e := Encoded{MessagesFrom: r.MessagesFrom, System: r.System, State: r.next}

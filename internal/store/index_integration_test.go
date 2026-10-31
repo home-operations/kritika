@@ -39,7 +39,8 @@ apps:
 `
 
 // checkBacklog reads account's onboarding backlog under its own policy and
-// checks it names want, in order; names maps a repository ID to its name.
+// makes sure that it names want, in order. names maps a repository ID to its
+// name.
 func checkBacklog(t *testing.T, s *Store, account string, names map[string]string, want []string) {
 	t.Helper()
 	ctx := t.Context()
@@ -58,10 +59,10 @@ func checkBacklog(t *testing.T, s *Store, account string, names map[string]strin
 	}
 }
 
-// TestOnboardCandidates checks which repositories the onboarding feeder is
-// offered and in what order: accounts take turns, and an account's repositories
-// whose pull requests moved last go first. A repository whose index another
-// embedder built is offered again.
+// TestOnboardCandidates makes sure that the onboarding feeder is offered the
+// correct repositories in the correct order: accounts take turns, and an
+// account's repositories whose pull requests moved last go first. A
+// repository whose index another embedder built is offered again.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -174,8 +175,8 @@ func TestOnboardCandidates(t *testing.T) {
 	// The dashboard's backlog of one account is the feeder's order, less
 	// the other accounts' turns.
 	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/stale"})
-	// A repository its settings leave off is passed over, and takes none
-	// of the limit: here, every one of east's.
+	// A repository that its configuration leaves off is passed over, and takes
+	// none of the limit: here, every one of east's.
 	west := accountID(t, s, "west")
 	ours := func(account string, _ configfile.RepoTraits) bool { return account == west }
 	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, ours); err != nil || len(limited) != 1 || names[limited[0].ID] != "west/one" {

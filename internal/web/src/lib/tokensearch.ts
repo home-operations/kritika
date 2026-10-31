@@ -5,8 +5,8 @@
 export interface TokenSpec {
   key: string;
   hint: string;
-  // values are what the token may name, matched in any case and written
-  // as listed; with open set, any value is taken and values only suggest.
+  // values are what the token can name, matched in any case and written
+  // as listed. With open set, any value is taken and values only suggest.
   values: readonly string[];
   open?: boolean;
 }
@@ -19,7 +19,7 @@ export interface Parsed {
   unknown: string[];
 }
 
-// parseTokens reads text; the last of a repeated token wins.
+// parseTokens reads text. The last of a repeated token wins.
 export function parseTokens(text: string, specs: readonly TokenSpec[]): Parsed {
   const tokens: Record<string, string> = {};
   const unknown: string[] = [];

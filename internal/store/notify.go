@@ -66,31 +66,30 @@ func parseEvent(payload string) (Event, error) {
 	return Event{AccountID: p.AccountID, Kind: kind, ID: p.ID, ReviewID: p.ReviewID}, nil
 }
 
-// ListenHandlers bundles the callbacks Listen drives. OnEvent and
-// OnReconnect are both funneled through the same bounded queue and invoked
-// synchronously, one at a time, in the order they were queued, from a
-// single dedicated goroutine that drains it (see Listen's doc comment) —
-// so none of them may block for long: a slow callback delays every
-// notification queued behind it. A callback that needs to do slow work
-// should hand off to its own goroutine or queue rather than doing it
-// inline.
+// ListenHandlers bundles the callbacks that Listen drives. OnEvent and
+// OnReconnect are both funneled through the same bounded queue. They are
+// invoked synchronously, one at a time, in the order they were queued. A
+// single dedicated goroutine that drains the queue invokes them (see Listen's
+// doc comment). So a callback must not block for long: a slow callback delays
+// every notification queued behind it. Slow work belongs in a goroutine or
+// queue of the callback's own, not inline.
 //
-// Once the queue is full, a new OnEvent notification is dropped
-// (see dropWarner), and OnReconnect is queued in its place, once for a run
-// of drops, so consumers re-fetch what the dropped events would have told
-// them (see deliver). OnReconnect is treated as more important than any
-// single dropped event — a consumer that misses it can go on serving
-// stale state indefinitely — so if the queue is full when OnReconnect is
-// due, the oldest queued notification is evicted to make room rather than
-// losing the reconnect signal itself (see enqueueReconnect).
+// Once the queue is full, a new OnEvent notification is dropped (see
+// dropWarner). OnReconnect is queued in its place, once for a run of drops.
+// So consumers re-fetch what the dropped events were going to tell them (see
+// deliver). OnReconnect is treated as more important than any single dropped
+// event. A consumer that misses it can go on serving stale state
+// indefinitely. If the queue is full when OnReconnect is due, the oldest
+// queued notification is evicted to make room. So the reconnect signal itself
+// is not lost (see enqueueReconnect).
 //
 // OnReconnect, if set, is invoked after every successful (re)connect after
-// the first — never after Listen's initial connection, only after each one
-// that follows a disconnect that got far enough to reach the notification
-// loop (i.e. LISTEN itself succeeded). A NOTIFY sent while no listener was
-// connected is lost, so consumers use OnReconnect to re-fetch whatever
-// state they'd otherwise have learned about incrementally: e.g. the web
-// SSE broadcaster telling browsers to resync.
+// the first. It is never invoked after Listen's initial connection. It is
+// invoked only after each one that follows a disconnect that got far enough
+// to reach the notification loop (that is, LISTEN itself succeeded). A NOTIFY
+// sent while no listener was connected is lost. So consumers use OnReconnect
+// to re-fetch whatever state they otherwise learn about incrementally: for
+// example, the web SSE broadcaster telling browsers to resync.
 type ListenHandlers struct {
 	OnEvent     func(Event)
 	OnReconnect func()
@@ -104,16 +103,16 @@ const listenBufferSize = 1024
 
 // listenBackoffMin and listenBackoffMax bound Listen's reconnect delay.
 // The delay grows exponentially between them (doubling per failed
-// attempt, capped at listenBackoffMax) and is jittered so that many
-// listeners disconnected by the same event (e.g. a Postgres failover)
-// don't all reconnect in lockstep.
+// attempt, capped at listenBackoffMax). It is jittered so that many
+// listeners disconnected by the same event (for example, a Postgres
+// failover) do not all reconnect in lockstep.
 const (
 	listenBackoffMin = 1 * time.Second
 	listenBackoffMax = 30 * time.Second
 )
 
 // dropWarner logs that the listen buffer is full and notifications are
-// being dropped, at most once per second, summarizing how many were
+// being dropped, at most once per second. The log summarizes how many were
 // dropped since the last warning. It is only ever called from Listen's
 // single read loop, so it needs no locking of its own.
 type dropWarner struct {
@@ -132,14 +131,14 @@ func (w *dropWarner) drop() {
 	}
 }
 
-// Listen holds one dedicated connection LISTENing on kritika_events,
-// reconnecting with backoff on any error, until ctx ends
-// (the only condition under which Listen returns).
+// Listen holds one dedicated connection LISTENing on kritika_events until
+// ctx ends (the only condition under which Listen returns). It reconnects
+// with backoff on any error.
 //
-// The connection's read loop never calls a handler directly: it decodes
+// The connection's read loop never calls a handler directly. It decodes
 // each notification and pushes it onto a bounded buffered channel, which a
 // separate goroutine drains to invoke ListenHandlers. This keeps a slow or
-// stuck callback from stalling WaitForNotification — a LISTENer that stops
+// stuck callback from stalling WaitForNotification. A LISTENer that stops
 // reading blocks Postgres's own NOTIFY queue cleanup, which can eventually
 // apply backpressure to unrelated writers. See ListenHandlers for the
 // resulting callback contract.
@@ -166,7 +165,7 @@ func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 
 	warner := &dropWarner{logger: s.logger}
 	// connectedOnce stays false until an attempt reaches the loop, so a
-	// failed first connection doesn't make the next one look like a
+	// failed first connection does not make the next one look like a
 	// reconnect. attempt counts failures since the last connection that
 	// reached the loop, so a long-lived connection's drop starts the
 	// backoff over.
@@ -193,12 +192,12 @@ func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 }
 
 // listenOnce opens one dedicated connection off the application pool's
-// config and blocks handling notifications on it until ctx ends or the
-// connection fails. isReconnect is true once a previous attempt has
-// already reached the notification loop successfully; it controls whether OnReconnect fires once this
-// attempt does the same. The returned bool reports whether this attempt
-// itself reached the notification loop, regardless of isReconnect and
-// regardless of how the attempt eventually ended.
+// configuration and blocks handling notifications on it until ctx ends or
+// the connection fails. isReconnect is true once a previous attempt already
+// reached the notification loop successfully. It controls whether OnReconnect
+// fires once this attempt does the same. The returned bool reports whether
+// this attempt itself reached the notification loop, regardless of
+// isReconnect and regardless of how the attempt eventually ended.
 func (s *Store) listenOnce(
 	ctx context.Context,
 	handlers ListenHandlers,
@@ -226,7 +225,7 @@ func (s *Store) listenOnce(
 		return false, fmt.Errorf("store: listen kritika_events: %w", err)
 	}
 
-	// From here on this attempt counts as having reached the loop,
+	// From here on, this attempt counts as one that reached the loop,
 	// regardless of how WaitForNotification eventually ends.
 	reachedLoop = true
 
@@ -259,13 +258,13 @@ func (s *Store) listenOnce(
 }
 
 // deliver queues fn, an OnEvent callback, or drops it when the queue is
-// full. A dropped event would leave consumers stale for good, so the first
-// drop of a run also queues resync, the OnReconnect callback, as
-// enqueueReconnect does. One is enough for the run: nothing has left a
-// queue that is still full, so that resync is still waiting behind
-// everything else and re-fetches what the later drops changed too. It
-// returns whether fn was dropped, which the caller passes back as dropping
-// for the next event.
+// full. Without a resync, a dropped event leaves consumers stale for good.
+// So the first drop of a run also queues resync, the OnReconnect callback,
+// as enqueueReconnect does. One is enough for the run. Nothing left a queue
+// that is still full, so that resync is still waiting behind everything
+// else. It re-fetches what the later drops changed too. deliver returns
+// whether fn was dropped, which the caller passes back as dropping for the
+// next event.
 func deliver(notifications chan func(), fn, resync func(), dropping bool, warner *dropWarner) bool {
 	select {
 	case notifications <- fn:
@@ -280,13 +279,13 @@ func deliver(notifications chan func(), fn, resync func(), dropping bool, warner
 }
 
 // enqueueReconnect delivers fn (an OnReconnect callback) through the same
-// notification queue as OnEvent, so both run one at a time, in order, on
+// notification queue as OnEvent. So both run one at a time, in order, on
 // the consumer goroutine. Unlike a regular notification, a reconnect
-// signal is not safe to drop silently: a consumer that misses it can go on
-// serving stale state indefinitely, so if the queue is full, the oldest
+// signal is not safe to drop silently. A consumer that misses it can go on
+// serving stale state indefinitely. So if the queue is full, the oldest
 // queued notification is evicted (and counted as a drop) to make room.
 // This is only ever called from the single producer goroutine that also
-// sends OnEvent closures onto notifications, so the evict-then-send is
+// sends OnEvent closures onto notifications. So the evict-then-send is
 // race-free: nothing else competes for the slot freed by the eviction.
 func enqueueReconnect(notifications chan func(), fn func(), warner *dropWarner) {
 	select {

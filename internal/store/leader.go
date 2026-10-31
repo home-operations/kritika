@@ -11,11 +11,11 @@ import (
 // leaderKey is the advisory lock every leader-eligible replica competes for.
 const leaderKey = "kritika-leader"
 
-// lockTimeout bounds one lock attempt, acquiring the connection and trying
-// the lock, and each ping of the held connection. Both are a round trip on
-// a server that is up; a server that is gone answers neither, and the
-// bound is what turns that into a step-down or a retry instead of a wait
-// on TCP retransmissions.
+// lockTimeout bounds one lock attempt and each ping of the held connection.
+// A lock attempt acquires the connection and tries the lock. Both are a round
+// trip on a server that is up. A server that is gone answers neither. The
+// bound turns that into a step-down or a retry instead of a wait on TCP
+// retransmissions.
 const lockTimeout = 5 * time.Second
 
 // LeaderStepDown is the longest a leader whose lock the server dropped goes
@@ -24,27 +24,28 @@ const lockTimeout = 5 * time.Second
 func LeaderStepDown(interval time.Duration) time.Duration { return interval + lockTimeout }
 
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
-// context that is cancelled if the lock is lost or ctx ends. It returns when
-// ctx ends. Only one replica per database holds the lock at a time; the
+// context that is canceled if the lock is lost or ctx ends. It returns when
+// ctx ends. Only one replica per database holds the lock at a time. The
 // holder is the only replica that migrates and writes configuration.
 //
-// An error from lead ends that tenure, not the process: the lock is
-// released and competed for again after retry, by this replica and the
-// others. A failover, a lock timeout or a deadlock under a migration or a
-// configuration apply clears on a later try, and ending the process for it
-// would cut the reviews this replica is running.
+// An error from lead ends that tenure, not the process. The lock is released,
+// and this replica and the others compete for it again after retry. A
+// failover, a lock timeout or a deadlock under a migration or a configuration
+// apply clears on a later try. Ending the process for it will cut the reviews
+// that this replica is running.
 //
 // The lock is session-level on a dedicated connection held for the whole
 // tenure, so it releases on its own if the process dies. The holder pings
 // that connection every interval, because a dropped connection releases the
 // lock server-side without the client noticing. The ping and each lock
-// attempt are bounded by lockTimeout: a server that died without closing
-// its sockets answers nothing, and an unbounded ping would wait on the
-// kernel's TCP retransmissions, about fifteen minutes, with lead running
-// the whole time while another replica may hold the lock on the new
-// primary. A database that cannot be reached when the lock is tried, as
-// during a failover, is tried again after retry rather than ending the
-// process: a standby that restarts on every failover is no standby.
+// attempt are bounded by lockTimeout. A server that died without closing its
+// sockets answers nothing. An unbounded ping will wait on the kernel's TCP
+// retransmissions, about fifteen minutes. During that wait, lead runs the
+// whole time while another replica can hold the lock on the new primary.
+//
+// A database that cannot be reached when the lock is tried, as during a
+// failover, is tried again after retry rather than ending the process. A
+// standby that restarts on every failover is no standby.
 func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(ctx context.Context) error) error {
 	if s.owner == nil {
 		return errors.New("store: leadership needs the owner DSN")
@@ -69,8 +70,8 @@ func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(
 }
 
 // tryLead makes one attempt. It reports whether the lock was held during
-// this attempt; a false return means someone else has it, or the database
-// did not answer, which is logged. The error is lead's own. The lock
+// this attempt. A false return means that someone else has it, or that the
+// database did not answer, which is logged. The error is lead's own. The lock
 // connection is only ever touched from this goroutine: lead runs on its own
 // goroutine and never sees the connection.
 func (s *Store) tryLead(ctx context.Context, interval time.Duration, lead func(ctx context.Context) error) (bool, error) {
@@ -135,8 +136,8 @@ loop:
 	return true, leadErr
 }
 
-// pingLock checks the held lock connection within lockTimeout. A ping that
-// runs out closes the connection, so the release that follows a step-down
+// pingLock pings the held lock connection within lockTimeout. A ping that
+// runs out closes the connection. So the release that follows a step-down
 // discards it rather than handing a dead socket back to the pool.
 func (s *Store) pingLock(ctx context.Context, conn *pgxpool.Conn) error {
 	pingCtx, cancel := context.WithTimeout(ctx, lockTimeout)
