@@ -87,8 +87,9 @@ var stepsBySize = []Step{StepDigest, StepPatch, StepMinor, StepMajor}
 var versionRE = regexp.MustCompile(`(?:^|[:/@^~<>=!])[vV]?(\d+(?:\.\d+)*)`)
 
 // version is the components of the version tok names, nil when it names
-// none. Digits are a version when a separator or the token's end follows
-// them, so the digits of a commit, a digest or a word are none. Digits before
+// none. Digits are a version when a separator, a closing tag, a dot that
+// starts an archive's suffix, or the token's end follows them, so the digits
+// of a commit, a digest or a word are none. Digits before
 // the token's last slash are none either: an image's registry, its port and
 // its repository path come before the tag, and a URL's path segment, such as
 // /v1/, names no version of what the line moves. After an @, digits alone
@@ -98,10 +99,14 @@ var versionRE = regexp.MustCompile(`(?:^|[:/@^~<>=!])[vV]?(\d+(?:\.\d+)*)`)
 // dropped, since only whether two differ is asked of them.
 func version(tok string) []string {
 	var found string
+	// A closing tag's slash parts no path.
 	slash := strings.LastIndexByte(tok, '/')
+	for slash > 0 && tok[slash-1] == '<' {
+		slash = strings.LastIndexByte(tok[:slash], '/')
+	}
 	for _, m := range versionRE.FindAllStringSubmatchIndex(tok, -1) {
 		start, end := m[2], m[3]
-		if end < len(tok) && !strings.ContainsRune("-+@:/_", rune(tok[end])) || end <= slash {
+		if end < len(tok) && !strings.ContainsRune("-+@:/_<.;", rune(tok[end])) || end <= slash {
 			continue
 		}
 		v := start > 0 && (tok[start-1] == 'v' || tok[start-1] == 'V')
