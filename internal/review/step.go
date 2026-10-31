@@ -119,11 +119,11 @@ func version(tok string) []string {
 		if v {
 			start--
 		}
-		// Inside a tag, the digits are the tag's name, or the closing tag's
-		// after its slash, unless they follow the < at once and run to a
-		// separator or the token's end: a range's upper bound, such as <2.0.0.
+		// Inside a tag, one a later > closes, the digits are the tag's name,
+		// or the closing tag's after its slash. After a < that no > closes,
+		// they are a range's upper bound, such as <2.0.0.
 		if lt := strings.LastIndexByte(tok[:start], '<'); lt > strings.LastIndexByte(tok[:start], '>') &&
-			(start != lt+1 || end < len(tok) && (tok[end] == ':' || tok[end] == '>')) {
+			(start != lt+1 || strings.IndexByte(tok[end:], '>') >= 0) {
 			continue
 		}
 		if digits := tok[m[2]:end]; !v && len(digits) >= minCommitDigits && !strings.Contains(digits, ".") {

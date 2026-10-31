@@ -51,6 +51,8 @@ func TestBumpStep(t *testing.T) {
 		{name: "an archive named by its version", old: "https://example.com/x/archive/v1.2.3.tar.gz", now: "https://example.com/x/archive/v1.3.0.tar.gz", want: StepMinor},
 		{name: "a version in a namespaced XML element", old: "<v1:version>1.2.3</v1:version>", now: "<v1:version>2.0.0</v1:version>", want: StepMajor},
 		{name: "a tag that names a version around no version", old: "<v1:version>latest</v1:version>", now: "<v1:version>stable</v1:version>", want: StepUnknown},
+		{name: "a hyphenated tag name around no version", old: "<v1-image>app:latest@sha256:aaaa</v1-image>", now: "<v1-image>app:latest@sha256:bbbb</v1-image>", want: StepUnknown},
+		{name: "a dotted tag name around a version", old: "<v1.image>app:1.2.3</v1.image>", now: "<v1.image>app:1.2.4</v1.image>", want: StepPatch},
 		{name: "a range's upper bound", old: "<2.0.0", now: "<3.0.0", want: StepMajor},
 		{name: "a range's upper bound with a v", old: "<v2.0.0", now: "<v3.0.0", want: StepMajor},
 		{name: "an archive named by its commit", old: "https://example.com/x/archive/1234567.tar.gz", now: "https://example.com/x/archive/7654321.tar.gz", want: StepUnknown},
