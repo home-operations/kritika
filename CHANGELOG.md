@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.113](https://github.com/home-operations/kritika/compare/0.0.112...0.0.113) (2026-10-31)
+
+
+### Features
+
+* **web:** show each account's forge host in the account menu ([#1331](https://github.com/home-operations/kritika/issues/1331)) ([6bc0955](https://github.com/home-operations/kritika/commit/6bc09553b4918bd77c2775a58ec553f7b65c1f52))
+
+
+### Miscellaneous Chores
+
+* **go:** update module go.yaml.in/yaml/v4 (v4.0.0-rc.6 → v4.0.0-rc.7) ([#1333](https://github.com/home-operations/kritika/issues/1333)) ([9ca47bc](https://github.com/home-operations/kritika/commit/9ca47bcd78cdd7b5c4774cee440233fe9b89dbcb))
+* **npm:** update dependency layerchart (2.9.1 → 2.9.2) ([#1334](https://github.com/home-operations/kritika/issues/1334)) ([c83377b](https://github.com/home-operations/kritika/commit/c83377b6c4035b88e903161a5d62a9614e816dfc))
+
 ## [0.0.112](https://github.com/home-operations/kritika/compare/0.0.111...0.0.112) (2026-10-31)
 
 
