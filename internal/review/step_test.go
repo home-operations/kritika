@@ -49,7 +49,10 @@ func TestBumpStep(t *testing.T) {
 		{name: "a module path and its version", old: "github.com/foo/bar/v2 v2.1.0", now: "github.com/foo/bar/v3 v3.0.0", want: StepMajor},
 		{name: "a version in an XML element", old: "<version>1.2.3</version>", now: "<version>2.0.0</version>", want: StepMajor},
 		{name: "an archive named by its version", old: "https://example.com/x/archive/v1.2.3.tar.gz", now: "https://example.com/x/archive/v1.3.0.tar.gz", want: StepMinor},
-		{name: "a requirement with a marker", old: "pkg==1.2.3;python_version>'3.8'", now: "pkg==1.2.4;python_version>'3.8'", want: StepPatch},
+		{name: "a version in a namespaced XML element", old: "<v1:version>1.2.3</v1:version>", now: "<v1:version>2.0.0</v1:version>", want: StepMajor},
+		{name: "an archive named by its commit", old: "https://example.com/x/archive/1234567.tar.gz", now: "https://example.com/x/archive/7654321.tar.gz", want: StepUnknown},
+		{name: "an npm major selector", old: "react@18", now: "react@19", want: StepMajor},
+		{name: "a date tag", old: "ghcr.io/x/y:20241014", now: "ghcr.io/x/y:20241031", want: StepUnknown},
 		{name: "a tag joined by a hyphen names no version", old: "ubuntu-22.04", now: "ubuntu-24.04", want: StepUnknown},
 		{name: "an address", old: "10.0.0.1", now: "10.0.0.2", want: StepPatch},
 		{name: "a kubernetes version", old: "registry.k8s.io/kube-apiserver:v1.30.0", now: "registry.k8s.io/kube-apiserver:v1.31.0", want: StepMinor},
@@ -102,6 +105,24 @@ func TestStepRisk(t *testing.T) {
 				t.Fatalf("stepRisk(%s, %v, %s) = %s, want %s", tt.step, tt.early, tt.reach, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestBumpsStep: the step reads from a bump as Bumps extracts it, with the
+// line's punctuation parted from the version.
+func TestBumpsStep(t *testing.T) {
+	diff := "diff --git a/requirements.txt b/requirements.txt\n--- a/requirements.txt\n+++ b/requirements.txt\n@@ -1 +1 @@\n" +
+		"-pkg==1.2.3;python_version>'3.8'\n+pkg==2.0.0;python_version>'3.8'\n" +
+		"diff --git a/pom.xml b/pom.xml\n--- a/pom.xml\n+++ b/pom.xml\n@@ -1 +1 @@\n" +
+		"-    <v1:version>1.2.3</v1:version>\n+    <v1:version>1.3.0</v1:version>\n"
+	bumps := Bumps(diff)
+	if len(bumps) != 2 || bumps[0].Old != "1.2.3" || bumps[0].New != "2.0.0" {
+		t.Fatalf("bumps = %+v, want the requirement's version alone and the element", bumps)
+	}
+	for i, want := range []Step{StepMajor, StepMinor} {
+		if step, _ := bumps[i].Step(); step != want {
+			t.Errorf("%s: step = %s, want %s", bumps[i].Path, step, want)
+		}
 	}
 }
 

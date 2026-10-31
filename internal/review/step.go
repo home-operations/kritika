@@ -80,6 +80,11 @@ func (b Bump) Step() (step Step, early bool) {
 // stepsBySize orders the known steps.
 var stepsBySize = []Step{StepDigest, StepPatch, StepMinor, StepMajor}
 
+// minCommitDigits is the length from which digits alone read as a commit or
+// a date rather than a version: the shortest commit a forge abbreviates to,
+// and under what a major version or an npm selector such as react@18 has.
+const minCommitDigits = 7
+
 // versionRE finds where a version can start in a token: digits and dots
 // after the token's start, a separator or a range operator, with a v allowed
 // before them. What follows the digits decides whether they are a version
@@ -89,14 +94,15 @@ var versionRE = regexp.MustCompile(`(?:^|[:/@^~<>=!])[vV]?(\d+(?:\.\d+)*)`)
 // version is the components of the version tok names, nil when it names
 // none. Digits are a version when a separator, a closing tag, a dot that
 // starts an archive's suffix, or the token's end follows them, so the digits
-// of a commit, a digest or a word are none. Digits before
-// the token's last slash are none either: an image's registry, its port and
-// its repository path come before the tag, and a URL's path segment, such as
-// /v1/, names no version of what the line moves. After an @, digits alone
-// are a commit that happens to hold no letter, not a version: a version
-// there has a dot or a v, as a module's does. Of several, the last is the
-// version. The components are kept as digits with their leading zeros
-// dropped, since only whether two differ is asked of them.
+// of a word are none. Digits alone, with no dot and no v, are a version only
+// under seven of them: longer, they are a commit that happens to hold no
+// letter, or a date, which a step does not measure. Digits inside an XML
+// tag's name are none. Digits before the token's last slash are none either:
+// an image's registry, its port and its repository path come before the tag,
+// and a URL's path segment, such as /v1/, names no version of what the line
+// moves. Of several, the last is the version. The components are kept as
+// digits with their leading zeros dropped, since only whether two differ is
+// asked of them.
 func version(tok string) []string {
 	var found string
 	// A closing tag's slash parts no path.
@@ -106,14 +112,17 @@ func version(tok string) []string {
 	}
 	for _, m := range versionRE.FindAllStringSubmatchIndex(tok, -1) {
 		start, end := m[2], m[3]
-		if end < len(tok) && !strings.ContainsRune("-+@:/_<.;", rune(tok[end])) || end <= slash {
+		if end < len(tok) && !strings.ContainsRune("-+@:/_<.", rune(tok[end])) || end <= slash {
+			continue
+		}
+		if strings.LastIndexByte(tok[:start], '<') > strings.LastIndexByte(tok[:start], '>') {
 			continue
 		}
 		v := start > 0 && (tok[start-1] == 'v' || tok[start-1] == 'V')
 		if v {
 			start--
 		}
-		if start > 0 && tok[start-1] == '@' && !v && !strings.Contains(tok[m[2]:end], ".") {
+		if digits := tok[m[2]:end]; !v && len(digits) >= minCommitDigits && !strings.Contains(digits, ".") {
 			continue
 		}
 		if lower := strings.ToLower(tok[:start]); strings.HasSuffix(lower, "sha256:") || strings.HasSuffix(lower, "sha512:") {

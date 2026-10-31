@@ -110,11 +110,11 @@ func movedTokens(old, now string) (bump Bump, ok bool) {
 }
 
 // bumpTokens splits a line on whitespace, a carriage return included, and
-// the punctuation manifests put around a version: quotes, equals, commas
-// and brackets.
+// the punctuation manifests put around a version: quotes, equals, commas,
+// brackets, and the semicolon that parts a requirement from its marker.
 func bumpTokens(line string) []string {
 	return strings.FieldsFunc(line, func(r rune) bool {
-		return r == ' ' || r == '\t' || r == '\r' || strings.ContainsRune(`"'=,()[]{}`, r)
+		return r == ' ' || r == '\t' || r == '\r' || strings.ContainsRune(`"'=,;()[]{}`, r)
 	})
 }
 
