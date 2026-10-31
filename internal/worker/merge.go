@@ -87,8 +87,9 @@ func (p *publishPhase) merge(ctx context.Context, parts []review.MergePart, find
 	}
 	ref := p.settings.Models.Review
 	// The review model's attempts can take all of the call's time. That is
-	// about one slow answer at the review's effort, which half of the time
-	// cuts off. A merge that fails only joins the parts' summaries.
+	// about enough for one slow answer at the review's effort. Half that time
+	// will cut the answer off. A merge that fails only joins the parts'
+	// summaries.
 	call, err := p.structured(ref, p.settings.Models.Fallback, store.ModelCallMerge, store.RoleReview, "merge", false)
 	if err != nil {
 		return "", err
