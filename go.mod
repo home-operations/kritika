@@ -36,7 +36,7 @@ require (
 	github.com/sigstore/sigstore-go v1.4.0
 	github.com/ulikunitz/xz v0.5.17
 	gitlab.com/gitlab-org/api/client-go/v3 v3.40.0
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	go.yaml.in/yaml/v4 v4.0.0-rc.7
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
