@@ -145,9 +145,12 @@ func (a *Forges) Build(ctx context.Context, in *configfile.Connection, repo stri
 // Reach lists the repositories that connection in reaches: those that its App
 // is installed on or its bot can see. It lists them by the lowercased login
 // of the account that each is under, as the store registers them. This is the
-// poller's Reach.
-func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
-	out := make(map[string][]store.ReachedRepository, len(in.Accounts))
+// poller's Reach. A Forgejo or Gitea account whose listing fails is logged
+// and left out, so the connection's other accounts still register. One
+// whose repositories the forge keeps from the bot is listed from the bot's
+// own, as a partial listing.
+func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[string]store.Listing, error) {
+	out := make(map[string]store.Listing, len(in.Accounts))
 	switch in.Forge {
 	case configfile.ForgeGitHub:
 		app, err := a.app(in)
@@ -163,7 +166,7 @@ func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[stri
 			for _, repo := range r.Repositories {
 				repos = append(repos, reached(repo.FullName, repo.DefaultBranch, repo.Archived, repo.Fork, repo.Visibility))
 			}
-			out[strings.ToLower(r.Account)] = repos
+			out[strings.ToLower(r.Account)] = store.Listing{Repos: repos}
 		}
 	case configfile.ForgeForgejo, configfile.ForgeGitea:
 		c, err := a.bot(in)
@@ -171,15 +174,19 @@ func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[stri
 			return nil, err
 		}
 		for _, account := range in.Accounts {
-			listed, err := c.Repositories(ctx, account)
+			listed, partial, err := c.Repositories(ctx, account)
 			if err != nil {
-				return nil, err
+				if ctx.Err() != nil {
+					return nil, err
+				}
+				slog.Warn("repositories not listed", "connection", in.Name, "account", account, "error", err)
+				continue
 			}
 			repos := make([]store.ReachedRepository, 0, len(listed))
 			for _, repo := range listed {
 				repos = append(repos, reached(repo.FullName, repo.DefaultBranch, repo.Archived, repo.Fork, repo.Visibility))
 			}
-			out[strings.ToLower(account)] = repos
+			out[strings.ToLower(account)] = store.Listing{Repos: repos, Partial: partial}
 		}
 	case configfile.ForgeGitLab:
 		c, err := a.lab(in)
@@ -195,7 +202,7 @@ func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[stri
 			for _, repo := range listed {
 				repos = append(repos, reached(repo.FullName, repo.DefaultBranch, repo.Archived, repo.Fork, repo.Visibility))
 			}
-			out[strings.ToLower(account)] = repos
+			out[strings.ToLower(account)] = store.Listing{Repos: repos}
 		}
 	default:
 		return nil, fmt.Errorf("worker: forge %s is not implemented", in.Forge)

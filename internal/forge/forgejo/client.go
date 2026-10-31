@@ -574,16 +574,54 @@ type Repository struct {
 // that the bot can see. The users route lists an organization's too. It asks
 // the token for the repository scope alone, where the organizations route
 // asks for the organization scope as well.
-func (c *Client) Repositories(ctx context.Context, account string) ([]Repository, error) {
-	repos, err := c.list[repository](ctx, "/users/"+url.PathEscape(account)+"/repos", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("forgejo: list repositories of %s: %w", account, err)
+//
+// A user whose profile is private is 404 on that route to anyone but the
+// user and site admins, whatever repositories of theirs the bot has access
+// to (Forgejo's routers/api/v1/permissions/individual_perms_checker.go, and
+// Gitea's individualPermsChecker). Then the bot's own listing stands in,
+// narrowed to the account, and partial says so. That listing holds the
+// repositories the bot owns or has an access entry for. Under a private
+// profile, the bot reaches the repositories it collaborates on and no other,
+// public or not (models/perm/access/repo_permission.go on both forges), and
+// a collaboration has an entry. Except that Gitea keeps none for a read-only
+// collaboration on a public repository, which that listing then lacks: what
+// a partial listing lacks is not known to be out of reach. An account that
+// does not exist is 404 too, and the bot's listing has nothing under it:
+// the error says not found.
+func (c *Client) Repositories(ctx context.Context, account string) (repos []Repository, partial bool, err error) {
+	listed, err := c.list[repository](ctx, "/users/"+url.PathEscape(account)+"/repos", nil, nil)
+	if errors.Is(err, forge.ErrNotFound) {
+		notFound := err
+		partial = true
+		if listed, err = c.ownRepositories(ctx, account); err == nil && len(listed) == 0 {
+			err = notFound
+		}
 	}
-	out := make([]Repository, 0, len(repos))
-	for _, r := range repos {
-		out = append(out, Repository{
+	if err != nil {
+		return nil, false, fmt.Errorf("forgejo: list repositories of %s: %w", account, err)
+	}
+	repos = make([]Repository, 0, len(listed))
+	for _, r := range listed {
+		repos = append(repos, Repository{
 			FullName: r.FullName, DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork, Visibility: r.visibility(),
 		})
+	}
+	return repos, partial, nil
+}
+
+// ownRepositories is the bot's own listing, GET /user/repos, narrowed to
+// the repositories under account. Forgejo spells the owner as the account
+// does, in its own case.
+func (c *Client) ownRepositories(ctx context.Context, account string) ([]repository, error) {
+	all, err := c.list[repository](ctx, "/user/repos", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []repository
+	for _, r := range all {
+		if owner, _, ok := strings.Cut(r.FullName, "/"); ok && strings.EqualFold(owner, account) {
+			out = append(out, r)
+		}
 	}
 	return out, nil
 }

@@ -218,7 +218,7 @@ func testEnableDiscovered(t *testing.T, e *actionsEnv) {
 	})
 	const path = "/api/v1/accounts/github/aj/repos/aj/discovered"
 	for _, on := range []bool{false, true, false} {
-		if _, _, err := e.st.RegisterRepositories(ctx, e.accountID, reached, time.Time{}); err != nil {
+		if _, _, err := e.st.RegisterRepositories(ctx, e.accountID, store.Listing{Repos: reached}, time.Time{}); err != nil {
 			t.Fatal(err)
 		}
 		status, body := e.send(http.MethodGet, path, "")

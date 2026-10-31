@@ -432,14 +432,14 @@ func TestSyncRepositories(t *testing.T) {
 	})
 	var asked []string
 	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Logger: logger,
-		Reach: func(_ context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+		Reach: func(_ context.Context, in *configfile.Connection) (map[string]store.Listing, error) {
 			asked = append(asked, in.Name)
-			return map[string][]store.ReachedRepository{
-				"onedr0p": {
+			return map[string]store.Listing{
+				"onedr0p": {Repos: []store.ReachedRepository{
 					{FullName: "onedr0p/synced", DefaultBranch: "main", Traits: &configfile.RepoTraits{}},
 					{FullName: "onedr0p/synced-fork", DefaultBranch: "main", Traits: &configfile.RepoTraits{Fork: true}},
-				},
-				"stranger": {{FullName: "stranger/elsewhere", Traits: &configfile.RepoTraits{}}},
+				}},
+				"stranger": {Repos: []store.ReachedRepository{{FullName: "stranger/elsewhere", Traits: &configfile.RepoTraits{}}}},
 			}, nil
 		},
 	}
@@ -515,13 +515,13 @@ func TestSyncRepositories(t *testing.T) {
 		})
 	}()
 	<-began
-	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+	p.Reach = func(context.Context, *configfile.Connection) (map[string]store.Listing, error) {
 		close(write)
 		if err := <-named; err != nil {
 			return nil, err
 		}
-		return map[string][]store.ReachedRepository{
-			"onedr0p": {{FullName: "onedr0p/synced", DefaultBranch: "main", Traits: &configfile.RepoTraits{}}},
+		return map[string]store.Listing{
+			"onedr0p": {Repos: []store.ReachedRepository{{FullName: "onedr0p/synced", DefaultBranch: "main", Traits: &configfile.RepoTraits{}}}},
 		}, nil
 	}
 	p.SyncRepositories(ctx)
@@ -530,14 +530,14 @@ func TestSyncRepositories(t *testing.T) {
 		t.Fatalf("a sync without synced-fork: repositories %q, logs %s; want %q", got, logs.String(), want)
 	}
 
-	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
-		return map[string][]store.ReachedRepository{"onedr0p": {}}, nil
+	p.Reach = func(context.Context, *configfile.Connection) (map[string]store.Listing, error) {
+		return map[string]store.Listing{"onedr0p": {}}, nil
 	}
 	p.SyncRepositories(ctx)
 	if got := rows(); got != want {
 		t.Fatalf("an empty listing: repositories %q, want %q", got, want)
 	}
-	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+	p.Reach = func(context.Context, *configfile.Connection) (map[string]store.Listing, error) {
 		return nil, errors.New("github: list App installations: 502")
 	}
 	p.SyncRepositories(ctx)
@@ -708,9 +708,9 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	storetest.Repositories(t, st, file, "onedr0p/home-ops")
-	if _, _, err := st.RegisterRepositories(ctx, account.ID(), []store.ReachedRepository{
+	if _, _, err := st.RegisterRepositories(ctx, account.ID(), store.Listing{Repos: []store.ReachedRepository{
 		{FullName: "onedr0p/flaky", DefaultBranch: "main", Traits: &configfile.RepoTraits{}},
-	}, time.Now()); err != nil {
+	}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	// A webhook reached the connection lately, so the poll looks at no default
