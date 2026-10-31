@@ -38,9 +38,11 @@ The scorer reads:
 It returns the risk of the change, whether it has a concern of its own, how
 much depends on each dependency the change moves, and a reason. A model from
 a different vendor can provide a second opinion. kritika derives the score,
-from **2 to 5**, from the findings and that answer:
+from **0 to 5**, from the findings and that answer:
 
-- A **P0** finding sets the score to **2**.
+- If the scorer says the change must not merge in any form, the score is **0**.
+- Otherwise, several **P0** findings, or one in a change rated critical, set it to **1**.
+- Otherwise, a **P0** finding sets it to **2**.
 - Otherwise, a **P1** finding sets it to **3**.
 - Otherwise, a concern of the scorer's own sets it to **4**.
 - Otherwise it is **5**. **P2** findings do not reduce it by themselves.

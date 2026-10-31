@@ -15,6 +15,7 @@ func TestParseConfidence(t *testing.T) {
 		raw         string
 		wantRisk    Risk
 		wantConcern bool
+		wantReject  bool
 		wantReaches []Reach
 		wantReason  string
 		wantErr     string
@@ -22,6 +23,9 @@ func TestParseConfidence(t *testing.T) {
 		{name: "a clean answer", raw: `{"risk": "low", "concern": false, "bumps": [], "reason": "Nothing stands against it."}`, wantRisk: RiskLow,
 			wantReason: "Nothing stands against it."},
 		{name: "a concern", raw: `{"risk": "medium", "concern": true, "bumps": [], "reason": "ok"}`, wantRisk: RiskMedium, wantConcern: true, wantReason: "ok"},
+		{name: "a rejection", raw: `{"risk": "critical", "concern": true, "reject": true, "bumps": [], "reason": "ok"}`, wantRisk: RiskCritical, wantConcern: true,
+			wantReject: true, wantReason: "ok"},
+		{name: "no word on a rejection rejects nothing", raw: `{"risk": "low", "concern": false, "reason": "ok"}`, wantRisk: RiskLow, wantReason: "ok"},
 		{name: "the reaches, by file and line", wantRisk: RiskLow, wantReason: "ok", wantReaches: []Reach{ReachCentral, ReachStandalone},
 			raw: `{"risk": "low", "concern": false, "bumps": [{"path": "go.mod", "line": 9, "reach": "standalone"}, {"path": "Chart.yaml", "line": 4, "reach": "central"}], "reason": "ok"}`},
 		{name: "a reach for a line not listed is dropped", wantRisk: RiskLow, wantReason: "ok", wantReaches: []Reach{"", ReachShared},
@@ -61,9 +65,10 @@ func TestParseConfidence(t *testing.T) {
 			if wantReaches == nil {
 				wantReaches = make([]Reach, len(bumps))
 			}
-			if err != nil || p.Risk != tt.wantRisk || p.Concern != tt.wantConcern || !slices.Equal(p.Reaches, wantReaches) || p.Reason != tt.wantReason {
-				t.Fatalf("ParseConfidence = %s, %v, %v, %q, %v; want %s, %v, %v, %q", p.Risk, p.Concern, p.Reaches, p.Reason, err,
-					tt.wantRisk, tt.wantConcern, wantReaches, tt.wantReason)
+			if err != nil || p.Risk != tt.wantRisk || p.Concern != tt.wantConcern || p.Reject != tt.wantReject || !slices.Equal(p.Reaches, wantReaches) ||
+				p.Reason != tt.wantReason {
+				t.Fatalf("ParseConfidence = %s, %v, %v, %v, %q, %v; want %s, %v, %v, %v, %q", p.Risk, p.Concern, p.Reject, p.Reaches, p.Reason, err,
+					tt.wantRisk, tt.wantConcern, tt.wantReject, wantReaches, tt.wantReason)
 			}
 			// What the judge gave is read back from its answer, apart from
 			// what stands.
@@ -82,21 +87,25 @@ func TestParseConfidence(t *testing.T) {
 
 func TestScore(t *testing.T) {
 	for _, tt := range []struct {
-		name    string
-		counts  Counts
-		concern bool
-		want    int
+		name            string
+		counts          Counts
+		risk            Risk
+		concern, reject bool
+		want            int
 	}{
-		{name: "a clean review", want: 5},
-		{name: "nits take nothing off", counts: Counts{P2: 3}, want: 5},
-		{name: "a concern takes one off", concern: true, want: 4},
-		{name: "an important finding holds it to 3", counts: Counts{P1: 1}, want: 3},
-		{name: "a concern beside an important finding changes nothing", counts: Counts{P1: 1}, concern: true, want: 3},
-		{name: "a blocking finding holds it to 2", counts: Counts{P0: 1, P1: 2}, want: 2},
-		{name: "several blocking findings hold it to 2 too", counts: Counts{P0: 3}, concern: true, want: 2},
+		{name: "a clean review", risk: RiskLow, want: 5},
+		{name: "nits take nothing off", counts: Counts{P2: 3}, risk: RiskCritical, want: 5},
+		{name: "a concern takes one off", risk: RiskLow, concern: true, want: 4},
+		{name: "an important finding holds it to 3", counts: Counts{P1: 1}, risk: RiskLow, want: 3},
+		{name: "a concern beside an important finding changes nothing", counts: Counts{P1: 1}, risk: RiskCritical, concern: true, want: 3},
+		{name: "a blocking finding holds it to 2", counts: Counts{P0: 1, P1: 2}, risk: RiskHigh, want: 2},
+		{name: "several blocking findings hold it to 1", counts: Counts{P0: 2}, risk: RiskLow, want: 1},
+		{name: "a blocking finding in a critical change holds it to 1", counts: Counts{P0: 1}, risk: RiskCritical, concern: true, want: 1},
+		{name: "a rejected change is 0", risk: RiskLow, reject: true, want: 0},
+		{name: "a rejected change is 0 whatever was found", counts: Counts{P0: 2}, risk: RiskCritical, reject: true, want: 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Score(tt.counts, tt.concern); got != tt.want {
+			if got := Score(tt.counts, tt.risk, tt.concern, tt.reject); got != tt.want {
 				t.Fatalf("Score = %d, want %d", got, tt.want)
 			}
 		})
@@ -325,6 +334,8 @@ func TestConfidenceSystemConcerns(t *testing.T) {
 	for _, rule := range []string{
 		"say so in the reason, so the maintainer knows to look. P2s take nothing off",
 		"A concern of your own takes a review with no P0 or P1 finding from 5 to 4",
+		"Several P0 findings, or one in a change you rate critical, take it to 1",
+		"A change that must not merge in any form close to this one takes it to 0 when you say so, whatever was found",
 		"or none, when the line moves no dependency, such as an address, a port or a version in prose",
 		"a bot author or a description that calls the update safe never rates it below its step",
 		"no reported finding raises, whatever its severity",

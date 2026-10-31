@@ -79,8 +79,9 @@ func checkConfidence(f confidenceCase, bumps []review.Bump, raw string) error {
 	if p.Defaulted() || strings.TrimSpace(p.Reason) == "" {
 		return fmt.Errorf("bench: incomplete risk or reason")
 	}
-	c := review.Confidence{Score: review.Score(f.Result.Counts(), p.Concern), Risk: p.Risk}
+	c := review.Confidence{Risk: p.Risk}
 	c.HoldStep(review.StepFloor(bumps, p.Reaches))
+	c.Score = review.Score(f.Result.Counts(), c.Risk, p.Concern, p.Reject)
 	if c.Score < f.Score[0] || c.Score > f.Score[1] || c.Risk != f.Risk {
 		return fmt.Errorf("bench: score/risk %d/%s (judge %s), want [%d,%d]/%s", c.Score, c.Risk, p.Risk, f.Score[0], f.Score[1], f.Risk)
 	}
@@ -113,6 +114,7 @@ func TestConfidenceEvaluation(t *testing.T) {
 	}{
 		{"within range", `{"risk":"critical","concern":false,"bumps":[],"reason":"Drops production records."}`, false},
 		{"a concern changes nothing under a ceiling", `{"risk":"critical","concern":true,"bumps":[],"reason":"Drops production records."}`, false},
+		{"a rejection scores 0", `{"risk":"critical","concern":false,"reject":true,"bumps":[],"reason":"Drops production records."}`, false},
 		{"understates risk", `{"risk":"low","concern":false,"bumps":[],"reason":"Drops production records."}`, true},
 		{"missing risk", `{"concern":false,"bumps":[],"reason":"Drops production records."}`, true},
 		{"missing concern", `{"risk":"critical","bumps":[],"reason":"Drops production records."}`, true},

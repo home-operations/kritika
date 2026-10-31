@@ -156,13 +156,16 @@ func (p *publishPhase) score(
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "risk")
 	}
 	c := review.Confidence{
-		Score: review.Score(res.Counts(), parsed.Concern), Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason,
-		Risk: parsed.Risk, Model: resp.Model, Rubric: rubric,
+		Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model, Rubric: rubric,
 	}
 	if floor, at := review.StepFloor(bumps, parsed.Reaches); c.HoldStep(floor, at) {
 		p.logger.Info("risk held to the version step", "rated", parsed.Risk, "floor", floor, "step", at)
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "step")
 	}
+	// The score rests on the risk the change is rated, the step's hold
+	// included, and not on the instance's floor: a floor set or cleared
+	// since moves a carried rating, never a carried score.
+	c.Score = review.Score(res.Counts(), c.Risk, parsed.Concern, parsed.Reject)
 	if floor, at := p.settings.Confidence.Floors.Floor(changed); c.Hold(floor, at) {
 		p.logger.Info("risk held to the floor", "rated", parsed.Risk, "floor", floor, "path", at)
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "floor")
