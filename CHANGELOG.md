@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.0.111](https://github.com/home-operations/kritika/compare/0.0.110...0.0.111) (2026-10-31)
+
+
+### Features
+
+* **review:** list other open pull requests that change the same files ([#1308](https://github.com/home-operations/kritika/issues/1308)) ([803660c](https://github.com/home-operations/kritika/commit/803660cb3f2874870d28cbdf009a756d559c900d))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/curlimages/curl (11e64e2 → 3fb7e13) ([#1305](https://github.com/home-operations/kritika/issues/1305)) ([2c53576](https://github.com/home-operations/kritika/commit/2c535769dad31bab0bb644d7d589f2cfbfe2e741))
+* **forgejo:** discover the repositories of a user with a private profile ([#1318](https://github.com/home-operations/kritika/issues/1318)) ([1b68551](https://github.com/home-operations/kritika/commit/1b68551123ef9b0d8f4d1c83605a73b2c95bb6a9))
+* **worker:** ask the forge whether a pull request is still open before acting on it ([#1309](https://github.com/home-operations/kritika/issues/1309)) ([058baa1](https://github.com/home-operations/kritika/commit/058baa13880656ef20790625600edf34546494d9))
+
+
+### Documentation
+
+* rewrite the docs and code comments in plain English ([#1315](https://github.com/home-operations/kritika/issues/1315)) ([0011643](https://github.com/home-operations/kritika/commit/0011643b080aa332b1a2851bf2817e37584499fd))
+
+
+### Miscellaneous Chores
+
+* **go:** update kubernetes monorepo (v0.37.1 → v0.37.2) ([#1316](https://github.com/home-operations/kritika/issues/1316)) ([1786714](https://github.com/home-operations/kritika/commit/17867145dd63583d301665e1024a4481d1514fbe))
+* **mise:** update tool node (26.12.1 → v26.13.0) ([#1314](https://github.com/home-operations/kritika/issues/1314)) ([55aa511](https://github.com/home-operations/kritika/commit/55aa5119316d704c7307cf4f7c334de44b813508))
+* **mise:** update tool pnpm (12.15.0 → 12.16.0) ([#1310](https://github.com/home-operations/kritika/issues/1310)) ([faf612f](https://github.com/home-operations/kritika/commit/faf612f7df955c8006c10a22a7754cd75e6e6b5a))
+* **mise:** update tool pnpm (12.16.0 → 12.16.1) ([#1311](https://github.com/home-operations/kritika/issues/1311)) ([8d860a1](https://github.com/home-operations/kritika/commit/8d860a1bde99f476dab0b1b5de114a550660cccb))
+* **renovate:** extend the org preset from home-operations/.github ([1732e87](https://github.com/home-operations/kritika/commit/1732e873b37cf564c45a71c394698710f45f4379))
+
 ## [0.0.110](https://github.com/home-operations/kritika/compare/0.0.109...0.0.110) (2026-10-28)
 
 
