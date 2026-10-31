@@ -91,7 +91,9 @@ var versionRE = regexp.MustCompile(`(?:^|[:/@^~<>=!])[vV]?(\d+(?:\.\d+)*)`)
 // them, so the digits of a commit, a digest or a word are none. Digits before
 // the token's last slash are none either: an image's registry, its port and
 // its repository path come before the tag, and a URL's path segment, such as
-// /v1/, names no version of what the line moves. Of several, the last is the
+// /v1/, names no version of what the line moves. After an @, digits alone
+// are a commit that happens to hold no letter, not a version: a version
+// there has a dot or a v, as a module's does. Of several, the last is the
 // version. The components are kept as digits with their leading zeros
 // dropped, since only whether two differ is asked of them.
 func version(tok string) []string {
@@ -102,8 +104,12 @@ func version(tok string) []string {
 		if end < len(tok) && !strings.ContainsRune("-+@:/_", rune(tok[end])) || end <= slash {
 			continue
 		}
-		if start > 0 && (tok[start-1] == 'v' || tok[start-1] == 'V') {
+		v := start > 0 && (tok[start-1] == 'v' || tok[start-1] == 'V')
+		if v {
 			start--
+		}
+		if start > 0 && tok[start-1] == '@' && !v && !strings.Contains(tok[m[2]:end], ".") {
+			continue
 		}
 		if lower := strings.ToLower(tok[:start]); strings.HasSuffix(lower, "sha256:") || strings.HasSuffix(lower, "sha512:") {
 			continue

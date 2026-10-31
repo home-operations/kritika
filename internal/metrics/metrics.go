@@ -122,8 +122,8 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, "score", "risk"}),
 		confidenceHeld: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_confidence_held_total",
-			Help: "Confidence answers kritika held to its own rule, by what: score (under the findings' ceiling), " +
-				"risk (given as no level, taken as critical), floor (raised to a path's floor).",
+			Help: "Confidence answers kritika held to its own rule, by what: risk (given as no level, taken as critical), " +
+				"step (raised to a moved version's step floor), floor (raised to a path's floor).",
 		}, []string{lblAccount, "what"}),
 		indexRuns: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
