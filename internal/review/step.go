@@ -115,12 +115,16 @@ func version(tok string) []string {
 		if end < len(tok) && !strings.ContainsRune("-+@:/_<.", rune(tok[end])) || end <= slash {
 			continue
 		}
-		if strings.LastIndexByte(tok[:start], '<') > strings.LastIndexByte(tok[:start], '>') {
-			continue
-		}
 		v := start > 0 && (tok[start-1] == 'v' || tok[start-1] == 'V')
 		if v {
 			start--
+		}
+		// Inside a tag, the digits are the tag's name, or the closing tag's
+		// after its slash, unless they follow the < at once and run to a
+		// separator or the token's end: a range's upper bound, such as <2.0.0.
+		if lt := strings.LastIndexByte(tok[:start], '<'); lt > strings.LastIndexByte(tok[:start], '>') &&
+			(start != lt+1 || end < len(tok) && (tok[end] == ':' || tok[end] == '>')) {
+			continue
 		}
 		if digits := tok[m[2]:end]; !v && len(digits) >= minCommitDigits && !strings.Contains(digits, ".") {
 			continue
