@@ -354,6 +354,42 @@ gitea:
 	}
 }
 
+// TestForgesReachSkipsAnAccountItCannotList: on a Forgejo or Gitea
+// connection, an account whose listing fails is left out, and the
+// connection's other accounts are listed. An account the forge does not
+// show, as it does not one with a private profile, is listed from the bot's
+// own repositories, as a partial listing.
+func TestForgesReachSkipsAnAccountItCannotList(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/users/acme/repos", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"full_name": "acme/widgets", "default_branch": "main", "private": true}]`)
+	})
+	for _, hidden := range []string{"shy", "nobody"} {
+		mux.HandleFunc("GET /api/v1/users/"+hidden+"/repos", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"message": "Visit Project"}`, http.StatusNotFound)
+		})
+	}
+	mux.HandleFunc("GET /api/v1/users/other/repos", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "down", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("GET /api/v1/user/repos", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"full_name": "acme/widgets", "default_branch": "main", "private": true}, {"full_name": "Shy/shared", "default_branch": "main", "private": true}]`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forges := &Forges{bots: map[string]*forgejo.Client{"acme-tea": c}}
+	in := &configfile.Connection{Name: "acme-tea", Forge: configfile.ForgeGitea, Accounts: []string{"nobody", "other", "acme", "shy"}}
+	reach, err := forges.Reach(t.Context(), in)
+	if err != nil || len(reach) != 2 || len(reach["acme"].Repos) != 1 || reach["acme"].Repos[0].FullName != "acme/widgets" || reach["acme"].Partial ||
+		len(reach["shy"].Repos) != 1 || reach["shy"].Repos[0].FullName != "Shy/shared" || !reach["shy"].Partial {
+		t.Fatalf("Reach = %+v, %v; want acme listed, shy listed as partial and the failing accounts left out", reach, err)
+	}
+}
+
 // TestForgeCachePullRequestAuthor: the author a GitLab webhook leaves out
 // is read from the merge request.
 func TestForgeCachePullRequestAuthor(t *testing.T) {

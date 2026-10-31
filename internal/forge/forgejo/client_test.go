@@ -646,17 +646,33 @@ func TestRepositories(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(page)
 	})
+	// A user whose profile is private is 404, as one who does not exist
+	// is. The bot's own listing, across every owner, stands in for either.
+	f.json("GET", "/api/v1/users/shy/repos", 404, map[string]any{"message": "Visit Project"})
 	f.json("GET", "/api/v1/users/nobody/repos", 404, nil)
+	f.json("GET", "/api/v1/user/repos", 200, []map[string]any{
+		{"full_name": "acme/widgets", "default_branch": "main", "private": true},
+		{"full_name": "Shy/shared", "default_branch": "main", "private": true},
+		{"full_name": "bot/own", "default_branch": "main", "private": true},
+		{"full_name": "Shy/tool", "default_branch": "main"},
+	})
 	c := f.client(t)
-	repos, err := c.Repositories(t.Context(), "acme")
-	if err != nil || len(repos) != 3 || repos[0].Visibility != "private" || repos[1].Visibility != "internal" || !repos[1].Archived ||
+	repos, partial, err := c.Repositories(t.Context(), "acme")
+	if err != nil || partial || len(repos) != 3 || repos[0].Visibility != "private" || repos[1].Visibility != "internal" || !repos[1].Archived ||
 		repos[2].Visibility != "public" || !repos[2].Fork {
 		t.Fatalf("Repositories(acme) = %+v, %v", repos, err)
 	}
-	if repos, err = c.Repositories(t.Context(), "dev"); err != nil || len(repos) != 3 || repos[2].FullName != "dev/last" || f.called("GET /api/v1/users/dev/repos") != 3 {
+	if repos, partial, err = c.Repositories(t.Context(), "dev"); err != nil || partial || len(repos) != 3 || repos[2].FullName != "dev/last" || f.called("GET /api/v1/users/dev/repos") != 3 {
 		t.Fatalf("Repositories(dev) = %+v, %v, %d calls; want an emptied page read past and the walk to end at the count", repos, err, f.called("GET /api/v1/users/dev/repos"))
 	}
-	if _, err := c.Repositories(t.Context(), "nobody"); !errors.Is(err, forge.ErrNotFound) {
+	if f.called("GET /api/v1/user/repos") != 0 {
+		t.Fatal("the bot's own listing was read for accounts the users route lists")
+	}
+	repos, partial, err = c.Repositories(t.Context(), "shy")
+	if err != nil || !partial || len(repos) != 2 || repos[0].FullName != "Shy/shared" || repos[0].Visibility != "private" || repos[1].FullName != "Shy/tool" {
+		t.Fatalf("Repositories(shy) = %+v, %v; want the account's share of the bot's own listing, partial", repos, err)
+	}
+	if _, _, err := c.Repositories(t.Context(), "nobody"); !errors.Is(err, forge.ErrNotFound) {
 		t.Fatalf("Repositories(nobody) = %v, want ErrNotFound", err)
 	}
 }

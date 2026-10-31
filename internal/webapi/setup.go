@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // How far the instance is from reviewing, for the Configuration page's
@@ -56,7 +57,7 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 		if !ok || len(a.Repositories) == 0 {
 			continue
 		}
-		added, _, err := s.store.RegisterRepositories(r.Context(), acct.ID(), a.Repositories, listedAt)
+		added, _, err := s.store.RegisterRepositories(r.Context(), acct.ID(), store.Listing{Repos: a.Repositories, Partial: a.Partial}, listedAt)
 		if err != nil {
 			return err
 		}

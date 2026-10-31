@@ -20,24 +20,34 @@ type ReachedRepository struct {
 	Traits                  *configfile.RepoTraits
 }
 
+// Listing is what a connection reaches under one account. A Partial listing
+// is the bot's own repositories under the account, shown in place of the
+// account's, which the forge keeps from the bot. A repository it lacks may
+// still be reached, so none is disabled for lacking from it.
+type Listing struct {
+	Repos   []ReachedRepository
+	Partial bool
+}
+
 // RegisterRepositories records the repositories of account accountID that
 // its connection's App reaches, as a webhook from each does. So polling and
-// onboarding know them before any event arrives. repos is the account's whole
-// listing, taken from listedAt on, by the database's clock as Now reads it.
-// The forge-reported repositories that it lacks, deleted, renamed, transferred
-// or no longer reached, are disabled as an installation event does, unless
-// named since listedAt. A webhook can name them after the listing. An empty
-// listing disables nothing, so a bad one never disables a whole account. It
-// returns how many were new and how many it disabled.
+// onboarding know them before any event arrives. l is the account's listing,
+// taken from listedAt on, by the database's clock as Now reads it. The
+// forge-reported repositories that a whole listing lacks, deleted, renamed,
+// transferred or no longer reached, are disabled as an installation event
+// does, unless named since listedAt. A webhook can name them after the
+// listing. An empty or Partial listing disables nothing, so a bad one never
+// disables a whole account. It returns how many were new and how many it
+// disabled.
 func (s *Store) RegisterRepositories(
-	ctx context.Context, accountID string, repos []ReachedRepository, listedAt time.Time,
+	ctx context.Context, accountID string, l Listing, listedAt time.Time,
 ) (added, disabled int, err error) {
-	if len(repos) == 0 {
+	if len(l.Repos) == 0 {
 		return 0, 0, nil
 	}
 	err = s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		ids := make([]string, 0, len(repos))
-		for _, r := range repos {
+		ids := make([]string, 0, len(l.Repos))
+		for _, r := range l.Repos {
 			id, isNew, err := ensureRepository(ctx, tx, accountID, r, &listedAt)
 			if err != nil {
 				return err
@@ -46,6 +56,9 @@ func (s *Store) RegisterRepositories(
 			if isNew {
 				added++
 			}
+		}
+		if l.Partial {
+			return nil
 		}
 		tag, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
 			WHERE account_id = $1 AND enabled AND id <> ALL($2::uuid[]) AND updated_at < $3`,

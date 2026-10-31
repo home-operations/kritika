@@ -42,7 +42,7 @@ type Poller struct {
 	Metrics *metrics.Metrics
 	// Reach lists, by lowercased account login, the repositories that a
 	// connection's App reaches. A nil Reach registers none.
-	Reach func(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error)
+	Reach func(ctx context.Context, in *configfile.Connection) (map[string]store.Listing, error)
 
 	// unknown are the pull requests held open that the forge did not know
 	// when asked, by "owner/name#number". They are asked once per process, so
@@ -107,7 +107,8 @@ func (p *Poller) poll(ctx context.Context, poll func(context.Context)) {
 // repositories that an account's listing no longer has are disabled, in case
 // the webhook that said so was missed. A connection whose listing fails, or
 // takes longer than reachTimeout, is logged and left for the next poll. An
-// account whose listing is empty is left as it is.
+// account whose listing is empty, or that Reach left out, is left as it is.
+// A partial listing registers what it has and disables nothing.
 func (p *Poller) SyncRepositories(ctx context.Context) {
 	if p.Reach == nil {
 		return
@@ -137,11 +138,11 @@ func (p *Poller) SyncRepositories(ctx context.Context) {
 			if c := file.ConnectionFor(account); c == nil || c.Name != in.Name {
 				continue
 			}
-			repos := reach[strings.ToLower(account.Name)]
-			if len(repos) == 0 {
+			listing := reach[strings.ToLower(account.Name)]
+			if len(listing.Repos) == 0 {
 				continue
 			}
-			added, disabled, err := p.Store.RegisterRepositories(ctx, account.ID(), repos, listedAt)
+			added, disabled, err := p.Store.RegisterRepositories(ctx, account.ID(), listing, listedAt)
 			if err != nil {
 				p.Logger.Warn("repositories not synced", "connection", in.Name, "account", account.Key(), "error", err)
 				continue

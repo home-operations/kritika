@@ -38,7 +38,9 @@ func TestRepositoriesIntegration(t *testing.T) {
 			t.Fatalf("KRITIKA_TEST_FORGES entry %q is not name=URL", pair)
 		}
 		t.Run(name, func(t *testing.T) {
-			testRepositories(t, &forgeAdmin{t: t, base: strings.TrimSuffix(base, "/"), user: user, password: password})
+			testRepositories(t, &forgeAdmin{
+				t: t, base: strings.TrimSuffix(base, "/"), user: user, password: password, forgejo: strings.HasPrefix(name, "forgejo"),
+			})
 		})
 	}
 }
@@ -121,9 +123,30 @@ func testRepositories(t *testing.T, admin *forgeAdmin) {
 	admin.fork(acme, "upstream", dev)
 	want[dev] = append(want[dev], dev+"/upstream")
 	admin.createUserRepo(dev, "shared", true)
-	admin.addCollaborator(dev, "shared", bot)
+	admin.addCollaborator(dev, "shared", bot, "write")
 	want[dev] = append(want[dev], dev+"/shared")
 	admin.createUserRepo(dev, "secret", true)
+
+	// A user whose profile is private, whose repositories the users route
+	// refuses to list to the bot. The bot's own listing stands in with the
+	// repositories it collaborates on, the only ones it reaches under that
+	// user. Gitea keeps no access entry for a read-only collaboration on a
+	// public repository, so its listing lacks that one.
+	shy := "shy-" + sfx
+	admin.createUser(shy)
+	admin.setVisibility(shy, "private")
+	admin.createUserRepo(shy, "shared", true)
+	admin.addCollaborator(shy, "shared", bot, "read")
+	admin.createUserRepo(shy, "open", false)
+	admin.addCollaborator(shy, "open", bot, "write")
+	want[shy] = []string{shy + "/shared", shy + "/open"}
+	admin.createUserRepo(shy, "peek", false)
+	admin.addCollaborator(shy, "peek", bot, "read")
+	if admin.forgejo {
+		want[shy] = append(want[shy], shy+"/peek")
+	}
+	admin.createUserRepo(shy, "tool", false)
+	admin.createUserRepo(shy, "secret", true)
 
 	// The bot's own account.
 	admin.createUserRepo(bot, "own", true)
@@ -135,9 +158,12 @@ func testRepositories(t *testing.T, admin *forgeAdmin) {
 	}
 	for _, account := range slices.Sorted(maps.Keys(want)) {
 		t.Run(strings.TrimSuffix(account, "-"+sfx), func(t *testing.T) {
-			repos, err := c.Repositories(t.Context(), account)
+			repos, partial, err := c.Repositories(t.Context(), account)
 			if err != nil {
 				t.Fatalf("Repositories(%s): %v", account, err)
+			}
+			if partial != (account == shy) {
+				t.Errorf("partial = %t; want it for the private profile alone", partial)
 			}
 			got := map[string]Repository{}
 			for _, r := range repos {
@@ -177,6 +203,9 @@ type forgeAdmin struct {
 	t              *testing.T
 	base           string
 	user, password string
+	// forgejo says the instance is Forgejo rather than Gitea, where the
+	// two list differently.
+	forgejo bool
 }
 
 // call sends body to path as user, authenticated by password, and decodes the
@@ -238,6 +267,12 @@ func (a *forgeAdmin) token(user string, scopes ...string) string {
 	return out.SHA1
 }
 
+// setVisibility sets user's profile visibility: public, limited or private.
+func (a *forgeAdmin) setVisibility(user, visibility string) {
+	a.t.Helper()
+	a.do("PATCH", "/admin/users/"+user, map[string]any{"login_name": user, "source_id": 0, "visibility": visibility}, nil)
+}
+
 func (a *forgeAdmin) createOrg(name, visibility string) {
 	a.t.Helper()
 	a.do("POST", "/orgs", map[string]any{"username": name, "visibility": visibility}, nil)
@@ -287,9 +322,11 @@ func (a *forgeAdmin) addTeamRepo(team int64, org, repo string) {
 	a.do("PUT", fmt.Sprintf("/teams/%d/repos/%s/%s", team, org, repo), nil, nil)
 }
 
-func (a *forgeAdmin) addCollaborator(owner, repo, user string) {
+// addCollaborator gives user permission, read, write or admin, on the
+// repository.
+func (a *forgeAdmin) addCollaborator(owner, repo, user, permission string) {
 	a.t.Helper()
-	a.do("PUT", "/repos/"+owner+"/"+repo+"/collaborators/"+user, map[string]any{"permission": "write"}, nil)
+	a.do("PUT", "/repos/"+owner+"/"+repo+"/collaborators/"+user, map[string]any{"permission": permission}, nil)
 }
 
 // repo is fullName as the admin sees it.

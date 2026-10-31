@@ -131,11 +131,11 @@ func (s *Server) reach(r *http.Request) (*configfile.Connection, []reachedAccoun
 			return nil, nil, errForge(err)
 		}
 		for _, account := range in.Accounts {
-			listed, err := c.Repositories(r.Context(), account)
+			listed, partial, err := c.Repositories(r.Context(), account)
 			if err != nil {
 				return nil, nil, errForge(err)
 			}
-			ra := reachedAccount{Account: account}
+			ra := reachedAccount{Account: account, Partial: partial}
 			for _, x := range listed {
 				ra.Repositories = append(ra.Repositories, reachedRepository(x.FullName, x.DefaultBranch, x.Archived, x.Fork, x.Visibility))
 			}
@@ -179,6 +179,9 @@ func (s *Server) forgejoClient(in *configfile.Connection) (*forgejo.Client, erro
 type reachedAccount struct {
 	Account      string
 	Repositories []store.ReachedRepository
+	// Partial is store.Listing's: the bot's own repositories under the
+	// account stand in for the account's.
+	Partial bool
 }
 
 func reachedRepository(fullName, defaultBranch string, archived, fork bool, visibility string) store.ReachedRepository {

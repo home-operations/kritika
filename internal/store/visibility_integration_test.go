@@ -238,7 +238,7 @@ func TestRegisterRepositoriesLeavesNewerTraits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := []ReachedRepository{{FullName: name, DefaultBranch: "master", Traits: &configfile.RepoTraits{Visibility: "private", Fork: true}}}
+	stale := Listing{Repos: []ReachedRepository{{FullName: name, DefaultBranch: "master", Traits: &configfile.RepoTraits{Visibility: "private", Fork: true}}}}
 	// The webhook lands after the listing was taken and before it is
 	// registered.
 	report(configfile.RepoTraits{Visibility: "public"})
@@ -256,6 +256,57 @@ func TestRegisterRepositoriesLeavesNewerTraits(t *testing.T) {
 	}
 	if traits, branch := known(); traits != (configfile.RepoTraits{Visibility: "private", Fork: true}) || branch != "master" {
 		t.Fatalf("traits = %+v, branch %q after a fresh listing, want the listing's", traits, branch)
+	}
+}
+
+// TestRegisterRepositoriesPartialDisablesNothing: a partial listing
+// registers what it has and disables nothing for lacking from it. A whole
+// listing taken later does.
+func TestRegisterRepositoriesPartialDisablesNothing(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := parse(t, twoAccounts)
+	if err := s.ApplyConfig(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
+	kept, listed := "alpha/partial-kept", "alpha/partial-listed"
+	ids := []string{configfile.RepositoryID(a.ID(), kept), configfile.RepositoryID(a.ID(), listed)}
+	t.Cleanup(func() {
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM repositories WHERE id = ANY($1::uuid[])`, ids); err != nil {
+			t.Error(err)
+		}
+	})
+	register := func(l Listing) int {
+		t.Helper()
+		listedAt, err := s.Now(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, disabled, err := s.RegisterRepositories(ctx, a.ID(), l, listedAt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return disabled
+	}
+	enabled := func() bool {
+		t.Helper()
+		var on bool
+		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM repositories WHERE id = $1`, ids[0]).Scan(&on); err != nil {
+			t.Fatal(err)
+		}
+		return on
+	}
+	both := Listing{Repos: []ReachedRepository{{FullName: kept, DefaultBranch: "main"}, {FullName: listed, DefaultBranch: "main"}}}
+	register(both)
+	one := Listing{Repos: both.Repos[1:], Partial: true}
+	if disabled := register(one); disabled != 0 || !enabled() {
+		t.Fatalf("a partial listing without %s: disabled %d, enabled %t; want it left enabled", kept, disabled, enabled())
+	}
+	one.Partial = false
+	if disabled := register(one); disabled != 1 || enabled() {
+		t.Fatalf("a whole listing without %s: disabled %d, enabled %t; want it disabled", kept, disabled, enabled())
 	}
 }
 
@@ -280,7 +331,7 @@ func TestRegisterRepositoriesLeavesNewerDisable(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	listing := []ReachedRepository{{FullName: name, DefaultBranch: "main"}}
+	listing := Listing{Repos: []ReachedRepository{{FullName: name, DefaultBranch: "main"}}}
 	now := func() time.Time {
 		t.Helper()
 		at, err := s.Now(ctx)
