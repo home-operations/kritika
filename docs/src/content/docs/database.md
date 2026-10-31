@@ -9,23 +9,25 @@ cluster in the same Kubernetes cluster, which this page sets up.
 
 ## What kritika needs
 
-- **Postgres 18 with VectorChord.** The `vchord`
+- kritika needs Postgres 18 with VectorChord. The `vchord`
   ([VectorChord](https://github.com/tensorchord/VectorChord)) and `vector`
   (pgvector) extensions must exist before the first start. `vchord` builds
   on the types from pgvector, and it must be in `shared_preload_libraries`.
-- **Three roles**, which the chart requires and kritika checks at start:
-  - the **owner** runs migrations and applies the configuration on the
+- kritika needs three roles. The chart requires them, and at start kritika
+  makes sure that they are correct:
+  - The owner runs migrations and applies the configuration on the
     leader. It owns the database, and kritika refuses an owner that is a
-    superuser;
-  - the **application** role (`database.app.role`, `kritika_app` by
+    superuser.
+  - The application role (`database.app.role`, `kritika_app` by
     default) serves everything else. kritika refuses an application role
     that owns a table, is a superuser or has `BYPASSRLS`. Any of these
-    would turn row-level security off;
-  - the **runner** role (`database.runner.role`, `kritika_runner` by
+    turns row-level security off.
+  - The runner role (`database.runner.role`, `kritika_runner` by
     default) is handed to runner Jobs and can only write its own run.
-- **Direct or session-mode connections** for the owner and application
-  roles. The leader is whichever replica holds a session advisory lock on its
-  owner connection. The dashboard's live updates and the job queue's
+- kritika needs direct or session-mode connections for the owner and
+  application roles. The leader is whichever replica holds a session advisory
+  lock (a Postgres lock that lasts for the session) on its owner connection.
+  The dashboard's live updates and the job queue's
   notifications `LISTEN` on the application connection. A transaction-mode
   pooler, such as PgBouncer or a CNPG `Pooler` with `poolMode: transaction`,
   hands a session to other clients between transactions. That breaks these
@@ -40,7 +42,8 @@ image as an
 [image volume extension](https://cloudnative-pg.io/docs/1.30/imagevolume_extensions/).
 The two-instance example favors availability when its standby is unavailable.
 While synchronous replication is active and commits use
-`synchronous_commit=on`, acknowledgement waits for the standby to flush WAL.
+`synchronous_commit=on`, acknowledgement waits for the standby to flush WAL
+(the write-ahead log of changes).
 With `dataDurability: preferred`, that requirement can be relaxed. If the
 primary fails before those writes reach a surviving standby, acknowledged
 changes can be lost. This is not an unconditional zero-data-loss failover
@@ -100,13 +103,13 @@ spec:
   standby is unavailable. `required` keeps the requested synchronous quorum
   and blocks commits without enough standbys. Neither replaces backups or
   protects against losing all copies. Choose this policy based on recovery
-  objectives; see
+  objectives. See
   [CNPG's durability tradeoff](https://cloudnative-pg.io/docs/1.30/replication/).
 - `primaryUpdateMethod: switchover` rejects an update that changes the image
-  and the Postgres parameters at once; apply them one at a time.
+  and the Postgres parameters at once. Apply them one at a time.
 - `podAntiAffinityType: required` keeps the two instances on different nodes.
-  CNPG's default, `preferred`, lets them share one when the scheduler finds
-  no other, and then that node takes both down.
+  When the scheduler finds no other node, CNPG's default, `preferred`, lets
+  them share one. Then that node takes both down.
 - Each instance has its own volume and Postgres replicates between them, so
   the storage class need not replicate as well: a node-local one is enough.
 - The bootstrap owner, `kritika`, is the owner role.
@@ -196,7 +199,7 @@ escape them.
 
 Set `connect_timeout`. Without it, a connection attempt waits as long as the
 kernel does. After an undeploy and a quick redeploy, a pod's first dial can
-go to a Service address that DNS still caches but that no longer exists.
+go to a Service address that no longer exists. DNS still caches that address.
 That dial hangs for minutes before kritika retries. With a timeout, the
 attempt fails fast and the retry looks the name up again.
 
@@ -212,14 +215,15 @@ database:
     existingSecret: kritika-postgres-runner
 ```
 
-`database.app.role` and `database.runner.role` must name the roles the URIs
-log in as, if they are not `kritika_app` and `kritika_runner`.
+If the roles that the URIs log in as are not `kritika_app` and
+`kritika_runner`, `database.app.role` and `database.runner.role` must name
+them.
 
 The chart's NetworkPolicies are on by default. With them, kritika serve and
 runner pods reach the Postgres port only where `networkPolicy.postgres` says
 the database is. Unless `networkPolicy.postgres` is set, that is any pod in
 the release namespace. Name the cluster's pods by the label CNPG gives them.
-Add their namespace when it is not the release namespace. CNPG gives a
+When their namespace is not the release namespace, add it. CNPG gives a
 `Pooler`'s pods the same label, so the selector also covers a URI that goes
 through a session-mode pooler:
 
@@ -251,14 +255,16 @@ Connections open on demand, so an idle replica holds few:
 Each active review publication holds a separate application-role connection
 for its advisory lock, without an open transaction. This keeps slow forge
 calls from occupying the application pool used by heartbeats and requests.
-Include these connections when sizing `max_connections`.
+When you size `max_connections`, include these connections.
 
-A `pool_max_conns` in a URI replaces that pool's ceiling. Raise the
-application pool's ceiling if jobs wait on the pool.
+A `pool_max_conns` in a URI replaces that pool's ceiling. If jobs wait on the
+pool, raise the application pool's ceiling.
 `kritika_db_pool_empty_acquires_total` counts those waits, and
 `kritika_db_pool_connections` shows the pool's connections against the
 ceiling ([metrics](/metrics/)). For more replicas, raise `max_connections`
-under the Cluster's `postgresql.parameters`. A `pool_ping_timeout` in a URI
+under the Cluster's `postgresql.parameters`.
+
+A `pool_ping_timeout` in a URI
 replaces that pool's five-second bound on a ping of an idle connection.
 CNPG's `cnpg_backends_total` metric shows what each `application_name`
 holds. Runner Jobs connect as `kritika-app` too, so that name counts their
@@ -266,9 +272,9 @@ connections together with the replicas' application pools.
 
 The leader runs hourly retention sweeps of transcripts, egress refusals,
 settled model invocations, stored diffs and agent conversations. The sweeps
-work in batches, and each
-batch is its own statement. A backlog larger than one statement could clear
-is worked off over the sweep rather than rolled back.
+work in batches, and each batch is its own statement. A backlog larger than
+what one statement can clear is worked off over the sweep rather than rolled
+back.
 
 Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the
 Cluster's `monitoring.enablePodMonitor` in favor of one you create
@@ -298,7 +304,7 @@ No kritika pod restarts.
 
 These application reconnect intervals are not an end-to-end recovery-time
 promise. CNPG must first detect the failure, promote a usable standby, and
-make the service reachable. Storage, scheduling and replication state also
+make the service reachable. Storage, replication state and scheduling also
 matter.
 
 kritika's pools ask Postgres for TCP keepalives: 30s idle, 10s apart, three
@@ -313,8 +319,8 @@ seconds. The leader therefore steps down within one
 connections reach the new primary.
 
 A switchover terminates the old primary's sessions outright, so the handover
-takes one retry interval at most. During that interval, the new leader may
-start its duties before the old one has noticed it lost the lock. For that
+takes one retry interval at most. During that interval, the new leader can
+start its duties before the old one notices that it lost the lock. For that
 reason, `KritikaMultipleLeaders` in the chart's alerts waits longer than one
 interval.
 
@@ -329,22 +335,23 @@ kubectl cnpg promote kritika-postgres kritika-postgres-2 -n kritika
 
 ## Backups
 
-The configuration lives in git and the similar-code index can be rebuilt, but
+The configuration lives in git and the similar-code index can be rebuilt. But
 reviews, findings, dismissals, feedback, usage, the audit log and queued jobs
 exist in the database. Embedding checkpoints and staging save repeated work,
 but they are also database state. Losing them can repeat paid embedding
 calls. CNPG backs a cluster up two ways
-([backups](https://cloudnative-pg.io/docs/1.30/backup/)):
+([backups](https://cloudnative-pg.io/docs/1.30/backup/)).
 
-- **Object storage** through the
-  [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/),
-  which also archives WAL for point-in-time recovery. The Cluster's native
-  `barmanObjectStore` does the same but is deprecated since CNPG 1.26.
-- **Volume snapshots** through the storage class's CSI driver
-  ([volume snapshots](https://cloudnative-pg.io/docs/1.30/appendixes/backup_volumesnapshot/)),
-  with `backup.volumeSnapshot` on the Cluster and a `ScheduledBackup`. They
-  stay in the same storage system, and point-in-time recovery still needs a
-  WAL archive in object storage.
+The first way is object storage through the
+[Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/),
+which also archives WAL for point-in-time recovery. The Cluster's native
+`barmanObjectStore` does the same but is deprecated since CNPG 1.26.
+
+The second way is volume snapshots through the storage class's CSI driver
+([volume snapshots](https://cloudnative-pg.io/docs/1.30/appendixes/backup_volumesnapshot/)),
+with `backup.volumeSnapshot` on the Cluster and a `ScheduledBackup`. They
+stay in the same storage system, and point-in-time recovery still needs a
+WAL archive in object storage.
 
 A replica is not a backup: it copies a mistake as fast as anything else.
 
@@ -360,9 +367,9 @@ anew.
 ## Recovery objectives and verification
 
 Recovery-point objective (RPO) is the amount of data loss the deployment
-accepts. Recovery-time objective (RTO) is how long service may be
-unavailable. Both are **undecided** for the deployment reviewed on
-2026-10-12. No numerical recovery guarantee has been established, and the
+accepts. Recovery-time objective (RTO) is how long service can be
+unavailable. Both are undecided for the deployment reviewed on
+2026-10-12. No numerical recovery guarantee was established, and the
 replication policy was left unchanged.
 With `preferred`, acknowledged queue inserts, review records and embedding
 checkpoints share the same potential loss window as other database writes.
@@ -371,36 +378,38 @@ A read-only inspection on that date found:
 
 | Area                 | Evidence                                                                                                              | Meaning / remaining gap                                                                                                                                    |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Replication policy   | Two instances; `method: any`, `number: 1`, `dataDurability: preferred`, `failoverQuorum: false`                       | Matches this example's availability preference; a zero-loss objective would require a separate policy decision and validation.                             |
-| Live replication     | Both instances ready; primary `synchronous_commit=on`; one streaming quorum standby in `synchronous_standby_names`    | Synchronous replication was active at inspection time. This does not prove behavior during standby loss or failover.                                       |
-| Backup configuration | No Cluster backup configuration or plugins; no CNPG `Backup` or `ScheduledBackup` resources for this cluster          | No CNPG-managed base-backup coverage was demonstrated. External backup systems were not verified.                                                          |
+| Replication policy   | Two instances, with `method: any`, `number: 1`, `dataDurability: preferred` and `failoverQuorum: false`               | Matches this example's availability preference. A zero-loss objective requires a separate policy decision and validation.                                  |
+| Live replication     | Both instances ready. Primary `synchronous_commit=on`. One streaming quorum standby in `synchronous_standby_names`.   | Synchronous replication was active at inspection time. This does not prove behavior during standby loss or failover.                                       |
+| Backup configuration | No Cluster backup configuration or plugins. No CNPG `Backup` or `ScheduledBackup` resources for this cluster.         | No CNPG-managed base-backup coverage was demonstrated. External backup systems were not verified.                                                          |
 | WAL archiving        | `archive_mode=on`, `archive_timeout=5min`, CNPG archive hook, nonzero archive counters and `ContinuousArchiving=True` | Hook success and counters do not establish an independently stored, retrievable WAL chain. No archive destination was configured in the inspected Cluster. |
 | Snapshots            | No `VolumeSnapshot` resources in the deployment namespace                                                             | No snapshot recovery point was demonstrated by this inspection.                                                                                            |
-| Restore evidence     | No last-successful-backup or first-recoverability timestamp reported; no restore exercise performed                   | Restore coverage and measured RTO remain unverified. A healthy standby is not restore-test evidence.                                                       |
+| Restore evidence     | No last-successful-backup or first-recoverability timestamp reported. No restore exercise performed.                  | Restore coverage and measured RTO remain unverified. A healthy standby is not restore-test evidence.                                                       |
 
 This is a dated observation, not a statement that the example manifest proves
-production durability. Recheck the Cluster specification and status, backup
-resources, snapshots, and PostgreSQL's `pg_stat_replication` and
-`pg_stat_archiver` when deployment settings change.
+production durability. When the deployment's configuration changes, recheck
+the Cluster specification and status, backup resources, snapshots, and
+PostgreSQL's `pg_stat_replication` and `pg_stat_archiver`.
 
 Before claiming recoverability:
 
-1. Decide acceptable RPO/RTO and whether writes should pause when synchronous
-   standbys are unavailable. Compare those targets with the deployed policy and
-   effective session settings, including any `synchronous_commit` overrides.
-2. Establish and verify base backups and a continuous WAL archive in an
-   independent failure domain, with retention sufficient for the intended
-   recovery window. Check actual objects, recent backup results and archive
-   failures, not just the presence of an archive hook. See
+1. Decide the acceptable RPO/RTO. Decide whether writes must pause when
+   synchronous standbys are unavailable. Compare those targets with the
+   deployed policy and the effective session configuration. Include any
+   `synchronous_commit` overrides.
+2. Establish base backups and a continuous WAL archive in an independent
+   failure domain. Make sure that they work, and that retention is sufficient
+   for the intended recovery window. Inspect actual objects, recent backup
+   results and archive failures, not just the presence of an archive hook. See
    [CNPG backup requirements](https://cloudnative-pg.io/docs/1.30/backup/).
-3. Restore a selected recovery point into an isolated cluster and record the
-   last recovered transaction and measured recovery time. Verify reviews,
-   findings/dismissals, usage and queue rows; test application-role access and
-   the restored embedding checkpoint's agreement with its vectors. Keep
-   production workers and forge/provider egress disconnected during validation
-   so restored jobs cannot post duplicate reviews or spend tokens.
+3. Restore a selected recovery point into an isolated cluster. Record the
+   last recovered transaction and the measured recovery time. Make sure that
+   reviews, findings/dismissals, usage and queue rows are correct. Test
+   application-role access. Test that the restored embedding checkpoint agrees
+   with its vectors. During validation, keep production workers and
+   forge/provider egress disconnected. Then restored jobs cannot post duplicate
+   reviews or spend tokens.
 4. Record the tested backup, recovery target, WAL coverage, result and remaining
-   gaps. Rebuild vector indexes when appropriate, but do not substitute an index
+   gaps. When appropriate, rebuild vector indexes. Do not substitute an index
    rebuild for recovery of durable application records. See
    [CNPG recovery procedures](https://cloudnative-pg.io/docs/1.30/recovery/).
 
@@ -411,14 +420,14 @@ Those are separate operational work after recovery objectives are agreed.
 
 Index jobs retain completed staging and checkpoint each batch in the same
 transaction as its vectors. A retry of the same River job resumes at the last
-committed chunk, reusing its index and runner records. Compatibility includes
-the target commit, incremental base, ignore rules, embedding endpoint/model,
-dimensions and input limits. Changed inputs discard incompatible progress and
+committed chunk and reuses its index and runner records. Compatibility includes
+the target commit, incremental base, ignore rules, dimensions, input limits and
+embedding endpoint/model. Changed inputs discard incompatible progress and
 build anew. A runner that did not finish staging is restarted.
 
-An embedding request can still be repeated if the process stops after the
-provider handles it but before its vectors and checkpoint commit. Usage is
-recorded separately when the provider reports it. Checkpoints do not promise
+If the process stops after the provider handles an embedding request but
+before its vectors and checkpoint commit, the request can still be repeated.
+When the provider reports usage, it is recorded separately. Checkpoints do not promise
 exactly-once external calls. No database transaction stays open during an
 embedding request.
 
@@ -427,9 +436,10 @@ only a completed index. Forced rebuilds also complete their River job and enqueu
 catch-up work in that transaction. Retryable failures retain partial vectors.
 Completed or superseded work clears them as appropriate. The leader's bounded
 recovery sweep removes remaining progress for completed, cancelled, discarded
-or missing jobs. To restart a cancelled index, request a fresh reindex. The
-pinned River version retains `cancel_attempted_at` when retrying a cancelled
-job ID. Its cancellation polling and state transitions still treat that job
+or missing jobs. To restart a cancelled index, request a fresh reindex.
+
+When it retries a cancelled job ID, the pinned River version retains
+`cancel_attempted_at`. Its cancellation polling and state transitions still treat that job
 as cancelled. The worker keeps that cancellation fence rather than ignoring
 the marker. Checkpoints inherit the database's replication and backup
 limitations described above.
@@ -445,9 +455,9 @@ the same invocation twice.
 
 The leader's rescuer retries completed, unsettled outcomes. An expired call
 without a saved outcome becomes `uncertain` and retains its reservation: the
-provider may have charged for it. A late outcome can still settle that call.
+provider possibly charged for it. A late outcome can still settle that call.
 A settled record is swept once its settlement is older than the transcript
-retention; its usage row stays. Operators can inspect pending records with an
+retention. Its usage row stays. Operators can inspect pending records with an
 owner connection:
 
 ```sql

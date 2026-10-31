@@ -31,8 +31,8 @@ chart's `monitoring.serviceMonitor.enabled` creates a Prometheus Operator
 | `kritika_polled_pull_requests_total`                                                                              | connection                      | open pull requests the backstop polls handed to ingest                                                                                                                                                                             |
 | `kritika_reviews_total`                                                                                           | account, status                 | reviews by terminal status: completed, skipped, capped, superseded, canceled, failed                                                                                                                                               |
 | `kritika_review_duration_seconds`                                                                                 | account                         | a review's wall time, from its first job's pickup to its terminal status, across its stages                                                                                                                                        |
-| `kritika_review_stage_duration_seconds`                                                                           | account, stage                  | preparation and publication operation durations, including failed attempts; nested stages overlap                                                                                                                                  |
-| `kritika_review_slot_wait_seconds`                                                                                | account, model                  | actual elapsed slot-snooze intervals observed at the next pickup, including queue delay                                                                                                                                            |
+| `kritika_review_stage_duration_seconds`                                                                           | account, stage                  | durations of preparation and publication operations, failed attempts included. Nested stages overlap                                                                                                                               |
+| `kritika_review_slot_wait_seconds`                                                                                | account, model                  | actual elapsed slot-snooze intervals observed at the next pickup, queue delay included                                                                                                                                             |
 | `kritika_findings_total`                                                                                          | account, severity, category     | findings posted                                                                                                                                                                                                                    |
 | `kritika_confidence_scores_total`                                                                                 | account, score, risk            | reviews the confidence model scored, by score (0 to 5) and risk: low, medium, high, critical                                                                                                                                       |
 | `kritika_confidence_held_total`                                                                                   | account, what                   | confidence answers kritika held to its own rule: `score` held under the findings' ceiling, `risk` given as no level and taken as critical, `floor` raised to a path's floor ([confidence](/confidence/))                           |
@@ -46,18 +46,18 @@ chart's `monitoring.serviceMonitor.enabled` creates a Prometheus Operator
 | `kritika_lease_wait_seconds`                                                                                      | account, model                  | time waiting for a model concurrency slot                                                                                                                                                                                          |
 | `kritika_review_snoozes_total`                                                                                    | account, model                  | reviews put back on the queue because every model slot was held                                                                                                                                                                    |
 | `kritika_jobs_rescued_total`                                                                                      | kind, state                     | jobs a replica died working, handed back to the queue by the leader: retryable, discarded (no attempts left), cancelled (a cancel was asked)                                                                                       |
-| `kritika_model_calls_total`                                                                                       | account, model, role, outcome   | model calls: ok, error; `model` is the one that answered, so OpenRouter's fallback shows under its own; `role` on this and the series below is review (a split review's summary merge included), followup, confidence or embedding |
+| `kritika_model_calls_total`                                                                                       | account, model, role, outcome   | model calls: ok, error. `model` is the one that answered, so OpenRouter's fallback shows under its own. `role` on this and the series below is review (a split review's summary merge included), followup, confidence or embedding |
 | `kritika_model_tokens_total`                                                                                      | account, model, role, direction | tokens: input, cached, output                                                                                                                                                                                                      |
 | `kritika_model_cost_usd_total`                                                                                    | account, model, role            | provider-reported cost                                                                                                                                                                                                             |
 | `kritika_model_unpriced_calls_total`                                                                              | account, model, role            | calls with no reported cost and no configured price, which `kritika_model_cost_usd_total` leaves out                                                                                                                               |
-| `kritika_forge_rate_limits_total`                                                                                 | connection, outcome             | responses GitHub refused for a rate limit: waited (the request waited the limit out and was sent again) or refused (the wait was over a minute, or the request could not be resent)                                                |
-| `kritika_egress_requests_total`                                                                                   | kind, outcome                   | requests runner pods made through the gateway: connect or http; allowed, refused, error                                                                                                                                            |
-| `kritika_transcript_writes_total`                                                                                 | kind, outcome                   | model calls recorded for the transcript view: agent_step (reviews and follow-ups), confidence, or merge (a split review's summary); ok, error                                                                                      |
+| `kritika_forge_rate_limits_total`                                                                                 | connection, outcome             | responses GitHub refused for a rate limit. waited: the request waited the limit out and was sent again. refused: the wait was over a minute, or the request cannot be resent                                                       |
+| `kritika_egress_requests_total`                                                                                   | kind, outcome                   | requests runner pods made through the gateway. kind: connect or http. outcome: allowed, refused, error                                                                                                                             |
+| `kritika_transcript_writes_total`                                                                                 | kind, outcome                   | model calls recorded for the transcript view. kind: agent_step (reviews and follow-ups), confidence, or merge (a split review's summary). outcome: ok, error                                                                       |
 | `kritika_db_pool_connections`                                                                                     | pool, state                     | connections the app and owner pools hold, by state: idle, acquired, constructing                                                                                                                                                   |
-| `kritika_db_pool_max_connections`                                                                                 | pool                            | each pool's ceiling; a pool at its ceiling queues jobs and requests                                                                                                                                                                |
+| `kritika_db_pool_max_connections`                                                                                 | pool                            | each pool's ceiling. A pool at its ceiling queues jobs and requests                                                                                                                                                                |
 | `kritika_db_pool_acquires_total`, `kritika_db_pool_empty_acquires_total`, `kritika_db_pool_acquire_seconds_total` | pool                            | connections taken from a pool, how many had to wait for one to free, and the time spent waiting                                                                                                                                    |
 | `kritika_config_drift`                                                                                            |                                 | 1 while this replica's file differs from the applied one                                                                                                                                                                           |
-| `kritika_config_error`                                                                                            |                                 | 1 while the leader's latest attempt to apply the configuration to the store was refused; the last applied configuration stays live meanwhile                                                                                       |
+| `kritika_config_error`                                                                                            |                                 | 1 while the leader's latest attempt to apply the configuration to the store was refused. The last applied configuration stays live meanwhile                                                                                       |
 | `kritika_leader`                                                                                                  |                                 | 1 while this replica holds the leader lock                                                                                                                                                                                         |
 | `kritika_build_info`                                                                                              | version, revision               | always 1, labelled with the running build's version and the commit it was built from                                                                                                                                               |
 
@@ -66,7 +66,7 @@ chart's `monitoring.serviceMonitor.enabled` creates a Prometheus Operator
 | Series                                  | Labels           | Meaning                                                                            |
 | --------------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
 | `kritika_queue_runnable_jobs`           | queue            | Due available, retryable and scheduled jobs in the shared database                 |
-| `kritika_queue_oldest_runnable_seconds` | queue            | Time since the oldest runnable job's `scheduled_at`; zero when empty               |
+| `kritika_queue_oldest_runnable_seconds` | queue            | Time since the oldest runnable job's `scheduled_at`. Zero when empty               |
 | `kritika_queue_stats_up`                |                  | Whether this replica read the queue snapshot successfully                          |
 | `kritika_queue_wait_seconds`            | queue            | Histogram from `scheduled_at` to worker start, recorded for every pickup           |
 | `kritika_vector_search_seconds`         | account, outcome | Histogram of database search transaction time, outcome `ok`, `error` or `canceled` |
@@ -82,14 +82,16 @@ Preparation and publication each have their own worker capacity and retry
 attempts. Thread jobs already queued on `followup` remain attributed to that
 queue until they finish.
 
-Runnable work includes overdue retries and scheduled jobs waiting for River's
-scheduler to promote them. Future work, pending jobs, running jobs and terminal
-jobs are excluded. A paused review, followup or thread queue still counts its
-overdue work, so it can raise `KritikaQueueDelayed`. Oldest age measures time
-since eligibility, not time since creation. Queue wait also excludes
-intentional retry backoff, scheduling and snooze delays, and records another
-sample on each pickup. Negative waits from clock skew are clamped to zero.
-Recording at worker entry makes delays visible before long jobs finish.
+Runnable work includes overdue retries and scheduled jobs that wait for
+River's scheduler to promote them. It excludes future work, pending jobs,
+running jobs and terminal jobs. A paused review, followup or thread queue
+still counts its overdue work, so it can raise `KritikaQueueDelayed`.
+
+Oldest age measures time since eligibility, not time since creation. Queue
+wait also excludes intentional delays: scheduling, snooze and retry backoff.
+It records another sample on each pickup. kritika clamps negative waits from
+clock skew to zero. Recording at worker entry makes delays visible before
+long jobs finish.
 
 Histograms record different work on each replica, so sum their bucket rates
 before computing quantiles:
@@ -113,8 +115,8 @@ Client cancellations and expired request contexts during the database phase
 use `outcome="canceled"`. That outcome is excluded from both the numerator and
 the denominator of the error ratio. All outcome series are initialized at zero
 for configured accounts before workers start. Prometheus can then count a
-first error after a zero sample has been scraped. Events before the first
-scrape still cannot be reconstructed by `increase()`.
+first error after it scrapes a zero sample. `increase()` still cannot
+reconstruct events before the first scrape.
 
 The delay alert uses the latest successful snapshot within five minutes to
 bridge short read failures. A fresh empty snapshot clears it. The
@@ -138,7 +140,7 @@ healthy.
 | `kritika_cache_operation_seconds`    | operation, outcome | Duration histogram for `origin_fetch`, `s3_lookup`, `s3_read`, and `s3_upload`                                                         |
 | `kritika_cache_transfer_bytes_total` | operation          | Actual body bytes consumed by cache fills, S3 reads/uploads, or accepted by response writers (`response_local`, `response_s3`)         |
 | `kritika_cache_responses_total`      | source, outcome    | Responses after serving, by `local`/`s3` source and `ok`/`error`/`canceled` result                                                     |
-| `kritika_cache_active_fills`         |                    | Current origin fills, excluding background S3 uploads                                                                                  |
+| `kritika_cache_active_fills`         |                    | Current origin fills. Excludes background S3 uploads                                                                                   |
 | `kritika_cache_local_bytes`          |                    | Retained files at the latest directory scan                                                                                            |
 | `kritika_cache_local_limit_bytes`    |                    | Retained-entry budget, not a hard disk limit                                                                                           |
 | `kritika_cache_evictions_total`      |                    | Local entries evicted to meet the budget                                                                                               |
@@ -150,10 +152,11 @@ Bypass reasons are bounded: `ineligible`, `fill_error`,
 origin's body without the digest the request named. URLs, object keys, run IDs and
 arbitrary errors are not metric labels. CONNECT tunnels are excluded.
 
-A miss is a request served after waiting for a fill, including requests sharing
-one in-process fill. Failed fills instead report a bypass. The hit ratio is
-hits divided by hits plus misses; inspect bypasses alongside it. Operation
-outcomes are `ok`, `error`, and `canceled`, plus these:
+A miss is a request that the gateway serves after a wait for a fill. This
+includes requests that share one in-process fill. Failed fills report a
+bypass instead. The hit ratio is hits divided by hits plus misses. Inspect
+bypasses alongside it. Operation outcomes are `ok`, `error`, and `canceled`,
+plus these:
 
 - `miss` for an absent or invalid S3 entry, or for one replaced or removed
   while it was being read.
@@ -168,11 +171,13 @@ from origin fill time.
 
 Transfer counters include partial operations. Origin bytes cover cache fill
 attempts, not all gateway forwarding or estimated bandwidth savings. Upload
-bytes count the HTTP request body, excluding the SDK's checksum pass. Response
-bytes count writes accepted by the HTTP writer, including multipart framing.
-HEAD and 304 responses contribute zero. A hit does not prove delivery: check
-response results for stream failures and client cancellations. S3 read duration
-includes time waiting for the downstream reader.
+bytes count the HTTP request body, but not the SDK's checksum pass. Response
+bytes count writes that the HTTP writer accepts, with multipart framing
+included. HEAD and 304 responses contribute zero.
+
+A hit does not prove delivery. To find stream failures and client
+cancellations, read the response results. S3 read duration includes the wait
+for the downstream reader.
 
 Local usage excludes fills in progress and evicted files that are still held
 open. It is updated at startup and at eviction scans. Compare it with the
@@ -210,24 +215,24 @@ The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
 (`monitoring.prometheusRule.*For`). `additionalRuleLabels` adds a routing
 label to every rule, and `additionalRuleAnnotations` adds an annotation.
 
-| Alert                          | Fires when                                                                                                                         | Severity | Wait |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
-| `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                       | critical | 5m   |
-| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`            | critical | 2m   |
-| `KritikaConfigError`           | `kritika_config_error == 1`: the leader could not apply the file                                                                   | warning  | 5m   |
-| `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                         | warning  | 15m  |
-| `KritikaQueueDelayed`          | Oldest runnable review/followup/thread job exceeds 600 seconds, using the last successful sample within 5m and max across replicas | warning  | 15m  |
-| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m                                                                 | warning  | 5m   |
-| `KritikaCacheStorageErrors`    | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m; cold misses are not errors                     | warning  | 10m  |
-| `KritikaVectorSearchErrors`    | More than 10% database search errors, with at least 10 non-canceled requests in 15m                                                | warning  | 10m  |
+| Alert                          | Fires when                                                                                                                        | Severity | Wait |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
+| `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                      | critical | 5m   |
+| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`           | critical | 2m   |
+| `KritikaConfigError`           | `kritika_config_error == 1`: the leader failed to apply the file                                                                  | warning  | 5m   |
+| `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                        | warning  | 15m  |
+| `KritikaQueueDelayed`          | Oldest runnable review/followup/thread job exceeds 600 seconds. Uses the last successful sample within 5m and max across replicas | warning  | 15m  |
+| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m                                                                | warning  | 5m   |
+| `KritikaCacheStorageErrors`    | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m. Cold misses are not errors                    | warning  | 10m  |
+| `KritikaVectorSearchErrors`    | More than 10% database search errors, with at least 10 non-canceled requests in 15m                                               | warning  | 10m  |
 
 Without a leader, nothing migrates, applies configuration, polls or rescues
 the jobs a dead replica left. A standby takes the lock within one leader
 retry interval once its owner connection reaches the database. Postgres
 drops a dead leader's session, and with it the lock, within about a minute.
 Two leaders can show for one retry interval during a database failover,
-while the old leader's lock connection has not yet failed. If they show for
-longer than that, the replicas are not on one database. Drift is expected
+before the old leader's lock connection fails. If they show for longer than
+that, the replicas are not on one database. Drift is expected
 for the minute or two a rollout takes, until the new pod leads and applies
 its file.
 
@@ -245,21 +250,21 @@ kritika records Events that `kubectl describe` and `kubectl events` show and
 that an event collector gathers. On a runner Job, an Event says why kritika
 ended its run. On a kritika serve pod, it says what its leader did.
 
-| On                  | Reason             | Type    | When                                                                                                                                                                          |
-| ------------------- | ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a runner Job        | `Superseded`       | Normal  | a newer head of the pull request superseded the run; the note names it                                                                                                        |
-| a runner Job        | `Replaced`         | Normal  | a newer review of the pull request replaced the run                                                                                                                           |
-| a runner Job        | `Cancelled`        | Normal  | the run was cancelled from the dashboard                                                                                                                                      |
-| a runner Job        | `HeartbeatLost`    | Warning | the runner's heartbeat went stale, so kritika ended the run                                                                                                                   |
-| a runner Job        | `Disrupted`        | Warning | Kubernetes stopped its pod, by a node drain, a preemption or an eviction; the note says how                                                                                   |
-| a runner Job        | `NeverStarted`     | Warning | its pod could not start, as for an image that cannot be pulled or a pod no node takes, or was never created, as when the namespace refuses it on admission; the note says why |
-| a runner Job        | `Interrupted`      | Normal  | kritika serve stopped, and the job runs again                                                                                                                                 |
-| a runner Job        | `Interrupted`      | Warning | the job's heartbeat stopped landing, so kritika handed it back to its queue                                                                                                   |
-| a runner Job        | `TimedOut`         | Warning | the job ran out of time                                                                                                                                                       |
-| a runner Job        | `StatusUnreadable` | Warning | kritika lost sight of the Job's status, as when someone else deleted it, so it deleted the Job                                                                                |
-| a kritika serve pod | `LeaderElected`    | Normal  | the replica took the lead                                                                                                                                                     |
-| a kritika serve pod | `ConfigApplied`    | Normal  | the leader applied the configuration, named by its hash                                                                                                                       |
-| a kritika serve pod | `ConfigRefused`    | Warning | the store refused the configuration, and the last applied one stays live, as `kritika_config_error` says too                                                                  |
+| On                  | Reason             | Type    | When                                                                                                                                                                                  |
+| ------------------- | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a runner Job        | `Superseded`       | Normal  | a newer head of the pull request superseded the run. The note names it                                                                                                                |
+| a runner Job        | `Replaced`         | Normal  | a newer review of the pull request replaced the run                                                                                                                                   |
+| a runner Job        | `Cancelled`        | Normal  | the run was cancelled from the dashboard                                                                                                                                              |
+| a runner Job        | `HeartbeatLost`    | Warning | the runner's heartbeat went stale, so kritika ended the run                                                                                                                           |
+| a runner Job        | `Disrupted`        | Warning | Kubernetes stopped its pod, by a node drain, a preemption or an eviction. The note says how                                                                                           |
+| a runner Job        | `NeverStarted`     | Warning | its pod failed to start, as for an image that cannot be pulled or a pod no node takes. Or its pod was never created, as when the namespace refuses it on admission. The note says why |
+| a runner Job        | `Interrupted`      | Normal  | kritika serve stopped, and the job runs again                                                                                                                                         |
+| a runner Job        | `Interrupted`      | Warning | the job's heartbeat stopped landing, so kritika handed it back to its queue                                                                                                           |
+| a runner Job        | `TimedOut`         | Warning | the job ran out of time                                                                                                                                                               |
+| a runner Job        | `StatusUnreadable` | Warning | kritika lost sight of the Job's status, as when someone else deleted it, so it deleted the Job                                                                                        |
+| a kritika serve pod | `LeaderElected`    | Normal  | the replica took the lead                                                                                                                                                             |
+| a kritika serve pod | `ConfigApplied`    | Normal  | the leader applied the configuration, named by its hash                                                                                                                               |
+| a kritika serve pod | `ConfigRefused`    | Warning | the store refused the configuration, and the last applied one stays live, as `kritika_config_error` says too                                                                          |
 
 A run that ended on its own, finished or failed, gets none of these. For such
 a run, the Job controller's own Events on its Job tell what happened.
@@ -292,7 +297,7 @@ then by `account` and `model`. Its rows follow a review's path:
 - queue delays and vector searches
 - the gateway's download cache
 
-Queue panels span all accounts; vector panels follow the account filter.
+Queue panels span all accounts. Vector panels follow the account filter.
 
 ## Reproducing the vector-search baseline
 
@@ -312,12 +317,12 @@ vector-search histogram:
   worker's grant, with `slots`, `remaining_parts` and `limit`. Remaining
   parts include active work and exclude completed checkpoints.
 
-The worker and runner check capacity every two seconds, so a review can gain
-slots after it starts. Recorded reviews waiting for their first slot take
-priority over extra slots. Elapsed fields are Go durations, encoded as
-nanoseconds by the JSON logger. Split parts retrieve similar code
+The worker and runner read capacity every two seconds, so a review can gain
+slots after it starts. Recorded reviews that wait for their first slot take
+priority over extra slots. Elapsed fields are Go durations, and the JSON
+logger encodes them as nanoseconds. Split parts retrieve similar code
 concurrently, bounded by their granted parallelism. These request durations
-can overlap and should not be summed to estimate preparation wall time.
+can overlap, so do not sum them to estimate preparation wall time.
 
 Run on a machine with Docker through the integration task, which creates and
 removes a disposable database. No provider credentials or model calls are needed:
@@ -334,15 +339,17 @@ total rows.
 Each case excludes either no paths or 10% of target paths. Data comes from a
 fixed-seed, 16-cluster synthetic distribution with one chunk per path.
 
-All retrieval runs as `kritika_app` with RLS enabled, the transaction's account
-setting, the generation filter and the actual path exclusions. A foreign-account
-lookup must return no results. Recall@4 compares the application's results with
-an exact table scan for 20 deterministic queries. The harness disables index
-and bitmap scans only for that reference, verifies its sequential-scan plan,
-and restores them before further application queries. It compares chunk paths
-directly because fixture paths have a distinct prefix for each generation.
-This also keeps the ground truth on the same full-result SQL as the
-application, rather than on a separate row-identifier query. VectorChord's
+All retrieval runs as `kritika_app` with RLS (row-level security) enabled, the
+transaction's account setting, the generation filter and the actual path
+exclusions. A foreign-account lookup must return no results. Recall@4 compares
+the application's results with an exact table scan for 20 deterministic queries.
+
+The harness disables index and bitmap scans only for that reference. It makes
+sure that the reference uses a sequential-scan plan. It restores those scans
+before further application queries. It compares chunk paths directly because
+fixture paths have a distinct prefix for each generation. This also keeps the
+ground truth on the same full-result SQL as the application, rather than on a
+separate row-identifier query. VectorChord's
 [recall evaluator](https://docs.vectorchord.ai/vectorchord/usage/measure-recall.html)
 is another option for production query samples.
 
@@ -355,7 +362,7 @@ cold-start or concurrent-traffic test.
 
 ### Local baseline, 2026-10-12
 
-Measured on Linux amd64, AMD EPYC 7502P, using the task's
+The measurements ran on Linux amd64, AMD EPYC 7502P, with the task's
 `ghcr.io/tensorchord/vchord-postgres:pg18-v1.1.1` container (PostgreSQL 18.3,
 VectorChord 1.1.1). Each mean below covers 20 timed requests. EXPLAIN times are
 individual diagnostic queries, not averages or percentiles.
@@ -371,18 +378,19 @@ individual diagnostic queries, not averages or percentiles.
 | 1,536      | 10,000        | 0              | 9.43              | 1.00     | 6.13                     | 144.10             |
 | 1,536      | 10,000        | 1,000          | 19.30             | 1.00     | 5.89                     | 97.31              |
 
-Every application plan chose `index_chunks_embedding_idx`; every exact plan
+Every application plan chose `index_chunks_embedding_idx`. Every exact plan
 used a sequential scan and top-N sort. The filters included both the generation
 and the RLS account predicate. Plans reported shared-buffer hits for these warm
-queries; the full buffer counts are emitted by the command above.
+queries. The command above emits the full buffer counts.
 
 The current index performed well on this fixture. The longer requests with
 large exclusion lists include their client-side encoding and transfer, so do not
 attribute all of that difference to the index. These small, synthetic samples
-are not evidence of production recall or an SLO, and do not justify changing
-partitioning, search parameters, prewarming or worker concurrency. Use the
-runtime histograms and repeat with representative embeddings and traffic before
-tuning those settings. No production database was measured for this baseline.
+are not evidence of production recall or an SLO. They do not justify a change
+to partitioning, search parameters, prewarming or worker concurrency. Before
+you tune that configuration, use the runtime histograms and repeat with
+representative embeddings and traffic. No production database was measured for
+this baseline.
 
 ## Review completion timings
 
@@ -393,7 +401,7 @@ answers. Stage labels are fixed operation names:
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `agent_to_prepare`                        | Agent row creation to the start of a preparation attempt                                    |
 | `prepare`                                 | Finding processing, summary merging and confidence scoring                                  |
-| `merge`, `confidence`                     | Each operation, including its model-slot wait and retries                                   |
+| `merge`, `confidence`                     | Each operation, with its model-slot wait and retries                                        |
 | `checkpoint`                              | Saving preparation or publication state and any queue handoff                               |
 | `deliver`                                 | Publication lock acquisition, delivery and persistence                                      |
 | `write_back`                              | Rendering and forge operations                                                              |
@@ -405,13 +413,15 @@ answers. Stage labels are fixed operation names:
 | `agent_to_published`                      | Agent row creation to successfully committed publication, across queue handoffs and retries |
 
 These intervals overlap: do not sum stages or their percentiles. Forge stages
-are operations and may make multiple HTTP requests. `agent_to_*` uses the
-database's agent-record timestamp, which approximates agent completion and
-requires aligned database and worker clocks. Negative durations are clamped to
-zero. A checkpoint without an agent row produces no such sample.
-Other stages include failed attempts. All `review stage ended` logs carry
-`review`, `run`, `job`, `stage` and `elapsed`. JSON duration fields are
-nanoseconds.
+are operations and can make multiple HTTP requests.
+
+`agent_to_*` uses the database's agent-record timestamp, which approximates
+agent completion and requires aligned database and worker clocks. kritika
+clamps negative durations to zero. A checkpoint without an agent row produces
+no such sample. Other stages include failed attempts.
+
+All `review stage ended` logs carry `review`, `run`, `job`, `stage` and
+`elapsed`. JSON duration fields are nanoseconds.
 
 For example, compare publication-tail p95 by account:
 
@@ -431,21 +441,26 @@ Executor logs split completion handling into `runner pods read`,
 `runner log tail read` and the enclosing `runner result collected`, joined by
 `job_name`. `runner job completion observed` marks when the watch sees
 completion. `agent completion observed` links that job to the run and reports
-`agent_to_executor_return` and `elapsed`. `agent_to_executor_return` ends
-when the supervised run returns to the worker, so it includes log collection
-and any supervisor check still in progress. `elapsed` also includes token
-revocation and loading the agent row. Their individual durations appear in
-`runner completion handled` as `revoke_elapsed` and `row_read_elapsed`. These
-logs distinguish lifecycle delay from log-read latency.
+`agent_to_executor_return` and `elapsed`.
+
+`agent_to_executor_return` ends when the supervised run returns to the worker,
+so it includes log collection and any supervisor check still in progress.
+`elapsed` also includes token revocation and loading the agent row. Their
+individual durations appear in `runner completion handled` as `revoke_elapsed`
+and `row_read_elapsed`. These logs distinguish lifecycle delay from log-read
+latency.
 
 `kritika_review_slot_wait_seconds` measures each recorded slot snooze from its
-start to the next review pickup. Early wakes shorten it; scheduling delays
-lengthen it. Sum `increase(kritika_review_slot_wait_seconds_sum[1h])` by
-account and model for aggregate observed waiting time. Group
-`review model slot wait ended` logs by job to inspect repeated waits. This
-metric is separate from `kritika_lease_wait_seconds`, which measures waits
+start to the next review pickup. Early wakes shorten it. Scheduling delays
+lengthen it. For aggregate observed waiting time, sum
+`increase(kritika_review_slot_wait_seconds_sum[1h])` by account and model. To
+inspect repeated waits, group `review model slot wait ended` logs by job.
+
+This metric is separate from `kritika_lease_wait_seconds`, which measures waits
 inside an active worker. The slot wait overlaps queue delay and must not be
-added to it. Canceled jobs never picked up again have no sample. A process crash before River saves cleared metadata can
-cause a repeated observation. A pickup that fails before the wait is recorded
-leaves it to the next attempt, retry backoff included. These are operational
-metrics, not an exactly-once accounting ledger.
+added to it. Canceled jobs never picked up again have no sample.
+
+A process crash before River saves cleared metadata can cause a repeated
+observation. A pickup that fails before the wait is recorded leaves it to the
+next attempt, retry backoff included. These are operational metrics, not an
+exactly-once accounting ledger.

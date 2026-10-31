@@ -2,8 +2,8 @@
 title: Repository settings
 ---
 
-A repository works without any configuration file. Add `.kritika.yaml` at its
-root when you want custom review rules, ignored paths or trigger conditions.
+A repository works without any configuration file. If you want custom review
+rules, ignored paths or trigger conditions, add `.kritika.yaml` at its root.
 
 Start small:
 
@@ -16,7 +16,7 @@ rules:
     paths: ["**/*.go"]
 ```
 
-kritika reads this file from the **merge base**, the shared ancestor of the pull
+kritika reads this file from the merge base, the shared ancestor of the pull
 request and its target branch. A pull request cannot change its own review rules.
 Merge a configuration change before expecting it to apply to later reviews.
 Indexing uses the configuration at the commit being indexed.
@@ -27,32 +27,32 @@ For custom tools, see [repository tools](#repository-tools).
 
 ## What it may set
 
-Use only the settings you need. This table shows how each interacts with the
-admin's policy; detailed examples follow.
+Use only the configuration keys that you need. This table shows how each
+key interacts with the admin's policy. Detailed examples follow the table.
 
-| Key                                                          | What it sets                                                       | Against the admin's value                                                                                 |
-| ------------------------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `enabled`                                                    | `false` stops reviews, follow-ups and indexing                     | can only turn the repository off                                                                          |
-| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                                                                                  |
-| [`review.effort`](#models)                                   | how hard they reason                                               | replaces                                                                                                  |
-| `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                                                                                       |
-| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some | replaces; its `when` holds beside the admin's                                                             |
-| [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                      | replaces, either way                                                                                      |
-| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it        | replaces; `risk` may only be lowered, `when` holds beside the admin's                                     |
-| [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                   | judged beside the admin's lists                                                                           |
-| `comments.inline`                                            | `false` posts the summary alone, without inline comments           | replaces                                                                                                  |
-| [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                      | replaces                                                                                                  |
-| [`ignore`](#ignored-paths)                                   | paths the review and the index leave out                           | added                                                                                                     |
-| [`rules`](#rules)                                            | checks the review makes                                            | added after; one under an admin's id is dropped                                                           |
-| [`context`](#context)                                        | files that explain the code                                        | added after                                                                                               |
-| [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up                                                                         |
-| [`tools`](#repository-tools)                                 | the tools the reviews may run, beside the image's commands         | added; one providing an image command replaces it                                                         |
-| [`review.agents`](#agents)                                   | agents that review beside the default pass, or replace it          | specialists added, one under an admin's name taking only rules and skills; the others replace the admin's |
+| Key                                                          | What it sets                                                                           | Against the admin's value                                                                                    |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `enabled`                                                    | `false` stops reviews, follow-ups (answers to questions in comments) and indexing      | can only turn the repository off                                                                             |
+| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                                            | replaces                                                                                                     |
+| [`review.effort`](#models)                                   | how hard they reason                                                                   | replaces                                                                                                     |
+| `review.fixes`                                               | `true` requires a suggested fix on every finding                                       | can only turn it on                                                                                          |
+| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some                     | replaces, and its `when` holds beside the admin's                                                            |
+| [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                                          | replaces, either way                                                                                         |
+| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it                            | replaces, `risk` can only be lowered, and `when` holds beside the admin's                                    |
+| [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                                       | judged beside the admin's lists                                                                              |
+| `comments.inline`                                            | `false` posts the summary alone, without inline comments                               | replaces                                                                                                     |
+| [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                                          | replaces                                                                                                     |
+| [`ignore`](#ignored-paths)                                   | paths the review and the index leave out                                               | added                                                                                                        |
+| [`rules`](#rules)                                            | checks the review makes                                                                | added after, and one under an admin's id is dropped                                                          |
+| [`context`](#context)                                        | files that explain the code                                                            | added after                                                                                                  |
+| [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered                     | `paths` replaces, and `scope` adds up                                                                        |
+| [`tools`](#repository-tools)                                 | the tools the reviews can run, beside the image's commands                             | added, and one providing an image command replaces it                                                        |
+| [`review.agents`](#agents)                                   | agents that review beside the default pass (kritika's own instructions), or replace it | specialists added, and one under an admin's name takes only rules and skills. The others replace the admin's |
 
-A value the file may not take, such as a model of an undeclared provider,
-is dropped. The admin's value applies for that field, and a note in the
-review's summary says which field was dropped and what it may be. The rest
-of the file still applies.
+kritika drops a value that the file cannot take, such as a model of an
+undeclared provider. The admin's value applies for that field. A note in
+the review's summary says which field kritika dropped and what it can be.
+The rest of the file still applies.
 
 These keys are the admin's alone: `agent`, `trigger.limit`,
 `review.incremental`, `review.cost`, `review.replies`, `comments.dashboard`,
@@ -68,15 +68,15 @@ provider is dropped, and the account's limits bound what a choice can cost.
 
 `review.model` replaces the admin's model and the admin's [agents that
 replace the default pass](/models/#agents-that-replace-the-default-pass).
-The file may write its own such agents. When a review's model fails, the
+The file can write its own such agents. When a review's model fails, the
 review goes on with the fallback, on the same provider or another. A
 follow-up does the same.
 
 `review.effort` sets how hard the review model reasons, and
-`confidence.effort` sets how hard the scorer reasons. Each covers its
-fallback too. The value is one of `none`, `minimal`, `low`, `medium`,
-`high`, `xhigh` or `max` ([effort](/models/#effort)). Each setting
-replaces the admin's. `""` restores the provider's default, and a value
+`confidence.effort` sets how hard the scorer, the model that scores a
+review, reasons. Each covers its fallback too. The value is one of `none`,
+`minimal`, `low`, `medium`, `high`, `xhigh` or `max`
+([effort](/models/#effort)). Each setting replaces the admin's. `""` restores the provider's default, and a value
 that is not a level is dropped.
 
 ### Approvals
@@ -126,17 +126,17 @@ admin's in either direction.
 threshold and the gate do so in either direction. The models are held
 to the same providers as `review.model` ([models](#models)). The fallback
 takes the scorer's call when the confidence model fails. `confidence.risk`
-may only lower the admin's, and a higher one is dropped.
+can only lower the admin's, and a higher one is dropped.
 
-`confidence.gate` may be a block of `when` conditions, as `review.approve`
-may. It then gates only a pull request that one of them holds for. It
+`confidence.gate` can be a block of `when` conditions, as `review.approve`
+can. It then gates only a pull request that one of them holds for. It
 replaces the admin's, conditions and all.
 
 `confidence.when` lists conditions, as a rule's `when` does. One of them
 must hold for a pull request to be scored, and the admin's conditions apply
 as well. A pull request that the file's conditions leave unscored is
 reviewed without a score. Where the admin asks for a score, that pull
-request is also not approved, so the file cannot lift the admin's risk
+request is also not approved. So the file cannot lift the admin's risk
 policy by narrowing scoring.
 
 `confidence.instructions` and `confidence.floors` are the admin's alone
@@ -145,22 +145,22 @@ policy by narrowing scoring.
 ### Trigger conditions
 
 `trigger.include` and `trigger.exclude` are conditions on the pull
-request. Each condition is an `expr`, `paths` globs, or both, with an
-optional `name`. `paths` globs hold when a changed path matches one. With
-both, both must hold. A pull request is reviewed when no `exclude` holds
-and either one `include` holds or there are none.
+request. Each condition is an `expr`, `paths` globs (path patterns), or
+both, with an optional `name`. `paths` globs hold when a changed path
+matches one. With both, both must hold. A pull request is reviewed when
+no `exclude` holds and either one `include` holds or there are none.
 
 - The lists are judged beside the admin's own, and a pull request must
   pass both. A condition with the same name as one of the admin's is
   dropped, and the review's summary says so.
-- Each expression is compiled and smoke-tested against a sample pull
-  request when the file is parsed, so a broken one is rejected rather than
-  silently skipping every review.
-- A condition on the pull request alone is decided before any runner
-  starts. One with `paths` or `pr.lines` is decided once the pull request
-  is fetched, before any model is called. When the lists keep a review
-  out, its commit status names the exclusion that held, if that exclusion
-  has a name.
+- kritika compiles each expression and smoke-tests it against a sample
+  pull request when it parses the file. So kritika rejects a broken
+  expression, rather than letting it silently skip every review.
+- A condition on the pull request alone is decided before any runner, the
+  pod that runs a review, starts. One with `paths` or `pr.lines` is decided
+  once the pull request is fetched, before any model is called. When the
+  lists keep a review out, its commit status names the exclusion that held,
+  if that exclusion has a name.
 
 See [the recipes](#include-and-exclude-recipes).
 
@@ -176,13 +176,13 @@ source maps and logs.
 
 `rules` are checks the review makes, added after the admin's:
 
-| Key     | What                                                                                                                                                                                                                    |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`    | lowercase letters, digits and hyphens, at most 64 characters; findings cite the rule by it                                                                                                                              |
-| `rule`  | the check itself, at most 2000 characters                                                                                                                                                                               |
-| `file`  | instead of `rule`, a file read from the same merge-base tree whose content is the check                                                                                                                                 |
-| `paths` | optional globs: the rule applies only when a changed path matches one, so checks for one part of the repository do not spend the room on changes elsewhere                                                              |
-| `when`  | optional conditions as `trigger.include` takes them, each an `expr` with an optional `name`; the rule applies only to a pull request one of them holds for, such as `pr.headRef.startsWith("renovate/")` for Renovate's |
+| Key     | What                                                                                                                                                                                                                                       |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`    | lowercase letters, digits and hyphens, at most 64 characters. Findings cite the rule by it                                                                                                                                                 |
+| `rule`  | the check itself, at most 2000 characters                                                                                                                                                                                                  |
+| `file`  | instead of `rule`, a file read from the same merge-base tree whose content is the check                                                                                                                                                    |
+| `paths` | optional globs. The rule applies only when a changed path matches one. So checks for one part of the repository do not spend the room on changes elsewhere                                                                                 |
+| `when`  | optional conditions as `trigger.include` takes them, each an `expr` with an optional `name`. The rule applies only to a pull request that one of them holds for, such as `pr.headRef.startsWith("renovate/")` for Renovate's pull requests |
 
 - A `when` condition is compiled and smoke-tested like a trigger
   condition, and one that fails to evaluate does not hold.
@@ -190,35 +190,42 @@ source maps and logs.
   summary says so.
 - The rules a change matches are listed by id in the system prompt, and
   in a follow-up's, within the [limits](#limits). A file rule goes under a
-  heading of its own. A finding lists the ids of the rules it enforces,
-  keeping only the ones its review was given.
-- A finding that cites a rule also quotes the passage of it that the
-  change breaks, which its inline comment shows. The quote must be in one
-  of the rules it cites, markdown, case and spacing aside, and at least 12
-  characters of it unless the rule is shorter. A submission with a finding
-  that cites a rule it does not quote is sent back to the review to
-  correct, naming every such finding, as a malformed one is, twice at
-  most: a review that does not correct them by then keeps the rest of
-  its submission and loses those findings, which never post. A finding
-  that cites no rule carries no quote.
+  heading of its own. A finding lists the ids of the rules that it
+  enforces. The list keeps only the ones that its review was given.
+- A finding that cites a rule also quotes the passage of the rule that the
+  change breaks. The finding's inline comment shows this quote. The quote
+  must be in one of the rules that the finding cites. The comparison
+  ignores markdown, case and spacing. The quote must also be at least 12
+  characters of the rule, unless the rule is shorter. A finding that cites
+  no rule carries no quote.
+- If a finding in a submission cites a rule that it does not quote, kritika
+  sends the submission back to the review to correct. It does the same for
+  a malformed one. kritika names every such finding. It sends the
+  submission back twice at most. If a review does not correct those
+  findings by then, it keeps the rest of its submission and loses those
+  findings. Those findings never post.
 
 ### Context
 
 `context` lists files that explain the code, added after the admin's. Each
-entry is a `path` with a `description` and optional `paths` globs. The
-review or follow-up is pointed at each file to read it with its own tools,
-from the **pull request's head**. A pull request can change or delete that
-content. These are optional references, not instructions. Requirements
-that must survive changes in the pull request belong in [rules](#rules).
-A file with `paths` applies only when a changed path matches one of them.
+entry is a `path` with a `description` and optional `paths` globs. kritika
+points the review or follow-up at each file, so that it can read the file
+with its own tools, from the pull request's head, its latest commit. A
+pull request can change or delete that content.
+
+These are optional references, not instructions. Requirements that must
+survive changes in the pull request belong in [rules](#rules). A file with
+`paths` applies only when a changed path matches one of them.
+
 If the admin already lists the same path, the admin's description and
-scope win, and the repository's entry is dropped with a summary note.
-Paths are not checked for existence when offered. A missing file produces
-a tool error if the reviewer tries to read it.
+scope win. kritika drops the repository's entry, with a summary note.
+kritika does not make sure that paths exist when it offers them. A missing
+file produces a tool error if the reviewer tries to read it.
 
 Reference pointers reserve up to a quarter of the user prompt budget.
-An oversized list is shortened with a summary note; the prompt also says
-when pointers were omitted, including in follow-ups.
+kritika shortens an oversized list, with a summary note. The prompt also
+says when kritika omitted pointers. This includes the prompts of
+follow-ups.
 
 ### Skills
 
@@ -231,71 +238,76 @@ and is the folder's name when unset. Each folder directly under
 `.agents/skills` and `.claude/skills` that holds a `SKILL.md` is a skill,
 with nothing to configure.
 
-| Key                   | What                                                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `skills.paths`        | the directories whose folders are skills, replacing the admin's; `paths: []` looks nowhere, which turns skills off for the repository |
-| `skills.scope.<name>` | narrows when the skill of that name is offered; added to the admin's scopes, and a skill named in both takes this file's              |
+| Key                   | What                                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills.paths`        | the directories whose folders are skills. It replaces the admin's. `paths: []` looks nowhere, which turns skills off for the repository |
+| `skills.scope.<name>` | narrows when the skill of that name is offered. It is added to the admin's scopes, and a skill named in both takes this file's          |
 
 `skills.scope.<name>`: its `paths` are globs, and a changed path must match
 one of them. Its `when` lists conditions as a rule's does, and one of them
 must hold. With both, both must hold.
 
-When a scope has `paths` or `when`, a review the skill applies to gets the
-skill's instructions in the system prompt, rather than its name to read.
-`load: false` offers the skill by name instead. With `load: true`, a skill
-whose scope has neither `paths` nor `when` is given whole to every review.
+When a scope has `paths` or `when`, a review that the skill applies to gets
+the skill's instructions in the system prompt. The review gets these rather
+than the skill's name to read. `load: false` offers the skill by name
+instead. With `load: true`, a skill whose scope has neither `paths` nor
+`when` is given whole to every review.
 
-- **Read from the merge base**, as this file and the rules are, so a pull
-  request cannot add or rewrite a skill to steer its own review.
-- **Offered by name, or given whole:** the system prompt lists each skill's
-  name and description. When a skill fits the pull request, the review
-  reads its instructions, or a file in its folder, with its `load_skill`
-  tool, from the merge base too. A skill whose scope has `paths` or `when`
-  skips that step, since the scope already decides where it applies. So
-  does a skill whose scope says `load: true`. When such a skill's `paths`
-  and `when` hold, the review starts with its instructions in the system
-  prompt, and `load_skill` still serves the files in its folder. Some
-  scopes narrow without deciding, such as every Go change for a reference
-  skill that only sometimes helps there. Such a scope says `load: false`
-  to keep the skill offered by name.
-- **Left out, not fatal:** a skill past a [limit](#limits) is left out and
-  noted rather than failing the review. So is a skill whose `SKILL.md` has
-  no frontmatter, no description or a name another skill has.
-- **No tools granted:** `allowed-tools` and every other frontmatter key is
-  ignored. A skill guides a review but grants it no tool or command. The
-  review skips a step that needs one it was not given.
-- **Reported:** the summary's collapsed **Review context** block counts
-  the skills the review was offered and names the ones it read. For
-  example, it shows `1/2 skills` on the block's line and
+- kritika reads skills from the merge base, as it does this file and the
+  rules. So a pull request cannot add or rewrite a skill to steer its own
+  review.
+- A skill is offered by name, or given whole. The system prompt lists each
+  skill's name and description. When a skill fits the pull request, the
+  review reads its instructions, or a file in its folder, with its
+  `load_skill` tool. The review reads these from the merge base too.
+- A skill whose scope has `paths` or `when` skips that step, since the
+  scope already decides where it applies. So does a skill whose scope says
+  `load: true`. When such a skill's `paths` and `when` hold, the review
+  starts with its instructions in the system prompt. `load_skill` still
+  serves the files in its folder. Some scopes narrow without deciding, such
+  as every Go change for a reference skill that only sometimes helps there.
+  Such a scope says `load: false` to keep the skill offered by name.
+- A skill can be left out, and this is not fatal. kritika leaves out and
+  notes a skill past a [limit](#limits), rather than failing the review. It
+  does the same for a skill whose `SKILL.md` has no frontmatter, no
+  description or a name that another skill has.
+- A skill grants no tools. kritika ignores `allowed-tools` and every other
+  frontmatter key. A skill guides a review but grants it no tool or
+  command. The review skips a step that needs a tool or command that it was
+  not given.
+- The summary's collapsed **Review context** block reports skills. It
+  counts the skills that the review was offered and names the ones that it
+  read. For example, it shows `1/2 skills` on the block's line and
   `Skills read: review-renovate-pr` inside it. Each read also shows in the
-  review's transcript, and a skill given whole counts as read. Commands
-  offered to a review through the run tool are counted the same way beside
-  the skills, such as `1/2 commands` and `Commands run: helm`.
-- **Follow-ups** are answered by an agent with the review's tools and
-  commands, under the same `agent` limits, in a runner of its own. That
-  agent is offered no skills.
-- **A worked example:** Sentry's
+  review's transcript, and a skill given whole counts as read. The block
+  counts commands offered to a review through the run tool the same way,
+  beside the skills, such as `1/2 commands` and `Commands run: helm`.
+- An agent with the review's tools and commands answers follow-ups, under
+  the same `agent` limits, in a runner of its own. That agent is offered no
+  skills.
+- A worked example is Sentry's
   [`gha-security-review`](https://github.com/getsentry/skills/blob/main/skills/gha-security-review/SKILL.md)
-  skill reviews GitHub Actions workflows with an explicit threat model and
-  a table of safe patterns not to flag. It requires a concrete exploit for
-  every finding. Its `references/` load through `load_skill`, as any file
-  in the folder does. Scope it with
-  `skills.scope.gha-security-review.paths: [".github/workflows/**"]`, and
-  check its exceptions against your own policy. It leaves first-party
-  actions on version tags alone, which a repository that pins every action
-  to a digest would not.
+  skill. It reviews GitHub Actions workflows with an explicit threat model
+  and a table of safe patterns not to flag. It requires a concrete exploit
+  for every finding. Its `references/` load through `load_skill`, as any
+  file in the folder does.
+- Scope that skill with
+  `skills.scope.gha-security-review.paths: [".github/workflows/**"]`. Make
+  sure that its exceptions fit your own policy. It leaves first-party
+  actions on version tags alone. A repository that pins every action to a
+  digest does not leave them alone.
 
 Rules, context and skills compared:
 
-|                  | In the prompt                                                                  | Cited by findings |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------- |
-| A rule           | whole, wherever it applies                                                     | yes, by id        |
-| A `context` file | a pointer, with the configuration's description                                | no                |
-| A skill          | its own description, until the review reads it; whole, when its scope loads it | no                |
+|                  | In the prompt                                                                     | Cited by findings |
+| ---------------- | --------------------------------------------------------------------------------- | ----------------- |
+| A rule           | whole, wherever it applies                                                        | yes, by id        |
+| A `context` file | a pointer, with the configuration's description                                   | no                |
+| A skill          | its own description, until the review reads it, or whole, when its scope loads it | no                |
 
 ### Agents
 
-Every review has a **default pass**: kritika's own instructions, on
+Every review has a default pass: kritika's own instructions, on
 `review.model`, with the repository's `rules` and `skills`.
 `review.agents` is a list of agents beside it, each by its `name`:
 
@@ -318,83 +330,88 @@ review:
         - { name: large, expr: pr.lines > 800 }
 ```
 
-- **An agent with `categories` is a specialist.** It reviews the change,
-  or the files its `paths` cover, for those categories alone. It runs as
-  an agent of its own beside the default pass, when one of its `when`
-  conditions holds, or always if it has none.
-- **An agent without `categories` replaces the default pass** when its
-  conditions hold. The first such agent whose conditions hold picks the
-  review's model, as [agents that replace the default
-  pass](/models/#agents-that-replace-the-default-pass) describes. It
-  takes only `name`, `model`, `fallback`, `effort`, `when` and `enabled`.
+An agent with `categories` is a specialist. It reviews the change, or the
+files its `paths` cover, for those categories alone. It runs as an agent of
+its own beside the default pass, when one of its `when` conditions holds, or
+always if it has none.
+
+An agent without `categories` replaces the default pass when its conditions
+hold. The first such agent whose conditions hold picks the review's model,
+as [agents that replace the default
+pass](/models/#agents-that-replace-the-default-pass) describes. It takes
+only `name`, `model`, `fallback`, `effort`, `when` and `enabled`.
 
 A specialist takes:
 
 | Key                           | What                                                                                                                                                                         |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                        | lowercase letters, digits and hyphens, at most 64 characters, not `default`; the comments credit a finding to it                                                             |
-| `categories`                  | the only finding categories it may report; its schema and its submission check refuse the rest                                                                               |
+| `name`                        | lowercase letters, digits and hyphens, at most 64 characters, not `default`. The comments credit a finding to it                                                             |
+| `categories`                  | the only finding categories it can report. Its schema and its submission check refuse the rest                                                                               |
 | `instructions`                | what it reviews for, at most 8000 characters, added after kritika's own instructions                                                                                         |
-| `file`                        | instead of `instructions`, a file read from the merge base whose content they are; the first 32 KiB is used                                                                  |
-| `model`, `fallback`, `effort` | as `review.*`, for this agent; where unset, the default pass's, as the agents picked it                                                                                      |
-| `paths`                       | the changed files it reads, every one when unset; a pull request that changes none of them is not reviewed by it                                                             |
+| `file`                        | instead of `instructions`, a file read from the merge base whose content they are. kritika uses the first 32 KiB                                                             |
+| `model`, `fallback`, `effort` | as `review.*`, for this agent. Where unset, the default pass's, as the agents picked it                                                                                      |
+| `paths`                       | the changed files it reads, every one when unset. It does not review a pull request that changes none of them                                                                |
 | `when`                        | conditions as a trigger's, `{name, expr}` or `{name, paths}` with `pr.lines` usable: it runs only on a pull request one of them holds for                                    |
 | `rules`                       | its checks, in place of the repository's, which are the default pass's                                                                                                       |
 | `skills.scope`                | skill scopes laid over the repository's for this agent, so a skill can be given whole to it alone                                                                            |
-| `agent`                       | `steps`, `tokens` and `timeout` (at least `1s` and at most `2h35m`) for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them |
+| `agent`                       | `steps`, `tokens` and `timeout` (at least `1s` and at most `2h35m`) for its agent, or each of its parts. They can lower the repository's `agent` bounds and never raise them |
 | `enabled`                     | `false` turns it off                                                                                                                                                         |
 
-- **One review.** The agents' answers are merged into one summary
-  comment, one commit status and one confidence score. Each inline finding
-  names the agent that raised it, as in `P1 · Open redirect · security ·
+- kritika merges the agents' answers into one review: one summary comment,
+  one commit status and one confidence score. Each inline finding names the
+  agent that raised it, as in `P1 · Open redirect · security ·
   security`. The summary's **Review context** block lists the agents that
   ran. A review by the default pass alone names no agent, in that block or
   on its findings.
-- **Duplicates merge.** When two agents raise the same thing (one path,
-  overlapping lines, the same category or title), one comment is posted:
-  the more severe finding, crediting both.
-- **Split by agent.** A large diff is split into parts within each agent,
-  and the run is sized and budgeted for every agent's parts. An agent
-  whose parts did not all submit leaves the review
+- Duplicates merge. When two agents raise the same thing (one path,
+  overlapping lines, the same category or title), kritika posts one
+  comment. That comment is the more severe finding, and it credits both
+  agents.
+- kritika splits a large diff by agent: into parts within each agent. It
+  sizes and budgets the run for every agent's parts. An agent whose parts
+  did not all submit leaves the review
   [incomplete](/reviews/#the-commit-status). Its findings are posted, and
   the summary names the agent. A retry of the same job reuses the parts
   that did submit.
-- **Judged over the whole pull request.** Which agents run, and on which
-  model, is decided from the whole change before any model is called. So
-  a pull request keeps its agents from push to push, and its author cannot
-  talk one away.
-- **Incremental per agent.** A re-review builds on the last one only for
-  the agents the last one ran. An agent it did not run, say one whose
-  `when` first holds on a later push, reviews its files whole, and none of
-  its findings is held back.
-- **Follow-ups.** A reply or mention in a finding's thread is answered by
-  the specialist that raised the finding, with its instructions, rules and
+- kritika judges agents over the whole pull request. It decides which
+  agents run, and on which model, from the whole change before it calls any
+  model. So a pull request keeps its agents from push to push, and its
+  author cannot talk one away.
+- Incremental reviews work per agent. A re-review builds on the last review
+  only for the agents that the last review ran. An agent that the last
+  review did not run, for example one whose `when` first holds on a later
+  push, reviews its files whole. None of that agent's findings is held
+  back.
+- A reply or mention in a finding's thread is a follow-up. The specialist
+  that raised the finding answers it, with its instructions, rules and
   model, while that specialist is on. Otherwise the default pass answers.
-- **On demand.** `@<bot> review <name>` runs that specialist alone,
-  whatever its `paths` and `when`, and carries the other agents' findings
-  on unchecked. `@<bot> review default` runs the default pass alone. For
-  an agent without categories, `@<bot> review <name>` runs the default
-  pass on that agent's model. A name that matches no agent that is on
-  runs every agent that applies, with a note.
-- **The admin's agents.** From this file, a specialist the admin defines
-  can only gain rules, under ids of their own, and skill scopes, for
-  skills it does not scope. Anything else written for it is dropped with
-  a note. The file's agents without categories replace the admin's whole,
-  as its `review.model` does, even when every one of them is off. They
-  are dropped whole when one of them names a model of a provider the
-  account may not use. They are also dropped whole when, together with
-  the admin's specialists, they pass the [limit](#limits) on agents. An
-  agent named `default` is dropped with a note, and the rest of the file
-  applies. So is an agent under the name of an admin's agent of the other
-  kind: a specialist where the admin's agent replaces the default pass,
-  or the other way round.
-- **Shared tools.** A specialist runs the repository's
+- Agents also run on demand. `@<bot> review <name>` runs that specialist
+  alone, whatever its `paths` and `when`. It carries the other agents'
+  findings on unchecked. `@<bot> review default` runs the default pass
+  alone. For an agent without categories, `@<bot> review <name>` runs the
+  default pass on that agent's model. A name that matches no agent that is
+  on runs every agent that applies, with a note.
+- From this file, a specialist among the admin's agents can only gain
+  rules and skill scopes. The rules must have ids of their own, and the
+  scopes must be for skills that it does not scope. kritika drops anything
+  else written for it, with a note. The file's agents without categories
+  replace the admin's whole, as its `review.model` does. They do so even
+  when every one of them is off.
+- kritika drops the file's agents without categories whole when one of them
+  names a model of a provider that the account cannot use. It also drops
+  them whole when, together with the admin's specialists, they pass the
+  [limit](#limits) on agents.
+- kritika drops an agent named `default`, with a note, and the rest of the
+  file applies. The same is true of an agent under the name of an admin's
+  agent of the other kind: a specialist where the admin's agent replaces
+  the default pass, or the other way round.
+- Agents share tools. A specialist runs the repository's
   [tools](#repository-tools) and commands, as the default pass does. There
   is no per-agent tool list.
-- **Model slots.** A review holds a slot of the account's
+- A review holds model slots. It holds a slot of the account's
   [`limits.concurrency`](/configuration/#accounts) on the model of each
-  specialist it runs, as it does on the default pass's model. It waits for
-  those slots as it waits for the default pass's.
+  specialist it runs. It does the same on the default pass's model. It
+  waits for those slots as it waits for the default pass's.
 
 Each specialist spends tokens of its own: with two, a review costs about
 three times as much. The dashboard's review timeline shows each part's
@@ -415,20 +432,22 @@ context:
     paths: ["web/**"]
 ```
 
-These follow the [context semantics](#context), including reading from the
-pull request's head. Directory-specific files must be listed explicitly;
-`paths` limits when each reference is offered. Name the file containing the
-actual text: `@AGENTS.md` imports and symlinks are not automatically
-followed, and tool paths are relative to the repository root.
+These follow the [context semantics](#context), and this includes reading
+from the pull request's head. You must list directory-specific files
+explicitly. `paths` limits when each reference is offered. Name the file
+that contains the actual text. kritika does not automatically follow
+`@AGENTS.md` imports and symlinks, and tool paths are relative to the
+repository root.
 
-Context is reference material, not instructions. Put requirements every
-applicable review must enforce into [rules](#rules), and review procedures into
-[skills](#skills). A rule can name a file containing review requirements;
-keep coding-agent workflows such as committing and opening pull requests
-out of that file. Skills are available to reviews only, not follow-up
-answers; put requirements shared by both in rules. An agent file that is
-not listed is not offered as context, and no review warns that it is
-missing.
+Context is reference material, not instructions. Put requirements that
+every applicable review must enforce into [rules](#rules). Put review
+procedures into [skills](#skills). A rule can name a file that contains
+review requirements. Keep coding-agent workflows, such as committing and
+opening pull requests, out of that file.
+
+Skills are available to reviews only, not follow-up answers. Put
+requirements shared by both in rules. An agent file that is not listed is
+not offered as context, and no review warns that it is missing.
 
 ### Comment templates
 
@@ -437,16 +456,17 @@ missing.
 kritika's built-in summary and inline comment templates. Where the admin
 set a template, an empty path restores the built-in one.
 
-- **Helpers:** the [sprout](https://github.com/go-sprout/sprout) helpers
-  that tuppr and chaski expose: std, strings, conversion, encoding, numeric,
-  slices, maps, regex, time, semver and reflect. Not env, filesystem,
-  network, random, uniqueid, checksum or crypto, and not `set` or `unset`.
-- **Refused actions:** `template`, `define` and `block`, so a template
-  cannot read any file or call any other template.
-- **Bounds:** rendering is bounded (loop iterations, bytes per function
-  call, output size, a deadline), so a template cannot hang or exhaust
-  memory. A template that exceeds a bound falls back to the default, with
-  a note in the summary.
+- Templates can use the [sprout](https://github.com/go-sprout/sprout)
+  helpers that tuppr and chaski expose: std, strings, conversion, encoding,
+  numeric, slices, maps, regex, time, semver and reflect. Templates cannot
+  use env, filesystem, network, random, uniqueid, checksum or crypto, and
+  cannot use `set` or `unset`.
+- kritika refuses the actions `template`, `define` and `block`. So a
+  template cannot read any file or call any other template.
+- Rendering has bounds (loop iterations, bytes per function call, output
+  size, a deadline). So a template cannot hang or exhaust memory. A template
+  that exceeds a bound falls back to the default, with a note in the
+  summary.
 
 The summary template's dot is the review:
 
@@ -463,7 +483,7 @@ The summary template's dot is the review:
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                                                                                                         |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                                                                                                       |
 | `.Result.Summary.Diagram`                                                    | Mermaid source for the flow the change adds or alters, "" unless `review.diagram` is on and the change has one                                                                                                |
-| `.Result.Findings`                                                           | the findings, each as the inline template sees one; an earlier finding that an incremental re-review carried on unchecked has `.CarriedFrom`: the head it was last reported at, whose lines its `.URL` links  |
+| `.Result.Findings`                                                           | the findings, each as the inline template sees one. An earlier finding that an incremental re-review carried on unchecked has `.CarriedFrom`: the head it was last reported at, whose lines its `.URL` links  |
 | `.Counts.P0`, `.Counts.P1`, `.Counts.P2`, `.Counts.Total`                    | the findings by severity and all of them, those outside the diff and those carried on unchecked included                                                                                                      |
 | `.Unanchored`                                                                | the findings on lines the diff does not show                                                                                                                                                                  |
 | `.HeldBack`                                                                  | an incremental re-review's new findings more than 3 lines from what changed since the last review, not counted                                                                                                |
@@ -473,11 +493,11 @@ The summary template's dot is the review:
 | `.Sources`                                                                   | links to what the review's commands fetched                                                                                                                                                                   |
 | `.Agents`, `.NamedAgents`                                                    | the [agents](#agents) the review ran, in order, and whether a specialist ran, alone or beside the default pass                                                                                                |
 | `.Skills`, `.Commands`                                                       | the repository's skills and the run tool's commands the review was offered                                                                                                                                    |
-| `.Overlaps`, `.NamedOverlaps`, `.MoreOverlaps`                               | the repository's other open pull requests that change a file this one changes, most shared files first; the first 5; how many that leaves out                                                                 |
+| `.Overlaps`, `.NamedOverlaps`, `.MoreOverlaps`                               | the repository's other open pull requests that change a file this one changes, most shared files first. Then the first 5, and how many that leaves out                                                        |
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                                                                                                             |
 | `.Confidence`                                                                | nil unless the review was scored                                                                                                                                                                              |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                                                                                                          |
-| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its View and Re-run badges point; both "" when the admin's `comments.dashboard` is off |
+| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its View and Re-run badges point. Both "" when the admin's `comments.dashboard` is off |
 
 `.Skills` and `.Commands` each have:
 
@@ -492,8 +512,7 @@ Each of `.Overlaps` has:
 - `.Shared`: the paths both change, sorted
 - `.NamedShared`, `.Spans` and `.MoreShared`: the first 3, the same as
   Markdown code spans, and how many that leaves out
-- `.Stale`: whether its head has moved since the review whose paths these
-  are
+- `.Stale`: whether its head moved since the review whose paths these are
 
 `.Confidence` has:
 
@@ -507,27 +526,27 @@ Each of `.Overlaps` has:
 The inline template's dot is one finding, with the dashboard's origin
 beside it:
 
-| Field                        | What                                                                                                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.Path`, `.Line`, `.EndLine` | where it is                                                                                                                                                                                 |
-| `.Severity`, `.Category`     | how much it matters, and what kind of problem it is; `.Severity.Label` is its badge text, P0 to P2, and `.Severity.Badge .WebURL` the badge image, or the label in bold without a dashboard |
-| `.WebURL`                    | the dashboard's origin, "" when the admin's `comments.dashboard` is off                                                                                                                     |
-| `.Title`, `.Explanation`     | what it is                                                                                                                                                                                  |
-| `.Agents`, `.AgentNames`     | the [agents](#agents) that raised it, none for the default pass alone, and their names joined for a comment, "" for the default pass alone                                                  |
-| `.SuggestedFix`              | the fix, in prose                                                                                                                                                                           |
-| `.Replacement`               | the lines that replace the finding's, for a one-click suggestion                                                                                                                            |
-| `.AgentPrompt`               | a prompt a coding agent can apply the fix from                                                                                                                                              |
-| `.AgentPromptFence`          | a code fence longer than any in the prompt                                                                                                                                                  |
-| `.Rules`                     | the ids of the rules it enforces                                                                                                                                                            |
-| `.Quote`, `.BlockQuote`      | the passage of a cited rule it enforces, "" when it cites none, and that passage as a Markdown block quote                                                                                  |
-| `.URL`                       | a link to the lines at the head commit                                                                                                                                                      |
-| `.ThreadURL`                 | a link to its inline comment thread, once one is posted                                                                                                                                     |
+| Field                        | What                                                                                                                                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.Path`, `.Line`, `.EndLine` | where it is                                                                                                                                                                                    |
+| `.Severity`, `.Category`     | how much it matters, and what kind of problem it is. `.Severity.Label` is its badge text, P0 to P2, and `.Severity.Badge .WebURL` is the badge image, or the label in bold without a dashboard |
+| `.WebURL`                    | the dashboard's origin, "" when the admin's `comments.dashboard` is off                                                                                                                        |
+| `.Title`, `.Explanation`     | what it is                                                                                                                                                                                     |
+| `.Agents`, `.AgentNames`     | the [agents](#agents) that raised it, none for the default pass alone, and their names joined for a comment, "" for the default pass alone                                                     |
+| `.SuggestedFix`              | the fix, in prose                                                                                                                                                                              |
+| `.Replacement`               | the lines that replace the finding's, for a one-click suggestion                                                                                                                               |
+| `.AgentPrompt`               | a prompt a coding agent can apply the fix from                                                                                                                                                 |
+| `.AgentPromptFence`          | a code fence longer than any in the prompt                                                                                                                                                     |
+| `.Rules`                     | the ids of the rules it enforces                                                                                                                                                               |
+| `.Quote`, `.BlockQuote`      | the passage of a cited rule it enforces, "" when it cites none, and that passage as a Markdown block quote                                                                                     |
+| `.URL`                       | a link to the lines at the head commit                                                                                                                                                         |
+| `.ThreadURL`                 | a link to its inline comment thread, once one is posted                                                                                                                                        |
 
 ## Repository tools
 
-A repository adds tools for its own reviews under `tools`. The key is read
-from the merge base like the rest of the file, so a pull request that
-changes it uses the previously merged version for its own review.
+A repository adds tools for its own reviews under `tools`. kritika reads
+the key from the merge base like the rest of the file. So a pull request
+that changes it uses the previously merged version for its own review.
 
 Each entry is a package of the
 [aqua registry](https://github.com/aquaproj/aqua-registry), named `aqua:`
@@ -552,55 +571,65 @@ other prefix included. A version with no digit in it, such as `latest`,
 fails the file: a download URL that takes it reads as whatever is newest.
 A tag the release does not have fails the install, which names it.
 
-A tool installs at the version given, on the first call that needs it,
-which can take a moment. A failed install fails that tool call without
-stopping the review. The runner reads the registry from the gateway,
-which keeps aqua-registry's main branch, unless the admin's
-`aquaRegistryUrl` names another source, and asks for it again every hour
-([how kritika runs](/configuration/#how-kritika-runs)). A package added
-to the registry, or a definition fixed in it, is offered within that,
-with no change to this file or to kritika. Release hosts and, for a tool
-with GitHub artifact attestations, the host GitHub keeps their bundles on
-need the admin's `egress.allow` permission
-([runner tools](/security/#runner-tools)). Once the admin gives the
-gateway a download cache, later runs reuse a checked download
-([the gateway's cache](/security/#the-gateways-download-cache)).
+A tool installs at the version given, on the first call that needs it.
+This can take a moment. A failed install fails that tool call without
+stopping the review.
 
-No lock is committed. Before a download, the runner fetches what it must
-match: the digest GitHub keeps of a release's asset, which also confirms
-the version is one of the release's tags, else the checksum file the
-registry names for the package. A tool with neither is not installed. The
-download is checked before anything of it is unpacked, and an install
-only downloads and unpacks.
+The runner reads the registry from kritika's gateway. The gateway keeps
+aqua-registry's main branch, unless the admin's `aquaRegistryUrl` names
+another source. The gateway asks for the registry again every hour
+([how kritika runs](/configuration/#how-kritika-runs)). A package added to
+the registry, or a definition fixed in it, is offered within that hour.
+This takes no change to this file or to kritika.
+
+Release hosts need the admin's `egress.allow` permission
+([runner tools](/security/#runner-tools)). For a tool with GitHub artifact
+attestations, the host where GitHub keeps their bundles needs it too. Once
+the admin gives the gateway a download cache, later runs reuse a checked
+download ([the gateway's cache](/security/#the-gateways-download-cache)).
+
+No lock is committed. Before a download, the runner fetches what the
+download must match. That is the digest that GitHub keeps of a release's
+asset, else the checksum file that the registry names for the package. The
+fetch of the digest also makes sure that the version is one of the release's
+tags. A tool with neither is not installed.
+
+The runner makes sure that the download matches before it unpacks anything
+of it. An install only downloads and unpacks.
 
 Where the registry declares a signature of the download or of its checksum
-file, the runner checks that too: a cosign bundle, a GitHub artifact
-attestation, SLSA provenance in a Sigstore bundle, or a minisign
-signature. A checksum file with a signature is read in place of GitHub's
-digest, as aqua reads it. A signature that does not verify fails the
-install. A cosign signature and certificate apart from a bundle, a
-key-signed one, provenance outside a Sigstore bundle, or an attestation
-by GitHub's own Sigstore instance is not checked, the runner's log says
-so, and the tool installs on its checksum alone.
+file, the runner makes sure that the signature is valid too. The signature
+can be a cosign bundle, a GitHub artifact attestation, SLSA provenance in a
+Sigstore bundle, or a minisign signature. A checksum file with a signature
+is read in place of GitHub's digest, as aqua reads it. A signature that
+fails verification fails the install.
+
+The runner skips signature verification for the forms below. The runner's
+log says so, and the tool installs on its checksum alone.
+
+- A cosign signature and certificate apart from a bundle
+- A key-signed signature
+- Provenance outside a Sigstore bundle
+- An attestation by GitHub's own Sigstore instance
 
 These are not offered, and the review's summary says why:
 
-- a package the registry does not have
-- one that builds from source (`go_install`, `go_build`, `cargo`) or
+- A package that the registry does not have
+- A package that builds from source (`go_install`, `go_build`, `cargo`) or
   takes a repository's files rather than a release's (`github_content`,
   `github_archive`)
-- one with no download for the version or the runner's platform
-- one whose download is packed in a way the runner does not unpack, such
-  as `dmg`, `pkg`, `rar` or `7z`, or whose commands the registry lays out
-  as links
-- a command another tool offers already, its tools taken in the order of
-  their names
+- A package with no download for the version or the runner's platform
+- A package whose download is packed in a way that the runner does not
+  unpack, such as `dmg`, `pkg`, `rar` or `7z`
+- A package whose commands the registry lays out as links
+- A command that another tool already offers, with the tools taken in the
+  order of their names
 
 ### Updating tools with Renovate
 
 A [custom regex manager](https://docs.renovatebot.com/modules/manager/regex/)
 offers the updates. On the line above each tool, annotate the datasource
-and the GitHub repository Renovate should follow:
+and the GitHub repository for Renovate to follow:
 
 ```yaml
 tools:
@@ -644,7 +673,7 @@ rule's `when` conditions, is a [CEL](https://cel.dev) expression over
 | `createdAt`                                | when it was opened                                                                                                                                       |
 | `labels`                                   | its labels, each with a `name` and a `color`                                                                                                             |
 | `event`                                    | what started the review (below)                                                                                                                          |
-| `lines`                                    | the lines its diff adds and removes, paths the `ignore` globs match left out; trigger conditions and a `review.agents` entry's `when` only, not a rule's |
+| `lines`                                    | the lines its diff adds and removes, paths the `ignore` globs match left out. Trigger conditions and a `review.agents` entry's `when` only, not a rule's |
 
 | `event`                                  | What started the review                           |
 | ---------------------------------------- | ------------------------------------------------- |
@@ -670,7 +699,7 @@ Some conditions, each under `trigger`:
 | To                                                                    | Write                                                                                     |
 | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Skip drafts                                                           | `exclude: [{ expr: pr.draft }]`                                                           |
-| Skip anything labelled `skip-review`                                  | `exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]`   |
+| Skip anything labeled `skip-review`                                   | `exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]`   |
 | Skip Renovate's pull requests                                         | `exclude: [{ expr: pr.author.startsWith("renovate") }]`                                   |
 | Skip pull requests from forks                                         | `exclude: [{ name: forks, expr: pr.fork }]`                                               |
 | Skip when the description asks to                                     | `exclude: [{ expr: 'pr.body.contains("[skip-review]")' }]`                                |
@@ -693,17 +722,17 @@ A configuration file that fails to parse is ignored as a whole, and noted
 rather than failing the review. The configuration and prompt limits below
 produce summary notes when content is omitted:
 
-| What                                                 | Limit                                     |
-| ---------------------------------------------------- | ----------------------------------------- |
-| `.kritika.yaml`, each rule file and comment template | 256 KiB                                   |
-| those configuration files together                   | 1 MiB                                     |
-| the rules in the prompt                              | 16 KiB of rule text, 32 KiB of rule files |
-| skills                                               | 50 read                                   |
-| a skill's description                                | 1024 characters                           |
-| the skills' names and descriptions in the prompt     | 4 KiB                                     |
-| the skills given whole in the prompt                 | 32 KiB; one past it is offered by name    |
-| agents                                               | 8, the admin's and the file's together    |
-| an agent's instructions                              | 8000 characters, or 32 KiB of its file    |
+| What                                                 | Limit                                      |
+| ---------------------------------------------------- | ------------------------------------------ |
+| `.kritika.yaml`, each rule file and comment template | 256 KiB                                    |
+| those configuration files together                   | 1 MiB                                      |
+| the rules in the prompt                              | 16 KiB of rule text, 32 KiB of rule files  |
+| skills                                               | 50 read                                    |
+| a skill's description                                | 1024 characters                            |
+| the skills' names and descriptions in the prompt     | 4 KiB                                      |
+| the skills given whole in the prompt                 | 32 KiB, and one past it is offered by name |
+| agents                                               | 8, the admin's and the file's together     |
+| an agent's instructions                              | 8000 characters, or 32 KiB of its file     |
 
 Context file contents are read on demand by `read_file`, outside the
 configuration-file limits above. Each read is capped at `agent.output`

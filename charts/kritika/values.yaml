@@ -2,7 +2,7 @@
 # Default values for kritika.
 #
 # Most string, list and map values below are rendered through Helm's `tpl`, so
-# they may carry template expressions that resolve at install time, e.g.
+# they can carry template expressions that resolve at install time, for example:
 #   ingress.hosts[0].host: kritika.{{ .Values.global.domain }}
 # Plain numbers and booleans are passed through as they are.
 
@@ -11,9 +11,9 @@ image:
   repository: ghcr.io/home-operations/kritika
   # -- Image pull policy.
   pullPolicy: IfNotPresent
-  # -- Overrides the image tag; defaults to the chart appVersion.
+  # -- Overrides the image tag. Defaults to the chart appVersion.
   tag: ""
-  # -- Pin the image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published image's digest.
+  # -- Pin the image by digest (sha256:…). When set, it overrides the tag. The release pipeline fills it with the published image's digest.
   digest: ""
 
 # -- Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs.
@@ -26,14 +26,14 @@ fullnameOverride: ""
 # type: string
 # minLength: 1
 # @schema
-# -- The cluster's DNS domain, the kubelet's `clusterDomain`: the gateway's in-cluster address that runner Jobs are handed as `HTTPS_PROXY`, `<release>-gateway.<namespace>.svc.<clusterDomain>`, and the Service names the `cilium` network policy lets runner pods look up end in it. On a cluster with another domain, every runner fails to reach the gateway until this matches.
+# -- The cluster's DNS domain, the kubelet's `clusterDomain`. The gateway's in-cluster address, which runner Jobs are handed as `HTTPS_PROXY`, is `<release>-gateway.<namespace>.svc.<clusterDomain>`. The Service names that the `cilium` network policy lets runner pods look up also end in it. On a cluster with another domain, every runner fails to reach the gateway until this matches.
 clusterDomain: cluster.local
 
 # kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,
-# the job queues, runner Jobs, the gateway and, on the replica holding the
-# leader lock, the leader duties. Runner pods are not part of it: serve
-# creates them as Jobs, one per review, follow-up and index run.
-# -- Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost.
+# the job queues, runner Jobs and the gateway. On the replica that holds the
+# leader lock, it also runs the leader duties. Runner pods are not part of it:
+# serve creates them as Jobs, one per review, follow-up and index run.
+# -- Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs. Exactly one holds the leader lock at a time. A rollout keeps one serving on its own. To keep one serving while a pod or node is lost, set 2.
 replicas: 1
 
 # -- Deployment update strategy. A rolling update that surges one pod and takes none down keeps a replica serving while each is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.
@@ -101,7 +101,7 @@ strategy:
 #   ignore: { type: array }
 #   enabled: { type: boolean }
 # @schema
-# -- Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys the chart derives from its deployment values (`addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor`, `runner`, and, when `gatewayCache.enabled` is set, `gatewayCacheDir`, `gatewayCacheStorage`, `gatewayCacheMaxEntrySize`, and `gatewayCacheMaxSize` for filesystem storage or the `gatewayCacheS3*` keys for S3) fail the render.
+# -- Application configuration, with the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted keys use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys that the chart derives from its deployment values fail the render. These keys are `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor` and `runner`. When `gatewayCache.enabled` is set, they also include `gatewayCacheDir`, `gatewayCacheStorage` and `gatewayCacheMaxEntrySize`. For filesystem storage, they also include `gatewayCacheMaxSize`. For S3, they also include the `gatewayCacheS3*` keys.
 config: {}
 # webUrl: https://kritika.example.com
 # auth:
@@ -140,21 +140,21 @@ config: {}
 # -- Existing ConfigMap containing config.yaml instead of inline config. Put webUrl in that file. Changes require a restart, for example through a Reloader annotation.
 existingConfigMap: ""
 
-# -- Operational settings and referenced secrets, keyed by environment variable name. Use valueFrom.secretKeyRef for credentials. Do not duplicate file settings or chart-managed variables. Rendered through tpl.
+# -- Operational configuration and referenced secrets, keyed by environment variable name. Use valueFrom.secretKeyRef for credentials. Do not duplicate file configuration or chart-managed variables. Rendered through tpl.
 env: {}
 # ADMIN_PASSWORD:
 #   valueFrom:
 #     secretKeyRef: { name: kritika-auth, key: password }
 
-# -- Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application settings must not also be set in the file.
+# -- Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application configuration must not also be set in the file.
 envFrom: []
 
-# Three Postgres connection strings, each from its own Secret. The
-# application role must not own the tables (row-level security), the owner
-# role runs migrations and applies configuration on the leader, and the
-# runner role is handed to runner Jobs and can only write its own run. On
-# CloudNativePG, declare `app` and `runner` as DatabaseRole resources and
-# use the bootstrap owner as `owner`; see the database docs.
+# Three Postgres connection strings, each from its own Secret. The application
+# role must not own the tables (row-level security). The owner role runs
+# migrations and applies configuration on the leader. The runner role is
+# handed to runner Jobs and can only write its own run. On CloudNativePG,
+# declare `app` and `runner` as DatabaseRole resources and use the bootstrap
+# owner as `owner`. See the database docs.
 database:
   app:
     # -- (required) Secret holding the application role's connection URI.
@@ -169,21 +169,21 @@ database:
     # -- Key in that Secret.
     key: uri
   runner:
-    # -- (required) Secret holding the runner role's connection URI; referenced by runner Jobs, never read by kritika serve.
+    # -- (required) Secret holding the runner role's connection URI. Runner Jobs reference it, and kritika serve never reads it.
     existingSecret: ""
     # -- Key in that Secret.
     key: uri
     # -- Name of the runner role, granted only what runner Jobs need.
     role: kritika_runner
 
-# Runner Jobs: one pod per review, follow-up or index run, created by kritika
-# serve in the release namespace from the release's -tools image, running as a
-# service account with no permissions and a database role that can only touch
-# its own run. The server's Role reaches every Secret in the release namespace,
-# so install kritika into a namespace of its own. A sandboxed RuntimeClass
-# (gVisor, Kata), `runner.podTemplate.spec.runtimeClassName`, is advised,
-# since a runner parses untrusted repository content and runs what the model
-# asks.
+# Runner Jobs: one pod per review, follow-up or index run. kritika serve
+# creates them in the release namespace from the release's -tools image. They
+# run as a service account with no permissions and a database role that can
+# only touch its own run. The server's Role reaches every Secret in the
+# release namespace, so install kritika into a namespace of its own. We
+# recommend a sandboxed RuntimeClass (gVisor, Kata),
+# `runner.podTemplate.spec.runtimeClassName`, since a runner parses untrusted
+# repository content and runs what the model asks.
 runner:
   # @schema
   # type: object
@@ -220,14 +220,14 @@ runner:
       # minimum: 1
       # maximum: 7200
       # @schema
-      # -- How long a runner Job may run, in seconds: at most 7200, or River's job timeout cap would cut the run off early. A review's or follow-up's Job runs as long as its agent's `timeout`, for each part a review is split into, needs, if that is longer. The deadline bounds the work around the run and the run's gateway token too.
+      # -- How long a runner Job can run, in seconds. It is at most 7200, since River's job timeout cap otherwise cuts the run off early. A review's or follow-up's Job runs as long as its agent's `timeout` needs, if that is longer. That need covers each part that a review is split into. The deadline bounds the work around the run and the run's gateway token too.
       activeDeadlineSeconds: 900
       # @schema
       # type: integer
       # minimum: 1
       # maximum: 2147483647
       # @schema
-      # -- How long a finished Job stays for kubectl before Kubernetes removes it, in seconds; the run row keeps everything the Job knew.
+      # -- How long a finished Job stays for kubectl before Kubernetes removes it, in seconds. The run row keeps everything that the Job knew.
       ttlSecondsAfterFinished: 600
   # @schema
   # type: object
@@ -253,7 +253,7 @@ runner:
       # type: object
       # additionalProperties: { type: string }
       # @schema
-      # -- Annotations for runner pods, such as `karpenter.sh/do-not-disrupt: "true"`. kritika refuses AppArmor's, which would set the runner's profile.
+      # -- Annotations for runner pods, such as `karpenter.sh/do-not-disrupt: "true"`. kritika refuses AppArmor's, which will otherwise set the runner's profile.
       annotations: {}
     # @schema
     # type: object
@@ -267,13 +267,13 @@ runner:
       #   requests: { type: object, additionalProperties: { type: [string, number] } }
       #   limits: { type: object, additionalProperties: { type: [string, number] } }
       # @schema
-      # -- Requests and limits of cpu, memory and hugepages for the whole runner pod, the run tool's commands included: pod-level resources, on by default from Kubernetes 1.34. A LimitRange's container defaults in the release namespace still apply to the runner container: its default limit bounds the runner within the pod's, and the API refuses a runner pod whose requests are below its default requests.
+      # -- Requests and limits of cpu, memory and hugepages for the whole runner pod, the run tool's commands included. These are pod-level resources, on by default from Kubernetes 1.34. A LimitRange's container defaults in the release namespace still apply to the runner container. Its default limit bounds the runner within the pod's, and the API refuses a runner pod whose requests are below its default requests.
       resources: {}
       # -- RuntimeClass for runner pods, such as gvisor or kata. Empty uses the cluster default.
       runtimeClassName: ""
       # -- PriorityClass for runner pods. Empty uses the cluster default.
       priorityClassName: ""
-      # -- Set false to run runner pods in a user namespace of their own, which the nodes' kernel and container runtime must support; true shares the node's, as Kubernetes does by default.
+      # -- Set false to run runner pods in a user namespace of their own, which the nodes' kernel and container runtime must support. True shares the node's, as Kubernetes does by default.
       hostUsers: true
       # @schema
       # type: object
@@ -333,19 +333,19 @@ runner:
       #                   key: { type: string, minLength: 1 }
       #                   optional: { type: boolean }
       # @schema
-      # -- The runner container, the pod's one, named runner: its `image`, empty for this release's `-tools` image pinned by digest, which carries curl, find, gh, grep and jq for a review's or follow-up's run tool; its `imagePullPolicy`; and its `env`, variables the run tool's commands get, each a `value` or a Secret's key (`valueFrom.secretKeyRef`), which is masked out of what the commands print. kritika sets them on the container as `KRITIKA_COMMAND_ENV_<name>`, so they configure the commands and never kritika itself, and refuses the names it keeps for the commands, such as `HOME`, `PATH`, the proxy variables and `GH_*`. The Secret must be in the release namespace.
+      # -- The runner container, the pod's one, named runner. It has an `image`, an `imagePullPolicy` and an `env`. An empty `image` is this release's `-tools` image pinned by digest. That image carries curl, find, gh, grep and jq for a review's or follow-up's run tool. `env` holds variables that the run tool's commands get, each a `value` or a Secret's key (`valueFrom.secretKeyRef`). The value of a Secret's key is masked out of what the commands print. kritika sets these variables on the container as `KRITIKA_COMMAND_ENV_<name>`, so they configure the commands and never kritika itself. kritika refuses the names that it keeps for the commands, such as `HOME`, `PATH`, the proxy variables and `GH_*`. The Secret must be in the release namespace.
       containers:
         - name: runner
           image: ""
           imagePullPolicy: IfNotPresent
           env: []
   admissionPolicy:
-    # -- Have the cluster refuse, from kritika serve's ServiceAccount, any Job that is not a runner Job as kritika builds it, any Secret that is not a run's, and any deletion of a Job but in the foreground, which takes its run's Secret with it, with three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects the chart's installer must be allowed to create. Without them the Role lets kritika serve create any Job in its namespace, whose pod may run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs an older replica starts mid-rollout do too; changing the repository, the runner ServiceAccount, RuntimeClass, database Secret or a Secret the runner container's `env` names refuses them until the rollout ends, and they are retried.
+    # -- Have the cluster refuse three things from kritika serve's ServiceAccount. The first is any Job that is not a runner Job as kritika builds it. The second is any Secret that is not a run's. The third is any deletion of a Job but in the foreground, which takes its run's Secret with it. The cluster uses three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects that the chart's installer must be allowed to create. Without them, the Role lets kritika serve create any Job in its namespace. That Job's pod can run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs that an older replica starts mid-rollout pass too. Some changes refuse those runs until the rollout ends, and the runs are retried. These are changes to the repository, the runner ServiceAccount, RuntimeClass, database Secret or a Secret that the runner container's `env` names.
     enabled: true
   serviceAccount:
     # -- Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.
     create: true
-    # -- Runner ServiceAccount name; generated from the release name if empty.
+    # -- Runner ServiceAccount name. Generated from the release name if empty.
     name: ""
     # -- Annotations for the runner ServiceAccount.
     annotations: {}
@@ -354,7 +354,7 @@ runner:
 # additionalProperties: false
 # @schema
 gatewayCache:
-  # -- Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica; S3 shares completed objects across replicas and rollouts.
+  # -- Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica. S3 shares completed objects across replicas and rollouts.
   enabled: false
   # -- Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi.
   maxEntrySize: 256Mi
@@ -375,13 +375,13 @@ gatewayCache:
     # @schema
     # -- Cache storage backend.
     type: filesystem
-    # -- Filesystem storage only: retained-entry budget, and separately the aggregate fill budget. Allow twice this plus evicted files still being served. S3's private local cache instead uses eight times maxEntrySize for each budget; this does not bound bucket usage.
+    # -- Filesystem storage only: retained-entry budget, and separately the aggregate fill budget. Allow twice this plus evicted files still being served. S3's private local cache instead uses eight times maxEntrySize for each budget. This does not bound bucket usage.
     maxSize: 2Gi
     # -- Existing S3 bucket. Provision its credentials and retention outside this chart.
     bucket: ""
-    # -- Object prefix dedicated to this instance. Kritika appends the storage format version.
+    # -- Object prefix dedicated to this instance. kritika appends the storage format version.
     prefix: gateway/
-    # -- S3 API origin, including http:// or https:// and an optional port; no bucket path.
+    # -- S3 API origin, with http:// or https:// and an optional port. No bucket path.
     endpoint: ""
     # -- Signing region configured on the S3 server.
     region: ""
@@ -397,14 +397,14 @@ serviceAccount:
   automount: true
   # -- Annotations for the ServiceAccount.
   annotations: {}
-  # -- ServiceAccount name; generated from the release name if empty.
+  # -- ServiceAccount name. Generated from the release name if empty.
   name: ""
 
 rbac:
   # -- Create the Role and RoleBinding kritika serve needs: Jobs in the release namespace, their pods and logs, the Secrets it hands them, the Jobs' finalizers, and Events on its Jobs and pods. Nothing cluster-wide.
   create: true
 
-# -- Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`.
+# -- Annotations added to the Deployment (for example, `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`.
 deploymentAnnotations: {}
 # -- Annotations added to the pods.
 podAnnotations: {}
@@ -434,13 +434,13 @@ service:
   port: 8080
   # -- Metrics and probe port.
   metricsPort: 8081
-  # -- Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (the connections' forges, github.com and api.github.com for an app and the instance host for a Forgejo, GitLab or Gitea connection, plus `egress.allow` less `egress.deny`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod.
+  # -- Port of the gateway that the kritika serve pods run, on the pods and its Service. The gateway is the forward proxy that runner Jobs are handed as `HTTPS_PROXY`. It allows only the hosts that the configuration names, so runner pods need no direct internet egress. These hosts are the connections' forges, plus `egress.allow` less `egress.deny`. The forges are github.com and api.github.com for an app, and the instance host for a Forgejo, GitLab or Gitea connection. The gateway also serves the model and similar-code endpoints that a runner calls with a per-run token, so no provider key enters a runner pod.
   gatewayPort: 8082
 
 # One Ingress, or one Gateway API HTTPRoute, to the public Service, which
 # serves the webhooks under `/hooks` and the dashboard. Its host must be
-# `config.webUrl`'s: the forges deliver webhooks to that URL and sign-in
-# redirects back to it, so a route for another name serves a dashboard
+# `config.webUrl`'s. The forges deliver webhooks to that URL, and sign-in
+# redirects back to it. A route for another name therefore serves a dashboard
 # that cannot sign in.
 ingress:
   # -- Expose the public Service through an Ingress.
@@ -449,7 +449,7 @@ ingress:
   className: ""
   # -- Ingress annotations.
   annotations: {}
-  # -- Ingress hosts and their paths; the host is `config.webUrl`'s.
+  # -- Ingress hosts and their paths. The host is `config.webUrl`'s.
   hosts:
     - host: kritika.example.com
       paths:
@@ -461,15 +461,15 @@ ingress:
   #   hosts:
   #     - kritika.example.com
 
-# Gateway API HTTPRoute, an alternative to `ingress`; one route to the public
+# Gateway API HTTPRoute, an alternative to `ingress`. One route to the public
 # Service. Named `httpRoute`, not `route`, to keep clear of the OpenShift
 # Route kind.
 httpRoute:
   # -- Expose the public Service through a Gateway API HTTPRoute (alternative to ingress).
   enabled: false
-  # -- HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.
+  # -- HTTPRoute apiVersion. Empty defaults to gateway.networking.k8s.io/v1.
   apiVersion: ""
-  # -- HTTPRoute kind; empty defaults to HTTPRoute.
+  # -- HTTPRoute kind. Empty defaults to HTTPRoute.
   kind: ""
   # -- HTTPRoute annotations.
   annotations: {}
@@ -481,7 +481,7 @@ httpRoute:
   #    namespace: gateway
   #    sectionName: https
 
-  # -- Hostnames matched against the Host header; `config.webUrl`'s host (templated).
+  # -- Hostnames matched against the Host header. `config.webUrl`'s host (templated).
   hostnames: []
   #  - kritika.example.com
 
@@ -495,34 +495,35 @@ httpRoute:
         type: PathPrefix
         value: /
   # Redirect HTTP to HTTPS (301) instead of routing to the backend. Requires
-  # a Gateway with both HTTP and HTTPS listeners; matches/filters are ignored.
+  # a Gateway with both HTTP and HTTPS listeners. The matches/filters are ignored.
 
   # -- Redirect HTTP to HTTPS (301) instead of routing to the backend (needs HTTP+HTTPS listeners).
   httpsRedirect: false
 
-# NetworkPolicies: one for the service pods (ingress to the webhook and
-# metrics ports, and to the gateway port from runner pods; egress to the
-# cluster's DNS, the forges and models over the egress ports, Postgres, the
-# API server and what `extraEgress` adds) and one for runner pods (egress
-# only: the cluster's DNS, Postgres and the gateway port on the service
-# pods, through which everything else is reached). Both reach the Postgres
-# port only where `postgres` says the database is.
+# NetworkPolicies: one for the service pods and one for runner pods. The one
+# for the service pods allows ingress to the webhook and metrics ports, and to
+# the gateway port from runner pods. It allows egress to the cluster's DNS,
+# the forges and models over the egress ports, Postgres, the API server and
+# what `extraEgress` adds. The one for runner pods allows egress only: the
+# cluster's DNS, Postgres and the gateway port on the service pods, through
+# which everything else is reached. Both reach the Postgres port only where
+# `postgres` says the database is.
 networkPolicy:
-  # -- Create the NetworkPolicies. The runner's is what keeps every command a review runs on the egress gateway: the run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.
+  # -- Create the NetworkPolicies. The runner's is what keeps every command that a review runs on the egress gateway. The run tool passes the model's arguments as given, so without it a command can connect around the gateway. Turn it off only where something else confines runner pods' egress.
   enabled: true
-  # -- Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto": "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`; plain `helm template` without `--api-versions` renders "default". The Cilium flavor's DNS rules need Cilium's L7 proxy, on unless turned off: without it Cilium refuses the runner's policy, and a NetworkPolicy the flavor adds then keeps runner pods from looking up any name, so runs fail until the type is "default". Set the flavor where the cluster serves a policy API its CNI does not enforce.
+  # -- Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy), "calico" (projectcalico.org/v3 NetworkPolicy), or "auto". "auto" is "cilium" when the cluster serves CiliumNetworkPolicy, else "calico" when it serves Calico's projectcalico.org/v3 NetworkPolicy, else "default". Helm and Flux read what the cluster serves from it, and Argo CD passes it to `helm template`. Plain `helm template` without `--api-versions` renders "default". The Cilium flavor's DNS rules need Cilium's L7 proxy, on unless turned off. Without it, Cilium refuses the runner's policy. A NetworkPolicy that the flavor adds then keeps runner pods from looking up any name, so runs fail until the type is "default". Set the flavor where the cluster serves a policy API that its CNI does not enforce.
   type: auto
-  # The cluster's DNS, the one peer the pods may send port 53 to.
+  # The cluster's DNS, the one peer that the pods can send port 53 to.
   dns:
     # -- Namespace of the cluster's DNS pods.
     namespace: kube-system
-    # Empty rather than kube-dns's label: Helm merges maps, so a default here
-    # would stay beside the labels set in its place.
+    # Empty rather than kube-dns's label. Helm merges maps, so a default here
+    # stays beside the labels set in its place.
     # @schema
     # type: object
     # additionalProperties: { type: string }
     # @schema
-    # -- Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`.
+    # -- Labels of the cluster's DNS pods. Empty stands for `k8s-app: kube-dns`.
     podSelector: {}
     # @schema
     # type: array
@@ -530,14 +531,14 @@ networkPolicy:
     # @schema
     # -- Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity.
     nodeLocalAddresses: []
-  # -- TCP ports the service pods may egress to at any address, for forges, model endpoints and S3 storage outside the cluster. Runner pods reach the gateway alone.
+  # -- TCP ports that the service pods can egress to at any address, for forges, model endpoints and S3 storage outside the cluster. Runner pods reach the gateway alone.
   egressPorts:
     - 443
   # @schema
   # type: array
   # items: { type: object }
   # @schema
-  # -- More egress rules for the service pods, as a networking.k8s.io/v1 NetworkPolicy's `egress`, rendered as a NetworkPolicy of their own whatever the type, since Cilium and Calico allow what any policy selecting a pod allows: for a destination in the cluster, such as an S3 bucket on Ceph RGW or a model server, its pods and their own ports, which a NetworkPolicy matches rather than a Service's. Runner pods never get them.
+  # -- More egress rules for the service pods, as a networking.k8s.io/v1 NetworkPolicy's `egress`. They render as a NetworkPolicy of their own whatever the type, since Cilium and Calico allow what any policy that selects a pod allows. For a destination in the cluster, such as an S3 bucket on Ceph RGW or a model server, name its pods and their own ports. A NetworkPolicy matches those rather than a Service's. Runner pods never get them.
   extraEgress: []
   #  - to:
   #      - namespaceSelector:
@@ -549,20 +550,20 @@ networkPolicy:
   #    ports:
   #      - port: 8080
   #        protocol: TCP
-  # Where the database is, the one peer the service pods and runner pods
-  # may reach its port at: every pod in the release namespace unless set.
-  # It must take in every pod the owner, application and runner URIs
+  # Where the database is, the one peer at which the service pods and runner
+  # pods can reach its port. It is every pod in the release namespace unless
+  # set. It must take in every pod that the owner, application and runner URIs
   # connect to.
   postgres:
-    # -- Port of the database, which the pods may reach only where the rest of `postgres` says.
+    # -- Port of the database, which the pods can reach only where the rest of `postgres` says.
     port: 5432
-    # -- Namespace of the database's pods; the release namespace when empty.
+    # -- Namespace of the database's pods. The release namespace when empty.
     namespace: ""
     # @schema
     # type: object
     # additionalProperties: { type: string }
     # @schema
-    # -- Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres`, which CloudNativePG gives a cluster's instances and its Poolers' pods alike, so it also covers a URI that goes through a session-mode Pooler. Empty selects every pod in `namespace`.
+    # -- Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres`. CloudNativePG gives that label to a cluster's instances and its Poolers' pods alike, so it also covers a URI that goes through a session-mode Pooler. Empty selects every pod in `namespace`.
     podSelector: {}
 
 # -- Resource requests and limits of the kritika serve pods.
@@ -573,7 +574,7 @@ resources:
   limits:
     memory: 512Mi
 
-# -- Spread the kritika serve pods across nodes, so with `replicas: 2` a node loss takes one of them: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes.
+# -- Spread the kritika serve pods across nodes, so with `replicas: 2` a node loss takes one of them. This is a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`. Empty leaves scheduling to Kubernetes.
 topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname
@@ -589,13 +590,13 @@ livenessProbe:
     path: /healthz
     port: metrics
   periodSeconds: 20
-# -- Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded, the database answers and it serves webhooks and the dashboard, so a rollout takes the previous pod down only once the new one can hold a delivery.
+# -- Readiness probe, on the metrics port. A replica is ready once its configuration file loads, the database answers and it serves webhooks and the dashboard. A rollout therefore takes the previous pod down only once the new one can hold a delivery.
 readinessProbe:
   httpGet:
     path: /readyz
     port: metrics
   periodSeconds: 10
-# -- Startup probe, on the metrics port. The liveness and readiness probes wait until it passes, so a pod still opening its listeners is not reported unready; it allows a minute.
+# -- Startup probe, on the metrics port. The liveness and readiness probes wait until it passes, so a pod still opening its listeners is not reported unready. It allows a minute.
 startupProbe:
   httpGet:
     path: /healthz
@@ -603,7 +604,7 @@ startupProbe:
   periodSeconds: 2
   failureThreshold: 30
 
-# -- Grace period for a clean shutdown: kritika serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod, stops taking jobs and lets running ones finish for up to 100s, then takes up to 90s to hand back the reviews it cut for a retry, and its gateway lets model steps in flight finish for up to 2m.
+# -- Grace period for a clean shutdown. kritika serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod. It stops taking jobs and lets running ones finish for up to 100s. It then takes up to 90s to hand back the reviews that it cut for a retry. Its gateway lets model steps in flight finish for up to 2m.
 terminationGracePeriodSeconds: 200
 
 monitoring:
@@ -623,31 +624,31 @@ monitoring:
     # -- Prometheus relabelings.
     relabelings: []
   prometheusRule:
-    # -- Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration the leader could not apply, configuration drift, delayed queues, unavailable queue metrics, vector-search errors and gateway cache storage errors.
+    # -- Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration that the leader failed to apply, configuration drift, delayed queues, unavailable queue metrics, vector-search errors and gateway cache storage errors.
     enabled: false
     # -- PrometheusRule labels.
     labels: {}
     # -- PrometheusRule annotations.
     annotations: {}
-    # -- Extra labels on every alert rule, e.g. a routing label for Alertmanager. The rule's own `severity` wins.
+    # -- Extra labels on every alert rule, for example, a routing label for Alertmanager. The rule's own `severity` wins.
     additionalRuleLabels: {}
     # -- Extra annotations on every alert rule.
     additionalRuleAnnotations: {}
-    # -- How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute.
+    # -- How long the leader lock can go without a holder before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering. Postgres drops a dead leader's session within about a minute.
     noLeaderFor: 5m
-    # -- How long more than one replica may report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval.
+    # -- How long more than one replica can report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval.
     multipleLeadersFor: 2m
     # -- How far back KritikaMultipleLeaders looks for each replica's latest leader sample. Keep it longer than the ServiceMonitor interval and shorter than multipleLeadersFor, so a replaced leader drops out of the sum before the alert fires.
     multipleLeadersWindow: 1m
-    # -- How long the leader's latest apply of the configuration may stay refused before KritikaConfigError fires.
+    # -- How long the leader's latest apply of the configuration can stay refused before KritikaConfigError fires.
     configErrorFor: 5m
-    # -- How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.
+    # -- How long a replica's configuration file can differ from the applied one before KritikaConfigDrift fires. A rollout drifts briefly until the new leader applies its file.
     configDriftFor: 15m
-    # -- Oldest runnable review/followup/thread job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.
+    # -- Age in seconds of the oldest runnable review/followup/thread job that triggers KritikaQueueDelayed. Index onboarding is excluded. Its age remains on the dashboard.
     queueAgeSeconds: 600
     # -- How long runnable work must exceed queueAgeSeconds before warning.
     queueDelayFor: 15m
-    # -- How long every scraped replica may succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning.
+    # -- How long every scraped replica can succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning.
     queueStatsUnavailableFor: 5m
     # -- How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning.
     vectorSearchErrorsFor: 10m
@@ -656,7 +657,7 @@ monitoring:
   dashboards:
     # -- Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs, database pools, queue delays and vector searches, from the metrics the ServiceMonitor scrapes.
     enabled: false
-    # -- Namespace for the dashboard objects; defaults to the release namespace.
+    # -- Namespace for the dashboard objects. Defaults to the release namespace.
     namespace: ""
     # -- Annotations added to the dashboard ConfigMap (templated).
     annotations: {}
@@ -667,11 +668,11 @@ monitoring:
       enabled: false
       # -- Allow a Grafana in any namespace to import this GrafanaDashboard.
       allowCrossNamespaceImport: true
-      # -- Folder to create the dashboard in (templated); empty uses the Grafana default.
+      # -- Folder to create the dashboard in (templated). Empty uses the Grafana default.
       folder: ""
       # -- Resync period for the operator to re-check the dashboard.
       resyncPeriod: "10m"
-      # -- Label selector matching the target Grafana instance (templated; required when grafanaOperator is enabled).
+      # -- Label selector matching the target Grafana instance (templated, and required when grafanaOperator is enabled).
       matchLabels: {}
 
 podDisruptionBudget:
@@ -685,7 +686,7 @@ podDisruptionBudget:
   # @schema
   # type: [integer, string]
   # @schema
-  # -- Maximum pods that may be unavailable, as a count or percentage; takes precedence over `minAvailable` when set.
+  # -- Maximum pods that can be unavailable, as a count or percentage. Takes precedence over `minAvailable` when set.
   maxUnavailable: 1
 
 # -- Node selector for pod scheduling.
@@ -702,12 +703,12 @@ volumes: []
 # -- Additional volume mounts on the kritika serve container.
 volumeMounts: []
 
-# Config for the chart's `helm test` hook: a one-shot pod that curls the
-# metrics Service's /readyz to prove the release serves. Used only by `helm
-# test`, never the workload.
+# Configuration for the chart's `helm test` hook: a one-shot pod that curls
+# the metrics Service's /readyz to prove the release serves. Used only by
+# `helm test`, never the workload.
 tests:
   image:
-    # -- `helm test` connection-pod image; a gcr-mirrored curl, so the test never pulls from Docker Hub.
+    # -- `helm test` connection-pod image. A gcr-mirrored curl, so the test never pulls from Docker Hub.
     repository: mirror.gcr.io/curlimages/curl
     # -- `helm test` image, pinned as `tag@sha256:digest` so Renovate bumps the tag and its digest together.
     tag: "8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93"

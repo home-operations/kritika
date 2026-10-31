@@ -22,18 +22,18 @@ confidence:
   risk: medium
 ```
 
-Use a model from a provider you configured. These settings belong under Helm's
-`config`, or at the root of the application configuration file.
+Use a model from a provider you configured. This configuration belongs under
+Helm's `config`, or at the root of the application configuration file.
 
 ## The score
 
 The scorer reads:
 
-- the pull request description and diff
-- the versions the change moves
-- the findings and the review summary
+- The pull request description and diff
+- The versions the change moves
+- The findings and the review summary
 - kritika's record of the review's run: the sources it read, the commands it
-  ran or could not run, and the parts of a split review that went unreviewed
+  ran or failed to run, and the parts of a split review that went unreviewed
 
 It returns a score from **0 to 5** and a reason. A model from a different
 vendor can provide a second opinion.
@@ -49,15 +49,15 @@ and post-deployment checks.
 
 Scoring uses tokens and adds cost. The scorer has no tools and sees only the
 supplied prompt. Since there are no tool outputs to leave room for, the
-prompt may take twice the agent's `agent.prompt` budget. It is capped at
+prompt can take twice the agent's `agent.prompt` budget. It is capped at
 96,000 tokens, but is never less than the `agent.prompt` budget itself. A
-diff cut to fit names the files it does not show, and the scorer is told to
-rate those files by their paths and say so.
+diff cut to fit names the files it does not show. kritika tells the scorer
+to rate those files by their paths and say so.
 
 If retries and `confidence.fallback` fail, the review remains unscored. The
-scorer gets two minutes, including time waiting for a model slot. Once the
-account's `tokensPerMonth` is spent, the scorer is not called and the review
-remains unscored.
+scorer gets two minutes. That time includes the wait for a model slot. Once
+the account's `tokensPerMonth` is spent, the scorer is not called and the
+review remains unscored.
 
 ## The commit status
 
@@ -65,7 +65,7 @@ remains unscored.
 | ------------------------- | ----------------------------------------------------------- |
 | No confidence model       | Success, regardless of findings.                            |
 | Scoring enabled, gate off | Shows the score and passes.                                 |
-| Scoring enabled, gate on  | Fails below the threshold; errors if no score is available. |
+| Scoring enabled, gate on  | Fails below the threshold. Errors if no score is available. |
 
 A pull request that [`confidence.when`](#only-some-pull-requests) leaves out
 is reviewed as if no confidence model were set: it is not scored, and the
@@ -94,7 +94,7 @@ These reviews do not approve:
   ran
 
 A later review that no longer qualifies withdraws kritika's approval. That
-includes a review that finds a reviewer has requested changes. On its own, a
+includes a review that finds that a reviewer requested changes. On its own, a
 change request withdraws nothing until that later review. Reviews of merged
 or closed pull requests neither approve nor withdraw an approval.
 
@@ -105,8 +105,8 @@ conditions of its own.
 
 ### Only some pull requests
 
-These settings narrow scoring, the gate and approval to the pull requests
-that one of their conditions holds for:
+These configuration keys narrow scoring, the gate and approval to the pull
+requests that one of their conditions holds for:
 
 - `confidence.when` narrows scoring.
 - A `when` block in place of `confidence.gate: true` narrows the gate.
@@ -131,14 +131,14 @@ review:
         expr: pr.bot && pr.labels.exists(l, l.name in ["type/patch", "type/minor", "type/digest"])
 ```
 
-To score Renovate's pull requests alone instead, saving the scorer's
-calls on the rest, move the condition to `confidence.when` and write
-`gate: true`.
+To score Renovate's pull requests alone instead, move the condition to
+`confidence.when` and write `gate: true`. This saves the scorer's calls on
+the rest.
 
-- A condition is compiled and smoke-tested when the configuration loads.
-  One that fails to evaluate does not hold. These conditions cannot read
-  `pr.lines`; only trigger conditions and a `review.agents` entry's `when`
-  can.
+- kritika compiles and smoke-tests a condition when the configuration
+  loads. One that fails to evaluate does not hold. These conditions cannot
+  read `pr.lines`. Only trigger conditions and a `review.agents` entry's
+  `when` can.
 - A `gate` or `approve` block must list at least one condition: `true`
   gates or approves every pull request the review allows, and `false`
   none.
@@ -146,25 +146,26 @@ calls on the rest, move the condition to `confidence.when` and write
   starts.
 - Approval's conditions are judged as the review is posted, so a label
   added while the review ran counts. A pull request they do not hold for is
-  never approved, whatever its review found. Any approval kritika gave it
-  is dismissed; otherwise its summary says nothing about approval.
-- `pr.bot` describes who opened the pull request, not who pushed to it. A
-  commit that someone else pushes onto a bot's branch is approved as the
-  bot's would be, when the review allows it.
+  never approved, whatever its review found. kritika dismisses any approval
+  that it gave that pull request. Otherwise, its summary says nothing about
+  approval.
+- `pr.bot` describes who opened the pull request, not who pushed to it.
+  When the review allows it, a commit that someone else pushes onto a bot's
+  branch is approved as the bot's own commit is.
 - A repository's `confidence.gate` replaces the admin's, conditions and
-  all, since a repository may already turn the gate off.
+  all, since a repository can already turn the gate off.
 - A repository's `.kritika.yaml` adds conditions that must hold beside the
-  admin's, and its `approve: true` keeps the admin's conditions. A pull
-  request left unscored only by the file's `confidence.when` is not
-  approved where a confidence model is set, even a model the file sets
-  itself. The file may narrow scoring, but never lift the risk policy by
-  doing so.
+  admin's, and its `approve: true` keeps the admin's conditions. Take a
+  pull request that the file's `confidence.when` alone leaves unscored.
+  Where a confidence model is set, even a model that the file sets itself,
+  kritika does not approve that pull request. The file can narrow scoring,
+  but it can never lift the risk policy by doing so.
 - If a pull request is closed by the time approval's conditions are judged,
   kritika neither approves it nor withdraws its approval.
 
 ## Risk
 
-Risk describes the damage a change could cause if something was missed.
+Risk describes the damage that a change can cause if something was missed.
 It controls automatic approval, independently of the confidence score.
 
 | Risk       | Typical impact                                                                            |
@@ -186,9 +187,9 @@ confidence:
   instructions: anything under db/migrations is critical
 ```
 
-Repository settings cannot change these instructions or raise the allowed risk.
+Repository configuration cannot change these instructions or raise the allowed risk.
 
-The instructions guide the scorer; `confidence.floors` binds it. Each risk
+The instructions guide the scorer. `confidence.floors` binds it. Each risk
 level lists globs. A change that touches a matching path is rated at least
 that level, whatever the scorer says. After the reason, the summary says
 which path held the rating there:
@@ -222,8 +223,8 @@ changes. These trigger a fresh rating:
 | `confidence.fallback`     | none                               | the model that takes the scorer's call when the confidence model fails ([fallback](/models/#fallback))                                                                                                               | replaces                                   |
 | `confidence.effort`       | the provider's                     | how hard the scorer, and the fallback that takes its call, reasons ([effort](/models/#effort))                                                                                                                       | replaces                                   |
 | `confidence.threshold`    | 5                                  | the score approvals need, and a gated commit status                                                                                                                                                                  | replaces, either way                       |
-| `confidence.gate`         | off                                | `true` fails the commit status under the threshold, so it can be a required check; a `when` block gates only the pull requests one of its conditions holds for ([only some pull requests](#only-some-pull-requests)) | replaces, either way                       |
+| `confidence.gate`         | off                                | `true` fails the commit status under the threshold, so it can be a required check. A `when` block gates only the pull requests one of its conditions holds for ([only some pull requests](#only-some-pull-requests)) | replaces, either way                       |
 | `confidence.when`         | none: every pull request is scored | conditions, one of which a pull request must hold for to be scored ([only some pull requests](#only-some-pull-requests))                                                                                             | adds conditions that must hold as well     |
-| `confidence.risk`         | `low`                              | the highest [risk](#risk) a change may be rated and still be approved                                                                                                                                                | may only lower it; a higher one is dropped |
+| `confidence.risk`         | `low`                              | the highest [risk](#risk) a change can be rated and still be approved                                                                                                                                                | can only lower it. A higher one is dropped |
 | `confidence.instructions` |                                    | the admin's guidance to the scorer on [rating risk](#risk) in your code                                                                                                                                              | the admin's alone                          |
 | `confidence.floors`       | none                               | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](#risk))                                                                                        | the admin's alone                          |

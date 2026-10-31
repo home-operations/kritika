@@ -6,7 +6,7 @@ kritika is an AI reviewer for pull requests on GitHub, Forgejo, GitLab and Gitea
 related code, posts findings with suggested fixes, and answers follow-up
 questions in comments.
 
-**New installation? Start with [Setup](/setup/).**
+For a new installation, start with [Setup](/setup/).
 
 :::caution[Under active development]
 
@@ -33,10 +33,10 @@ results and costs. Confidence scores and automatic approvals are optional.
 | Install kritika and get a first review       | [Setup](/setup/)                           |
 | Ask the bot a question or re-run a review    | [Reviews and commands](/reviews/#commands) |
 | Add rules for my repository                  | [Repository settings](/repository-config/) |
-| Find a failed review or check spending       | [Dashboard](/dashboard/)                   |
+| Find a failed review or see spending         | [Dashboard](/dashboard/)                   |
 | Let a coding agent read reviews and findings | [MCP endpoint](/mcp/)                      |
 | Use scores or automatic approvals            | [Confidence and approvals](/confidence/)   |
 | Connect a Forgejo, GitLab or Gitea instance  | [Git forges](/forges/)                     |
 
 The **Operations** pages cover the database, security and monitoring.
-The **Reference** pages list configuration options, providers and Helm values.
+The **Reference** pages list the configuration, providers and Helm values.

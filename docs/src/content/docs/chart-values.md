@@ -8,7 +8,7 @@ available value, see the generated
 
 | Values                            | Purpose                                             | Guide                                                                                                    |
 | --------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `config`, `existingConfigMap`     | Application settings; choose one source.            | [Configuration](/configuration/)                                                                         |
+| `config`, `existingConfigMap`     | Application configuration. Choose one source.       | [Configuration](/configuration/)                                                                         |
 | `env`, `envFrom`                  | Credentials from existing Secrets.                  | [Setup](/setup/#deploy)                                                                                  |
 | `database`                        | Three database connection Secrets and role names.   | [Database](/database/)                                                                                   |
 | `runner`                          | Runner resources, runtime, placement and deadlines. | [Security](/security/#runner-sandbox)                                                                    |
