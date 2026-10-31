@@ -41,7 +41,7 @@ a different vendor can provide a second opinion. kritika derives the score,
 from **0 to 5**, from the findings and that answer:
 
 - If the scorer says the change must not merge in any form, the score is **0**.
-- Otherwise, several **P0** findings, or one in a change rated critical, set it to **1**.
+- Otherwise, several **P0** findings, or one in a change the scorer rates critical, set it to **1**. A floor from `confidence.floors` raises the risk only, never the score.
 - Otherwise, a **P0** finding sets it to **2**.
 - Otherwise, a **P1** finding sets it to **3**.
 - Otherwise, a concern of the scorer's own sets it to **4**.
@@ -79,7 +79,8 @@ the pull requests that one of its conditions holds for. Any other pull
 request shows its score and passes.
 
 To block merging, also make **Kritika / Review** a required check on the forge.
-Risk does not affect this check. A high-risk change can pass its score gate
+The risk reaches this check only through the score: a P0 finding in a change
+the scorer rates critical scores 1. A high-risk change can pass its score gate
 without receiving an automatic approval.
 
 ## Approvals
