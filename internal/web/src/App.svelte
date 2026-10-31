@@ -170,7 +170,10 @@
 {#snippet scope()}
   {#if me && me.accounts.length > 0}
     <Popover.Root bind:open={scopeOpen}>
-      <Popover.Trigger class="account-button btn btn-icon min-w-0 max-w-80 justify-between font-semibold" title="Switch between the instance and an account">
+      <Popover.Trigger
+        class="account-button btn btn-icon min-w-0 max-w-80 justify-between font-semibold"
+        title={currentSlug && me.accountHosts?.[currentSlug] ? `${currentSlug} on ${me.accountHosts[currentSlug]}` : 'Switch between the instance and an account'}
+      >
         {#if currentSlug}
           <span class="mono">{currentSlug}</span>
         {:else}
@@ -192,9 +195,11 @@
         <p class="menu-heading mt-1.5 mx-0 mb-0.5 py-0 px-2.5 text-ui-xs text-muted">Accounts</p>
         {#each me.accounts as slug (slug)}
           {@const on = slug === currentSlug}
+          {@const host = me.accountHosts?.[slug]}
           <a class="menu-item mono flex items-center gap-2 py-1.5 px-3 text-ink text-ui-md whitespace-nowrap" href={href(pageIn(router.route, slug))} aria-current={on ? 'true' : undefined}>
             <span class="menu-check inline-flex w-[15px] flex-none">{#if on}<Icon path={mdiCheck} size={14} />{/if}</span>
-            {slug}
+            <span class="account-slug">{slug}</span>
+            {#if host}<span class="account-host ml-auto pl-4 text-muted text-ui-xs">{host}</span>{/if}
           </a>
         {/each}
           </nav>

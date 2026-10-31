@@ -12,6 +12,7 @@ export const DEFAULT_ME: Me = {
   user: { id: 'u1', displayName: 'Ada Lovelace', email: 'ada@example.com', avatarUrl: '' },
   admin: false,
   accounts: ['github/acme'],
+  accountHosts: { 'github/acme': 'github.com' },
   settings: { timeZone: '', clock: '', theme: '' },
 };
 

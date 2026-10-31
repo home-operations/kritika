@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -59,7 +60,12 @@ const testEntry = "assets/app-1.js"
 
 func newTestServer(t *testing.T, webURL string) *testServer {
 	t.Helper()
-	f := testFile(t)
+	return newTestServerOf(t, webURL, testFile(t))
+}
+
+// newTestServerOf is newTestServer serving the configuration f.
+func newTestServerOf(t *testing.T, webURL string, f *configfile.File) *testServer {
+	t.Helper()
 	cur := configfile.NewCurrent(f)
 	u, err := url.Parse(webURL)
 	if err != nil {
@@ -193,10 +199,14 @@ func TestMe(t *testing.T) {
 		p        *auth.Principal
 		admin    bool
 		accounts []string
+		hosts    map[string]string
 	}{
-		{"member", memberOf(t, ts.file, "beta"), false, []string{"github/beta"}},
-		{"an admin reads every account", &auth.Principal{Admin: true}, true, []string{"github/alpha", "github/beta"}},
-		{"no accounts", &auth.Principal{}, false, []string{}},
+		{"member", memberOf(t, ts.file, "beta"), false, []string{"github/beta"}, map[string]string{"github/beta": "github.com"}},
+		{
+			"an admin reads every account", &auth.Principal{Admin: true}, true, []string{"github/alpha", "github/beta"},
+			map[string]string{"github/alpha": "github.com", "github/beta": "github.com"},
+		},
+		{"no accounts", &auth.Principal{}, false, []string{}, map[string]string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -208,10 +218,29 @@ func TestMe(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &me); err != nil {
 				t.Fatal(err)
 			}
-			if me.Admin != tt.admin || !slices.Equal(me.Accounts, tt.accounts) {
-				t.Fatalf("me = %+v, want admin %v accounts %v", me, tt.admin, tt.accounts)
+			if me.Admin != tt.admin || !slices.Equal(me.Accounts, tt.accounts) || !maps.Equal(me.AccountHosts, tt.hosts) {
+				t.Fatalf("me = %+v, want admin %v accounts %v hosts %v", me, tt.admin, tt.accounts, tt.hosts)
 			}
 		})
+	}
+}
+
+// TestMeAccountHosts: accounts of one name on two forges are told apart by
+// the host of the forge each is on.
+func TestMeAccountHosts(t *testing.T) {
+	t.Setenv("KRITIKA_TEST_TOKEN", "tok")
+	ts := newTestServerOf(t, "https://kritika.example", configfiletest.Load(t, testConfig+`
+gitea:
+  tea: { host: gitea.example.com, accounts: [alpha], token: { env: KRITIKA_TEST_TOKEN }, webhookSecret: { env: KRITIKA_TEST_TOKEN } }
+`))
+	w := ts.as(&auth.Principal{Admin: true}, httptest.NewRequest("GET", "/api/v1/me", nil))
+	var me Me
+	if err := json.Unmarshal(w.Body.Bytes(), &me); err != nil {
+		t.Fatalf("status %d: %v", w.Code, err)
+	}
+	want := map[string]string{"github/alpha": "github.com", "github/beta": "github.com", "gitea/alpha": "gitea.example.com"}
+	if !maps.Equal(me.AccountHosts, want) {
+		t.Fatalf("accountHosts = %v, want %v", me.AccountHosts, want)
 	}
 }
 

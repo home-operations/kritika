@@ -30,12 +30,14 @@ type User struct {
 
 // Me is who the session acts as: an admin, who reads and changes everything,
 // or a member of Accounts, the slugs ("<forge>/<name>") of the accounts that
-// it can read.
+// it can read. AccountHosts is the host of the forge each of them is on, by
+// slug: accounts of one name on two instances of a forge differ by it alone.
 type Me struct {
-	User     User         `json:"user"`
-	Admin    bool         `json:"admin"`
-	Accounts []string     `json:"accounts"`
-	Settings UserSettings `json:"settings"`
+	User         User              `json:"user"`
+	Admin        bool              `json:"admin"`
+	Accounts     []string          `json:"accounts"`
+	AccountHosts map[string]string `json:"accountHosts"`
+	Settings     UserSettings      `json:"settings"`
 }
 
 // UserSettings is what a user chose for their own dashboard. An empty field

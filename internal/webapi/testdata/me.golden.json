@@ -7,6 +7,9 @@
   },
   "admin": true,
   "accounts": ["github/alpha"],
+  "accountHosts": {
+    "github/alpha": "github.com"
+  },
   "settings": {
     "timeZone": "Europe/Amsterdam",
     "clock": "24",
