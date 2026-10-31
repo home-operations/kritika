@@ -1,73 +1,112 @@
 package review
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
 
 func TestParseConfidence(t *testing.T) {
+	bumps := []Bump{{Path: "Chart.yaml", Line: 4, Old: "1.2.3", New: "1.2.4"}, {Path: "go.mod", Line: 9, Old: "v1.0.0", New: "v1.1.0"}}
 	tests := []struct {
-		name       string
-		raw        string
-		counts     Counts
-		wantScore  int
-		wantRisk   Risk
-		wantReason string
-		wantErr    string
+		name        string
+		raw         string
+		wantRisk    Risk
+		wantConcern bool
+		wantReject  bool
+		wantReaches []Reach
+		wantReason  string
+		wantErr     string
 	}{
-		{name: "a clean review keeps its score", raw: `{"score": 5, "reason": "Nothing stands against it."}`, wantScore: 5, wantReason: "Nothing stands against it."},
-		{name: "nits set no ceiling", raw: `{"score": 5, "reason": "ok"}`, counts: Counts{P2: 3}, wantScore: 5, wantReason: "ok"},
-		{name: "an important finding holds it to 3", raw: `{"score": 5, "reason": "ok"}`, counts: Counts{P1: 1}, wantScore: 3, wantReason: "ok"},
-		{name: "a blocking finding holds it to 2", raw: `{"score": 4, "reason": "ok"}`, counts: Counts{P0: 1, P1: 2}, wantScore: 2, wantReason: "ok"},
-		{name: "a score under the ceiling stands", raw: `{"score": 1, "reason": "ok"}`, counts: Counts{P0: 1}, wantScore: 1, wantReason: "ok"},
-		{name: "the reason is one line", raw: `{"score": 4, "reason": " two\n lines "}`, wantScore: 4, wantReason: "two lines"},
-		{name: "a long reason is cut between words", raw: `{"score": 4, "reason": "` + strings.Repeat("word ", 120) + `"}`, wantScore: 4,
+		{name: "a clean answer", raw: `{"risk": "low", "concern": false, "bumps": [], "reason": "Nothing stands against it."}`, wantRisk: RiskLow,
+			wantReason: "Nothing stands against it."},
+		{name: "a concern", raw: `{"risk": "medium", "concern": true, "bumps": [], "reason": "ok"}`, wantRisk: RiskMedium, wantConcern: true, wantReason: "ok"},
+		{name: "a rejection", raw: `{"risk": "critical", "concern": true, "reject": true, "bumps": [], "reason": "ok"}`, wantRisk: RiskCritical, wantConcern: true,
+			wantReject: true, wantReason: "ok"},
+		{name: "no word on a rejection rejects nothing", raw: `{"risk": "low", "concern": false, "reason": "ok"}`, wantRisk: RiskLow, wantReason: "ok"},
+		{name: "the reaches, by file and line", wantRisk: RiskLow, wantReason: "ok", wantReaches: []Reach{ReachCentral, ReachStandalone},
+			raw: `{"risk": "low", "concern": false, "bumps": [{"path": "go.mod", "line": 9, "reach": "standalone"}, {"path": "Chart.yaml", "line": 4, "reach": "central"}], "reason": "ok"}`},
+		{name: "a reach for a line not listed is dropped", wantRisk: RiskLow, wantReason: "ok", wantReaches: []Reach{"", ReachShared},
+			raw: `{"risk": "low", "concern": false, "bumps": [{"path": "Chart.yaml", "line": 5, "reach": "central"}, {"path": "go.mod", "line": 9, "reach": "shared"}], "reason": "ok"}`},
+		{name: "of several reaches for a line, the widest", wantRisk: RiskLow, wantReason: "ok", wantReaches: []Reach{ReachCentral, ""},
+			raw: `{"risk": "low", "concern": false, "bumps": [{"path": "Chart.yaml", "line": 4, "reach": "central"}, {"path": "Chart.yaml", "line": 4, "reach": "none"}], "reason": "ok"}`},
+		{name: "a reach that is none of them is dropped", wantRisk: RiskLow, wantReason: "ok",
+			raw: `{"risk": "low", "concern": false, "bumps": [{"path": "Chart.yaml", "line": 4, "reach": "everything"}], "reason": "ok"}`},
+		{name: "no bumps answered", raw: `{"risk": "low", "concern": false, "reason": "ok"}`, wantRisk: RiskLow, wantReason: "ok"},
+		{name: "the reason is one line", raw: `{"risk": "low", "concern": false, "reason": " two\n lines "}`, wantRisk: RiskLow, wantReason: "two lines"},
+		{name: "a long reason is cut between words", raw: `{"risk": "low", "concern": false, "reason": "` + strings.Repeat("word ", 120) + `"}`, wantRisk: RiskLow,
 			wantReason: strings.TrimSpace(strings.Repeat("word ", 100)) + " …"},
-		{name: "a word on the cap is kept", raw: `{"score": 4, "reason": "` + strings.Repeat("a", 496) + ` bcd efg"}`, wantScore: 4,
+		{name: "a word on the cap is kept", raw: `{"risk": "low", "concern": false, "reason": "` + strings.Repeat("a", 496) + ` bcd efg"}`, wantRisk: RiskLow,
 			wantReason: strings.Repeat("a", 496) + " bcd …"},
-		{name: "a link over the cap goes whole", raw: `{"score": 4, "reason": "` + strings.Repeat("a", 480) + ` up/stream#12 more"}`, wantScore: 4,
+		{name: "a link over the cap goes whole", raw: `{"risk": "low", "concern": false, "reason": "` + strings.Repeat("a", 480) + ` up/stream#12 more"}`, wantRisk: RiskLow,
 			wantReason: strings.Repeat("a", 480) + " …"},
-		{name: "a reason of one long word is cut in it", raw: `{"score": 4, "reason": "` + strings.Repeat("x", 600) + `"}`, wantScore: 4, wantReason: strings.Repeat("x", 500) + " …"},
-		{name: "a reference to another repository does not link", raw: `{"score": 4, "reason": "See up/stream#12."}`, wantScore: 4,
+		{name: "a reason of one long word is cut in it", raw: `{"risk": "low", "concern": false, "reason": "` + strings.Repeat("x", 600) + `"}`, wantRisk: RiskLow,
+			wantReason: strings.Repeat("x", 500) + " …"},
+		{name: "a reference to another repository does not link", raw: `{"risk": "low", "concern": false, "reason": "See up/stream#12."}`, wantRisk: RiskLow,
 			wantReason: RedirectReferences("See up/stream#12.", "o/r")},
-		{name: "the risk it gives", raw: `{"score": 5, "risk": "medium", "reason": "ok"}`, wantScore: 5, wantRisk: RiskMedium, wantReason: "ok"},
-		{name: "a risk that is no level is the highest", raw: `{"score": 5, "risk": "none", "reason": "ok"}`, wantScore: 5, wantReason: "ok"},
-		{name: "a risk in another case is no level", raw: `{"score": 5, "risk": "Critical", "reason": "ok"}`, wantScore: 5, wantReason: "ok"},
-		{name: "a score at the ceiling is not held", raw: `{"score": 3, "reason": "ok"}`, counts: Counts{P1: 1}, wantScore: 3, wantReason: "ok"},
-		{name: "a score past the scale", raw: `{"score": 6, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
-		{name: "a negative score", raw: `{"score": -1, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
-		{name: "no score", raw: `{"reason": "ok"}`, wantErr: "no score from 0 to 5"},
+		{name: "a risk that is no level is the highest", raw: `{"risk": "none", "concern": false, "reason": "ok"}`, wantRisk: RiskCritical, wantReason: "ok"},
+		{name: "a risk in another case is no level", raw: `{"risk": "Critical", "concern": false, "reason": "ok"}`, wantRisk: RiskCritical, wantReason: "ok"},
+		{name: "no risk is the highest", raw: `{"concern": false, "reason": "ok"}`, wantRisk: RiskCritical, wantReason: "ok"},
+		{name: "no word on a concern", raw: `{"risk": "low", "reason": "ok"}`, wantErr: "did not say whether it has a concern"},
 		{name: "not JSON", raw: `five`, wantErr: "not the expected JSON"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := ParseConfidence(tt.raw, "o/r", tt.counts)
+			p, err := ParseConfidence(tt.raw, "o/r", bumps)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)
 				}
 				return
 			}
-			if err != nil || p.Score != tt.wantScore || p.Reason != tt.wantReason || p.Risk != cmp.Or(tt.wantRisk, RiskCritical) {
-				t.Fatalf("ParseConfidence = %d, %s, %q, %v; want %d, %s, %q", p.Score, p.Risk, p.Reason, err, tt.wantScore,
-					cmp.Or(tt.wantRisk, RiskCritical), tt.wantReason)
+			wantReaches := tt.wantReaches
+			if wantReaches == nil {
+				wantReaches = make([]Reach, len(bumps))
 			}
-			// What the scorer gave is read back from its answer, apart from
+			if err != nil || p.Risk != tt.wantRisk || p.Concern != tt.wantConcern || p.Reject != tt.wantReject || !slices.Equal(p.Reaches, wantReaches) ||
+				p.Reason != tt.wantReason {
+				t.Fatalf("ParseConfidence = %s, %v, %v, %v, %q, %v; want %s, %v, %v, %v, %q", p.Risk, p.Concern, p.Reject, p.Reaches, p.Reason, err,
+					tt.wantRisk, tt.wantConcern, tt.wantReject, wantReaches, tt.wantReason)
+			}
+			// What the judge gave is read back from its answer, apart from
 			// what stands.
 			var given struct {
-				Score int    `json:"score"`
-				Risk  string `json:"risk"`
+				Risk string `json:"risk"`
 			}
 			if err := json.Unmarshal([]byte(tt.raw), &given); err != nil {
 				t.Fatal(err)
 			}
-			if p.Given != given.Score || p.RiskGiven != given.Risk || p.Clamped() != (given.Score > tt.wantScore) ||
-				p.Defaulted() != (given.Risk != string(cmp.Or(tt.wantRisk, RiskCritical))) {
-				t.Fatalf("given %d (clamped %v), risk given %q (defaulted %v); the answer gave %d and %q", p.Given, p.Clamped(), p.RiskGiven,
-					p.Defaulted(), given.Score, given.Risk)
+			if p.RiskGiven != given.Risk || p.Defaulted() != (given.Risk != string(tt.wantRisk)) {
+				t.Fatalf("risk given %q (defaulted %v); the answer gave %q", p.RiskGiven, p.Defaulted(), given.Risk)
+			}
+		})
+	}
+}
+
+func TestScore(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		counts          Counts
+		risk            Risk
+		concern, reject bool
+		want            int
+	}{
+		{name: "a clean review", risk: RiskLow, want: 5},
+		{name: "nits take nothing off", counts: Counts{P2: 3}, risk: RiskCritical, want: 5},
+		{name: "a concern takes one off", risk: RiskLow, concern: true, want: 4},
+		{name: "an important finding holds it to 3", counts: Counts{P1: 1}, risk: RiskLow, want: 3},
+		{name: "a concern beside an important finding changes nothing", counts: Counts{P1: 1}, risk: RiskCritical, concern: true, want: 3},
+		{name: "a blocking finding holds it to 2", counts: Counts{P0: 1, P1: 2}, risk: RiskHigh, want: 2},
+		{name: "several blocking findings hold it to 1", counts: Counts{P0: 2}, risk: RiskLow, want: 1},
+		{name: "a blocking finding in a critical change holds it to 1", counts: Counts{P0: 1}, risk: RiskCritical, concern: true, want: 1},
+		{name: "a rejected change is 0", risk: RiskLow, reject: true, want: 0},
+		{name: "a rejected change is 0 whatever was found", counts: Counts{P0: 2}, risk: RiskCritical, reject: true, want: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Score(tt.counts, tt.risk, tt.concern, tt.reject); got != tt.want {
+				t.Fatalf("Score = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -199,6 +238,38 @@ func TestConfidenceHold(t *testing.T) {
 	}
 }
 
+func TestConfidenceHoldStep(t *testing.T) {
+	const at = "minor step at charts/app/Chart.yaml:4"
+	for _, tt := range []struct {
+		name  string
+		c     Confidence
+		floor Risk
+		want  Confidence
+		held  bool
+	}{
+		{name: "a rating under the floor rises to it", c: Confidence{Risk: RiskLow, Reason: "Docs only."}, floor: RiskMedium,
+			want: Confidence{Risk: RiskMedium, Stepped: RiskLow, Step: at, Reason: "Docs only."}, held: true},
+		{name: "a rating at the floor stands", c: Confidence{Risk: RiskMedium, Reason: "r"}, floor: RiskMedium, want: Confidence{Risk: RiskMedium, Reason: "r"}},
+		{name: "a rating over the floor stands", c: Confidence{Risk: RiskCritical, Reason: "r"}, floor: RiskMedium, want: Confidence{Risk: RiskCritical, Reason: "r"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := tt.c
+			if held := c.HoldStep(tt.floor, at); held != tt.held || c != tt.want {
+				t.Fatalf("HoldStep = %v, %+v; want %v, %+v", held, c, tt.held, tt.want)
+			}
+		})
+	}
+	// The instance's floor holds the risk the step held, and a carry that
+	// lets the floor go keeps the step's hold.
+	c := Confidence{Risk: RiskMedium, Stepped: RiskLow, Step: at, Reason: "r"}
+	if !c.Hold(RiskCritical, "db/x.sql") || c.Rated != RiskMedium || c.Stepped != RiskLow {
+		t.Fatalf("after the instance's floor: %+v", c)
+	}
+	if c.Hold(RiskLow, "") || c.Risk != RiskMedium || c.Step != at {
+		t.Fatalf("after the floor is lowered: %+v", c)
+	}
+}
+
 func TestConfidenceExplanation(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -210,6 +281,10 @@ func TestConfidenceExplanation(t *testing.T) {
 			want: "Docs only. Held to critical risk by the instance's floor for db/migrations/1.sql."},
 		{name: "no reason to follow", c: Confidence{Risk: RiskHigh, Rated: RiskLow, Held: "charts/x.yaml"},
 			want: "Held to high risk by the instance's floor for charts/x.yaml."},
+		{name: "how a step held the risk", c: Confidence{Risk: RiskMedium, Stepped: RiskLow, Step: "minor step at charts/app/Chart.yaml:4", Reason: "Docs only."},
+			want: "Docs only. Held to medium risk by the minor step at charts/app/Chart.yaml:4."},
+		{name: "the instance's floor over a step", c: Confidence{Risk: RiskCritical, Rated: RiskMedium, Held: "db/x.sql", Stepped: RiskLow, Step: "minor step at a:1", Reason: "r"},
+			want: "r Held to critical risk by the instance's floor for db/x.sql."},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.c.Explanation(); got != tt.want {
@@ -257,7 +332,12 @@ func TestConfidenceSystemPrompt(t *testing.T) {
 func TestConfidenceSystemConcerns(t *testing.T) {
 	system := strings.Join(strings.Fields(ConfidenceSystem), " ")
 	for _, rule := range []string{
-		"score it as reported: a P2 you would rate higher still takes nothing off",
+		"say so in the reason, so the maintainer knows to look. P2s take nothing off",
+		"A concern of your own takes a review with no P0 or P1 finding from 5 to 4",
+		"Several P0 findings, or one in a change you rate critical, take it to 1",
+		"A change that must not merge in any form close to this one takes it to 0 when you say so, whatever was found",
+		"or none, when the line moves no dependency, such as an address, a port or a version in prose",
+		"a bot author or a description that calls the update safe never rates it below its step",
 		"no reported finding raises, whatever its severity",
 		"a prerequisite for merging that is unmet or that nothing in the description or the account shows was met",
 		"their silence about a changed line is no sign that the review skipped it",

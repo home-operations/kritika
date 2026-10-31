@@ -122,11 +122,12 @@ func (p *publishPhase) score(
 	rec.Unfinished = unfinished
 	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
 	rubric := review.ConfidenceRubric(system)
+	bumps := review.Bumps(diff)
 	req := model.CompletionRequest{
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
-			Body: body, Changed: changed, Diff: diff, Bumps: review.Bumps(diff), Dismissed: dismissedFindings(p.prior.dismissed),
+			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(p.prior.dismissed),
 		}, res, rec, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
@@ -140,25 +141,31 @@ func (p *publishPhase) score(
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
 		return review.Confidence{}, err
 	}
-	parsed, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
+	// The judge rates in its risk the versions its list left out, and
+	// gives a reach to the ones it was shown alone.
+	bumps = review.ListedBumps(bumps)
+	parsed, err := review.ParseConfidence(resp.Raw, p.pr.repository, bumps)
 	if err != nil {
 		return review.Confidence{}, err
 	}
-	// What the scorer gave against what stands is the calibration signal:
-	// a model that keeps scoring over the ceiling disagrees with the
-	// findings, one that keeps giving no level fails the schema.
-	if parsed.Clamped() {
-		p.logger.Info("confidence score held to the ceiling", "model", resp.Model, "given", parsed.Given, "score", parsed.Score)
-		p.w.Metrics.ConfidenceHeld(p.account.Key(), "score")
-	}
+	// What the judge gave against what stands is the calibration signal: a
+	// model that keeps giving no level fails the schema, one whose rating
+	// the steps keep holding up reads a version step lighter than the rule.
 	if parsed.Defaulted() {
 		p.logger.Info("confidence risk given as no level", "model", resp.Model, "given", parsed.RiskGiven, "risk", parsed.Risk)
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "risk")
 	}
 	c := review.Confidence{
-		Score: parsed.Score, Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model,
-		Rubric: rubric,
+		Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model, Rubric: rubric,
 	}
+	if floor, at := review.StepFloor(bumps, parsed.Reaches); c.HoldStep(floor, at) {
+		p.logger.Info("risk held to the version step", "rated", parsed.Risk, "floor", floor, "step", at)
+		p.w.Metrics.ConfidenceHeld(p.account.Key(), "step")
+	}
+	// The score rests on the risk the change is rated, the step's hold
+	// included, and not on the instance's floor: a floor set or cleared
+	// since moves a carried rating, never a carried score.
+	c.Score = review.Score(res.Counts(), c.Risk, parsed.Concern, parsed.Reject)
 	if floor, at := p.settings.Confidence.Floors.Floor(changed); c.Hold(floor, at) {
 		p.logger.Info("risk held to the floor", "rated", parsed.Risk, "floor", floor, "path", at)
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "floor")

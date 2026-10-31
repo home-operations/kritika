@@ -105,6 +105,37 @@ type Reference struct {
 // takes a line of its own, and the diff shows the rest.
 const maxBumpsBytes = 2_000
 
+// bumpItem is bump's line in the list of versions the change moves, with
+// the step since the last review where delta holds one for it.
+func bumpItem(bump Bump, delta []Bump) string {
+	item := fmt.Sprintf("- %s:%d: %s to %s", bump.Path, bump.Line, bump.Old, bump.New)
+	if j := slices.IndexFunc(delta, func(d Bump) bool {
+		return d.Path == bump.Path && d.Line == bump.Line && d.New == bump.New && d.positions == bump.positions
+	}); j >= 0 {
+		item += fmt.Sprintf(" (%s to %s since your last review)", delta[j].Old, delta[j].New)
+	}
+	return item + "\n"
+}
+
+// listedBumps is how many of bumps, from the first, writeBumps lists within
+// maxBumpsBytes.
+func listedBumps(bumps, delta []Bump) int {
+	room := maxBumpsBytes
+	for i, bump := range bumps {
+		if room -= len(bumpItem(bump, delta)); room < 0 {
+			return i
+		}
+	}
+	return len(bumps)
+}
+
+// ListedBumps is the versions of bumps that the judge is shown, the first
+// of them that its list holds (see BuildConfidence): the ones it can give
+// a reach, and the ones a step floor can rest on.
+func ListedBumps(bumps []Bump) []Bump {
+	return bumps[:listedBumps(bumps, nil)]
+}
+
 // writeBumps lists the versions a change moves, each on the
 // line that moves it, as many as maxBumpsBytes holds, and counts the rest.
 func writeBumps(b *strings.Builder, bumps, delta []Bump) {
@@ -112,20 +143,12 @@ func writeBumps(b *strings.Builder, bumps, delta []Bump) {
 		return
 	}
 	fmt.Fprintf(b, "Versions the change moves (%d):\n", len(bumps))
-	room := maxBumpsBytes
-	for i, bump := range bumps {
-		item := fmt.Sprintf("- %s:%d: %s to %s", bump.Path, bump.Line, bump.Old, bump.New)
-		if j := slices.IndexFunc(delta, func(d Bump) bool {
-			return d.Path == bump.Path && d.Line == bump.Line && d.New == bump.New && d.positions == bump.positions
-		}); j >= 0 {
-			item += fmt.Sprintf(" (%s to %s since your last review)", delta[j].Old, delta[j].New)
-		}
-		item += "\n"
-		if room -= len(item); room < 0 {
-			fmt.Fprintf(b, "- and %d more\n", len(bumps)-i)
-			return
-		}
-		b.WriteString(item)
+	n := listedBumps(bumps, delta)
+	for _, bump := range bumps[:n] {
+		b.WriteString(bumpItem(bump, delta))
+	}
+	if n < len(bumps) {
+		fmt.Fprintf(b, "- and %d more\n", len(bumps)-n)
 	}
 }
 
