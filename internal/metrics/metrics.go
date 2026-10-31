@@ -233,8 +233,8 @@ func (m *Metrics) ConfidenceScored(account string, score int, risk string) {
 	}
 }
 
-// ConfidenceHeld counts a scorer's answer held to kritika's rule: what is
-// score, risk or floor.
+// ConfidenceHeld counts a judge's answer held to kritika's rule: what is
+// risk, step or floor.
 func (m *Metrics) ConfidenceHeld(account, what string) {
 	if m != nil {
 		m.confidenceHeld.WithLabelValues(account, what).Inc()

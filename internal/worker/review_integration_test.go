@@ -645,7 +645,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		return answer(cmp.Or(f.reply, `{"reply":"Because b is new."}`), model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
 	if tool == "confidence" {
-		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
+		return answer(`{"risk":"medium","concern":false,"bumps":[],"reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
 		  {"path":"main.go",`+first+`,"severity":"p1","category":"correctness","explanation":"look here","suggested_fix":"do this",

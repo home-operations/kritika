@@ -35,16 +35,19 @@ The scorer reads:
 - kritika's record of the review's run: the sources it read, the commands it
   ran or failed to run, and the parts of a split review that went unreviewed
 
-It returns a score from **0 to 5** and a reason. A model from a different
-vendor can provide a second opinion.
+It returns the risk of the change, whether it has a concern of its own, how
+much depends on each dependency the change moves, and a reason. A model from
+a different vendor can provide a second opinion. kritika derives the score,
+from **2 to 5**, from the findings and that answer:
 
-- A **P0** finding caps the score at **2**.
-- A **P1** finding caps it at **3**.
-- **P2** findings do not reduce it by themselves.
+- A **P0** finding sets the score to **2**.
+- Otherwise, a **P1** finding sets it to **3**.
+- Otherwise, a concern of the scorer's own sets it to **4**.
+- Otherwise it is **5**. **P2** findings do not reduce it by themselves.
 - Dismissed findings stop counting at the next review.
 
-The scorer can raise its own concerns when evidence backs them. Two things do
-not lower the score by themselves: what the summary says merging sets off,
+When evidence backs a concern, the scorer can raise it. Two things do not
+count as a concern by themselves: what the summary says merging sets off,
 and post-deployment checks.
 
 Scoring uses tokens and adds cost. The scorer has no tools and sees only the
@@ -175,10 +178,27 @@ It controls automatic approval, independently of the confidence score.
 | `high`     | Breaking changes to something other systems depend on, or expanded access.                |
 | `critical` | Data loss, exposed secrets, administrative access or outages a revert cannot quickly fix. |
 
-Dependency updates are rated by both the version step and the dependency's role.
-Major changes and widely shared dependencies generally carry more risk. Breaking
-release notes can raise that rating. Updates below 1.0 and unversioned tags need
-extra care. Being bot-generated does not reduce an update's risk.
+Dependency updates are rated by both the version step and the dependency's
+reach. kritika reads the step from the versions the diff moves. The scorer
+says how much depends on each dependency: nothing (`standalone`), other
+things (`shared`) or much else (`central`). If the line moves no dependency,
+such as an address or a version in prose, the scorer says `none`. The two
+set the least risk the change is rated:
+
+| Step                                                                       | `standalone` | `shared` | `central` |
+| -------------------------------------------------------------------------- | ------------ | -------- | --------- |
+| major                                                                      | `medium`     | `high`   | `high`    |
+| minor, or a new digest under a tag that names no version, such as `latest` | `low`        | `medium` | `high`    |
+| minor, under 1.0                                                           | `medium`     | `medium` | `high`    |
+| patch, or a new digest of the same version                                 | `low`        | `low`    | `medium`  |
+
+The scorer rates the risk above that floor by what the update does. Breaking
+release notes can raise the rating. A bot author or a description that calls
+the update safe never lowers it below its step. If a step held the rating,
+the summary names that step after the reason, unless a floor from
+`confidence.floors` holds the rating higher still. The step is read from the
+versions the scorer's list holds. If the list is cut, the scorer rates the
+versions past its end in the risk it gives.
 
 Admins can add local guidance with `confidence.instructions`, for example:
 

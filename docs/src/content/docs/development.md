@@ -298,10 +298,10 @@ env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestC
 Use `KRITIKA_BENCH_CONFIDENCE_CASES` to supply additional cases shaped like
 `bench/cases/confidence.json`. The harness supports custom risk instructions
 and an earlier rating. The same dry-run, output directory and effort controls
-apply. Score checks hold the model's own score to the expected range, as well
-as to the ceiling that the findings enforce. So a scorer that overrates a
-change fails even where production clamps it. Inspect risk ratings and reasons
-too.
+apply. The check derives the score from the findings and the answer's concern,
+and holds the risk to the steps of the versions the diff moves, as production
+does. So the check judges what production would publish. Inspect risk ratings
+and reasons too.
 
 These small synthetic cases detect regressions. They do not establish accuracy
 on production reviews. Model errors and failed checks stay in the report and

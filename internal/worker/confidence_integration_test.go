@@ -52,6 +52,7 @@ func TestCarriedConfidence(t *testing.T) {
 	scored := configfile.Confidence{Model: "test/judge", Threshold: 3}
 	floored := configfile.Confidence{Model: "test/judge", Threshold: 3, Floors: configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}}}
 	errRollback := errors.New("roll back")
+	const step = "minor step at charts/x.yaml:4"
 	type row struct{ status, confidence string }
 	tests := []struct {
 		name string
@@ -65,6 +66,7 @@ func TestCarriedConfidence(t *testing.T) {
 		wantScore     int
 		wantRisk      review.Risk
 		wantHeld      string
+		wantStep      string
 		wantSkippable bool
 	}{
 		{name: "no score asked for", rows: []row{{"completed", ""}}, wantScore: -1, wantSkippable: true},
@@ -91,6 +93,15 @@ func TestCarriedConfidence(t *testing.T) {
 			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"critical","rated":"low","held":"db/migrations/1.sql"}`}}, changed: []string{"db/migrations/1.sql"}},
 		{name: "a risk never rated stays none under a floor", want: floored, wantScore: 4, wantSkippable: true,
 			rows: []row{{"completed", `{"score":4,"threshold":3}`}}, changed: []string{"db/migrations/1.sql"}},
+		{name: "a risk a step held keeps the step's hold", want: scored, wantScore: 4, wantRisk: review.RiskMedium, wantStep: step, wantSkippable: true,
+			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"medium","stepped":"low","step":"` + step + `"}`}}, changed: []string{"charts/x.yaml"}},
+		{name: "a floor set since holds the risk a step held", want: floored, wantScore: 4, wantRisk: review.RiskCritical, wantHeld: "db/migrations/1.sql",
+			wantStep: step, wantSkippable: true,
+			rows:    []row{{"completed", `{"score":4,"threshold":3,"risk":"medium","stepped":"low","step":"` + step + `"}`}},
+			changed: []string{"charts/x.yaml", "db/migrations/1.sql"}},
+		{name: "a floor cleared since lets the rating go back to the step's hold", want: scored, wantScore: 4, wantRisk: review.RiskMedium, wantStep: step,
+			wantSkippable: true, changed: []string{"charts/x.yaml", "db/migrations/1.sql"},
+			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"critical","rated":"medium","held":"db/migrations/1.sql","stepped":"low","step":"` + step + `"}`}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -134,8 +145,9 @@ func TestCarriedConfidence(t *testing.T) {
 				if got.Threshold != tt.want.Threshold {
 					t.Errorf("threshold = %d, want the one asked for now, %d", got.Threshold, tt.want.Threshold)
 				}
-				if got.Risk != tt.wantRisk || got.Held != tt.wantHeld {
-					t.Errorf("risk = %q held by %q, want %q and %q under the floors asked for now", got.Risk, got.Held, tt.wantRisk, tt.wantHeld)
+				if got.Risk != tt.wantRisk || got.Held != tt.wantHeld || got.Step != tt.wantStep || (got.Step != "") != (got.Stepped != "") {
+					t.Errorf("risk = %q held by %q, step %q (stepped %q), want %q, %q and %q under the floors asked for now",
+						got.Risk, got.Held, got.Step, got.Stepped, tt.wantRisk, tt.wantHeld, tt.wantStep)
 				}
 			}
 			if score != tt.wantScore || skippable != tt.wantSkippable {
