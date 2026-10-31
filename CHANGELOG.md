@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.112](https://github.com/home-operations/kritika/compare/0.0.111...0.0.112) (2026-10-31)
+
+
+### Features
+
+* **confidence:** derive the score and the version-step floor in code ([#1329](https://github.com/home-operations/kritika/issues/1329)) ([2637dbd](https://github.com/home-operations/kritika/commit/2637dbd108fe2c2ec04666110801630fed33119d))
+
+
+### Miscellaneous Chores
+
+* **go:** update module cel.dev/cel-go (v0.33.1 → v0.33.2) ([#1319](https://github.com/home-operations/kritika/issues/1319)) ([2f815d2](https://github.com/home-operations/kritika/commit/2f815d2cb782bbef1903a9b950eb3be14014fa18))
+* **go:** update module github.com/go-jose/go-jose/v4 (v4.1.6 → v4.1.7) ([#1320](https://github.com/home-operations/kritika/issues/1320)) ([60b57ab](https://github.com/home-operations/kritika/commit/60b57ab163579ec83c2f7741968bd1d6684087a1))
+* **go:** update module github.com/jackc/pgx/v5 (v5.11.0 → v5.12.0) ([#1324](https://github.com/home-operations/kritika/issues/1324)) ([1614e23](https://github.com/home-operations/kritika/commit/1614e2331dfaf71aa84372a2659c998f6656301b))
+* **go:** update module github.com/openai/openai-go/v3 (v3.89.0 → v3.91.0) ([#1325](https://github.com/home-operations/kritika/issues/1325)) ([e101abd](https://github.com/home-operations/kritika/commit/e101abd2e89b6d4215af83324df94d666ca39201))
+* **go:** update module github.com/sigstore/sigstore-go (v1.3.0 → v1.4.0) ([#1326](https://github.com/home-operations/kritika/issues/1326)) ([0cc8e4a](https://github.com/home-operations/kritika/commit/0cc8e4aa5dc8e285c793d3b8e71fd9db07545c7d))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.39.1 → v3.40.0) ([#1327](https://github.com/home-operations/kritika/issues/1327)) ([aed37a4](https://github.com/home-operations/kritika/commit/aed37a43d0ce15b493a77fd90570be450aca60a0))
+* **npm:** update dependency @astrojs/starlight (0.42.7 → 0.42.8) ([#1321](https://github.com/home-operations/kritika/issues/1321)) ([364f2a2](https://github.com/home-operations/kritika/commit/364f2a273a6c555029d481042dc1f2eded91652b))
+* **npm:** update dependency astro (7.4.2 → 7.4.4) ([#1322](https://github.com/home-operations/kritika/issues/1322)) ([b5f5886](https://github.com/home-operations/kritika/commit/b5f58860283846d4cb26fc89602b8611cb56d545))
+
 ## [0.0.111](https://github.com/home-operations/kritika/compare/0.0.110...0.0.111) (2026-10-31)
 
 
