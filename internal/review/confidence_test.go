@@ -3,6 +3,7 @@ package review
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -129,6 +130,7 @@ func TestBuildConfidence(t *testing.T) {
 		body    string
 		res     Result
 		rec     Record
+		history []BumpHistory
 		earlier *EarlierRisk
 		want    []string
 	}{
@@ -145,6 +147,18 @@ func TestBuildConfidence(t *testing.T) {
 		{
 			name: "a rating without a reason", earlier: &EarlierRisk{HeadSHA: "abcdef1234", Risk: RiskLow},
 			want: []string{"at abcdef1, rated its risk low.\n"},
+		},
+		{
+			name: "the dependencies' last ratings follow the findings and precede the earlier rating",
+			history: []BumpHistory{
+				{Path: "apps/x/hr.yaml", Line: 12, Number: 41, Step: StepPatch, Reach: ReachShared, Risk: RiskLow, Reason: "A patch\nof one app."},
+				{Path: "k.yaml", Line: 3, Number: 39, Step: StepUnknown, Reach: ReachCentral},
+			},
+			earlier: &EarlierRisk{HeadSHA: "abcdef1234", Risk: RiskLow},
+			want: []string{"The review reported no findings.\n\n\nThe last merged change to a dependency this change moves, and how it was rated:\n" +
+				"- apps/x/hr.yaml:12: pull request #41 moved it by a patch step and rated its reach shared. That change moved this version alone and was rated low risk. Its reason: A patch of one app.\n" +
+				"- k.yaml:3: pull request #39 moved it by a step of unknown size and rated its reach central.\n" +
+				"\n\nThe last review of this pull request, at abcdef1, rated its risk low.\n"},
 		},
 		{
 			name: "findings follow the diff, whole",
@@ -185,7 +199,7 @@ func TestBuildConfidence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			in := in
 			in.Body = tt.body
-			msg := BuildConfidence(in, tt.res, tt.rec, tt.earlier, ConfidenceSystem, 0)
+			msg := BuildConfidence(in, tt.res, tt.rec, tt.history, tt.earlier, ConfidenceSystem, 0)
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
@@ -193,6 +207,9 @@ func TestBuildConfidence(t *testing.T) {
 			}
 			if tt.earlier == nil && strings.Contains(msg, "The last review of this pull request") {
 				t.Errorf("a rating is given with none earlier:\n%s", msg)
+			}
+			if tt.history == nil && strings.Contains(msg, "last merged change") {
+				t.Errorf("a dependency's rating is given with none:\n%s", msg)
 			}
 			if len(tt.rec.CommandsRun) == 0 && strings.Contains(msg, "commands it ran") {
 				t.Errorf("commands are named with none run:\n%s", msg)
@@ -231,7 +248,7 @@ func TestConfidenceHold(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := tt.c
-			if held := c.Hold(tt.floor, tt.at); held != tt.held || c != tt.want {
+			if held := c.Hold(tt.floor, tt.at); held != tt.held || !reflect.DeepEqual(c, tt.want) {
 				t.Fatalf("Hold = %v, %+v; want %v, %+v", held, c, tt.held, tt.want)
 			}
 		})
@@ -254,7 +271,7 @@ func TestConfidenceHoldStep(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := tt.c
-			if held := c.HoldStep(tt.floor, at); held != tt.held || c != tt.want {
+			if held := c.HoldStep(tt.floor, at); held != tt.held || !reflect.DeepEqual(c, tt.want) {
 				t.Fatalf("HoldStep = %v, %+v; want %v, %+v", held, c, tt.held, tt.want)
 			}
 		})
@@ -379,7 +396,7 @@ func TestBuildConfidenceBudget(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, Result{}, Record{}, nil, ConfidenceSystem, tt.budget)
+			msg := BuildConfidence(in, Result{}, Record{}, nil, nil, ConfidenceSystem, tt.budget)
 			if kept := strings.Contains(msg, "+// a line of the large file under review"); kept != tt.kept {
 				t.Fatalf("diff in the message = %v, want %v", kept, tt.kept)
 			}
@@ -389,5 +406,22 @@ func TestBuildConfidenceBudget(t *testing.T) {
 				t.Fatalf("omission note in the message = %v, want %v, never naming read_diff:\n%s", note, !tt.kept, msg[len(msg)-300:])
 			}
 		})
+	}
+}
+
+// TestBumpVerdicts: each listed bump is kept with its step and the reach the
+// judge gave it, "" where it gave none.
+func TestBumpVerdicts(t *testing.T) {
+	bumps := Bumps("diff --git a/x.yaml b/x.yaml\n--- a/x.yaml\n+++ b/x.yaml\n@@ -1,2 +1,2 @@\n-tag: 1.2.3\n-image: a:latest@sha256:" + sha("a") +
+		"\n+tag: 1.3.0\n+image: a:latest@sha256:" + sha("b") + "\n")
+	want := []BumpVerdict{
+		{Key: "x.yaml tag: *", Path: "x.yaml", Line: 1, Step: StepMinor, Reach: ReachShared},
+		{Key: "x.yaml image: a:latest@sha256:*", Path: "x.yaml", Line: 2, Step: StepUnknown},
+	}
+	if got := BumpVerdicts(bumps, []Reach{ReachShared}); !slices.Equal(got, want) {
+		t.Fatalf("BumpVerdicts = %+v, want %+v", got, want)
+	}
+	if got := BumpVerdicts(nil, nil); got != nil {
+		t.Fatalf("BumpVerdicts of none = %+v", got)
 	}
 }

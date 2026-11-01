@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -2362,7 +2363,7 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 		Score: 2, Threshold: 4, Reason: "Nothing else stands out.", Risk: review.RiskMedium, Model: "reviewer",
 		Rubric: review.ConfidenceRubric(review.ConfidenceSystem),
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("confidence = %+v, want %+v", got, want)
 	}
 	if calls != 1 || charged != 1 {

@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 func TestWorkerReadContracts(t *testing.T) {
@@ -550,4 +553,165 @@ func TestReviewBaselineConfidence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDependencyHistory: the judge is told how the last merged pull request
+// that moved a dependency was rated, by the newest completed review of it
+// under the same rubric, the judge's own rating before any hold where the
+// change moved that version alone; an open pull request, a partial review,
+// another rubric, a bump the judge gave no reach, an older review of a pull
+// request whose newest no longer moves the dependency, two lines of one
+// change that share a key, a completed review of a head that was pushed
+// over before the merge, the pull request under review and another
+// repository tell it nothing. A review of the patch the merged head carried
+// counts where that head's own review was skipped as unchanged.
+func TestDependencyHistory(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	// An account of its own: the pull request numbers below are fixed, and
+	// the suite's other tests number alpha's pull requests as they like.
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("carry"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "carry", "carry/one", "carry/two")
+	account := accountID(t, s, "carry")
+	must := func(t *testing.T, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var repoID, otherRepo, under string
+	must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'carry/one'`, account).Scan(&repoID); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'carry/two'`, account).Scan(&otherRepo); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha) VALUES ($1, $2, 99, 'h') RETURNING id`,
+			account, repoID).Scan(&under)
+	}))
+	const key = "apps/x/hr.yaml tag: *"
+	// merged inserts a pull request closed at closedAt with one review per
+	// confidence, in order, of status, partial or not, and returns nothing:
+	// the history is read by key.
+	merged := func(repo string, number int, closedAt string, mergedPR bool, status string, partial bool, confidences ...string) {
+		t.Helper()
+		must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var prID string
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha, state, merged, closed_at)
+				VALUES ($1, $2, $3, 'h', 'closed', $4, $5::timestamptz) RETURNING id`, account, repo, number, mergedPR, closedAt).Scan(&prID); err != nil {
+				return err
+			}
+			for i, confidence := range confidences {
+				if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, partial, confidence, created_at)
+					VALUES ($1, $2, 'h', $3, $4, nullif($5, '')::jsonb, now() + make_interval(secs => $6))`,
+					account, prID, status, partial, confidence, i); err != nil {
+					return err
+				}
+			}
+			return nil
+		}))
+	}
+	bump := func(reach string) string {
+		return fmt.Sprintf(`{"key":%q,"path":"apps/x/hr.yaml","line":12,"step":"patch","reach":%q}`, key, reach)
+	}
+	verdict := func(rubric, risk, stepped string, alone bool, bumps ...string) string {
+		return fmt.Sprintf(`{"score":5,"threshold":5,"risk":%q,"stepped":%q,"reason":"Routine.","rubric":%q,"one_bump":%v,"bumps":[%s]}`,
+			risk, stepped, rubric, alone, strings.Join(bumps, ","))
+	}
+	merged(repoID, 1, "2026-01-01", true, "completed", false, verdict("r", "medium", "", true, bump("shared")))
+	merged(repoID, 2, "2026-01-03", true, "completed", false, verdict("r", "high", "medium", true, bump("central")))
+	merged(repoID, 3, "2026-01-05", true, "completed", true, verdict("r", "low", "", true, bump("standalone")))
+	merged(repoID, 4, "2026-01-06", false, "completed", false, verdict("r", "low", "", true, bump("standalone")))
+	merged(repoID, 5, "2026-01-07", true, "failed", false, verdict("r", "low", "", true, bump("standalone")))
+	merged(repoID, 6, "2026-01-08", true, "completed", false, verdict("other", "low", "", true, bump("standalone")))
+	merged(otherRepo, 7, "2026-01-09", true, "completed", false, verdict("r", "low", "", true, bump("standalone")))
+	merged(repoID, 8, "2026-01-10", true, "completed", false, verdict("r", "low", "", true, bump("")))
+	// #9's newest review no longer moves the dependency, and #10's newest
+	// review was not scored at all.
+	merged(repoID, 9, "2026-01-11", true, "completed", false, verdict("r", "low", "", true, bump("standalone")), verdict("r", "low", "", false))
+	merged(repoID, 10, "2026-01-12", true, "completed", false, verdict("r", "low", "", true, bump("standalone")), "")
+	merged(repoID, 11, "2026-01-13", true, "completed", false, verdict("r", "low", "", true, bump("standalone"), bump("central")))
+	merged(repoID, 13, "2026-01-15", true, "completed", false, verdict("r", "low", "", true, bump("standalone"), bump("")))
+	for _, tt := range []struct {
+		name   string
+		repo   string
+		rubric string
+		keys   []string
+		want   []review.BumpHistory
+	}{
+		{name: "the newest merged, completed, whole review under the rubric, the judge's own rating", repo: repoID, rubric: "r", keys: []string{key, "none"},
+			want: []review.BumpHistory{{Key: key, Number: 2, Step: review.StepPatch, Reach: review.ReachCentral, Risk: review.RiskMedium, Reason: "Routine."}}},
+		{name: "no keys", repo: repoID, rubric: "r"},
+		{name: "another rubric", repo: repoID, rubric: "newer", keys: []string{key}},
+		{name: "the other repository has only its own", repo: otherRepo, rubric: "r", keys: []string{key},
+			want: []review.BumpHistory{{Key: key, Number: 7, Step: review.StepPatch, Reach: review.ReachStandalone, Risk: review.RiskLow, Reason: "Routine."}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := s.DependencyHistory(ctx, account, tt.repo, under, tt.rubric, tt.keys)
+			must(t, err)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("DependencyHistory = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+	t.Run("a review of a head pushed over before the merge is none", func(t *testing.T) {
+		// #14 merged at head "new" with its only completed review at "old";
+		// #15 the same, but "new" was skipped as the unchanged patch of
+		// "old", so "old"'s review is of what merged.
+		head := func(number int, closedAt, patch string, skipped bool) {
+			t.Helper()
+			must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				var prID string
+				if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha, state, merged, closed_at)
+					VALUES ($1, $2, $3, 'new', 'closed', true, $4::timestamptz) RETURNING id`, account, repoID, number, closedAt).Scan(&prID); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, forge_patch_id, status, confidence)
+					VALUES ($1, $2, 'old', $3, 'completed', $4::jsonb)`, account, prID, patch, verdict("r", "low", "", true, bump("standalone"))); err != nil {
+					return err
+				}
+				if !skipped {
+					return nil
+				}
+				_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, forge_patch_id, status, skip_reason, created_at)
+					VALUES ($1, $2, 'new', $3, 'skipped', 'unchanged_patch', now() + interval '1 second')`, account, prID, patch)
+				return err
+			}))
+		}
+		head(14, "2026-01-20", "p14", false)
+		got, err := s.DependencyHistory(ctx, account, repoID, under, "r", []string{key})
+		must(t, err)
+		if len(got) != 1 || got[0].Number != 2 {
+			t.Fatalf("DependencyHistory with #14 reviewed at an earlier head = %+v, want #2", got)
+		}
+		head(15, "2026-01-21", "p15", true)
+		got, err = s.DependencyHistory(ctx, account, repoID, under, "r", []string{key})
+		must(t, err)
+		if len(got) != 1 || got[0].Number != 15 {
+			t.Fatalf("DependencyHistory with #15 skipped as unchanged at its merged head = %+v, want #15", got)
+		}
+	})
+	t.Run("a change that did more than move the one version carries its reach alone", func(t *testing.T) {
+		merged(repoID, 12, "2026-01-24", true, "completed", false, verdict("r", "critical", "", false, bump("shared")))
+		got, err := s.DependencyHistory(ctx, account, repoID, under, "r", []string{key})
+		must(t, err)
+		want := []review.BumpHistory{{Key: key, Number: 12, Step: review.StepPatch, Reach: review.ReachShared, Reason: "Routine."}}
+		if !slices.Equal(got, want) {
+			t.Fatalf("DependencyHistory = %+v, want %+v", got, want)
+		}
+	})
+	t.Run("the pull request under review is left out", func(t *testing.T) {
+		var prID string
+		must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT id FROM pull_requests WHERE repository_id = $1 AND number = 12`, repoID).Scan(&prID)
+		}))
+		got, err := s.DependencyHistory(ctx, account, repoID, prID, "r", []string{key})
+		must(t, err)
+		if len(got) != 1 || got[0].Number != 15 {
+			t.Fatalf("DependencyHistory without #12 = %+v, want #15", got)
+		}
+	})
 }
