@@ -209,6 +209,20 @@ the summary names that step after the reason, unless a floor from
 versions the scorer's list holds. If the list is cut, the scorer rates the
 versions past its end in the risk it gives.
 
+The scorer is also told how the last merged pull request that moved the
+same dependency was rated: the step it moved by, the reach the scorer gave
+it and, if that pull request moved that one version and nothing else, the
+risk it rated, with its reason. It keeps that reach, and that risk for a
+step no bigger, unless the release notes show something the rating did not
+account for. kritika identifies a dependency by the file and the line that
+moves it, with the version blanked, and by the `name:` line above it when
+the diff shows one, so nothing is configured and a dependency's history
+starts with its first merged update. Two lines of one file that name
+nothing but a version, with no `name:` line in the diff's context above
+them, share an identity: a change that moves both gets no history for them.
+The history is read from reviews under the current instructions: changing
+`confidence.instructions` starts it afresh.
+
 Admins can add local guidance with `confidence.instructions`, for example:
 
 ```yaml

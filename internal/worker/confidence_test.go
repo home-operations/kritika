@@ -2,6 +2,7 @@ package worker
 
 import (
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -161,5 +162,47 @@ func TestEarlierRisk(t *testing.T) {
 				t.Fatalf("earlierRisk = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestAttachHistory: a dependency's last rating is given at the bump of
+// this change that moves it, in the order of the bumps, and one that no
+// bump moves is left out.
+func TestAttachHistory(t *testing.T) {
+	listed := []review.Bump{
+		{Path: "a.yaml", Line: 3, Key: "a.yaml tag: *.*.*"},
+		{Path: "b.yaml", Line: 7, Key: "b.yaml tag: *.*.*"},
+		{Path: "c.yaml", Line: 9, Key: "c.yaml tag: *.*.*"},
+	}
+	rows := []review.BumpHistory{
+		{Key: "c.yaml tag: *.*.*", Number: 3, Step: review.StepPatch, Reach: review.ReachCentral, Risk: review.RiskMedium},
+		{Key: "a.yaml tag: *.*.*", Number: 1, Step: review.StepMinor, Reach: review.ReachStandalone, Risk: review.RiskLow, Reason: "r"},
+		{Key: "z.yaml tag: *.*.*", Number: 2, Step: review.StepMajor, Reach: review.ReachShared, Risk: review.RiskHigh},
+	}
+	want := []review.BumpHistory{
+		{Key: "a.yaml tag: *.*.*", Path: "a.yaml", Line: 3, Number: 1, Step: review.StepMinor, Reach: review.ReachStandalone, Risk: review.RiskLow, Reason: "r"},
+		{Key: "c.yaml tag: *.*.*", Path: "c.yaml", Line: 9, Number: 3, Step: review.StepPatch, Reach: review.ReachCentral, Risk: review.RiskMedium},
+	}
+	if got := attachHistory(listed, rows); !slices.Equal(got, want) {
+		t.Fatalf("attachHistory = %+v, want %+v", got, want)
+	}
+	if got := attachHistory(listed, nil); got != nil {
+		t.Fatalf("attachHistory of none = %+v", got)
+	}
+}
+
+// TestUniqueKeys: two bumps that share a key, such as the versions of two
+// of a chart's dependencies, are not asked after.
+func TestUniqueKeys(t *testing.T) {
+	listed := []review.Bump{
+		{Path: "Chart.yaml", Line: 8, Key: "Chart.yaml version: *"},
+		{Path: "a.yaml", Line: 3, Key: "a.yaml tag: *"},
+		{Path: "Chart.yaml", Line: 11, Key: "Chart.yaml version: *"},
+	}
+	if got, want := uniqueKeys(listed), []string{"a.yaml tag: *"}; !slices.Equal(got, want) {
+		t.Fatalf("uniqueKeys = %q, want %q", got, want)
+	}
+	if got := uniqueKeys(nil); got != nil {
+		t.Fatalf("uniqueKeys of none = %q", got)
 	}
 }

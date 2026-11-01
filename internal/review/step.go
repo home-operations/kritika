@@ -109,7 +109,15 @@ var versionRE = regexp.MustCompile(`(?:^|[:/@^~<>=!])[vV]?(\d+(?:\.\d+)*)`)
 // digits with their leading zeros dropped, since only whether two differ is
 // asked of them.
 func version(tok string) []string {
+	_, parts := versionSpan(tok)
+	return parts
+}
+
+// versionSpan is where the version tok names starts, its v included, and
+// its components as version has them; -1 and nil when it names none.
+func versionSpan(tok string) (int, []string) {
 	var found string
+	foundStart := -1
 	// A closing tag's slash parts no path.
 	slash := strings.LastIndexByte(tok, '/')
 	for slash > 0 && tok[slash-1] == '<' {
@@ -137,16 +145,16 @@ func version(tok string) []string {
 		if lower := strings.ToLower(tok[:start]); strings.HasSuffix(lower, "sha256:") || strings.HasSuffix(lower, "sha512:") {
 			continue
 		}
-		found = tok[m[2]:end]
+		found, foundStart = tok[m[2]:end], start
 	}
 	if found == "" {
-		return nil
+		return -1, nil
 	}
 	var out []string
 	for part := range strings.SplitSeq(found, ".") {
 		out = append(out, cmp.Or(strings.TrimLeft(part, "0"), "0"))
 	}
-	return out
+	return foundStart, out
 }
 
 // tokenStep is how far the edit from old to now moves the version the

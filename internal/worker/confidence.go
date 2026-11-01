@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -123,12 +124,23 @@ func (p *publishPhase) score(
 	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
 	rubric := review.ConfidenceRubric(system)
 	bumps := review.Bumps(diff)
+	// The judge rates in its risk the versions its list leaves out, and
+	// gives a reach to the ones it is shown alone, which are the ones a
+	// last merged change can have been rated for.
+	listed := review.ListedBumps(bumps)
+	history, err := p.dependencyHistory(ctx, listed, rubric)
+	if err != nil {
+		// The history keeps the judge consistent and the judge rates
+		// without it, so a read that fails costs the consistency, not the
+		// score.
+		p.logger.Warn("dependency history not read", "error", err)
+	}
 	req := model.CompletionRequest{
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res, rec, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
+		}, res, rec, history, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
@@ -141,12 +153,15 @@ func (p *publishPhase) score(
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
 		return review.Confidence{}, err
 	}
-	// The judge rates in its risk the versions its list left out, and
-	// gives a reach to the ones it was shown alone.
-	bumps = review.ListedBumps(bumps)
-	parsed, err := review.ParseConfidence(resp.Raw, p.pr.repository, bumps)
+	parsed, err := review.ParseConfidence(resp.Raw, p.pr.repository, listed)
 	if err != nil {
 		return review.Confidence{}, err
+	}
+	for _, h := range history {
+		if i := slices.IndexFunc(listed, func(b review.Bump) bool { return b.Key == h.Key }); i >= 0 && parsed.Reaches[i] != h.Reach {
+			p.logger.Info("judge departed from the dependency's last reach",
+				"path", h.Path, "line", h.Line, "was", h.Reach, "now", parsed.Reaches[i])
+		}
 	}
 	// What the judge gave against what stands is the calibration signal: a
 	// model that keeps giving no level fails the schema, one whose rating
@@ -157,8 +172,9 @@ func (p *publishPhase) score(
 	}
 	c := review.Confidence{
 		Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model, Rubric: rubric,
+		Bumps: review.BumpVerdicts(listed, parsed.Reaches), OneBump: review.OneBump(diff),
 	}
-	if floor, at := review.StepFloor(bumps, parsed.Reaches); c.HoldStep(floor, at) {
+	if floor, at := review.StepFloor(listed, parsed.Reaches); c.HoldStep(floor, at) {
 		p.logger.Info("risk held to the version step", "rated", parsed.Risk, "floor", floor, "step", at)
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "step")
 	}
@@ -171,6 +187,54 @@ func (p *publishPhase) score(
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "floor")
 	}
 	return c, nil
+}
+
+// dependencyHistory is how the last merged change to each dependency that
+// listed moves was rated under rubric, each with the bump of this change
+// that moves the same dependency, in the order of listed. A dependency two
+// bumps of listed share a key for is not asked after: which of the two the
+// history is of cannot be told.
+func (p *publishPhase) dependencyHistory(ctx context.Context, listed []review.Bump, rubric string) ([]review.BumpHistory, error) {
+	keys := uniqueKeys(listed)
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	rows, err := p.w.Store.DependencyHistory(ctx, p.account.ID(), p.pr.repositoryID, p.pr.id, rubric, keys)
+	if err != nil {
+		return nil, err
+	}
+	return attachHistory(listed, rows), nil
+}
+
+// uniqueKeys is the keys of the bumps of listed that no other bump of it
+// shares, in the order of listed.
+func uniqueKeys(listed []review.Bump) []string {
+	seen := make(map[string]int, len(listed))
+	for _, b := range listed {
+		seen[b.Key]++
+	}
+	var keys []string
+	for _, b := range listed {
+		if seen[b.Key] == 1 {
+			keys = append(keys, b.Key)
+		}
+	}
+	return keys
+}
+
+// attachHistory is rows, each at the bump of listed that moves its
+// dependency, in the order of listed. A row that no bump matches is left
+// out.
+func attachHistory(listed []review.Bump, rows []review.BumpHistory) []review.BumpHistory {
+	var out []review.BumpHistory
+	for _, b := range listed {
+		if i := slices.IndexFunc(rows, func(h review.BumpHistory) bool { return h.Key == b.Key }); i >= 0 {
+			h := rows[i]
+			h.Path, h.Line = b.Path, b.Line
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // earlierRisk is the risk that prior was rated. A review of head is asked to

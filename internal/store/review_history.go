@@ -253,3 +253,53 @@ func ReviewStatusSince(ctx context.Context, tx pgx.Tx, prID string, requested ti
 	}
 	return status, nil
 }
+
+// DependencyHistory is how the last merged pull request of repositoryID
+// that moved each of the dependencies keys name was rated, by its newest
+// completed whole review, where that review's judge rated under rubric: the
+// step, the reach, the risk the judge gave before any hold where that change
+// moved that version alone and "" otherwise, and the reason. prID itself is
+// left out. A dependency that no merged change moved, that the judge gave no
+// reach, or that two lines of one change share a key for is absent. It is
+// read as accountID.
+func (s *Store) DependencyHistory(
+	ctx context.Context, accountID, repositoryID, prID, rubric string, keys []string,
+) ([]review.BumpHistory, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	var out []review.BumpHistory
+	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		// The newest review of each pull request is chosen before its bumps
+		// are read: an older review's bump that a later push took back
+		// never merged.
+		rows, err := tx.Query(ctx, `WITH latest AS (
+				SELECT DISTINCT ON (p.id) p.number, p.closed_at, r.created_at, r.confidence
+				FROM pull_requests p JOIN reviews r ON r.pull_request_id = p.id
+				WHERE p.repository_id = $1 AND p.merged AND p.id::text <> $2 AND r.status = 'completed' AND NOT r.partial
+				ORDER BY p.id, r.created_at DESC),
+			moved AS (
+				SELECT l.number, l.closed_at, l.created_at, l.confidence, b, count(*) OVER (PARTITION BY l.number, b->>'key') AS lines
+				FROM latest l CROSS JOIN LATERAL jsonb_array_elements(l.confidence->'bumps') b
+				WHERE l.confidence->>'rubric' = $3 AND b->>'key' = ANY($4))
+			SELECT DISTINCT ON (b->>'key') b->>'key', number, b->>'step', b->>'reach',
+				CASE WHEN (confidence->>'one_bump')::boolean
+					THEN coalesce(nullif(confidence->>'stepped', ''), nullif(confidence->>'rated', ''), confidence->>'risk') ELSE '' END,
+				coalesce(confidence->>'reason', '')
+			FROM moved WHERE lines = 1 AND coalesce(b->>'reach', '') <> ''
+			ORDER BY b->>'key', closed_at DESC, created_at DESC`, repositoryID, prID, rubric, keys)
+		if err != nil {
+			return err
+		}
+		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (review.BumpHistory, error) {
+			var h review.BumpHistory
+			err := row.Scan(&h.Key, &h.Number, &h.Step, &h.Reach, &h.Risk, &h.Reason)
+			return h, err
+		})
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: read dependency history: %w", err)
+	}
+	return out, nil
+}
