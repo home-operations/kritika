@@ -339,10 +339,10 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 // ActiveRules is the rules that apply to a change of the changed paths, in
 // order: each without paths, and each with them when a changed path
 // matches one. A rule's text counts against MaxRulesBytes and a file
-// rule's content, read from files, against MaxRuleFileBytes. left is how
-// many applied but did not fit. A file rule whose file files lacks or
-// holds nothing is left out, since reading it was already noted.
-func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left int) {
+// rule's content, read from files, against MaxRuleFileBytes. left names
+// the ones that applied but did not fit, by id. A file rule whose file
+// files lacks or holds nothing is left out, since reading it was already noted.
+func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left []string) {
 	room, fileRoom := MaxRulesBytes, MaxRuleFileBytes
 	for _, r := range rules {
 		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(r.Paths, c) }) {
@@ -358,7 +358,7 @@ func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []
 			*budget -= size
 			out = append(out, review.Rule{ID: r.ID, Text: text, File: r.File})
 		} else {
-			left++
+			left = append(left, r.ID)
 		}
 	}
 	return out, left

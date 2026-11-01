@@ -205,6 +205,54 @@ source maps and logs.
   findings by then, it keeps the rest of its submission and loses those
   findings. Those findings never post.
 
+### Rule files
+
+Each markdown file under `.agents/rules` and `.claude/rules`, at any
+depth, is a file rule, with nothing to configure. These are the
+directories where coding agents keep path-scoped conventions. kritika
+reads them from the merge base, as it does `rules`, so a pull request
+cannot add or rewrite a rule file to steer its own review.
+
+```markdown
+---
+paths:
+  - "**/*.rs"
+---
+
+Never discard an error with a bare `let _ =`.
+```
+
+- The rule's id is the file's path below the directory, without `.md`,
+  lowercased, with every run of other characters than letters and digits
+  a hyphen. So `.claude/rules/backend/API.md` is `backend-api`. Findings
+  cite it by that id.
+- The file's `paths` frontmatter limits the rule to changes that touch a
+  matching path, as a rule's `paths` does. `paths` is a list of globs or
+  one comma-separated string, relative to the repository root. A file
+  without it applies to every change. kritika reads no other frontmatter
+  key, and leaves the frontmatter out of the rule. Frontmatter that does
+  not parse is dropped, and the file then applies to every change. An
+  invalid glob matches nothing, and the file's other globs still apply.
+- A configured rule that names the file as its `file` takes its place.
+  A file whose id a configured rule has, admin's or the repository's, is
+  left out, with a summary note. So is a file whose id an earlier file
+  has. `.agents/rules` is read before `.claude/rules`.
+- Rule files come after the configured rules and share their 32 KiB of
+  rule files. Among them, the ones with `paths` come first, then the ones
+  that apply to every change. So a long file that applies everywhere does
+  not take the room of the rules narrowed to the change. A file longer
+  than the 32 KiB on its own can never fit, and is left out with a note
+  that says to split it. When the rules a change matches do not fit, the
+  summary note names the ones left out.
+- The default reviewer and its follow-ups are given rule files. An agent
+  with its own instructions keeps its own rules alone, as it does for
+  `rules`.
+- A symlinked file is passed over: kritika reads files from the merge
+  base, where a symlink holds a path rather than the rule.
+- No key configures rule files. A repository without these directories
+  discovers none. To keep a file out of reviews, move it out of them, or
+  write a rule under its id, which takes its place.
+
 ### Context
 
 `context` lists files that explain the code, added after the admin's. Each
@@ -447,7 +495,9 @@ opening pull requests, out of that file.
 
 Skills are available to reviews only, not follow-up answers. Put
 requirements shared by both in rules. An agent file that is not listed is
-not offered as context, and no review warns that it is missing.
+not offered as context, and no review warns that it is missing. The
+files under `.agents/rules` and `.claude/rules` are the exception: they
+are [rule files](#rule-files), with nothing to list.
 
 ### Comment templates
 
@@ -727,6 +777,7 @@ produce summary notes when content is omitted:
 | `.kritika.yaml`, each rule file and comment template | 256 KiB                                    |
 | those configuration files together                   | 1 MiB                                      |
 | the rules in the prompt                              | 16 KiB of rule text, 32 KiB of rule files  |
+| rule files discovered                                | 100 read                                   |
 | skills                                               | 50 read                                    |
 | a skill's description                                | 1024 characters                            |
 | the skills' names and descriptions in the prompt     | 4 KiB                                      |

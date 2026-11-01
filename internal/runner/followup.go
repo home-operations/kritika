@@ -53,6 +53,10 @@ func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets r
 	if err != nil {
 		return err
 	}
+	p, files, _, err = withRuleFiles(baseTree, p, files)
+	if err != nil {
+		return err
+	}
 	chunks, _, err := stages(ctx, headTree, baseTree, res, p.Ignore)
 	if err != nil {
 		return err

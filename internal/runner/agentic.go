@@ -55,7 +55,7 @@ type packView struct {
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
 const (
-	noteRulesLeft         = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
+	noteRulesLeft         = "%d review rule(s) left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given: %s"
 	noteDiffOmitted       = "%d diff file(s) left out of the prompt to fit its budget, for the agent to read with read_diff: %s"
 	noteReferencesOmitted = "%d reference file(s) left out of the prompt to fit its budget"
 	noteContextOmitted    = "%d context chunk(s) left out of the prompt to fit its budget"
@@ -102,9 +102,9 @@ func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.
 			in.notes = append(in.notes, fmt.Sprintf(noteSkillsUnloaded, offered.Unloaded))
 		}
 	}
-	var left int
-	if in.rules, left = repoconfig.ActiveRules(p.Prompt.Rules, files, changed); left > 0 {
-		in.notes = append(in.notes, fmt.Sprintf(noteRulesLeft, left))
+	var left []string
+	if in.rules, left = repoconfig.ActiveRules(p.Prompt.Rules, files, changed); len(left) > 0 {
+		in.notes = append(in.notes, fmt.Sprintf(noteRulesLeft, len(left), strings.Join(left, ", ")))
 	}
 	for _, c := range repoconfig.ActiveContext(p.Prompt.Context, changed) {
 		in.references = append(in.references, review.Reference{Path: c.Path, Description: c.Description})

@@ -138,6 +138,13 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 	if err != nil {
 		return err
 	}
+	// The pack keeps the configured files alone. Discovered rule files reach
+	// the prompt, which the run's rule ids record.
+	p, promptFiles, ruleNotes, err := withRuleFiles(baseTree, p, files)
+	if err != nil {
+		return err
+	}
+	notes = append(notes, ruleNotes...)
 	ignore := p.Ignore
 	priorHead, deltaPaths := priorDelta(res, p, logger)
 	// Everything the worker reads back is decided here, before the pack is
@@ -169,7 +176,7 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 		}
 		notes = append(notes, skillNotes...)
 	}
-	in := newPromptInputs(p, files, found, res.Changed)
+	in := newPromptInputs(p, promptFiles, found, res.Changed)
 	notes = append(notes, in.notes...)
 	var tools agentTools
 	var prompt agentPrompt
@@ -196,7 +203,7 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
 			notes = append(notes, prompt.notes()...)
 		} else if parts, chunks, ruleIDs, err = partPrompts(
-			ctx, p, secrets, headTree, baseTree, res, files, found, shares, &tools, logger,
+			ctx, p, secrets, headTree, baseTree, res, promptFiles, found, shares, &tools, logger,
 		); err != nil {
 			return err
 		} else {
