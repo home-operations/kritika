@@ -438,11 +438,11 @@ Completed or superseded work clears them as appropriate. The leader's bounded
 recovery sweep removes remaining progress for completed, cancelled, discarded
 or missing jobs. To restart a cancelled index, request a fresh reindex.
 
-When it retries a cancelled job ID, the pinned River version retains
-`cancel_attempted_at`. Its cancellation polling and state transitions still treat that job
-as cancelled. The worker keeps that cancellation fence rather than ignoring
-the marker. Checkpoints inherit the database's replication and backup
-limitations described above.
+An explicit retry of a cancelled job clears the earlier attempt's
+cancellation request, so the retried attempt runs. A cancellation requested
+while an attempt runs still fences it: the worker refuses to lock or
+continue a job whose metadata carries `cancel_attempted_at`. Checkpoints
+inherit the database's replication and backup limitations described above.
 
 ## Model-call accounting recovery
 
