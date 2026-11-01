@@ -36,18 +36,23 @@ func (s Step) phrase() string {
 	return string(s) + " step"
 }
 
-// Reach is how much depends on a dependency whose version a bump moves, as
-// the judge rates it.
+// Reach is what stops working when a dependency whose version a bump moves
+// fails, as the judge rates it: not how many files name the dependency,
+// since every workload names a monitoring stack, but what fails with it.
 type Reach string
 
-// Reaches, from the one that the least depends on.
+// Reaches, from the one whose failure stops the least.
 const (
 	// ReachNone is a bump that moves no dependency: an address, a port or a
 	// version in prose.
-	ReachNone       Reach = "none"
+	ReachNone Reach = "none"
+	// ReachStandalone is a dependency whose failure stays inside the one
+	// thing it serves, or shows only in what is observed about the rest.
 	ReachStandalone Reach = "standalone"
-	ReachShared     Reach = "shared"
-	ReachCentral    Reach = "central"
+	// ReachShared is a dependency that other workloads fail with.
+	ReachShared Reach = "shared"
+	// ReachCentral is a dependency that the whole system fails with.
+	ReachCentral Reach = "central"
 )
 
 var reaches = []Reach{ReachNone, ReachStandalone, ReachShared, ReachCentral}
@@ -194,9 +199,11 @@ func stepRisk(step Step, early bool, reach Reach) Risk {
 			r = RiskHigh
 		}
 	case StepMinor, StepUnknown:
-		r = map[Reach]Risk{ReachStandalone: RiskLow, ReachShared: RiskMedium, ReachCentral: RiskHigh}[reach]
-		if early && r == RiskLow {
-			r = RiskMedium
+		// A minor step is no breaking change, so it never reaches high
+		// by its step alone, whatever fails with the dependency.
+		r = RiskMedium
+		if reach == ReachStandalone && !early {
+			r = RiskLow
 		}
 	default:
 		r = RiskLow

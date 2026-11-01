@@ -183,21 +183,27 @@ It controls automatic approval, independently of the confidence score.
 
 Dependency updates are rated by both the version step and the dependency's
 reach. kritika reads the step from the versions the diff moves. The scorer
-says how much depends on each dependency: nothing (`standalone`), other
-things (`shared`) or much else (`central`). If the line moves no dependency,
-such as an address or a version in prose, the scorer says `none`. The two
-set the least risk the change is rated:
+says what stops working when each dependency fails, not how many files name
+it: only what the dependency serves, or only what is observed about the rest,
+as monitoring and exporters are (`standalone`); other workloads (`shared`);
+or the whole system, as the network layer, storage, DNS, the gateway, the
+deployment pipeline and secrets are (`central`). If the line moves no
+dependency, such as an address or a version in prose, the scorer says
+`none`. The two set the least risk the change is rated:
 
 | Step                                                                       | `standalone` | `shared` | `central` |
 | -------------------------------------------------------------------------- | ------------ | -------- | --------- |
 | major                                                                      | `medium`     | `high`   | `high`    |
-| minor, or a new digest under a tag that names no version, such as `latest` | `low`        | `medium` | `high`    |
-| minor, under 1.0                                                           | `medium`     | `medium` | `high`    |
+| minor, or a new digest under a tag that names no version, such as `latest` | `low`        | `medium` | `medium`  |
+| minor, under 1.0                                                           | `medium`     | `medium` | `medium`  |
 | patch, or a new digest of the same version                                 | `low`        | `low`    | `medium`  |
 
-The scorer rates the risk above that floor by what the update does. Breaking
-release notes can raise the rating. A bot author or a description that calls
-the update safe never lowers it below its step. If a step held the rating,
+The scorer rates the risk above that floor by what the update does. An
+update whose release notes show no change in behavior that the repository
+uses adds nothing above its floor, so it rates `low` where the floor is
+`low`: the rollout or restart that every update causes never raises it by
+itself. Breaking release notes raise the rating. A bot author or a description that calls the
+update safe never lowers it below its step. If a step held the rating,
 the summary names that step after the reason, unless a floor from
 `confidence.floors` holds the rating higher still. The step is read from the
 versions the scorer's list holds. If the list is cut, the scorer rates the
