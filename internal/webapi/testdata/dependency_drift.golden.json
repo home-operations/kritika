@@ -1,0 +1,37 @@
+[
+  {
+    "repository": "alpha/one",
+    "path": "kubernetes/apps/o11y/kube-prometheus-stack/app/ocirepository.yaml",
+    "dependency": "tag: *",
+    "bumps": 4,
+    "levels": 2,
+    "risks": {
+      "high": 1,
+      "medium": 3
+    },
+    "reaches": {
+      "central": 4
+    },
+    "lastAt": "2026-09-01T12:01:30Z",
+    "lastRisk": "high",
+    "lastReach": "central",
+    "lastStep": "minor"
+  },
+  {
+    "repository": "alpha/one",
+    "path": "go.mod",
+    "dependency": "github.com/x/widgets *",
+    "bumps": 2,
+    "levels": 1,
+    "risks": {
+      "low": 2
+    },
+    "reaches": {
+      "standalone": 2
+    },
+    "lastAt": "2026-09-01T12:00:00Z",
+    "lastRisk": "low",
+    "lastReach": "standalone",
+    "lastStep": "patch"
+  }
+]

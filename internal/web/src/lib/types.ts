@@ -720,6 +720,23 @@ export interface EgressRefusal {
   lastSeenAt: string;
 }
 
+// How one dependency's updates were rated over the window: the judge's own
+// risk per update and the reach it gave the dependency, counted, with the
+// last update's rating. More levels than one is drift.
+export interface DependencyDrift {
+  repository: string;
+  path: string;
+  dependency: string;
+  bumps: number;
+  levels: number;
+  risks: Record<string, number>;
+  reaches: Record<string, number>;
+  lastAt: string;
+  lastRisk: string;
+  lastReach: string;
+  lastStep: string;
+}
+
 export interface Analytics {
   group: AnalyticsGroup;
   from: string;

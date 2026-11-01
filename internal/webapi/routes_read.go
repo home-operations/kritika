@@ -58,6 +58,7 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/usage", s.account(s.getUsage))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/chatgpt/allowances", s.account(s.getChatGPTAllowances))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/analytics", s.account(s.getAnalytics))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/analytics/dependencies", s.account(s.getDependencyDrift))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/attention", s.account(s.getAttention))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/queue", s.account(s.listQueue))
 }

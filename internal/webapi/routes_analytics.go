@@ -3,6 +3,7 @@ package webapi
 import (
 	"cmp"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,8 +16,9 @@ import (
 // analyticsRefusals how many refused hosts, each with a row per
 // repository.
 const (
-	analyticsRepos    = 5
-	analyticsRefusals = 50
+	analyticsRepos        = 5
+	analyticsRefusals     = 50
+	analyticsDependencies = 50
 )
 
 // analyticsQuery reads ?group=, ?from= and ?to=: by day over the last 30
@@ -71,6 +73,59 @@ func analytics(data store.Analytics) (current, previous AnalyticsTotals, series 
 		}
 	}
 	return analyticsTotals(data.Current), analyticsTotals(data.Previous), series, repos
+}
+
+// getDependencyDrift serves how the dependencies the account's pull
+// requests moved in the window were rated, the ones rated at the most
+// levels first.
+func (s *Server) getDependencyDrift(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	from, to, err := s.window(r)
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
+	out := []DependencyDrift{}
+	if err := s.read(ctx, t, func(tx pgx.Tx) error {
+		rows, err := store.ReadDependencyDrift(ctx, tx, from, to, analyticsDependencies)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			out = append(out, dependencyDrift(row))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// dependencyDrift counts row's ratings. The key is the path, a space and
+// the line, as review.Bumps writes it, so the line is what follows the
+// path, whatever the path holds.
+func dependencyDrift(row store.DependencyDrift) DependencyDrift {
+	d := DependencyDrift{
+		Repository: row.Repository, Path: row.Path, Dependency: strings.TrimPrefix(row.Key, row.Path+" "),
+		Bumps: len(row.Risks), LastAt: row.LastAt, Risks: map[review.Risk]int{}, Reaches: map[review.Reach]int{},
+	}
+	for i, risk := range row.Risks {
+		d.Risks[review.Risk(risk)]++
+		if i < len(row.Reaches) {
+			d.Reaches[review.Reach(row.Reaches[i])]++
+		}
+	}
+	d.Levels = len(d.Risks)
+	if n := len(row.Risks); n > 0 {
+		d.LastRisk = review.Risk(row.Risks[n-1])
+	}
+	if n := len(row.Reaches); n > 0 {
+		d.LastReach = review.Reach(row.Reaches[n-1])
+	}
+	if n := len(row.Steps); n > 0 {
+		d.LastStep = review.Step(row.Steps[n-1])
+	}
+	return d
 }
 
 func egressRefusals(rows []store.EgressRefusalRow) []EgressRefusal {

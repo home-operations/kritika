@@ -6,7 +6,7 @@
   import { accountApi, repoRoute } from '../links';
   import { day } from '../dates';
   import { daysAgo, duration, costTotal, wholeNumber, tokens, usd, CATEGORIES } from '../format';
-  import type { Analytics, AnalyticsPoint, EgressRefusal } from '../types';
+  import type { Analytics, AnalyticsPoint, DependencyDrift, EgressRefusal } from '../types';
   import StateView from '../components/StateView.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import HelpPopover from '../components/HelpPopover.svelte';
@@ -54,6 +54,21 @@
   }, () => JSON.stringify([base, 'analytics', days, group]));
   $effect(() => { void res.load(); });
   $effect(() => live((e) => (!slug || e.account === slug) && e.kind === 'review', () => void res.load(), 1000));
+
+  // The dependencies an account's pull requests moved and how each update
+  // was rated: an account's own, since the judge rates under its
+  // instructions.
+  const drift = new Resource((signal) => {
+    const now = Date.now();
+    const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
+    return getJSON<DependencyDrift[]>(`${base}/analytics/dependencies?${new URLSearchParams({ from })}`, signal);
+  }, () => JSON.stringify([base, 'dependencies', days]));
+  $effect(() => { if (slug) void drift.load(); });
+  $effect(() => live((e) => e.account === slug && e.kind === 'review', () => { if (slug) void drift.load(); }, 1000));
+  const LEVELS = ['low', 'medium', 'high', 'critical'];
+  const REACHES = ['none', 'standalone', 'shared', 'central'];
+  const counted = (counts: Record<string, number>, order: string[]) =>
+    order.filter((k) => counts[k]).map((k) => `${k} ${wholeNumber(counts[k]!)}`).join(' · ');
 
   const found = (c: { p0: number; p1: number; p2: number }) => c.p0 + c.p1 + c.p2;
   const rate = (addressed: number, total: number) => (total ? (addressed / total) * 100 : null);
@@ -298,6 +313,47 @@
               <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">Hosts the gateway refused a run's commands and fetches, as the agent asked for them. A host a review needs goes in the configuration's egress.allow.</p>
             {/if}
           </section>
+
+          {#if slug}
+            <section class="panel" aria-labelledby="an-deps">
+              <header class="panel-head"><h2 id="an-deps">Dependency ratings</h2></header>
+              <StateView res={drift} retry={() => drift.load()}>
+                {#snippet children(deps)}
+                  {#if deps.length === 0}
+                    <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No dependency was updated more than once in this period.</p>
+                  {:else}
+                    <div class="table-wrap overflow-x-auto max-w-full">
+                      <table class="data dependency-ratings">
+                        <thead>
+                          <tr>
+                            <th scope="col">Repository</th>
+                            <th scope="col">Dependency</th>
+                            <th scope="col" class="num">Updates</th>
+                            <th scope="col">Risks</th>
+                            <th scope="col">Reaches</th>
+                            <th scope="col">Last</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each deps as d (`${d.repository} ${d.path} ${d.dependency}`)}
+                            <tr class:drifted={d.levels > 1}>
+                              <td class="mono"><a href={href(repoRoute(slug, d.repository))}>{d.repository}</a></td>
+                              <td class="mono name-fill" title={`${d.path} ${d.dependency}`}>{d.dependency}<span class="block small muted text-ui-sm">{d.path}</span></td>
+                              <td class="num">{wholeNumber(d.bumps)}</td>
+                              <td class="small text-ui-sm">{counted(d.risks, LEVELS)}</td>
+                              <td class="small text-ui-sm">{counted(d.reaches, REACHES)}</td>
+                              <td class="small text-ui-sm"><time datetime={d.lastAt}>{day(d.lastAt)}</time> · {d.lastStep} · {d.lastRisk}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">The risk the scorer gave each update of a dependency, before any floor, and the reach it gave the dependency, from the latest scored review of each pull request. A dependency rated at more than one level drifted; the most drifted come first.</p>
+                  {/if}
+                {/snippet}
+              </StateView>
+            </section>
+          {/if}
         </div>
       {/snippet}
     </StateView>

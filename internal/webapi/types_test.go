@@ -291,6 +291,14 @@ var goldens = map[string]any{
 		Rows: []UsagePoint{{Key: "2026-09-01", InputTokens: 100, CacheReadTokens: 50, CacheWriteTokens: 5, OutputTokens: 20, CostUSD: 0.1, Calls: 2}},
 	},
 	"attention": Attention{Failed: 2, Capped: 1, P0: 3, Paused: 1},
+	"dependency_drift": []DependencyDrift{
+		{Repository: "alpha/one", Path: "kubernetes/apps/o11y/kube-prometheus-stack/app/ocirepository.yaml", Dependency: "tag: *", Bumps: 4, Levels: 2,
+			Risks: map[review.Risk]int{review.RiskMedium: 3, review.RiskHigh: 1}, Reaches: map[review.Reach]int{review.ReachCentral: 4},
+			LastAt: t1, LastRisk: review.RiskHigh, LastReach: review.ReachCentral, LastStep: review.StepMinor},
+		{Repository: "alpha/one", Path: "go.mod", Dependency: "github.com/x/widgets *", Bumps: 2, Levels: 1,
+			Risks: map[review.Risk]int{review.RiskLow: 2}, Reaches: map[review.Reach]int{review.ReachStandalone: 2},
+			LastAt: t0, LastRisk: review.RiskLow, LastReach: review.ReachStandalone, LastStep: review.StepPatch},
+	},
 	"analytics": Analytics{
 		Group: store.AnalyticsByDay, From: t0, To: t1,
 		Current: AnalyticsTotals{
