@@ -133,9 +133,6 @@ type File struct {
 	// Skills replace the directories the admin has skills looked for in,
 	// and add to the admin's scopes.
 	Skills configfile.SkillsSpec `yaml:"skills,omitempty"`
-	// RuleFiles replace the directories the admin has rule files discovered
-	// in.
-	RuleFiles configfile.RuleFilesSpec `yaml:"ruleFiles,omitempty"`
 	// Tools are the tools the repository's reviews can run, over the
 	// image's.
 	Tools Tools `yaml:"tools,omitempty"`
@@ -193,11 +190,6 @@ func Parse(data []byte) (File, error) {
 	}
 	if err := configfile.CheckSkills(skillPaths, f.Skills.Scope); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
-	}
-	if f.RuleFiles.Paths != nil {
-		if err := configfile.CheckRuleFiles(*f.RuleFiles.Paths); err != nil {
-			return File{}, fmt.Errorf("repoconfig: %w", err)
-		}
 	}
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)

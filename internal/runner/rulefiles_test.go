@@ -51,7 +51,7 @@ func TestDiscoverRuleFiles(t *testing.T) {
 		tkNote  = ".claude/rules/taken.md: skipped, a configured rule has the id taken"
 	)
 	taken := &runspec.RuleFiles{
-		Paths: configfile.DefaultRuleFilePaths, IDs: []string{"taken", "own"}, Files: []string{".claude/rules/configured.md"},
+		Paths: repoconfig.RuleFileDirs, IDs: []string{"taken", "own"}, Files: []string{".claude/rules/configured.md"},
 	}
 	many, capped, cappedTexts := map[string]string{}, []configfile.Rule{}, repoconfig.Files{}
 	blanks := map[string]string{"r/z.md": "Read past the cap.\n"}
@@ -183,7 +183,7 @@ func TestWithRuleFiles(t *testing.T) {
 	t.Run("discovered after the configured", func(t *testing.T) {
 		p := agentPromptSpec()
 		p.Prompt.Rules = []configfile.Rule{own}
-		p.Prompt.RuleFiles = &runspec.RuleFiles{Paths: configfile.DefaultRuleFilePaths, IDs: []string{"style"}, Files: []string{"docs/style.md"}}
+		p.Prompt.RuleFiles = &runspec.RuleFiles{Paths: repoconfig.RuleFileDirs, IDs: []string{"style"}, Files: []string{"docs/style.md"}}
 		got, gotFiles, notes, err := withRuleFiles(base, p, files)
 		if err != nil || notes != nil {
 			t.Fatalf("err = %v, notes = %q", err, notes)

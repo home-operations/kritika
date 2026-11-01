@@ -226,16 +226,6 @@ func TestMerge(t *testing.T) {
 		},
 		{name: "an absolute skill path", doc: "skills: { paths: [/x] }\n", wantErr: `repoconfig: skills.paths[0]: path "/x" must be relative`},
 		{name: "a skill path outside the repository", doc: "skills: { paths: [a, ../x] }\n", wantErr: `skills.paths[1]: path "../x" escapes the repository`},
-		{
-			name: "rule file paths replace the admin's", doc: "ruleFiles: { paths: [docs/rules] }\n",
-			want: func(s *configfile.Settings) { s.RuleFiles.Paths = []string{"docs/rules"} },
-		},
-		{
-			name: "empty rule file paths turn rule files off", doc: "ruleFiles: { paths: [] }\n",
-			want: func(s *configfile.Settings) { s.RuleFiles.Paths = []string{} },
-		},
-		{name: "a rule file path outside the repository", doc: "ruleFiles: { paths: [a, ../x] }\n", wantErr: `repoconfig: ruleFiles.paths[1]: path "../x" escapes the repository`},
-		{name: "rule files take no other key", doc: "ruleFiles: { scope: {} }\n", wantErr: "field scope not found"},
 		{name: "a skill scope with a bad glob", doc: "skills: { scope: { db: { paths: ['['] } } }\n", wantErr: `repoconfig: skills.scope.db.paths[0] "[" is not a valid glob`},
 		{name: "a skill scope whose condition does not compile", doc: "skills: { scope: { db: { when: [{ expr: 'pr.draft &&' }] } } }\n", wantErr: "skills.scope.db.when[0]"},
 		{

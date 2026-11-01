@@ -9,6 +9,11 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 )
 
+// RuleFileDirs are the directories of the merge base whose markdown files
+// are discovered as rules: the ones coding agents read path-scoped
+// conventions from. A repository without them discovers none.
+var RuleFileDirs = []string{".agents/rules", ".claude/rules"}
+
 // MaxRuleFiles bounds how many rule files are read for one review.
 const MaxRuleFiles = 100
 

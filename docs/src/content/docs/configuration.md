@@ -405,7 +405,7 @@ with a few keys beside them:
 | `trigger`    | `include`, `exclude`, `limit`                                                                            | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                              | what is posted                             |
 | `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`                   | the bounds of a review's tool loop         |
-| beside them  | `enabled`, `rules`, `ruleFiles`, `context`, `skills`, `ignore`, and `limits` at the root alone           |                                            |
+| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone                        |                                            |
 
 `ignore` lists globs of paths left out of a review's initial diff and
 context, the index, and the agent's searches and checkout. These add to
@@ -516,7 +516,6 @@ the root's, except:
 | `trigger.include`, `trigger.exclude` | judged beside the admin's lists. A name that an admin's list has is dropped                                                   |
 | `skills.paths`                       | replaces                                                                                                                      |
 | `skills.scope`                       | adds up by skill name. The file's entry wins                                                                                  |
-| `ruleFiles.paths`                    | replaces                                                                                                                      |
 | `review.agents`                      | specialists added, and an admin's specialist gains only rules and skill scopes. Agents without categories replace the admin's |
 | `review.fixes`                       | can only turn it on                                                                                                           |
 | `confidence.risk`                    | can only lower it                                                                                                             |

@@ -375,7 +375,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 	}
 	prompt := &runspec.Prompt{
 		Repository: f.pr.repository, Context: f.eff.Review.Context, Rules: repoconfig.RulesFor(f.eff.Review.Rules, rec.vars),
-		RuleFiles: ruleFiles(f.eff.RuleFiles, f.eff.Review.Rules), Prior: rec.findings,
+		RuleFiles: ruleFiles(f.eff.Review.Rules), Prior: rec.findings,
 	}
 	var answering *store.ReviewerGrant
 	name := f.findingReviewer(ctx, rec)

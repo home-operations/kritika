@@ -249,10 +249,9 @@ Never discard an error with a bare `let _ =`.
   `rules`.
 - A symlinked file is passed over: kritika reads files from the merge
   base, where a symlink holds a path rather than the rule.
-
-| Key               | What                                                                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ruleFiles.paths` | the directories whose markdown files are rules. It replaces the admin's. `paths: []` looks nowhere, which turns rule files off for the repository |
+- No key configures rule files. A repository without these directories
+  discovers none. To keep a file out of reviews, move it out of them, or
+  write a rule under its id, which takes its place.
 
 ### Context
 
