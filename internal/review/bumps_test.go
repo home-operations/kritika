@@ -140,7 +140,7 @@ func TestBumpKeyNameAbove(t *testing.T) {
 		"@@ -20,3 +20,3 @@\n     repository: oci://x\n   - name: database\n-    version: 5.6.8\n+    version: 5.6.9\n" +
 		"@@ -30,3 +30,3 @@\n   - name: cache\n     condition: cache.enabled\n     repository: oci://x\n     tags: []\n-    version: 1.0.0\n+    version: 1.0.1\n"
 	bumps := Bumps(diff)
-	want := []string{"Chart.yaml name: frontend version: *", "Chart.yaml name: database version: *", "Chart.yaml version: *"}
+	want := []string{`Chart.yaml version: * "frontend"`, `Chart.yaml version: * "database"`, "Chart.yaml version: *"}
 	if len(bumps) != len(want) {
 		t.Fatalf("bumps = %+v, want %d", bumps, len(want))
 	}

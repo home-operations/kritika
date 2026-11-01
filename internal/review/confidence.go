@@ -224,10 +224,15 @@ such as an upstream interface or a version step, that no checked line or source 
 did not read: the account lists the sources it read and a selection of what it checked beyond the diff, so a concern
 names what they leave out, and their silence about a changed line is no sign that the review skipped it, except where
 the record says a part of the review ended before it submitted: the files it names went unreviewed, and whatever
-they change rests on the diff alone. The record also says which commands the review ran and which failed to run,
-which is kritika's account, not the review's: a command run is no proof of what it showed, and one that failed to
-run is a source the review could not have read. The account
-is the review's claim, not proof that the change is right. What its summary says merging sets off is no finding: its
+they change rests on the diff alone. kritika also lists the versions the change moves that none of the sources it
+recorded names, by neither the version nor the dependency: such a version is not shown read, so where neither the
+description carries its release notes nor a checked line or the summary covers what its step changes, that is a
+prerequisite nothing shows was met. A source can be about a version under a name kritika did not match, and the
+record holds at most fifty, so say what the list leaves unshown rather than that it was unread. A listed line that
+moves no dependency, one you give the reach none, needs no release notes. The record also says which commands the
+review ran and which failed to run, which is kritika's account, not the review's: a command run is no proof of what
+it showed, and one that failed to run is a source the review could not have read. The account is the review's
+claim, not proof that the change is right. What its summary says merging sets off is no finding: its
 evidence can inform the risk rating and answer a concern, but saying so never lowers the score, and a check it
 suggests is not proof that the check passed. A post-merge check that cannot be completed before deployment is not, by
 itself, an unanswered concern or a reason to lower the score, and neither is a step the description sets for a
@@ -378,8 +383,9 @@ type Record struct {
 // the pull request, its description, and its diff as Build renders them.
 // Input.Toolless is set, since the scorer cannot read what the diff leaves
 // out. Then the message holds the review's account of itself, res's summary
-// and checked lines, the record of its run, and the findings that it
-// reported. Then history, how the last merged change to each dependency the
+// and checked lines, the record of its run, with the versions the change
+// moves that none of its sources names (see Uncovered), and the findings
+// that it reported. Then history, how the last merged change to each dependency the
 // change moves was rated, where any was. When earlier is not nil, it also
 // holds the risk that the last review was rated, which the description and
 // the diff give way to.
@@ -409,6 +415,12 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		}
 		if more := len(rec.Sources) - maxConfidenceSources; more > 0 {
 			fmt.Fprintf(&tail, "- and %d more\n", more)
+		}
+	}
+	if uncovered := Uncovered(ListedBumps(in.Bumps), rec.Sources); len(uncovered) > 0 {
+		tail.WriteString("\nVersions the change moves that none of the sources it recorded names:\n")
+		for _, b := range uncovered {
+			fmt.Fprintf(&tail, "- %s:%d: %s to %s\n", b.Path, b.Line, b.Old, b.New)
 		}
 	}
 	if len(rec.CommandsRun) > 0 {

@@ -130,6 +130,7 @@ func TestBuildConfidence(t *testing.T) {
 		body    string
 		res     Result
 		rec     Record
+		diff    string
 		history []BumpHistory
 		earlier *EarlierRisk
 		want    []string
@@ -186,6 +187,17 @@ func TestBuildConfidence(t *testing.T) {
 			want: []string{"- https://example.com/19\n- and 5 more\n"},
 		},
 		{
+			name: "the versions no source names follow the sources",
+			diff: "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -2,2 +2,2 @@\n-\tgithub.com/x/widgets v1.2.3\n-\tgithub.com/x/gears v2.0.0\n+\tgithub.com/x/widgets v1.3.0\n+\tgithub.com/x/gears v2.0.1\n",
+			rec:  Record{Sources: []string{"https://github.com/x/widgets/releases/tag/v1.3.0"}, CommandsRun: []string{"gh"}},
+			want: []string{"- https://github.com/x/widgets/releases/tag/v1.3.0\n\nVersions the change moves that none of the sources it recorded names:\n- go.mod:3: v2.0.0 to v2.0.1\n\nThe commands it ran: gh.\n"},
+		},
+		{
+			name: "with no source, every version is unnamed",
+			diff: "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -2 +2 @@\n-\tgithub.com/x/widgets v1.2.3\n+\tgithub.com/x/widgets v1.3.0\n",
+			want: []string{"\nIt read no sources outside the repository.\n\nVersions the change moves that none of the sources it recorded names:\n- go.mod:2: v1.2.3 to v1.3.0\n"},
+		},
+		{
 			name: "the record of the run follows the sources",
 			rec: Record{Sources: []string{"oci://ghcr.io/x/y:1"}, CommandsRun: []string{"gh", "rg"}, CommandErrors: []string{"helm: not found\nat all"},
 				Unfinished: []string{"Part 2 of 2 ended before it submitted, so its files went unreviewed: " + longPaths}},
@@ -199,7 +211,13 @@ func TestBuildConfidence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			in := in
 			in.Body = tt.body
+			if tt.diff != "" {
+				in.Diff, in.Bumps = tt.diff, Bumps(tt.diff)
+			}
 			msg := BuildConfidence(in, tt.res, tt.rec, tt.history, tt.earlier, ConfidenceSystem, 0)
+			if tt.diff == "" && strings.Contains(msg, "none of the sources it recorded names") {
+				t.Errorf("versions are listed with none moved:\n%s", msg)
+			}
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
