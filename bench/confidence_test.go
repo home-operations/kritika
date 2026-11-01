@@ -129,7 +129,7 @@ func TestConfidenceEvaluation(t *testing.T) {
 	}
 	// The risk is held to the step of a moved version by the reach the
 	// answer gives it, as the worker holds it.
-	bump := confidenceCase{Repository: "example/app", Score: [2]int{5, 5}, Risk: review.RiskHigh,
+	bump := confidenceCase{Repository: "example/app", Score: [2]int{5, 5}, Risk: review.RiskMedium,
 		Diff: "diff --git a/Chart.yaml b/Chart.yaml\n--- a/Chart.yaml\n+++ b/Chart.yaml\n@@ -1 +1 @@\n-version: 1.2.0\n+version: 1.3.0\n"}
 	bumps := review.Bumps(bump.Diff)
 	if len(bumps) != 1 {
@@ -139,7 +139,7 @@ func TestConfidenceEvaluation(t *testing.T) {
 		name, raw string
 		bad       bool
 	}{
-		{"a central one rates high", `{"risk":"low","concern":false,"bumps":[{"path":"Chart.yaml","line":1,"reach":"central"}],"reason":"Routine."}`, false},
+		{"a central one rates medium", `{"risk":"low","concern":false,"bumps":[{"path":"Chart.yaml","line":1,"reach":"central"}],"reason":"Routine."}`, false},
 		{"a standalone one rates as the judge says", `{"risk":"low","concern":false,"bumps":[{"path":"Chart.yaml","line":1,"reach":"standalone"}],"reason":"Routine."}`, true},
 		{"no reach is standalone", `{"risk":"low","concern":false,"bumps":[],"reason":"Routine."}`, true},
 	} {

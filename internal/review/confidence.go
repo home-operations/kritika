@@ -205,12 +205,18 @@ versions the change moves are listed, old to new, with the file and line that mo
 kritika rates the size of each step from the versions themselves, and holds the risk to at least what the step and
 the dependency's reach together warrant: a major step rates at least medium for a standalone dependency and high for
 a shared or central one; a minor step, a version under 1.0 moving its first non-zero component, or a new digest
-under a tag that names no version, such as latest, at least low, medium or high by the same measure, and at least
-medium under 1.0; a patch, or a new digest of the same version, at least low, or medium for a central one. A digest
-pinned beside its tag, a bot author or a description that calls the update safe never rates it below its step. You
-supply the reach: for each listed version, say whether its dependency is standalone, when nothing else depends on
-it, shared, when other things do, or central, when much else does, or none, when the line moves no dependency, such
-as an address, a port or a version in prose. Then rate the risk by what the update does: release notes that show an
+under a tag that names no version, such as latest, at least low for a standalone one and medium for a shared or
+central one, and at least medium under 1.0; a patch, or a new digest of the same version, at least low, or medium
+for a central one. A digest pinned beside its tag, a bot author or a description that calls the update safe never
+rates it below its step. You supply the reach, by what stops working when the dependency fails, not by how many
+files name it: for each listed version, say whether its dependency is standalone, when a failure stays inside the
+one thing it serves or shows only in what is observed about the rest, as monitoring, exporters, dashboards and
+alerting do; shared, when other workloads or jobs fail with it; central, when the whole system does, as the network
+layer, storage, DNS, the gateway, the deployment pipeline, secrets and authentication do; or none, when the line
+moves no dependency, such as an address, a port or a version in prose. Then rate the risk by what the update does: an
+update whose release notes and upstream changes show no change in behavior that this repository uses adds nothing
+above its step's least risk, so it rates low where that is low, and the rollout, restart or brief interruption of
+what the dependency serves is what every update does and never raises it by itself; release notes that show an
 update does more than its step says, such as a breaking change in a minor release, rate it as the bigger step, and
 one that can do what the critical level names, such as migrating stored data to a form an older version cannot read,
 rates critical. The list holds only lines rewritten with the version alone, and counts the lines past its end, so a
