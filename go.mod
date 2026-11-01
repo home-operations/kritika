@@ -26,7 +26,7 @@ require (
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/odvcencio/gotreesitter v0.56.0
-	github.com/openai/openai-go/v3 v3.91.0
+	github.com/openai/openai-go/v3 v3.91.1
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
