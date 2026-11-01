@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.0.114](https://github.com/home-operations/kritika/compare/0.0.113...0.0.114) (2026-11-01)
+
+
+### Features
+
+* **confidence:** list the moved versions that no source the review read names ([#1339](https://github.com/home-operations/kritika/issues/1339)) ([0cae0d0](https://github.com/home-operations/kritika/commit/0cae0d07942efc67797a8763b150f1b38e3e351e))
+* **confidence:** tell the judge how a dependency's last merged bump was rated ([#1337](https://github.com/home-operations/kritika/issues/1337)) ([144dc8c](https://github.com/home-operations/kritika/commit/144dc8cca199d5393a406e3e26b7fdca1675c578))
+* **dashboard:** list how each dependency's updates were rated on the analytics page ([#1341](https://github.com/home-operations/kritika/issues/1341)) ([d47084f](https://github.com/home-operations/kritika/commit/d47084f840b8f049d556a7556190d4c9e26e8ade))
+
+
+### Bug Fixes
+
+* **confidence:** rate reach by what fails and cap a minor step at medium ([#1336](https://github.com/home-operations/kritika/issues/1336)) ([33e02c3](https://github.com/home-operations/kritika/commit/33e02c38250696a9fe71b416d77328b481b7161d))
+
+
+### Continuous Integration
+
+* **govulncheck:** run the scan on a schedule ([54426f9](https://github.com/home-operations/kritika/commit/54426f9c455da0d7f29979ea13628ca98b0ab7be))
+
+
+### Miscellaneous Chores
+
+* **go:** update river monorepo (v0.50.0 → v0.51.0) ([#1335](https://github.com/home-operations/kritika/issues/1335)) ([bc7c624](https://github.com/home-operations/kritika/commit/bc7c624f0c56b920d06e00a255c64879ec6e7609))
+
 ## [0.0.113](https://github.com/home-operations/kritika/compare/0.0.112...0.0.113) (2026-10-31)
 
 
