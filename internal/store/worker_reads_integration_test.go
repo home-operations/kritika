@@ -561,8 +561,10 @@ func TestReviewBaselineConfidence(t *testing.T) {
 // change moved that version alone; an open pull request, a partial review,
 // another rubric, a bump the judge gave no reach, an older review of a pull
 // request whose newest no longer moves the dependency, two lines of one
-// change that share a key, the pull request under review and another
-// repository tell it nothing.
+// change that share a key, a completed review of a head that was pushed
+// over before the merge, the pull request under review and another
+// repository tell it nothing. A review of the patch the merged head carried
+// counts where that head's own review was skipped as unchanged.
 func TestDependencyHistory(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -653,8 +655,45 @@ func TestDependencyHistory(t *testing.T) {
 			}
 		})
 	}
+	t.Run("a review of a head pushed over before the merge is none", func(t *testing.T) {
+		// #14 merged at head "new" with its only completed review at "old";
+		// #15 the same, but "new" was skipped as the unchanged patch of
+		// "old", so "old"'s review is of what merged.
+		head := func(number int, closedAt, patch string, skipped bool) {
+			t.Helper()
+			must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				var prID string
+				if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha, state, merged, closed_at)
+					VALUES ($1, $2, $3, 'new', 'closed', true, $4::timestamptz) RETURNING id`, account, repoID, number, closedAt).Scan(&prID); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, forge_patch_id, status, confidence)
+					VALUES ($1, $2, 'old', $3, 'completed', $4::jsonb)`, account, prID, patch, verdict("r", "low", "", true, bump("standalone"))); err != nil {
+					return err
+				}
+				if !skipped {
+					return nil
+				}
+				_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, forge_patch_id, status, skip_reason, created_at)
+					VALUES ($1, $2, 'new', $3, 'skipped', 'unchanged_patch', now() + interval '1 second')`, account, prID, patch)
+				return err
+			}))
+		}
+		head(14, "2026-01-20", "p14", false)
+		got, err := s.DependencyHistory(ctx, account, repoID, under, "r", []string{key})
+		must(t, err)
+		if len(got) != 1 || got[0].Number != 2 {
+			t.Fatalf("DependencyHistory with #14 reviewed at an earlier head = %+v, want #2", got)
+		}
+		head(15, "2026-01-21", "p15", true)
+		got, err = s.DependencyHistory(ctx, account, repoID, under, "r", []string{key})
+		must(t, err)
+		if len(got) != 1 || got[0].Number != 15 {
+			t.Fatalf("DependencyHistory with #15 skipped as unchanged at its merged head = %+v, want #15", got)
+		}
+	})
 	t.Run("a change that did more than move the one version carries its reach alone", func(t *testing.T) {
-		merged(repoID, 12, "2026-01-14", true, "completed", false, verdict("r", "critical", "", false, bump("shared")))
+		merged(repoID, 12, "2026-01-24", true, "completed", false, verdict("r", "critical", "", false, bump("shared")))
 		got, err := s.DependencyHistory(ctx, account, repoID, under, "r", []string{key})
 		must(t, err)
 		want := []review.BumpHistory{{Key: key, Number: 12, Step: review.StepPatch, Reach: review.ReachShared, Reason: "Routine."}}
@@ -669,8 +708,8 @@ func TestDependencyHistory(t *testing.T) {
 		}))
 		got, err := s.DependencyHistory(ctx, account, repoID, prID, "r", []string{key})
 		must(t, err)
-		if len(got) != 1 || got[0].Number != 2 {
-			t.Fatalf("DependencyHistory without #12 = %+v, want #2", got)
+		if len(got) != 1 || got[0].Number != 15 {
+			t.Fatalf("DependencyHistory without #12 = %+v, want #15", got)
 		}
 	})
 }

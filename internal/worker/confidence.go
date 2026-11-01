@@ -128,7 +128,7 @@ func (p *publishPhase) score(
 	// gives a reach to the ones it is shown alone, which are the ones a
 	// last merged change can have been rated for.
 	listed := review.ListedBumps(bumps)
-	history, err := p.dependencyHistory(ctx, listed, rubric)
+	history, err := p.dependencyHistory(ctx, bumps, listed, rubric)
 	if err != nil {
 		// The history keeps the judge consistent and the judge rates
 		// without it, so a read that fails costs the consistency, not the
@@ -172,7 +172,7 @@ func (p *publishPhase) score(
 	}
 	c := review.Confidence{
 		Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model, Rubric: rubric,
-		Bumps: review.BumpVerdicts(listed, parsed.Reaches), OneBump: review.OneBump(diff),
+		Bumps: review.BumpVerdicts(bumps, parsed.Reaches), OneBump: review.OneBump(diff),
 	}
 	if floor, at := review.StepFloor(listed, parsed.Reaches); c.HoldStep(floor, at) {
 		p.logger.Info("risk held to the version step", "rated", parsed.Risk, "floor", floor, "step", at)
@@ -190,12 +190,13 @@ func (p *publishPhase) score(
 }
 
 // dependencyHistory is how the last merged change to each dependency that
-// listed moves was rated under rubric, each with the bump of this change
-// that moves the same dependency, in the order of listed. A dependency two
-// bumps of listed share a key for is not asked after: which of the two the
-// history is of cannot be told.
-func (p *publishPhase) dependencyHistory(ctx context.Context, listed []review.Bump, rubric string) ([]review.BumpHistory, error) {
-	keys := uniqueKeys(listed)
+// listed, the bumps the judge is shown of bumps, moves was rated under
+// rubric, each with the bump of this change that moves the same
+// dependency, in the order of listed. A dependency two bumps share a key
+// for is not asked after, whether or not the list shows both: which of the
+// two the history is of cannot be told.
+func (p *publishPhase) dependencyHistory(ctx context.Context, bumps, listed []review.Bump, rubric string) ([]review.BumpHistory, error) {
+	keys := uniqueKeys(bumps, len(listed))
 	if len(keys) == 0 {
 		return nil, nil
 	}
@@ -206,15 +207,15 @@ func (p *publishPhase) dependencyHistory(ctx context.Context, listed []review.Bu
 	return attachHistory(listed, rows), nil
 }
 
-// uniqueKeys is the keys of the bumps of listed that no other bump of it
-// shares, in the order of listed.
-func uniqueKeys(listed []review.Bump) []string {
-	seen := make(map[string]int, len(listed))
-	for _, b := range listed {
+// uniqueKeys is the keys of the first listed of bumps that no bump at all
+// shares, in their order.
+func uniqueKeys(bumps []review.Bump, listed int) []string {
+	seen := make(map[string]int, len(bumps))
+	for _, b := range bumps {
 		seen[b.Key]++
 	}
 	var keys []string
-	for _, b := range listed {
+	for _, b := range bumps[:listed] {
 		if seen[b.Key] == 1 {
 			keys = append(keys, b.Key)
 		}

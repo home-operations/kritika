@@ -256,7 +256,9 @@ func ReviewStatusSince(ctx context.Context, tx pgx.Tx, prID string, requested ti
 
 // DependencyHistory is how the last merged pull request of repositoryID
 // that moved each of the dependencies keys name was rated, by its newest
-// completed whole review, where that review's judge rated under rubric: the
+// completed whole review of the head that merged, or of the patch that
+// head carried where its own review was skipped as unchanged, where that
+// review's judge rated under rubric: the
 // step, the reach, the risk the judge gave before any hold where that change
 // moved that version alone and "" otherwise, and the reason. prID itself is
 // left out. A dependency that no merged change moved, that the judge gave no
@@ -272,16 +274,24 @@ func (s *Store) DependencyHistory(
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		// The newest review of each pull request is chosen before its bumps
 		// are read: an older review's bump that a later push took back
-		// never merged.
+		// never merged. The review must be of the head that merged, or of
+		// its patch: a rebase that leaves the patch unchanged is skipped
+		// with the patch's id on its row, so the completed review of the
+		// same patch at the head before is what merged. The check runs on
+		// the chosen review alone, once per pull request.
 		rows, err := tx.Query(ctx, `WITH latest AS (
-				SELECT DISTINCT ON (p.id) p.number, p.closed_at, r.created_at, r.confidence
+				SELECT DISTINCT ON (p.id) p.id, p.number, p.head_sha, p.closed_at,
+					r.created_at, r.head_sha AS reviewed, r.forge_patch_id, r.patch_id, r.confidence
 				FROM pull_requests p JOIN reviews r ON r.pull_request_id = p.id
 				WHERE p.repository_id = $1 AND p.merged AND p.id::text <> $2 AND r.status = 'completed' AND NOT r.partial
 				ORDER BY p.id, r.created_at DESC),
 			moved AS (
 				SELECT l.number, l.closed_at, l.created_at, l.confidence, b, count(*) OVER (PARTITION BY l.number, b->>'key') AS lines
 				FROM latest l CROSS JOIN LATERAL jsonb_array_elements(l.confidence->'bumps') b
-				WHERE l.confidence->>'rubric' = $3 AND b->>'key' = ANY($4))
+				WHERE l.confidence->>'rubric' = $3 AND b->>'key' = ANY($4)
+					AND (l.reviewed = l.head_sha OR EXISTS (
+						SELECT 1 FROM reviews h WHERE h.pull_request_id = l.id AND h.head_sha = l.head_sha
+							AND ((h.forge_patch_id <> '' AND h.forge_patch_id = l.forge_patch_id) OR (h.patch_id <> '' AND h.patch_id = l.patch_id)))))
 			SELECT DISTINCT ON (b->>'key') b->>'key', number, b->>'step', b->>'reach',
 				CASE WHEN (confidence->>'one_bump')::boolean
 					THEN coalesce(nullif(confidence->>'stepped', ''), nullif(confidence->>'rated', ''), confidence->>'risk') ELSE '' END,
