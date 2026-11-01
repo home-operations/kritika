@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.115](https://github.com/home-operations/kritika/compare/0.0.114...0.0.115) (2026-11-01)
+
+
+### Features
+
+* **rules:** discover .claude/rules and .agents/rules as merge-base rule files ([#1330](https://github.com/home-operations/kritika/issues/1330)) ([4e8c70a](https://github.com/home-operations/kritika/commit/4e8c70a2ec8c73330926bbf8bf661fbdbb78b3ac))
+
 ## [0.0.114](https://github.com/home-operations/kritika/compare/0.0.113...0.0.114) (2026-11-01)
 
 
