@@ -97,8 +97,18 @@ func TestNeedles(t *testing.T) {
 			want: needles{versions: []string{"4.2.0"}, names: []string{"checkout"}}},
 		{name: "a tag under a named path", bump: Bump{Path: "kubernetes/apps/network/ingress-nginx/app/ocirepository.yaml", New: "4.12.0",
 			Key: "kubernetes/apps/network/ingress-nginx/app/ocirepository.yaml tag: *"}, want: needles{versions: []string{"4.12.0"}, names: []string{"ingress-nginx"}}},
-		{name: "a name line", bump: Bump{Path: "Chart.yaml", New: "1.2.4", Key: "Chart.yaml name: frontend version: *"},
+		{name: "a name line", bump: Bump{Path: "Chart.yaml", New: "1.2.4", Key: `Chart.yaml version: * "frontend"`},
 			want: needles{versions: []string{"1.2.4"}, names: []string{"frontend"}}},
+		{name: "a name line and inline names", bump: Bump{Path: "Chart.yaml", New: "2.0.1", Key: `Chart.yaml dependencies: name: frontend version: * name: database version: * @9 "stack"`},
+			want: needles{versions: []string{"2.0.1"}, names: []string{"stack", "database"}}},
+		{name: "a moved token with its own name", bump: Bump{Path: "Dockerfile", New: "database@2.0.1", Key: "Dockerfile RUN npm install frontend@* database@* @5"},
+			want: needles{versions: []string{"2.0.1"}, names: []string{"database"}}},
+		{name: "a range placeholder is bare", bump: Bump{Path: "package.json", New: "^2.0.1", Key: "package.json frontend : ^* database : ^* @6"},
+			want: needles{versions: []string{"2.0.1"}, names: []string{"database"}}},
+		{name: "a short image and a short version", bump: Bump{Path: "k.yaml", New: "ghcr.io/x/y:2", Key: "k.yaml image: ghcr.io/x/y:*"},
+			want: needles{versions: []string{"2"}}},
+		{name: "one package of two on a line", bump: Bump{Path: "Dockerfile", New: "2.0.1", Key: "Dockerfile RUN pip install frontend * database * @7"},
+			want: needles{versions: []string{"2.0.1"}, names: []string{"database"}}},
 		{name: "an address", bump: Bump{Path: "config.yaml", New: "192.168.1.3", Key: "config.yaml server: *"},
 			want: needles{versions: []string{"192.168.1.3"}, names: []string{"server"}}},
 	} {
@@ -106,6 +116,35 @@ func TestNeedles(t *testing.T) {
 			got := tt.bump.needles()
 			if !slices.Equal(got.versions, tt.want.versions) || !slices.Equal(got.names, tt.want.names) || !slices.Equal(got.weak, tt.want.weak) {
 				t.Fatalf("needles = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUncoveredNamesWhatMoved: a source names the dependency that moved,
+// not another on its line, and a short version is matched whole.
+func TestUncoveredNamesWhatMoved(t *testing.T) {
+	diff := "diff --git a/Dockerfile b/Dockerfile\n--- a/Dockerfile\n+++ b/Dockerfile\n@@ -1 +1 @@\n" +
+		"-RUN pip install frontend==1.2.3 database==2.0.0\n+RUN pip install frontend==1.2.3 database==2.0.1\n" +
+		"diff --git a/k.yaml b/k.yaml\n--- a/k.yaml\n+++ b/k.yaml\n@@ -1 +1 @@\n-image: ghcr.io/x/y:1\n+image: ghcr.io/x/y:2\n"
+	bumps := Bumps(diff)
+	if len(bumps) != 2 {
+		t.Fatalf("bumps = %+v, want 2", bumps)
+	}
+	for _, tt := range []struct {
+		name    string
+		sources []string
+		want    int
+	}{
+		{name: "the unchanged package's source", sources: []string{"https://example.com/frontend/releases"}, want: 2},
+		{name: "the moved package's source", sources: []string{"https://example.com/database/releases"}, want: 1},
+		{name: "the short image's reference", sources: []string{"oci://ghcr.io/x/y:2"}, want: 1},
+		{name: "a longer number is not the short version", sources: []string{"oci://ghcr.io/x/y:22"}, want: 2},
+		{name: "a digest does not hold the short version", sources: []string{"oci://ghcr.io/other/thing@sha256:ab2c" + sha("d")[4:]}, want: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Uncovered(bumps, tt.sources); len(got) != tt.want {
+				t.Fatalf("Uncovered = %+v, want %d", got, tt.want)
 			}
 		})
 	}
@@ -179,6 +218,11 @@ func TestHoldsVersion(t *testing.T) {
 		{"https://x/releases/tag/v1.3.0-rc.1", "1.3.0", true},
 		{"https://x/compare/a-1.2.0...a-1.3.0", "1.3.0", true},
 		{"https://x/compare/a-1.3.0.1...a-1.3.0", "1.3.0", true},
+		{"https://x/sha256:ab2c0000", "2", false},
+		{"https://x/y:2", "2", true},
+		{"https://x/releases/tag/V2", "2", true},
+		{"https://x/dev2", "2", false},
+		{"https://x/2alpha", "2", false},
 		{"1.3.0", "1.3.0", true},
 		{"", "1.3.0", false},
 	} {

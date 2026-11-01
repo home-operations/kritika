@@ -18,11 +18,12 @@ type Bump struct {
 	Old, New string
 	// Key names the dependency that the line moves, the same across its
 	// bumps: the path and the line's tokens, each cut where its version,
-	// digest or commit starts (see bumpKey), after the name that a name
-	// line just above gives it where there is one (see nameAbove). So
-	// whichever of them moves leaves it as it was, and what the line names
-	// stays. Two lines of one file that name nothing but a version, with no
-	// name line in the diff's context above them, share a key.
+	// digest or commit starts (see bumpKey), then, in quotes no token can
+	// hold, the name that a name line just above gives it where there is
+	// one (see nameAbove).
+	// So whichever of them moves leaves it as it was, and what the line
+	// names stays. Two lines of one file that name nothing but a version,
+	// with no name line in the diff's context above them, share a key.
 	Key string
 	// positions identifies the changed tokens by their one-based offsets.
 	// Distinct tokens on one line can have the same version. Zero is unused.
@@ -86,7 +87,7 @@ func bumpsAndRest(diff string) (bumps []Bump, rest int) {
 					bump.Path, bump.Line = p, added[j].NewLine
 					bump.Key = p + " " + bumpKey(added[j].Text, bump.positions)
 					if name := nameAbove(h.Lines, at); name != "" {
-						bump.Key = p + " name: " + name + " " + bumpKey(added[j].Text, bump.positions)
+						bump.Key += ` "` + name + `"`
 					}
 					bumps = append(bumps, bump)
 				}

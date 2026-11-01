@@ -2,6 +2,7 @@ package review
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -64,8 +65,12 @@ func holdsName(s, name string) bool {
 
 // holdsVersion reports whether s holds version whole: not as the tail of a
 // longer number, nor as the head of one, so 1.3.0 is not in v11.3.0 or in
-// 1.3.0.4. A pre-release or build suffix after it is the same version.
+// 1.3.0.4, and not inside a digest or a word, so 2 is not in ab2c, while a
+// v before it is its own. A pre-release or build suffix after it is the
+// same version.
 func holdsVersion(s, version string) bool {
+	letter := func(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+	digit := func(c byte) bool { return c >= '0' && c <= '9' || c == '.' }
 	for at := 0; at < len(s); {
 		i := strings.Index(s[at:], version)
 		if i < 0 {
@@ -73,8 +78,8 @@ func holdsVersion(s, version string) bool {
 		}
 		i += at
 		end := i + len(version)
-		before := i == 0 || !strings.ContainsRune("0123456789.", rune(s[i-1]))
-		after := end == len(s) || !strings.ContainsRune("0123456789.", rune(s[end]))
+		before := i == 0 || !digit(s[i-1]) && (!letter(s[i-1]) || (s[i-1] == 'v' || s[i-1] == 'V') && (i == 1 || !letter(s[i-2])))
+		after := end == len(s) || !digit(s[end]) && !letter(s[end])
 		if before && after {
 			return true
 		}
@@ -113,6 +118,13 @@ func (b Bump) needles() needles {
 			*to = append(*to, s)
 		}
 	}
+	// A version is matched whole (see holdsVersion), so a short one is no
+	// risk of an incidental match as a short name is.
+	version := func(s string) {
+		if s = strings.ToLower(s); s != "" && !slices.Contains(n.versions, s) {
+			n.versions = append(n.versions, s)
+		}
+	}
 	// name adds what tok names, and the weak name it is under.
 	name := func(tok string) {
 		tok, _, _ = strings.Cut(tok, "*")
@@ -137,16 +149,55 @@ func (b Bump) needles() needles {
 	}
 	for tok := range strings.FieldsSeq(b.New) {
 		if start, parts := versionSpan(tok); start >= 0 {
-			add(&n.versions, strings.Join(parts, "."))
+			version(strings.Join(parts, "."))
 			tok = tok[:start]
 		} else if h := hexRun(tok); h >= 0 {
 			tok = tok[:h]
 		}
 		name(tok)
 	}
-	for tok := range strings.FieldsSeq(strings.TrimPrefix(b.Key, b.Path)) {
-		if tok != "*" {
-			name(tok)
+	// The key's tokens name the dependency where the line holds one
+	// version. Where it holds several, the key ends with the moved
+	// positions, and only the moved token names it, or the nearest token
+	// before it that can name anything where the moved token is a bare
+	// version, as frontend is before 1.2.3 in frontend==1.2.3 and database
+	// is before "version: 2.0.0" in an inline list: the line's other
+	// dependencies are not what moved. The name a name line gave follows
+	// in quotes, which no token holds.
+	rest := strings.TrimPrefix(b.Key, b.Path+" ")
+	if strings.HasSuffix(rest, `"`) {
+		if i := strings.LastIndex(rest[:len(rest)-1], ` "`); i >= 0 {
+			for tok := range strings.FieldsSeq(rest[i+2 : len(rest)-1]) {
+				name(tok)
+			}
+			rest = rest[:i]
+		}
+	}
+	toks := strings.Fields(rest)
+	if last := len(toks) - 1; last >= 0 && strings.HasPrefix(toks[last], "@") {
+		for pos := range strings.SplitSeq(toks[last][1:], ",") {
+			p, err := strconv.Atoi(pos)
+			if err != nil || p < 1 || p > last {
+				continue
+			}
+			// A placeholder behind a range operator alone, such as ^*, is as
+			// bare as * is.
+			if moved := toks[p-1]; strings.TrimLeft(moved, "^~<>=!vV") != "*" {
+				name(moved)
+				continue
+			}
+			for i := p - 2; i >= 0; i-- {
+				if _, ok := eligible(toks[i]); ok && toks[i] != "*" {
+					name(toks[i])
+					break
+				}
+			}
+		}
+	} else {
+		for _, tok := range toks {
+			if tok != "*" {
+				name(tok)
+			}
 		}
 	}
 	dirs := strings.Split(b.Path, "/")
