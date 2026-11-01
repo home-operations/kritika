@@ -119,6 +119,13 @@ Reactions are counted on GitHub alone and need polling enabled.
 proxy for runner Jobs. Review why a host was blocked before adding it to
 [`egress.allow`](/security/#the-egress-gateway).
 
+**Dependency ratings** lists, on an account's page, each dependency that more
+than one pull request updated in the period, with the risk the
+[scorer](/confidence/#risk) gave each update before any floor, where the pull
+request moved that one version alone, and the reach it gave the dependency. A dependency rated at more than one level drifted; the
+most drifted come first. Use it to see whether the scorer answers the same
+way twice for the same dependency, and which dependencies it does not.
+
 In **Usage & costs**, select a repository, model or review to inspect spending.
 **Unpriced** means a call has no known price and totals are incomplete. API
 spending excludes subscription fees. Cache details depend on transcript retention.

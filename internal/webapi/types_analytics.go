@@ -95,3 +95,26 @@ type Analytics struct {
 	Repositories []RepoActivity       `json:"repositories"`
 	Refusals     []EgressRefusal      `json:"refusals"`
 }
+
+// DependencyDrift is how one dependency's updates were rated over the
+// window, from the newest scored review of each pull request that moved
+// it: the risk the judge gave each update before any hold, where the
+// change moved that version alone, and the reach it gave the dependency,
+// counted, with the last update's rating, whose risk is "" where the
+// change did more. A dependency rated at more levels than one drifted.
+type DependencyDrift struct {
+	Repository string `json:"repository"`
+	// Path is the file that moves the dependency and Dependency the line,
+	// with its version blanked, that names it there.
+	Path       string `json:"path"`
+	Dependency string `json:"dependency"`
+	Bumps      int    `json:"bumps"`
+	// Levels is how many risk levels the updates were rated at.
+	Levels    int                  `json:"levels"`
+	Risks     map[review.Risk]int  `json:"risks"`
+	Reaches   map[review.Reach]int `json:"reaches"`
+	LastAt    time.Time            `json:"lastAt"`
+	LastRisk  review.Risk          `json:"lastRisk"`
+	LastReach review.Reach         `json:"lastReach"`
+	LastStep  review.Step          `json:"lastStep"`
+}

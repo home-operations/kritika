@@ -196,6 +196,33 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/analytics') && u.searchParams.get('group') === 'week')).toBe(true);
 });
 
+test('dependency ratings list each updated dependency with its risks and reaches, the most drifted first', async ({ page }) => {
+  await page.goto(`/${T}/analytics`);
+  const deps = page.getByRole('region', { name: 'Dependency ratings' });
+  await expect(deps.getByRole('columnheader')).toHaveText(['Repository', 'Dependency', 'Updates', 'Risks', 'Reaches', 'Last']);
+  const rows = deps.locator('tbody tr');
+  await expect(rows).toHaveCount(g.dependencyDrift.length);
+  await expect(rows.first()).toHaveClass(/drifted/);
+  await expect(rows.first()).toContainText('tag: *');
+  await expect(rows.first()).toContainText('kubernetes/apps/o11y/kube-prometheus-stack/app/ocirepository.yaml');
+  await expect(rows.first()).toContainText('medium 3 · high 1');
+  await expect(rows.first()).toContainText('central 4');
+  await expect(rows.first()).toContainText('minor · high');
+  await expect(rows.nth(1)).not.toHaveClass(/drifted/);
+  await expect(rows.nth(1)).toContainText('low 2');
+  await expect(deps.locator('td.name-fill').first()).toHaveAttribute('title', `${g.dependencyDrift[0]!.path} ${g.dependencyDrift[0]!.dependency}`);
+
+  await g.mockApi(page, [[new RegExp(`${g.SLUG}/analytics/dependencies$`), []], ...g.defaultApi()]);
+  await page.reload();
+  await expect(deps).toContainText('No dependency was updated more than once in this period.');
+});
+
+test('the instance analytics has no dependency ratings', async ({ page }) => {
+  await page.goto('/#/analytics');
+  await expect(page.getByRole('region', { name: 'Most reviewed repositories' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Dependency ratings' })).toHaveCount(0);
+});
+
 test('tables over time read newest first', async ({ page }) => {
   const point = g.analytics.series[0]!;
   const series = [point, { ...point, key: '2026-09-02', reviews: 7, findings: { p0: 4, p1: 0, p2: 0 } }];
