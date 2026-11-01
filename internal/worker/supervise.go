@@ -33,8 +33,12 @@ const (
 	// superviseInterval is how often supervision looks at a running run.
 	superviseInterval = 10 * time.Second
 	// heartbeatStale is how old a runner's heartbeat can get before the run
-	// is treated as dead: six missed beats, to ride out a slow database.
-	heartbeatStale = 6 * runspec.HeartbeatInterval
+	// is treated as dead. A heartbeat goes through the gateway as a report
+	// does, so an outage silences both. This outlasts a report's last attempt,
+	// and the beats either side of it, because ending the run sooner can lose
+	// an answer already paid for. A pod that dies is seen sooner, by its Job.
+	// Only a wedged runner waits this long.
+	heartbeatStale = runspec.ReportRetryWindow + runspec.ReportTimeout + 2*runspec.HeartbeatInterval
 )
 
 // supervision is what the worker watches while a runner works.

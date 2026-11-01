@@ -14,6 +14,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // fakeState is a run as the database reports it, changed by the test while
@@ -278,5 +279,29 @@ func TestSuperviseLeavesParentCancellation(t *testing.T) {
 	res, cause := supervise(ctx, supervision{every: time.Hour, stale: time.Minute, heartbeat: state.heartbeat, logger: slog.New(slog.DiscardHandler)}, b, executor.Spec{})
 	if cause != nil || !errors.Is(res.Err, context.Canceled) {
 		t.Fatalf("cause = %v, err = %v", cause, res.Err)
+	}
+}
+
+// TestHeartbeatStaleOutlastsReportRetries: a gateway outage silences a runner's
+// heartbeat and its reports together. The last attempt of a report can start at
+// the end of its retry window and then hang for its timeout. A worker that ended
+// the run within that can lose an answer already paid for.
+func TestHeartbeatStaleOutlastsReportRetries(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		age  time.Duration
+		want error
+	}{
+		{"past the old six missed beats", 6*runspec.HeartbeatInterval + time.Second, nil},
+		{"as long as a report's last attempt", runspec.ReportRetryWindow + runspec.ReportTimeout, nil},
+		{"past the bound", heartbeatStale + time.Second, errHeartbeatLost},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := supervision{stale: heartbeatStale, logger: slog.New(slog.DiscardHandler),
+				heartbeat: func(context.Context) (time.Duration, bool, error) { return tt.age, true, nil }}
+			if err := s.check(t.Context()); !errors.Is(err, tt.want) {
+				t.Fatalf("check = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }

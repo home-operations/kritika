@@ -122,8 +122,16 @@ func TestPartCheckpointReadIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Saved before the gateway bounded saves, and larger than a whole read.
+	legacy, err := json.Marshal(strings.Repeat("x", maxCheckpointRead))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
-		for part := 1; part <= 4; part++ {
+		if err := SavePartCheckpoint(ctx, tx, g.RunID, "inputs", 1, legacy); err != nil {
+			return err
+		}
+		for part := 2; part <= 5; part++ {
 			if err := SavePartCheckpoint(ctx, tx, g.RunID, "inputs", part, payload); err != nil {
 				return err
 			}
@@ -132,8 +140,8 @@ func TestPartCheckpointReadIsBounded(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if len(rows) != 2 || rows[0].Part != 1 || rows[1].Part != 2 {
-			t.Errorf("read %d checkpoints, want the first 2", len(rows))
+		if len(rows) != 2 || rows[0].Part != 2 || rows[1].Part != 3 {
+			t.Errorf("read %d checkpoints, want parts 2 and 3", len(rows))
 		}
 		// The read leaves the transaction usable.
 		_, err = ReadPartCheckpoints(ctx, tx, g.RunID, "other")

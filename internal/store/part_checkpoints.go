@@ -20,10 +20,11 @@ const maxCheckpointRead = 32 << 20
 
 // ReadPartCheckpoints reads only the current run's matching input snapshot,
 // within maxCheckpointRead. A part left out runs again, as one with no
-// checkpoint does.
+// checkpoint does. A row past the bound stays in the database, since one saved
+// before the gateway bounded saves can be of any size.
 func ReadPartCheckpoints(ctx context.Context, tx pgx.Tx, runID, inputHash string) ([]PartCheckpoint, error) {
 	rows, err := tx.Query(ctx, `SELECT part, source_run_id::text, payload FROM review_part_checkpoints
-		WHERE runner_run_id = $1 AND input_hash = $2 ORDER BY part`, runID, inputHash)
+		WHERE runner_run_id = $1 AND input_hash = $2 AND octet_length(payload) <= $3 ORDER BY part`, runID, inputHash, maxCheckpointRead)
 	if err != nil {
 		return nil, fmt.Errorf("store: read part checkpoints: %w", err)
 	}

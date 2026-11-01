@@ -3006,7 +3006,7 @@ func checkSupervision(
 			t.Fatalf("forge status while the runner works = %q", forgeStatus)
 		}
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.Job.RunID)
+			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '10 minutes' WHERE id = $1`, spec.Job.RunID)
 			return err
 		})
 		if err != nil {

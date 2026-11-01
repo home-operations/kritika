@@ -41,6 +41,17 @@ const (
 // ReportCheckpointInput names a part input hash on ReportCheckpointsPath.
 const ReportCheckpointInput = "input"
 
+// A runner keeps a report going while the gateway is out of reach: a replica
+// restarts under the run in every rollout, and a lost report can be a model's
+// answer already paid for. ReportRetryWindow is how long it starts new attempts,
+// and ReportTimeout is how long one of them can then hang, since a replica that
+// dies mid-request answers nothing. A heartbeat takes the same route, so the
+// worker's patience with a silent run must outlast both.
+const (
+	ReportRetryWindow = 3 * time.Minute
+	ReportTimeout     = 2 * time.Minute
+)
+
 // IndexUploadTimeout is how long one upload of a run's index can take. The
 // indexer's limits allow hundreds of megabytes, so the gateway's usual bound
 // on reading a request does not hold for it.

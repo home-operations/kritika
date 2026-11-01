@@ -15,9 +15,8 @@ import (
 
 // A replica's liveness on the River jobs it works: a beat every
 // jobHeartbeatInterval. A job whose last beat is older than jobAbandonedAfter
-// belongs to a replica that died. That is six missed beats, as a runner's
-// heartbeat gets, so a slow database alone never has a live job rescued and
-// run twice. A replica that cannot write a beat for jobFenceAfter fences
+// belongs to a replica that died. That is six missed beats, so a slow database
+// alone never has a live job rescued and run twice. A replica that cannot write a beat for jobFenceAfter fences
 // itself: it ends the job's context an interval before the leader can hand
 // the job to another replica. So a replica cut off from the database alone,
 // its runner pod still working, never has its job worked twice either.

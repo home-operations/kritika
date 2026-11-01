@@ -248,8 +248,9 @@ under the Cluster's `postgresql.parameters`.
 A `pool_ping_timeout` in a URI
 replaces that pool's five-second bound on a ping of an idle connection.
 CNPG's `cnpg_backends_total` metric shows what each `application_name`
-holds. Runner Jobs connect as `kritika-app` too, so that name counts their
-connections together with the replicas' application pools.
+holds. `kritika-app` counts the replicas' application pools, which also write
+what runner Jobs report to the gateway. Runner Jobs open no connection of their
+own.
 
 The leader runs hourly retention sweeps of transcripts, egress refusals,
 settled model invocations, stored diffs and agent conversations. The sweeps

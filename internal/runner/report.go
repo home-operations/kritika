@@ -16,22 +16,16 @@ import (
 )
 
 // A report is sent again for as long as reportRetryWindow when the gateway is
-// out of reach or says the trouble is its own: a replica restarts under the
-// run in every rollout, and a lost report can be a model's answer already paid
-// for. The context of the report ends it sooner. They are variables for the
-// tests.
+// out of reach or says the trouble is its own. The context of the report ends
+// it sooner. They are variables for the tests.
 var (
-	reportRetryWindow = 5 * time.Minute
+	reportRetryWindow = runspec.ReportRetryWindow
 	reportBackoff     = time.Second
 	reportMaxBackoff  = 15 * time.Second
 )
 
-// Bounds on one attempt. A gateway replica that dies mid-request answers
-// nothing, so only these end the wait for it.
-const (
-	reportTimeout    = 2 * time.Minute
-	heartbeatTimeout = 10 * time.Second
-)
+// heartbeatTimeout bounds one heartbeat, as runspec.ReportTimeout does a report.
+const heartbeatTimeout = 10 * time.Second
 
 // maxReportAnswer bounds what the gateway's answer is read to: the part
 // checkpoints of a run, or an error.
@@ -49,7 +43,7 @@ func newReporter(p runspec.Spec, secrets runspec.Secrets) *reporter {
 
 // authorize makes sure that the gateway takes this run's reports.
 func (r *reporter) authorize(ctx context.Context) error {
-	return r.send(ctx, reportTimeout, http.MethodGet, runspec.ReportAuthorizePath, nil, nil)
+	return r.send(ctx, runspec.ReportTimeout, http.MethodGet, runspec.ReportAuthorizePath, nil, nil)
 }
 
 // heartbeat is tried once. Another comes along soon, and one that retries
@@ -99,7 +93,7 @@ func (r *reporter) index(ctx context.Context, pack runspec.IndexPack, chunks []r
 func (r *reporter) checkpoints(ctx context.Context, input string) ([]runspec.PartCheckpoint, error) {
 	var saved []runspec.PartCheckpoint
 	path := runspec.ReportCheckpointsPath + "?" + url.Values{runspec.ReportCheckpointInput: {input}}.Encode()
-	err := r.send(ctx, reportTimeout, http.MethodGet, path, nil, &saved)
+	err := r.send(ctx, runspec.ReportTimeout, http.MethodGet, path, nil, &saved)
 	return saved, err
 }
 
@@ -118,7 +112,7 @@ func (r *reporter) post(ctx context.Context, path string, v, out any) error {
 	if err != nil {
 		return fmt.Errorf("runner: encode report %s: %w", path, err)
 	}
-	return r.send(ctx, reportTimeout, http.MethodPost, path, func() io.Reader { return bytes.NewReader(body) }, out)
+	return r.send(ctx, runspec.ReportTimeout, http.MethodPost, path, func() io.Reader { return bytes.NewReader(body) }, out)
 }
 
 // send makes a request, again while its failure is worth another try. The window

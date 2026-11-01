@@ -82,6 +82,7 @@ func TestRunnerTokenAuthority(t *testing.T) {
 	t.Run("a revocation waits for a write in flight and refuses the next", func(t *testing.T) {
 		held, token := runnerWriteFixture(t, s, alpha, RunnerKindIndex)
 		revoked := make(chan error, 1)
+		waited := true
 		err := s.WithRunner(ctx, token, func(pgx.Tx, RunnerGrant) error {
 			go func() {
 				revoked <- s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
@@ -91,6 +92,7 @@ func TestRunnerTokenAuthority(t *testing.T) {
 			}()
 			select {
 			case err := <-revoked:
+				waited = false
 				t.Errorf("the revocation did not wait for the write: %v", err)
 			case <-time.After(200 * time.Millisecond):
 			}
@@ -99,8 +101,10 @@ func TestRunnerTokenAuthority(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := <-revoked; err != nil {
-			t.Fatal(err)
+		if waited {
+			if err := <-revoked; err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := s.WithRunner(ctx, token, func(pgx.Tx, RunnerGrant) error { return nil }); !errors.Is(err, ErrRunnerToken) {
 			t.Fatalf("WithRunner after the revocation = %v, want ErrRunnerToken", err)
