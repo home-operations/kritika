@@ -50,7 +50,12 @@ from **0 to 5**, from the findings and that answer:
 
 When evidence backs a concern, the scorer can raise it. Two things do not
 count as a concern by themselves: what the summary says merging sets off,
-and post-deployment checks.
+and post-deployment checks. kritika lists for the scorer the versions the
+change moves that none of the sources the review recorded names, by the
+version or by the dependency. Such a version is not shown read: if neither
+the description carries its release notes nor a checked line covers what
+its step changes, that is a prerequisite nothing shows was met. A line that
+moves no dependency, such as an address, needs none.
 
 Scoring uses tokens and adds cost. The scorer has no tools and sees only the
 supplied prompt. Since there are no tool outputs to leave room for, the
