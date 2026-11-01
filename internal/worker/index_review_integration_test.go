@@ -159,17 +159,20 @@ func TestIndexCancelledJobRetry(t *testing.T) {
 	if _, err := env.queue.JobCancel(ctx, job.ID); err != nil {
 		t.Fatal(err)
 	}
+	// River clears the earlier attempt's cancellation request on an
+	// explicit retry (riverqueue/river#1564), so the retried attempt runs.
 	retried, err := env.queue.JobRetry(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(retried.Metadata), "cancel_attempted_at") {
-		t.Fatal("River retry no longer retains cancellation; revisit documented limitation")
+	if strings.Contains(string(retried.Metadata), "cancel_attempted_at") {
+		t.Fatalf("River retry kept the cancellation request: %s", retried.Metadata)
 	}
 	job = env.claim(2)
-	if err := env.st.WithAccount(ctx, env.account.ID(), func(tx pgx.Tx) error { return store.LockIndexJob(ctx, tx, env.account.ID(), job.ID, job.Attempt) }); err == nil {
-		t.Fatal("cancel marker bypassed")
+	if err := env.st.WithAccount(ctx, env.account.ID(), func(tx pgx.Tx) error { return store.LockIndexJob(ctx, tx, env.account.ID(), job.ID, job.Attempt) }); err != nil {
+		t.Fatalf("retried attempt refused: %v", err)
 	}
+	// A cancellation of the running attempt fences it as before.
 	if _, err := env.queue.JobCancel(ctx, job.ID); err != nil {
 		t.Fatal(err)
 	}
