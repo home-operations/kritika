@@ -2,7 +2,7 @@
 # smoke.sh boots `kritika serve` the way the chart deploys it and makes sure
 # that it comes up: two replicas in a throwaway kind cluster, against a
 # CloudNativePG Postgres with VectorChord mounted as an image volume extension.
-# The owner, application and runner roles are as the docs set them up. It fails
+# The owner and application roles are as the docs set them up. It fails
 # on a pod that never becomes ready (a startup panic, a refused configuration,
 # a database the roles cannot use). It also fails on `helm test`, and when the
 # replicas do not settle on exactly one leader with the configuration applied.
@@ -107,7 +107,6 @@ role_secret() {
 }
 role_secret kritika-postgres-credentials kritika
 role_secret kritika-postgres-app kritika_app
-role_secret kritika-postgres-runner kritika_runner
 kubectl -n "$ns" create secret generic kritika-smoke-auth --from-literal=password="$(password)" \
   --dry-run=client -o yaml | kubectl apply -f -
 # A variable the runner container's env takes from a Secret.
@@ -178,21 +177,9 @@ spec:
   login: true
   passwordSecret:
     name: kritika-postgres-app
----
-apiVersion: postgresql.cnpg.io/v1
-kind: DatabaseRole
-metadata:
-  name: kritika-runner
-spec:
-  cluster:
-    name: kritika-postgres
-  name: kritika_runner
-  login: true
-  passwordSecret:
-    name: kritika-postgres-runner
 MANIFEST
 kubectl -n "$ns" wait cluster/kritika-postgres --for=condition=Ready --timeout=5m
-kubectl -n "$ns" wait database/kritika databaserole/kritika-app databaserole/kritika-runner \
+kubectl -n "$ns" wait database/kritika databaserole/kritika-app \
   --for=jsonpath='{.status.applied}'=true --timeout=2m
 
 log "installing the chart"

@@ -5,30 +5,23 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
-func reportPartCount(ctx context.Context, st *store.Store, p runspec.Spec, count int, logger *slog.Logger) {
+func reportPartCount(ctx context.Context, report *reporter, p runspec.Spec, count int, logger *slog.Logger) {
 	if p.Agent != nil && p.Agent.Parts > 1 {
-		runnerPartSlots(st, p, logger)(ctx, max(1, count))
+		runnerPartSlots(report, p, logger)(ctx, max(1, count))
 	}
 }
 
-func runnerPartSlots(st *store.Store, p runspec.Spec, logger *slog.Logger) func(context.Context, int) int {
+func runnerPartSlots(report *reporter, p runspec.Spec, logger *slog.Logger) func(context.Context, int) int {
 	granted := max(1, p.Agent.Parallel)
 	return func(ctx context.Context, remaining int) int {
 		queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		var slots int
-		err := st.WithRunnerJob(queryCtx, p.RunID, func(tx pgx.Tx) error {
-			var err error
-			slots, err = store.ReportRemainingParts(queryCtx, tx, p.RunID, remaining)
-			return err
-		})
+		slots, err := report.partsRemaining(queryCtx, remaining)
 		if err != nil {
 			if ctx.Err() == nil {
 				logger.Warn("review part capacity not refreshed", "error", err)

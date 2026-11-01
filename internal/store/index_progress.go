@@ -38,7 +38,7 @@ func LockIndexBuild(ctx context.Context, tx pgx.Tx, accountID, repositoryID stri
 // MintIndexRunnerToken fences capability creation against superseded attempts
 // and discarded staging. Revocation and minting share the same job lock.
 func (s *Store) MintIndexRunnerToken(ctx context.Context, accountID, runID string, jobID int64, attempt int) (string, error) {
-	token := RandomToken()
+	token := newRunnerToken(accountID, runID)
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		if err := LockIndexJob(ctx, tx, accountID, jobID, attempt); err != nil {
 			return err

@@ -67,15 +67,6 @@ func TestChatGPTSessionLifecycle(t *testing.T) {
 			}
 		})
 	}
-	t.Run("runner cannot read tokens", func(t *testing.T) {
-		var allowed bool
-		if err := st.App().QueryRow(ctx, `SELECT has_table_privilege('kritika_runner', 'chatgpt_sessions', 'SELECT')`).Scan(&allowed); err != nil {
-			t.Fatal(err)
-		}
-		if allowed {
-			t.Fatal("runner role has access to provider credentials")
-		}
-	})
 }
 
 func TestChatGPTSessionRenewal(t *testing.T) {

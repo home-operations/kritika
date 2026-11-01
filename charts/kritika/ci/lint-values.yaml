@@ -6,8 +6,6 @@ database:
     existingSecret: kritika-postgres-app
   owner:
     existingSecret: kritika-postgres-credentials
-  runner:
-    existingSecret: kritika-postgres-runner
 config:
   webUrl: https://kritika.example.com
   auth:

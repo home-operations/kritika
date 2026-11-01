@@ -178,12 +178,9 @@ gatewayUrl: {{ include "kritika.gatewayURL" . | quote }}
 {{ include "kritika.gatewayCacheSettings" . }}
 {{- end }}
 databaseAppRole: {{ .Values.database.app.role | quote }}
-databaseRunnerRole: {{ .Values.database.runner.role | quote }}
 executor: kubernetes
 runner:
   serviceAccount: {{ include "kritika.runnerServiceAccountName" . | quote }}
-  databaseSecret: {{ tpl .Values.database.runner.existingSecret . | quote }}
-  databaseSecretKey: {{ .Values.database.runner.key | quote }}
   jobTemplate: {{ include "kritika.runnerJobTemplate" . | nindent 4 }}
   podTemplate: {{ include "kritika.runnerPodTemplate" . | nindent 4 }}
 {{- end -}}
@@ -222,8 +219,6 @@ an `env` key that duplicates one of them.
 {{- end }}
 - name: KRITIKA_DATABASE_APP_ROLE
   value: {{ .Values.database.app.role | quote }}
-- name: KRITIKA_DATABASE_RUNNER_ROLE
-  value: {{ .Values.database.runner.role | quote }}
 {{- end }}
 {{- if and .Values.gatewayCache.enabled (eq .Values.gatewayCache.storage.type "s3") .Values.gatewayCache.storage.existingSecret }}
 - name: KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY
@@ -252,10 +247,6 @@ an `env` key that duplicates one of them.
   value: kubernetes
 - name: KRITIKA_RUNNER_SERVICE_ACCOUNT
   value: {{ include "kritika.runnerServiceAccountName" . | quote }}
-- name: KRITIKA_RUNNER_DATABASE_SECRET
-  value: {{ tpl .Values.database.runner.existingSecret . | quote }}
-- name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
-  value: {{ .Values.database.runner.key | quote }}
 - name: KRITIKA_RUNNER_JOB_TEMPLATE
   value: {{ include "kritika.runnerJobTemplate" . | fromYaml | toJson | quote }}
 - name: KRITIKA_RUNNER_POD_TEMPLATE
@@ -266,7 +257,7 @@ an `env` key that duplicates one of them.
 {{/* Environment names corresponding to the operational configuration present in the file. */}}
 {{- define "kritika.configEnv" -}}
 {{- $names := dict -}}
-{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxEntrySize" "gatewayCacheStorage" "gatewayCacheS3Endpoint" "gatewayCacheS3Region" "gatewayCacheS3Bucket" "gatewayCacheS3Prefix" "gatewayCacheS3ForcePathStyle" "aquaRegistryUrl" "aquaRegistryRefresh" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
+{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxEntrySize" "gatewayCacheStorage" "gatewayCacheS3Endpoint" "gatewayCacheS3Region" "gatewayCacheS3Bucket" "gatewayCacheS3Prefix" "gatewayCacheS3ForcePathStyle" "aquaRegistryUrl" "aquaRegistryRefresh" "webUrl" "databaseAppRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
 {{- if and (hasKey $ $key) (ne (get $ $key) nil) -}}
 {{- $_ := set $names (printf "KRITIKA_%s" ($key | snakecase | upper)) $key -}}
 {{- end -}}

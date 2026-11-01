@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -27,7 +26,6 @@ import (
 // `mise run test-integration` provisions:
 //   KRITIKA_TEST_OWNER_URL   database owner (not superuser)
 //   KRITIKA_TEST_APP_URL     application role, owns nothing
-//   KRITIKA_TEST_RUNNER_URL  runner role, owns nothing
 //   KRITIKA_TEST_SUPER_URL   a superuser, used only to assert refusal
 
 func testEnv(t testing.TB, key string) string {
@@ -50,7 +48,7 @@ func openStore(t testing.TB) *Store {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(s.Close)
-	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 	return s
@@ -79,7 +77,7 @@ func TestSchemaReadyWaitsForRiver(t *testing.T) {
 		}
 	}
 	ready(false, "with River's migration 8 unapplied")
-	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 	ready(true, "once migrated")
@@ -88,7 +86,7 @@ func TestSchemaReadyWaitsForRiver(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready(false, "with a River table not yet granted")
-	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 	ready(true, "once granted")
@@ -144,7 +142,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if ready, err := s.SchemaReady(t.Context()); err != nil || !ready {
 		t.Fatalf("SchemaReady after Migrate = %v, %v", ready, err)
 	}
-	if err := s.Migrate(t.Context(), "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(t.Context(), "kritika_app"); err != nil {
 		t.Fatalf("second Migrate: %v", err)
 	}
 	names, _ := fs.Glob(migrationFS, "migrations/*.sql")
@@ -410,109 +408,6 @@ func TestRepositoryTraits(t *testing.T) {
 	}
 }
 
-func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
-	s := openStore(t)
-	ctx := t.Context()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
-		t.Fatalf("ApplyConfig: %v", err)
-	}
-	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
-	var runID string
-	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index') RETURNING id`, alpha).Scan(&runID)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatalf("Open runner: %v", err)
-	}
-	t.Cleanup(runner.Close)
-	token, err := s.MintRunnerToken(ctx, alpha, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner = runner.ForRunner(token)
-
-	tests := []struct {
-		name    string
-		stmt    string
-		allowed bool
-	}{
-		{name: "phase", stmt: `UPDATE runner_runs SET phase = 'fetching' WHERE id = $1`, allowed: true},
-		{name: "heartbeat", stmt: `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, allowed: true},
-		{name: "error", stmt: `UPDATE runner_runs SET phase = 'failed', error = 'boom' WHERE id = $1`, allowed: true},
-		{name: "account", stmt: `UPDATE runner_runs SET account_id = '` + beta + `' WHERE id = $1`},
-		{name: "log tail", stmt: `UPDATE runner_runs SET log_tail = 'forged' WHERE id = $1`},
-		{name: "exit code", stmt: `UPDATE runner_runs SET exit_code = 0 WHERE id = $1`},
-		{name: "secret swept", stmt: `UPDATE runner_runs SET secret_swept_at = now() WHERE id = $1`},
-		{name: "database credential", stmt: `UPDATE runner_runs SET access_token_hash = NULL WHERE id = $1`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-				tag, err := tx.Exec(ctx, tt.stmt, runID)
-				if err == nil && tag.RowsAffected() != 1 {
-					return errors.New("no row updated")
-				}
-				return err
-			})
-			pgErr, refused := errors.AsType[*pgconn.PgError](err)
-			switch {
-			case tt.allowed && err != nil:
-				t.Fatalf("a runner must be able to update its %s: %v", tt.name, err)
-			case !tt.allowed && (!refused || pgErr.Code != "42501"):
-				t.Fatalf("a runner updating its %s must be refused permission, got %v", tt.name, err)
-			}
-		})
-	}
-	var account string
-	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT account_id FROM runner_runs WHERE id = $1`, runID).Scan(&account)
-	}); err != nil || account != alpha {
-		t.Fatalf("run account = %q, %v", account, err)
-	}
-	// What a runner writes carries its run's account: a pack under another
-	// account is refused by the policy, not left invisible to every reader.
-	for _, tt := range []struct {
-		name    string
-		account string
-		allowed bool
-	}{{"own account", alpha, true}, {"another account", beta, false}} {
-		t.Run("index pack under "+tt.name, func(t *testing.T) {
-			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `INSERT INTO index_packs (runner_run_id, account_id, mode) VALUES ($1, $2, 'full')`, runID, tt.account)
-				return err
-			})
-			pgErr, refused := errors.AsType[*pgconn.PgError](err)
-			switch {
-			case tt.allowed && err != nil:
-				t.Fatalf("a runner must be able to write its pack: %v", err)
-			case !tt.allowed && (!refused || pgErr.Code != "42501"):
-				t.Fatalf("a pack under another account must be refused, got %v", err)
-			}
-		})
-		t.Run("conversation under "+tt.name, func(t *testing.T) {
-			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens)
-					VALUES ($1, $2, $3, '{}', 1)`, runID, tt.account, runID)
-				return err
-			})
-			pgErr, refused := errors.AsType[*pgconn.PgError](err)
-			switch {
-			case tt.allowed && err != nil:
-				t.Fatalf("a runner must be able to keep its conversation: %v", err)
-			case !tt.allowed && (!refused || pgErr.Code != "42501"):
-				t.Fatalf("a conversation under another account must be refused, got %v", err)
-			}
-		})
-	}
-	t.Cleanup(func() {
-		_, _ = s.owner.Exec(context.Background(), `DELETE FROM agent_conversations WHERE runner_run_id = $1`, runID)
-	})
-}
-
 func TestLeaderLockIsExclusive(t *testing.T) {
 	s := openStore(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -564,7 +459,7 @@ func TestMain(m *testing.M) {
 		pool, err := pgxpool.New(ctx, super)
 		if err == nil {
 			_, _ = pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;
-				GRANT ALL ON SCHEMA public TO kritika; GRANT USAGE ON SCHEMA public TO kritika_app, kritika_runner;
+				GRANT ALL ON SCHEMA public TO kritika; GRANT USAGE ON SCHEMA public TO kritika_app;
 				CREATE EXTENSION IF NOT EXISTS vchord CASCADE`)
 			pool.Close()
 		}
@@ -580,7 +475,7 @@ var _ = filepath.Join
 func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 	// The suites share one database: leave no index schema behind.

@@ -5,7 +5,7 @@ import "syscall"
 // hideEnviron makes the runner process non-dumpable, which leaves its
 // /proc/<pid> entries owned by root. A command the run tool executes
 // shares the runner's uid. Without hideEnviron, the command can read the git
-// token, the gateway token, and the database DSN from the runner's
+// token, the gateway token, and the report token from the runner's
 // /proc/<pid>/environ. That is true whatever environment the command itself
 // was given.
 func hideEnviron() error {

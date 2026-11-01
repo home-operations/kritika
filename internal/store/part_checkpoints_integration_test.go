@@ -5,7 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -26,11 +26,6 @@ func TestPartCheckpointRetries(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runner.Close)
 	start := func(jobID int64) Started {
 		t.Helper()
 		var started Started
@@ -58,8 +53,8 @@ func TestPartCheckpointRetries(t *testing.T) {
 	}
 	payload := json.RawMessage(`{"Result":{"Stop":"submitted","Submitted":{"findings":[]}}}`)
 	for _, p := range []json.RawMessage{payload, json.RawMessage(`{"replacement":true}`)} {
-		if err := runner.ForRunner(token).WithRunnerJob(ctx, first.RunID, func(tx pgx.Tx) error {
-			return SavePartCheckpoint(ctx, tx, first.RunID, "inputs", 1, p)
+		if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
+			return SavePartCheckpoint(ctx, tx, g.RunID, "inputs", 1, p)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -70,17 +65,15 @@ func TestPartCheckpointRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name, token, run, hash string
-		want                   int
+		name, hash string
+		want       int
 	}{
-		{"retry reads copy", freshToken, retry.RunID, "inputs", 1},
-		{"changed inputs", freshToken, retry.RunID, "changed", 0},
-		{"old token cannot read retry", token, retry.RunID, "inputs", 0},
-		{"retry cannot read source", freshToken, first.RunID, "inputs", 0},
+		{"retry reads copy", "inputs", 1},
+		{"changed inputs", "changed", 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := runner.ForRunner(tt.token).WithRunnerJob(ctx, tt.run, func(tx pgx.Tx) error {
-				rows, err := ReadPartCheckpoints(ctx, tx, tt.run, tt.hash)
+			if err := s.WithRunner(ctx, freshToken, func(tx pgx.Tx, g RunnerGrant) error {
+				rows, err := ReadPartCheckpoints(ctx, tx, g.RunID, tt.hash)
 				if err != nil {
 					return err
 				}
@@ -108,6 +101,42 @@ func TestPartCheckpointRetries(t *testing.T) {
 		if len(rows) != 0 {
 			t.Fatal("manual review reused an earlier job")
 		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPartCheckpointReadIsBounded: what a run saved decides how much a read
+// holds in the service, so a read stops at its budget. The parts it leaves out
+// run again.
+func TestPartCheckpointReadIsBounded(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	_, token := runnerWriteFixture(t, s, accountID(t, s, "alpha"), RunnerKindReview)
+	const third = maxCheckpointRead/3 + 1
+	payload, err := json.Marshal(strings.Repeat("x", third))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
+		for part := 1; part <= 4; part++ {
+			if err := SavePartCheckpoint(ctx, tx, g.RunID, "inputs", part, payload); err != nil {
+				return err
+			}
+		}
+		rows, err := ReadPartCheckpoints(ctx, tx, g.RunID, "inputs")
+		if err != nil {
+			return err
+		}
+		if len(rows) != 2 || rows[0].Part != 1 || rows[1].Part != 2 {
+			t.Errorf("read %d checkpoints, want the first 2", len(rows))
+		}
+		// The read leaves the transaction usable.
+		_, err = ReadPartCheckpoints(ctx, tx, g.RunID, "other")
 		return err
 	}); err != nil {
 		t.Fatal(err)

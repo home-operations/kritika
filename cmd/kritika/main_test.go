@@ -262,10 +262,10 @@ func TestChatGPTLoginRequiresConfigFile(t *testing.T) {
 }
 
 func TestStoreOptionsOwnerDSN(t *testing.T) {
-	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner", DatabaseRunnerRole: "custom_runner"}
+	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner"}
 	opts := storeOptions(cfg, slog.New(slog.DiscardHandler))
-	if opts.OwnerURL != "postgres://owner" || opts.AppURL != "postgres://app" || opts.ExpectedRole != "" {
-		t.Errorf("owner = %q, app = %q, role = %q; want the owner and app DSNs, no role", opts.OwnerURL, opts.AppURL, opts.ExpectedRole)
+	if opts.OwnerURL != "postgres://owner" || opts.AppURL != "postgres://app" {
+		t.Errorf("owner = %q, app = %q; want the owner and app DSNs", opts.OwnerURL, opts.AppURL)
 	}
 }
 

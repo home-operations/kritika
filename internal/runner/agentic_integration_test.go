@@ -5,6 +5,7 @@ package runner
 import (
 	"log/slog"
 	"maps"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -13,10 +14,19 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
+
+// gatewayReporter is a run's reporter over a real gateway on st.
+func gatewayReporter(t *testing.T, st *store.Store, token string) *reporter {
+	t.Helper()
+	srv := httptest.NewServer(&gateway.Server{Store: st, Logger: slog.New(slog.DiscardHandler)})
+	t.Cleanup(srv.Close)
+	return &reporter{gatewayURL: srv.URL, token: token}
+}
 
 // TestWriteAgentRun saves the run tool's command counts, and the limit
 // that made the loop tell the agent to submit, as the runner writes them.
@@ -35,13 +45,6 @@ func TestWriteAgentRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, _ := f.Account(configfile.ForgeGitHub, "command-counts")
-	runner, err := store.Open(ctx, store.Options{
-		AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runner.Close)
 	for _, tt := range []struct {
 		counts map[string]int
 		forced agent.ForcedBy
@@ -63,7 +66,7 @@ func TestWriteAgentRun(t *testing.T) {
 		}
 		rec.useTools(agentTools{})
 		rec.commandCounts = counts
-		if err := writeAgentRun(ctx, runner.ForRunner(token), runspec.Spec{RunID: id}, rec, "failed"); err != nil {
+		if err := writeAgentRun(ctx, gatewayReporter(t, st, token), rec, "failed"); err != nil {
 			t.Fatal(err)
 		}
 		if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {

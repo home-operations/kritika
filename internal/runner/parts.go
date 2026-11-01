@@ -21,7 +21,6 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 // splitReview is the parts a review is split into, the paths of each, nil
@@ -347,22 +346,22 @@ func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 // findings every part submitted under a joined summary, and how each part
 // ended.
 func runParts(
-	ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
+	ctx context.Context, report *reporter, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
 	locks *partLocks, parts []reviewPart, logger *slog.Logger,
 ) error {
 	hash, err := partInputHash(p, parts, tools)
 	if err != nil {
 		return err
 	}
-	saved, err := loadParts(ctx, st, p, hash, parts, logger)
+	saved, err := loadParts(ctx, report, hash, parts, logger)
 	if err != nil {
 		return err
 	}
 	save := func(ctx context.Context, part int, result agent.Result) error {
-		return savePart(ctx, st, p, secrets, hash, part, result, tools)
+		return savePart(ctx, report, secrets, hash, part, result, tools)
 	}
 	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, locks, parts, logger, saved, save,
-		runnerPartSlots(st, p, logger))
+		runnerPartSlots(report, p, logger))
 	if err != nil {
 		return err
 	}
@@ -395,9 +394,9 @@ func runParts(
 		// its own, as a cancelled agent's is.
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
 		defer cancel()
-		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), writeAgentRun(wctx, st, p, rec, "failed"))
+		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), writeAgentRun(wctx, report, rec, "failed"))
 	}
-	return writeAgentRun(ctx, st, p, rec, "done")
+	return writeAgentRun(ctx, report, rec, "done")
 }
 
 // runPartLoops runs the agents of a split review's parts, as many at once
@@ -410,7 +409,7 @@ func runPartLoops(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
 	parts []reviewPart, logger *slog.Logger,
 	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, int) int,
-) ([]agent.Result, []store.TimelineStep, error) {
+) ([]agent.Result, []runspec.TimelineStep, error) {
 	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
 	parallel := max(p.Agent.Parallel, 1)
 	rounds := (len(parts) + parallel - 1) / parallel
@@ -418,7 +417,7 @@ func runPartLoops(
 	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "parallel", parallel, "commands", tools.commands(),
 		"search", tools.search != nil)
 	results := make([]agent.Result, len(parts))
-	steps := make([][]store.TimelineStep, len(parts))
+	steps := make([][]runspec.TimelineStep, len(parts))
 	pending := make([]int, 0, len(parts))
 	for i := range parts {
 		if len(saved) > i && saved[i].Result.Stop == agent.StopSubmitted {
@@ -474,7 +473,7 @@ func runPartLoops(
 	if err != nil {
 		return nil, nil, err
 	}
-	var timeline []store.TimelineStep
+	var timeline []runspec.TimelineStep
 	for i, partSteps := range steps {
 		for j := range partSteps {
 			partSteps[j].Part, partSteps[j].Index = i+1, len(timeline)+j
@@ -490,11 +489,11 @@ func runPartLoops(
 // why the others stopped. mergeParts also returns how each part ended, its
 // summary once it submitted. A run no part submitted for stops as its first
 // part did.
-func mergeParts(parts []reviewPart, results []agent.Result, secrets runspec.Secrets) (agent.Result, []store.AgentPart, error) {
+func mergeParts(parts []reviewPart, results []agent.Result, secrets runspec.Secrets) (agent.Result, []runspec.AgentPart, error) {
 	merged := agent.Result{ToolCalls: map[string]int{}}
 	var submitted []review.Result
 	var stops []string
-	records := make([]store.AgentPart, len(parts))
+	records := make([]runspec.AgentPart, len(parts))
 	for i, r := range results {
 		merged.Steps += r.Steps
 		merged.Usage = merged.Usage.Add(r.Usage)
@@ -504,7 +503,7 @@ func mergeParts(parts []reviewPart, results []agent.Result, secrets runspec.Secr
 		for name, n := range r.ToolCalls {
 			merged.ToolCalls[name] += n
 		}
-		records[i] = store.AgentPart{
+		records[i] = runspec.AgentPart{
 			Reviewer: parts[i].reviewer, Full: parts[i].full, Paths: parts[i].paths, Stop: string(r.Stop), Error: secrets.Mask(r.Err),
 			Steps: r.Steps, ForcedBy: string(r.ForcedBy),
 		}

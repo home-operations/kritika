@@ -23,7 +23,6 @@ roles, its public URL, a way to sign in, and its configuration file:
 helm install kritika oci://ghcr.io/home-operations/charts/kritika \
   --set database.app.existingSecret=kritika-postgres-app \
   --set database.owner.existingSecret=kritika-postgres-credentials \
-  --set database.runner.existingSecret=kritika-postgres-runner \
   --values my-values.yaml
 ```
 
@@ -104,14 +103,13 @@ what a fresh instance still lacks.
 
 ### Database
 
-The chart requires three Postgres roles, and kritika makes sure that
+The chart requires two Postgres roles, and kritika makes sure that
 they are valid at start:
 
-| Role        | Values                                                   | What it does                                             | kritika refuses one that                        |
-| ----------- | -------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
-| owner       | `database.owner.existingSecret`                          | runs migrations and applies configuration on the leader  | is a superuser                                  |
-| application | `database.app.existingSecret`, `database.app.role`       | serves everything else, under row-level security         | owns a table, is a superuser or has `BYPASSRLS` |
-| runner      | `database.runner.existingSecret`, `database.runner.role` | is handed to runner Jobs, and can only write its own run |                                                 |
+| Role        | Values                                             | What it does                                            | kritika refuses one that                        |
+| ----------- | -------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| owner       | `database.owner.existingSecret`                    | runs migrations and applies configuration on the leader | is a superuser                                  |
+| application | `database.app.existingSecret`, `database.app.role` | serves everything else, under row-level security        | owns a table, is a superuser or has `BYPASSRLS` |
 
 The `vchord` (VectorChord) and `vector` (pgvector, whose types it builds on)
 extensions must exist before the first start, and `vchord` must be in
@@ -127,16 +125,16 @@ other clients between transactions. That breaks both. `kritika_leader`
 is 1 on the replica that holds the lock.
 
 The chart supports the database as a CloudNativePG cluster in the same
-Kubernetes cluster. The chart's NetworkPolicies let kritika serve and
-runner pods reach the Postgres port only on the pods that
-`networkPolicy.postgres` selects.
+Kubernetes cluster. The chart's NetworkPolicies let kritika serve reach the
+Postgres port only on the pods that `networkPolicy.postgres` selects, and
+runner pods not at all.
 
 [Postgres with
 CloudNativePG](https://kritika.home-operations.com/database/) sets this
 up end to end. It covers a two-instance cluster with VectorChord mounted
 as an image volume extension, and the extensions through a `Database`
-resource. It also covers the application and runner roles as
-`DatabaseRole` resources, the Secrets with their `uri` key for
+resource. It also covers the application role as a
+`DatabaseRole` resource, the Secrets with their `uri` key for
 `database.*.existingSecret`, failover and backups.
 
 ### Security
@@ -145,14 +143,15 @@ Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
 - `networkPolicy.enabled`, on by default, keeps a runner pod to the
-  cluster's DNS, the database that `networkPolicy.postgres` locates and
-  the egress gateway. kritika serve runs that gateway on
+  cluster's DNS and the egress gateway. kritika serve runs that gateway on
   `service.gatewayPort`. The gateway allows what the configuration
-  file's `egress` lists, and it is the runner's only way to its model.
+  file's `egress` lists, and it is the runner's only way to its model and
+  to the database, where it writes what the runner reports.
   With the Cilium flavor, the runner pod can look up only the names of
   the cluster's Services.
-- A runner holds no provider key or App key: only a GitHub token for its
-  run, a gateway token and the runner role's database URI.
+- A runner holds no provider key, App key or database credential: only a
+  GitHub token for its run, a gateway token and a token to report what it
+  found to the gateway with.
 - The review's run tool executes the five programs that the runner image
   carries: `curl`, `find`, `gh`, `grep` and `jq`. It runs them in a root
   with bash but no package manager. It also executes those that the

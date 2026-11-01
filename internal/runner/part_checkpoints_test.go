@@ -80,7 +80,7 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 	}))
 	defer gw.Close()
 	s := reviewSpec()
-	s.Model.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
 	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
 	saved := []partCheckpoint{{SourceRun: "prior", Result: agent.Result{
 		Stop: agent.StopSubmitted, Model: "saved-model", Submitted: json.RawMessage(`{"summary":{"take":"saved"},"findings":[]}`),
@@ -136,7 +136,7 @@ func TestPartsCheckpointFailureKeepsAnswer(t *testing.T) {
 	}))
 	defer gw.Close()
 	s := reviewSpec()
-	s.Model.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
 	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
 	saves := 0
 	save := func(context.Context, int, agent.Result) error {
@@ -230,7 +230,7 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 	}))
 	defer gw.Close()
 	s := reviewSpec()
-	s.Model.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
 	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
 	ctx, cancel := context.WithCancelCause(t.Context())
 	defer cancel(nil)

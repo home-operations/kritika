@@ -307,7 +307,7 @@ commands against another pod.
 The command saves the registration and tokens in Postgres. Each replica
 reads the current access token and reuses it for up to a minute, or until
 it is due for renewal. Only the elected leader renews the rotating refresh
-token. The runner database role cannot read these credentials.
+token. A runner holds no way to read these credentials.
 
 A terminal refresh error clears the unusable tokens. Repeat the login command to
 reconnect with the saved client and host IDs. The client ID is saved as

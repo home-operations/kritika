@@ -131,7 +131,7 @@ func TestKubeStartWatchesRunnersAlone(t *testing.T) {
 // Stop. A signal ends that ctx while runs still drain.
 func TestKubeWatchOutlastsStart(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
+	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", Poll: 10 * time.Millisecond}
 	t.Cleanup(k.Stop)
 	ctx, cancel := context.WithCancel(t.Context())
 	if err := k.Start(ctx); err != nil {

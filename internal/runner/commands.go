@@ -91,7 +91,7 @@ func commandTool(
 	if len(p.Tools) > 0 {
 		var toolNotes []string
 		var err error
-		tools, toolNotes, err = newRepoTools(ctx, p.Tools, p.Model.GatewayURL, secrets.GatewayToken, home, env, p.Agent.CacheLocked,
+		tools, toolNotes, err = newRepoTools(ctx, p.Tools, p.GatewayURL, secrets.GatewayToken, home, env, p.Agent.CacheLocked,
 			slices.Sorted(maps.Keys(commandEnvs)), token, logger)
 		notes = append(notes, toolNotes...)
 		switch {

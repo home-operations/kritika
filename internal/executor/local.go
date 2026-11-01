@@ -11,16 +11,13 @@ import (
 
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
-// Local runs the runner in this process against the given store, which must
-// be opened with the runner role's DSN. It exists for tests and local
-// development. It is not a supported deployment mode, because it gives the
-// checkout the worker's credentials.
-type Local struct {
-	Store *store.Store
-}
+// Local runs the runner in this process, reporting to the gateway that the job
+// document names. It exists for tests and local development. It is not a
+// supported deployment mode, because it gives the checkout the worker's
+// credentials.
+type Local struct{}
 
 // Run implements Executor.
 func (l *Local) Run(ctx context.Context, spec Spec) Result {
@@ -33,7 +30,7 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 	// Job's mounted document, size limit included.
 	job, err := specRoundTrip(spec.Job)
 	if err == nil {
-		err = runner.Run(ctx, l.Store, job, spec.Secrets, logger)
+		err = runner.Run(ctx, job, spec.Secrets, logger)
 	}
 	logTail := tail(spec.Secrets.Mask(buf.String()), LogTailBytes)
 	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail}

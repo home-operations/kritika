@@ -5,7 +5,6 @@ package store
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -182,37 +181,6 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 	})
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
 		t.Fatalf("insert into model_calls with a foreign account_id: err = %v, want a 42501 permission-denied error", err)
-	}
-}
-
-// TestRunnerRoleCannotTouchWebTables makes sure that the web dashboard's
-// instance-level tables are not among the tables that grant() gives the
-// runner role. These tables have no RLS, and access control lives in web
-// code. A compromised runner container must never be able to read or write
-// users, sessions, or any other dashboard table.
-func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
-	openStore(t) // makes sure that Migrate/grant() ran against this schema
-	ctx := t.Context()
-	runner, err := Open(ctx, Options{
-		AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"),
-		Logger: slog.New(slog.DiscardHandler),
-	})
-	if err != nil {
-		t.Fatalf("open runner store: %v", err)
-	}
-	t.Cleanup(runner.Close)
-
-	tables := []string{
-		"users", "identities", "sessions", "login_states", "audit_events", "model_calls",
-	}
-	for _, table := range tables {
-		t.Run(table, func(t *testing.T) {
-			var n int
-			err := runner.app.QueryRow(ctx, `SELECT count(*) FROM `+pgx.Identifier{table}.Sanitize()).Scan(&n)
-			if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
-				t.Fatalf("runner querying %s: err = %v, want a 42501 permission-denied error", table, err)
-			}
-		})
 	}
 }
 

@@ -38,8 +38,7 @@ func (s Settings) Validate() error {
 	v.AddRule("LogLevel", "enum", slices.Sorted(maps.Keys(logLevels)))
 	v.AddRule("LogFormat", "enum", []string{"json", "text"})
 	v.AddRule("Executor", "enum", []string{string(ExecutorKubernetes), string(ExecutorLocal)})
-	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole,DatabaseRunnerRole", "required")
-	v.AddRule("DatabaseRunnerRole", "neField", "DatabaseAppRole")
+	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole", "required")
 	v.WithMessages(map[string]string{
 		"gt":                       "{field} must be positive",
 		"gte":                      "{field} must not be negative",
@@ -108,25 +107,13 @@ func (c *Config) ValidateServe() error {
 	v.StopOnError = false
 	v.SkipOnEmpty = false
 	v.AddRule("ConfigFile,WebURL,GatewayURL", "required")
-	// Executor is a named string type. requiredIf compares it to a plain
-	// string.
-	v.AddRule("RunnerDatabaseSecret,RunnerDatabaseSecretKey", "required").SetBeforeFunc(func(*validate.Validation) bool {
-		return c.Executor == ExecutorKubernetes
-	})
-	v.AddRule("RunnerDatabaseURL", "required").SetBeforeFunc(func(*validate.Validation) bool {
-		return c.Executor == ExecutorLocal
-	})
 	v.WithTranslates(map[string]string{
-		"ConfigFile":              "KRITIKA_CONFIG_FILE",
-		"WebURL":                  "webUrl: KRITIKA_WEB_URL",
-		"GatewayURL":              "gatewayUrl: KRITIKA_GATEWAY_URL",
-		"RunnerDatabaseSecret":    "runner.databaseSecret: KRITIKA_RUNNER_DATABASE_SECRET",
-		"RunnerDatabaseSecretKey": "runner.databaseSecretKey: KRITIKA_RUNNER_DATABASE_SECRET_KEY",
-		"RunnerDatabaseURL":       "KRITIKA_RUNNER_DATABASE_URL",
+		"ConfigFile": "KRITIKA_CONFIG_FILE",
+		"WebURL":     "webUrl: KRITIKA_WEB_URL",
+		"GatewayURL": "gatewayUrl: KRITIKA_GATEWAY_URL",
 	})
 	v.WithMessages(map[string]string{
-		"required":                   "{field} is required to serve",
-		"RunnerDatabaseURL.required": "{field} is required with the local executor",
+		"required": "{field} is required to serve",
 	})
 	if (c.GatewayCacheS3AccessKey == "") != (c.GatewayCacheS3SecretKey == "") {
 		return validationError(v, "both KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY and KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY must be set")

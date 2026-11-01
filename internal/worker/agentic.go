@@ -459,7 +459,7 @@ func (w *Review) agentSpec(
 		return deadline, nil, err
 	}
 	spec.Prompt, secrets.GatewayToken = prompt, token
-	spec.Model = &runspec.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName, Granted: grant.Model}
+	spec.Model = &runspec.ModelEndpoint{Model: gateway.ModelName, Granted: grant.Model}
 	spec.Agent = &runspec.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.parts, Parallel: size.slots,

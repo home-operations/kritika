@@ -2,7 +2,8 @@
 // egress proxy that they reach the outside through, each with its run token.
 // It holds the model, similar-code and conversation endpoints that a review's
 // runner calls with the same token. It also holds the aqua registry that the
-// runner resolves tools against.
+// runner resolves tools against, and the endpoints that a run reports what it
+// found to, with a token of their own (report.go).
 //
 // No provider key enters a runner pod. The gateway reserves each call against
 // the run's budget and makes sure that the account is under its monthly cap.
@@ -94,6 +95,8 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.conversation(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == runspec.AquaRegistryPath:
 		g.aquaRegistry(w, r)
+	case strings.HasPrefix(r.URL.Path, runspec.ReportPrefix):
+		g.report(w, r)
 	default:
 		http.NotFound(w, r)
 	}

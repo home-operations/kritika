@@ -10,12 +10,13 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // Index modes, as index_runs and index_packs spell them.
 const (
-	IndexModeFull        = "full"
-	IndexModeIncremental = "incremental"
+	IndexModeFull        = runspec.IndexModeFull
+	IndexModeIncremental = runspec.IndexModeIncremental
 )
 
 // IndexRepo is a repository as an index job reads it: its name, default
@@ -138,13 +139,8 @@ func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRu
 	return nil
 }
 
-// IndexPack is what an index runner wrote: the mode it built in, which
-// can be full where an incremental step was asked for, and the paths that
-// changed since the base.
-type IndexPack struct {
-	Mode, Base   string
-	ChangedPaths []string
-}
+// IndexPack is what an index runner wrote.
+type IndexPack = runspec.IndexPack
 
 // ReadIndexPack reads the index pack that a runner run wrote and records
 // its mode on the run. The runner can fall back to a full build.

@@ -10,12 +10,9 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 type partCheckpoint struct {
@@ -71,15 +68,8 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 // loadParts reads the parts the run can reuse. A checkpoint that cannot be
 // reused is left out, so its part runs again rather than failing every
 // retry that copies it.
-func loadParts(
-	ctx context.Context, st *store.Store, p runspec.Spec, hash string, parts []reviewPart, logger *slog.Logger,
-) ([]partCheckpoint, error) {
-	var rows []store.PartCheckpoint
-	err := st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
-		var err error
-		rows, err = store.ReadPartCheckpoints(ctx, tx, p.RunID, hash)
-		return err
-	})
+func loadParts(ctx context.Context, report *reporter, hash string, parts []reviewPart, logger *slog.Logger) ([]partCheckpoint, error) {
+	rows, err := report.checkpoints(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +88,7 @@ func loadParts(
 // restorePart decodes a checkpoint as the answer of its part: one its
 // submission check refuses is reused only if the answer was taken on the
 // check's fallback, as the agent took it.
-func restorePart(row store.PartCheckpoint, parts []reviewPart) (partCheckpoint, error) {
+func restorePart(row runspec.PartCheckpoint, parts []reviewPart) (partCheckpoint, error) {
 	var part partCheckpoint
 	if row.Part < 1 || row.Part > len(parts) {
 		return part, errors.New("runner: checkpoint part is outside the plan")
@@ -120,7 +110,7 @@ func restorePart(row store.PartCheckpoint, parts []reviewPart) (partCheckpoint, 
 // savePart stores only a submitted answer, the limit that forced it, and
 // provenance. Usage stays on the source run. Reusing an answer performs no
 // model steps or commands.
-func savePart(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, hash string, part int, res agent.Result,
+func savePart(ctx context.Context, report *reporter, secrets runspec.Secrets, hash string, part int, res agent.Result,
 	tools agentTools,
 ) error {
 	meta := agentRecord{}
@@ -133,9 +123,7 @@ func savePart(ctx context.Context, st *store.Store, p runspec.Spec, secrets runs
 	if err != nil {
 		return fmt.Errorf("runner: encode part checkpoint: %w", err)
 	}
-	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
-		return store.SavePartCheckpoint(ctx, tx, p.RunID, hash, part, json.RawMessage(secrets.Mask(string(payload))))
-	})
+	return report.saveCheckpoint(ctx, hash, part, json.RawMessage(secrets.Mask(string(payload))))
 }
 
 func checkpointNames(current, saved []string) []string {

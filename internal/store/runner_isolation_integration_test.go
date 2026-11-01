@@ -4,113 +4,18 @@ package store
 
 import (
 	"context"
-	"errors"
-	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func TestRunnerCannotSelectAccountPolicy(t *testing.T) {
-	s := openStore(t)
-	ctx := t.Context()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
-		t.Fatal(err)
-	}
-	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
-	runs := map[string]string{}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		for _, id := range runs {
-			if _, err := s.owner.Exec(ctx, `DELETE FROM index_packs WHERE runner_run_id = $1`, id); err != nil {
-				t.Error(err)
-			}
-			if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id = $1`, id); err != nil {
-				t.Error(err)
-			}
-		}
-	})
-	for _, account := range []string{alpha, beta} {
-		var id string
-		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index') RETURNING id`, account).Scan(&id)
-		}); err != nil {
-			t.Fatal(err)
-		}
-		runs[account] = id
-	}
-	token, err := s.MintRunnerToken(ctx, alpha, runs[alpha])
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runner.Close)
-	t.Run("migration restricts existing public policies", func(t *testing.T) {
-		checkPublicPolicyUpgrade(t, s, runner, beta, runs[beta])
-	})
-	for _, withRun := range []bool{false, true} {
-		name := "account setting alone"
-		if withRun {
-			name = "account setting alongside own run"
-		}
-		t.Run(name, func(t *testing.T) {
-			err := runner.WithAccount(ctx, beta, func(tx pgx.Tx) error {
-				if withRun {
-					if _, err := tx.Exec(ctx, `SELECT set_config('app.runner_job_id', $1, true), set_config('app.runner_token', $2, true)`, runs[alpha], token); err != nil {
-						return err
-					}
-				}
-				var n int
-				if err := tx.QueryRow(ctx, `SELECT count(*) FROM runner_runs WHERE account_id = $1`, beta).Scan(&n); err != nil {
-					return err
-				}
-				if n != 0 {
-					t.Errorf("runner read %d runs from another account", n)
-				}
-				if withRun {
-					if err := tx.QueryRow(ctx, `SELECT count(*) FROM runner_runs WHERE id = $1`, runs[alpha]).Scan(&n); err != nil {
-						return err
-					}
-					if n != 1 {
-						t.Errorf("runner read %d own runs, want 1", n)
-					}
-				}
-				tag, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed' WHERE account_id = $1`, beta)
-				if err == nil && tag.RowsAffected() != 0 {
-					t.Errorf("runner changed %d runs from another account", tag.RowsAffected())
-				}
-				return err
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-	t.Run("cannot insert a pack for another run", func(t *testing.T) {
-		err := runner.WithAccount(ctx, beta, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `INSERT INTO index_packs (runner_run_id, account_id, mode) VALUES ($1, $2, 'full')`, runs[beta], beta)
-			return err
-		})
-		pgErr, ok := errors.AsType[*pgconn.PgError](err)
-		if !ok || pgErr.Code != "42501" {
-			t.Fatalf("foreign pack insert = %v, want row security refusal", err)
-		}
-	})
-}
 
 func assertPolicyRoles(t *testing.T, s *Store) {
 	t.Helper()
 	var wrong int
 	if err := s.owner.QueryRow(t.Context(), `SELECT count(*) FROM pg_policies WHERE schemaname = current_schema()
- AND policyname IN ('account_isolation', 'runner_job')
- AND roles::text[] <> ARRAY[CASE policyname WHEN 'account_isolation' THEN 'kritika_app' ELSE 'kritika_runner' END]`).Scan(&wrong); err != nil || wrong != 0 {
+ AND policyname = 'account_isolation' AND roles::text[] <> ARRAY['kritika_app']`).Scan(&wrong); err != nil || wrong != 0 {
 		t.Fatalf("%d incorrectly bound policies: %v", wrong, err)
 	}
 }
@@ -123,7 +28,7 @@ func TestPolicyBindingsAvoidUnchangedLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `ALTER POLICY runner_job ON runner_runs TO kritika_runner`); err != nil {
+	if _, err := tx.Exec(ctx, `ALTER POLICY account_isolation ON runner_runs TO kritika_app`); err != nil {
 		t.Fatal(err)
 	}
 	var exclusive bool
@@ -144,39 +49,17 @@ func TestPolicyBindingsAvoidUnchangedLocks(t *testing.T) {
 	}
 	limited, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := s.grant(limited, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.grant(limited, "kritika_app"); err != nil {
 		t.Fatalf("unchanged policy binding blocked behind reader: %v", err)
 	}
 	assertPolicyRoles(t, s)
-}
-
-func TestConfiguredRunnerRole(t *testing.T) {
-	openStore(t)
-	for _, tt := range []struct {
-		name, env string
-		wantErr   bool
-	}{
-		{"runner login", "KRITIKA_TEST_RUNNER_URL", false},
-		{"application login", "KRITIKA_TEST_APP_URL", true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			st, err := Open(t.Context(), Options{AppURL: testEnv(t, tt.env), ExpectedRole: "kritika_runner", Logger: slog.New(slog.DiscardHandler)})
-			if st != nil {
-				st.Close()
-			}
-			if errors.Is(err, ErrDatabaseRole) != tt.wantErr || (!tt.wantErr && err != nil) {
-				t.Fatalf("Open = %v", err)
-			}
-		})
-	}
 }
 
 func TestPolicyBindingsIncludeNewTables(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
 	if _, err := s.owner.Exec(ctx, `CREATE TABLE policy_binding_probe (id uuid);
-		CREATE POLICY account_isolation ON policy_binding_probe USING (true);
-		CREATE POLICY runner_job ON policy_binding_probe USING (true)`); err != nil {
+		CREATE POLICY account_isolation ON policy_binding_probe USING (true)`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -186,45 +69,97 @@ func TestPolicyBindingsIncludeNewTables(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if err := s.grant(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.grant(ctx, "kritika_app"); err != nil {
 		t.Fatal(err)
 	}
 	assertPolicyRoles(t, s)
 }
 
-func checkPublicPolicyUpgrade(t *testing.T, s, runner *Store, accountID, runID string) {
-	t.Helper()
+// TestPublicPoliciesAreBound brings back a binding to PUBLIC, which a policy
+// has until the first grant, and makes sure that Migrate restricts it.
+func TestPublicPoliciesAreBound(t *testing.T) {
+	s := openStore(t)
 	ctx := t.Context()
-	t.Cleanup(func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := s.grant(cleanup, "kritika_app", "kritika_runner"); err != nil {
-			t.Error(err)
-		}
-	})
-	rows, err := s.owner.Query(ctx, `SELECT tablename, policyname FROM pg_policies WHERE schemaname = current_schema()
-   AND policyname IN ('account_isolation', 'runner_job')`)
+	rows, err := s.owner.Query(ctx, `SELECT tablename FROM pg_policies WHERE schemaname = current_schema() AND policyname = 'account_isolation'`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	type policy struct{ Table, Name string }
-	policies, err := pgx.CollectRows(rows, pgx.RowToStructByPos[policy])
+	tables, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range policies {
-		if _, err := s.owner.Exec(ctx, `ALTER POLICY `+pgx.Identifier{p.Name}.Sanitize()+` ON `+pgx.Identifier{p.Table}.Sanitize()+` TO PUBLIC`); err != nil {
+	for _, table := range tables {
+		if _, err := s.owner.Exec(ctx, `ALTER POLICY account_isolation ON `+pgx.Identifier{table}.Sanitize()+` TO PUBLIC`); err != nil {
 			t.Fatal(err)
 		}
 	}
-	var exposed int
-	if err := runner.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT count(*) FROM runner_runs WHERE id = $1`, runID).Scan(&exposed)
-	}); err != nil || exposed != 1 {
-		t.Fatalf("public policy exposes %d foreign runs, %v; want 1", exposed, err)
-	}
-	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
 		t.Fatal(err)
 	}
 	assertPolicyRoles(t, s)
+}
+
+// TestRunnerRoleLosesItsAccess applies the migration that took the database
+// away from runners to what an install had before it: a role bound to the
+// runner_job policies and granted what they gated.
+func TestRunnerRoleLosesItsAccess(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	super, err := pgxpool.New(ctx, testEnv(t, "KRITIKA_TEST_SUPER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(super.Close)
+	const role = "custom_runner_role"
+	if _, err := super.Exec(ctx, `CREATE ROLE `+role+` LOGIN`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := super.Exec(cleanup, `DROP ROLE `+role); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, stmt := range []string{
+		`GRANT USAGE ON SCHEMA public TO ` + role,
+		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + role,
+		`GRANT SELECT, UPDATE (phase, error, heartbeat_at, parts_remaining) ON runner_runs TO ` + role,
+		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs, agent_conversations, review_part_checkpoints TO ` + role,
+		`CREATE POLICY runner_job ON agent_runs TO ` + role + ` USING (true)`,
+		`CREATE POLICY runner_job ON runner_runs TO ` + role + ` USING (true)`,
+	} {
+		if _, err := s.owner.Exec(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	migration, err := migrationFS.ReadFile("migrations/0054_runner_without_database.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	var policies int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM pg_policies WHERE schemaname = current_schema() AND policyname = 'runner_job'`).
+		Scan(&policies); err != nil || policies != 0 {
+		t.Fatalf("%d runner_job policies left: %v", policies, err)
+	}
+	var table, column bool
+	if err := s.owner.QueryRow(ctx, `SELECT has_table_privilege($1, 'agent_runs', 'INSERT'),
+		has_column_privilege($1, 'runner_runs', 'phase', 'UPDATE')`, role).Scan(&table, &column); err != nil {
+		t.Fatal(err)
+	}
+	if table || column {
+		t.Fatalf("the runner role kept table = %v, column = %v", table, column)
+	}
+	// A role with nothing left can be dropped by whoever manages it, as the
+	// cleanup above does.
+	for _, name := range []string{"runner_runs", "agent_runs"} {
+		var granted int
+		if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM information_schema.role_table_grants WHERE grantee = $1 AND table_name = $2`, role, name).
+			Scan(&granted); err != nil || granted != 0 {
+			t.Fatalf("%d grants left on %s: %v", granted, name, err)
+		}
+	}
 }

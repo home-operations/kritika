@@ -9,8 +9,6 @@ database:
     existingSecret: kritika-postgres-credentials
   app:
     existingSecret: kritika-postgres-app
-  runner:
-    existingSecret: kritika-postgres-runner
 config:
   webUrl: http://kritika.kritika.svc:8080
   # The app below is not a real GitHub App, so the backstop poll stays off.

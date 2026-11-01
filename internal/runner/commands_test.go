@@ -20,6 +20,20 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 )
 
+// TestCommandEnvHoldsNoReportToken: a command that could report would forge
+// what the run found. It holds the proxy credential, so that token authorizes no
+// report, and it must never come by the one that does.
+func TestCommandEnvHoldsNoReportToken(t *testing.T) {
+	t.Setenv("KRITIKA_REPORT_TOKEN", "krr_report_token")
+	t.Setenv("HTTPS_PROXY", "http://:krk_run_token@gateway:8082")
+	env, _ := commandEnv("/tmp/home", "/tmp/cache")
+	for _, e := range env {
+		if strings.Contains(e, "krr_report_token") || strings.HasPrefix(e, "KRITIKA_") {
+			t.Fatalf("a command's environment holds %q", e)
+		}
+	}
+}
+
 func TestCommandEnv(t *testing.T) {
 	for _, name := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"} {
 		t.Setenv(name, "")

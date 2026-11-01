@@ -65,7 +65,6 @@ strategy:
 #   aquaRegistryRefresh: { type: string, minLength: 1 }
 #   webUrl: { type: string }
 #   databaseAppRole: { type: string }
-#   databaseRunnerRole: { type: string }
 #   leaderRetryInterval: { type: string, minLength: 1 }
 #   reviewWorkers: { type: integer }
 #   indexWorkers: { type: integer }
@@ -101,7 +100,7 @@ strategy:
 #   ignore: { type: array }
 #   enabled: { type: boolean }
 # @schema
-# -- Application configuration, with the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted keys use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys that the chart derives from its deployment values fail the render. These keys are `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor` and `runner`. When `gatewayCache.enabled` is set, they also include `gatewayCacheDir`, `gatewayCacheStorage` and `gatewayCacheMaxEntrySize`. For filesystem storage, they also include `gatewayCacheMaxSize`. For S3, they also include the `gatewayCacheS3*` keys.
+# -- Application configuration, with the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted keys use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys that the chart derives from its deployment values fail the render. These keys are `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `executor` and `runner`. When `gatewayCache.enabled` is set, they also include `gatewayCacheDir`, `gatewayCacheStorage` and `gatewayCacheMaxEntrySize`. For filesystem storage, they also include `gatewayCacheMaxSize`. For S3, they also include the `gatewayCacheS3*` keys.
 config: {}
 # webUrl: https://kritika.example.com
 # auth:
@@ -149,12 +148,11 @@ env: {}
 # -- Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application configuration must not also be set in the file.
 envFrom: []
 
-# Three Postgres connection strings, each from its own Secret. The application
+# Two Postgres connection strings, each from its own Secret. The application
 # role must not own the tables (row-level security). The owner role runs
-# migrations and applies configuration on the leader. The runner role is
-# handed to runner Jobs and can only write its own run. On CloudNativePG,
-# declare `app` and `runner` as DatabaseRole resources and use the bootstrap
-# owner as `owner`. See the database docs.
+# migrations and applies configuration on the leader. On CloudNativePG,
+# declare `app` as a DatabaseRole resource and use the bootstrap owner as
+# `owner`. See the database docs.
 database:
   app:
     # -- (required) Secret holding the application role's connection URI.
@@ -168,18 +166,11 @@ database:
     existingSecret: ""
     # -- Key in that Secret.
     key: uri
-  runner:
-    # -- (required) Secret holding the runner role's connection URI. Runner Jobs reference it, and kritika serve never reads it.
-    existingSecret: ""
-    # -- Key in that Secret.
-    key: uri
-    # -- Name of the runner role, granted only what runner Jobs need.
-    role: kritika_runner
 
 # Runner Jobs: one pod per review, follow-up or index run. kritika serve
 # creates them in the release namespace from the release's -tools image. They
-# run as a service account with no permissions and a database role that can
-# only touch its own run. The server's Role reaches every Secret in the
+# run as a service account with no permissions, hold no database credential, and
+# report what they find to the gateway. The server's Role reaches every Secret in the
 # release namespace, so install kritika into a namespace of its own. We
 # recommend a sandboxed RuntimeClass (gVisor, Kata),
 # `runner.podTemplate.spec.runtimeClassName`, since a runner parses untrusted
@@ -340,7 +331,7 @@ runner:
           imagePullPolicy: IfNotPresent
           env: []
   admissionPolicy:
-    # -- Have the cluster refuse three things from kritika serve's ServiceAccount. The first is any Job that is not a runner Job as kritika builds it. The second is any Secret that is not a run's. The third is any deletion of a Job but in the foreground, which takes its run's Secret with it. The cluster uses three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects that the chart's installer must be allowed to create. Without them, the Role lets kritika serve create any Job in its namespace. That Job's pod can run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs that an older replica starts mid-rollout pass too. Some changes refuse those runs until the rollout ends, and the runs are retried. These are changes to the repository, the runner ServiceAccount, RuntimeClass, database Secret or a Secret that the runner container's `env` names.
+    # -- Have the cluster refuse three things from kritika serve's ServiceAccount. The first is any Job that is not a runner Job as kritika builds it. The second is any Secret that is not a run's. The third is any deletion of a Job but in the foreground, which takes its run's Secret with it. The cluster uses three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects that the chart's installer must be allowed to create. Without them, the Role lets kritika serve create any Job in its namespace. That Job's pod can run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs that an older replica starts mid-rollout pass too. Some changes refuse those runs until the rollout ends, and the runs are retried. These are changes to the repository, the runner ServiceAccount, RuntimeClass or a Secret that the runner container's `env` names.
     enabled: true
   serviceAccount:
     # -- Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.
@@ -550,10 +541,9 @@ networkPolicy:
   #    ports:
   #      - port: 8080
   #        protocol: TCP
-  # Where the database is, the one peer at which the service pods and runner
-  # pods can reach its port. It is every pod in the release namespace unless
-  # set. It must take in every pod that the owner, application and runner URIs
-  # connect to.
+  # Where the database is, the one peer at which the service pods can reach
+  # its port. It is every pod in the release namespace unless set. It must take
+  # in every pod that the owner and application URIs connect to.
   postgres:
     # -- Port of the database, which the pods can reach only where the rest of `postgres` says.
     port: 5432

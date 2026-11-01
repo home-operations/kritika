@@ -22,7 +22,7 @@ mise run ui-mock            # the dashboard at http://localhost:5544/ on mocked 
 1. Builds the image.
 2. Creates a kind cluster.
 3. Installs CloudNativePG and a one-instance Postgres with VectorChord as
-   an image volume extension and the three roles.
+   an image volume extension and the two roles.
 4. Installs the chart with two replicas and waits for both to be ready.
 5. Runs `helm test`.
 6. Makes sure that the replicas settle on one leader with the configuration

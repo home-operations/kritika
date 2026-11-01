@@ -422,7 +422,7 @@ func startWorker(
 	})
 	river.AddWorker(workers, &worker.Thread{Base: base})
 	river.AddWorker(workers, &worker.Index{
-		Base: base, Executor: exec, Embedders: embedders, GatewayTokenTTL: cfg.GatewayTokenTTL,
+		Base: base, Executor: exec, Embedders: embedders, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})
 	// Every job this replica works carries its heartbeat. So the leader can
 	// hand back the jobs of a replica that dies without a soft stop long
@@ -604,11 +604,7 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 // every Job.
 func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
 	if cfg.Executor == config.ExecutorLocal {
-		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
-		if err != nil {
-			return nil, err
-		}
-		return &executor.Local{Store: runnerStore}, nil
+		return &executor.Local{}, nil
 	}
 	jobTemplate, err := executor.DecodeJobTemplate(cfg.RunnerJobTemplate)
 	if err != nil {
@@ -624,10 +620,9 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 	}
 	kube := &executor.Kube{
 		Client: client, Namespace: ns, JobTemplate: jobTemplate, PodTemplate: podTemplate,
-		DatabaseRole:   cfg.DatabaseRunnerRole,
-		ServiceAccount: cfg.RunnerServiceAccount, DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
-		GatewayURL: cfg.GatewayURL,
-		Events:     executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
+		ServiceAccount: cfg.RunnerServiceAccount,
+		GatewayURL:     cfg.GatewayURL,
+		Events:         executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
 	}
 	if err := kube.CheckJob(ctx, cfg.RunnerDeadline()); err != nil {
 		return nil, fmt.Errorf("runner.jobTemplate, runner.podTemplate: %w", err)
@@ -652,7 +647,7 @@ func lead(
 	svc *ingest.Service, apps *worker.Forges, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
 	m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
-	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
+	if err := st.Migrate(ctx, cfg.DatabaseAppRole); err != nil {
 		return err
 	}
 	// Every leader duty ends before lead returns and the lock is released, so

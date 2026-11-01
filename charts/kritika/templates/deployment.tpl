@@ -4,9 +4,6 @@
 {{- if not .Values.database.owner.existingSecret -}}
 {{- fail "database.owner.existingSecret is required: the leader runs migrations with it" -}}
 {{- end -}}
-{{- if not .Values.database.runner.existingSecret -}}
-{{- fail "database.runner.existingSecret is required: runner Jobs connect with it" -}}
-{{- end -}}
 {{- $configuration := include "kritika.configuration" . -}}
 {{- if not .Values.existingConfigMap -}}
 {{- $webURL := get ($configuration | fromYaml) "webUrl" | default "" | toString -}}

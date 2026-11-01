@@ -50,11 +50,6 @@ type Kube struct {
 	PodTemplate PodTemplate
 	// ServiceAccount is the permissionless runner service account.
 	ServiceAccount string
-	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
-	// runner role's DSN, injected as KRITIKA_DATABASE_URL.
-	DatabaseSecret, DatabaseSecretKey string
-	// DatabaseRole is the database role the runner login must inherit.
-	DatabaseRole string
 	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
 	// and HTTP_PROXY. The URL has the run token as the password that the
 	// gateway admits a proxy request by. The runner network policy allows
@@ -568,10 +563,10 @@ func logTail(log string, hitCeiling bool, secrets runspec.Secrets) string {
 
 // Secret keys of a run's job-scoped Secret.
 const (
-	secretKeyGitToken      = "git-token"
-	secretKeyGatewayToken  = "gateway-token"
-	secretKeyDatabaseToken = "database-token"
-	secretKeyRunSpec       = "run-spec.json"
+	secretKeyGitToken     = "git-token"
+	secretKeyGatewayToken = "gateway-token"
+	secretKeyReportToken  = "report-token"
+	secretKeyRunSpec      = "run-spec.json"
 )
 
 // The run's job document is mounted read-only from its Secret at
@@ -632,7 +627,7 @@ func (k *Kube) secret(spec Spec, runSpec []byte, job *batchv1.Job) *corev1.Secre
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
 			secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyGatewayToken: []byte(spec.Secrets.GatewayToken),
-			secretKeyDatabaseToken: []byte(spec.Secrets.DatabaseToken), secretKeyRunSpec: runSpec,
+			secretKeyReportToken: []byte(spec.Secrets.ReportToken), secretKeyRunSpec: runSpec,
 		},
 	}
 }
@@ -644,8 +639,7 @@ const defaultTTL = 10 * time.Minute
 
 // job builds the Job for a spec. The runner gets its job document as a
 // read-only file and its credentials as variables, both from the run's
-// Secret. It gets the runner role's DSN from the database Secret. It gets
-// nothing else.
+// Secret. It gets nothing else.
 func (k *Kube) job(spec Spec) *batchv1.Job {
 	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
@@ -681,19 +675,16 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
 		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken)},
 		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken)},
-		{Name: "KRITIKA_DATABASE_TOKEN", ValueFrom: secretRef(secretKeyDatabaseToken)},
-		{Name: "KRITIKA_DATABASE_RUNNER_ROLE", Value: cmp.Or(k.DatabaseRole, "kritika_runner")},
+		{Name: "KRITIKA_REPORT_TOKEN", ValueFrom: secretRef(secretKeyReportToken)},
 		{Name: "KRITIKA_LOG_FORMAT", Value: "json"},
-		{Name: "KRITIKA_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
 	}...)
 	if k.GatewayURL != "" {
 		proxy := proxyEnv(k.GatewayURL)
 		env = append(env,
 			corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxy},
 			corev1.EnvVar{Name: "HTTP_PROXY", Value: proxy},
-			// Postgres is not HTTP, and the one Service the runner talks
-			// to is the gateway's model endpoint.
+			// The one Service the runner talks to is the gateway's own
+			// endpoints.
 			corev1.EnvVar{Name: "NO_PROXY", Value: noProxy + "," + gatewayHost(k.GatewayURL)},
 		)
 	}

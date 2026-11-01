@@ -12,7 +12,7 @@ that pod can reach.
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Use a dedicated namespace.                      | kritika can create Jobs and Secrets in its namespace.                                                                          |
 | Keep `runner.admissionPolicy.enabled` on.       | Restricts the Jobs and Secrets the service can create to the expected runner forms.                                            |
-| Keep `networkPolicy.enabled` on, the default.   | Restricts runners to DNS, Postgres and the gateway, the only bound on where the commands a review runs can connect.            |
+| Keep `networkPolicy.enabled` on, the default.   | Restricts runners to DNS and the gateway, the only bound on where the commands a review runs can connect.                      |
 | Set `runner.podTemplate.spec.runtimeClassName`. | Uses an installed sandboxed runtime, such as gVisor, to isolate untrusted work. That work includes the commands a review runs. |
 | Set `runner.podTemplate.spec.resources`.        | Limits the CPU and memory a runner can consume.                                                                                |
 | Map sign-in roles from trusted groups or roles. | Avoids granting access from profile fields users can change themselves. See [role mappings](/configuration/#role-mappings).    |
@@ -35,11 +35,11 @@ For runner resource and runtime examples, go to [Runner sandbox](#runner-sandbox
 kritika serve creates a runner Job for each review, follow-up and index
 run, and hands it a Secret of its own:
 
-| Credential                     | What it can do                                                                                                                                                                                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a forge token for the run      | Fetch the repository under review. Which token it is and what else it can do depend on the forge (see below).                                                                                                                                         |
-| a gateway token                | Reach the egress proxy (the proxy for outgoing traffic) and, for a review or follow-up, the run's model through the gateway. When the run ends, kritika revokes it. It is valid until `config.gatewayTokenTtl` past the Job's deadline at the latest. |
-| the runner role's database URI | Connect as the restricted runner role                                                                                                                                                                                                                 |
+| Credential                | What it can do                                                                                                                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a forge token for the run | Fetch the repository under review. Which token it is and what else it can do depend on the forge (see below).                                                                                                                                         |
+| a gateway token           | Reach the egress proxy (the proxy for outgoing traffic) and, for a review or follow-up, the run's model through the gateway. When the run ends, kritika revokes it. It is valid until `config.gatewayTokenTtl` past the Job's deadline at the latest. |
+| a report token            | Report what the run found to the gateway, for the run's own record. A command that the run starts never sees it.                                                                                                                                      |
 
 The forge token for the run depends on the forge:
 
@@ -54,12 +54,18 @@ The forge token for the run depends on the forge:
 Off GitHub, only the git fetch uses it. `fetch_repo` uses none of these
 tokens.
 
-Each run also receives a separate random database token. Row-level
-security (Postgres rules on which rows a role can use) requires that
-token as well as the run ID for reads and writes. kritika stores only the
-SHA-256 hash of that token. IDs published in database notifications grant
-no access. Before it fetches repository content, the runner makes sure
-that its configured database role and run credential are correct.
+A runner holds no database credential. The gateway writes what a run
+reports, as the application role under the run's account, and only to that
+run's record. The report token decides which run that is, and a report
+cannot name another run or account. kritika stores only the SHA-256 hash of
+that token. It stops working when the run ends. IDs published in database
+notifications grant no access. Before it fetches repository content, the
+runner makes sure that the gateway takes its report token.
+
+The gateway token does not authorize a report, because a command that the
+run starts holds the gateway token as its proxy credential. A command that
+could report could forge what the run found. The report token is apart from
+it for that reason.
 
 The runner never holds a provider key, the App's private key, or a
 credential that `egress.credentials` lets the gateway add. The pod runs
@@ -102,7 +108,7 @@ can relay through the gateway or use a credential that it adds.
 
 `networkPolicy.enabled` is on by default. With it, a runner's git fetch and
 every command that it runs use the gateway to reach anything except the
-cluster's DNS and the database. The gateway allows a destination by name
+cluster's DNS. The gateway allows a destination by name
 and by the address it resolves to. The gateway allows each connection's
 forge once it is declared. That is `github.com` and `api.github.com` for a
 GitHub App, and the instance's host for a Forgejo, GitLab or Gitea
@@ -193,7 +199,7 @@ the host of that URL.
 
 With the `cilium` flavor, a runner pod can look up only the names of the
 cluster's Services, `<service>.<namespace>.svc.cluster.local`. These names
-include the gateway's and the database's. The cluster's DNS answers those
+include the gateway's. The cluster's DNS answers those
 names itself. The lookup of an `ExternalName` Service's name goes on to the
 name that the Service points at. The Service's author set that name, not
 the runner. Cilium refuses any other name.
@@ -207,7 +213,7 @@ The `default` and `calico` flavors cannot filter names.
 These rules need Cilium's L7 proxy, which is on unless turned off. Where
 it is off, Cilium refuses the runner's CiliumNetworkPolicy for them. The
 `cilium` flavor also renders a plain NetworkPolicy for runner pods that
-allows the database and the gateway but no DNS. So a refused policy
+allows the gateway but no DNS. So a refused policy
 leaves runner pods unable to look up any name. Every run fails,
 rather than running with no policy, until `networkPolicy.type` is
 `default`.
@@ -236,6 +242,9 @@ it, so it has no switch:
   more times. The gateway embeds the diff or the query with the instance's
   embedder, answers from the repository's index, and charges the embedding
   to the run.
+- A run reports here what it found: its phase, its context, its agent's
+  result and its index. This takes the run's report token, not the token
+  that the model endpoint takes.
 
 ## Runner tools
 
@@ -417,10 +426,9 @@ can print what its own environment holds and send it wherever the network
 lets it.
 
 The runner pod is the boundary. Its NetworkPolicy, on by default, lets
-runner pods reach three places:
+runner pods reach two places:
 
 - The cluster's DNS
-- The Postgres port where `networkPolicy.postgres` says the database is
 - The gateway
 
 `egress.allow` and `egress.deny` therefore hold for everything else a
@@ -428,14 +436,14 @@ command connects to. Without the policy, a command can connect around the
 gateway, so turn the policy off only where something else confines the
 egress of runner pods.
 
-A command reaches the first two directly as well. The cluster's DNS
-forwards the lookup of an outside name, which only the `cilium` flavor
-filters (see [Name lookups](#name-lookups)). The database admits only the
-runner role's credentials, which a command never sees. A sandboxed
-runtime keeps a kernel exploit from reaching the node (see
-[Runner sandbox](#runner-sandbox)).
+A command reaches the cluster's DNS directly as well, which forwards the
+lookup of an outside name. Only the `cilium` flavor filters those (see
+[Name lookups](#name-lookups)). A command can also connect to the gateway
+directly, where its proxy credential admits it to the run's model and not to
+the run's reports. A sandboxed runtime keeps a kernel exploit from reaching
+the node (see [Runner sandbox](#runner-sandbox)).
 
-The clean environment hides the runner's database and model credentials.
+The clean environment hides the runner's report token.
 Commands still receive the gateway proxy credential, though, and the tool
 offered as `gh` receives the run's read-only GitHub token. For that
 reason, a repository tool is never offered as `gh`. The image's tool is, and
@@ -495,7 +503,7 @@ What bounds a command:
   the proxy variables cover. A URL with any other scheme, given or redirected
   to, fails rather than trying a connection without the gateway. An argument
   can lift that limit. The NetworkPolicy then refuses such a connection
-  anywhere but the cluster's DNS and the database's port.
+  anywhere but the cluster's DNS.
 
   The admin's variables cannot set what the runner sets, or what changes
   every call of a tool rather than the one that the model makes. These are
