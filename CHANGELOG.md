@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.116](https://github.com/home-operations/kritika/compare/0.0.115...0.0.116) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **runner:** report through the gateway and hold no database credential ([#1343](https://github.com/home-operations/kritika/issues/1343))
+
+### Code Refactoring
+
+* **runner:** report through the gateway and hold no database credential ([#1343](https://github.com/home-operations/kritika/issues/1343)) ([22e79a3](https://github.com/home-operations/kritika/commit/22e79a3ce3b393491f8b35a685fd6287aeb6a83b))
+
+
+### Miscellaneous Chores
+
+* **go:** update module github.com/openai/openai-go/v3 (v3.91.0 → v3.91.1) ([#1344](https://github.com/home-operations/kritika/issues/1344)) ([60ee44f](https://github.com/home-operations/kritika/commit/60ee44ffc688502d680ac94fc14b29ec3a0aabe2))
+
 ## [0.0.115](https://github.com/home-operations/kritika/compare/0.0.114...0.0.115) (2026-11-01)
 
 
