@@ -14,7 +14,6 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
@@ -43,14 +42,7 @@ func TestPartCheckpointPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner, err := store.Open(ctx, store.Options{
-		AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runner.Close)
-	runner = runner.ForRunner(token)
+	report := gatewayReporter(t, st, token)
 	parts := []reviewPart{{paths: []string{"a.go"}, prompt: loopPrompt(s, false)}}
 	hash, err := partInputHash(s, parts, agentTools{})
 	if err != nil {
@@ -58,10 +50,10 @@ func TestPartCheckpointPersistence(t *testing.T) {
 	}
 	result := agent.Result{Stop: agent.StopSubmitted, Submitted: submission("a.go", "repository-secret"), Model: "model",
 		Steps: 4, Usage: model.Usage{Input: 100, Output: 20}, CostUSD: 0.5, ForcedBy: agent.ForcedByTime}
-	if err := savePart(ctx, runner, s, runspec.Secrets{GitToken: "repository-secret"}, hash, 1, result, agentTools{}); err != nil {
+	if err := savePart(ctx, report, runspec.Secrets{GitToken: "repository-secret"}, hash, 1, result, agentTools{}); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := loadParts(ctx, runner, s, hash, parts, slog.New(slog.DiscardHandler))
+	saved, err := loadParts(ctx, report, hash, parts, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

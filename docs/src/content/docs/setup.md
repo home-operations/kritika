@@ -17,7 +17,7 @@ declare:
 Have these ready:
 
 - A Kubernetes cluster and Helm.
-- [Postgres with VectorChord and three database roles](/database/).
+- [Postgres with VectorChord and two database roles](/database/).
 - An HTTPS address, such as `https://kritika.example.com`, reachable by GitHub.
 - A model provider credential. The example below uses OpenRouter.
 
@@ -66,7 +66,6 @@ secret management tool. Do not commit their values.
 | ------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `kritika-postgres-credentials` | `uri`: owner database connection string.                                                       |
 | `kritika-postgres-app`         | `uri`: application database connection string.                                                 |
-| `kritika-postgres-runner`      | `uri`: runner database connection string.                                                      |
 | `kritika-credentials`          | `ADMIN_PASSWORD`, `OPENROUTER_API_KEY`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET`. |
 | `kritika-tls`                  | TLS certificate and key for your public hostname.                                              |
 
@@ -102,8 +101,6 @@ database:
     existingSecret: kritika-postgres-credentials
   app:
     existingSecret: kritika-postgres-app
-  runner:
-    existingSecret: kritika-postgres-runner
 
 envFrom:
   - secretRef:

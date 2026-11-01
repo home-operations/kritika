@@ -88,8 +88,8 @@ them, the host's identity, which no CIDR selects. */}}
 {{- end }}
 {{- end }}
 {{- end -}}
-{{- /* Egress to the Postgres port on the database's pods alone, the one
-peer both policies allow it at, in each flavor: each takes
+{{- /* Egress to the Postgres port on the database's pods alone, the one peer
+that the service pods reach it at, in each flavor: each takes
 networkPolicy.postgres with the namespace filled in. */}}
 {{- define "kritika.postgresEgress" -}}
 - to:
@@ -122,8 +122,8 @@ networkPolicy.postgres with the namespace filled in. */}}
       - {{ .port }}
 {{- end -}}
 {{- /* The runner pods' NetworkPolicy: no ingress at all. Egress goes to the
-database and the gateway port on the server pods, and to the cluster's DNS
-when withDNS is set. The git remote, the model and similar-code endpoints and
+gateway port on the server pods, and to the cluster's DNS when withDNS is set.
+The git remote, what a run reports, the model and similar-code endpoints and
 every allowed host are reached through the gateway port. */}}
 {{- define "kritika.runnerNetworkPolicy" -}}
 {{- $root := .root }}
@@ -146,7 +146,6 @@ spec:
     {{- if .withDNS }}
     {{- include "kritika.dnsEgress" .dns | nindent 4 }}
     {{- end }}
-    {{- include "kritika.postgresEgress" .pg | nindent 4 }}
     - to:
         - podSelector:
             matchLabels:
@@ -175,7 +174,7 @@ renders the default flavor. */}}
 {{- $type = "calico" }}
 {{- end }}
 {{- end }}
-{{- $runner := dict "root" . "dns" $dns "withDNS" true "pg" $pg "gateway" $gateway }}
+{{- $runner := dict "root" . "dns" $dns "withDNS" true "gateway" $gateway }}
 {{- if eq $type "default" }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -297,7 +296,6 @@ spec:
     {{- /* The cluster's DNS answers its Services' names itself, but for an
     ExternalName Service's, whose lookup goes on to the name its author set. */}}
     {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns "names" (list (printf "*.*.svc.%s" .Values.clusterDomain))) | nindent 4 }}
-    {{- include "kritika.ciliumPostgresEgress" $pg | nindent 4 }}
     - toEndpoints:
         - matchLabels:
             {{- include "kritika.selectorLabels" . | nindent 12 }}
@@ -308,7 +306,7 @@ spec:
 ---
 {{- /* Cilium refuses the policy above where its L7 proxy is off, for its
 DNS rules, and a runner pod with no policy reaches anything. This one,
-without DNS, keeps runner pods to the database and the gateway either way:
+without DNS, keeps runner pods to the gateway either way:
 it allows nothing the policy above does not. Where that policy is refused,
 a runner cannot look up a name, so every run fails rather than run
 unconfined. */}}
@@ -376,7 +374,6 @@ spec:
     - Egress
   egress:
     {{- include "kritika.calicoDNSEgress" $dns | nindent 4 }}
-    {{- include "kritika.calicoPostgresEgress" $pg | nindent 4 }}
     - action: Allow
       protocol: TCP
       destination:

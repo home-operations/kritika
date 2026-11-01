@@ -79,7 +79,7 @@ func carryOn(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, prompt agentPrompt, tools []agent.Tool,
 	diff, delta string, logger *slog.Logger,
 ) agentPrompt {
-	c, err := conversationOf(ctx, p.Model.GatewayURL, secrets.GatewayToken)
+	c, err := conversationOf(ctx, p.GatewayURL, secrets.GatewayToken)
 	if err != nil {
 		logger.Info("the last review's conversation is not carried on", "reason", secrets.Mask(err.Error()))
 		return prompt

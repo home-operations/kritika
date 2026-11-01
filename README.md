@@ -33,7 +33,7 @@ a follow-up question or request another review.
 ## What you need
 
 - Kubernetes and Helm.
-- Postgres with VectorChord and three database roles.
+- Postgres with VectorChord and two database roles.
 - A GitHub App, a Forgejo or Gitea bot account or a GitLab service account, and a model provider credential.
 - An HTTPS address for the dashboard and the forge's webhooks.
 

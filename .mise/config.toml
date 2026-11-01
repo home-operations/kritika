@@ -88,12 +88,11 @@ cid=$(docker run -d --rm -e POSTGRES_PASSWORD=super -p 127.0.0.1::5432 ghcr.io/t
 trap 'docker stop "$cid" >/dev/null' EXIT
 port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
 for i in $(seq 1 30); do docker exec "$cid" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break; sleep 1; done
-docker exec "$cid" psql -U postgres -v ON_ERROR_STOP=1 -q -c "CREATE ROLE kritika LOGIN PASSWORD 'owner'" -c "CREATE ROLE kritika_app LOGIN PASSWORD 'app'" -c "CREATE ROLE kritika_runner LOGIN PASSWORD 'runner'" -c "CREATE DATABASE kritika OWNER kritika"
-docker exec "$cid" psql -U postgres -d kritika -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION vchord CASCADE" -c "GRANT ALL ON SCHEMA public TO kritika" -c "GRANT USAGE ON SCHEMA public TO kritika_app, kritika_runner"
+docker exec "$cid" psql -U postgres -v ON_ERROR_STOP=1 -q -c "CREATE ROLE kritika LOGIN PASSWORD 'owner'" -c "CREATE ROLE kritika_app LOGIN PASSWORD 'app'" -c "CREATE DATABASE kritika OWNER kritika"
+docker exec "$cid" psql -U postgres -d kritika -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION vchord CASCADE" -c "GRANT ALL ON SCHEMA public TO kritika" -c "GRANT USAGE ON SCHEMA public TO kritika_app"
 export KRITIKA_TEST_SUPER_URL="postgres://postgres:super@127.0.0.1:${port}/kritika?sslmode=disable"
 export KRITIKA_TEST_OWNER_URL="postgres://kritika:owner@127.0.0.1:${port}/kritika?sslmode=disable"
 export KRITIKA_TEST_APP_URL="postgres://kritika_app:app@127.0.0.1:${port}/kritika?sslmode=disable"
-export KRITIKA_TEST_RUNNER_URL="postgres://kritika_runner:runner@127.0.0.1:${port}/kritika?sslmode=disable"
 # Only the packages with integration tests: the rest are the unit suite over
 # again, uncached. -p 1: every integration package shares the one database,
 # so packages must not run concurrently.

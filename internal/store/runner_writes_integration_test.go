@@ -4,11 +4,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestRunnerWriteTransactions(t *testing.T) {
@@ -18,76 +20,146 @@ func TestRunnerWriteTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 	account := accountID(t, s, "alpha")
-	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runner.Close)
 	for _, tt := range []struct {
 		name  string
 		kind  RunnerKind
 		rows  map[string]int
-		write func(*Store, string, bool) error
+		write func(pgx.Tx, string, bool) error
 	}{
 		{name: "context and phase", kind: RunnerKindReview, rows: map[string]int{"context_packs": 1},
-			write: func(st *Store, id string, fail bool) error {
+			write: func(tx pgx.Tx, id string, fail bool) error {
 				phase := "done"
 				if fail {
 					phase = "invalid"
 				}
-				return st.WriteRunnerContext(ctx, id, RunnerContextPack{
+				return WriteRunnerContext(ctx, tx, id, runspec.ContextPack{
 					Head: "head", Base: "base", PatchID: "patch", ChangedPaths: []string{}, Stages: []byte(`[]`), Files: []byte(`{}`),
 					Notes: []string{}, DeltaPaths: []string{}, Scope: "full", RuleIDs: []string{},
 				}, phase)
 			}},
 		{name: "agent conversation and phase", kind: RunnerKindReview, rows: map[string]int{"agent_runs": 1, "agent_conversations": 1},
-			write: func(st *Store, id string, fail bool) error {
+			write: func(tx pgx.Tx, id string, fail bool) error {
 				phase := "done"
 				if fail {
 					phase = "invalid"
 				}
-				return st.WriteRunnerAgent(ctx, id, RunnerAgentRecord{
+				return WriteRunnerAgent(ctx, tx, id, runspec.AgentRecord{
 					Stop: "error", ToolCalls: []byte(`{}`), Timeline: []byte(`[]`), Sources: []byte(`[]`),
 					SkillsOffered: []string{}, SkillsOpened: []string{}, CommandsOffered: []string{}, CommandsRun: []string{}, CommandErrors: []string{},
 					Conversation: []byte(`{"messages":[]}`), Session: id, GrantedModel: "test/model",
 				}, phase)
 			}},
-		{name: "all index batches and phase", kind: RunnerKindIndex, rows: map[string]int{"index_packs": 1, "index_staging": 501},
-			write: func(st *Store, id string, fail bool) error {
-				chunks := make([]StagedChunk, 501)
-				for n := range chunks {
-					chunks[n] = StagedChunk{Path: fmt.Sprintf("%d.go", n), StartLine: 1, EndLine: 1, Text: "content"}
-				}
-				if fail {
-					chunks[500].Text = "invalid\x00text"
-				}
-				return st.WriteRunnerIndex(ctx, id, IndexPack{Mode: IndexModeFull, ChangedPaths: []string{}}, chunks)
-			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			id, token := runnerWriteFixture(t, s, account, tt.kind)
 			other, _ := runnerWriteFixture(t, s, account, tt.kind)
-			st := runner.ForRunner(token)
-			if err := st.AuthorizeRunner(ctx, id); err != nil {
-				t.Fatal(err)
+			write := func(fail bool) error {
+				return s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error { return tt.write(tx, g.RunID, fail) })
 			}
-			if err := st.AuthorizeRunner(ctx, other); err == nil {
-				t.Fatal("credential authorized another run")
-			}
-			if err := tt.write(st, other, false); err == nil {
-				t.Fatal("credential wrote another run")
-			}
-			assertRunnerWriteState(t, s, other, "created", tt.rows, false)
-			if err := tt.write(st, id, true); err == nil {
+			if err := write(true); err == nil {
 				t.Fatal("injected failure did not fail")
 			}
 			assertRunnerWriteState(t, s, id, "created", tt.rows, false)
-			if err := tt.write(st, id, false); err != nil {
+			if err := write(false); err != nil {
 				t.Fatal(err)
 			}
 			assertRunnerWriteState(t, s, id, "done", tt.rows, true)
+			// An answer lost on the way back has the runner send it again.
+			if err := write(false); err != nil {
+				t.Fatalf("second write: %v", err)
+			}
+			assertRunnerWriteState(t, s, id, "done", tt.rows, true)
+			assertRunnerWriteState(t, s, other, "created", tt.rows, false)
 		})
 	}
+}
+
+// TestRunnerIndexUpload stages an upload over several transactions, as the
+// gateway does, and seals it with its pack.
+func TestRunnerIndexUpload(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "alpha")
+	tables := map[string]int{"index_packs": 1, "index_staging": 3}
+	chunks := func(n int) []runspec.IndexChunk {
+		out := make([]runspec.IndexChunk, n)
+		for i := range out {
+			out[i] = runspec.IndexChunk{Path: fmt.Sprintf("%d.go", i), StartLine: 1, EndLine: 1, Text: "content"}
+		}
+		return out
+	}
+	pack := runspec.IndexPack{Mode: IndexModeFull, ChangedPaths: []string{}}
+	id, token := runnerWriteFixture(t, s, account, RunnerKindIndex)
+	begin := func() (string, bool) {
+		t.Helper()
+		var upload string
+		var written bool
+		if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
+			var err error
+			upload, written, err = BeginRunnerIndex(ctx, tx, g.RunID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return upload, written
+	}
+	stage := func(upload string, n int) error {
+		return s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error { return StageRunnerChunks(ctx, tx, g.RunID, upload, chunks(n)) })
+	}
+	finish := func(upload string, n int) error {
+		return s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error { return FinishRunnerIndex(ctx, tx, g.RunID, upload, pack, n) })
+	}
+
+	died, written := begin()
+	if written {
+		t.Fatal("a new upload found its pack written")
+	}
+	// An upload that died leaves staging, which the next one clears.
+	if err := stage(died, 2); err != nil {
+		t.Fatal(err)
+	}
+	stale, written := begin()
+	if written {
+		t.Fatal("an unsealed upload counted as written")
+	}
+	assertRunnerWriteState(t, s, id, "created", tables, false)
+	// Three uploads overlap, and only the last holds. A stale one neither
+	// stages nor seals, however its count comes out.
+	if err := stage(stale, 1); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := begin()
+	if err := stage(stale, 1); !errors.Is(err, ErrIndexStaging) {
+		t.Fatalf("stale stage = %v, want ErrIndexStaging", err)
+	}
+	if err := finish(stale, 0); !errors.Is(err, ErrIndexStaging) {
+		t.Fatalf("stale seal = %v, want ErrIndexStaging", err)
+	}
+	assertRunnerWriteState(t, s, id, "created", tables, false)
+	if err := stage(current, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := finish(current, 3); !errors.Is(err, ErrIndexStaging) {
+		t.Fatalf("seal over too few chunks = %v, want ErrIndexStaging", err)
+	}
+	if err := stage(current, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := finish(current, 3); err != nil {
+		t.Fatal(err)
+	}
+	assertRunnerWriteState(t, s, id, "done", tables, true)
+	// A stale upload adds nothing once the pack is written.
+	if err := stage(stale, 1); !errors.Is(err, ErrIndexStaging) {
+		t.Fatalf("stage after the seal = %v, want ErrIndexStaging", err)
+	}
+	if _, written := begin(); !written {
+		t.Fatal("a sealed upload sent again must count as written")
+	}
+	assertRunnerWriteState(t, s, id, "done", tables, true)
 }
 
 func runnerWriteFixture(t *testing.T, s *Store, account string, kind RunnerKind) (string, string) {

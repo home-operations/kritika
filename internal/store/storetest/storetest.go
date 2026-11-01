@@ -26,8 +26,7 @@ func Env(t testing.TB, key string) string {
 }
 
 // Open opens the store on KRITIKA_TEST_APP_URL and KRITIKA_TEST_OWNER_URL,
-// migrated for the kritika_app and kritika_runner roles and closed when the
-// test ends.
+// migrated for the kritika_app role and closed when the test ends.
 func Open(t testing.TB) *store.Store {
 	t.Helper()
 	ctx := t.Context()
@@ -39,7 +38,7 @@ func Open(t testing.TB) *store.Store {
 		t.Fatalf("storetest: open: %v", err)
 	}
 	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+	if err := st.Migrate(ctx, "kritika_app"); err != nil {
 		t.Fatalf("storetest: migrate: %v", err)
 	}
 	return st

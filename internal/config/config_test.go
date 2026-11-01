@@ -59,7 +59,6 @@ func TestLoad(t *testing.T) {
 		{name: "bad level", env: map[string]string{"KRITIKA_LOG_LEVEL": "loud"}, wantErr: true},
 		{name: "bad format", env: map[string]string{"KRITIKA_LOG_FORMAT": "xml"}, wantErr: true},
 		{name: "database url required", env: map[string]string{"KRITIKA_DATABASE_URL": ""}, wantErr: true},
-		{name: "same role for app and runner", env: map[string]string{"KRITIKA_DATABASE_RUNNER_ROLE": "kritika_app"}, wantErr: true},
 		{name: "zero leader retry", env: map[string]string{"KRITIKA_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIKA_EXECUTOR": "docker"}, wantErr: true},
 		{name: "templates must be JSON", env: map[string]string{"KRITIKA_RUNNER_POD_TEMPLATE": "gvisor"}, wantErr: true},
@@ -196,12 +195,8 @@ func TestCommandValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Executor = ExecutorLocal
-	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIKA_RUNNER_DATABASE_URL") {
-		t.Fatalf("local executor without a runner DSN = %v", err)
-	}
-	cfg.RunnerDatabaseURL = "postgres://runner@db/kritika"
 	if err := cfg.ValidateServe(); err != nil {
-		t.Fatalf("local executor with a runner DSN: %v", err)
+		t.Fatalf("local executor: %v", err)
 	}
 	if err := cfg.ValidateRunner(); err == nil {
 		t.Fatal("run without its inputs must fail")

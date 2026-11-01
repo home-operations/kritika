@@ -21,10 +21,10 @@ var migrationFS embed.FS
 
 // Migrate applies River's schema and then kritika's own migrations, in order,
 // each in its own transaction. It records each in schema_migrations. It runs
-// as the owner and is idempotent. Grants to the application and runner
-// roles are re-applied after every run because a new table needs them and
-// GRANT is idempotent.
-func (s *Store) Migrate(ctx context.Context, appRole, runnerRole string) error {
+// as the owner and is idempotent. Grants to the application role are
+// re-applied after every run because a new table needs them and GRANT is
+// idempotent.
+func (s *Store) Migrate(ctx context.Context, appRole string) error {
 	if s.owner == nil {
 		return errors.New("store: migrate needs the owner DSN")
 	}
@@ -51,7 +51,7 @@ func (s *Store) Migrate(ctx context.Context, appRole, runnerRole string) error {
 			return err
 		}
 	}
-	return s.grant(ctx, appRole, runnerRole)
+	return s.grant(ctx, appRole)
 }
 
 func (s *Store) applyMigration(ctx context.Context, name, version string) error {
@@ -153,22 +153,21 @@ func (s *Store) WaitForSchema(ctx context.Context, every time.Duration) error {
 	}
 }
 
-// grant gives the application role what requests and jobs need, and the
-// runner role what one runner's job writes. Role names come from
-// configuration, so they are quoted as identifiers rather than interpolated
-// raw.
-func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
+// grant gives the application role what requests and jobs need. Its name
+// comes from configuration, so it is quoted as an identifier rather than
+// interpolated raw.
+func (s *Store) grant(ctx context.Context, appRole string) error {
 	app := pgx.Identifier{appRole}.Sanitize()
-	runner := pgx.Identifier{runnerRole}.Sanitize()
 	stmts := []string{
-		`GRANT USAGE ON SCHEMA public TO ` + app + `, ` + runner,
+		`GRANT USAGE ON SCHEMA public TO ` + app,
 		`GRANT SELECT ON accounts, config_state, schema_migrations TO ` + app,
 		// Only the leader writes connections. A request stamps a delivery.
 		`GRANT SELECT, UPDATE (last_webhook_at, last_unsigned_webhook_at) ON connections TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, dismissals, poll_state TO ` + app,
-		`GRANT SELECT ON index_schema, agent_runs, agent_conversations TO ` + app,
+		`GRANT SELECT ON index_schema TO ` + app,
+		`GRANT SELECT, INSERT ON agent_runs, agent_conversations TO ` + app,
 		`GRANT SELECT, INSERT, DELETE ON review_part_checkpoints TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON gateway_tokens, job_heartbeats TO ` + app,
 		// The web dashboard's own tables: all instance-level (no RLS,
@@ -178,14 +177,6 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT, UPDATE ON chatgpt_sessions TO ` + app,
 		`GRANT SELECT, INSERT ON audit_events TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls, egress_refusals, model_invocations TO ` + app,
-		// The runner role sees only its own job through the runner_job
-		// policies. It needs the table privileges that those policies gate. On
-		// runner_runs, it can update only what a runner reports, never the
-		// account or review that its run belongs to.
-		`GRANT SELECT, UPDATE (` + strings.Join(runnerRunColumns, ", ") + `) ON runner_runs TO ` + runner,
-		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs, agent_conversations TO ` + runner,
-		`GRANT SELECT, INSERT ON review_part_checkpoints TO ` + runner,
-		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}
 	// River's tables are outside row-level security. The application role
@@ -207,7 +198,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		return fmt.Errorf("store: begin grants: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := bindPolicies(ctx, tx, appRole, runnerRole); err != nil {
+	if err := bindPolicies(ctx, tx, appRole); err != nil {
 		return err
 	}
 	for _, stmt := range stmts {
@@ -222,19 +213,14 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	return nil
 }
 
-// runnerRunColumns are the runner_runs columns a runner writes: its phase,
-// its error, its heartbeat and its remaining review parts.
-var runnerRunColumns = []string{"phase", "error", "heartbeat_at", "parts_remaining"}
-
 // bindPolicies scopes policies to roles only when their bindings differ.
 // ALTER POLICY takes an exclusive table lock even for an unchanged binding.
-func bindPolicies(ctx context.Context, tx pgx.Tx, appRole, runnerRole string) error {
-	rows, err := tx.Query(ctx, `SELECT tablename, policyname,
-		CASE policyname WHEN 'account_isolation' THEN $1 ELSE $2 END AS role
+func bindPolicies(ctx context.Context, tx pgx.Tx, appRole string) error {
+	rows, err := tx.Query(ctx, `SELECT tablename, policyname, $1::text AS role
 		FROM pg_policies WHERE schemaname = current_schema()
-		AND policyname IN ('account_isolation', 'runner_job')
-		AND roles::text[] <> ARRAY[CASE policyname WHEN 'account_isolation' THEN $1 ELSE $2 END]::text[]
-		ORDER BY tablename, policyname`, appRole, runnerRole)
+		AND policyname = 'account_isolation'
+		AND roles::text[] <> ARRAY[$1::text]
+		ORDER BY tablename, policyname`, appRole)
 	if err != nil {
 		return fmt.Errorf("store: inspect policy roles: %w", err)
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 const submitReplyDescription = "Submit the reply and end the run. The input is the whole reply, as it is posted in the thread. " +
@@ -26,8 +25,8 @@ const submitIfNeededDescription = "Submit the reply, or none and why, and end th
 // findings kritika posted, and the thread. It runs the agent with a review's
 // tools until the agent submits the reply, which the worker posts. It writes
 // no context pack: nothing builds on a follow-up.
-func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
-	if err := st.SetRunnerPhase(ctx, p.RunID, "fetching"); err != nil {
+func runFollowUp(ctx context.Context, report *reporter, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
+	if err := report.phase(ctx, "fetching"); err != nil {
 		return err
 	}
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base})
@@ -37,7 +36,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets r
 	defer func() { _ = res.Close() }()
 	logger.Info("fetched", "head", p.Head[:7], "base", p.Base[:7], "changed_paths", len(res.Changed), "diff_bytes", len(res.Diff))
 
-	if err := st.SetRunnerPhase(ctx, p.RunID, "parsing"); err != nil {
+	if err := report.phase(ctx, "parsing"); err != nil {
 		return err
 	}
 	headTree, err := res.Head.Tree()
@@ -86,10 +85,10 @@ func runFollowUp(ctx context.Context, st *store.Store, p runspec.Spec, secrets r
 		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	}, p.Prompt.Prior, p.Thread)
-	if err := st.SetRunnerPhase(ctx, p.RunID, "reviewing"); err != nil {
+	if err := report.phase(ctx, "reviewing"); err != nil {
 		return err
 	}
-	return runAgentic(ctx, st, p, secrets, headTree, p.Ignore, tools, agentPrompt{
+	return runAgentic(ctx, report, p, secrets, headTree, p.Ignore, tools, agentPrompt{
 		system: system, user: user, validate: validate,
 		submit: model.ToolDef{Name: review.SubmitReply, Description: description, InputSchema: schema()},
 	}, review.ScopeFull, logger)

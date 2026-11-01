@@ -71,13 +71,12 @@ tests:
           value: reviews.kritika-runner-secrets
         documentIndex: 5
 
-  - it: pins the runner ServiceAccount, image repository and database Secret the executor uses
+  - it: pins the runner ServiceAccount and image repository the executor uses
     set:
       runner.podTemplate.spec.containers:
         - name: runner
           image: registry.example:5000/team/tools:1.2@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       runner.serviceAccount.name: reviewers
-      database.runner.existingSecret: runner-db
     asserts:
       - equal:
           path: spec.validations[8].expression
@@ -86,10 +85,6 @@ tests:
       - matchRegex:
           path: spec.validations[3].expression
           pattern: "variables.pod.serviceAccountName == 'reviewers'"
-        documentIndex: 0
-      - matchRegex:
-          path: spec.validations[12].expression
-          pattern: "e.valueFrom.secretKeyRef.name == 'runner-db'"
         documentIndex: 0
 
   - it: pins the repository of this release's -tools image by default

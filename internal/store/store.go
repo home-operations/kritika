@@ -22,10 +22,9 @@ import (
 // leader-eligible roles, the owner pool that runs migrations and the
 // configuration sync.
 type Store struct {
-	app         *pgxpool.Pool
-	owner       *pgxpool.Pool
-	logger      *slog.Logger
-	runnerToken string
+	app    *pgxpool.Pool
+	owner  *pgxpool.Pool
+	logger *slog.Logger
 }
 
 // Pool ceilings when the URI sets no pool_max_conns. pgx's own default is
@@ -104,10 +103,7 @@ type Options struct {
 	// OwnerURL is the owner role's DSN. It is optional. Without it, the process
 	// can never become leader.
 	OwnerURL string
-	// ExpectedRole requires the login to inherit this role. Empty skips that
-	// requirement.
-	ExpectedRole string
-	Logger       *slog.Logger
+	Logger   *slog.Logger
 }
 
 // Open connects both pools and runs the startup assertions. It fails, rather
@@ -123,18 +119,6 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err := s.assertApplicationRole(ctx); err != nil {
 		app.Close()
 		return nil, err
-	}
-	if opts.ExpectedRole != "" {
-		var allowed bool
-		if err := app.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles
-			WHERE rolname = $1 AND pg_has_role(current_user, oid, 'USAGE'))`, opts.ExpectedRole).Scan(&allowed); err != nil {
-			app.Close()
-			return nil, fmt.Errorf("store: inspect configured database role: %w", err)
-		}
-		if !allowed {
-			app.Close()
-			return nil, fmt.Errorf("%w: expected membership in %q", ErrDatabaseRole, opts.ExpectedRole)
-		}
 	}
 	if err := s.assertExtension(ctx); err != nil {
 		app.Close()
@@ -193,9 +177,6 @@ func (s *Store) PoolStats() map[string]func() *pgxpool.Stat {
 	}
 	return stats
 }
-
-// ErrDatabaseRole is a login that does not inherit the configured role.
-var ErrDatabaseRole = errors.New("store: database login does not have the configured role")
 
 // ErrIsolationOff is a database role that can bypass row-level security.
 var ErrIsolationOff = errors.New("store: application role would bypass row-level security")
@@ -268,7 +249,7 @@ func OpenWhenReady(ctx context.Context, opts Options) (*Store, error) {
 // as opposed to a database that is not reachable yet. No amount of retrying
 // will fix a startup assertion.
 func IsConfigurationError(err error) bool {
-	return errors.Is(err, ErrDatabaseRole) || errors.Is(err, ErrIsolationOff) ||
+	return errors.Is(err, ErrIsolationOff) ||
 		errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser)
 }
 
@@ -290,36 +271,17 @@ func (s *Store) assertExtension(ctx context.Context) error {
 	return nil
 }
 
-// WithRunnerJob sets the run ID and the credential supplied by ForRunner
-// transaction-locally. The runner policies require both before opening
-// that run's rows.
-func (s *Store) WithRunnerJob(ctx context.Context, runID string, fn func(pgx.Tx) error) error {
-	return s.withSetting(ctx, "app.runner_job_id", runID, "store: set runner job", func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT set_config('app.runner_token', $1, true)`, s.runnerToken); err != nil {
-			return fmt.Errorf("store: set runner credential: %w", err)
-		}
-		return fn(tx)
-	})
-}
-
 // WithAccount runs fn in a transaction on the application pool with the
 // account set transaction-locally. So every policy resolves to that account
 // and nothing survives on the pooled connection after commit or rollback.
 func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
-	return s.withSetting(ctx, "app.account_id", accountID, "store: set account", fn)
-}
-
-// withSetting runs fn in a transaction on the application pool with the
-// setting key set to value transaction-locally. setErr prefixes a failure
-// to set it.
-func (s *Store) withSetting(ctx context.Context, key, value, setErr string, fn func(pgx.Tx) error) error {
 	tx, err := s.app.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, key, value); err != nil {
-		return fmt.Errorf("%s: %w", setErr, err)
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.account_id', $1, true)`, accountID); err != nil {
+		return fmt.Errorf("store: set account: %w", err)
 	}
 	if err := fn(tx); err != nil {
 		return err

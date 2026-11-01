@@ -1633,11 +1633,6 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	if _, err := appStore.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
-	if err != nil {
-		t.Fatalf("Open runner: %v", err)
-	}
-	t.Cleanup(runnerStore.Close)
 
 	t.Setenv("TEST_PEM", "pem")
 	// Long enough that masking it out of the transcripts leaves the prompts
@@ -1677,7 +1672,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	fc := &fakeCompleter{}
 	fe := &fakeEmbedder{}
 	embedders := &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return fe }}
-	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
+	exec := &gateExecutor{inner: &executor.Local{}, started: make(chan executor.Spec)}
 	deadline := &jobDeadline{}
 	workers := river.NewWorkers()
 	reg := prometheus.NewRegistry()
@@ -1702,7 +1697,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		awaitEvery: 100 * time.Millisecond,
 	})
 	river.AddWorker(workers, &Index{
-		Base: wb, Executor: exec, Embedders: embedders,
+		Base: wb, Executor: exec, Embedders: embedders, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour,
 		// A chunk a batch, so a build commits several.
 		batch: 1,
 	})
@@ -3011,7 +3006,7 @@ func checkSupervision(
 			t.Fatalf("forge status while the runner works = %q", forgeStatus)
 		}
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.Job.RunID)
+			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '10 minutes' WHERE id = $1`, spec.Job.RunID)
 			return err
 		})
 		if err != nil {

@@ -136,7 +136,7 @@ func TestPartPromptsReviewers(t *testing.T) {
 	}))
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
-	s.Model.GatewayURL, s.PriorHead = gw.URL, shaB
+	s.GatewayURL, s.PriorHead = gw.URL, shaB
 	s.Prompt.Rules = []configfile.Rule{{ID: "house-rule", Rule: "Mind the house."}}
 	s.Prompt.Prior = []review.Finding{
 		{Path: "auth/login.go", Line: 1, Severity: review.SeverityP1, Title: "default's earlier finding"},
@@ -257,7 +257,7 @@ func TestDefaultReviewPriorOwnership(t *testing.T) {
 		for _, split := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/split=%t", scope, split), func(t *testing.T) {
 				s := reviewSpec()
-				s.Model.GatewayURL, s.PriorHead = gw.URL, shaB
+				s.GatewayURL, s.PriorHead = gw.URL, shaB
 				s.Prompt.Prior = []review.Finding{
 					{Path: "main.go", Line: 1, Severity: review.SeverityP1, Title: "default finding"},
 					{Path: "main.go", Line: 1, Severity: review.SeverityP1, Title: "lens finding", Agents: []string{"security"}},

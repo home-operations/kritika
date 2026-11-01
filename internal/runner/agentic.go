@@ -19,7 +19,6 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 // submitReview is the tool whose input is the review contract.
@@ -289,13 +288,13 @@ func offeredTools(p runspec.Spec, head *object.Tree, ignore []string, extra []ag
 func agentLoop(
 	ctx context.Context, stepper model.Stepper, p runspec.Spec, tools []agent.Tool, prompt agentPrompt, timeout time.Duration,
 	logger *slog.Logger,
-) (agent.Result, []store.TimelineStep) {
+) (agent.Result, []runspec.TimelineStep) {
 	actx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
 		actx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
-	timeline := []store.TimelineStep{}
+	timeline := []runspec.TimelineStep{}
 	limits := agentLimits(p.Agent)
 	// A review of one step reads nothing: its findings come from the prompt
 	// alone, and are not held to a file it cannot read. Its submission is still
@@ -323,7 +322,7 @@ func agentLoop(
 			for i, c := range e.Calls {
 				tools[i], outputBytes = c.Name, outputBytes+c.OutputBytes
 			}
-			timeline = append(timeline, store.TimelineStep{
+			timeline = append(timeline, runspec.TimelineStep{
 				Index: e.Index, Tools: tools, DurationMS: e.Duration.Milliseconds(), OutputBytes: outputBytes,
 				InputTokens: e.Usage.Prompt(), OutputTokens: e.Usage.Output,
 			})
@@ -423,7 +422,7 @@ const gatewayRetries = 2
 // composed. It writes its agent_runs row, with a review's conversation for
 // the next re-review, and marks the run done.
 func runAgentic(
-	ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
+	ctx context.Context, report *reporter, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools,
 	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
 ) error {
 	stepper, err := gatewayStepper(p, secrets, 0, followUpReviewer(p))
@@ -453,7 +452,7 @@ func runAgentic(
 		rec.useTools(tools)
 		rec.continued = continued
 		if err == nil {
-			err = writeAgentRun(wctx, st, p, rec, "failed")
+			err = writeAgentRun(wctx, report, rec, "failed")
 		}
 		logger.Warn("agent canceled", "steps", res.Steps, "input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output,
 			"cost_usd", res.CostUSD, "error", err)
@@ -477,7 +476,7 @@ func runAgentic(
 	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "commands", rec.commandsRun,
 		"sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
-	return writeAgentRun(ctx, st, p, rec, "done")
+	return writeAgentRun(ctx, report, rec, "done")
 }
 
 // gatewayStepper is the run's client of the gateway. It names part, the part
@@ -489,7 +488,7 @@ func gatewayStepper(p runspec.Spec, secrets runspec.Secrets, part int, reviewer 
 		reviewer = ""
 	}
 	s, err := model.NewOpenAI(model.OpenAIConfig{
-		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,
+		BaseURL: strings.TrimSuffix(p.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,
 		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout, Part: part, Reviewer: reviewer,
 	})
 	if err != nil {
@@ -601,7 +600,7 @@ func keptConversation(c *agent.Conversation, secrets runspec.Secrets, logger *sl
 // fetched. The error text, the sources and the submitted review are
 // masked: an error can carry a token, a steered model can write one into
 // its review, and the worker shows all three.
-func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets runspec.Secrets) (agentRecord, error) {
+func newAgentRecord(res agent.Result, timeline []runspec.TimelineStep, sources []string, secrets runspec.Secrets) (agentRecord, error) {
 	rec := agentRecord{
 		stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, unpricedSteps: res.UnpricedSteps, model: res.Model,
 		err: secrets.Mask(res.Err), forcedBy: res.ForcedBy,
@@ -627,8 +626,8 @@ func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []s
 }
 
 // writeAgentRun records the agent's row and moves the run to phase.
-func writeAgentRun(ctx context.Context, st *store.Store, p runspec.Spec, rec agentRecord, phase string) error {
-	return st.WriteRunnerAgent(ctx, p.RunID, store.RunnerAgentRecord{
+func writeAgentRun(ctx context.Context, report *reporter, rec agentRecord, phase string) error {
+	return report.agent(ctx, runspec.AgentRecord{
 		Stop: string(rec.stop), ForcedBy: string(rec.forcedBy), Result: rec.result, Steps: rec.steps,
 		ToolCalls: rec.toolCalls, Timeline: rec.timeline, Sources: rec.sources, Usage: rec.usage,
 		CostUSD: rec.costUSD, UnpricedSteps: rec.unpricedSteps, SkillsOffered: rec.skillsOffered, SkillsOpened: rec.skillsOpened,

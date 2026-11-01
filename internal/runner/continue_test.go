@@ -89,7 +89,7 @@ func TestCarryOn(t *testing.T) {
 			}))
 			defer srv.Close()
 			s := s
-			s.Model = &runspec.ModelEndpoint{GatewayURL: srv.URL, Model: "review"}
+			s.GatewayURL, s.Model = srv.URL, &runspec.ModelEndpoint{Model: "review"}
 			got := carryOn(t.Context(), s, runspec.Secrets{GatewayToken: "krk_run"}, fresh, tools, pack.Diff, delta, slog.New(slog.DiscardHandler))
 			if path != "GET /v1/conversation" || auth != "Bearer krk_run" {
 				t.Fatalf("request = %s with %q", path, auth)

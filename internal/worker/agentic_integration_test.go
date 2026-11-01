@@ -312,9 +312,7 @@ type agenticHarness struct {
 	number  int
 	ctx     context.Context
 	st      *store.Store
-	// runner is the store as a runner's role opens it.
-	runner *store.Store
-	svc    *ingest.Service
+	svc     *ingest.Service
 	// insertOnly enqueues jobs without working them, as the web API does.
 	insertOnly *river.Client[pgx.Tx]
 	queue      *river.Client[pgx.Tx]
@@ -373,13 +371,8 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
-	if err != nil {
-		t.Fatalf("Open runner: %v", err)
-	}
-	t.Cleanup(runnerStore.Close)
 
-	h := &agenticHarness{number: number, ctx: ctx, st: appStore, runner: runnerStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
+	h := &agenticHarness{number: number, ctx: ctx, st: appStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", h.sm.serveCatalog)
 	mux.Handle("/", h.sm)
@@ -392,6 +385,7 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritika:provider-secret@", 1)
 	h.config = fmt.Sprintf(agenticConfigYAML, providerURL)
+	var err error
 	if h.file, err = configfiletest.Parse(t, h.config); err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +405,7 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	// happens to have.
 	t.Setenv("PATH", bin)
 	h.lf = &localForge{dir: h.dir, base: h.base, tip: h.head}
-	h.exec = &hookExecutor{inner: &executor.Local{Store: runnerStore}, st: appStore}
+	h.exec = &hookExecutor{inner: &executor.Local{}, st: appStore}
 
 	insertOnly, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{})
 	if err != nil {
@@ -867,11 +861,7 @@ func checkGatewayConversation(t *testing.T, h *agenticHarness) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	databaseToken, err := h.st.MintRunnerToken(h.ctx, h.account.ID(), leaked)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := h.runner.ForRunner(databaseToken).WithRunnerJob(h.ctx, leaked, func(tx pgx.Tx) error {
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		_, err := tx.Exec(h.ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
 			SELECT id, account_id, $2, '{"system":"the key is model-key"}', 10, 'gateway/agent-model' FROM runner_runs WHERE id = $1`, leaked, leaked)
 		return err

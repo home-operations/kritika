@@ -1,14 +1,14 @@
 // Package runner is what a runner pod does. It fetches the head and
 // merge-base (and the last reviewed head when there is one), diffs them, and
 // computes the patch id. It decides what the review builds on and whether it
-// is skipped. It writes a context pack under its own run id and runs the
-// review's agent over it. A follow-up's run answers a comment with the same
-// agent and tools, and an index run chunks a tree.
+// is skipped. It reports a context pack and runs the review's agent over it. A
+// follow-up's run answers a comment with the same agent and tools, and an index
+// run chunks a tree.
 //
 // It works from one versioned job document (Spec). Its credentials arrive
-// apart from it (Secrets): a git token for one repository and, for a review,
-// a token for the worker's model gateway. Its database role can only touch
-// its own run.
+// apart from it (Secrets): a git token for one repository, a token for the
+// worker's gateway and a token to report with. It holds no database credential:
+// the gateway writes what it reports, to its own run alone.
 package runner
 
 import (
@@ -28,28 +28,31 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 // Run executes one run and reports success or failure in the run row,
-// stamping a heartbeat while it works. The store must be opened with the
-// runner role's DSN.
-func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
+// stamping a heartbeat while it works.
+func Run(ctx context.Context, spec runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := spec.Validate(); err != nil {
 		return err
 	}
 	// Every copy of the secrets taken from here on shares the redactions
 	// the run tool adds as it is built.
 	secrets.Redacted = &runspec.Redactions{}
-	st = st.ForRunner(secrets.DatabaseToken)
-	if err := st.AuthorizeRunner(ctx, spec.RunID); err != nil {
-		return fmt.Errorf("runner: database credential does not authorize this run: %w", err)
+	report := newReporter(spec, secrets)
+	// The first thing any kind does is talk to the gateway, which a runner
+	// started with the service can reach before its Service does.
+	if err := waitForGateway(ctx, logger); err != nil {
+		return err
+	}
+	if err := report.authorize(ctx); err != nil {
+		return fmt.Errorf("runner: the gateway does not take this run's reports: %w", err)
 	}
 	hctx, stop := context.WithCancel(ctx)
 	beating := make(chan struct{})
 	go func() {
 		defer close(beating)
-		heartbeat(hctx, runspec.HeartbeatInterval, func(ctx context.Context) error { return st.HeartbeatRunner(ctx, spec.RunID) }, logger)
+		heartbeat(hctx, runspec.HeartbeatInterval, report.heartbeat, logger)
 	}()
 	defer func() {
 		stop()
@@ -62,16 +65,10 @@ func Run(ctx context.Context, st *store.Store, spec runspec.Spec, secrets runspe
 	case runspec.KindFollowUp:
 		run = runFollowUp
 	}
-	// The first thing either kind does is fetch through the gateway, which
-	// a runner started with the service can reach before its Service
-	// does.
-	err := waitForGateway(ctx, logger)
-	if err == nil {
-		err = run(ctx, st, spec, secrets, logger)
-	}
+	err := run(ctx, report, spec, secrets, logger)
 	if err != nil {
 		// The worker still sees the Job fail. The row only loses why.
-		if ferr := fail(ctx, st, spec.RunID, secrets, err); ferr != nil {
+		if ferr := fail(ctx, report, secrets, err); ferr != nil {
 			logger.Warn("run failure not recorded", "error", ferr)
 		}
 	}
@@ -109,8 +106,8 @@ func priorDelta(res *gitfetch.Result, p runspec.Spec, logger *slog.Logger) (*str
 	return nil, deltaPaths
 }
 
-func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
-	if err := st.SetRunnerPhase(ctx, p.RunID, "fetching"); err != nil {
+func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
+	if err := report.phase(ctx, "fetching"); err != nil {
 		return err
 	}
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{
@@ -123,7 +120,7 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 	defer func() { _ = res.Close() }()
 	logger.Info("fetched", "head", p.Head[:7], "base", p.Base[:7], "changed_paths", len(res.Changed), "diff_bytes", len(res.Diff))
 
-	if err := st.SetRunnerPhase(ctx, p.RunID, "parsing"); err != nil {
+	if err := report.phase(ctx, "parsing"); err != nil {
 		return err
 	}
 	headTree, err := res.Head.Tree()
@@ -163,7 +160,7 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 	if skip == "" {
 		shares, scope, scopeReason = reviewShares(p, res, scope, scopeReason, deltaPaths)
 	}
-	reportPartCount(ctx, st, p, len(shares), logger)
+	reportPartCount(ctx, report, p, len(shares), logger)
 	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, shares != nil, logger)
 	if err != nil {
 		return err
@@ -234,14 +231,14 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 		notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
 	}
 
-	if err := st.SetRunnerPhase(ctx, p.RunID, "writing"); err != nil {
+	if err := report.phase(ctx, "writing"); err != nil {
 		return err
 	}
 	phase := "reviewing"
 	if skip != "" {
 		phase = "done"
 	}
-	err = st.WriteRunnerContext(ctx, p.RunID, store.RunnerContextPack{
+	err = report.context(ctx, runspec.ContextPack{
 		Head: p.Head, Base: p.Base, PatchID: res.PatchID, Diff: packDiff, ChangedPaths: res.Changed,
 		Stages: stagesJSON, Files: filesJSON, Notes: notes, PriorHead: priorHead, DeltaDiff: packDelta,
 		DeltaPaths: deltaPaths, Scope: string(scope), ScopeReason: scopeReason, SkipReason: skip, RuleIDs: ruleIDs, SkipDetail: skipDetail,
@@ -255,9 +252,9 @@ func runReview(ctx context.Context, st *store.Store, p runspec.Spec, secrets run
 		return nil
 	}
 	if parts != nil {
-		return runParts(ctx, st, p, secrets, headTree, ignore, tools, locks, parts, logger)
+		return runParts(ctx, report, p, secrets, headTree, ignore, tools, locks, parts, logger)
 	}
-	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
+	return runAgentic(ctx, report, p, secrets, headTree, ignore, tools, prompt, scope, logger)
 }
 
 // reviewShares is how a review that is not skipped runs, as planReviewers
@@ -351,7 +348,7 @@ func similarCodeFor(
 		return contextpack.SimilarResponse{}, false
 	}
 	started := time.Now()
-	out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: changed})
+	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: changed})
 	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
 		"elapsed", time.Since(started))
 	if err != nil {
@@ -365,7 +362,7 @@ func similarCodeFor(
 // the changed paths, which the prompt shows.
 func newSearchTool(p runspec.Spec, secrets runspec.Secrets, changed []string) *searchTool {
 	return &searchTool{
-		gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
+		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
 	}
 }
 
@@ -417,11 +414,10 @@ func heartbeat(ctx context.Context, interval time.Duration, beat func(context.Co
 
 // fail records cause as the run's error, with its secrets masked: a git or
 // provider error can carry a credential.
-func fail(ctx context.Context, st *store.Store, runID string, secrets runspec.Secrets, cause error) error {
+func fail(ctx context.Context, report *reporter, secrets runspec.Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	err := st.RecordRunnerFailure(fctx, runID, secrets.Mask(cause.Error()))
-	if err != nil {
+	if err := report.failure(fctx, secrets.Mask(cause.Error())); err != nil {
 		return fmt.Errorf("runner: record failure: %w", err)
 	}
 	return nil

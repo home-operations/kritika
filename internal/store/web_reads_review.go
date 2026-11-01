@@ -12,6 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/transcript"
 )
 
@@ -142,17 +143,7 @@ func LatestRunnerRun(ctx context.Context, tx pgx.Tx, reviewID string) (RunnerRun
 }
 
 // TimelineStep is one agent step as agent_runs.timeline records it.
-type TimelineStep struct {
-	Index int `json:"index"`
-	// Part is the part of a split review that the step was for, from 1. It is
-	// 0 when the review was not split.
-	Part         int      `json:"part,omitempty"`
-	Tools        []string `json:"tools"`
-	DurationMS   int64    `json:"duration_ms"`
-	OutputBytes  int      `json:"output_bytes"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-}
+type TimelineStep = runspec.TimelineStep
 
 // AgentRunRow is one agent_runs row.
 type AgentRunRow struct {
@@ -188,25 +179,8 @@ type AgentRunRow struct {
 	ForcedBy string
 }
 
-// AgentPart is how the agent of one part of a split review ended: the
-// files it reviewed, why it stopped and, once it submitted, the summary it
-// wrote.
-type AgentPart struct {
-	ReusedFrom string `json:"reused_from,omitempty"`
-	// Reviewer is the reviewer that the part was for in a review with several,
-	// "" in a review with the default reviewer alone. Full says that it
-	// reviewed the whole change where the review built on the last one.
-	Reviewer string          `json:"agent,omitempty"`
-	Full     bool            `json:"full,omitempty"`
-	Paths    []string        `json:"paths"`
-	Stop     string          `json:"stop"`
-	Error    string          `json:"error,omitempty"`
-	Steps    int             `json:"steps"`
-	Summary  json.RawMessage `json:"summary,omitempty"`
-	// ForcedBy is the limit that made the loop tell the part's agent to
-	// submit, "" when it never did.
-	ForcedBy string `json:"forced_by,omitempty"`
-}
+// AgentPart is how the agent of one part of a split review ended.
+type AgentPart = runspec.AgentPart
 
 // FindAgentRun returns the agent run of a runner run, or ErrNotFound.
 func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunRow, error) {

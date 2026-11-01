@@ -441,7 +441,7 @@ func (f *followUp) runAgent(
 		defer cancel()
 		return nil, errors.Join(err, failRun(dctx, f.w.Store, f.account.ID(), runID, err.Error()))
 	}
-	databaseToken, err := f.w.Store.MintRunnerToken(ctx, f.account.ID(), runID)
+	reportToken, err := f.w.Store.MintRunnerToken(ctx, f.account.ID(), runID)
 	if err != nil {
 		return nil, err
 	}
@@ -451,9 +451,10 @@ func (f *followUp) runAgent(
 		Annotations: runnerAnnotations(f.jobID, f.pr.headSHA),
 		Job: runspec.Spec{
 			Version: runspec.Version, Kind: runspec.KindFollowUp, RunID: runID, CloneURL: f.client.CloneURL(f.owner, f.repo),
-			Forge: string(f.account.Forge), Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
+			GatewayURL: f.w.GatewayURL,
+			Forge:      string(f.account.Forge), Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
 			Tools: f.eff.Tools, Prompt: prompt, Thread: thread, Reply: f.asReply,
-			Model: &runspec.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
+			Model: &runspec.ModelEndpoint{Model: gateway.ModelName},
 			Agent: &runspec.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
@@ -461,7 +462,7 @@ func (f *followUp) runAgent(
 				Hosts: f.file.EgressHosts(), CacheLocked: f.file.GatewayCaches(),
 			},
 		},
-		Secrets:  runspec.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
+		Secrets:  runspec.Secrets{GitToken: gitToken, GatewayToken: token, ReportToken: reportToken},
 		Deadline: deadline,
 	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
 	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr

@@ -13,7 +13,7 @@ cluster in the same Kubernetes cluster, which this page sets up.
   ([VectorChord](https://github.com/tensorchord/VectorChord)) and `vector`
   (pgvector) extensions must exist before the first start. `vchord` builds
   on the types from pgvector, and it must be in `shared_preload_libraries`.
-- kritika needs three roles. The chart requires them, and at start kritika
+- kritika needs two roles. The chart requires them, and at start kritika
   makes sure that they are correct:
   - The owner runs migrations and applies the configuration on the
     leader. It owns the database, and kritika refuses an owner that is a
@@ -22,8 +22,6 @@ cluster in the same Kubernetes cluster, which this page sets up.
     default) serves everything else. kritika refuses an application role
     that owns a table, is a superuser or has `BYPASSRLS`. Any of these
     turns row-level security off.
-  - The runner role (`database.runner.role`, `kritika_runner` by
-    default) is handed to runner Jobs and can only write its own run.
 - kritika needs direct or session-mode connections for the owner and
   application roles. The leader is whichever replica holds a session advisory
   lock (a Postgres lock that lasts for the session) on its owner connection.
@@ -137,10 +135,10 @@ spec:
       ensure: present
 ```
 
-The application and runner roles are `DatabaseRole` resources, which CNPG
+The application role is a `DatabaseRole` resource, which CNPG
 recommends over the Cluster's `managed.roles`
 ([declarative role management](https://cloudnative-pg.io/docs/1.30/declarative_role_management/)).
-kritika's migrations grant them what they need:
+kritika's migrations grant it what it needs:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -156,19 +154,6 @@ spec:
     name: kritika-postgres-app
   # Deleting this resource leaves the role, so a running kritika keeps its
   # connections.
-  databaseRoleReclaimPolicy: retain
----
-apiVersion: postgresql.cnpg.io/v1
-kind: DatabaseRole
-metadata:
-  name: kritika-runner
-spec:
-  cluster:
-    name: kritika-postgres
-  name: kritika_runner
-  login: true
-  passwordSecret:
-    name: kritika-postgres-runner
   databaseRoleReclaimPolicy: retain
 ```
 
@@ -190,10 +175,10 @@ stringData:
   uri: postgres://kritika_app:<password>@kritika-postgres-rw.kritika.svc:5432/kritika?sslmode=require&connect_timeout=10
 ```
 
-The owner's Secret, `kritika-postgres-credentials`, and the runner's,
-`kritika-postgres-runner`, look the same, each with its own role. A password
-generator, such as an External Secrets `Password` generator feeding a
-templated `ExternalSecret`, can produce all three, `uri` included. Keep the
+The owner's Secret, `kritika-postgres-credentials`, looks the same, with its
+own role. A password generator, such as an External Secrets `Password`
+generator feeding a templated `ExternalSecret`, can produce both, `uri`
+included. Keep the
 generated passwords free of characters that need escaping in a URI, or
 escape them.
 
@@ -203,7 +188,7 @@ go to a Service address that no longer exists. DNS still caches that address.
 That dial hangs for minutes before kritika retries. With a timeout, the
 attempt fails fast and the retry looks the name up again.
 
-Point the chart at the three Secrets:
+Point the chart at the two Secrets:
 
 ```yaml
 database:
@@ -211,17 +196,14 @@ database:
     existingSecret: kritika-postgres-credentials
   app:
     existingSecret: kritika-postgres-app
-  runner:
-    existingSecret: kritika-postgres-runner
 ```
 
-If the roles that the URIs log in as are not `kritika_app` and
-`kritika_runner`, `database.app.role` and `database.runner.role` must name
-them.
+If the role that the application URI logs in as is not `kritika_app`,
+`database.app.role` must name it.
 
-The chart's NetworkPolicies are on by default. With them, kritika serve and
-runner pods reach the Postgres port only where `networkPolicy.postgres` says
-the database is. Unless `networkPolicy.postgres` is set, that is any pod in
+The chart's NetworkPolicies are on by default. With them, kritika serve
+reaches the Postgres port only where `networkPolicy.postgres` says the
+database is, and runner pods do not reach it at all. Unless `networkPolicy.postgres` is set, that is any pod in
 the release namespace. Name the cluster's pods by the label CNPG gives them.
 When their namespace is not the release namespace, add it. CNPG gives a
 `Pooler`'s pods the same label, so the selector also covers a URI that goes
@@ -244,13 +226,12 @@ replica never becomes ready.
 Postgres allows 100 connections unless `max_connections` says otherwise.
 Connections open on demand, so an idle replica holds few:
 
-| Connections              | Per        | At most                                                                                                           | `statement_timeout`                                                                      | `application_name`    |
-| ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------- |
-| the application pool     | replica    | 16                                                                                                                | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`         |
-| the owner pool           | replica    | 4                                                                                                                 | ten minutes, for a migration that builds an index                                        | `kritika-owner`       |
-| the `LISTEN` connection  | replica    | 1                                                                                                                 | one minute, as the application pool's                                                    | `kritika-listen`      |
-| review publication locks | replica    | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute                                                                               | `kritika-publication` |
-| a runner's pool          | runner Job | uses one or two                                                                                                   | one minute, as the application pool's                                                    | `kritika-app`         |
+| Connections              | Per     | At most                                                                                                           | `statement_timeout`                                                                      | `application_name`    |
+| ------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------- |
+| the application pool     | replica | 16                                                                                                                | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`         |
+| the owner pool           | replica | 4                                                                                                                 | ten minutes, for a migration that builds an index                                        | `kritika-owner`       |
+| the `LISTEN` connection  | replica | 1                                                                                                                 | one minute, as the application pool's                                                    | `kritika-listen`      |
+| review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute                                                                               | `kritika-publication` |
 
 Each active review publication holds a separate application-role connection
 for its advisory lock, without an open transaction. This keeps slow forge
@@ -267,8 +248,9 @@ under the Cluster's `postgresql.parameters`.
 A `pool_ping_timeout` in a URI
 replaces that pool's five-second bound on a ping of an idle connection.
 CNPG's `cnpg_backends_total` metric shows what each `application_name`
-holds. Runner Jobs connect as `kritika-app` too, so that name counts their
-connections together with the replicas' application pools.
+holds. `kritika-app` counts the replicas' application pools, which also write
+what runner Jobs report to the gateway. Runner Jobs open no connection of their
+own.
 
 The leader runs hourly retention sweeps of transcripts, egress refusals,
 settled model invocations, stored diffs and agent conversations. The sweeps

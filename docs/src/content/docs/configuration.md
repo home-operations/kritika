@@ -34,8 +34,7 @@ use its default. Explicit `false` and `0` are preserved.
 For an external ConfigMap, set `existingConfigMap` instead of `config`.
 It must contain `config.yaml` with `webUrl` and the application
 configuration. Omit the keys that the chart owns: `addr`, `metricsAddr`,
-`gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`,
-`executor` and `runner`.
+`gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `executor` and `runner`.
 
 If the chart's `gatewayCache.enabled` is set, also omit the gateway
 cache keys that it sets. These keys are `gatewayCacheDir`,
@@ -106,15 +105,14 @@ These inputs have no configuration-file equivalent:
 | Variable                              | Purpose                                                                                                                                         |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `KRITIKA_CONFIG_FILE`                 | Configuration file path, required by `serve` and `chatgpt login`, and `config check`'s file when it names none                                  |
-| `KRITIKA_DATABASE_URL`                | Application DSN (database connection string) for `serve`. Runner DSN for `run`                                                                  |
+| `KRITIKA_DATABASE_URL`                | Application DSN (database connection string) for `serve`                                                                                        |
 | `KRITIKA_DATABASE_OWNER_URL`          | Owner DSN for migrations and leader work. The leader is the replica, one running kritika pod, that holds the leader lock                        |
 | `KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY` | S3 access key for serve only. Paired with the secret key                                                                                        |
 | `KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY` | S3 secret key for serve only. When both keys are absent, serve uses IAM credentials                                                             |
-| `KRITIKA_RUNNER_DATABASE_URL`         | Runner DSN for the local executor                                                                                                               |
 | `KRITIKA_RUN_SPEC_FILE`               | Per-run job document path                                                                                                                       |
 | `KRITIKA_GIT_TOKEN`                   | Per-run Git credential                                                                                                                          |
 | `KRITIKA_GATEWAY_TOKEN`               | Per-run model gateway credential                                                                                                                |
-| `KRITIKA_DATABASE_TOKEN`              | Per-run database credential                                                                                                                     |
+| `KRITIKA_REPORT_TOKEN`                | Per-run report credential                                                                                                                       |
 | `KRITIKA_POD_NAME`, `KRITIKA_POD_UID` | The serve pod's name and UID, from the downward API, which the pod's [Kubernetes Events](/metrics/#kubernetes-events) name. The chart sets both |
 | `GOMEMLIMIT`, `AUTOMEMLIMIT`          | Go's soft memory limit. The chart sets neither                                                                                                  |
 
@@ -968,13 +966,11 @@ forge API limits remain shared with reviews, so raising worker counts
 does not guarantee higher throughput.
 
 Other keys in the file are `webUrl` (required public URL), `addr`,
-`metricsAddr`, `gatewayAddr`, `gatewayUrl`, `executor`,
-`databaseAppRole` and `databaseRunnerRole`. The chart derives all except
-`webUrl` from deployment values. The `runner` section also accepts
-`serviceAccount`, `databaseSecret` and `databaseSecretKey`. The chart
-derives these from its runner and database values.
+`metricsAddr`, `gatewayAddr`, `gatewayUrl`, `executor` and
+`databaseAppRole`. The chart derives all except `webUrl` from deployment
+values. The `runner` section also accepts `serviceAccount`. The chart
+derives it from its runner values.
 
 The runner image is `runner.podTemplate.spec.containers[0].image`. How
 long a finished Job is kept is
-`runner.jobTemplate.spec.ttlSecondsAfterFinished`. Database Secret names
-are references, not DSNs.
+`runner.jobTemplate.spec.ttlSecondsAfterFinished`.

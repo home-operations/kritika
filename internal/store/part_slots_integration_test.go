@@ -4,16 +4,13 @@ package store
 
 import (
 	"context"
-	"errors"
-	"log/slog"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/sync/errgroup"
 )
 
-func TestPartSlotsPermissions(t *testing.T) {
+func TestPartSlots(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
@@ -44,15 +41,9 @@ func TestPartSlotsPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runner.Close)
-	bound := runner.ForRunner(token)
 	for _, remaining := range []int{4, 2, 0} {
-		if err := bound.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-			slots, err := ReportRemainingParts(ctx, tx, runID, remaining)
+		if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
+			slots, err := ReportRemainingParts(ctx, tx, g.RunID, remaining)
 			if err == nil && slots != 3 {
 				t.Errorf("slots = %d, want 3", slots)
 			}
@@ -60,17 +51,6 @@ func TestPartSlotsPermissions(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-	}
-	err = bound.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error { return SetPartSlots(ctx, tx, runID, 10) })
-	if pgerr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgerr.Code != "42501" {
-		t.Fatalf("runner grant = %v, want permission denied", err)
-	}
-	err = runner.ForRunner(RandomToken()).WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		_, err := ReportRemainingParts(ctx, tx, runID, 10)
-		return err
-	})
-	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("other credential report = %v, want no rows", err)
 	}
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		remaining, err := RemainingParts(ctx, tx, runID)

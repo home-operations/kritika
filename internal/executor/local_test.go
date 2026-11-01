@@ -13,7 +13,7 @@ func TestLocalMasksTheRunError(t *testing.T) {
 	const token = "ghs_secret_token"
 	s := spec()
 	// An invalid head makes the runner's own error quote it, before the
-	// runner touches the store.
+	// runner reaches the gateway.
 	s.Job.Head = token
 	res := (&Local{}).Run(t.Context(), s)
 	if res.Err == nil || strings.Contains(res.Err.Error(), token) || !strings.Contains(res.Err.Error(), "***") {

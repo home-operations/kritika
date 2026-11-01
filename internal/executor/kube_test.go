@@ -36,12 +36,12 @@ func spec() Spec {
 		Annotations: map[string]string{"head-sha": headSHA},
 		Job: runspec.Spec{
 			Version: runspec.Version, Kind: runspec.KindReview, RunID: "0123456789abcdef-run",
-			CloneURL: "https://forge.example.com/acme/widgets.git", Head: headSHA, Base: baseSHA,
+			CloneURL: "https://forge.example.com/acme/widgets.git", GatewayURL: "http://kritika-gateway:8082", Head: headSHA, Base: baseSHA,
 			Ignore: []string{"vendor/**", "**/*.lock"},
-			Agent:  &runspec.AgentLimits{}, Model: &runspec.ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
+			Agent:  &runspec.AgentLimits{}, Model: &runspec.ModelEndpoint{Model: "review"},
 			Prompt: &runspec.Prompt{Repository: "acme/widgets"},
 		},
-		Secrets:  runspec.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", DatabaseToken: "db_run_token"},
+		Secrets:  runspec.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", ReportToken: "krr_run_token"},
 		Deadline: 5 * time.Minute,
 	}
 }
@@ -53,8 +53,8 @@ func withImage(image string) PodTemplate {
 }
 
 func TestJobSpec(t *testing.T) {
-	k := &Kube{Namespace: "kritika", ServiceAccount: "kritika-runner", DatabaseSecret: "kritika-postgres-runner", DatabaseSecretKey: "uri",
-		DatabaseRole: "custom_runner", GatewayURL: "http://kritika-gateway:8082", PodTemplate: PodTemplate{Spec: PodTemplateSpec{
+	k := &Kube{Namespace: "kritika", ServiceAccount: "kritika-runner",
+		GatewayURL: "http://kritika-gateway:8082", PodTemplate: PodTemplate{Spec: PodTemplateSpec{
 			RuntimeClassName: "gvisor",
 			Containers:       []TemplateContainer{{Name: runnerRole, Image: "ttl.sh/x:1h", ImagePullPolicy: corev1.PullIfNotPresent}},
 		}}}
@@ -160,14 +160,14 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 		t.Fatal("the job document must not travel as a variable")
 	}
 	for _, e := range vars {
-		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "krk_run_token") || strings.Contains(e.Value, "db_run_token") {
+		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "krk_run_token") || strings.Contains(e.Value, "krr_run_token") {
 			t.Fatalf("%s carries a secret in plain text", e.Name)
 		}
 	}
 	for name, want := range map[string]struct {
 		key      string
 		optional bool
-	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", false}, "KRITIKA_DATABASE_TOKEN": {"database-token", false}} {
+	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", false}, "KRITIKA_REPORT_TOKEN": {"report-token", false}} {
 		ref := env[name].ValueFrom
 		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritika-run-0123456789abcdef-run" || ref.SecretKeyRef.Key != want.key ||
 			(ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) != want.optional {
@@ -179,13 +179,7 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 			t.Fatalf("%s is replaced by the job document", name)
 		}
 	}
-	if env["KRITIKA_DATABASE_RUNNER_ROLE"].Value != "custom_runner" {
-		t.Fatalf("runner role = %v", env["KRITIKA_DATABASE_RUNNER_ROLE"])
-	}
-	if ref := env["KRITIKA_DATABASE_URL"].ValueFrom.SecretKeyRef; ref.Name != "kritika-postgres-runner" || ref.Key != "uri" {
-		t.Fatalf("db env = %+v", ref)
-	}
-	for _, name := range []string{"KRITIKA_EMBED_API_KEY", "KRITIKA_DATABASE_OWNER_URL", "OPENROUTER_API_KEY"} {
+	for _, name := range []string{"KRITIKA_DATABASE_URL", "KRITIKA_EMBED_API_KEY", "KRITIKA_DATABASE_OWNER_URL", "OPENROUTER_API_KEY"} {
 		if _, leaked := env[name]; leaked {
 			t.Fatalf("%s must never reach a runner pod", name)
 		}
@@ -655,7 +649,7 @@ func TestKubeRunRemembersAStartedPod(t *testing.T) {
 // newKube is an executor over client whose watch started.
 func newKube(t *testing.T, client *fake.Clientset) *Kube {
 	t.Helper()
-	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
+	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", Poll: 10 * time.Millisecond}
 	t.Cleanup(k.Stop)
 	if err := k.Start(t.Context()); err != nil {
 		t.Fatal(err)
@@ -778,7 +772,7 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 		t.Fatalf("secret = %+v, %v; want one owner reference", sec, err)
 	}
 	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["gateway-token"]) != "krk_run_token" ||
-		string(sec.Data["database-token"]) != "db_run_token" {
+		string(sec.Data["report-token"]) != "krr_run_token" {
 		t.Fatalf("secret data = %v", sec.Data)
 	}
 	got, err := runspec.Decode(sec.Data["run-spec.json"])

@@ -10,7 +10,7 @@ available value, see the generated
 | --------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `config`, `existingConfigMap`     | Application configuration. Choose one source.       | [Configuration](/configuration/)                                                                         |
 | `env`, `envFrom`                  | Credentials from existing Secrets.                  | [Setup](/setup/#deploy)                                                                                  |
-| `database`                        | Three database connection Secrets and role names.   | [Database](/database/)                                                                                   |
+| `database`                        | Two database connection Secrets and a role name.    | [Database](/database/)                                                                                   |
 | `runner`                          | Runner resources, runtime, placement and deadlines. | [Security](/security/#runner-sandbox)                                                                    |
 | `networkPolicy`                   | Allowed network access for pods.                    | [Security](/security/#hardening-an-install)                                                              |
 | `service`, `ingress`, `httpRoute` | Ports and public access.                            | [Setup](/setup/#deploy)                                                                                  |

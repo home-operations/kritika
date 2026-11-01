@@ -39,7 +39,7 @@ func (w *Index) stage(
 	if err != nil {
 		return err
 	}
-	databaseToken, err := w.Store.MintIndexRunnerToken(ctx, account.ID(), spec.RunID, job.ID, job.Attempt)
+	reportToken, err := w.Store.MintIndexRunnerToken(ctx, account.ID(), spec.RunID, job.ID, job.Attempt)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func (w *Index) stage(
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels:      runnerLabels(account.Key(), repository, jobs.QueueIndex, 0),
 		Annotations: runnerAnnotations(job.ID, spec.Head), Job: spec,
-		Secrets:  runspec.Secrets{GitToken: token, GatewayToken: gatewayToken, DatabaseToken: databaseToken},
+		Secrets:  runspec.Secrets{GitToken: token, GatewayToken: gatewayToken, ReportToken: reportToken},
 		Deadline: deadline,
 	})
 	// Runner accounting survives River cancellation, while sealing staging

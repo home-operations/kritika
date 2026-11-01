@@ -36,7 +36,6 @@ func TestSettingsValidation(t *testing.T) {
 		{"empty metrics address", "metricsAddr: ''", "metricsAddr: KRITIKA_METRICS_ADDR must be set"},
 		{"empty gateway address", "gatewayAddr: ''", "gatewayAddr: KRITIKA_GATEWAY_ADDR must be set"},
 		{"empty role", "databaseAppRole: ''", "databaseAppRole: KRITIKA_DATABASE_APP_ROLE must be set"},
-		{"same database roles", "databaseRunnerRole: kritika_app", "databaseRunnerRole: KRITIKA_DATABASE_RUNNER_ROLE must be distinct"},
 		{"unknown executor", "executor: docker", "executor: KRITIKA_EXECUTOR must be kubernetes or local"},
 		{"allowed bounds", fmt.Sprintf("pollInterval: 0s\npollLookback: 0s\nindexGrace: 0s\ntranscriptRetention: 24h\ndiffRetention: 24h\n"+
 			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline/time.Second)), ""},
@@ -95,21 +94,6 @@ func TestValidationErrorsAreStable(t *testing.T) {
 		if err == nil || err.Error() != want {
 			t.Fatalf("LoadSettings = %v, want %s", err, want)
 		}
-	}
-}
-
-func TestServeRequiresRunnerSecret(t *testing.T) {
-	for _, key := range []string{"databaseSecret", "databaseSecretKey"} {
-		t.Run(key, func(t *testing.T) {
-			s, _, err := LoadSettings([]byte("webUrl: https://example.com\ngatewayUrl: http://gateway:8082\nrunner: {" + key + ": ''}"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			cfg := Config{Settings: s, ConfigFile: "config.yaml"}
-			if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "runner."+key) {
-				t.Fatalf("ValidateServe = %v", err)
-			}
-		})
 	}
 }
 

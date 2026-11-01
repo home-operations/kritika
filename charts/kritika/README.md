@@ -18,7 +18,6 @@ roles, its public URL, a way to sign in, and its configuration file:
 helm install kritika oci://ghcr.io/home-operations/charts/kritika \
   --set database.app.existingSecret=kritika-postgres-app \
   --set database.owner.existingSecret=kritika-postgres-credentials \
-  --set database.runner.existingSecret=kritika-postgres-runner \
   --values my-values.yaml
 ```
 
@@ -99,14 +98,13 @@ what a fresh instance still lacks.
 
 ### Database
 
-The chart requires three Postgres roles, and kritika makes sure that
+The chart requires two Postgres roles, and kritika makes sure that
 they are valid at start:
 
-| Role        | Values                                                   | What it does                                             | kritika refuses one that                        |
-| ----------- | -------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
-| owner       | `database.owner.existingSecret`                          | runs migrations and applies configuration on the leader  | is a superuser                                  |
-| application | `database.app.existingSecret`, `database.app.role`       | serves everything else, under row-level security         | owns a table, is a superuser or has `BYPASSRLS` |
-| runner      | `database.runner.existingSecret`, `database.runner.role` | is handed to runner Jobs, and can only write its own run |                                                 |
+| Role        | Values                                             | What it does                                            | kritika refuses one that                        |
+| ----------- | -------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| owner       | `database.owner.existingSecret`                    | runs migrations and applies configuration on the leader | is a superuser                                  |
+| application | `database.app.existingSecret`, `database.app.role` | serves everything else, under row-level security        | owns a table, is a superuser or has `BYPASSRLS` |
 
 The `vchord` (VectorChord) and `vector` (pgvector, whose types it builds on)
 extensions must exist before the first start, and `vchord` must be in
@@ -122,16 +120,16 @@ other clients between transactions. That breaks both. `kritika_leader`
 is 1 on the replica that holds the lock.
 
 The chart supports the database as a CloudNativePG cluster in the same
-Kubernetes cluster. The chart's NetworkPolicies let kritika serve and
-runner pods reach the Postgres port only on the pods that
-`networkPolicy.postgres` selects.
+Kubernetes cluster. The chart's NetworkPolicies let kritika serve reach the
+Postgres port only on the pods that `networkPolicy.postgres` selects, and
+runner pods not at all.
 
 [Postgres with
 CloudNativePG](https://kritika.home-operations.com/database/) sets this
 up end to end. It covers a two-instance cluster with VectorChord mounted
 as an image volume extension, and the extensions through a `Database`
-resource. It also covers the application and runner roles as
-`DatabaseRole` resources, the Secrets with their `uri` key for
+resource. It also covers the application role as a
+`DatabaseRole` resource, the Secrets with their `uri` key for
 `database.*.existingSecret`, failover and backups.
 
 ### Security
@@ -140,14 +138,15 @@ Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
 - `networkPolicy.enabled`, on by default, keeps a runner pod to the
-  cluster's DNS, the database that `networkPolicy.postgres` locates and
-  the egress gateway. kritika serve runs that gateway on
+  cluster's DNS and the egress gateway. kritika serve runs that gateway on
   `service.gatewayPort`. The gateway allows what the configuration
-  file's `egress` lists, and it is the runner's only way to its model.
+  file's `egress` lists, and it is the runner's only way to its model and
+  to the database, where it writes what the runner reports.
   With the Cilium flavor, the runner pod can look up only the names of
   the cluster's Services.
-- A runner holds no provider key or App key: only a GitHub token for its
-  run, a gateway token and the runner role's database URI.
+- A runner holds no provider key, App key or database credential: only a
+  GitHub token for its run, a gateway token and a token to report what it
+  found to the gateway with.
 - The review's run tool executes the five programs that the runner image
   carries: `curl`, `find`, `gh`, `grep` and `jq`. It runs them in a root
   with bash but no package manager. It also executes those that the
@@ -213,15 +212,12 @@ Kubernetes: `>=1.34.0-0`
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
 | clusterDomain | string | `"cluster.local"` | The cluster's DNS domain, the kubelet's `clusterDomain`. The gateway's in-cluster address, which runner Jobs are handed as `HTTPS_PROXY`, is `<release>-gateway.<namespace>.svc.<clusterDomain>`. The Service names that the `cilium` network policy lets runner pods look up also end in it. On a cluster with another domain, every runner fails to reach the gateway until this matches. |
-| config | object | `{}` | Application configuration, with the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted keys use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys that the chart derives from its deployment values fail the render. These keys are `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `databaseRunnerRole`, `executor` and `runner`. When `gatewayCache.enabled` is set, they also include `gatewayCacheDir`, `gatewayCacheStorage` and `gatewayCacheMaxEntrySize`. For filesystem storage, they also include `gatewayCacheMaxSize`. For S3, they also include the `gatewayCacheS3*` keys. |
+| config | object | `{}` | Application configuration, with the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted keys use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. The keys that the chart derives from its deployment values fail the render. These keys are `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`, `executor` and `runner`. When `gatewayCache.enabled` is set, they also include `gatewayCacheDir`, `gatewayCacheStorage` and `gatewayCacheMaxEntrySize`. For filesystem storage, they also include `gatewayCacheMaxSize`. For S3, they also include the `gatewayCacheS3*` keys. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritika_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
 | database.owner.existingSecret | required | `""` | Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync. |
 | database.owner.key | string | `"uri"` | Key in that Secret. |
-| database.runner.existingSecret | required | `""` | Secret holding the runner role's connection URI. Runner Jobs reference it, and kritika serve never reads it. |
-| database.runner.key | string | `"uri"` | Key in that Secret. |
-| database.runner.role | string | `"kritika_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (for example, `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | env | object | `{}` | Operational configuration and referenced secrets, keyed by environment variable name. Use valueFrom.secretKeyRef for credentials. Do not duplicate file configuration or chart-managed variables. Rendered through tpl. |
 | envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application configuration must not also be set in the file. |
@@ -313,7 +309,7 @@ Kubernetes: `>=1.34.0-0`
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once its configuration file loads, the database answers and it serves webhooks and the dashboard. A rollout therefore takes the previous pod down only once the new one can hold a delivery. |
 | replicas | int | `1` | Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs. Exactly one holds the leader lock at a time. A rollout keeps one serving on its own. To keep one serving while a pod or node is lost, set 2. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritika serve pods. |
-| runner.admissionPolicy.enabled | bool | `true` | Have the cluster refuse three things from kritika serve's ServiceAccount. The first is any Job that is not a runner Job as kritika builds it. The second is any Secret that is not a run's. The third is any deletion of a Job but in the foreground, which takes its run's Secret with it. The cluster uses three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects that the chart's installer must be allowed to create. Without them, the Role lets kritika serve create any Job in its namespace. That Job's pod can run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs that an older replica starts mid-rollout pass too. Some changes refuse those runs until the rollout ends, and the runs are retried. These are changes to the repository, the runner ServiceAccount, RuntimeClass, database Secret or a Secret that the runner container's `env` names. |
+| runner.admissionPolicy.enabled | bool | `true` | Have the cluster refuse three things from kritika serve's ServiceAccount. The first is any Job that is not a runner Job as kritika builds it. The second is any Secret that is not a run's. The third is any deletion of a Job but in the foreground, which takes its run's Secret with it. The cluster uses three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects that the chart's installer must be allowed to create. Without them, the Role lets kritika serve create any Job in its namespace. That Job's pod can run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs that an older replica starts mid-rollout pass too. Some changes refuse those runs until the rollout ends, and the runs are retried. These are changes to the repository, the runner ServiceAccount, RuntimeClass or a Secret that the runner container's `env` names. |
 | runner.jobTemplate.metadata.annotations | object | `{}` | Annotations for runner Jobs. kritika refuses its own, under `kritika.home-operations.com/`. |
 | runner.jobTemplate.metadata.labels | object | `{}` | Labels for runner Jobs. kritika refuses its own, the instance label and the Job controller's. |
 | runner.jobTemplate.spec.activeDeadlineSeconds | int | `900` | How long a runner Job can run, in seconds. It is at most 7200, since River's job timeout cap otherwise cuts the run off early. A review's or follow-up's Job runs as long as its agent's `timeout` needs, if that is longer. That need covers each part that a review is split into. The deadline bounds the work around the run and the run's gateway token too. |

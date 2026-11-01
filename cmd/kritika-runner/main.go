@@ -24,7 +24,6 @@ import (
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/server"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 // Build metadata, set via -ldflags at release time (see Dockerfile / release.yaml).
@@ -48,7 +47,7 @@ func run() (err error) {
 	if args := os.Args[1:]; len(args) != 1 || args[0] != "run" {
 		return fmt.Errorf("unknown arguments %q: usage: kritika-runner run", args)
 	}
-	cfg, err := config.Load()
+	cfg, err := config.LoadRunner()
 	if err != nil {
 		return err
 	}
@@ -80,34 +79,22 @@ func run() (err error) {
 	}
 	_, _ = memlimit.Set(memOpts...)
 
-	// The management listener comes up first so liveness answers while the
-	// database is still starting. Whatever ends run ends it first, and run
-	// waits for it before the store closes.
+	// Whatever ends run ends the management listener first, and run waits for
+	// it.
 	mgmt := server.NewManagement(cfg.MetricsAddr, version, commit, logger)
 	g, ctx := errgroup.WithContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
-	var st *store.Store
 	defer func() {
 		cancel()
 		if werr := g.Wait(); werr != nil && !errors.Is(werr, context.Canceled) && !errors.Is(err, werr) {
 			logger.Warn("a listener failed", "error", werr)
 		}
-		if st != nil {
-			st.Close()
-		}
 	}()
 	g.Go(func() error { return mgmt.Run(ctx) })
 
-	// A runner pod gets the runner role's DSN under KRITIKA_DATABASE_URL:
-	// Open refuses one that can bypass row-level security or does not
-	// inherit that role.
-	st, err = store.OpenWhenReady(ctx, store.Options{AppURL: cfg.DatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
-	if err != nil {
-		return err
-	}
 	// A runner does one thing and exits. It never becomes ready.
-	return runner.Run(ctx, st, spec, runspec.Secrets{
-		GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken, DatabaseToken: cfg.DatabaseToken,
+	return runner.Run(ctx, spec, runspec.Secrets{
+		GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken, ReportToken: cfg.ReportToken,
 	}, logger)
 }
 

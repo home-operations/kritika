@@ -97,11 +97,10 @@ type Settings struct {
 	// once into an unexported *url.URL, read back with [Config.WebURLParsed].
 	WebURL string `env:"KRITIKA_WEB_URL" yaml:"webUrl,omitempty"`
 
-	// DatabaseAppRole and DatabaseRunnerRole are the Postgres role names the
-	// owner grants privileges to during migrations. They default to what
-	// deploy/dev and the chart's CloudNativePG example declare.
-	DatabaseAppRole    string `env:"KRITIKA_DATABASE_APP_ROLE" envDefault:"kritika_app" yaml:"databaseAppRole,omitempty"`
-	DatabaseRunnerRole string `env:"KRITIKA_DATABASE_RUNNER_ROLE" envDefault:"kritika_runner" yaml:"databaseRunnerRole,omitempty"`
+	// DatabaseAppRole is the Postgres role name the owner grants privileges to
+	// during migrations. It defaults to what deploy/dev and the chart's
+	// CloudNativePG example declare.
+	DatabaseAppRole string `env:"KRITIKA_DATABASE_APP_ROLE" envDefault:"kritika_app" yaml:"databaseAppRole,omitempty"`
 
 	// LeaderRetryInterval is how often a leader-eligible replica retries the
 	// leader lock and how often the holder makes sure that it still has it.
@@ -165,11 +164,8 @@ type Settings struct {
 // Runner describes the Jobs created for reviews and indexing.
 type Runner struct {
 	// RunnerServiceAccount is the permissionless service account runner pods
-	// run as. RunnerDatabaseSecret and RunnerDatabaseSecretKey locate the
-	// runner role's DSN, which the Job injects as KRITIKA_DATABASE_URL.
-	RunnerServiceAccount    string `env:"KRITIKA_RUNNER_SERVICE_ACCOUNT" envDefault:"kritika-runner" yaml:"serviceAccount,omitempty"`
-	RunnerDatabaseSecret    string `env:"KRITIKA_RUNNER_DATABASE_SECRET" envDefault:"kritika-postgres-runner" yaml:"databaseSecret,omitempty"`
-	RunnerDatabaseSecretKey string `env:"KRITIKA_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri" yaml:"databaseSecretKey,omitempty"`
+	// run as.
+	RunnerServiceAccount string `env:"KRITIKA_RUNNER_SERVICE_ACCOUNT" envDefault:"kritika-runner" yaml:"serviceAccount,omitempty"`
 
 	// RunnerJobTemplate is set on every runner Job as a JobTemplateSpec
 	// spells it: its labels and annotations, and its spec's

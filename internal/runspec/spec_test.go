@@ -25,9 +25,10 @@ const (
 func reviewSpec() Spec {
 	return Spec{
 		Version: Version, Kind: KindReview, RunID: "run-1", CloneURL: "https://forge.example.com/acme/widgets.git",
-		Head: shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
+		GatewayURL: "http://kritika-gateway:8082",
+		Head:       shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
 		Agent: &AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000},
-		Model: &ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
+		Model: &ModelEndpoint{Model: "review"},
 		Prompt: &Prompt{
 			Repository: "acme/widgets",
 			PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",
@@ -59,7 +60,7 @@ func TestDecode(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid review", in: encode(reviewSpec())},
-		{name: "valid index without base", in: encode(Spec{Version: Version, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
+		{name: "valid index without base", in: encode(Spec{Version: Version, Kind: KindIndex, RunID: "r", CloneURL: "u", GatewayURL: "g", Head: shaA})},
 		{name: "valid follow-up", in: encode(followUpSpec())},
 		{name: "a follow-up without a thread", in: func() string { s := followUpSpec(); s.Thread = nil; return encode(s) }(), wantErr: "thread"},
 		{name: "a follow-up without a base", in: func() string { s := followUpSpec(); s.Base = ""; return encode(s) }(),
@@ -79,7 +80,7 @@ func TestDecode(t *testing.T) {
 		{name: "a review without model", in: func() string { s := reviewSpec(); s.Model = nil; return encode(s) }(), wantErr: "model"},
 		{name: "a review without limits", in: func() string { s := reviewSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
 		{name: "a review without a prompt", in: func() string { s := reviewSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
-		{name: "a review without the gateway", in: func() string { s := reviewSpec(); s.Model.GatewayURL = ""; return encode(s) }(), wantErr: "gateway"},
+		{name: "a spec without the gateway", in: func() string { s := reviewSpec(); s.GatewayURL = ""; return encode(s) }(), wantErr: "gatewayUrl"},
 		{name: "a version 4 document", in: func() string { s := reviewSpec(); s.Version = 4; return encode(s) }(), wantErr: "version 4"},
 		{name: "trailing data", in: encode(reviewSpec()) + "{}", wantErr: "trailing"},
 		{name: "not json", in: "nope", wantErr: "runspec"},
@@ -114,7 +115,7 @@ func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Agent.MaxSteps != 30 || got.Model.Model != "review" ||
-		got.Model.GatewayURL != "http://kritika-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
+		got.GatewayURL != "http://kritika-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
 		t.Fatalf("round trip = %+v %+v %+v", got, got.Agent, got.Model)
 	}
 }
@@ -147,8 +148,8 @@ func TestSecretsMask(t *testing.T) {
 		want    string
 	}{
 		{name: "empty secrets leave text untouched", in: "clone ok", want: "clone ok"},
-		{name: "all replaced", secrets: Secrets{GitToken: "tok-123", GatewayToken: "key-456", DatabaseToken: "db-789"},
-			in: "auth tok-123 and key-456 and db-789 twice tok-123", want: "auth *** and *** and *** twice ***"},
+		{name: "all replaced", secrets: Secrets{GitToken: "tok-123", GatewayToken: "key-456", ReportToken: "krr-789"},
+			in: "auth tok-123 and key-456 and krr-789 twice tok-123", want: "auth *** and *** and *** twice ***"},
 		{name: "overlapping secrets mask the longer whole", secrets: Secrets{GitToken: "abc", GatewayToken: "abcdef"},
 			in: "x abcdef y abc", want: "x *** y ***"},
 		{name: "only one set", secrets: Secrets{GatewayToken: "key"}, in: "key", want: "***"},

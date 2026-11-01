@@ -2,162 +2,139 @@ package store
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
-// AuthorizeRunner makes sure that the database capability is valid before
-// any runner work.
-func (s *Store) AuthorizeRunner(ctx context.Context, runID string) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		var id string
-		if err := tx.QueryRow(ctx, `SELECT id FROM runner_runs WHERE id = $1`, runID).Scan(&id); err != nil {
-			return fmt.Errorf("store: authorize runner: %w", err)
-		}
-		return nil
-	})
+// A runner's writes are safe to repeat. A runner sends one again when the
+// answer to it is lost, so a row it already wrote is left as it is.
+
+// ErrIndexStaging is an index upload that another upload of the run overtook:
+// sending it again makes that upload the current one.
+var ErrIndexStaging = errors.New("store: the run's index staging changed during the upload")
+
+// HeartbeatRunner stamps the run's heartbeat.
+func HeartbeatRunner(ctx context.Context, tx pgx.Tx, runID string) error {
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, runID); err != nil {
+		return fmt.Errorf("store: runner heartbeat: %w", err)
+	}
+	return nil
 }
 
-func (s *Store) HeartbeatRunner(ctx context.Context, runID string) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, runID); err != nil {
-			return fmt.Errorf("store: runner heartbeat: %w", err)
-		}
-		return nil
-	})
-}
-
-func (s *Store) SetRunnerPhase(ctx context.Context, runID, phase string) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error { return setRunnerPhase(ctx, tx, runID, phase) })
-}
-
-func setRunnerPhase(ctx context.Context, tx pgx.Tx, runID, phase string) error {
+// SetRunnerPhase moves the run to phase.
+func SetRunnerPhase(ctx context.Context, tx pgx.Tx, runID, phase string) error {
 	tag, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, runID, phase)
 	if err != nil {
 		return fmt.Errorf("store: set runner phase: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("store: run %s is not visible to this role", runID)
+		return ErrNotFound
 	}
 	return nil
 }
 
 // RecordRunnerFailure accepts an already redacted error. Only the executor can
 // write finished_at. A runner can report its phase and error alone.
-func (s *Store) RecordRunnerFailure(ctx context.Context, runID, cause string) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`, runID, cause); err != nil {
-			return fmt.Errorf("store: record runner failure: %w", err)
-		}
-		return nil
-	})
+func RecordRunnerFailure(ctx context.Context, tx pgx.Tx, runID, cause string) error {
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`, runID, cause); err != nil {
+		return fmt.Errorf("store: record runner failure: %w", err)
+	}
+	return nil
 }
 
-// RunnerContextPack contains the runner's review decisions and encoded context.
-// Account identity is always copied from its authorized run, never supplied.
-type RunnerContextPack struct {
-	Head, Base, PatchID, Diff                  string
-	ChangedPaths                               []string
-	Stages, Files                              json.RawMessage
-	Notes                                      []string
-	PriorHead                                  *string
-	DeltaDiff                                  string
-	DeltaPaths                                 []string
-	Scope, ScopeReason, SkipReason, SkipDetail string
-	RuleIDs                                    []string
+// WriteRunnerContext commits the context and its next phase together. Account
+// identity is copied from the authorized run, never supplied.
+func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.ContextPack, phase string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
+			prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail)
+		SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM runner_runs WHERE id = $1
+		ON CONFLICT (runner_run_id) DO NOTHING`,
+		runID, p.Head, p.Base, p.PatchID, p.Diff, p.ChangedPaths, p.Stages, p.Files, p.Notes,
+		p.PriorHead, p.DeltaDiff, p.DeltaPaths, p.Scope, p.ScopeReason, p.SkipReason, p.RuleIDs, p.SkipDetail)
+	if err != nil {
+		return fmt.Errorf("store: write runner context: %w", err)
+	}
+	return SetRunnerPhase(ctx, tx, runID, phase)
 }
 
-// WriteRunnerContext commits the context and its next phase together.
-func (s *Store) WriteRunnerContext(ctx context.Context, runID string, p RunnerContextPack, phase string) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
-				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail)
-			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM runner_runs WHERE id = $1`,
-			runID, p.Head, p.Base, p.PatchID, p.Diff, p.ChangedPaths, p.Stages, p.Files, p.Notes,
-			p.PriorHead, p.DeltaDiff, p.DeltaPaths, p.Scope, p.ScopeReason, p.SkipReason, p.RuleIDs, p.SkipDetail)
-		if err != nil {
-			return fmt.Errorf("store: write runner context: %w", err)
+// WriteRunnerAgent commits the result, retained conversation, and phase
+// together.
+func WriteRunnerAgent(ctx context.Context, tx pgx.Tx, runID string, rec runspec.AgentRecord, phase string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
+			input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
+			skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts,
+			unpriced_steps, command_errors, command_counts, forced_by)
+		SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
+			nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22, coalesce($23::jsonb, '{}'::jsonb), $24
+		FROM runner_runs WHERE id = $1
+		ON CONFLICT (runner_run_id) DO NOTHING`,
+		runID, rec.Stop, rec.Result, rec.Steps, rec.ToolCalls, rec.Timeline,
+		rec.Usage.Input, rec.Usage.CacheRead, rec.Usage.CacheWrite, rec.Usage.Output, rec.CostUSD, rec.Model, rec.Error,
+		rec.Sources, rec.SkillsOffered, rec.SkillsOpened, rec.CommandsOffered, rec.CommandsRun, rec.ContinuedFrom, rec.Parts,
+		rec.UnpricedSteps, rec.CommandErrors, rec.CommandCounts, rec.ForcedBy)
+	if err != nil {
+		return fmt.Errorf("store: write agent run: %w", err)
+	}
+	if rec.Conversation != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
+			SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1
+			ON CONFLICT (runner_run_id) DO NOTHING`,
+			runID, rec.Session, string(rec.Conversation), rec.Tokens, rec.GrantedModel); err != nil {
+			return fmt.Errorf("store: write conversation: %w", err)
 		}
-		return setRunnerPhase(ctx, tx, runID, phase)
-	})
+	}
+	return SetRunnerPhase(ctx, tx, runID, phase)
 }
 
-// RunnerAgentRecord is a redacted agent result and optional retained conversation.
-// JSON fields carry the runner's encoded payloads. A nil Result is SQL NULL.
-type RunnerAgentRecord struct {
-	Stop, ForcedBy               string
-	Result                       json.RawMessage
-	Steps                        int
-	ToolCalls, Timeline, Sources json.RawMessage
-	Usage                        model.Usage
-	CostUSD                      float64
-	UnpricedSteps                int
-	SkillsOffered, SkillsOpened  []string
-	CommandsOffered, CommandsRun []string
-	CommandErrors                []string
-	CommandCounts                map[string]int
-	Model, Error, ContinuedFrom  string
-	Parts                        json.RawMessage
-	Conversation                 []byte
-	Tokens                       int64
-	Session, GrantedModel        string
+// BeginRunnerIndex opens an index upload, and returns the id that its batches
+// and its seal must name. A new upload makes every earlier one stale, whatever
+// is still on its way from it. It reports whether the run's pack is already
+// written, so the upload is one that landed and lost its answer. Otherwise it
+// clears what an upload that failed left. Staging holds no transaction across
+// an upload, so a slow runner cannot pin a pooled connection. Nothing reads
+// staging until the pack exists.
+func BeginRunnerIndex(ctx context.Context, tx pgx.Tx, runID string) (upload string, written bool, err error) {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_packs WHERE runner_run_id = $1)`, runID).Scan(&written); err != nil {
+		return "", false, fmt.Errorf("store: read index pack: %w", err)
+	}
+	if written {
+		return "", true, nil
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runID); err != nil {
+		return "", false, fmt.Errorf("store: clear index staging: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `UPDATE runner_runs SET index_upload = gen_random_uuid() WHERE id = $1 RETURNING index_upload::text`, runID).
+		Scan(&upload); err != nil {
+		return "", false, fmt.Errorf("store: open index upload: %w", err)
+	}
+	return upload, false, nil
 }
 
-// WriteRunnerAgent commits the result, retained conversation, and phase together.
-func (s *Store) WriteRunnerAgent(ctx context.Context, runID string, rec RunnerAgentRecord, phase string) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts,
-				unpriced_steps, command_errors, command_counts, forced_by)
-			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
-				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22, coalesce($23::jsonb, '{}'::jsonb), $24
-			FROM runner_runs WHERE id = $1`,
-			runID, rec.Stop, rec.Result, rec.Steps, rec.ToolCalls, rec.Timeline,
-			rec.Usage.Input, rec.Usage.CacheRead, rec.Usage.CacheWrite, rec.Usage.Output, rec.CostUSD, rec.Model, rec.Error,
-			rec.Sources, rec.SkillsOffered, rec.SkillsOpened, rec.CommandsOffered, rec.CommandsRun, rec.ContinuedFrom, rec.Parts,
-			rec.UnpricedSteps, rec.CommandErrors, rec.CommandCounts, rec.ForcedBy)
-		if err != nil {
-			return fmt.Errorf("store: write agent run: %w", err)
-		}
-		if rec.Conversation != nil {
-			if _, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
-				SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
-				runID, rec.Session, string(rec.Conversation), rec.Tokens, rec.GrantedModel); err != nil {
-				return fmt.Errorf("store: write conversation: %w", err)
-			}
-		}
-		return setRunnerPhase(ctx, tx, runID, phase)
-	})
+// checkRunnerUpload refuses an upload that a later one made stale. WithRunner
+// holds the run's row, so the upload stays current for the rest of tx.
+func checkRunnerUpload(ctx context.Context, tx pgx.Tx, runID, upload string) error {
+	var current bool
+	if err := tx.QueryRow(ctx, `SELECT coalesce(index_upload = $2::uuid, false) FROM runner_runs WHERE id = $1`, runID, upload).
+		Scan(&current); err != nil {
+		return fmt.Errorf("store: read index upload: %w", err)
+	}
+	if !current {
+		return ErrIndexStaging
+	}
+	return nil
 }
 
-// WriteRunnerIndex commits all staged batches, the pack, and the done phase
-// together. Account identity comes from the authorized runner row.
-func (s *Store) WriteRunnerIndex(ctx context.Context, runID string, p IndexPack, chunks []StagedChunk) error {
-	return s.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count)
-			SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
-			runID, p.Base, p.Mode, p.ChangedPaths, len(chunks)); err != nil {
-			return fmt.Errorf("store: write runner index: %w", err)
-		}
-		for batch := range slices.Chunk(chunks, 500) {
-			if err := stageRunnerChunks(ctx, tx, runID, batch); err != nil {
-				return err
-			}
-		}
-		return setRunnerPhase(ctx, tx, runID, "done")
-	})
-}
-
-func stageRunnerChunks(ctx context.Context, tx pgx.Tx, runID string, chunks []StagedChunk) error {
+// StageRunnerChunks stages one batch of an upload.
+func StageRunnerChunks(ctx context.Context, tx pgx.Tx, runID, upload string, chunks []runspec.IndexChunk) error {
+	if err := checkRunnerUpload(ctx, tx, runID, upload); err != nil {
+		return err
+	}
 	n := len(chunks)
 	paths, langs, symbols := make([]string, n), make([]string, n), make([]string, n)
 	kinds, scopes, texts := make([]string, n), make([]string, n), make([]string, n)
@@ -176,4 +153,26 @@ func stageRunnerChunks(ctx context.Context, tx pgx.Tx, runID string, chunks []St
 		return fmt.Errorf("store: stage chunks: %w", err)
 	}
 	return nil
+}
+
+// FinishRunnerIndex seals an upload of count chunks: the pack and the done
+// phase commit together, and only over what the upload staged.
+func FinishRunnerIndex(ctx context.Context, tx pgx.Tx, runID, upload string, p runspec.IndexPack, count int) error {
+	if err := checkRunnerUpload(ctx, tx, runID, upload); err != nil {
+		return err
+	}
+	var staged int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_staging WHERE runner_run_id = $1`, runID).Scan(&staged); err != nil {
+		return fmt.Errorf("store: count staged chunks: %w", err)
+	}
+	if staged != count {
+		return fmt.Errorf("%w: %d chunks staged, %d uploaded", ErrIndexStaging, staged, count)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count)
+		SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
+		runID, p.Base, p.Mode, p.ChangedPaths, count); err != nil {
+		return fmt.Errorf("store: write runner index: %w", err)
+	}
+	return SetRunnerPhase(ctx, tx, runID, "done")
 }

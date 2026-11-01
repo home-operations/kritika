@@ -138,12 +138,13 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}()
 	deadline := file.RunnerDeadline()
 	spec := runspec.Spec{
-		Version: runspec.Version, Kind: runspec.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo), Forge: string(account.Forge),
-		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, PriorBase: prior.mergeBase,
+		Version: runspec.Version, Kind: runspec.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo), GatewayURL: w.GatewayURL,
+		Forge: string(account.Forge),
+		Head:  args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, PriorBase: prior.mergeBase,
 		Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),
 	}
 	secrets := runspec.Secrets{GitToken: b.token}
-	secrets.DatabaseToken, err = w.Store.MintRunnerToken(ctx, args.AccountID, runID)
+	secrets.ReportToken, err = w.Store.MintRunnerToken(ctx, args.AccountID, runID)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}

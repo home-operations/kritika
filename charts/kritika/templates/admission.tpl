@@ -129,10 +129,9 @@ spec:
     - expression: >-
         variables.pod.containers.all(c, !has(c.envFrom) &&
           (!has(c.env) || c.env.all(e, !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
-            e.valueFrom.secretKeyRef.name == '{{ tpl .Values.database.runner.existingSecret . }}' ||
             e.valueFrom.secretKeyRef.name.matches(variables.runSecret) ||
             e.valueFrom.secretKeyRef.name in variables.envSecrets)))
-      message: the runner container reads its run's own Secret, the runner database Secret and those runner.podTemplate's env names alone
+      message: the runner container reads its run's own Secret and those runner.podTemplate's env names alone
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

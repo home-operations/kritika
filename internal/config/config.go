@@ -75,23 +75,18 @@ type Config struct {
 	// Changes take effect after a restart.
 	ConfigFile string `env:"KRITIKA_CONFIG_FILE"`
 
-	// DatabaseURL is the DSN that every process connects with for request and
-	// job work. It must be the application role: not a superuser, no BYPASSRLS,
-	// owning nothing, so row-level security applies to it. Runner pods get
-	// the runner role's DSN under the same variable name. The process makes
-	// sure that this is true at startup. A DSN that bypasses row-level security
-	// refuses to start.
-	DatabaseURL string `env:"KRITIKA_DATABASE_URL,required,notEmpty,unset"`
+	// DatabaseURL is the DSN that serve connects with for request and job work.
+	// It must be the application role: not a superuser, no BYPASSRLS, owning
+	// nothing, so row-level security applies to it. The process makes sure that
+	// this is true at startup. A DSN that bypasses row-level security refuses
+	// to start. A runner pod holds none.
+	DatabaseURL string `env:"KRITIKA_DATABASE_URL,unset"`
 
 	// DatabaseOwnerURL is the DSN of the role that owns the schema. It runs
 	// migrations, the configuration loader and the chunks DDL, all of which
 	// write across accounts. serve needs it to become leader. A runner
 	// must not have it.
 	DatabaseOwnerURL string `env:"KRITIKA_DATABASE_OWNER_URL,unset"`
-
-	// RunnerDatabaseURL is the runner database role's DSN, needed only by
-	// the local executor, which runs the runner inside the serve process.
-	RunnerDatabaseURL string `env:"KRITIKA_RUNNER_DATABASE_URL,unset"`
 
 	// GatewayCacheS3AccessKey and GatewayCacheS3SecretKey authenticate only
 	// serve to the cache bucket. Empty selects the SDK's IAM credentials.
@@ -114,11 +109,11 @@ type Config struct {
 	// review.
 	GitToken     string `env:"KRITIKA_GIT_TOKEN,unset"`
 	GatewayToken string `env:"KRITIKA_GATEWAY_TOKEN,unset"`
-	// DatabaseToken authenticates this run to its database rows. It has no
-	// default.
-	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
-	webURL        *url.URL
-	logLevel      slog.Level
+	// ReportToken authenticates what this run reports to the gateway. The
+	// commands that the run starts never see it.
+	ReportToken string `env:"KRITIKA_REPORT_TOKEN,unset"`
+	webURL      *url.URL
+	logLevel    slog.Level
 	// document is the startup snapshot shared with the policy loader.
 	document Document
 }
@@ -175,6 +170,18 @@ func (c *Config) parseWebURL() error {
 // the values are valid. It fails fast on an invalid value so a misconfigured
 // process never starts serving.
 func Load() (*Config, error) {
+	cfg, err := LoadRunner()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.DatabaseURL == "" {
+		return nil, errors.New("config: KRITIKA_DATABASE_URL is required")
+	}
+	return cfg, nil
+}
+
+// LoadRunner is Load for a runner pod, which holds no database credential.
+func LoadRunner() (*Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {
 		return nil, envError[Config](err)

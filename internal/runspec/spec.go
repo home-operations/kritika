@@ -29,7 +29,7 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 40
+const Version = 41
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -62,8 +62,6 @@ func (k Kind) agentic() bool { return k == KindReview || k == KindFollowUp }
 // and counts what the run spends. The run's token for it reaches the pod as
 // a job-scoped secret.
 type ModelEndpoint struct {
-	// GatewayURL is the gateway's address, http://host:port.
-	GatewayURL string `json:"gatewayUrl"`
 	// Model is the name the gateway knows the run's model by.
 	Model string `json:"model"`
 	// Granted is the provider/model reference the gateway answers a
@@ -260,6 +258,9 @@ type Spec struct {
 	CheckpointScope string `json:"checkpointScope,omitempty"`
 	// CloneURL is fetched with Secrets.GitToken.
 	CloneURL string `json:"cloneUrl"`
+	// GatewayURL is the gateway's address, http://host:port. A run reports to
+	// it, and calls its model through it.
+	GatewayURL string `json:"gatewayUrl"`
 	// Forge is the repository's forge, github, forgejo, gitlab or gitea.
 	// Empty is github. Secrets.GitToken is a GitHub token only on GitHub,
 	// where gh and the repository tools' lookups in the GitHub API are given
@@ -308,8 +309,8 @@ func (s Spec) Validate() error {
 	if !s.Kind.Valid() {
 		return fmt.Errorf("runspec: spec kind %q is not review, index or followup", s.Kind)
 	}
-	if s.RunID == "" || s.CloneURL == "" {
-		return errors.New("runspec: spec needs runId and cloneUrl")
+	if s.RunID == "" || s.CloneURL == "" || s.GatewayURL == "" {
+		return errors.New("runspec: spec needs runId, cloneUrl and gatewayUrl")
 	}
 	if !gitfetch.IsSHA(s.Head) {
 		return fmt.Errorf("runspec: spec head %q is not a commit SHA", s.Head)
@@ -336,8 +337,8 @@ func (s Spec) Validate() error {
 		if s.Agent == nil {
 			return fmt.Errorf("runspec: a %s spec needs agent limits", s.Kind)
 		}
-		if s.Model == nil || s.Model.Model == "" || s.Model.GatewayURL == "" {
-			return fmt.Errorf("runspec: a %s spec needs a model and the gateway to reach it through", s.Kind)
+		if s.Model == nil || s.Model.Model == "" {
+			return fmt.Errorf("runspec: a %s spec needs a model", s.Kind)
 		}
 		if s.Prompt == nil {
 			return fmt.Errorf("runspec: a %s spec needs a prompt", s.Kind)
@@ -443,13 +444,16 @@ func Decode(data []byte) (Spec, error) {
 	return s, nil
 }
 
-// Secrets are a run's credentials, delivered apart from the spec: its
-// git token, database capability and gateway token, which admits it to
-// the egress proxy and, for a review or follow-up, to its model.
+// Secrets are a run's credentials, delivered apart from the spec: its git
+// token, its gateway token, which admits it to the egress proxy and, for a
+// review or follow-up, to its model, and its report token, which lets it write
+// what it found. A command the run starts is handed the gateway token as its
+// proxy credential and never the report token, so a command cannot forge what
+// the run reports.
 type Secrets struct {
-	GitToken      string
-	GatewayToken  string
-	DatabaseToken string
+	GitToken     string
+	GatewayToken string
+	ReportToken  string
 	// Redacted are further values masked as the tokens are, the admin's
 	// secret variables for the commands among them: shared by every copy
 	// of the secrets, since the run tool adds them as it is built.
@@ -487,7 +491,7 @@ func (r *Redactions) Values() []string {
 // its proxy. Longer secrets go first so one containing another is masked
 // whole.
 func (s Secrets) Mask(text string) string {
-	values := []string{s.GitToken, s.GatewayToken, s.DatabaseToken}
+	values := []string{s.GitToken, s.GatewayToken, s.ReportToken}
 	if s.Redacted != nil {
 		values = append(values, s.Redacted.Values()...)
 	}

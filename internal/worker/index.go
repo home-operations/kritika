@@ -47,8 +47,10 @@ type Index struct {
 	// Embedders resolves the instance's embedder. A generation built with
 	// another model or dimension is rebuilt in full.
 	Embedders *adapter.Embedders
-	// GatewayTokenTTL is how long the run token that admits an index run
-	// to the egress proxy outlives its Job's deadline.
+	// GatewayURL is where an index run reports, and GatewayTokenTTL how long
+	// the run token that admits it to the egress proxy outlives its Job's
+	// deadline.
+	GatewayURL      string
 	GatewayTokenTTL time.Duration
 
 	// superviseEvery overrides superviseInterval.
@@ -164,7 +166,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	if !resumed {
 		err := w.stage(ctx, job, account, repo.Name, client, runID, runspec.Spec{
-			Version: runspec.Version, Kind: runspec.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
+			Version: runspec.Version, Kind: runspec.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name), GatewayURL: w.GatewayURL,
 			Forge: string(account.Forge), Head: commit, Base: base, Ignore: eff.Ignore,
 		}, logger)
 		if err != nil {

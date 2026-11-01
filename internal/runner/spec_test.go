@@ -21,9 +21,10 @@ const (
 func reviewSpec() runspec.Spec {
 	return runspec.Spec{
 		Version: runspec.Version, Kind: runspec.KindReview, RunID: "run-1", CloneURL: "https://forge.example.com/acme/widgets.git",
-		Head: shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
+		GatewayURL: "http://kritika-gateway:8082",
+		Head:       shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
 		Agent: &runspec.AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000},
-		Model: &runspec.ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
+		Model: &runspec.ModelEndpoint{Model: "review"},
 		Prompt: &runspec.Prompt{
 			Repository: "acme/widgets",
 			PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",

@@ -123,7 +123,7 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].startupProbe
 
-  - it: wires the three database secrets and the runner settings
+  - it: wires the two database secrets and the runner settings
     set:
       config: null
       existingConfigMap: external-config
@@ -144,11 +144,6 @@ tests:
               secretKeyRef:
                 name: kritika-postgres-credentials
                 key: uri
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_DATABASE_SECRET
-            value: kritika-postgres-runner
       - contains:
           path: spec.template.spec.containers[0].env
           content:
