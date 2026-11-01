@@ -568,11 +568,13 @@ func TestReviewBaselineConfidence(t *testing.T) {
 func TestDependencyHistory(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+	// An account of its own: the pull request numbers below are fixed, and
+	// the suite's other tests number alpha's pull requests as they like.
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("carry"))); err != nil {
 		t.Fatal(err)
 	}
-	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	account := accountID(t, s, "alpha")
+	listRepos(t, s, "carry", "carry/one", "carry/two")
+	account := accountID(t, s, "carry")
 	must := func(t *testing.T, err error) {
 		t.Helper()
 		if err != nil {
@@ -581,10 +583,10 @@ func TestDependencyHistory(t *testing.T) {
 	}
 	var repoID, otherRepo, under string
 	must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'alpha/one'`, account).Scan(&repoID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'carry/one'`, account).Scan(&repoID); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'alpha/two'`, account).Scan(&otherRepo); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'carry/two'`, account).Scan(&otherRepo); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha) VALUES ($1, $2, 99, 'h') RETURNING id`,
