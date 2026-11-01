@@ -109,8 +109,12 @@ func dependencyDrift(row store.DependencyDrift) DependencyDrift {
 		Repository: row.Repository, Path: row.Path, Dependency: strings.TrimPrefix(row.Key, row.Path+" "),
 		Bumps: len(row.Risks), LastAt: row.LastAt, Risks: map[review.Risk]int{}, Reaches: map[review.Reach]int{},
 	}
+	// A "" risk is a change that did more than move the version, whose
+	// risk is not the dependency's.
 	for i, risk := range row.Risks {
-		d.Risks[review.Risk(risk)]++
+		if risk != "" {
+			d.Risks[review.Risk(risk)]++
+		}
 		if i < len(row.Reaches) {
 			d.Reaches[review.Reach(row.Reaches[i])]++
 		}

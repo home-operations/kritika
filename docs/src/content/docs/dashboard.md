@@ -121,8 +121,8 @@ proxy for runner Jobs. Review why a host was blocked before adding it to
 
 **Dependency ratings** lists, on an account's page, each dependency that more
 than one pull request updated in the period, with the risk the
-[scorer](/confidence/#risk) gave each update before any floor and the reach it
-gave the dependency. A dependency rated at more than one level drifted; the
+[scorer](/confidence/#risk) gave each update before any floor, where the pull
+request moved that one version alone, and the reach it gave the dependency. A dependency rated at more than one level drifted; the
 most drifted come first. Use it to see whether the scorer answers the same
 way twice for the same dependency, and which dependencies it does not.
 

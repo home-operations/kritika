@@ -10,7 +10,9 @@ import (
 
 // DependencyDrift is how the updates of one dependency were rated over a
 // window: per update, oldest first, the risk the judge gave before any
-// hold, the reach it gave the dependency, and the step the update took.
+// hold where the update moved that version alone and "" where the change
+// did more, since the risk is then the whole change's, the reach it gave
+// the dependency, and the step the update took.
 type DependencyDrift struct {
 	Repository string
 	// Key names the dependency as the judge's verdicts record it (see
@@ -26,11 +28,12 @@ type DependencyDrift struct {
 // ReadDependencyDrift reads, over the newest completed whole scored review
 // of each pull request reviewed in [from, to), the dependencies that more
 // than one pull request moved and how each update was rated, the ones rated
-// at the most levels first, then the most updated, at most limit of them.
-// A pull request counts once per dependency, by the first of its lines
-// that share a key. A dependency rated at one level throughout is in the
-// list too, as the measure of a consistent judge; the levels order puts
-// the drift first.
+// at the most risk levels first, then the most updated, at most limit of
+// them. A pull request counts once per dependency, by the first of its
+// lines that share a key, and its risk counts only where it moved that
+// one version alone (see review.Confidence.OneBump). A dependency rated at
+// one level throughout is in the list too, as the measure of a consistent
+// judge; the levels order puts the drift first.
 func ReadDependencyDrift(ctx context.Context, tx pgx.Tx, from, to time.Time, limit int) ([]DependencyDrift, error) {
 	rows, err := tx.Query(ctx, `WITH latest AS (
 			SELECT DISTINCT ON (p.id) p.id AS pull_id, p.repository_id, r.created_at, r.confidence
@@ -40,7 +43,8 @@ func ReadDependencyDrift(ctx context.Context, tx pgx.Tx, from, to time.Time, lim
 		moved AS (
 			SELECT DISTINCT ON (l.pull_id, b->>'key') l.pull_id, l.repository_id, l.created_at, b->>'key' AS key,
 				coalesce(b->>'path', '') AS path, coalesce(b->>'step', '') AS step, b->>'reach' AS reach,
-				coalesce(nullif(l.confidence->>'stepped', ''), nullif(l.confidence->>'rated', ''), l.confidence->>'risk', '') AS risk
+				CASE WHEN (l.confidence->>'one_bump')::boolean
+					THEN coalesce(nullif(l.confidence->>'stepped', ''), nullif(l.confidence->>'rated', ''), l.confidence->>'risk', '') ELSE '' END AS risk
 			FROM latest l CROSS JOIN LATERAL jsonb_array_elements(l.confidence->'bumps') WITH ORDINALITY AS b(b, at)
 			WHERE coalesce(b->>'reach', '') <> ''
 			ORDER BY l.pull_id, b->>'key', b.at)
@@ -48,7 +52,7 @@ func ReadDependencyDrift(ctx context.Context, tx pgx.Tx, from, to time.Time, lim
 			array_agg(m.reach ORDER BY m.created_at, m.pull_id), array_agg(m.step ORDER BY m.created_at, m.pull_id), max(m.created_at)
 		FROM moved m JOIN repositories repo ON repo.id = m.repository_id
 		GROUP BY repo.name, m.key HAVING count(*) > 1
-		ORDER BY count(DISTINCT m.risk) DESC, count(*) DESC, repo.name, m.key LIMIT $3`, from, to, limit)
+		ORDER BY count(DISTINCT m.risk) FILTER (WHERE m.risk <> '') DESC, count(*) DESC, repo.name, m.key LIMIT $3`, from, to, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: dependency drift: %w", err)
 	}

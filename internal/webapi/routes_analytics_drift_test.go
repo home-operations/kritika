@@ -15,11 +15,12 @@ func TestDependencyDrift(t *testing.T) {
 	at := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
 	got := dependencyDrift(store.DependencyDrift{
 		Repository: "alpha/one", Key: "kubernetes/apps/o11y/kps/app/ocirepository.yaml tag: *", Path: "kubernetes/apps/o11y/kps/app/ocirepository.yaml",
-		Risks: []string{"medium", "medium", "high"}, Reaches: []string{"shared", "central", "central"}, Steps: []string{"patch", "minor", "minor"}, LastAt: at,
+		Risks: []string{"medium", "", "medium", "high"}, Reaches: []string{"shared", "shared", "central", "central"},
+		Steps: []string{"patch", "patch", "minor", "minor"}, LastAt: at,
 	})
 	want := DependencyDrift{
-		Repository: "alpha/one", Path: "kubernetes/apps/o11y/kps/app/ocirepository.yaml", Dependency: "tag: *", Bumps: 3, Levels: 2,
-		Risks: map[review.Risk]int{review.RiskMedium: 2, review.RiskHigh: 1}, Reaches: map[review.Reach]int{review.ReachShared: 1, review.ReachCentral: 2},
+		Repository: "alpha/one", Path: "kubernetes/apps/o11y/kps/app/ocirepository.yaml", Dependency: "tag: *", Bumps: 4, Levels: 2,
+		Risks: map[review.Risk]int{review.RiskMedium: 2, review.RiskHigh: 1}, Reaches: map[review.Reach]int{review.ReachShared: 2, review.ReachCentral: 2},
 		LastAt: at, LastRisk: review.RiskHigh, LastReach: review.ReachCentral, LastStep: review.StepMinor,
 	}
 	if !reflect.DeepEqual(got, want) {

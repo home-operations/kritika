@@ -98,9 +98,10 @@ type Analytics struct {
 
 // DependencyDrift is how one dependency's updates were rated over the
 // window, from the newest scored review of each pull request that moved
-// it: the risk the judge gave each update before any hold and the reach it
-// gave the dependency, counted, with the last update's rating. A
-// dependency rated at more levels than one drifted.
+// it: the risk the judge gave each update before any hold, where the
+// change moved that version alone, and the reach it gave the dependency,
+// counted, with the last update's rating, whose risk is "" where the
+// change did more. A dependency rated at more levels than one drifted.
 type DependencyDrift struct {
 	Repository string `json:"repository"`
 	// Path is the file that moves the dependency and Dependency the line,

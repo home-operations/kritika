@@ -4,7 +4,7 @@
   import { href, navigate } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
-  import { day } from '../dates';
+  import { day, timestamp } from '../dates';
   import { daysAgo, duration, costTotal, wholeNumber, tokens, usd, CATEGORIES } from '../format';
   import type { Analytics, AnalyticsPoint, DependencyDrift, EgressRefusal } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -342,13 +342,13 @@
                               <td class="num">{wholeNumber(d.bumps)}</td>
                               <td class="small text-ui-sm">{counted(d.risks, LEVELS)}</td>
                               <td class="small text-ui-sm">{counted(d.reaches, REACHES)}</td>
-                              <td class="small text-ui-sm"><time datetime={d.lastAt}>{day(d.lastAt)}</time> · {d.lastStep} · {d.lastRisk}</td>
+                              <td class="small text-ui-sm"><time datetime={d.lastAt}>{timestamp(d.lastAt)}</time>{` · ${d.lastStep}${d.lastRisk ? ` · ${d.lastRisk}` : ''}`}</td>
                             </tr>
                           {/each}
                         </tbody>
                       </table>
                     </div>
-                    <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">The risk the scorer gave each update of a dependency, before any floor, and the reach it gave the dependency, from the latest scored review of each pull request. A dependency rated at more than one level drifted; the most drifted come first.</p>
+                    <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">The risk the scorer gave each update of a dependency, before any floor, where the pull request moved that version alone, and the reach it gave the dependency, from the latest scored review of each pull request. A dependency rated at more than one level drifted; the most drifted come first.</p>
                   {/if}
                 {/snippet}
               </StateView>
