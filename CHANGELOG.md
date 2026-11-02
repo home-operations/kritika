@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.117](https://github.com/home-operations/kritika/compare/0.0.116...0.0.117) (2026-11-02)
+
+
+### Features
+
+* **review:** add compatibility and accessibility finding categories ([#1346](https://github.com/home-operations/kritika/issues/1346)) ([d8bc379](https://github.com/home-operations/kritika/commit/d8bc3790fb6e41339283125b430e73bafccf8942))
+
+
+### Miscellaneous Chores
+
+* **go:** update module github.com/aquaproj/aqua/v2 (v2.65.2 → v2.66.0) ([#1351](https://github.com/home-operations/kritika/issues/1351)) ([e5444a9](https://github.com/home-operations/kritika/commit/e5444a95cfa5b4c6cc7d565c7d51dc69eaba945e))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.40.0 → v3.40.2) ([#1347](https://github.com/home-operations/kritika/issues/1347)) ([fdcfdf3](https://github.com/home-operations/kritika/commit/fdcfdf39291436a6f4ef8f6f8f9608b329f81699))
+* **go:** update module go.yaml.in/yaml/v4 (v4.0.0-rc.7 → v4.0.0-rc.8) ([#1349](https://github.com/home-operations/kritika/issues/1349)) ([d45cb71](https://github.com/home-operations/kritika/commit/d45cb711695f76130c928cf662638cbdcd73ba60))
+* **go:** update module go.yaml.in/yaml/v4 (v4.0.0-rc.8 → v4.0.0-rc.9) ([#1352](https://github.com/home-operations/kritika/issues/1352)) ([38207e0](https://github.com/home-operations/kritika/commit/38207e0e3de0e96078d08dcbf994da4a3346f012))
+* **npm:** update tanstack-query monorepo (6.3.6 → 6.3.7) ([#1350](https://github.com/home-operations/kritika/issues/1350)) ([ab3f992](https://github.com/home-operations/kritika/commit/ab3f992ccf99371f4516e68e821ebb4e55fb3782))
+
 ## [0.0.116](https://github.com/home-operations/kritika/compare/0.0.115...0.0.116) (2026-11-01)
 
 
