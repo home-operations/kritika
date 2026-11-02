@@ -811,7 +811,7 @@ export interface FindingSummary extends FindingCounts {
 }
 
 // Category is what kind of problem a finding is.
-export type Category = 'correctness' | 'security' | 'performance' | 'reliability' | 'maintainability' | 'tests';
+export type Category = 'correctness' | 'security' | 'performance' | 'reliability' | 'compatibility' | 'accessibility' | 'maintainability' | 'tests';
 
 // AccountFinding is one finding of a pull request, however many of its
 // reviews reported it, as the latest of them did.

@@ -150,7 +150,9 @@ export const followupTone: Record<FollowupStatus, Tone> = {
 };
 
 export const SEVERITIES: readonly Severity[] = ['p0', 'p1', 'p2'];
-export const CATEGORIES: readonly Category[] = ['correctness', 'security', 'performance', 'reliability', 'maintainability', 'tests'];
+export const CATEGORIES: readonly Category[] = [
+  'correctness', 'security', 'performance', 'reliability', 'compatibility', 'accessibility', 'maintainability', 'tests',
+];
 
 // DISMISSED_BY says what dismissed a finding, by its dismissSource.
 export const DISMISSED_BY: Record<DismissSource, string> = {
