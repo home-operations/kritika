@@ -12,6 +12,8 @@
       "p2": 3
     },
     "categories": {
+      "accessibility": 0,
+      "compatibility": 0,
       "correctness": 2,
       "maintainability": 2,
       "performance": 0,
@@ -37,6 +39,8 @@
       "p2": 0
     },
     "categories": {
+      "accessibility": 0,
+      "compatibility": 0,
       "correctness": 0,
       "maintainability": 0,
       "performance": 0,

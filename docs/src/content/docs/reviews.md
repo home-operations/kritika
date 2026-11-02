@@ -84,7 +84,7 @@ Reactions and automatic thread resolution need the relevant
 | `p2`     | Optional polish.              |
 
 Findings also have a category: correctness, security, performance, reliability,
-maintainability or tests. With [agents](/repository-config/#agents) beside
+compatibility, accessibility, maintainability or tests. With [agents](/repository-config/#agents) beside
 the default pass, a finding that a specialist raised also names the agents
 that raised it. A finding that the default pass alone raised names none. The
 summary includes findings outside the visible diff, which cannot get an

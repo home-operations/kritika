@@ -654,7 +654,7 @@ func checkContract(t *testing.T, n node, required []string) {
 		!slices.Equal(items.Required, required) ||
 		items.Properties["line"].Type != "integer" || items.Properties["suggested_fix"].Type != "string" ||
 		!slices.Equal(items.Properties["severity"].Enum, []string{"p0", "p1", "p2"}) ||
-		!slices.Equal(items.Properties["category"].Enum, []string{"correctness", "security", "performance", "reliability", "maintainability", "tests"}) {
+		!slices.Equal(items.Properties["category"].Enum, []string{"correctness", "security", "performance", "reliability", "compatibility", "accessibility", "maintainability", "tests"}) {
 		t.Fatalf("findings item = %+v", items)
 	}
 }

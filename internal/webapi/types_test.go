@@ -303,7 +303,7 @@ var goldens = map[string]any{
 		Group: store.AnalyticsByDay, From: t0, To: t1,
 		Current: AnalyticsTotals{
 			PullRequests: 3, Reviews: 5, Failed: 1, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, Addressed: 2,
-			Categories:  map[review.Category]int{review.CategoryCorrectness: 2, review.CategorySecurity: 1, review.CategoryPerformance: 0, review.CategoryReliability: 1, review.CategoryMaintainability: 2, review.CategoryTests: 0},
+			Categories:  map[review.Category]int{review.CategoryCorrectness: 2, review.CategorySecurity: 1, review.CategoryPerformance: 0, review.CategoryReliability: 1, review.CategoryCompatibility: 0, review.CategoryAccessibility: 0, review.CategoryMaintainability: 2, review.CategoryTests: 0},
 			ReactionsUp: 4, ReactionsDown: 1, CostUSD: 1.25, Tokens: 1200, MedianReviewMs: new(int64(90000)), MedianMergeMs: new(int64(129600000)),
 		},
 		Previous: AnalyticsTotals{Findings: SeverityCounts{}, Categories: categoryCounts(nil)},
