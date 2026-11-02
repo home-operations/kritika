@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.117](https://github.com/home-operations/kritika/compare/0.0.116...0.0.117) (2026-11-02)
+
+
+### Miscellaneous Chores
+
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.40.0 → v3.40.2) ([#1347](https://github.com/home-operations/kritika/issues/1347)) ([fdcfdf3](https://github.com/home-operations/kritika/commit/fdcfdf39291436a6f4ef8f6f8f9608b329f81699))
+
 ## [0.0.116](https://github.com/home-operations/kritika/compare/0.0.115...0.0.116) (2026-11-01)
 
 
