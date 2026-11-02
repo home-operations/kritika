@@ -204,7 +204,7 @@ func (a pageArgs) page() (store.Page, error) {
 // findingFilterArgs narrow findings. Each one left out keeps them all.
 type findingFilterArgs struct {
 	Severity  string `json:"severity,omitempty" jsonschema:"p0, p1 or p2"`
-	Category  string `json:"category,omitempty" jsonschema:"correctness, security, performance, reliability, maintainability or tests"`
+	Category  string `json:"category,omitempty" jsonschema:"correctness, security, performance, reliability, compatibility, accessibility, maintainability or tests"` //nolint:lll // a struct tag does not wrap
 	Status    string `json:"status,omitempty" jsonschema:"open, addressed or dismissed"`
 	Dismissed string `json:"dismissed,omitempty" jsonschema:"what dismissed it: command, resolved or conceded"`
 	Rule      string `json:"rule,omitempty" jsonschema:"the id of a rule it enforces"`

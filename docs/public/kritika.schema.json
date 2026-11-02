@@ -110,6 +110,8 @@
                     "security",
                     "performance",
                     "reliability",
+                    "compatibility",
+                    "accessibility",
                     "maintainability",
                     "tests"
                   ]

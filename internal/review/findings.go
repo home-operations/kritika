@@ -71,12 +71,15 @@ const (
 	CategorySecurity        Category = "security"
 	CategoryPerformance     Category = "performance"
 	CategoryReliability     Category = "reliability"
+	CategoryCompatibility   Category = "compatibility"
+	CategoryAccessibility   Category = "accessibility"
 	CategoryMaintainability Category = "maintainability"
 	CategoryTests           Category = "tests"
 )
 
 var categories = []Category{
-	CategoryCorrectness, CategorySecurity, CategoryPerformance, CategoryReliability, CategoryMaintainability, CategoryTests,
+	CategoryCorrectness, CategorySecurity, CategoryPerformance, CategoryReliability, CategoryCompatibility,
+	CategoryAccessibility, CategoryMaintainability, CategoryTests,
 }
 
 // Categories lists the categories, in the order the dashboard shows them.
@@ -369,7 +372,11 @@ const (
 		"No comment shows it; leave it empty when there is nothing to pass on."
 	describeCategory = "What kind of problem it is. correctness: wrong behaviour, a bug, a broken contract. " +
 		"security: exposure, injection, secrets, unsafe defaults, data loss. performance: cost in time, memory or calls. " +
-		"reliability: error handling, retries, timeouts, concurrency, resource leaks. maintainability: structure, " +
+		"reliability: error handling, retries, timeouts, concurrency, resource leaks. compatibility: a change that " +
+		"breaks existing callers, users or deployments: a removed or renamed API, CLI flag, config key or environment " +
+		"variable, or a changed data format, without a migration path. accessibility: a user interface some people " +
+		"cannot perceive or operate: missing labels or alt text, keyboard access, focus, contrast, screen reader " +
+		"semantics. maintainability: structure, " +
 		"naming, clarity, duplication, dead code. tests: a test the change needs or a test that is wrong."
 )
 

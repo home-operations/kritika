@@ -147,7 +147,8 @@ func checkFindingFilter(f store.FindingFilter) error {
 	case f.Severity != "" && !f.Severity.Valid():
 		return errBadRequest(CodeBadRequest, "severity must be p0, p1 or p2")
 	case f.Category != "" && !f.Category.Valid():
-		return errBadRequest(CodeBadRequest, "category must be correctness, security, performance, reliability, maintainability or tests")
+		return errBadRequest(CodeBadRequest, "category must be correctness, security, performance, reliability, "+
+			"compatibility, accessibility, maintainability or tests")
 	case f.Status != "" && !f.Status.Valid():
 		return errBadRequest(CodeBadRequest, "status must be open, addressed or dismissed")
 	case f.DismissedBy != "" && !f.DismissedBy.Valid():
