@@ -209,9 +209,17 @@ func (s *Server) uiHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/assets/") {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/assets/"):
+			// Fingerprinted build output; safe to cache forever.
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
+		case strings.HasPrefix(r.URL.Path, "/badges/"):
+			// Static review badges embedded in PR comments. Image proxies
+			// (e.g. GitHub's camo) re-validate on every load when these are
+			// no-cache, which breaks them in the mobile app; they never
+			// change between releases, so cache them like the assets do.
+			w.Header().Set("Cache-Control", "public, max-age=14400")
+		default:
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 		files.ServeHTTP(w, r)
