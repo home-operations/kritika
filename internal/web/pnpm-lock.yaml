@@ -15,8 +15,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@tanstack/svelte-query':
-        specifier: ^6.3.9
-        version: 6.3.9(svelte@5.57.3)
+        specifier: ^6.3.10
+        version: 6.3.10(svelte@5.57.3)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.14.0
@@ -38,7 +38,7 @@ importers:
         version: 4.3.4(vite@8.3.5(jiti@2.7.0))
       '@tanstack/svelte-query-devtools':
         specifier: ^6.3.10
-        version: 6.3.10(@tanstack/svelte-query@6.3.9(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)
+        version: 6.3.10(@tanstack/svelte-query@6.3.10(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -595,9 +595,6 @@ packages:
     resolution: {integrity: sha512-DIpUSOhPfQ7u/qfUi/Wgm0wBO56MyBYXGvnlI0NcauDRPqdBUlAZZjW2Dxm92m+k1UWVhKw8YJ4f47+75Aujyw==}
     engines: {node: '>=20'}
 
-  '@tanstack/query-core@5.105.3':
-    resolution: {integrity: sha512-v1rbNy7MB/4Akth7CQH+CerV13K7Ok9hAusEsfz4sCjDdu3/kOSJPoWfoB+YjdEX1eBFBWKNAGE5nqZCgdlHDw==}
-
   '@tanstack/query-core@5.106.0':
     resolution: {integrity: sha512-3GuqVrhCG0bBfmLt4AU0SIm8UuZ1rzeRjDiQBnYuzW3lkri1RdawWN73jZYvB4kC8WyDUoDgBx3kyO3TbNH/6Q==}
 
@@ -615,8 +612,8 @@ packages:
       '@tanstack/svelte-query': ^6.3.10
       svelte: ^5.25.0
 
-  '@tanstack/svelte-query@6.3.9':
-    resolution: {integrity: sha512-AemjCleZHfuv7MRyS9Bxocm/UON3KByNeMP2BjeGFUTvT/3PiEQMB4Er72Wu33I5oy/qRjq+QY3+LK3zwztZ0w==}
+  '@tanstack/svelte-query@6.3.10':
+    resolution: {integrity: sha512-0gsP9i/IMFvjhyKW23N/L7UCimEk3fbKilo/Zw+7yynMLJC/cY7Km1pbBHqlgKJGz+2g0tBEd2/QLVluWz7kHw==}
     peerDependencies:
       svelte: ^5.25.0
 
@@ -1863,8 +1860,6 @@ snapshots:
     dependencies:
       remove-accents: 0.5.0
 
-  '@tanstack/query-core@5.105.3': {}
-
   '@tanstack/query-core@5.106.0': {}
 
   '@tanstack/query-devtools@5.106.0(csstype@3.2.3)':
@@ -1889,18 +1884,18 @@ snapshots:
       '@tanstack/virtual-core': 3.19.11
       solid-js: 1.9.17
 
-  '@tanstack/svelte-query-devtools@6.3.10(@tanstack/svelte-query@6.3.9(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)':
+  '@tanstack/svelte-query-devtools@6.3.10(@tanstack/svelte-query@6.3.10(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)':
     dependencies:
       '@tanstack/query-devtools': 5.106.0(csstype@3.2.3)
-      '@tanstack/svelte-query': 6.3.9(svelte@5.57.3)
+      '@tanstack/svelte-query': 6.3.10(svelte@5.57.3)
       esm-env: 1.2.2
       svelte: 5.57.3
     transitivePeerDependencies:
       - csstype
 
-  '@tanstack/svelte-query@6.3.9(svelte@5.57.3)':
+  '@tanstack/svelte-query@6.3.10(svelte@5.57.3)':
     dependencies:
-      '@tanstack/query-core': 5.105.3
+      '@tanstack/query-core': 5.106.0
       svelte: 5.57.3
 
   '@tanstack/virtual-core@3.19.11': {}
