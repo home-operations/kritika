@@ -60,8 +60,8 @@ github.com/anthropics/anthropic-sdk-go/v2 v2.5.0 h1:144oxWulRafDlDWIcejLKw2uH7gl
 github.com/anthropics/anthropic-sdk-go/v2 v2.5.0/go.mod h1:LAOInMKgn6reTIrPvKXa5weyqzxsJkxSBuzhnxzukpQ=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
-github.com/aquaproj/aqua/v2 v2.66.0 h1:oe+iZ6D4gL25QPvTrdCjCfbwL73fQ7pxSWKNj6MR3OQ=
-github.com/aquaproj/aqua/v2 v2.66.0/go.mod h1:9pbEZf4suWgUoXxp46bZzsWqn9q+6F8p5CfAG8k5Wvk=
+github.com/aquaproj/aqua/v2 v2.66.1 h1:p/eB3luLqguboiaZjiguFlUwEULJ7Je1Zv9JxlBvM0E=
+github.com/aquaproj/aqua/v2 v2.66.1/go.mod h1:9pbEZf4suWgUoXxp46bZzsWqn9q+6F8p5CfAG8k5Wvk=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5/go.mod h1:wHh0iHkYZB8zMSxRWpUBQtwG5a7fFgvEO+odwuTv2gs=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3dyBCFEj5IhUbnKptjxatkF07cF2ak3yi77so=
