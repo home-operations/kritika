@@ -239,7 +239,7 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 		phase = "done"
 	}
 	err = report.context(ctx, runspec.ContextPack{
-		Head: p.Head, Base: p.Base, PatchID: res.PatchID, Diff: packDiff, ChangedPaths: res.Changed,
+		Head: p.Head, Base: p.Base, PatchID: res.PatchID, Diff: packDiff, ChangedPaths: res.Changed, RenamedFrom: res.RenamedFrom,
 		Stages: stagesJSON, Files: filesJSON, Notes: notes, PriorHead: priorHead, DeltaDiff: packDelta,
 		DeltaPaths: deltaPaths, Scope: string(scope), ScopeReason: scopeReason, SkipReason: skip, RuleIDs: ruleIDs, SkipDetail: skipDetail,
 	}, phase)

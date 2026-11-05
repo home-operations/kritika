@@ -2160,14 +2160,25 @@ review:
 		}
 		return reason
 	}
-	for _, head := range []string{docsHead, loosened} {
-		dispatchPR(2, head, false)
-		if status, _, _ := waitReview(head); status != "skipped" {
+	// Skipped, the head that changes .kritika.yaml still withdraws the
+	// approval that its pull request has: the file configures kritika.
+	for _, skip := range []struct {
+		head       string
+		dismissals int
+	}{{docsHead, 0}, {loosened, 1}} {
+		dispatchPR(2, skip.head, false)
+		if status, _, _ := waitReview(skip.head); status != "skipped" {
 			t.Fatalf("status = %s, want skipped: the merge-base ignore globs cover every changed path", status)
 		}
 		waitStatus(t, lf, "success: kritika: skipped (only ignored paths changed)")
-		if reason := skipReason(head); reason != "only_skipped_paths" {
+		if reason := skipReason(skip.head); reason != "only_skipped_paths" {
 			t.Fatalf("reason = %q", reason)
+		}
+		lf.mu.Lock()
+		dismissals := lf.dismissals
+		lf.mu.Unlock()
+		if dismissals != skip.dismissals {
+			t.Fatalf("dismissals = %d after the skip of %s, want %d", dismissals, skip.head, skip.dismissals)
 		}
 	}
 	fc.mu.Lock()
@@ -2215,7 +2226,7 @@ review:
 	if !strings.HasPrefix(sticky, "<!-- kritika:pr-3 -->\nCustom summary for #3: Changes main.go.") {
 		t.Fatalf("sticky comment for PR 3 = %q", sticky)
 	}
-	checkWithdrawn(t, lf)
+	checkWithdrawn(t, lf, 2)
 	checkConfidence(ctx, t, appStore, lf, fc, accountID, codeHead)
 	pushedHead := commit("more code", map[string]string{"main.go": "package main\n\nfunc d() {}\n\nfunc f() {}\n"})
 	// The confidence model fails both its attempts. The fallback on the other
@@ -2488,14 +2499,14 @@ func checkFallbackFailed(
 
 // checkWithdrawn asserts what a review with an important finding does
 // where the merge-base .kritika.yaml opted in to approvals: no approval,
-// and any standing one withdrawn.
-func checkWithdrawn(t *testing.T, lf *localForge) {
+// and any standing one withdrawn, which makes want withdrawals in all.
+func checkWithdrawn(t *testing.T, lf *localForge, want int) {
 	t.Helper()
 	lf.mu.Lock()
 	approvals, dismissals := lf.approvals, lf.dismissals
 	lf.mu.Unlock()
-	if len(approvals) != 0 || dismissals != 1 {
-		t.Fatalf("approvals = %v dismissals = %d, want none and one withdrawal", approvals, dismissals)
+	if len(approvals) != 0 || dismissals != want {
+		t.Fatalf("approvals = %v dismissals = %d, want none and %d withdrawals", approvals, dismissals, want)
 	}
 }
 

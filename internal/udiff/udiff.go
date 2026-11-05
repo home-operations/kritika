@@ -141,6 +141,24 @@ func (f File) Path() string {
 	return ""
 }
 
+// RenamedFrom is the base-side name that the file's "rename from" line
+// gives, "" for a file that is not renamed. As in Path, the name is git's
+// quoting only where the "diff --git" line quotes the base-side name too.
+func (f File) RenamedFrom() string {
+	first, _, _ := strings.Cut(f.Header, "\n")
+	_, after, _ := strings.Cut(first, "diff --git ")
+	quoted := strings.HasPrefix(after, `"a/`)
+	for l := range strings.Lines(f.Header) {
+		if name, ok := strings.CutPrefix(strings.TrimSuffix(l, "\n"), "rename from "); ok {
+			if quoted {
+				return unquoteName(name)
+			}
+			return name
+		}
+	}
+	return ""
+}
+
 // String is the file's diff as it was.
 func (f File) String() string {
 	var b strings.Builder

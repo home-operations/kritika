@@ -333,6 +333,20 @@ func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (Conte
 	return changes, nil
 }
 
+// ContextPackPaths returns every path that the context pack of a runner run
+// says the change touches, a rename by both of its names, or ErrNotFound.
+func ContextPackPaths(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]string, error) {
+	var paths []string
+	err := tx.QueryRow(ctx, `SELECT changed_paths || renamed_from FROM context_packs WHERE runner_run_id = $1`, runnerRunID).Scan(&paths)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: context pack paths: %w", err)
+	}
+	return paths, nil
+}
+
 // ContextPackInputs returns the context chunks and repository files of the
 // context pack a runner run wrote, or ErrNotFound.
 func ContextPackInputs(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]contextpack.Chunk, map[string]string, error) {

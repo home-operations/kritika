@@ -72,6 +72,10 @@ type Result struct {
 	// empty rather than nil when the diff is: the runner stores it in a
 	// NOT NULL column, and pgx writes a nil slice as NULL.
 	Changed []string
+	// RenamedFrom lists the base-side names of the renames, which Changed
+	// names by their head-side names. It is empty rather than nil, as
+	// Changed is.
+	RenamedFrom []string
 	// Prior is the fetched prior head, nil when none was asked for or it
 	// failed to fetch, in which case PriorErr says why. DeltaDiff and
 	// DeltaChanged are the diff from it to head and the paths that diff
@@ -183,7 +187,9 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Head: head, Base: base, Diff: diff, PatchID: PatchID(diff), Changed: changed, Dir: dir, repo: repo}
+	res := &Result{
+		Head: head, Base: base, Diff: diff, PatchID: PatchID(diff), Changed: changed, RenamedFrom: renamedFrom(changes), Dir: dir, repo: repo,
+	}
 	if f.Prior == "" {
 		return res, nil
 	}
@@ -288,6 +294,17 @@ func treeChanges(ctx context.Context, from, to *object.Commit) (object.Changes, 
 		return nil, fmt.Errorf("gitfetch: diff: %w", err)
 	}
 	return changes, nil
+}
+
+// renamedFrom is the base-side names of the renames among changes.
+func renamedFrom(changes object.Changes) []string {
+	out := []string{}
+	for _, c := range changes {
+		if c.From.Name != "" && c.To.Name != "" && c.From.Name != c.To.Name {
+			out = append(out, c.From.Name)
+		}
+	}
+	return out
 }
 
 // renderChanges is the changes as a unified diff, with the paths it touches

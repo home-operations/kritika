@@ -86,6 +86,7 @@ type ContextPack struct {
 	PatchID      string          `json:"patchId"`
 	Diff         string          `json:"diff"`
 	ChangedPaths []string        `json:"changedPaths"`
+	RenamedFrom  []string        `json:"renamedFrom"`
 	Stages       json.RawMessage `json:"stages"`
 	Files        json.RawMessage `json:"files"`
 	Notes        []string        `json:"notes"`

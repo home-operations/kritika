@@ -108,6 +108,7 @@ func TestCarryApproval(t *testing.T) {
 		name                string
 		settings            configfile.Settings
 		carried             *review.Confidence
+		own                 []string
 		approved, dismissed string
 	}{
 		{name: "nothing carried", settings: settings(true, 4)},
@@ -119,12 +120,17 @@ func TestCarryApproval(t *testing.T) {
 		{name: "nothing carried for a pull request the repository left unscored withdraws",
 			settings:  configfile.Settings{Review: configfile.Review{Approve: true}, Confidence: configfile.Confidence{RepoUnscored: true}},
 			dismissed: "o/r#7: kritika: this repository's confidence.when leaves it unscored at abcdef1."},
+		{name: "a passing score withdraws from a patch that changes kritika's files", settings: settings(true, 4), carried: carried(4),
+			own: []string{".kritika.yaml"}, dismissed: "o/r#7: kritika: it changes files that configure kritika (.kritika.yaml) at abcdef1."},
+		{name: "nothing carried withdraws from a patch that changes kritika's files", settings: settings(true, 4),
+			own:       []string{".agents/skills/go/SKILL.md"},
+			dismissed: "o/r#7: kritika: it changes files that configure kritika (.agents/skills/go/SKILL.md) at abcdef1."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &approvalForge{}
 			carryApproval(t.Context(), slog.New(slog.DiscardHandler), approvalInScope, f,
-				&pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, tt.settings, tt.carried)
+				&pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, tt.settings, tt.carried, tt.own)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {
 				t.Fatalf("approved %q dismissed %q, want %q and %q", f.approved, f.dismissed, tt.approved, tt.dismissed)
 			}

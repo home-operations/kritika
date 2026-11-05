@@ -243,6 +243,7 @@ func TestRunPriorDelta(t *testing.T) {
 		wantNotInDelta  string
 		wantBaseErr     bool
 		wantHeadChanged string
+		wantRenamedFrom []string
 	}{
 		// head and rebased carry the same main.go. README.md moved between
 		// them with the base, which is no change of the pull request's.
@@ -251,7 +252,8 @@ func TestRunPriorDelta(t *testing.T) {
 		// even where the head no longer touches them.
 		{name: "rebased, a path the change dropped", prior: r.head, priorChanged: []string{"main.go", "README.md"}, wantPrior: true, wantChanged: []string{"README.md"}, wantInDelta: "+there"},
 		{name: "prior already fetched as the base", prior: r.other, wantPrior: true, wantChanged: []string{"main.go"}, wantInDelta: "+func b() {}"},
-		{name: "the changed file renamed since", head: r.renamed, prior: r.rebased, priorChanged: []string{"main.go"}, wantPrior: true, wantChanged: []string{"lib.go"}, wantInDelta: "lib.go", wantHeadChanged: "lib.go"},
+		{name: "the changed file renamed since", head: r.renamed, prior: r.rebased, priorChanged: []string{"main.go"}, wantPrior: true, wantChanged: []string{"lib.go"}, wantInDelta: "lib.go", wantHeadChanged: "lib.go",
+			wantRenamedFrom: []string{"main.go"}},
 		{name: "prior is the head", prior: r.rebased, wantPrior: true},
 		// The base edited the start of the file the change edits at its end,
 		// and the change was brought up to date: what the base gained in the
@@ -302,6 +304,9 @@ func TestRunPriorDelta(t *testing.T) {
 			}
 			if want := cmp.Or(tc.wantHeadChanged, "main.go"); len(res.Changed) != 1 || res.Changed[0] != want {
 				t.Fatalf("the merge-base diff must not change: %v, want %s", res.Changed, want)
+			}
+			if res.RenamedFrom == nil || strings.Join(res.RenamedFrom, ",") != strings.Join(tc.wantRenamedFrom, ",") {
+				t.Fatalf("renamed from = %#v, want %v", res.RenamedFrom, tc.wantRenamedFrom)
 			}
 		})
 	}

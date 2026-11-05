@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path"
+	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/udiff"
 )
 
 // approvalScope is whether review.approve's conditions hold for a pull
@@ -82,6 +87,9 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 	if ok && p.unfinished > 0 {
 		ok, why = false, "parts of the change went unreviewed"
 	}
+	if ok && len(p.ownChanged) > 0 {
+		ok, why = false, ownReason(p.ownChanged)
+	}
 	if ok {
 		requested, err := p.client.ChangesRequested(ctx, owner, repo, p.pr.number)
 		if err != nil {
@@ -141,6 +149,62 @@ func (p *publishPhase) dismissOutOfScope(ctx context.Context) *review.Approval {
 		return &review.Approval{Reason: why}
 	}
 	return nil
+}
+
+// ownPaths are the files and directories whose content steers kritika's
+// reviews of the repository: .kritika.yaml, the rule file and skill
+// directories, and the files that the configuration names. Once a change to
+// one merges, it steers every later review.
+func ownPaths(s configfile.Settings) []string {
+	paths := append([]string{repoconfig.FileName}, repoconfig.RuleFileDirs...)
+	paths = append(paths, s.Skills.Paths...)
+	paths = append(paths, s.Review.Referenced()...)
+	paths = append(paths, configfile.ReviewerFiles(s.Reviewers)...)
+	for _, c := range s.Review.Context {
+		paths = append(paths, c.Path)
+	}
+	return paths
+}
+
+// changedOwn is the paths of changed that are of ownPaths, or under one of
+// them. changed names a rename by both of its names.
+func changedOwn(s configfile.Settings, changed []string) []string {
+	own := ownPaths(s)
+	for i, o := range own {
+		own[i] = path.Clean(o)
+	}
+	var out []string
+	for _, p := range changed {
+		if p == "" || slices.Contains(out, p) {
+			continue
+		}
+		if slices.ContainsFunc(own, func(o string) bool { return p == o || strings.HasPrefix(p, o+"/") }) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// diffPaths are the paths that a unified diff changes, a rename by both of
+// its names.
+func diffPaths(diff string) []string {
+	files := udiff.Parse(diff)
+	out := make([]string, 0, 2*len(files))
+	for _, f := range files {
+		out = append(out, f.Path(), f.RenamedFrom())
+	}
+	return out
+}
+
+// ownReason is why a change to the paths of changedOwn is not approved,
+// with the first few of them.
+func ownReason(changed []string) string {
+	const named = 3
+	list := strings.Join(changed[:min(len(changed), named)], ", ")
+	if len(changed) > named {
+		list += fmt.Sprintf(" and %d more", len(changed)-named)
+	}
+	return "it changes files that configure kritika (" + list + ")"
 }
 
 // approvable reports whether a review's verdict lets kritika approve the

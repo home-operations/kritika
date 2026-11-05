@@ -322,19 +322,20 @@ func skipVerdict(carried *review.Confidence, gate bool, reason string) (forge.St
 // nothing. But the threshold, the risk ceiling, or the approval's conditions
 // can move after the score is given, and an approval must not outlive them.
 // The head is the one that the skip was just decided for. scope is
-// judgeApproval's word on the pull request as it stands.
+// judgeApproval's word on the pull request as it stands, and own the paths
+// of the patch that changedOwn gives.
 func carryApproval(
 	ctx context.Context, logger *slog.Logger, scope approvalScope, client forge.Client, pr *pullRequest,
-	settings configfile.Settings, carried *review.Confidence,
+	settings configfile.Settings, carried *review.Confidence, own []string,
 ) {
 	if !settings.Review.Approve {
 		return
 	}
 	// With no score carried the skip has no verdict to apply, unless the
 	// approval it stands on is one kritika must no longer give.
-	if carried == nil && scope != approvalOutOfScope && !settings.Confidence.RepoUnscored {
+	if carried == nil && scope != approvalOutOfScope && !settings.Confidence.RepoUnscored && len(own) == 0 {
 		return
 	}
-	p := &publishPhase{client: client, pr: pr, settings: settings, confidence: carried, logger: logger}
+	p := &publishPhase{client: client, pr: pr, settings: settings, confidence: carried, ownChanged: own, logger: logger}
 	p.approve(ctx, review.Counts{}, true, scope)
 }

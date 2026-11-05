@@ -24,14 +24,16 @@ import (
 // and the configuration, with the repository's .kritika.yaml applied and its
 // templates read. It also holds the notes that the summary states and whether
 // the review builds on the last completed one. Finally, it holds the ids of
-// the rules that the agent was given.
+// the rules that the agent was given, and, where the repository has kritika
+// approve, the paths of the change that changedOwn gives.
 type prepared struct {
-	patchID   string
-	eff       Effective
-	templates review.Templates
-	notes     []string
-	scope     review.Scope
-	ruleIDs   []string
+	patchID    string
+	eff        Effective
+	templates  review.Templates
+	notes      []string
+	scope      review.Scope
+	ruleIDs    []string
+	ownChanged []string
 }
 
 // afterRun makes sure again that the head did not move, under the account
@@ -84,7 +86,12 @@ func (w *Review) afterRun(
 			}
 			if eff.Review.Approve {
 				scope := judgeApproval(ctx, w.Store, args.AccountID, pr.id, args.Trigger, eff.Review, logger)
-				carryApproval(ctx, logger, scope, client, pr, eff.Settings, pack.carried)
+				own, err := w.ownChanged(ctx, args.AccountID, runID, eff.Settings)
+				if err != nil {
+					logger.Warn("approval left as it stands", "error", err)
+					return nil
+				}
+				carryApproval(ctx, logger, scope, client, pr, eff.Settings, pack.carried, own)
 			}
 			return nil
 		})
@@ -93,11 +100,32 @@ func (w *Review) afterRun(
 		}
 		return prepared{}, decision.end.Status, decision.jobError()
 	}
+	var own []string
+	if eff.Review.Approve {
+		if own, err = w.ownChanged(ctx, args.AccountID, runID, eff.Settings); err != nil {
+			return prepared{}, "", err
+		}
+	}
 	logger.Info("review prepared", "patch_id", review.ShortSHA(pack.PatchID), "scope", pack.Scope, "scope_reason", pack.ScopeReason)
 	return prepared{
 		patchID: pack.PatchID, eff: eff, templates: eff.templates(pack.Files), notes: append(slices.Clone(notes), pack.Notes...),
-		scope: pack.Scope, ruleIDs: pack.RuleIDs,
+		scope: pack.Scope, ruleIDs: pack.RuleIDs, ownChanged: own,
 	}, decision.end.Status, nil
+}
+
+// ownChanged is what the context pack of runner run runID changes of the
+// paths that steer kritika's reviews (see changedOwn).
+func (w *Review) ownChanged(ctx context.Context, accountID, runID string, settings configfile.Settings) ([]string, error) {
+	var changed []string
+	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		var err error
+		changed, err = store.ContextPackPaths(ctx, tx, runID)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("worker: read the context pack's paths: %w", err)
+	}
+	return changedOwn(settings, changed), nil
 }
 
 // afterRunEnded is the review afterRun ends, as ownedWrite takes it.

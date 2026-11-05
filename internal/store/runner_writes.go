@@ -51,11 +51,11 @@ func RecordRunnerFailure(ctx context.Context, tx pgx.Tx, runID, cause string) er
 func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.ContextPack, phase string) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
-			prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail)
-		SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM runner_runs WHERE id = $1
+			prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail, renamed_from)
+		SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18 FROM runner_runs WHERE id = $1
 		ON CONFLICT (runner_run_id) DO NOTHING`,
 		runID, p.Head, p.Base, p.PatchID, p.Diff, p.ChangedPaths, p.Stages, p.Files, p.Notes,
-		p.PriorHead, p.DeltaDiff, p.DeltaPaths, p.Scope, p.ScopeReason, p.SkipReason, p.RuleIDs, p.SkipDetail)
+		p.PriorHead, p.DeltaDiff, p.DeltaPaths, p.Scope, p.ScopeReason, p.SkipReason, p.RuleIDs, p.SkipDetail, p.RenamedFrom)
 	if err != nil {
 		return fmt.Errorf("store: write runner context: %w", err)
 	}

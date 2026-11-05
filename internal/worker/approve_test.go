@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -50,6 +51,7 @@ func TestApprove(t *testing.T) {
 		unscored, requested bool
 		moved               bool
 		unfinished          int
+		own                 []string
 		err, reviewsErr     error
 		approved, dismissed string
 		outcome             review.Approval
@@ -92,6 +94,12 @@ func TestApprove(t *testing.T) {
 			outcome:   review.Approval{Reason: "this repository's confidence.when leaves it unscored"}},
 		{name: "a split review with an unfinished part withdraws", unfinished: 1,
 			dismissed: withdraws + "parts of the change went unreviewed at abcdef1.", outcome: review.Approval{Reason: "parts of the change went unreviewed"}},
+		{name: "a change to kritika's files withdraws", own: []string{".kritika.yaml"},
+			dismissed: withdraws + "it changes files that configure kritika (.kritika.yaml) at abcdef1.",
+			outcome:   review.Approval{Reason: "it changes files that configure kritika (.kritika.yaml)"}},
+		{name: "a change to kritika's files withdraws even when a reviewer's request cannot be read", own: []string{".claude/rules/go.md"},
+			reviewsErr: errors.New("forbidden"), dismissed: withdraws + "it changes files that configure kritika (.claude/rules/go.md) at abcdef1.",
+			outcome: review.Approval{Reason: "it changes files that configure kritika (.claude/rules/go.md)"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,6 +108,7 @@ func TestApprove(t *testing.T) {
 			p := &publishPhase{
 				client: f, pr: &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, logger: slog.New(slog.DiscardHandler),
 				settings: configfile.Settings{Confidence: tt.want}, confidence: tt.confidence, unscored: tt.unscored, unfinished: tt.unfinished,
+				ownChanged: tt.own,
 			}
 			got := p.approve(t.Context(), tt.counts, !tt.moved, approvalInScope)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {
@@ -148,5 +157,61 @@ func TestApproveOutOfScope(t *testing.T) {
 				t.Fatalf("outcome = %+v, want %+v", got, tt.outcome)
 			}
 		})
+	}
+}
+
+// TestChangedOwn: the paths of a change that steer kritika's reviews are
+// .kritika.yaml, the rule file and skill directories, and the files that the
+// configuration names, by either name of a rename. A path that only shares
+// a prefix with one of them is not.
+func TestChangedOwn(t *testing.T) {
+	t.Parallel()
+	settings := configfile.Settings{
+		Skills: configfile.Skills{Paths: []string{"docs/skills/"}},
+		Review: configfile.Review{
+			Rules:     []configfile.Rule{{ID: "sql", File: "docs/sql-rules.md"}},
+			Templates: configfile.ReviewTemplates{Summary: "./.github/kritika/summary.md"},
+			Context:   []configfile.ContextFile{{Path: "AGENTS.md", Description: "Conventions."}},
+		},
+		Reviewers: map[string]configfile.Reviewer{"security": {File: "docs/security-agent.md"}},
+	}
+	const renamed = "diff --git a/.kritika.yaml b/kritika.yaml.bak\nsimilarity index 100%\nrename from .kritika.yaml\nrename to kritika.yaml.bak\n"
+	for _, tt := range []struct {
+		name    string
+		changed []string
+		diff    string
+		want    []string
+	}{
+		{name: "code alone", changed: []string{"main.go", "docs/index.md"}},
+		{name: "the repository file", changed: []string{"main.go", ".kritika.yaml"}, want: []string{".kritika.yaml"}},
+		{name: "rule file directories", changed: []string{".agents/rules/go.md", ".claude/rules/sql/x.md"},
+			want: []string{".agents/rules/go.md", ".claude/rules/sql/x.md"}},
+		{name: "the configured skill directory, not the default one",
+			changed: []string{"docs/skills/go/SKILL.md", ".agents/skills/go/SKILL.md"}, want: []string{"docs/skills/go/SKILL.md"}},
+		{name: "files the configuration names",
+			changed: []string{"docs/sql-rules.md", ".github/kritika/summary.md", "AGENTS.md", "docs/security-agent.md"},
+			want:    []string{"docs/sql-rules.md", ".github/kritika/summary.md", "AGENTS.md", "docs/security-agent.md"}},
+		{name: "a shared prefix is not a match", changed: []string{".kritika.yaml.bak", "docs/skillset/x.md", ".claude/rules.md"}},
+		{name: "a rename away is by its base-side name", changed: []string{"kritika.yaml.bak"}, diff: renamed,
+			want: []string{".kritika.yaml"}},
+		{name: "a forge diff alone", diff: renamed, want: []string{".kritika.yaml"}},
+		{name: "a path is listed once", changed: []string{".kritika.yaml"},
+			diff: "diff --git a/.kritika.yaml b/.kritika.yaml\n--- a/.kritika.yaml\n+++ b/.kritika.yaml\n@@ -1 +1 @@\n-a\n+b\n",
+			want: []string{".kritika.yaml"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := changedOwn(settings, slices.Concat(tt.changed, diffPaths(tt.diff))); !slices.Equal(got, tt.want) {
+				t.Fatalf("changedOwn = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOwnReason(t *testing.T) {
+	t.Parallel()
+	got := ownReason([]string{"a", "b", "c", "d", "e"})
+	if want := "it changes files that configure kritika (a, b, c and 2 more)"; got != want {
+		t.Fatalf("ownReason = %q, want %q", got, want)
 	}
 }

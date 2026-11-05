@@ -166,7 +166,7 @@ func everyReport(t *testing.T) map[string][]byte {
 
 func contextPack() runspec.ContextPack {
 	return runspec.ContextPack{
-		Head: "head", Base: "base", PatchID: "patch", Diff: "diff", ChangedPaths: []string{"a.go"}, Stages: []byte(`[]`), Files: []byte(`{}`),
+		Head: "head", Base: "base", PatchID: "patch", Diff: "diff", ChangedPaths: []string{"a.go"}, RenamedFrom: []string{}, Stages: []byte(`[]`), Files: []byte(`{}`),
 		Notes: []string{}, DeltaPaths: []string{}, Scope: "full", RuleIDs: []string{},
 	}
 }
