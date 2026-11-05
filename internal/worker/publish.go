@@ -81,6 +81,9 @@ type publishPhase struct {
 	// they submitted, whose files went unreviewed: the review is then
 	// incomplete for the commit status and approves nothing.
 	unfinished int
+	// ownChanged are the paths of the change that steer kritika's reviews
+	// (see changedOwn): the review then approves nothing.
+	ownChanged []string
 	// resolved are the last review's findings this review
 	// listed as no longer holding, which the summary lists and whose
 	// threads it resolves.

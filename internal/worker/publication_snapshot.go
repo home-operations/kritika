@@ -59,6 +59,7 @@ type publicationContext struct {
 	Confidence      *review.Confidence
 	Unscored        bool
 	Unfinished      int
+	OwnChanged      []string `json:",omitempty"`
 	Started         time.Time
 }
 
@@ -118,7 +119,8 @@ func (p *publishPhase) snapshotContext() publicationContext {
 		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
 		Prior:     snapshotFindings(p.prior.findings),
 		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
-		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished, Started: p.started,
+		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished,
+		OwnChanged: p.ownChanged, Started: p.started,
 	}
 	if p.agent != nil {
 		snapshot.Sources = p.agent.Sources
@@ -205,7 +207,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,
 		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
 	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
-	p.confidence, p.unscored, p.unfinished = s.Confidence, s.Unscored, s.Unfinished
+	p.confidence, p.unscored, p.unfinished, p.ownChanged = s.Confidence, s.Unscored, s.Unfinished, s.OwnChanged
 	p.reviewers = s.Reviewers
 	p.agent = &store.AgentRunRow{Sources: s.Sources}
 	if s.Agent != nil {

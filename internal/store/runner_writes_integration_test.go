@@ -33,7 +33,7 @@ func TestRunnerWriteTransactions(t *testing.T) {
 					phase = "invalid"
 				}
 				return WriteRunnerContext(ctx, tx, id, runspec.ContextPack{
-					Head: "head", Base: "base", PatchID: "patch", ChangedPaths: []string{}, Stages: []byte(`[]`), Files: []byte(`{}`),
+					Head: "head", Base: "base", PatchID: "patch", ChangedPaths: []string{}, RenamedFrom: []string{}, Stages: []byte(`[]`), Files: []byte(`{}`),
 					Notes: []string{}, DeltaPaths: []string{}, Scope: "full", RuleIDs: []string{},
 				}, phase)
 			}},

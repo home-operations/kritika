@@ -102,6 +102,10 @@ The block turns approval on, and its conditions hold beside the admin's. A
 pull request must pass both, so the file cannot approve what the admin's
 conditions keep out. `approve: true` also keeps the admin's conditions.
 
+kritika never approves a pull request that changes `.kritika.yaml` or
+another [file that configures kritika](/confidence/#approvals). No
+condition changes this.
+
 ### Flow diagrams
 
 With `review.diagram: true`, the summary draws the flow that the change adds

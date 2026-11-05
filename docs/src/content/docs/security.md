@@ -79,6 +79,10 @@ permissions.
   request's own tree. The merge base is a commit in the base branch's
   history. A pull request therefore cannot rewrite them to steer its own
   review.
+- After a pull request merges, its changes to these files steer every
+  later review. kritika therefore never approves a pull request that
+  changes them, or a context file that the configuration names
+  ([approvals](/confidence/#approvals)).
 - `.kritika.yaml` can narrow the admin's configuration and add rules, but
   [some keys](/configuration/#what-only-the-admin-sets) are the admin's
   alone: the agent's bounds, `confidence.instructions`,

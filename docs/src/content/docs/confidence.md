@@ -103,6 +103,21 @@ These reviews do not approve:
 - a split review whose parts did not all get reviewed
 - a review of a head that the pull request moved on from while the review
   ran
+- a review of a change to a file that configures kritika
+
+The files that configure kritika are these:
+
+- `.kritika.yaml`
+- the rule file directories, `.agents/rules` and `.claude/rules`
+- the skill directories in `skills.paths`
+- the rule files, the comment templates, the agent files and the context
+  files that the configuration names
+
+A review reads most of these files from the merge base. It reads the
+context files from the head of the pull request. After the pull request
+merges, its changes to these files apply to every later review. A person
+must approve it. A rename counts by both of its names. No setting turns
+this off.
 
 A later review that no longer qualifies withdraws kritika's approval. That
 includes a review that finds that a reviewer requested changes. On its own, a

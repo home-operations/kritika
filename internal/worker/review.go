@@ -227,7 +227,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 			Categories: reviewerCategories(prep.eff.Reviewers),
 		},
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
-		agent: agentOutcome,
+		agent: agentOutcome, ownChanged: prep.ownChanged,
 	}
 	phase.handoff = func(ctx context.Context, tx pgx.Tx) error {
 		return phase.advance(ctx, tx, job, jobs.PrepareArgs{ReviewArgs: job.Args, ReviewID: reviewID})
@@ -408,7 +408,9 @@ func (w *Review) skipUnchangedBot(
 	}
 	if settings.Review.Approve {
 		scope := judgeApproval(ctx, w.Store, e.args.AccountID, e.pr.id, e.args.Trigger, settings.Review, e.logger)
-		carryApproval(ctx, e.logger, scope, e.client, e.pr, settings, e.carried)
+		// botPatch found the patch unchanged, so it read the diff.
+		diff, _ := forgeDiff()
+		carryApproval(ctx, e.logger, scope, e.client, e.pr, settings, e.carried, changedOwn(settings, diffPaths(diff)))
 	}
 	return patch, true, nil
 }
