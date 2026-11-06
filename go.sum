@@ -274,10 +274,10 @@ github.com/googleapis/gax-go/v2 v2.26.2 h1:ydkmNXxj7bEmmeK5AihkKnWxyOyBR9TDebvp5
 github.com/googleapis/gax-go/v2 v2.26.2/go.mod h1:sMKqnMesnKH+3wiRJROcttA+cJoZoGbZl1vDQ8XYtGk=
 github.com/gookit/filter v1.2.3 h1:Zo7cBOtsVzAoa/jtf+Ury6zlsbJXqInFdUpbbnB2vMM=
 github.com/gookit/filter v1.2.3/go.mod h1:nFLJcOV8dRgS1iiX23gUQgmHUhpuS40qCvAGgIvA1pM=
-github.com/gookit/goutil v0.8.0 h1:efZWxfesXw8+5tQfTfRMSIC6A0ax527/H+A/aIiaSrw=
-github.com/gookit/goutil v0.8.0/go.mod h1:vJS9HXctYTCLtCsZot5L5xF+O1oR17cDYO9R0HxBmnU=
-github.com/gookit/validate/v2 v2.0.2 h1:3PMzjAzAsDpWVg0KRKq3/METoUmcD1eRhbMSDgwlNVw=
-github.com/gookit/validate/v2 v2.0.2/go.mod h1:lPoTfisF5LK3Y/GyRFtK3MxbsJZjYYQ1LsKWMzdEVII=
+github.com/gookit/goutil v0.8.6 h1:8LfEg9xVDdlQ1yWzk0seLslJCUPt8YnZQo5v0ycGs3E=
+github.com/gookit/goutil v0.8.6/go.mod h1:vJS9HXctYTCLtCsZot5L5xF+O1oR17cDYO9R0HxBmnU=
+github.com/gookit/validate/v2 v2.0.3 h1:g8zvdSf8Eh7wy3Hrx2tTu/eMcLU9OqbWz4DIkJ/eeVE=
+github.com/gookit/validate/v2 v2.0.3/go.mod h1:mz6RR1izrUicpU2bl3gTAusWo2BKIir6d0qYU2QrJBQ=
 github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 h1:UH//fgunKIs4JdUbpDl1VZCDaL56wXCB/5+wF6uHfaI=
 github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4 h1:9ZJYjPEJpcleIKcqysXOo14NLQYwu23fzmKRFpIjPjc=
 github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4/go.mod h1:0xydIeg2omQ9DH6zYMP24Kk57793rnLUvP8fwdbFvz8=

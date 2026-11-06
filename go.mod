@@ -17,7 +17,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-github/v93 v93.0.0
 	github.com/google/uuid v1.6.0
-	github.com/gookit/validate/v2 v2.0.2
+	github.com/gookit/validate/v2 v2.0.3
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/klauspost/compress v1.20.3
 	github.com/knadh/koanf/providers/confmap v1.0.1
@@ -107,7 +107,7 @@ require (
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/gookit/filter v1.2.3 // indirect
-	github.com/gookit/goutil v0.8.0 // indirect
+	github.com/gookit/goutil v0.8.6 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
