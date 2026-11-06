@@ -46,24 +46,27 @@ url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/66006925
 provenance = "cosign"
 
 [[tools."github:grafana/dashboard-linter"]]
-version = "0.4.0"
+version = "0.5.2"
 backend = "github:grafana/dashboard-linter"
-specifiers = ["v0.4.0"]
+specifiers = ["v0.5.2"]
 
 [tools."github:grafana/dashboard-linter"."platforms.linux-arm64"]
-checksum = "sha256:f1b149533d13c76f3c8bc708fcd7ed5f51f534a745342df0c1248037cd01afc1"
-url = "https://github.com/grafana/dashboard-linter/releases/download/v0.4.0/dashboard-linter_0.4.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/grafana/dashboard-linter/releases/assets/662866423"
+checksum = "sha256:7dae2f1882dc1dcedd9d65a54115b4d9a579579d8f7a4667b169fcb8508487b3"
+url = "https://github.com/grafana/dashboard-linter/releases/download/v0.5.2/dashboard-linter_0.5.2_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/dashboard-linter/releases/assets/706968087"
+provenance = "github-attestations"
 
 [tools."github:grafana/dashboard-linter"."platforms.linux-x64"]
-checksum = "sha256:df9a94834b5ea1273a2a79c649f0513913771a81ae25f194dc2244b7f45fef51"
-url = "https://github.com/grafana/dashboard-linter/releases/download/v0.4.0/dashboard-linter_0.4.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/grafana/dashboard-linter/releases/assets/662866436"
+checksum = "sha256:108004b1020eac3f578752d3245def9180ea08667fe25d54a09a422039b13aab"
+url = "https://github.com/grafana/dashboard-linter/releases/download/v0.5.2/dashboard-linter_0.5.2_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/dashboard-linter/releases/assets/706968134"
+provenance = "github-attestations"
 
 [tools."github:grafana/dashboard-linter"."platforms.macos-arm64"]
-checksum = "sha256:e83b91b0c4fd003172c526b74724ed1a9fd46621176b2e8884b0e4836ae8c0c4"
-url = "https://github.com/grafana/dashboard-linter/releases/download/v0.4.0/dashboard-linter_0.4.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/grafana/dashboard-linter/releases/assets/662866428"
+checksum = "sha256:5650f91773b0fa96a0f9ad7cd778853f0848b63cfd80f30e467dcc22cc468af7"
+url = "https://github.com/grafana/dashboard-linter/releases/download/v0.5.2/dashboard-linter_0.5.2_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/dashboard-linter/releases/assets/706968084"
+provenance = "github-attestations"
 
 [[tools.go]]
 version = "1.27.3"
