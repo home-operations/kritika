@@ -317,8 +317,8 @@ a reason of one or two plain sentences. The reason is read beside the review's o
 repeats the title or says that the change matches it, and never says that no finding was reported or that you found
 nothing: the summary and the score say that already. It speaks of the change and the review, never of you: no "I".
 With a P0 or P1 finding, a concern or a rejection, it opens with the finding, the lines or what the account leaves
-out that stands against the change, and says what the risk rating rests on after that; otherwise, it says only what
-the risk rating rests on.`
+out that stands against the change, and says what the risk rating rests on after that; otherwise, it says what the
+risk rating rests on, and nothing more but the outside prerequisite of an earlier concern that it names again.`
 
 // ConfidenceRubric identifies the standing instructions system gives the
 // scorer. A risk rated under other ones, older wording or other guidance
