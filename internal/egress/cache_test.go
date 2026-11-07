@@ -163,11 +163,11 @@ func TestCacheBypass(t *testing.T) {
 	for _, tt := range []struct {
 		name, method, target string
 		header               http.Header
-		credentials          map[string]string
+		credentials          map[string]egresspolicy.Credential
 		unnamed              bool
 	}{
 		{"no digest named", http.MethodGet, "http://example.com/tool.tar.gz", nil, nil, true},
-		{"credential added", http.MethodGet, "http://example.com/tool.tar.gz", nil, map[string]string{"example.com": "Bearer configured"}, false},
+		{"credential added", http.MethodGet, "http://example.com/tool.tar.gz", nil, bearer("example.com", "configured"), false},
 		{"runner credential", http.MethodGet, "http://example.com/tool.tar.gz", http.Header{"Authorization": {"Bearer runner"}}, nil, false},
 		{"cookie", http.MethodGet, "http://example.com/tool.tar.gz", http.Header{"Cookie": {"session=1"}}, nil, false},
 		{"post", http.MethodPost, "http://example.com/tool.tar.gz", nil, nil, false},
@@ -179,7 +179,7 @@ func TestCacheBypass(t *testing.T) {
 			rules := egresspolicy.Rules{Allow: hosts("example.com", "other.example.com"), Credentials: tt.credentials}
 			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
-				if want := tt.credentials["example.com"]; r.Header.Get("Authorization") != want {
+				if want := tt.credentials["example.com"].Header(); r.Header.Get("Authorization") != want {
 					t.Errorf("upstream Authorization = %q, want %q", r.Header.Get("Authorization"), want)
 				}
 				_, _ = io.WriteString(w, "response")
@@ -213,7 +213,7 @@ func TestCacheBypass(t *testing.T) {
 func TestCacheKeepsNamedDigests(t *testing.T) {
 	for _, tt := range []struct {
 		name, host  string
-		credentials map[string]string
+		credentials map[string]egresspolicy.Credential
 		// named says which of the requests, in turn, name the digest.
 		named   []bool
 		calls   int32
@@ -223,8 +223,8 @@ func TestCacheKeepsNamedDigests(t *testing.T) {
 		{"no digest named", "other.example.com", nil, []bool{false, false}, 2, 0},
 		{"from an uncached host", "api.example.com", nil, []bool{true, true}, 2, 0},
 		{"from an uncached host with a trailing dot", "api.example.com.", nil, []bool{true, true}, 2, 0},
-		{"from a host with a credential", "other.example.com", map[string]string{"other.example.com": "Bearer configured"}, []bool{true, true}, 2, 0},
-		{"from a host with a credential and a trailing dot", "other.example.com.", map[string]string{"other.example.com": "Bearer configured"},
+		{"from a host with a credential", "other.example.com", bearer("other.example.com", "configured"), []bool{true, true}, 2, 0},
+		{"from a host with a credential and a trailing dot", "other.example.com.", bearer("other.example.com", "configured"),
 			[]bool{true, true}, 2, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -380,7 +380,7 @@ func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rules := egresspolicy.Rules{
 				Allow: hosts("example.com", "api.example.net", "assets.example.net"), Uncached: []string{"api.example.net"},
-				Credentials: map[string]string{"assets.example.net": "Bearer configured"},
+				Credentials: bearer("assets.example.net", "configured"),
 			}
 			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 				if r.Host == "example.com" {

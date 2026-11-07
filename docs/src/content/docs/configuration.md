@@ -869,7 +869,8 @@ forward proxy, beyond the connections' forges. Those forges are
 `github.com` and `api.github.com` for an app, and the instance's host
 for a Forgejo, GitLab or Gitea connection. `allow` and `deny` list
 hosts, IP addresses and CIDRs, and `credentials` names hosts that the
-gateway adds a token to. Once `gatewayCacheDir` is set, the gateway
+gateway signs requests in to, for the runs of the accounts that each
+one lists. Once `gatewayCacheDir` is set, the gateway
 keeps the downloads that a repository's lock pins there.
 [Security](/security/#the-egress-gateway) describes them with the
 gateway, and the cache with [runner
@@ -882,7 +883,14 @@ egress:
   allow: ["*", 10.10.0.5]
   deny: ["*.pastebin.com", 203.0.113.0/24]
   credentials:
-    api.github.com: { env: GITHUB_TOKEN }
+    api.github.com: { token: { env: GITHUB_TOKEN }, accounts: ["*"] }
+    git.example.com:
+      {
+        scheme: oci,
+        username: kritika-bot,
+        token: { env: GITEA_PACKAGES_TOKEN },
+        accounts: [org-1],
+      }
 ```
 
 ## How kritika runs

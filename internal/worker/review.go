@@ -177,6 +177,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
 	spec.Agent.Hosts = file.EgressHosts()
+	spec.Agent.Registries = file.Registries(account)
 	spec.Agent.CacheLocked = file.GatewayCaches()
 	spec.Tools = eff.Tools
 	b.notes = append(b.notes, promptNotes...)

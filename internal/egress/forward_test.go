@@ -21,11 +21,18 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 func TestUpgradeHopHeaders(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
-		credentials map[string]string
+		credentials map[string]egresspolicy.Credential
+		// want is the Authorization sent upstream, "" for none.
+		want string
 	}{
-		{"unconfigured", nil},
-		{"configured", map[string]string{"example.com": "Bearer configured"}},
-		{"empty", map[string]string{"example.com": ""}},
+		{"unconfigured", nil, ""},
+		{"configured", bearer("example.com", "configured"), "Bearer configured"},
+		{"basic", map[string]egresspolicy.Credential{"example.com": {
+			Scheme: egresspolicy.SchemeBasic, Username: "bot", Secret: "pw", Accounts: []string{egresspolicy.AllAccounts},
+		}}, "Basic Ym90OnB3"},
+		{"another account's", map[string]egresspolicy.Credential{"example.com": {
+			Scheme: egresspolicy.SchemeBearer, Secret: "configured", Accounts: []string{"other-account"},
+		}}, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			called := false
@@ -41,9 +48,8 @@ func TestUpgradeHopHeaders(t *testing.T) {
 							t.Errorf("upstream %s = %q", header, got)
 						}
 					}
-					credential, configured := tt.credentials["example.com"]
-					if _, present := r.Header["Authorization"]; present != configured || r.Header.Get("Authorization") != credential {
-						t.Errorf("upstream Authorization = %q, present=%v; want %q, present=%v", r.Header.Values("Authorization"), present, credential, configured)
+					if _, present := r.Header["Authorization"]; present != (tt.want != "") || r.Header.Get("Authorization") != tt.want {
+						t.Errorf("upstream Authorization = %q, want %q", r.Header.Values("Authorization"), tt.want)
 					}
 					body, err := io.ReadAll(r.Body)
 					if err != nil || string(body) != "request" || r.ContentLength != 7 || r.Method != http.MethodPost {
@@ -149,7 +155,7 @@ func TestForwardRejectsProtocolSwitch(t *testing.T) {
 	outcomes := []string{}
 	p := &Proxy{
 		Rules: func() egresspolicy.Rules {
-			return egresspolicy.Rules{Allow: hosts("example.com"), Credentials: map[string]string{"example.com": "Bearer configured"}}
+			return egresspolicy.Rules{Allow: hosts("example.com"), Credentials: bearer("example.com", "configured")}
 		},
 		Logger:  slog.New(slog.DiscardHandler),
 		Observe: func(kind, outcome string) { outcomes = append(outcomes, kind+"/"+outcome) },

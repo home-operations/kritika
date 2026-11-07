@@ -110,7 +110,8 @@ type grantKey struct{}
 // handed as the password of its proxy URL. git, gh and curl send that
 // password as Proxy-Authorization. admitProxy then returns the request, or
 // refuses the request and reports false. A returned request has its run's
-// grant in the context. It is marked egress.ForDigest when it names, in
+// grant in the context and is marked egress.ForAccount with the run's
+// account. It is marked egress.ForDigest when it names, in
 // runspec.DigestHeader, the digest of the body that it asks for.
 //
 // Only a live run reaches the outside through the gateway and the credentials
@@ -138,7 +139,7 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 		http.Error(w, "egress: the run token could not be checked", http.StatusInternalServerError)
 		return r, false
 	}
-	ctx := context.WithValue(r.Context(), grantKey{}, grant)
+	ctx := egress.ForAccount(context.WithValue(r.Context(), grantKey{}, grant), grant.AccountID)
 	if named {
 		ctx = egress.ForDigest(ctx, digest)
 	}

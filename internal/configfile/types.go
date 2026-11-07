@@ -717,16 +717,20 @@ type Account struct {
 // internet is reached only when an Allow address covers it. The gateway
 // tunnels TLS to port 443 only.
 //
-// A credential is the token that the gateway adds, as a bearer, to a plain
-// http:// request that a runner makes to that host. So the runner can use an
-// API at a token's rate limit without holding it.
+// A credential is what the gateway signs a plain http:// request that a
+// runner makes to that host in with, for the runs of the accounts that it
+// lists. So the runner can use an API at a token's rate limit, or read a
+// private registry, without holding the token.
 type Egress struct {
-	Allow       []string             `yaml:"allow,omitempty"`
-	Deny        []string             `yaml:"deny,omitempty"`
-	Credentials map[string]SecretRef `yaml:"credentials,omitempty"`
+	Allow       []string                    `yaml:"allow,omitempty"`
+	Deny        []string                    `yaml:"deny,omitempty"`
+	Credentials map[string]EgressCredential `yaml:"credentials,omitempty"`
 
 	allow, deny egresspolicy.List
-	credentials map[string]Secret
+	// tokens are the credentials' tokens, read by resolve, and credentials
+	// the credentials that validateEgress makes of them.
+	tokens      map[string]Secret
+	credentials map[string]egresspolicy.Credential
 }
 
 // File is the running configuration from the file and the operational

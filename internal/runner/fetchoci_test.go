@@ -1,12 +1,15 @@
 package runner
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -315,5 +318,49 @@ func TestFetchOCIDef(t *testing.T) {
 	}
 	if strings.Contains((&fetchOCITool{fetchMax: 8}).Def().Description, "gateway") {
 		t.Fatal("no hosts known, yet the gateway is named")
+	}
+	if !strings.Contains(def.Description, "The read is anonymous") {
+		t.Fatalf("no signed registry, yet the read is not called anonymous: %s", def.Description)
+	}
+	signed := (&fetchOCITool{fetchMax: 8, signed: []string{"git.example.com", "registry.example.com"}}).Def().Description
+	if !strings.Contains(signed, "A read from git.example.com, registry.example.com is signed in with the deployment's credential") ||
+		strings.Contains(signed, "never a private one") {
+		t.Fatalf("signed registries are not named: %s", signed)
+	}
+}
+
+// TestFetchOCISigned: a registry that the gateway signs reads in for is
+// read over plain http://, at its host in lowercase and without the HTTPS
+// port, so the gateway sees the request. Any other registry is read over
+// HTTPS.
+func TestFetchOCISigned(t *testing.T) {
+	var hosts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hosts = append(hosts, r.Host)
+		if r.URL.Path != "/v2/acme/app/tags/list" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"name":"acme/app","tags":["1.2.3"]}`)
+	}))
+	defer srv.Close()
+	transport := srv.Client().Transport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}
+	defer transport.CloseIdleConnections()
+	for _, image := range []string{"registry.example.com/acme/app", "REGISTRY.example.com/acme/app", "registry.example.com:443/acme/app"} {
+		t.Run(image, func(t *testing.T) {
+			hosts = nil
+			tool := &fetchOCITool{transport: transport, fetchMax: 2, signed: []string{"registry.example.com"}}
+			out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"image": image, "tags": ""}))
+			if err != nil || !strings.Contains(out, "1.2.3") || !slices.Equal(hosts, []string{"registry.example.com"}) {
+				t.Fatalf("signed read = %q, %v; hosts %q", out, err, hosts)
+			}
+		})
+	}
+	input := fetchInput(t, map[string]any{"image": "registry.example.com/acme/app", "tags": ""})
+	if _, err := (&fetchOCITool{transport: transport, fetchMax: 2}).Run(t.Context(), input); err == nil {
+		t.Fatal("an unsigned registry was read over plain http://")
 	}
 }

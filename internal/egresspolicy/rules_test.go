@@ -5,6 +5,38 @@ import (
 	"testing"
 )
 
+func TestCredential(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		cred         Credential
+		header       string
+		for1, forAny bool
+	}{
+		{"bearer for every account", Credential{Scheme: SchemeBearer, Secret: "s", Accounts: []string{AllAccounts}}, "Bearer s", true, true},
+		{"basic for one account", Credential{Scheme: SchemeBasic, Username: "bot", Secret: "pw", Accounts: []string{"a1"}}, "Basic Ym90OnB3", true, false},
+		{"oci for another account", Credential{Scheme: SchemeOCI, Username: "bot", Secret: "pw", Accounts: []string{"a2"}}, "", false, false},
+		{"no accounts", Credential{Scheme: SchemeBearer, Secret: "s"}, "Bearer s", false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cred.Header(); got != tt.header {
+				t.Errorf("Header() = %q, want %q", got, tt.header)
+			}
+			if got := tt.cred.For("a1"); got != tt.for1 {
+				t.Errorf("For(a1) = %v, want %v", got, tt.for1)
+			}
+			if got := tt.cred.For(""); got != tt.forAny {
+				t.Errorf("For(\"\") = %v, want %v", got, tt.forAny)
+			}
+		})
+	}
+	if got := (Credential{Scheme: SchemeOCI, Username: "bot", Secret: "pw"}).Basic(); got != "Ym90OnB3" {
+		t.Errorf("Basic() = %q", got)
+	}
+	if got := (Credential{Scheme: SchemeBearer, Secret: "pw"}).Basic(); got != "" {
+		t.Errorf("Basic() of a bearer = %q", got)
+	}
+}
+
 func prefixes(ps ...string) []netip.Prefix {
 	out := make([]netip.Prefix, 0, len(ps))
 	for _, p := range ps {

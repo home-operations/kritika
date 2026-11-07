@@ -123,34 +123,84 @@ egress:
   allow: ["*", 10.10.0.5]
   deny: ["*.pastebin.com", 203.0.113.0/24]
   credentials:
-    api.github.com: { env: GITHUB_TOKEN }
+    api.github.com: { token: { env: GITHUB_TOKEN }, accounts: ["*"] }
 ```
 
-| Key           | What                                                                                                                                                                 |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow`       | the destinations a runner can reach: a host, exact or `*.`-prefixed for every host under a domain, `"*"` for every host, or an IP address or CIDR (an address range) |
-| `deny`        | destinations refused however `allow` matches them, in the same forms                                                                                                 |
-| `credentials` | a token the gateway adds to a plain `http://` request to that host, so the runner never holds it. The host must be allowed.                                          |
+| Key           | What                                                                                                                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow`       | the destinations a runner can reach: a host, exact or `*.`-prefixed for every host under a domain, `"*"` for every host, or an IP address or CIDR (an address range)                   |
+| `deny`        | destinations refused however `allow` matches them, in the same forms                                                                                                                   |
+| `credentials` | the credential that the gateway signs a plain `http://` request to that host in with, for the runs of the accounts that it lists. The runner never holds it. The host must be allowed. |
 
 At startup, kritika makes sure that no `deny` host pattern cuts off a host
 that a connection's forge needs. It rejects a pattern that does. A `deny`
 address or CIDR works differently. The gateway compares it on each request
 with what a host resolves to. So that entry can still cut a forge off.
 
-A credential's token is a secret reference like any other in the file,
-set from a Secret:
+A credential names one host. It has a scheme, a token and the accounts
+whose runs get it. Its token is a secret reference like any other in the
+file, set from a Secret:
 
 ```yaml
 config:
   egress:
-    allow: [api.github.com, "*.githubusercontent.com", ghcr.io]
+    allow: [api.github.com, "*.githubusercontent.com", ghcr.io, git.example.com]
     credentials:
-      api.github.com: { env: GITHUB_TOKEN }
+      api.github.com: { token: { env: GITHUB_TOKEN }, accounts: ["*"] }
+      git.example.com:
+        scheme: oci
+        username: kritika-bot
+        token: { env: GITEA_PACKAGES_TOKEN }
+        accounts: [org-1]
 env:
   GITHUB_TOKEN:
     valueFrom:
       secretKeyRef: { name: kritika-github-token, key: token }
+  GITEA_PACKAGES_TOKEN:
+    valueFrom:
+      secretKeyRef: { name: kritika-gitea-packages, key: token }
 ```
+
+| Key        | What                                                                                                                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheme`   | how the gateway applies the token. `bearer`, the default, sends it as `Authorization: Bearer`. `basic` sends the username and token as Basic credentials. `oci` answers an OCI registry's challenge, as described below |
+| `username` | the user for `basic` and `oci`. A `bearer` credential has none                                                                                                                                                          |
+| `token`    | the secret reference of the token                                                                                                                                                                                       |
+| `accounts` | the names of the accounts whose runs get the credential, or `["*"]` for every account. kritika refuses a name that no connection serves                                                                                 |
+
+A review can publish what it reads with a credential, because kritika
+posts the review on the pull request. On a public repository, the author
+of any pull request can ask the agent to read with it. So give a
+credential to the accounts that need it alone, and give it a read-only
+token.
+
+With `oci`, the gateway answers the registry's challenge itself:
+
+- The gateway signs in a run's reads of a repository in the registry API
+  alone: `/v2/<repository>/manifests/<tag or digest>`,
+  `/v2/<repository>/blobs/<digest>`, `/v2/<repository>/tags/list` and
+  `/v2/<repository>/referrers/<digest>`. The path must be written exactly
+  as the OCI distribution specification writes names, tags and digests,
+  with no dot segments or escapes. The gateway refuses a write to these
+  paths. Any other path on the host, the token endpoint among them, is
+  reached without the credential, so a run cannot ask for a token of its
+  own. A registry whose token endpoint is one of these paths is not
+  signed in at all.
+- The username and token go to the token endpoint alone. A registry that
+  asks for them on a read itself, with a Basic challenge, is not signed
+  in.
+- The gateway sends the username and token to the token endpoint that the
+  challenge names, and sends the token that it gets back with the
+  request. The token endpoint must be on the registry's own host, over
+  HTTPS. A registry whose token endpoint is on another host, such as
+  Docker Hub's `auth.docker.io`, fails the read.
+- The gateway keeps the token that the registry grants for each
+  repository, and gets a new one when the registry refuses it. The runner
+  never sees the token.
+- A redirect, such as one to a blob's storage, goes back to the runner,
+  which follows it without the credential. A redirect or a page link to
+  the registry's own host comes back as plain `http://`, so the gateway
+  signs that read in too.
 
 The gateway makes sure that a host's name passes the egress rules, then
 resolves the name once. The gateway connects to an address that passed
@@ -633,10 +683,14 @@ With `tags`, it lists a repository's tags. kritika makes the reads
 itself, with [oras-go](https://oras.land): the model names an image,
 never a registry request.
 
-- A read is anonymous. kritika answers the registry's challenge with the
-  token that the registry grants anyone. So a private image is not read, and
-  the tool's description says so. A bare Docker Hub name, such as
-  `postgres:17`, is read as `docker.io/library/postgres:17`.
+- A read from a registry with an `oci` credential for the run's account
+  goes to the gateway as plain `http://`, and the gateway signs it in with
+  that [`egress.credentials`](#the-egress-gateway) entry. Every other read is
+  anonymous: kritika answers the registry's challenge with the token that
+  the registry grants anyone, so a private image there is not read. The
+  tool's description names the registries that are signed in. A bare
+  Docker Hub name, such as `postgres:17`, is read as
+  `docker.io/library/postgres:17`.
 - A read goes through the gateway. The registry, its token endpoint and the
   storage that its blobs redirect to must all be in `egress.allow`. For
   Docker Hub, these are `registry-1.docker.io`, `auth.docker.io` and its

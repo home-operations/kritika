@@ -4,7 +4,9 @@
 package egresspolicy
 
 import (
+	"encoding/base64"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -15,12 +17,64 @@ type Rules struct {
 	// CONNECT is allowed to 443 only, and an upgraded request always goes
 	// to 443.
 	Allow, Deny List
-	// Credentials map a host to the Authorization header value an
-	// upgraded request to it carries.
-	Credentials map[string]string
+	// Credentials map a host to what an upgraded request to it is signed
+	// in with.
+	Credentials map[string]Credential
 	// Uncached are the exact hosts the cache keeps nothing from, when it
 	// has a cache: a locked install's downloads from them stay its own.
 	Uncached []string
+}
+
+// The schemes a credential is applied by.
+const (
+	// SchemeBearer sends the secret as a bearer token with every request.
+	SchemeBearer = "bearer"
+	// SchemeBasic sends the username and secret as Basic credentials with
+	// every request.
+	SchemeBasic = "basic"
+	// SchemeOCI answers an OCI registry's challenge: the gateway exchanges
+	// the username and secret at the registry's token endpoint and sends the
+	// token that it gets back.
+	SchemeOCI = "oci"
+)
+
+// AllAccounts in a credential's Accounts gives it to every account's runs.
+const AllAccounts = "*"
+
+// Credential is what the gateway signs a host's upgraded requests in with.
+type Credential struct {
+	Scheme           string
+	Username, Secret string
+	// Accounts are the ids of the accounts whose runs it is added for, or
+	// AllAccounts alone.
+	Accounts []string
+}
+
+// For reports whether a run of the account with id gets c.
+func (c Credential) For(account string) bool {
+	return slices.Contains(c.Accounts, AllAccounts) || account != "" && slices.Contains(c.Accounts, account)
+}
+
+// Header is the Authorization value of a bearer or basic credential, and
+// "" for an oci one, whose header is the token that the registry grants.
+func (c Credential) Header() string {
+	switch c.Scheme {
+	case SchemeBearer:
+		return "Bearer " + c.Secret
+	case SchemeBasic:
+		return "Basic " + c.Basic()
+	}
+	return ""
+}
+
+// Basic is the username and secret as Basic credentials encode them, which
+// an oci credential also sends to the registry's token endpoint. It is "" for
+// a credential without a username.
+func (c Credential) Basic() string {
+	if c.Username == "" {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(c.Username + ":" + c.Secret))
 }
 
 // List is one side of the rules.

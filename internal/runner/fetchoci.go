@@ -67,9 +67,11 @@ var fetchOCISchema = json.RawMessage(`{
 }`)
 
 // fetchOCITool is fetch_oci: it inspects an image or artifact in a
-// registry without pulling it, through the gateway and anonymously as
-// fetch_repo fetches, and lists a repository's tags. It is offered beside
-// fetch_repo, under the same condition.
+// registry without pulling it, through the gateway, and lists a
+// repository's tags. It reads a registry that the gateway has a credential
+// for over plain http://, so the gateway signs the reads in, and any other
+// anonymously, as fetch_repo fetches. It is offered beside fetch_repo, under
+// the same condition.
 type fetchOCITool struct {
 	// transport carries the reads. nil is upstream's default, through the
 	// pod's proxy.
@@ -79,6 +81,8 @@ type fetchOCITool struct {
 	// hosts name what the gateway lets a read reach, for the description.
 	// Empty leaves them unnamed.
 	hosts []string
+	// signed are the registries whose reads the gateway signs in.
+	signed []string
 
 	fetches  int
 	listings int
@@ -87,7 +91,9 @@ type fetchOCITool struct {
 
 // newFetchOCITool is the tool for a run of p.
 func newFetchOCITool(p runspec.Spec) *fetchOCITool {
-	return &fetchOCITool{fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), hosts: p.Agent.Hosts}
+	return &fetchOCITool{
+		fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), hosts: p.Agent.Hosts, signed: p.Agent.Registries,
+	}
 }
 
 func (t *fetchOCITool) Def() model.ToolDef {
@@ -100,8 +106,13 @@ func (t *fetchOCITool) Def() model.ToolDef {
 		"and media type alone. " +
 		fmt.Sprintf("A review may inspect %d images and list tags %d times.", t.fetchMax, listMax) +
 		` For example, {"image": "ghcr.io/home-operations/postgres:17.5"} shows what that tag is, and ` +
-		`{"image": "ghcr.io/home-operations/postgres", "tags": "17."} lists the tags with 17. in their names.` +
-		" The read is anonymous: it reads a public registry, never a private one."
+		`{"image": "ghcr.io/home-operations/postgres", "tags": "17."} lists the tags with 17. in their names.`
+	if len(t.signed) > 0 {
+		desc += " A read from " + strings.Join(t.signed, ", ") + " is signed in with the deployment's credential, " +
+			"so it reads a private image there too. A read from any other registry is anonymous: it reads public images alone."
+	} else {
+		desc += " The read is anonymous: it reads a public registry, never a private one."
+	}
 	if len(t.hosts) > 0 {
 		desc += " The read goes through the gateway, which allows only " + agent.AllowedHosts(t.hosts) +
 			"; a registry's token endpoint and blob storage must be allowed beside it."
@@ -150,16 +161,24 @@ func (t *fetchOCITool) Run(ctx context.Context, input json.RawMessage) (string, 
 	return out, nil
 }
 
-// repository is the client for ref's repository: anonymous, so the
-// registry's challenge is answered with a token it grants anyone, through
-// the capped transport.
+// repository is the client for ref's repository, through the capped
+// transport. A registry that the gateway signs reads in for is reached over
+// plain http://, so the gateway sees the request. Any other is reached over
+// HTTPS, and its challenge is answered with a token it grants anyone.
 func (t *fetchOCITool) repository(ref registry.Reference) (*remote.Repository, func()) {
 	wire, done := upstream.CappedTransport(t.transport, ociWireBytes)
+	// The gateway serves a plain request on port 80 alone, and names a
+	// registry in lowercase.
+	host := strings.ToLower(strings.TrimSuffix(ref.Host(), ":443"))
+	plain := slices.Contains(t.signed, host)
+	if plain {
+		ref.Registry = host
+	}
 	// The cache keeps the token the registry grants for the repository, so
 	// the index, the manifest and the config are read on one.
 	repo := &remote.Repository{
 		Reference: ref, Client: &auth.Client{Client: &http.Client{Transport: wire}, Cache: auth.NewCache()},
-		MaxMetadataBytes: ociMetadataBytes, TagListMaxPages: ociTagPages,
+		MaxMetadataBytes: ociMetadataBytes, TagListMaxPages: ociTagPages, PlainHTTP: plain,
 	}
 	return repo, done
 }

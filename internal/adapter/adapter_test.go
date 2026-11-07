@@ -126,6 +126,7 @@ const minimalFile = `apps:
 func TestMask(t *testing.T) {
 	t.Setenv("TEST_PROVIDER_KEY", "sk-provider")
 	t.Setenv("TEST_EGRESS_TOKEN", "ghp-egress")
+	t.Setenv("TEST_REGISTRY_TOKEN", "ghp-registry")
 	t.Setenv("TEST_HEADER_KEY", "gw-secret")
 	f, err := configfiletest.Parse(t, `providers:
   p:
@@ -134,24 +135,26 @@ func TestMask(t *testing.T) {
     apiKey: { env: TEST_PROVIDER_KEY }
     headers: { x-gw-key: { env: TEST_HEADER_KEY }, x-team: platform }
 egress:
-  allow: [api.example.com]
+  allow: [api.example.com, registry.example.com]
   credentials:
-    api.example.com: { env: TEST_EGRESS_TOKEN }
+    api.example.com: { token: { env: TEST_EGRESS_TOKEN }, accounts: ["*"] }
+    registry.example.com: { scheme: oci, username: bot, token: { env: TEST_REGISTRY_TOKEN }, accounts: [acme] }
 `+minimalFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mask := Mask(f, f.Providers["p"], "krk_run", "", `se"cr\et<x`)
 	tests := map[string]string{
-		"key sk-provider":                           "key ***",
-		"https://kritika:url-secret@llm/":           "https://***@llm/",
-		"auth Bearer ghp-egress or bare ghp-egress": "auth *** or bare ***",
-		"token krk_run":                             "token ***",
-		"header gw-secret of platform":              "header *** of platform",
-		`plain se"cr\et<x`:                          "plain ***",
-		`{"k":"se\"cr\\et\u003cx"}`:                 `{"k":"***"}`,
-		`{"k":"se\"cr\\et<x"}`:                      `{"k":"***"}`,
-		"nothing secret":                            "nothing secret",
+		"key sk-provider":                                         "key ***",
+		"https://kritika:url-secret@llm/":                         "https://***@llm/",
+		"auth Bearer ghp-egress or bare ghp-egress":               "auth Bearer *** or bare ***",
+		"registry ghp-registry as Basic Ym90OmdocC1yZWdpc3RyeQ==": "registry *** as Basic ***",
+		"token krk_run":                                           "token ***",
+		"header gw-secret of platform":                            "header *** of platform",
+		`plain se"cr\et<x`:                                        "plain ***",
+		`{"k":"se\"cr\\et\u003cx"}`:                               `{"k":"***"}`,
+		`{"k":"se\"cr\\et<x"}`:                                    `{"k":"***"}`,
+		"nothing secret":                                          "nothing secret",
 	}
 	for in, want := range tests {
 		t.Run(in, func(t *testing.T) {
