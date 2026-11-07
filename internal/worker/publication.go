@@ -322,9 +322,10 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 			return err
 		}
 		// A review that is not published accepts no answer: one superseded
-		// or canceled leaves its findings to the next.
+		// or canceled leaves its findings to the next. A dismissal recorded
+		// since, by a maintainer or a concession, stands as it is.
 		for _, d := range p.answered {
-			if err := store.RecordDismissal(fctx, tx, d); err != nil {
+			if err := store.AddDismissal(fctx, tx, d); err != nil {
 				return err
 			}
 		}

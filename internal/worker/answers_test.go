@@ -172,8 +172,8 @@ func TestReopen(t *testing.T) {
 	// d's thread changed as the reply in it conceded the finding, which is
 	// dismissed already.
 	kept, reopened := reopen(answered, held, map[string]bool{review.Fingerprint(d): true}, "h1")
-	if len(kept) != 2 || kept[0].CommentID != 10 || kept[1].CommentID != 40 {
-		t.Fatalf("kept = %+v, want a's and d's", kept)
+	if len(kept) != 1 || kept[0].CommentID != 10 {
+		t.Fatalf("kept = %+v, want a's alone: d keeps the dismissal it has", kept)
 	}
 	if len(reopened) != 2 || reopened[0].Title != "b" || reopened[0].CarriedFrom != "h1" || reopened[1].CarriedFrom != "h0" {
 		t.Fatalf("reopened = %+v, want b from h1 and c from h0", reopened)

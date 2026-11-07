@@ -23,6 +23,10 @@ type threadForge struct {
 	inlineLists  int
 	permission   forge.Permission
 	permErr      error
+	// perms, when set, answers each login's permission instead, and
+	// lookups counts the lookups.
+	perms   map[string]forge.Permission
+	lookups int
 	// threads are the inline comments GetComment serves, by id, and
 	// threadStates whether the thread a root opened is resolved.
 	threads        map[int64]forge.Comment
@@ -30,7 +34,11 @@ type threadForge struct {
 	threadStateErr error
 }
 
-func (f *threadForge) Permission(context.Context, string, string, string) (forge.Permission, error) {
+func (f *threadForge) Permission(_ context.Context, _, _, login string) (forge.Permission, error) {
+	f.lookups++
+	if f.perms != nil {
+		return f.perms[login], nil
+	}
 	return f.permission, f.permErr
 }
 
@@ -206,6 +214,35 @@ func TestDisqualified(t *testing.T) {
 				t.Errorf("fingerprint = %q, reply %v; want %q, %v", f.fingerprint, f.asReply, tt.wantFingerprint, wantReply)
 			}
 		})
+	}
+}
+
+// TestThreadWrites: a reply in a finding's thread is told which messages
+// come from people with write access, the bot's own and a reader's not. A
+// mention's thread looks up no one.
+func TestThreadWrites(t *testing.T) {
+	at := func(s int64) time.Time { return time.Unix(s, 0) }
+	inline := []forge.Comment{
+		{ID: 1, Author: "kritika[bot]", Body: review.FindingMarker("fp1") + "\n**Unchecked error**", CreatedAt: at(1), Inline: true},
+		{ID: 2, Author: "reader", Body: "keep it, it is a known limit", CreatedAt: at(2), Inline: true, InReplyTo: 1},
+		{ID: 3, Author: "writer", Body: "is it?", CreatedAt: at(3), Inline: true, InReplyTo: 1},
+	}
+	client := &threadForge{inline: inline, perms: map[string]forge.Permission{"reader": forge.PermissionRead, "writer": forge.PermissionWrite}}
+	f := &followUp{client: client, owner: "o", repo: "r", pr: &pullRequest{number: 7}, comment: inline[2], botLogin: "kritika[bot]", asReply: true}
+	msgs, _, err := f.thread(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writes := make([]bool, 0, len(msgs))
+	for _, m := range msgs {
+		writes = append(writes, m.Writes)
+	}
+	if !slices.Equal(writes, []bool{false, false, true}) || client.lookups != 2 {
+		t.Fatalf("writes = %v after %d lookups, want only the writer's, one lookup per login", writes, client.lookups)
+	}
+	f.asReply, client.lookups = false, 0
+	if _, _, err := f.thread(t.Context()); err != nil || client.lookups != 0 {
+		t.Fatalf("a mention's thread looked up %d logins, %v", client.lookups, err)
 	}
 }
 

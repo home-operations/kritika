@@ -245,7 +245,8 @@ func (p *publishPhase) recheckAnswered(ctx context.Context) []review.Finding {
 		ids = append(ids, review.PriorID(d.Finding))
 	}
 	// A finding dismissed meanwhile, as the reply in its thread conceded
-	// it, stays out whatever its thread holds now.
+	// it or a maintainer dismissed it, stays out whatever its thread holds
+	// now, under the dismissal it has.
 	dismissed := map[string]bool{}
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		ds, err := store.Dismissals(ctx, tx, p.pr.id)
@@ -266,13 +267,18 @@ func (p *publishPhase) recheckAnswered(ctx context.Context) []review.Finding {
 }
 
 // reopen splits the pending dismissals of answered findings into those whose
-// answer held still holds, the same reply, or that dismissed holds by their
-// fingerprint, and the findings of the others, carried on from head.
+// answer held still holds, the same reply, and the findings of the others,
+// carried on from head. A finding that dismissed holds by its fingerprint is
+// in neither: dismissed meanwhile, by a concession or a maintainer, it keeps
+// that dismissal as it was recorded.
 func reopen(answered []store.Dismissal, held map[string]review.Answer, dismissed map[string]bool, head string) (
 	kept []store.Dismissal, reopened []review.Finding,
 ) {
 	for _, d := range answered {
-		if a, ok := held[review.PriorID(d.Finding)]; ok && a.ID == d.CommentID || dismissed[d.Fingerprint] {
+		if dismissed[d.Fingerprint] {
+			continue
+		}
+		if a, ok := held[review.PriorID(d.Finding)]; ok && a.ID == d.CommentID {
 			kept = append(kept, d)
 			continue
 		}

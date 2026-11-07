@@ -286,3 +286,14 @@ func TestBuildAnswered(t *testing.T) {
 		t.Fatalf("a re-review is shown the answered findings again:\n%s", msg)
 	}
 }
+
+// TestBuildReplyWrites: a reply's thread marks the messages from people with
+// write access.
+func TestBuildReplyWrites(t *testing.T) {
+	msg := BuildReply(Input{Repository: "a/b", Number: 1, Title: "t"}, nil, []Message{
+		{Author: "reader", Body: "keep it"}, {Author: "writer", Body: "is it?", Writes: true},
+	})
+	if !strings.Contains(msg, "--- reader ---\nkeep it") || !strings.Contains(msg, "--- writer [write access] [reply if needed] ---\nis it?") {
+		t.Fatalf("thread:\n%s", msg)
+	}
+}
