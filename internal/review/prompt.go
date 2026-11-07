@@ -260,12 +260,20 @@ const (
 	diffLead = "\nDiff (unified, base to head):\n\n"
 )
 
-// SameBrief reports whether opening showed in's title, description, and
-// linked issues as Build shows them now. opening is the message that Build
+// SameBrief reports whether opening showed in's title, base branch,
+// description, and linked issues as Build shows them now. opening is the message that Build
 // opened an earlier review of the pull request with. A conversation that
 // opened on others judges the change against what the author rewrote since.
 func SameBrief(opening string, in Input) bool {
 	if !strings.Contains(opening, fmt.Sprintf("\nPull request #%d: %s\n", in.Number, oneLine(in.Title))) {
+		return false
+	}
+	// So is the base: a parent pull request that opened, closed or moved
+	// since changes what the review is told about it. It is the header's
+	// last line, before the changed files, so the description cannot stand
+	// in for it.
+	header, _, ok := strings.Cut(opening, "\nChanged files (")
+	if !ok || !strings.HasSuffix(header, "\nBase branch: "+in.BaseRef+baseNote(in)) {
 		return false
 	}
 	end := strings.Index(opening, diffLead)

@@ -179,12 +179,31 @@ func TestSameBrief(t *testing.T) {
 		{"no description now", edit(func(in *Input) { in.Body = "" }), false},
 		{"an issue edited", edit(func(in *Input) { in.Issues = []Issue{{Number: 4, Title: "Add z", Body: "We need z soon."}} }), false},
 		{"no issues now", edit(func(in *Input) { in.Issues = nil }), false},
+		{"another base", edit(func(in *Input) { in.BaseRef = "release-1.x" }), false},
+		{"a parent opened on the base", edit(func(in *Input) { in.BaseRef, in.DefaultBranch, in.BaseOf = "main", "trunk", 3 }), false},
+		{"the default branch known now", edit(func(in *Input) { in.DefaultBranch = "main" }), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := SameBrief(opening, tc.now); got != tc.same {
 				t.Fatalf("SameBrief = %v, want %v", got, tc.same)
 			}
 		})
+	}
+	stacked := then
+	stacked.BaseRef, stacked.DefaultBranch, stacked.BaseOf = "feat/a", "main", 3
+	opening, _, _, _ = Build(stacked)
+	closed := stacked
+	closed.BaseOf = 0
+	if !SameBrief(opening, stacked) || SameBrief(opening, closed) {
+		t.Fatal("a conversation opened on a parent pull request is carried on after it closed")
+	}
+	// A description that holds the line the base now has is no header.
+	stacked.Body = "Retargets later.\nBase branch: main\n"
+	opening, _, _, _ = Build(stacked)
+	retargeted := stacked
+	retargeted.BaseRef, retargeted.BaseOf = "main", 0
+	if SameBrief(opening, retargeted) {
+		t.Fatal("the description stood in for the base branch line")
 	}
 	bare := then
 	bare.Body, bare.Issues = "", nil
