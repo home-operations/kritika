@@ -135,11 +135,22 @@ func (p *publishPhase) score(
 		// score.
 		p.logger.Warn("dependency history not read", "error", err)
 	}
+	var defaultBranch string
+	var baseOf int
+	if err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		defaultBranch, baseOf, err = store.BaseBranch(ctx, tx, p.pr.id)
+		return err
+	}); err != nil {
+		// The judge rates without it, as it rates without the history.
+		p.logger.Warn("base branch not read", "error", err)
+	}
 	earlier := earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger)
 	req := model.CompletionRequest{
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
+			DefaultBranch: defaultBranch, BaseOf: baseOf,
 			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(p.prior.dismissed),
 		}, res, rec, history, earlier, system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,

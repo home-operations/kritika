@@ -68,6 +68,9 @@ func TestCarryOn(t *testing.T) {
 		body    string
 		carried bool
 		fetched bool
+		// spec changes the review's spec from the one the conversation
+		// opened on.
+		spec func(*runspec.Spec)
 	}{
 		{name: "the same system prompt, tools and description", status: http.StatusOK, body: conversation(nil), carried: true},
 		{name: "one that fetched a repository", status: http.StatusOK, carried: true, fetched: true,
@@ -76,6 +79,8 @@ func TestCarryOn(t *testing.T) {
 			})},
 		{name: "another system prompt", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.System = "An older one." })},
 		{name: "an older description", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Messages[0].Text = opening("Adds a.") })},
+		{name: "a parent pull request opened on the base since", status: http.StatusOK, body: conversation(nil),
+			spec: func(s *runspec.Spec) { s.Prompt.DefaultBranch, s.Prompt.BaseOf = "trunk", 3 }},
 		{name: "too large for the run's budget", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Tokens = 60_000 })},
 		{name: "none served", status: http.StatusNotFound, body: `{"error":{"code":"not_found"}}`},
 		{name: "not a conversation", status: http.StatusOK, body: `[`},
@@ -90,6 +95,9 @@ func TestCarryOn(t *testing.T) {
 			defer srv.Close()
 			s := s
 			s.GatewayURL, s.Model = srv.URL, &runspec.ModelEndpoint{Model: "review"}
+			if tc.spec != nil {
+				tc.spec(&s)
+			}
 			got := carryOn(t.Context(), s, runspec.Secrets{GatewayToken: "krk_run"}, fresh, tools, pack.Diff, delta, slog.New(slog.DiscardHandler))
 			if path != "GET /v1/conversation" || auth != "Bearer krk_run" {
 				t.Fatalf("request = %s with %q", path, auth)

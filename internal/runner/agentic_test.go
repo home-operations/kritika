@@ -684,3 +684,15 @@ func TestAgentPromptNotesReferenceOmissions(t *testing.T) {
 		t.Fatalf("notes = %v", prompt.notes())
 	}
 }
+
+// TestAgentPromptBaseOf: a review whose base is another open pull request's
+// head is told so, from the spec.
+func TestAgentPromptBaseOf(t *testing.T) {
+	s := agentPromptSpec()
+	s.Prompt.PullRequest.BaseRef, s.Prompt.DefaultBranch, s.Prompt.BaseOf = "feat/a", "main", 6
+	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}, Scope: review.ScopeFull}
+	prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
+	if !strings.Contains(prompt.user, "Base branch: feat/a (not the default branch, main, but the head of pull request #6, which is open).") {
+		t.Fatalf("user message lacks the base:\n%s", prompt.user[:min(len(prompt.user), 400)])
+	}
+}

@@ -86,13 +86,14 @@ func carryOn(
 	}
 	budget := review.UserBudget(prompt.system, p.Agent.MaxPromptTokens)
 	pr := p.Prompt.PullRequest
-	brief := review.Input{Number: pr.Number, Title: pr.Title, Body: pr.Body, Issues: p.Prompt.Issues, BudgetTokens: budget}
+	brief := review.Input{Number: pr.Number, Title: pr.Title, BaseRef: pr.BaseRef, DefaultBranch: p.Prompt.DefaultBranch,
+		BaseOf: p.Prompt.BaseOf, Body: pr.Body, Issues: p.Prompt.Issues, BudgetTokens: budget}
 	var why string
 	switch {
 	case !(agent.Run{System: prompt.system, Tools: tools, Submit: prompt.submit}).Carries(c):
 		why = "its system prompt or tools differ from this review's"
 	case len(c.Messages) == 0 || !review.SameBrief(c.Messages[0].Text, brief):
-		why = "the pull request's title, description or linked issues changed"
+		why = "the pull request's title, base branch, description or linked issues changed"
 	case c.Tokens*carryShare > agentLimits(p.Agent).MaxTokens:
 		why = "too large for the run's budget"
 	}

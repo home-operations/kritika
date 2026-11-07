@@ -345,6 +345,13 @@ func (s jsonSchema) mustMarshal() json.RawMessage {
 	return b
 }
 
+// severityDescription sets a finding's severity by what reaches the defect,
+// as systemRules states it.
+const severityDescription = "p0: must be fixed before merging: users, production or stored data are hurt, or someone " +
+	"gains access they should not have. p1: should be fixed: a defect whose harm reaches users, production, stored data or " +
+	"real credentials. p2: optional: a defect whose harm stays inside development mode, tests, a documentation example or " +
+	"a value only the operator sets, and polish."
+
 // Descriptions of the fix fields, which the model must get exactly right
 // for a one-click suggestion to be worth offering.
 const (
@@ -420,7 +427,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 						keyPath: {Type: schemaString, Description: "Path of the changed file, exactly as it appears in the diff header."},
 						keyLine: {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
 						keySeverity: {Type: schemaString, Enum: enum,
-							Description: "p0: must be fixed before merging. p1: should be fixed. p2: optional polish."},
+							Description: severityDescription},
 						keyCategory:     {Type: schemaString, Enum: kinds, Description: describeCategory},
 						keyTitle:        {Type: schemaString, Description: "One line, under 80 characters."},
 						keyExplanation:  {Type: schemaString, Description: "Why it matters. Markdown allowed, no headings."},

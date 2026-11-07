@@ -41,6 +41,32 @@ func TestBuildKeepsTheTitleOnItsLine(t *testing.T) {
 	}
 }
 
+// TestBuildBaseBranch: a base that is another open pull request's head is
+// named as work that has not merged. Another base other than the default
+// branch is named without that claim, and the default branch or one not
+// known adds nothing.
+func TestBuildBaseBranch(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   Input
+		want string
+	}{
+		{"the default branch", Input{BaseRef: "main", DefaultBranch: "main"}, "Base branch: main\n"},
+		{"no default branch known", Input{BaseRef: "feat/a", BaseOf: 7}, "Base branch: feat/a\n"},
+		{"a release branch", Input{BaseRef: "release-1.x", DefaultBranch: "main"}, "Base branch: release-1.x (not the default branch, main)\n"},
+		{"an open pull request's head", Input{BaseRef: "feat/a", DefaultBranch: "main", BaseOf: 7},
+			"Base branch: feat/a (not the default branch, main, but the head of pull request #7, which is open). " +
+				"What that pull request changes has not merged into main: do not take state, a migration or an interface"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.in.Repository, tt.in.Number, tt.in.Title = "a/b", 1, "t"
+			if msg, _, _, _ := Build(tt.in); !strings.Contains(msg, tt.want) {
+				t.Fatalf("header:\n%s", msg[:min(len(msg), 400)])
+			}
+		})
+	}
+}
+
 // TestBuildFocus: the focus follows the changed files as the requester's
 // words, its closing tag escaped. A prompt with none has no such section.
 func TestBuildFocus(t *testing.T) {

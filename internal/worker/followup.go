@@ -397,6 +397,9 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 			if prompt.PullRequest, err = store.ReadFilterPullRequest(ctx, tx, f.pr.id); err != nil {
 				return err
 			}
+			if prompt.DefaultBranch, prompt.BaseOf, err = store.BaseBranch(ctx, tx, f.pr.id); err != nil {
+				return err
+			}
 			runID, err = store.InsertRunnerRun(ctx, tx, f.account.ID(), store.RunnerKindFollowUp, "", f.jobID)
 			return err
 		})
