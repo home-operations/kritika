@@ -54,6 +54,7 @@ type publicationContext struct {
 	PriorDiagram    string
 	Prior           []publicationFinding
 	Dismissed       []store.Dismissal
+	Answered        []store.Dismissal `json:",omitempty"`
 	Resolved        []publicationFinding
 	HeldBack        []review.Finding
 	Confidence      *review.Confidence
@@ -118,7 +119,7 @@ func (p *publishPhase) snapshotContext() publicationContext {
 		Scope: p.scope, Trigger: p.trigger, Focus: p.focus, Closed: p.pr.closed, RepoNotes: p.repoNotes,
 		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
 		Prior:     snapshotFindings(p.prior.findings),
-		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
+		Dismissed: p.prior.dismissed, Answered: p.answered, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
 		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished,
 		OwnChanged: p.ownChanged, Started: p.started,
 	}
@@ -206,7 +207,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	p.repoNotes = s.RepoNotes
 	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,
 		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
-	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
+	p.resolved, p.answered, p.heldBack = restoreFindings(s.Resolved), s.Answered, s.HeldBack
 	p.confidence, p.unscored, p.unfinished, p.ownChanged = s.Confidence, s.Unscored, s.Unfinished, s.OwnChanged
 	p.reviewers = s.Reviewers
 	p.agent = &store.AgentRunRow{Sources: s.Sources}

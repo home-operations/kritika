@@ -88,6 +88,10 @@ type publishPhase struct {
 	// listed as no longer holding, which the summary lists and whose
 	// threads it resolves.
 	resolved []priorFinding
+	// answered are the dismissals of the last review's findings that this
+	// review accepted an answer to, which the summary lists with the others
+	// dismissed. They are recorded when the review is published.
+	answered []store.Dismissal
 }
 
 // run publishes what the runner's agent submitted. The run's usage is already
@@ -216,9 +220,11 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 		res.Summary.Diagram = carriedDiagram(answer, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
 	}
 	// Carried findings follow the review's own, which it vouches for.
+	var answered []answeredPrior
 	if len(p.prior.findings) > 0 {
 		var carried []review.Finding
-		p.resolved, carried = settlePrior(p.prior.findings, p.prior.headSHA, slices.Concat(res.Findings, unanchored), res.Resolved)
+		p.resolved, answered, carried = settlePrior(p.prior.findings, p.prior.headSHA, slices.Concat(res.Findings, unanchored),
+			res.Resolved, p.heldAnswers(ctx, res.Answered))
 		if len(carried) > 0 {
 			p.logger.Info("earlier findings carried on unchecked", "count", len(carried))
 			res.Findings = append(res.Findings, carried...)
@@ -226,6 +232,13 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	}
 	if err := p.preparationCurrent(ctx); err != nil {
 		return nil, err
+	}
+	if len(answered) > 0 {
+		login, err := p.client.BotLogin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		p.answered = answeredDismissals(p.account.ID(), p.pr.id, login, answered)
 	}
 	// A finding on a line that the diff does not show has no inline comment.
 	// But it weighs on the score, the counts, and the approval all the same.
@@ -572,43 +585,14 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 	return posted
 }
 
-// settlePrior sorts the last review's findings, made at head, that this
-// review did not report again. reported is this review's findings on and off
-// the diff. settlePrior separates those whose ids the review listed as
-// resolved from the rest. The rest stay open, carried on unchecked from the
-// head they were last reported at. A finding is gone only when a review says
-// so. So these are never taken as fixed: a finding that the model passed
-// over, one that a split review's unfinished part had, or one that the prompt
-// had no room for.
-func settlePrior(prior []priorFinding, head string, reported []review.Finding, resolvedIDs []string) (
-	resolved []priorFinding, carried []review.Finding,
-) {
-	again := reportedSet(reported)
-	gone := make(map[string]bool, len(resolvedIDs))
-	for _, id := range resolvedIDs {
-		gone[strings.TrimSpace(id)] = true
-	}
-	for _, pf := range prior {
-		switch {
-		case again[review.Fingerprint(pf.Finding)]:
-		case gone[review.PriorID(pf.Finding)]:
-			resolved = append(resolved, pf)
-		default:
-			f := pf.Finding
-			f.CarriedFrom = cmp.Or(f.CarriedFrom, head)
-			carried = append(carried, f)
-		}
-	}
-	return resolved, carried
-}
-
 // priorFindings is the last review's findings as this review's summary lists
 // them. First come those it listed as resolved, linked to their threads where
 // they have one. Then come the findings that maintainers dismissed, each
 // linked to the comment that dismissed it.
 func (p *publishPhase) priorFindings() []review.PriorFinding {
 	owner, repo := p.pr.ownerRepo()
-	out := make([]review.PriorFinding, 0, len(p.resolved)+len(p.prior.dismissed))
+	dismissed := slices.Concat(p.prior.dismissed, p.answered)
+	out := make([]review.PriorFinding, 0, len(p.resolved)+len(dismissed))
 	for _, pf := range p.resolved {
 		f := pf.Finding
 		f.URL = p.client.FileURL(owner, repo, cmp.Or(f.CarriedFrom, p.prior.headSHA), f.Path, f.Line, f.EndLine)
@@ -617,7 +601,7 @@ func (p *publishPhase) priorFindings() []review.PriorFinding {
 		}
 		out = append(out, review.PriorFinding{Finding: f, Resolved: true})
 	}
-	for _, d := range p.prior.dismissed {
+	for _, d := range dismissed {
 		f := d.Finding
 		f.URL = p.client.FileURL(owner, repo, p.prior.headSHA, f.Path, f.Line, f.EndLine)
 		f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, d.CommentID)

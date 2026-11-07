@@ -243,3 +243,45 @@ func TestBuildMarksFileStatus(t *testing.T) {
 		t.Fatalf("message lacks\n%s\nin:\n%s", want, msg)
 	}
 }
+
+// TestPriorSectionAnswers: a finding of the last review shows the answers
+// in its thread under it, and the section says what to do with them only
+// when one has any.
+func TestPriorSectionAnswers(t *testing.T) {
+	f := Finding{Path: "a.go", Line: 3, Severity: SeverityP1, Title: "Unchecked error", Explanation: "It drops it."}
+	plain := priorSection("abcdef1234", []Finding{f}, 10_000)
+	if strings.Contains(plain, "answered") {
+		t.Fatalf("a section with no answers speaks of them:\n%s", plain)
+	}
+	f.Answers = []Answer{{Author: "maint", Text: "Known limit\nof the beta."}}
+	got := priorSection("abcdef1234", []Finding{f}, 10_000)
+	for _, want := range []string{
+		"[p1] Unchecked error: It drops it.\n  Answered by maint: Known limit of the beta.\n",
+		"list its id in answered and do not report it again",
+		"Report it again only when the code shows the answer wrong",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("section lacks %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestBuildAnswered: a review that looks afresh is shown the last review's
+// answered findings with how to weigh them, and one shown the earlier
+// findings is not shown them twice.
+func TestBuildAnswered(t *testing.T) {
+	f := Finding{Path: "a.go", Line: 3, Severity: SeverityP1, Title: "Unchecked error", Explanation: "It drops it.",
+		Answers: []Answer{{Author: "maint", Text: "Known limit."}}}
+	in := Input{Repository: "a/b", Number: 1, Title: "t", Answered: []Finding{f}}
+	msg, _, _, _ := Build(in)
+	for _, want := range []string{"answered in their threads. This review looks at the change afresh",
+		"Unchecked error: It drops it.\n  Answered by maint: Known limit.\n", "list its id in answered"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("fresh prompt lacks %q:\n%s", want, msg)
+		}
+	}
+	in.Earlier = &EarlierInput{HeadSHA: "abcdef1234", Findings: []Finding{f}}
+	if msg, _, _, _ := Build(in); strings.Count(msg, "Answered by maint") != 1 || strings.Contains(msg, "looks at the change afresh") {
+		t.Fatalf("a re-review is shown the answered findings again:\n%s", msg)
+	}
+}

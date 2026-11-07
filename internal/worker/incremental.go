@@ -2,9 +2,11 @@ package worker
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -144,4 +146,39 @@ func alreadyInline(findings []review.Finding, prior []priorFinding) []store.Inli
 		out[i] = posted[review.Fingerprint(f)]
 	}
 	return out
+}
+
+// settlePrior sorts the last review's findings, made at head, that this
+// review did not report again. reported is this review's findings on and off
+// the diff. settlePrior separates those whose ids the review listed as
+// resolved from the rest. It also separates those that held has an answer
+// for: the review accepted an answer that someone with write access gave, as
+// heldAnswers makes sure. The rest stay open,
+// carried on unchecked from the head they were last reported at. A finding is
+// gone only when a review says so. So these are never taken as fixed: a
+// finding that the model passed over, one that a split review's unfinished
+// part had, or one that the prompt had no room for.
+func settlePrior(prior []priorFinding, head string, reported []review.Finding, resolvedIDs []string,
+	held map[string]review.Answer,
+) (resolved []priorFinding, answered []answeredPrior, carried []review.Finding) {
+	again := reportedSet(reported)
+	gone := make(map[string]bool, len(resolvedIDs))
+	for _, id := range resolvedIDs {
+		gone[strings.TrimSpace(id)] = true
+	}
+	for _, pf := range prior {
+		answer, accepted := held[review.PriorID(pf.Finding)]
+		switch {
+		case again[review.Fingerprint(pf.Finding)]:
+		case gone[review.PriorID(pf.Finding)]:
+			resolved = append(resolved, pf)
+		case accepted:
+			answered = append(answered, answeredPrior{priorFinding: pf, answer: answer})
+		default:
+			f := pf.Finding
+			f.CarriedFrom = cmp.Or(f.CarriedFrom, head)
+			carried = append(carried, f)
+		}
+	}
+	return resolved, answered, carried
 }

@@ -249,7 +249,23 @@ func (w *Review) agentPrompt(
 	if eff.Review.Diagram {
 		p.PriorDiagram = prior.diagram
 	}
+	var shown map[string][]review.Answer
+	if roots := answerRoots(prior.findings); len(roots) > 0 {
+		owner, repo := pr.ownerRepo()
+		answers, err := threadAnswers(ctx, client, owner, repo, pr.number, roots)
+		if err != nil {
+			// Without the answers, the review judges an answered finding on
+			// the code alone, as it did before anyone answered.
+			logger.Warn("finding threads not read", "error", err)
+		}
+		p.Prior, shown = withAnswers(p.Prior, prior.findings, answers)
+	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		// What the review is shown is what publication holds an answer it
+		// accepts to.
+		if err := store.RecordAnswers(ctx, tx, reviewID, shown); err != nil {
+			return err
+		}
 		// agentPrompt judges the rules' when conditions here, before the
 		// runner cuts the body. So a rule applies as it will when the worker
 		// reads the run.

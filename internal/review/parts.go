@@ -181,6 +181,7 @@ func MergeParts(parts []Result) Result {
 		out.Summary.Checked = append(out.Summary.Checked, p.Summary.Checked...)
 		out.Findings = append(out.Findings, p.Findings...)
 		out.Resolved = append(out.Resolved, p.Resolved...)
+		out.Answered = append(out.Answered, p.Answered...)
 	}
 	out.Summary.Take = strings.Join(takes, "\n\n")
 	return out

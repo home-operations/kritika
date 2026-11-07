@@ -696,3 +696,17 @@ func TestAgentPromptBaseOf(t *testing.T) {
 		t.Fatalf("user message lacks the base:\n%s", prompt.user[:min(len(prompt.user), 400)])
 	}
 }
+
+// TestAgentPromptAnsweredFresh: a review asked for by hand looks afresh and
+// is shown no earlier finding, but still the ones that maintainers answered.
+func TestAgentPromptAnsweredFresh(t *testing.T) {
+	s := agentPromptSpec()
+	s.Prompt.PullRequest.Event = "manual"
+	s.Prompt.Prior = append(s.Prompt.Prior, review.Finding{Path: "main.go", Line: 1, Severity: review.SeverityP1, Title: "Known limit",
+		Explanation: "e", Answers: []review.Answer{{ID: 9, Author: "maint", Text: "Accepted for the beta."}}})
+	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}, Scope: review.ScopeFull}
+	prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
+	if !strings.Contains(prompt.user, "Answered by maint: Accepted for the beta.") || strings.Contains(prompt.user, "Findings from the last review (verify each") {
+		t.Fatalf("user message:\n%s", prompt.user)
+	}
+}

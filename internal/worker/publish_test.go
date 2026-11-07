@@ -137,6 +137,10 @@ func TestSettlePrior(t *testing.T) {
 		resolved []string
 		carried  []string
 		threads  []int64
+		// held are the answers heldAnswers holds, by id, and answered the
+		// titles of those settled as answered, with the answer's id.
+		held     map[string]review.Answer
+		answered []string
 	}{
 		{
 			name:    "a finding neither reported again nor listed stays open",
@@ -158,14 +162,34 @@ func TestSettlePrior(t *testing.T) {
 			threads: []int64{12, 14},
 		},
 		{
+			name: "a finding with a held answer is answered", held: map[string]review.Answer{id(0): {ID: 102}},
+			answered: []string{"Unchecked error@102"},
+			carried:  []string{"Stale comment@h1", "Never posted inline@h1", "Carried before@h0"},
+		},
+		{
+			name: "a finding reported again is not answered, though held", reported: []review.Finding{{Path: "a.go", Title: "Unchecked error"}},
+			held: map[string]review.Answer{id(0): {ID: 102}}, carried: []string{"Stale comment@h1", "Never posted inline@h1", "Carried before@h0"},
+		},
+		{
+			name: "a finding listed as resolved is resolved, though held", ids: []string{id(1)},
+			held: map[string]review.Answer{id(1): {ID: 102}}, resolved: []string{"Stale comment"}, threads: []int64{12},
+			carried: []string{"Unchecked error@h1", "Never posted inline@h1", "Carried before@h0"},
+		},
+		{
 			name: "an id that names no earlier finding resolves nothing", ids: []string{"deadbeef", ""},
 			carried: []string{"Unchecked error@h1", "Stale comment@h1", "Never posted inline@h1", "Carried before@h0"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolved, carried := settlePrior(prior, "h1", tt.reported, tt.ids)
-			var gotResolved, gotCarried []string
+			resolved, answered, carried := settlePrior(prior, "h1", tt.reported, tt.ids, tt.held)
+			var gotResolved, gotCarried, gotAnswered []string
+			for _, a := range answered {
+				gotAnswered = append(gotAnswered, fmt.Sprintf("%s@%d", a.Title, a.answer.ID))
+			}
+			if !slices.Equal(gotAnswered, tt.answered) {
+				t.Errorf("settlePrior() answered %q, want %q", gotAnswered, tt.answered)
+			}
 			for _, pf := range resolved {
 				gotResolved = append(gotResolved, pf.Title)
 			}

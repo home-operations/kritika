@@ -76,14 +76,14 @@ func TestCheck(t *testing.T) {
 		{name: "a finding's line as a string", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[{"path":"a","line":"3"}]}`,
 			wantErr: "cannot unmarshal string into Go struct field"},
 		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`,
-			wantErr: `unknown keys "praise", "take"; the input takes findings, resolved, summary`},
+			wantErr: `unknown keys "praise", "take"; the input takes answered, findings, resolved, summary`},
 		{name: "empty summary", raw: `{"summary":{},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "every key the contract defines", raw: `{"summary":{"headline":"h","take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B","checked":["c"]},
 			"findings":[{"path":"a","line":1,"severity":"p2","category":"tests","title":"t","explanation":"e","suggested_fix":"f",
 			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"],"quote":"q","prior":"0a1b2c3d"}]}`},
 		{name: "a misspelled fix key and checked key", raw: `{"summary":{"headline":"h","take":"t","praise":[],"checked>":["x"]},
 			"findings":[{"path":"a.yaml","line":1,"severity":"p1","category":"correctness","title":"t","explanation":"e","suggested_fix.":"the fix"}]}`,
-			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes findings, resolved, summary, ` +
+			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes answered, findings, resolved, summary, ` +
 				`the summary takes checked, diagram, headline, praise, take and a finding takes agent_prompt, category, ` +
 				`end_line, explanation, insert_after, line, path, prior, quote, replacement, rules, severity, suggested_fix, title`},
 		{name: "broken keys across findings, each named", raw: `{"summary":{"take":"t","praise":[]},
@@ -729,7 +729,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d", Checked: []string{"c"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityP2, Title: "t", Explanation: "e", SuggestedFix: "f",
 			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, Quote: "q", Prior: "p", URL: "ignored"}},
-		Resolved: []string{"0a1b2c3d"},
+		Resolved: []string{"0a1b2c3d"}, Answered: []string{"1a2b3c4d"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -917,14 +917,17 @@ func TestParsePrior(t *testing.T) {
 	}
 }
 
-// TestParseResolved: the ids of the findings a review lists as resolved
-// come through, and no finding keeps a carried_from the model sent.
+// TestParseResolved: the ids of the findings a review lists as resolved or
+// answered come through, and no finding keeps a carried_from or answers
+// that the model sent.
 func TestParseResolved(t *testing.T) {
 	raw := `{"summary": {"take": "t"}, "findings": [
-	  {"path": "main.go", "line": 11, "severity": "p1", "category": "correctness", "title": "t", "explanation": "e", "carried_from": "0123456"}
-	], "resolved": ["0a1b2c3d"]}`
+	  {"path": "main.go", "line": 11, "severity": "p1", "category": "correctness", "title": "t", "explanation": "e", "carried_from": "0123456",
+	   "answers": [{"author": "maint", "text": "fine"}]}
+	], "resolved": ["0a1b2c3d"], "answered": ["1a2b3c4d"]}`
 	res, _, err := Parse(raw, Anchors(sampleDiff), ParseOptions{})
-	if err != nil || !slices.Equal(res.Resolved, []string{"0a1b2c3d"}) || len(res.Findings) != 1 || res.Findings[0].CarriedFrom != "" {
+	if err != nil || !slices.Equal(res.Resolved, []string{"0a1b2c3d"}) || !slices.Equal(res.Answered, []string{"1a2b3c4d"}) ||
+		len(res.Findings) != 1 || res.Findings[0].CarriedFrom != "" || res.Findings[0].Answers != nil {
 		t.Fatalf("Parse = %+v, %v", res, err)
 	}
 }

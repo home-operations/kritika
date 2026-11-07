@@ -153,6 +153,8 @@ type Finding struct {
 	// numbers it uses. It is "" otherwise. kritika sets it. Parse clears any
 	// that the model sent.
 	CarriedFrom string `json:"carried_from,omitempty"`
+	// Answers are what a re-review is shown of its thread. See Answer.
+	Answers []Answer `json:"answers,omitempty"`
 	// Unread marks a finding on a file that the review never read with
 	// read_file or read_diff. The runner sets it once the review submits, and
 	// Parse drops the finding as DropUnread. The model cannot set it: Check
@@ -213,6 +215,8 @@ type Result struct {
 	// Resolved are the ids, as the prompt listed them, of the last
 	// review's findings this review found no longer hold.
 	Resolved []string `json:"resolved,omitempty"`
+	// Answered are the ids of the last review's findings whose answer it accepts.
+	Answered []string `json:"answered,omitempty"`
 }
 
 // Counts is the number of findings at each severity.
@@ -317,6 +321,7 @@ const (
 	keyQuote        = "quote"
 	keyPrior        = "prior"
 	keyResolved     = "resolved"
+	keyAnswered     = "answered"
 )
 
 // JSON Schema types the answer shapes use more than once.
@@ -371,6 +376,8 @@ const (
 		"whatever the wording now; the finding then keeps that one's thread. Omit it for a new finding."
 	describeResolved = "Ids of the last review's findings, as their listing opens each line with, that no longer hold: " +
 		"fixed since, or not a problem after all. Omit it when none are listed or every one still holds."
+	describeAnswered = "Ids of the last review's findings, listed with an answer from a maintainer, whose answer you " +
+		"accept, so the finding is not reported again. Omit it when no finding was answered or no answer holds."
 	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
 		"change adds or alters as the head commit has it, drawn as the instructions say. Omit it when the change has no " +
 		"such flow."
@@ -447,6 +454,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 			// A first review is offered resolved too: a re-review carries on
 			// a conversation only with the very tools it was offered.
 			keyResolved: {Type: schemaArray, Description: describeResolved, Items: &jsonSchema{Type: schemaString}},
+			keyAnswered: {Type: schemaArray, Description: describeAnswered, Items: &jsonSchema{Type: schemaString}},
 		},
 		Required:             []string{keySummary, keyFindings},
 		AdditionalProperties: new(false),
@@ -638,7 +646,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	var dropped []Dropped
 	prior := indexPrior(opts.Prior)
 	for _, f := range res.Findings {
-		f.CarriedFrom = ""
+		f.CarriedFrom, f.Answers = "", nil
 		f.Path = strings.TrimSpace(f.Path)
 		f.Title = severityPrefix.ReplaceAllString(prose(f.Title, opts.Repository), "")
 		f.Explanation = prose(f.Explanation, opts.Repository)
