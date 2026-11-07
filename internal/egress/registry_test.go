@@ -28,8 +28,9 @@ func TestRegistryCredential(t *testing.T) {
 		name    string
 		method  string
 		account string
-		// path is what the runner asks for, the manifest when it is empty.
-		path string
+		// host and path are what the runner asks for: the registry and its
+		// manifest when they are empty.
+		host, path string
 		// realm is the challenge the registry answers an unsigned request with.
 		realm string
 		// manifest is what the registry answers a signed read with.
@@ -50,6 +51,16 @@ func TestRegistryCredential(t *testing.T) {
 				"GET registry.example.com/v2/app/manifests/1 ",
 				"GET registry.example.com/v2/token?scope=repository%3Aapp%3Apull&service=registry.example.com Basic Ym90OnB3",
 				"GET registry.example.com/v2/app/manifests/1 Bearer tok-1",
+				"GET registry.example.com/v2/app/manifests/1 Bearer tok-1",
+			},
+		},
+		{
+			name: "a signed read of the host in capitals", method: http.MethodGet, account: "acme", realm: challenge, reads: 1,
+			host:       "REGISTRY.example.com",
+			wantStatus: http.StatusOK, wantBody: "manifest",
+			wantCalls: []string{
+				"GET registry.example.com/v2/app/manifests/1 ",
+				"GET registry.example.com/v2/token?scope=repository%3Aapp%3Apull&service=registry.example.com Basic Ym90OnB3",
 				"GET registry.example.com/v2/app/manifests/1 Bearer tok-1",
 			},
 		},
@@ -174,7 +185,7 @@ func TestRegistryCredential(t *testing.T) {
 				}),
 			}
 			for range tt.reads {
-				r := httptest.NewRequest(tt.method, "http://registry.example.com"+cmp.Or(tt.path, "/v2/app/manifests/1"), nil)
+				r := httptest.NewRequest(tt.method, "http://"+cmp.Or(tt.host, "registry.example.com")+cmp.Or(tt.path, "/v2/app/manifests/1"), nil)
 				r.Header.Set("Authorization", "Bearer from-the-runner")
 				r = r.WithContext(ForAccount(r.Context(), tt.account))
 				w := httptest.NewRecorder()

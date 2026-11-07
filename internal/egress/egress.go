@@ -258,7 +258,9 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "egress: only absolute http:// requests and CONNECT are served", http.StatusBadRequest)
 		return
 	}
-	host := r.URL.Hostname()
+	// Lowercase, as the rules and the credentials name a host, so a
+	// registry's client finds its credential by the Host it sends.
+	host := strings.ToLower(r.URL.Hostname())
 	rules := p.Rules()
 	if r.URL.Port() != "" && r.URL.Port() != "80" {
 		p.refuse(r.Context(), w, "http", r.URL.Host, "only port 80 is served")
@@ -271,7 +273,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	// An oci credential signs in a repository's reads in the registry API
 	// alone. Signed in, a request to the registry's token endpoint would hand
 	// the runner the token.
-	cred, signed := rules.Credentials[strings.ToLower(host)]
+	cred, signed := rules.Credentials[host]
 	signed = signed && cred.For(AccountOf(r.Context())) && (cred.Scheme != egresspolicy.SchemeOCI || repositoryOf(r.URL) != "")
 	ociSigned := signed && cred.Scheme == egresspolicy.SchemeOCI
 	transport := p.httpTransport()
@@ -280,7 +282,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 			p.refuse(r.Context(), w, "http", r.URL.Host, "a registry with a credential takes GET and HEAD alone")
 			return
 		}
-		transport = p.registryTransport(strings.ToLower(host), cred)
+		transport = p.registryTransport(host, cred)
 	}
 	if p.Cache != nil {
 		if cacheable(r, host, rules) {
@@ -328,7 +330,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 				return errors.New("egress: protocol upgrades are not supported")
 			}
 			if ociSigned {
-				plainOwnURLs(resp.Header, strings.ToLower(host))
+				plainOwnURLs(resp.Header, host)
 			}
 			p.observe("http", OutcomeAllowed)
 			p.Logger.Debug("egress request", "host", host, "method", r.Method, "path", r.URL.Path, "status", resp.StatusCode)
