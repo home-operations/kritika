@@ -176,9 +176,6 @@ func TestEarlierRisk(t *testing.T) {
 	}
 }
 
-// TestAttachHistory: a dependency's last rating is given at the bump of
-// this change that moves it, in the order of the bumps, and one that no
-// bump moves is left out.
 // TestConcernCarries: a concern stays told across reviews that, told of
 // it, have none of their own for it, so the score does not swing back.
 func TestConcernCarries(t *testing.T) {
@@ -201,6 +198,9 @@ func TestConcernCarries(t *testing.T) {
 	}
 }
 
+// TestAttachHistory: a dependency's last rating is given at the bump of
+// this change that moves it, in the order of the bumps, and one that no
+// bump moves is left out.
 func TestAttachHistory(t *testing.T) {
 	listed := []review.Bump{
 		{Path: "a.yaml", Line: 3, Key: "a.yaml tag: *.*.*"},
