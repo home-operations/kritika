@@ -162,6 +162,9 @@ func TestEarlierRisk(t *testing.T) {
 			confidence: &review.Confidence{Score: 4, Risk: review.RiskHigh, Rated: review.RiskLow, Held: "charts/x.yaml", Reason: "Docs only.", Rubric: "rubric"}}},
 		{name: "a new head under the same instructions", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("rubric")},
 			want: &review.EarlierRisk{HeadSHA: "old", Risk: review.RiskHigh, Reason: "A major bump."}},
+		{name: "a rating with a concern", prior: priorReview{id: "r1", headSHA: "old",
+			confidence: &review.Confidence{Score: 4, Risk: review.RiskMedium, Reason: "Not shown applied.", Rubric: "rubric", Concern: true}},
+			want: &review.EarlierRisk{HeadSHA: "old", Risk: review.RiskMedium, Reason: "Not shown applied.", Concern: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -170,6 +173,28 @@ func TestEarlierRisk(t *testing.T) {
 				t.Fatalf("earlierRisk = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestConcernCarries: a concern stays told across reviews that, told of
+// it, have none of their own for it, so the score does not swing back.
+func TestConcernCarries(t *testing.T) {
+	rated := func(concern bool) priorReview {
+		return priorReview{id: "r", headSHA: "old", confidence: &review.Confidence{Risk: review.RiskMedium, Rubric: "rubric", Concern: concern}}
+	}
+	// A raises it, B and C are told of it and have none of their own.
+	a := concerned(true, earlierRisk(priorReview{}, "a", "rubric", ""))
+	b := concerned(false, earlierRisk(rated(a), "b", "rubric", ""))
+	c := concerned(false, earlierRisk(rated(b), "c", "rubric", ""))
+	if !a || !b || !c {
+		t.Fatalf("concerned across reviews = %v, %v, %v; want it kept", a, b, c)
+	}
+	// A re-run rates afresh, so it is told nothing and keeps nothing.
+	if concerned(false, earlierRisk(rated(true), "d", "rubric", jobs.TriggerManual)) {
+		t.Fatal("a manual re-run kept the concern")
+	}
+	if concerned(false, earlierRisk(rated(false), "e", "rubric", "")) {
+		t.Fatal("a concern appeared that no review had")
 	}
 }
 
