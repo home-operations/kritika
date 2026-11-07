@@ -112,8 +112,12 @@ type Config struct {
 	// ReportToken authenticates what this run reports to the gateway. The
 	// commands that the run starts never see it.
 	ReportToken string `env:"KRITIKA_REPORT_TOKEN,unset"`
-	webURL      *url.URL
-	logLevel    slog.Level
+	// parsedWebURL must not be named webURL. The case-insensitive field lookup
+	// from gookit/validate#347 resolves the WebURL rule in ValidateServe to the
+	// first top-level field with that name in any case, unexported fields
+	// included, before Settings.WebURL.
+	parsedWebURL *url.URL
+	logLevel     slog.Level
 	// document is the startup snapshot shared with the policy loader.
 	document Document
 }
@@ -132,15 +136,15 @@ func (c *Config) ValidateRunner() error {
 
 // WebURLParsed returns WebURL parsed into a *url.URL, or nil when WebURL is
 // unset.
-func (c *Config) WebURLParsed() *url.URL { return c.webURL }
+func (c *Config) WebURLParsed() *url.URL { return c.parsedWebURL }
 
 // WebBasePath is WebURL's path, "" when it has none or is unset: the
 // dashboard is served under it, and the webhook listener shares it.
 func (c *Config) WebBasePath() string {
-	if c.webURL == nil {
+	if c.parsedWebURL == nil {
 		return ""
 	}
-	return c.webURL.Path
+	return c.parsedWebURL.Path
 }
 
 // parseWebURL trims a trailing slash from WebURL. It rejects anything that
@@ -162,7 +166,7 @@ func (c *Config) parseWebURL() error {
 		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must not have a query or fragment, got %q", c.WebURL)
 	}
 	c.WebURL = trimmed
-	c.webURL = u
+	c.parsedWebURL = u
 	return nil
 }
 
