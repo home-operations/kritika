@@ -15,8 +15,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@tanstack/svelte-query':
-        specifier: ^6.3.11
-        version: 6.3.11(svelte@5.57.3)
+        specifier: ^6.4.0
+        version: 6.4.0(svelte@5.57.3)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.14.0
@@ -37,8 +37,8 @@ importers:
         specifier: ^4.3.5
         version: 4.3.5(vite@8.3.6(jiti@2.7.0))
       '@tanstack/svelte-query-devtools':
-        specifier: ^6.3.11
-        version: 6.3.11(@tanstack/svelte-query@6.3.11(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)
+        specifier: ^6.4.0
+        version: 6.4.0(@tanstack/svelte-query@6.4.0(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -595,25 +595,25 @@ packages:
     resolution: {integrity: sha512-DIpUSOhPfQ7u/qfUi/Wgm0wBO56MyBYXGvnlI0NcauDRPqdBUlAZZjW2Dxm92m+k1UWVhKw8YJ4f47+75Aujyw==}
     engines: {node: '>=20'}
 
-  '@tanstack/query-core@5.106.1':
-    resolution: {integrity: sha512-erYv/UACddcdgjOL2ixmFdK6tO/AVBeUcTCOtX2N51yZpDQ2U7KJ+xgB/bCNfsF3uoCDTqGHEEbDiFsIO9YUmQ==}
+  '@tanstack/query-core@5.107.0':
+    resolution: {integrity: sha512-QrobCJilIr2futzukm0E9w/j7fEGweTNZL0cBJDTV0ek1PeNE32XqzQHUxqKc6grb9OxUZt6tz27lgu5fchK0w==}
 
-  '@tanstack/query-devtools@5.106.1':
-    resolution: {integrity: sha512-SEDgVRKVTGS4mjhylu3pjIIy9waf7r6se64yoe99hFZUAumbEsuzjVz896wJMvAWGZmxjfIDPrjBad4Gri20fg==}
+  '@tanstack/query-devtools@5.107.0':
+    resolution: {integrity: sha512-GBmIpx8Hs8q3pKxMeyDGktGHGT6GxVs3T/1UhsMckfRN8ROkO8uxfXaRxQJAle589cIDenuDdMAt3VJYN9iAog==}
 
   '@tanstack/solid-virtual@3.13.53':
     resolution: {integrity: sha512-LUdGSmkTkwtpUea4w7bJp6N6ErnNkWT5iXpvn0mI9ijjtVrOa0JkSX8ZhQfNZxbhm4cnlGYbz/U1SQn/LqSNlw==}
     peerDependencies:
       solid-js: ^1.3.0
 
-  '@tanstack/svelte-query-devtools@6.3.11':
-    resolution: {integrity: sha512-RhyBTl7NobBiTPM3VQSZUvlrVvJpNx9HSak0WzxeEVparUrhriTG/1QJThULz1eF2HHVtxJmzx6A7ahPxOTUEA==}
+  '@tanstack/svelte-query-devtools@6.4.0':
+    resolution: {integrity: sha512-5rbLPuQoo76Df/w71kJm8PHfJr+w5Zb7Do7Tvn2TOShq7ZcAfZKBy16Wf9hPaRL3ni8yeBrRJqgPlVQgT5APJg==}
     peerDependencies:
-      '@tanstack/svelte-query': ^6.3.11
+      '@tanstack/svelte-query': ^6.4.0
       svelte: ^5.25.0
 
-  '@tanstack/svelte-query@6.3.11':
-    resolution: {integrity: sha512-xoYIHzDs6pqr7l5Xymzdv4fsG2fjny5l+6Hh4cXf/RVCc4hvoiE0kz42PNcYDNiucaorFTRs/vDoxBL56ZIv3A==}
+  '@tanstack/svelte-query@6.4.0':
+    resolution: {integrity: sha512-P+SVMBavntRj58GaRDFhdL5FyLA6S+6f60OEp9q1b+f6Eu7Y/4ErCLRgI0FszJLWX0bT6RoZ62QiLFrZI5DWpw==}
     peerDependencies:
       svelte: ^5.25.0
 
@@ -1860,16 +1860,16 @@ snapshots:
     dependencies:
       remove-accents: 0.5.0
 
-  '@tanstack/query-core@5.106.1': {}
+  '@tanstack/query-core@5.107.0': {}
 
-  '@tanstack/query-devtools@5.106.1(csstype@3.2.3)':
+  '@tanstack/query-devtools@5.107.0(csstype@3.2.3)':
     dependencies:
       '@kobalte/core': 0.13.14(solid-js@1.9.17)
       '@solid-primitives/keyed': 1.5.3(solid-js@1.9.17)
       '@solid-primitives/resize-observer': 2.2.0(solid-js@1.9.17)
       '@solid-primitives/storage': 1.3.11(solid-js@1.9.17)
       '@tanstack/match-sorter-utils': 9.2.6
-      '@tanstack/query-core': 5.106.1
+      '@tanstack/query-core': 5.107.0
       '@tanstack/solid-virtual': 3.13.53(solid-js@1.9.17)
       clsx: 2.1.1
       goober: 2.1.19(csstype@3.2.3)
@@ -1884,18 +1884,18 @@ snapshots:
       '@tanstack/virtual-core': 3.19.11
       solid-js: 1.9.17
 
-  '@tanstack/svelte-query-devtools@6.3.11(@tanstack/svelte-query@6.3.11(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)':
+  '@tanstack/svelte-query-devtools@6.4.0(@tanstack/svelte-query@6.4.0(svelte@5.57.3))(csstype@3.2.3)(svelte@5.57.3)':
     dependencies:
-      '@tanstack/query-devtools': 5.106.1(csstype@3.2.3)
-      '@tanstack/svelte-query': 6.3.11(svelte@5.57.3)
+      '@tanstack/query-devtools': 5.107.0(csstype@3.2.3)
+      '@tanstack/svelte-query': 6.4.0(svelte@5.57.3)
       esm-env: 1.2.2
       svelte: 5.57.3
     transitivePeerDependencies:
       - csstype
 
-  '@tanstack/svelte-query@6.3.11(svelte@5.57.3)':
+  '@tanstack/svelte-query@6.4.0(svelte@5.57.3)':
     dependencies:
-      '@tanstack/query-core': 5.106.1
+      '@tanstack/query-core': 5.107.0
       svelte: 5.57.3
 
   '@tanstack/virtual-core@3.19.11': {}
