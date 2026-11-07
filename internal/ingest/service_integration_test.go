@@ -756,27 +756,21 @@ func TestDispatchCommentPush(t *testing.T) {
 }
 
 // TestDispatchReply: a reply in an inline thread that mentions no one is a
-// follow-up where the configuration answers replies in finding threads. Its
-// job says so. A root inline comment, or a reply where they are off, is not a
-// follow-up.
+// follow-up, and its job says so. A root inline comment is not.
 func TestDispatchReply(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
-	replies := withRoot(t, "review: { replies: true }\n")
 	reply := &webhook.Comment{ID: 511, Number: 7, Author: "devin", Body: "the caller holds the lock", Inline: true, InReplyTo: 500}
-	event := func(f *configfile.File, repo *webhook.Repository, c *webhook.Comment) Request {
+	event := func(repo *webhook.Repository, c *webhook.Comment) Request {
 		return request(f, webhook.Event{Kind: webhook.KindComment, Action: "created", Repository: repo, Comment: c})
-	}
-	if out, _ := svc.Dispatch(ctx, event(f, repo("onedr0p/home-ops"), reply)); out.Reason != "no-mention" {
-		t.Fatalf("reply where replies are off = %+v", out)
 	}
 	root := *reply
 	root.ID, root.InReplyTo = 512, 0
-	if out, _ := svc.Dispatch(ctx, event(replies, repo("onedr0p/replies"), &root)); out.Reason != "no-mention" {
+	if out, _ := svc.Dispatch(ctx, event(repo("onedr0p/replies"), &root)); out.Reason != "no-mention" {
 		t.Fatalf("root inline comment = %+v", out)
 	}
-	if out, err := svc.Dispatch(ctx, event(replies, repo("onedr0p/replies"), reply)); err != nil || out.Status != Enqueued || out.Job != "followup" {
+	if out, err := svc.Dispatch(ctx, event(repo("onedr0p/replies"), reply)); err != nil || out.Status != Enqueued || out.Job != "followup" {
 		t.Fatalf("reply = %+v, %v", out, err)
 	}
 	var asReply bool

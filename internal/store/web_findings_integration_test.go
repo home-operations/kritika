@@ -534,3 +534,47 @@ apps:
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
 `, name)
 }
+
+// TestAddDismissal: AddDismissal records a dismissal where the finding has
+// none, and leaves one that it has as it was recorded.
+func TestAddDismissal(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("added"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "added", "added/one")
+	account := accountID(t, s, "added")
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var pull string
+		if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
+			SELECT $1, id, 7, 'h' FROM repositories WHERE account_id = $1 AND name = 'added/one' RETURNING id`, account).Scan(&pull); err != nil {
+			return err
+		}
+		maintainer := Dismissal{AccountID: account, PullRequestID: pull, Fingerprint: "fp-a", Reason: "intended", Author: "devin",
+			CommentID: 99, Source: DismissedByCommand}
+		if err := RecordDismissal(ctx, tx, maintainer); err != nil {
+			return err
+		}
+		accepted := Dismissal{AccountID: account, PullRequestID: pull, Fingerprint: "fp-a", Reason: "kritika accepted", Author: "kritika[bot]",
+			CommentID: 100, Source: DismissedByConcession}
+		if err := AddDismissal(ctx, tx, accepted); err != nil {
+			return err
+		}
+		accepted.Fingerprint = "fp-b"
+		if err := AddDismissal(ctx, tx, accepted); err != nil {
+			return err
+		}
+		ds, err := Dismissals(ctx, tx, pull)
+		if err != nil {
+			return err
+		}
+		if len(ds) != 2 || ds[0].Fingerprint != "fp-a" || ds[0].Author != "devin" || ds[0].CommentID != 99 || ds[0].Source != DismissedByCommand ||
+			ds[1].Fingerprint != "fp-b" || ds[1].Source != DismissedByConcession {
+			t.Fatalf("Dismissals = %+v, want the maintainer's kept and fp-b added", ds)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

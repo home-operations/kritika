@@ -387,7 +387,6 @@ export interface ReviewBlock {
   approveWhenInRepo?: Condition[];
   diagram: boolean;
   cost: boolean;
-  replies: boolean;
   context: ContextFile[];
 }
 

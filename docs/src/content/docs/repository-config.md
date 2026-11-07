@@ -55,7 +55,7 @@ the review's summary says which field kritika dropped and what it can be.
 The rest of the file still applies.
 
 These keys are the admin's alone: `agent`, `trigger.limit`,
-`review.incremental`, `review.cost`, `review.replies`, `comments.dashboard`,
+`review.incremental`, `review.cost`, `comments.dashboard`,
 `confidence.instructions`, `confidence.floors` and `limits`. A file that
 names one of them, or any other unknown key, does not parse.
 

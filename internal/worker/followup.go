@@ -520,8 +520,6 @@ func (f *followUp) disqualified(ctx context.Context) string {
 		f.asReply = false
 	case !f.asReply:
 		return "does not mention @" + slug
-	case !f.settings.Review.Replies:
-		return "replies in finding threads are off for this repository"
 	}
 	perm, err := f.client.Permission(ctx, f.owner, f.repo, f.comment.Author)
 	if err != nil {
@@ -618,8 +616,21 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int, error) {
 		comments = comments[len(comments)-threadMessages:]
 	}
 	msgs := make([]review.Message, 0, len(comments))
+	writes := map[string]bool{}
 	for _, c := range comments {
-		msgs = append(msgs, review.NewMessage(c.Author, c.Body, c.CreatedAt))
+		m := review.NewMessage(c.Author, c.Body, c.CreatedAt)
+		// A reply in a finding's thread is told who can end the finding:
+		// those with write access. A lookup that fails counts as none.
+		if f.asReply && !c.AuthorIsBot && !strings.EqualFold(c.Author, f.botLogin) {
+			can, known := writes[c.Author]
+			if !known {
+				perm, err := f.client.Permission(ctx, f.owner, f.repo, c.Author)
+				can = err == nil && forge.CanWrite(perm)
+				writes[c.Author] = can
+			}
+			m.Writes = can
+		}
+		msgs = append(msgs, m)
 	}
 	return msgs, replied, nil
 }

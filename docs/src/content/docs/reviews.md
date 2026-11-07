@@ -105,16 +105,6 @@ A later review can mark a finding fixed. To dismiss one you disagree with,
 reply `@<bot> dismiss <reason>` in its thread. Later reviews of that pull
 request will not raise it again.
 
-A re-review also reads the replies in each finding's thread from people with
-write access, and weighs them. A reply can say that the finding is fixed,
-that the code stays as it is, or why the finding is wrong. When the answer
-holds, kritika dismisses the finding as `@<bot> dismiss` does, with the reply
-as its reason, and does not report it again. The re-review reports it again
-only when the code shows the answer wrong, and then says why. When a reply
-in the thread is added or edited before the review is published, the finding
-stays open for the next review to weigh. This needs no mention and no
-setting, and it makes no model call of its own.
-
 Resolving the thread on GitHub also dismisses the finding, unless GitHub
 marks the thread outdated because its lines changed. In that case, resolution
 counts as a fix. If you want a lasting dismissal, use the dismiss command.
@@ -130,20 +120,34 @@ sends no event, so it does not dismiss the finding.
 
 ### Replies in finding threads
 
-With [`review.replies`](/configuration/#what-only-the-admin-sets) on,
-kritika also reads a reply in one of its finding threads that does not
-mention it. The reply must come from someone with write access, and they
-must make it while the thread is unresolved. kritika answers when the reply
-needs the reviewer. That is a question about the finding, a disagreement with
-it, or a claim about the code that is worth comparing with the head. The head
-is the pull request's newest commit. kritika posts nothing for an
-acknowledgement, a message meant for someone else, or a point that the thread
-already settled. The dashboard records why.
+You can answer a finding in its thread, without mentioning kritika.
+kritika weighs a reply from someone with write access by one rule. A reply
+ends the finding when it shows the finding wrong. It also ends the finding
+when it decides to keep the code as it is and gives a reason, such as a
+known limit. A claim that the finding is fixed does not dismiss it: a review that sees
+the fix in the code marks the finding resolved, so the finding can come
+back if the fix is undone. An acknowledgement, a promise to fix it later or
+a question ends nothing. kritika's own earlier reply that stood by the finding stands
+until a later answer or the code meets what it said. When a reply ends a
+finding, kritika dismisses it as `@<bot> dismiss` does, and resolves its
+thread.
 
-When the thread convinces kritika that the finding was wrong, its reply says
-so. kritika then dismisses the finding as `@<bot> dismiss` does, and resolves
-the thread. This works on GitHub alone, for the reason that
-[Git forges](/forges/#what-works-where) gives.
+kritika weighs a reply at two times. First, it answers the reply when the
+reply needs the reviewer: a question about the finding, a disagreement with
+it, a decision about it, or a claim about the code that is worth comparing
+with the head. The head is the pull request's newest commit. kritika posts
+nothing for an acknowledgement, a message meant for someone else, or a
+point that the thread already settled. The dashboard records why. This
+answer needs an event for the reply, so it works on GitHub alone, for the
+reason that [Git forges](/forges/#what-works-where) gives. The reply must
+come while the thread is unresolved.
+
+Then the next review of the pull request reads each finding's thread on
+every forge, kritika's own replies included. When a reply ends a finding,
+the review does not report it again, and kritika dismisses the finding when
+it publishes the review. If a reply in the thread is added or edited before
+then, the finding stays open for the next review to weigh. This makes no
+model call of its own.
 
 Such replies count against the five follow-ups per pull request per hour,
 whether or not kritika posts a reply. After kritika replies three times in

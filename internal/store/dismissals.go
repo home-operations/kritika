@@ -44,12 +44,22 @@ func (s DismissalSource) Valid() bool {
 // RecordDismissal records a dismissal. It replaces an earlier one of the
 // same finding.
 func RecordDismissal(ctx context.Context, tx pgx.Tx, d Dismissal) error {
+	return insertDismissal(ctx, tx, d, `DO UPDATE SET reason = excluded.reason, author = excluded.author,
+		comment_id = excluded.comment_id, source = excluded.source, created_at = now()`)
+}
+
+// AddDismissal records a dismissal unless the finding has one already,
+// which it leaves as it was recorded.
+func AddDismissal(ctx context.Context, tx pgx.Tx, d Dismissal) error {
+	return insertDismissal(ctx, tx, d, `DO NOTHING`)
+}
+
+func insertDismissal(ctx context.Context, tx pgx.Tx, d Dismissal, onConflict string) error {
 	f := d.Finding
 	if _, err := tx.Exec(ctx, `INSERT INTO dismissals
 		(account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author, comment_id, source)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), $10, $11, $12)
-		ON CONFLICT (pull_request_id, fingerprint) DO UPDATE SET reason = excluded.reason, author = excluded.author,
-			comment_id = excluded.comment_id, source = excluded.source, created_at = now()`,
+		ON CONFLICT (pull_request_id, fingerprint) `+onConflict,
 		d.AccountID, d.PullRequestID, d.Fingerprint, f.Path, f.Line, string(f.Severity), f.Title, f.Explanation,
 		d.Reason, d.Author, d.CommentID, string(d.Source)); err != nil {
 		return fmt.Errorf("store: record dismissal: %w", err)

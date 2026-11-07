@@ -252,7 +252,11 @@ func (w *Review) agentPrompt(
 	var shown map[string][]review.Answer
 	if roots := answerRoots(prior.findings); len(roots) > 0 {
 		owner, repo := pr.ownerRepo()
-		answers, err := threadAnswers(ctx, client, owner, repo, pr.number, roots)
+		login, err := client.BotLogin(ctx)
+		var answers map[int64][]review.Answer
+		if err == nil {
+			answers, err = threadAnswers(ctx, client, owner, repo, pr.number, login, roots)
+		}
 		if err != nil {
 			// Without the answers, the review judges an answered finding on
 			// the code alone, as it did before anyone answered.

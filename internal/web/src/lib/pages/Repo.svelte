@@ -126,7 +126,6 @@
     },
     { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Cost in footer', key: 'review.cost', value: (s) => yes(s.review.cost) },
-    { label: 'Replies in finding threads', key: 'review.replies', value: (s) => yes(s.review.replies) },
     { label: 'Concurrency', key: 'limits', value: (s) => unlimited(s.limits.concurrency) },
     { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },
     { label: 'Tokens / month', key: 'limits', value: (s) => unlimited(s.limits.tokensPerMonth) },
