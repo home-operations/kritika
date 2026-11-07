@@ -194,12 +194,20 @@ the rest.
 Risk describes the damage that a change can cause if something was missed.
 It controls automatic approval, independently of the confidence score.
 
-| Risk       | Typical impact                                                                            |
-| ---------- | ----------------------------------------------------------------------------------------- |
-| `low`      | Documentation, tests, formatting or small changes that leave behavior alone.              |
-| `medium`   | Routine application changes that a revert can undo.                                       |
-| `high`     | Breaking changes to something other systems depend on, or expanded access.                |
-| `critical` | Data loss, exposed secrets, administrative access or outages a revert cannot quickly fix. |
+| Risk       | Typical impact                                                                                                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `low`      | Documentation, tests, formatting or small changes that leave behavior alone.                                                                                                                         |
+| `medium`   | Routine application changes that a revert can undo.                                                                                                                                                  |
+| `high`     | Breaking changes to something other systems depend on, expanded access, or a removed or weakened check on what runs or who gets in, such as signature verification or an authentication requirement. |
+| `critical` | Data loss, exposed secrets, administrative access or outages a revert cannot quickly fix, that the change itself causes once it merges and deploys.                                                  |
+
+The scorer rates what merging and deploying the change does, not what it
+makes possible later. Damage that a later change, a later removal or a
+person's deliberate action does as intended is the risk of that step. For
+example, documentation that describes a destructive command, or a new
+resource that removes nothing, is not critical for what could follow it. A
+defect stays the change's own: an action that damages more than it says
+rates by that damage, even if only an administrator runs it.
 
 Dependency updates are rated by both the version step and the dependency's
 reach. kritika reads the step from the versions the diff moves. The scorer
@@ -271,7 +279,11 @@ floor set after a review holds on the next rebase. Floors are the admin's
 alone, as the instructions are.
 
 A later push normally keeps the earlier risk rating unless the change's impact
-changes. These trigger a fresh rating:
+changes. The scorer is also told whether a review of the pull request has had
+a concern of its own. A concern about a prerequisite outside the repository, one that nothing
+in the pull request can show met, lowers the score once: later reviews name it
+in the reason, but do not take the score to 4 for it again, unless the change
+depends on more of it. These trigger a fresh rating:
 
 - manual re-runs
 - re-runs of the same commit

@@ -135,12 +135,13 @@ func (p *publishPhase) score(
 		// score.
 		p.logger.Warn("dependency history not read", "error", err)
 	}
+	earlier := earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger)
 	req := model.CompletionRequest{
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res, rec, history, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
+		}, res, rec, history, earlier, system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
@@ -172,7 +173,7 @@ func (p *publishPhase) score(
 	}
 	c := review.Confidence{
 		Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model, Rubric: rubric,
-		Bumps: review.BumpVerdicts(bumps, parsed.Reaches), OneBump: review.OneBump(diff),
+		Bumps: review.BumpVerdicts(bumps, parsed.Reaches), OneBump: review.OneBump(diff), Concern: concerned(parsed.Concern, earlier),
 	}
 	if floor, at := review.StepFloor(listed, parsed.Reaches); c.HoldStep(floor, at) {
 		p.logger.Info("risk held to the version step", "rated", parsed.Risk, "floor", floor, "step", at)
@@ -250,7 +251,15 @@ func earlierRisk(prior priorReview, head, rubric, trigger string) *review.Earlie
 	if c == nil || prior.headSHA == head || trigger == jobs.TriggerManual || c.Rubric != rubric || c.Rated != "" {
 		return nil
 	}
-	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason}
+	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason, Concern: c.Concern}
+}
+
+// concerned is whether a review of the pull request has had a concern of its
+// own: this one's judge, or one before it as far as earlier carries. A judge
+// told of a concern about a prerequisite outside the repository has none of
+// its own for it again, so the next one must still be told.
+func concerned(concern bool, earlier *review.EarlierRisk) bool {
+	return concern || earlier != nil && earlier.Concern
 }
 
 // verdict is the commit status of a published review with that many

@@ -150,6 +150,12 @@ func TestBuildConfidence(t *testing.T) {
 			want: []string{"at abcdef1, rated its risk low.\n"},
 		},
 		{
+			name:    "a rating with a concern",
+			earlier: &EarlierRisk{HeadSHA: "abcdef1234", Risk: RiskMedium, Reason: "The upstream apply is not shown done.", Concern: true},
+			want: []string{"at abcdef1, rated its risk medium. A review of this pull request has had a concern of its own. " +
+				"Its reason: The upstream apply is not shown done.\n"},
+		},
+		{
 			name: "the dependencies' last ratings follow the findings and precede the earlier rating",
 			history: []BumpHistory{
 				{Path: "apps/x/hr.yaml", Line: 12, Number: 41, Step: StepPatch, Reach: ReachShared, Risk: RiskLow, Reason: "A patch\nof one app."},
