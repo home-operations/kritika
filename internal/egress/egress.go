@@ -62,6 +62,11 @@ type Proxy struct {
 
 	transportOnce sync.Once
 	transport     http.RoundTripper
+
+	registriesMu sync.Mutex
+	// registries are the clients of the registries with an oci credential,
+	// by host.
+	registries map[string]*registryClient
 }
 
 // Resolver is the part of net.Resolver the proxy uses.
@@ -244,14 +249,18 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 }
 
 // upgrade forwards an absolute-URI http:// request to the same host over
-// HTTPS and adds the host's credential.
+// HTTPS and signs it in with the host's credential, when the run's account
+// has it. A registry with an oci credential takes GET and HEAD alone, the
+// reads, and a URL of its own that it answers with stays on plain http://.
 func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	if !r.URL.IsAbs() || r.URL.Scheme != plainScheme {
 		p.observe("http", OutcomeRefused)
 		http.Error(w, "egress: only absolute http:// requests and CONNECT are served", http.StatusBadRequest)
 		return
 	}
-	host := r.URL.Hostname()
+	// Lowercase, as the rules and the credentials name a host, so a
+	// registry's client finds its credential by the Host it sends.
+	host := strings.ToLower(r.URL.Hostname())
 	rules := p.Rules()
 	if r.URL.Port() != "" && r.URL.Port() != "80" {
 		p.refuse(r.Context(), w, "http", r.URL.Host, "only port 80 is served")
@@ -260,6 +269,20 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	if reason := rules.Refuses(host); reason != "" {
 		p.refuse(r.Context(), w, "http", r.URL.Host, reason)
 		return
+	}
+	// An oci credential signs in a repository's reads in the registry API
+	// alone. Signed in, a request to the registry's token endpoint would hand
+	// the runner the token.
+	cred, signed := rules.Credentials[host]
+	signed = signed && cred.For(AccountOf(r.Context())) && (cred.Scheme != egresspolicy.SchemeOCI || repositoryOf(r.URL) != "")
+	ociSigned := signed && cred.Scheme == egresspolicy.SchemeOCI
+	transport := p.httpTransport()
+	if ociSigned {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			p.refuse(r.Context(), w, "http", r.URL.Host, "a registry with a credential takes GET and HEAD alone")
+			return
+		}
+		transport = p.registryTransport(host, cred)
 	}
 	if p.Cache != nil {
 		if cacheable(r, host, rules) {
@@ -273,7 +296,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
 	defer cancel()
 	proxy := &httputil.ReverseProxy{
-		Transport: p.httpTransport(),
+		Transport: transport,
 		ErrorLog:  slog.NewLogLogger(p.Logger.Handler(), slog.LevelWarn),
 		Rewrite: func(req *httputil.ProxyRequest) {
 			// This forward proxy does not interpret query parameters.
@@ -298,13 +321,16 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 				req.Out.Header.Set("User-Agent", "kritika")
 			}
 			req.Out.Header.Del("Authorization")
-			if cred, ok := rules.Credentials[strings.ToLower(host)]; ok {
-				req.Out.Header.Set("Authorization", cred)
+			if header := cred.Header(); signed && header != "" {
+				req.Out.Header.Set("Authorization", header)
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if resp.StatusCode == http.StatusSwitchingProtocols {
 				return errors.New("egress: protocol upgrades are not supported")
+			}
+			if ociSigned {
+				plainOwnURLs(resp.Header, host)
 			}
 			p.observe("http", OutcomeAllowed)
 			p.Logger.Debug("egress request", "host", host, "method", r.Method, "path", r.URL.Path, "status", resp.StatusCode)

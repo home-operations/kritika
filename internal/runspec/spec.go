@@ -97,6 +97,10 @@ type AgentLimits struct {
 	// as configfile.EgressHosts lists them, for the tools' descriptions.
 	// Empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
+	// Registries are the registries that the gateway signs the run's reads
+	// in to, as configfile.Registries lists them. fetch_oci reads one over
+	// plain http://, so the gateway can sign the read in.
+	Registries []string `json:"registries,omitempty"`
 	// CacheLocked says the gateway keeps downloads, as configfile.GatewayCaches
 	// reports. So a repository's tool is installed through the cache. The run
 	// makes sure that the tool's download matches a checksum fetched apart from

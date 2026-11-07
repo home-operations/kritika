@@ -129,13 +129,13 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 		}
 		f.Providers[name] = p
 	}
-	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
+	f.Egress.tokens = make(map[string]Secret, len(f.Egress.Credentials))
 	for _, host := range slices.Sorted(maps.Keys(f.Egress.Credentials)) {
-		v, err := s.read(f.Egress.Credentials[host])
+		v, err := s.read(f.Egress.Credentials[host].Token)
 		if err != nil {
-			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
+			return fmt.Errorf("configfile: egress.credentials.%s.token: %w", host, err)
 		}
-		f.Egress.credentials[strings.ToLower(host)] = v
+		f.Egress.tokens[host] = v
 	}
 	if err := f.resolveEmbedding(); err != nil {
 		return err

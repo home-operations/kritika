@@ -23,6 +23,33 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
+// recordingProxy stands in for the egress proxy. It counts the requests
+// that reach it and keeps the digest that each is marked with. It fails the
+// test on a request that still carries the run token or the digest header,
+// or that is not marked with the run's account.
+type recordingProxy struct {
+	t       *testing.T
+	account string
+	reached int
+	digests []string
+}
+
+func (p *recordingProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p.reached++
+	d, _ := egress.DigestOf(r.Context())
+	p.digests = append(p.digests, d.String())
+	if r.Header.Get("Proxy-Authorization") != "" {
+		p.t.Error("the run token reached the proxy")
+	}
+	if r.Header.Get(runspec.DigestHeader) != "" {
+		p.t.Error("the digest header reached the proxy")
+	}
+	if got := egress.AccountOf(r.Context()); got != p.account {
+		p.t.Errorf("the proxy got the request for account %q, want the run's %q", got, p.account)
+	}
+	http.Error(w, "reached", http.StatusTeapot)
+}
+
 // TestProxyAdmitsRunTokens sends requests through the gateway the way a
 // runner's tools do, with the run token as the proxy URL's password: the
 // proxy serves a live token alone, and a token without a budget admits
@@ -67,20 +94,7 @@ apps:
 		t.Fatalf("reserved a step on a token without a budget: %v, %v", ok, err)
 	}
 
-	reached := 0
-	var digests []string
-	proxy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached++
-		d, _ := egress.DigestOf(r.Context())
-		digests = append(digests, d.String())
-		if r.Header.Get("Proxy-Authorization") != "" {
-			t.Error("the run token reached the proxy")
-		}
-		if r.Header.Get(runspec.DigestHeader) != "" {
-			t.Error("the digest header reached the proxy")
-		}
-		http.Error(w, "reached", http.StatusTeapot)
-	})
+	proxy := &recordingProxy{t: t, account: account.ID()}
 	registry := &AquaRegistry{body: []byte(aquaFixture)}
 	srv := httptest.NewServer(&Server{
 		Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Proxy: proxy, AquaRegistry: registry,
@@ -147,8 +161,8 @@ apps:
 			if code, _, err := get(via("", token), "http://example.com/", runspec.DigestHeader, tt.header); err != nil || code != http.StatusTeapot {
 				t.Fatalf("status = %d, %v; want %d", code, err, http.StatusTeapot)
 			}
-			if !slices.Equal(digests, tt.digests) {
-				t.Fatalf("digests = %v; want %v", digests, tt.digests)
+			if !slices.Equal(proxy.digests, tt.digests) {
+				t.Fatalf("digests = %v; want %v", proxy.digests, tt.digests)
 			}
 		})
 	}
@@ -175,8 +189,8 @@ apps:
 			t.Fatalf("status = %d, %v; want %d", code, err, http.StatusProxyAuthRequired)
 		}
 	})
-	if reached != 4 {
-		t.Fatalf("the proxy served %d requests, want the four with the run token", reached)
+	if proxy.reached != 4 {
+		t.Fatalf("the proxy served %d requests, want the four with the run token", proxy.reached)
 	}
 }
 

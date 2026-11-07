@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/egresspolicy"
 )
 
 // minimalEnv sets what the minimal fixture's secret references resolve.
@@ -38,7 +40,7 @@ func TestEgressRules(t *testing.T) {
 	}
 
 	raw := "egress:\n  allow: [ghcr.io, \"*.githubusercontent.com\", api.github.com]\n" +
-		"  credentials:\n    api.github.com: { env: TEST_GH_TOKEN }\n"
+		"  credentials:\n    api.github.com: { token: { env: TEST_GH_TOKEN }, accounts: [\"*\"] }\n"
 	g, err := loadBytes(t, []byte(raw+minimal))
 	if err != nil {
 		t.Fatal(err)
@@ -49,17 +51,19 @@ func TestEgressRules(t *testing.T) {
 			t.Errorf("Allows(%s) = %v, want %v", host, !want, want)
 		}
 	}
-	if rules.Credentials["api.github.com"] != "Bearer ghp_x" {
+	if cred := rules.Credentials["api.github.com"]; cred.Header() != "Bearer ghp_x" || !slices.Equal(cred.Accounts, []string{"*"}) {
 		t.Fatalf("credentials = %v", rules.Credentials)
 	}
 	// "*" allows every host but the denied ones, and a credential can name
 	// any host under it. Addresses and CIDRs are prefixes, not hosts.
-	any, err := loadBytes(t, []byte("egress:\n  allow: [\"*\", 10.0.0.0/8, \"2001:db8::1\", \"::ffff:198.51.100.0/120\"]\n  deny: [\"*.pastebin.com\", 10.0.5.0/24, 10.0.0.9, \"::ffff:203.0.113.7\"]\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n"+minimal))
+	any, err := loadBytes(t, []byte("egress:\n  allow: [\"*\", 10.0.0.0/8, \"2001:db8::1\", \"::ffff:198.51.100.0/120\"]\n  deny: [\"*.pastebin.com\", 10.0.5.0/24, 10.0.0.9, \"::ffff:203.0.113.7\"]\n  credentials:\n    registry.example.com: { scheme: oci, username: bot, token: { env: TEST_GH_TOKEN }, accounts: [ACME] }\n"+minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
 	rules = any.EgressRules()
-	if !rules.Allows("evil.example") || rules.Allows("paste.pastebin.com") || rules.Credentials["registry.example.com"] != "Bearer ghp_x" {
+	want := egresspolicy.Credential{Scheme: egresspolicy.SchemeOCI, Username: "bot", Secret: "ghp_x", Accounts: []string{AccountID(ForgeGitHub, "acme")}}
+	if cred := rules.Credentials["registry.example.com"]; !rules.Allows("evil.example") || rules.Allows("paste.pastebin.com") ||
+		cred.Scheme != want.Scheme || cred.Username != want.Username || cred.Secret != want.Secret || !slices.Equal(cred.Accounts, want.Accounts) {
 		t.Fatalf("any host: allow = %v, deny = %v, credentials = %v", rules.Allow, rules.Deny, rules.Credentials)
 	}
 	if got := fmt.Sprint(rules.Allow.Prefixes, rules.Deny.Prefixes, rules.Deny.Hosts); got != "[10.0.0.0/8 2001:db8::1/128 198.51.100.0/24] [10.0.5.0/24 10.0.0.9/32 203.0.113.7/32] [*.pastebin.com]" {
@@ -106,6 +110,7 @@ func TestEgressRejects(t *testing.T) {
 	minimalEnv(t)
 	t.Setenv("TEST_GH_TOKEN", "ghp_x")
 	t.Setenv("TEST_EMPTY", "")
+	const every = `{ token: { env: TEST_GH_TOKEN }, accounts: ["*"] }`
 	for name, tt := range map[string]struct{ yaml, want string }{
 		"scheme in host":         {"egress:\n  allow: [\"https://ghcr.io\"]\n", "egress.allow[0]"},
 		"port in host":           {"egress:\n  allow: [\"ghcr.io:443\"]\n", "lowercase hostname"},
@@ -116,11 +121,20 @@ func TestEgressRejects(t *testing.T) {
 		"bad prefix":             {"egress:\n  allow: [10.0.0.0/33]\n", "egress.allow[0]"},
 		"dot after wildcard":     {"egress:\n  allow: [\"*..example.com\"]\n", "egress.allow[0]"},
 		"forge denied":           {"egress:\n  deny: [\"*.github.com\"]\n", "api.github.com is denied"},
-		"credential not allowed": {"egress:\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not allowed by egress.allow and egress.deny"},
-		"credential denied":      {"egress:\n  allow: [\"*\"]\n  deny: [registry.example.com]\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not allowed by egress.allow and egress.deny"},
-		"credential pattern":     {"egress:\n  allow: [\"*\"]\n  credentials:\n    \"*\": { env: TEST_GH_TOKEN }\n", "one host, not a pattern"},
-		"credential suffix":      {"egress:\n  allow: [\"*.example.com\"]\n  credentials:\n    \"*.example.com\": { env: TEST_GH_TOKEN }\n", "one host, not a pattern"},
-		"empty credential":       {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { env: TEST_EMPTY }\n", "empty value"},
+		"credential not allowed": {"egress:\n  credentials:\n    registry.example.com: " + every + "\n", "not allowed by egress.allow and egress.deny"},
+		"credential denied":      {"egress:\n  allow: [\"*\"]\n  deny: [registry.example.com]\n  credentials:\n    registry.example.com: " + every + "\n", "not allowed by egress.allow and egress.deny"},
+		"credential pattern":     {"egress:\n  allow: [\"*\"]\n  credentials:\n    \"*\": " + every + "\n", "one host, not a pattern"},
+		"credential suffix":      {"egress:\n  allow: [\"*.example.com\"]\n  credentials:\n    \"*.example.com\": " + every + "\n", "one host, not a pattern"},
+		"uppercase credential":   {"egress:\n  allow: [\"*\"]\n  credentials:\n    Registry.example.com: " + every + "\n", "lowercase hostname"},
+		"empty credential":       {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { token: { env: TEST_EMPTY }, accounts: [acme] }\n", "token resolved to an empty value"},
+		"a bare reference":       {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { env: TEST_GH_TOKEN }\n", "field env not found"},
+		"unknown scheme":         {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { scheme: token, token: { env: TEST_GH_TOKEN }, accounts: [acme] }\n", `scheme "token" must be bearer, basic or oci`},
+		"bearer username":        {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { username: bot, token: { env: TEST_GH_TOKEN }, accounts: [acme] }\n", "a bearer credential has no username"},
+		"oci without username":   {"egress:\n  allow: [ghcr.io]\n  credentials:\n    ghcr.io: { scheme: oci, token: { env: TEST_GH_TOKEN }, accounts: [acme] }\n", "the oci scheme needs one"},
+		"no accounts":            {"egress:\n  allow: [ghcr.io]\n  credentials:\n    ghcr.io: { token: { env: TEST_GH_TOKEN } }\n", "accounts must list at least one account"},
+		"every account and one":  {"egress:\n  allow: [ghcr.io]\n  credentials:\n    ghcr.io: { token: { env: TEST_GH_TOKEN }, accounts: [\"*\", acme] }\n", "stands alone"},
+		"an unserved account":    {"egress:\n  allow: [ghcr.io]\n  credentials:\n    ghcr.io: { token: { env: TEST_GH_TOKEN }, accounts: [acme, other] }\n", "accounts[1]: no connection serves other"},
+		"an account twice":       {"egress:\n  allow: [ghcr.io]\n  credentials:\n    ghcr.io: { token: { env: TEST_GH_TOKEN }, accounts: [acme, ACME] }\n", "listed twice"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadBytes(t, []byte(tt.yaml+minimal))
@@ -128,6 +142,38 @@ func TestEgressRejects(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestRegistries: a run gets the registries of the oci credentials given to
+// its account and to every account, and neither another account's nor a
+// host with another scheme.
+func TestRegistries(t *testing.T) {
+	minimalEnv(t)
+	t.Setenv("TEST_GH_TOKEN", "ghp_x")
+	raw := `apps:
+  acme-bot: { accounts: [acme], clientId: Iv1.acme, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+  other-bot: { accounts: [other], clientId: Iv1.other, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+egress:
+  allow: ["*"]
+  credentials:
+    api.github.com: { token: { env: TEST_GH_TOKEN }, accounts: ["*"] }
+    ghcr.io: { scheme: oci, username: bot, token: { env: TEST_GH_TOKEN }, accounts: ["*"] }
+    git.example.com: { scheme: oci, username: bot, token: { env: TEST_GH_TOKEN }, accounts: [other] }
+    registry.example.com: { scheme: basic, username: bot, token: { env: TEST_GH_TOKEN }, accounts: [acme] }
+`
+	f, err := loadBytes(t, []byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string][]string{
+		"acme":  {"ghcr.io"},
+		"other": {"ghcr.io", "git.example.com"},
+	} {
+		account := &Account{Forge: ForgeGitHub, Name: name}
+		if got := f.Registries(account); !slices.Equal(got, want) {
+			t.Errorf("Registries(%s) = %v, want %v", name, got, want)
+		}
 	}
 }
 

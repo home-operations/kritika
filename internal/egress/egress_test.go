@@ -44,6 +44,13 @@ func TestRulesAllows(t *testing.T) {
 
 func hosts(h ...string) egresspolicy.List { return egresspolicy.List{Hosts: h} }
 
+// bearer is host's bearer credential secret, for every account's runs.
+func bearer(host, secret string) map[string]egresspolicy.Credential {
+	return map[string]egresspolicy.Credential{
+		host: {Scheme: egresspolicy.SchemeBearer, Secret: secret, Accounts: []string{egresspolicy.AllAccounts}},
+	}
+}
+
 func prefixes(ps ...string) []netip.Prefix {
 	out := make([]netip.Prefix, 0, len(ps))
 	for _, p := range ps {
@@ -128,7 +135,7 @@ func viaProxy(proxy *httptest.Server) *http.Client {
 
 func TestUpgradeAddsCredentialAndStripsProxyHeaders(t *testing.T) {
 	proxy, outcomes, _ := newProxy(t, egresspolicy.Rules{
-		Allow: hosts("api.github.com"), Credentials: map[string]string{"api.github.com": "Bearer secret"},
+		Allow: hosts("api.github.com"), Credentials: bearer("api.github.com", "secret"),
 	})
 	req, _ := http.NewRequest(http.MethodPost, "http://api.github.com/repos/x/y", strings.NewReader("body"))
 	req.Header.Set("Authorization", "Bearer from-the-pod")
@@ -197,7 +204,7 @@ func TestRefusals(t *testing.T) {
 }
 
 func TestConnectTunnelsAllowedHosts(t *testing.T) {
-	proxy, outcomes, dialed := newProxy(t, egresspolicy.Rules{Allow: hosts("*.github.com"), Credentials: map[string]string{"api.github.com": "Bearer x"}})
+	proxy, outcomes, dialed := newProxy(t, egresspolicy.Rules{Allow: hosts("*.github.com"), Credentials: bearer("api.github.com", "x")})
 	resp, err := viaProxy(proxy).Get("https://api.github.com/tunnelled")
 	if err != nil {
 		t.Fatal(err)
