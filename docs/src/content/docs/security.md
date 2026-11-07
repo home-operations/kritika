@@ -161,12 +161,40 @@ env:
       secretKeyRef: { name: kritika-gitea-packages, key: token }
 ```
 
-| Key        | What                                                                                                                                                                                                                    |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheme`   | how the gateway applies the token. `bearer`, the default, sends it as `Authorization: Bearer`. `basic` sends the username and token as Basic credentials. `oci` answers an OCI registry's challenge, as described below |
-| `username` | the user for `basic` and `oci`. A `bearer` credential has none                                                                                                                                                          |
-| `token`    | the secret reference of the token                                                                                                                                                                                       |
-| `accounts` | the names of the accounts whose runs get the credential, or `["*"]` for every account. kritika refuses a name that no connection serves                                                                                 |
+| Key                | What                                                                                                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheme`           | how the gateway applies the token. `bearer`, the default, sends it as `Authorization: Bearer`. `basic` sends the username and token as Basic credentials. `oci` answers an OCI registry's challenge, as described below |
+| `username`         | the user for `basic` and `oci`. A `bearer` credential has none                                                                                                                                                          |
+| `token`            | the secret reference of the token                                                                                                                                                                                       |
+| `dockerConfigJson` | instead of `username` and `token`: the path of a Docker config file to read them from, for `basic` and `oci`. The gateway reads the host's entry under `auths`                                                          |
+| `accounts`         | the names of the accounts whose runs get the credential, or `["*"]` for every account. kritika refuses a name that no connection serves                                                                                 |
+
+`dockerConfigJson` reads the same Secret that a cluster uses for
+`imagePullSecrets`, a Secret of type `kubernetes.io/dockerconfigjson`.
+Mount it on the serve pods with the chart's `volumes` and `volumeMounts`:
+
+```yaml
+volumes:
+  - name: registry-auth
+    secret: { secretName: gitea-packages }
+volumeMounts:
+  - { name: registry-auth, mountPath: /etc/kritika/registry, readOnly: true }
+config:
+  egress:
+    credentials:
+      git.example.com:
+        scheme: oci
+        dockerConfigJson: /etc/kritika/registry/.dockerconfigjson
+        accounts: [org-1]
+```
+
+The gateway reads the file again when it changes. So when the Secret
+rotates, the gateway uses the new credential without a restart. The
+kubelet does not update a volume mounted with `subPath`, so mount the
+whole Secret. If a changed file does not read, the gateway keeps the
+credential that it read last and logs a warning. kritika reads a username
+and password alone: it refuses an entry with an `identitytoken` or a
+`registrytoken`.
 
 A review can publish what it reads with a credential, because kritika
 posts the review on the pull request. On a public repository, the author
