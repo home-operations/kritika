@@ -6,8 +6,10 @@ import "strings"
 // which a re-review is shown with the finding. kritika sets answers on the
 // findings that it sends a re-review, and stores none.
 type Answer struct {
-	// ID is the reply's comment, which the prompt does not show.
+	// ID is the reply's comment, and Digest a digest of its whole body, so
+	// that an edit past the cut that Text is shows. The prompt shows neither.
 	ID     int64  `json:"id,omitempty"`
+	Digest string `json:"digest,omitempty"`
 	Author string `json:"author"`
 	Text   string `json:"text"`
 }

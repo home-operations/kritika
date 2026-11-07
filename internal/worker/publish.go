@@ -490,7 +490,7 @@ func (p *publishPhase) writeBack(
 	if p.prior.id != "" {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
 		data.Prior = p.priorFindings()
-		p.resolveThreads(ctx, resolvedThreads(p.resolved))
+		p.resolveThreads(ctx, resolvedThreads(p.resolved), true)
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -633,17 +633,19 @@ func reportedSet(findings []review.Finding) map[string]bool {
 }
 
 // resolveThreads resolves the threads of the findings this review found
-// gone, so the forge agrees with the summary that lists them resolved. The
-// forge client leaves a thread someone else wrote in open. Best effort,
-// like the inline review: the summary is the record either way.
-func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
+// gone or settled as answered, so the forge agrees with the summary that
+// lists them. With onlyOwn, the forge client leaves a thread someone else
+// wrote in open: an answered one has their reply, and resolves as the
+// dismiss command resolves it. Best effort, like the inline review: the
+// summary is the record either way.
+func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64, onlyOwn bool) {
 	if len(ids) == 0 {
 		return
 	}
 	defer p.timeStage("forge_resolve_threads")()
 	owner, repo := p.pr.ownerRepo()
 	for _, id := range ids {
-		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, true)
+		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, onlyOwn)
 		switch {
 		case errors.Is(err, forge.ErrUnsupported):
 			return

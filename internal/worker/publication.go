@@ -334,6 +334,7 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 	if err != nil || !completed {
 		return "", err
 	}
+	p.resolveThreads(lockCtx, answeredThreads(p.prior.findings, p.answered), false)
 	p.agentElapsed("agent_to_published")
 	p.countFindings(answer.Result)
 	if c := p.confidence; c != nil {

@@ -3,6 +3,8 @@ package worker
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
 
@@ -68,9 +70,7 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 			writes[c.Author] = can
 		}
 		if can {
-			replies[c.InReplyTo] = append(replies[c.InReplyTo], review.Answer{
-				ID: c.ID, Author: c.Author, Text: textcut.Truncate(c.Body, answerBytes),
-			})
+			replies[c.InReplyTo] = append(replies[c.InReplyTo], answerOf(c))
 		}
 	}
 	out := map[int64][]review.Answer{}
@@ -80,6 +80,26 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 		}
 	}
 	return out, nil
+}
+
+// answerOf is a reply as a review is shown it and publication compares it.
+func answerOf(c forge.Comment) review.Answer {
+	sum := sha256.Sum256([]byte(c.Body))
+	return review.Answer{ID: c.ID, Digest: hex.EncodeToString(sum[:16]), Author: c.Author, Text: textcut.Truncate(c.Body, answerBytes)}
+}
+
+// answeredThreads are the threads that the findings of the answered
+// dismissals opened, which a published review resolves as the dismiss
+// command does. A dismissal's comment is the reply, not the thread.
+func answeredThreads(prior []priorFinding, answered []store.Dismissal) []int64 {
+	var ids []int64
+	for _, d := range answered {
+		if i := slices.IndexFunc(prior, func(pf priorFinding) bool { return review.Fingerprint(pf.Finding) == d.Fingerprint }); i >= 0 &&
+			prior[i].commentID != 0 {
+			ids = append(ids, prior[i].commentID)
+		}
+	}
+	return ids
 }
 
 // answerRoots are the inline comments that the findings of prior opened.

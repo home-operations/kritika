@@ -121,8 +121,10 @@ counts as a fix. If you want a lasting dismissal, use the dismiss command.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
 
-On Forgejo, kritika neither reads nor resolves threads, so the dismiss
-command is the way, as [Git forges](/forges/#what-works-where) lists. On GitLab
+On Forgejo, kritika does not resolve threads, and resolving one dismisses
+nothing, as [Git forges](/forges/#what-works-where) lists. So the dismiss
+command is the sure way. A re-review still reads the replies in a finding's
+conversation, where kritika can tell which conversation a reply is in. On GitLab
 and Gitea, kritika resolves a fixed finding's thread. Resolving one yourself
 sends no event, so it does not dismiss the finding.
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/forge"
@@ -60,9 +61,9 @@ func TestThreadAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[int64][]review.Answer{
-		1:  {{ID: 5, Author: "maint", Text: "second"}, {ID: 6, Author: "owner", Text: "third"}, {ID: 7, Author: "maint", Text: "fourth"}},
-		11: {{ID: 12, Author: "maint", Text: "both are fine"}},
+	want := map[int64][]review.Answer{1: {answerOf(f.comments[4]), answerOf(f.comments[5]), answerOf(f.comments[6])}, 11: {answerOf(f.comments[10])}}
+	if want[1][0].Text != "second" || want[1][0].ID != 5 || want[1][0].Digest == "" {
+		t.Fatalf("answerOf = %+v", want[1][0])
 	}
 	if len(got) != len(want) || !slices.Equal(got[1], want[1]) || !slices.Equal(got[11], want[11]) {
 		t.Fatalf("answers = %v, want %v", got, want)
@@ -116,6 +117,29 @@ func TestHeldOf(t *testing.T) {
 	got := heldOf(prior, []string{id(0), id(1), id(2), id(3), id(5)}, shown, now)
 	if len(got) != 1 || got[id(0)] != shownA[1] {
 		t.Fatalf("held = %v, want the last shown answer of a alone", got)
+	}
+	// An edit past the cut that the review was shown changes the digest
+	// alone, and holds no answer either.
+	long := strings.Repeat("x", answerBytes+20)
+	was, edited := answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " keep it"}), answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " drop it"})
+	if was.Text != edited.Text || was.Digest == edited.Digest {
+		t.Fatalf("answerOf: %+v against %+v", was, edited)
+	}
+	if got := heldOf(prior[:1], []string{id(0)}, map[string][]review.Answer{id(0): {was}}, map[int64][]review.Answer{1: {edited}}); len(got) != 0 {
+		t.Fatalf("held = %v after an edit past the cut", got)
+	}
+}
+
+// TestAnsweredThreads: an answered dismissal resolves the thread that its
+// finding opened, not its reply, and a finding with no thread resolves none.
+func TestAnsweredThreads(t *testing.T) {
+	prior := []priorFinding{{Title: "a", commentID: 1}, {Title: "b"}, {Title: "c", commentID: 3}}
+	answered := []store.Dismissal{
+		{Fingerprint: review.Fingerprint(prior[2].Finding), CommentID: 30},
+		{Fingerprint: review.Fingerprint(prior[1].Finding), CommentID: 20},
+	}
+	if got := answeredThreads(prior, answered); !slices.Equal(got, []int64{3}) {
+		t.Fatalf("answeredThreads = %v, want the finding's own thread", got)
 	}
 }
 
