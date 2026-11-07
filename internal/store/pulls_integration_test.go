@@ -649,3 +649,61 @@ func TestOverlappingPullRequests(t *testing.T) {
 		}
 	})
 }
+
+// TestBaseBranch: a pull request reads its repository's default branch, and
+// the open pull request whose head its base branch is. A closed pull request
+// or a fork's head is no such base.
+func TestBaseBranch(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	// An account of its own: a repository added under a shared one changes
+	// what other tests count.
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("stacked"))); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "stacked")
+	ids := map[int]string{}
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		repo, _, err := EnsureRepository(ctx, tx, account, ReachedRepository{FullName: "stacked/repo", DefaultBranch: "main"})
+		if err != nil {
+			return err
+		}
+		for _, p := range []struct {
+			number            int
+			head, base, state string
+			fork              bool
+		}{
+			{1, "feat/a", "main", "open", false},
+			{2, "feat/b", "feat/a", "open", false},
+			{3, "feat/c", "feat/closed", "open", false},
+			{4, "feat/closed", "main", "closed", false},
+			{5, "feat/d", "feat/forked", "open", false},
+			{6, "feat/forked", "main", "open", true},
+		} {
+			var id string
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha, head_ref, base_ref, state,
+				fork, url) VALUES ($1, $2, $3, 'head', $4, $5, $6, $7, $8) RETURNING id`,
+				account, repo, p.number, p.head, p.base, p.state, p.fork, fmt.Sprintf("https://forge.example/pull/%d", p.number)).Scan(&id); err != nil {
+				return err
+			}
+			ids[p.number] = id
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for number, want := range map[int]int{1: 0, 2: 1, 3: 0, 5: 0} {
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			def, of, err := BaseBranch(ctx, tx, ids[number])
+			if err != nil {
+				return err
+			}
+			if def != "main" || of != want {
+				t.Errorf("pull %d: BaseBranch = %q, %d; want main, %d", number, def, of, want)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

@@ -264,6 +264,9 @@ func (w *Review) agentPrompt(
 			p.Skills = &runspec.Skills{Paths: sk.Paths, Scope: sk.Scope, Off: repoconfig.SkillsOff(sk.Scope, vars)}
 		}
 		p.RuleFiles = ruleFiles(eff.Review.Rules)
+		if p.DefaultBranch, p.BaseOf, err = store.BaseBranch(ctx, tx, pr.id); err != nil {
+			return err
+		}
 		// The runner owns the conditions that only the diff can judge. It
 		// judges them with the review's trigger as the event. A review that
 		// someone asked for passes the admin's lists, whatever they say.

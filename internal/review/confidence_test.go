@@ -449,3 +449,13 @@ func TestBumpVerdicts(t *testing.T) {
 		t.Fatalf("BumpVerdicts of none = %+v", got)
 	}
 }
+
+// TestBuildConfidenceBaseOf: the scorer is told of a base that is another
+// open pull request's head, as the review is.
+func TestBuildConfidenceBaseOf(t *testing.T) {
+	in := Input{Repository: "a/b", Number: 2, Title: "t", BaseRef: "feat/a", DefaultBranch: "main", BaseOf: 1}
+	if msg := BuildConfidence(in, Result{}, Record{}, nil, nil, ConfidenceSystem, 0); !strings.Contains(msg,
+		"Base branch: feat/a (not the default branch, main, but the head of pull request #1, which is open).") {
+		t.Fatalf("scorer prompt lacks the base:\n%s", msg[:min(len(msg), 400)])
+	}
+}

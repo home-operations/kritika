@@ -99,6 +99,26 @@ func OpenPullRequests(ctx context.Context, tx pgx.Tx, repositoryID string) ([]in
 	return out, nil
 }
 
+// BaseBranch is the default branch of the pull request's repository, and
+// the open pull request whose head its base branch is, 0 for none. A base is
+// always a branch of the repository, so only a head that is not a fork's
+// names one.
+func BaseBranch(ctx context.Context, tx pgx.Tx, pullRequestID string) (defaultBranch string, baseOf int, err error) {
+	err = tx.QueryRow(ctx, `
+		SELECT r.default_branch, coalesce((
+			SELECT o.number FROM pull_requests o
+			WHERE o.repository_id = p.repository_id AND o.id <> p.id AND o.state = 'open' AND NOT o.fork
+				AND o.head_ref <> '' AND o.head_ref = p.base_ref
+			ORDER BY o.number DESC LIMIT 1), 0)
+		FROM pull_requests p
+		JOIN repositories r ON r.id = p.repository_id
+		WHERE p.id = $1`, pullRequestID).Scan(&defaultBranch, &baseOf)
+	if err != nil {
+		return "", 0, fmt.Errorf("store: read base branch: %w", err)
+	}
+	return defaultBranch, baseOf, nil
+}
+
 // PullRequestPaused reports whether the pull request's automatic reviews
 // are paused.
 func PullRequestPaused(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (bool, error) {

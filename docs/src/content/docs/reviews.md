@@ -77,11 +77,22 @@ Reactions and automatic thread resolution need the relevant
 
 ### Findings
 
-| Severity | Meaning                       |
-| -------- | ----------------------------- |
-| `p0`     | Must be fixed before merging. |
-| `p1`     | We recommend that you fix it. |
-| `p2`     | Optional polish.              |
+| Severity | Meaning                                                                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `p0`     | Must be fixed before merging: users, production or stored data are hurt, or someone gains access they should not have.                     |
+| `p1`     | We recommend that you fix it: a defect whose harm reaches users, production, stored data or real credentials, however it is triggered.     |
+| `p2`     | Optional: a defect whose harm stays inside development mode, tests, a documentation example or a value only the operator sets, and polish. |
+
+The severity follows where the defect's harm lands, not how bad it would
+be somewhere it cannot happen.
+
+When the base branch is the head of another open pull request, the review
+is told so. What that pull request changes has not merged into the default
+branch, so the review does not take it as deployed unless something shows
+that it shipped. When the description says that the change
+is one part of a series or a split, the review judges it against that plan.
+Work that the description leaves to another part is no finding, unless this
+part breaks something on its own.
 
 Findings also have a category: correctness, security, performance, reliability,
 compatibility, accessibility, maintainability or tests. With [agents](/repository-config/#agents) beside

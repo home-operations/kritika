@@ -81,7 +81,8 @@ func runFollowUp(ctx context.Context, report *reporter, p runspec.Spec, secrets 
 	system := review.WithReviewer(systemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil), followUpRole(p, files))
 	pr := p.Prompt.PullRequest
 	user := build(review.Input{
-		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body, BaseRef: pr.BaseRef,
+		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
+		BaseRef: pr.BaseRef, DefaultBranch: p.Prompt.DefaultBranch, BaseOf: p.Prompt.BaseOf,
 		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	}, p.Prompt.Prior, p.Thread)

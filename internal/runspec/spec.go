@@ -134,6 +134,10 @@ const CommandEnvPrefix = "KRITIKA_COMMAND_ENV_"
 type Prompt struct {
 	Repository  string                 `json:"repository"`
 	PullRequest repoconfig.PullRequest `json:"pullRequest"`
+	// DefaultBranch is the repository's default branch, and BaseOf the open
+	// pull request whose head the pull request's base branch is, 0 for none.
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+	BaseOf        int    `json:"baseOf,omitempty"`
 	// Issues are the issues the pull request's description says it
 	// closes, as the worker read them from the forge.
 	Issues []review.Issue `json:"issues,omitempty"`
