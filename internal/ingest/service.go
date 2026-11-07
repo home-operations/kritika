@@ -307,11 +307,11 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	}
 	// The cheap gate: a bot never triggers a follow-up. A comment with no
 	// mention at all is not a follow-up. The exception is a comment that
-	// replies in an inline thread of a repository whose finding threads
-	// kritika answers replies in. The worker compares the mention with the
-	// connection's resolved bot identity and the thread with the bot's
-	// findings. It also makes sure that the author has access.
-	reply := c.Inline && c.InReplyTo != 0 && req.File.Settings(req.Account).Review.Replies
+	// replies in an inline thread, which can be in one of kritika's finding
+	// threads. The worker compares the mention with the connection's
+	// resolved bot identity and the thread with the bot's findings. It also
+	// makes sure that the author has access.
+	reply := c.Inline && c.InReplyTo != 0
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") && !reply {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}

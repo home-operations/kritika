@@ -153,13 +153,13 @@ func TestDisqualified(t *testing.T) {
 		comment    forge.Comment
 		permission forge.Permission
 		permErr    error
-		// asReply says the job allows a reply, replies that the repository
-		// does, and resolved the thread's state, nil for one not found.
-		asReply, replies bool
-		resolved         *bool
-		stateErr         error
-		want             string
-		wantFingerprint  string
+		// asReply says the job allows a reply, and resolved the thread's
+		// state, nil for one not found.
+		asReply         bool
+		resolved        *bool
+		stateErr        error
+		want            string
+		wantFingerprint string
 	}{
 		{name: "a bot author", comment: forge.Comment{Author: "renovate[bot]", AuthorIsBot: true, Body: "@kritika explain"}, want: "author is a bot"},
 		{name: "the bot's own login, whatever its case", comment: forge.Comment{Author: "Kritika[Bot]", Body: "@kritika explain"}, want: "author is a bot"},
@@ -169,26 +169,24 @@ func TestDisqualified(t *testing.T) {
 		{name: "read access", comment: forge.Comment{Author: "alice", Body: "@kritika explain"},
 			permission: forge.PermissionRead, want: "author has read access, write is required"},
 		{name: "write access", comment: forge.Comment{Author: "alice", Body: "@kritika explain"}, permission: forge.PermissionWrite},
-		{name: "a reply where replies are off", comment: inReply(root, "the caller holds it"), asReply: true, resolved: new(false),
-			permission: forge.PermissionWrite, want: "replies in finding threads are off for this repository"},
-		{name: "a reply in someone else's thread", comment: inReply(other, "agreed"), asReply: true, replies: true, resolved: new(false),
+		{name: "a reply in someone else's thread", comment: inReply(other, "agreed"), asReply: true, resolved: new(false),
 			permission: forge.PermissionWrite, want: "not a reply in one of kritika's finding threads"},
-		{name: "a reply in a resolved thread", comment: inReply(root, "the caller holds it"), asReply: true, replies: true, resolved: new(true),
+		{name: "a reply in a resolved thread", comment: inReply(root, "the caller holds it"), asReply: true, resolved: new(true),
 			permission: forge.PermissionWrite, want: "thread is resolved"},
-		{name: "a reply in a thread not found", comment: inReply(root, "the caller holds it"), asReply: true, replies: true,
+		{name: "a reply in a thread not found", comment: inReply(root, "the caller holds it"), asReply: true,
 			permission: forge.PermissionWrite, want: "thread not found"},
-		{name: "a reply whose thread state is unknown", comment: inReply(root, "the caller holds it"), asReply: true, replies: true,
+		{name: "a reply whose thread state is unknown", comment: inReply(root, "the caller holds it"), asReply: true,
 			stateErr: errors.New("boom"), permission: forge.PermissionWrite, want: "thread state unknown"},
-		{name: "a reply to a comment that is gone", comment: inReply(72, "the caller holds it"), asReply: true, replies: true,
+		{name: "a reply to a comment that is gone", comment: inReply(72, "the caller holds it"), asReply: true,
 			permission: forge.PermissionWrite, want: "thread unknown"},
-		{name: "a reply with read access", comment: inReply(root, "the caller holds it"), asReply: true, replies: true, resolved: new(false),
+		{name: "a reply with read access", comment: inReply(root, "the caller holds it"), asReply: true, resolved: new(false),
 			permission: forge.PermissionRead, want: "author has read access, write is required"},
-		{name: "a reply the job did not allow", comment: inReply(root, "the caller holds it"), replies: true, resolved: new(false),
+		{name: "a reply the job did not allow", comment: inReply(root, "the caller holds it"), resolved: new(false),
 			permission: forge.PermissionWrite, want: "does not mention @kritika"},
-		{name: "a reply in the bot's finding thread", comment: inReply(root, "the caller holds it"), asReply: true, replies: true,
+		{name: "a reply in the bot's finding thread", comment: inReply(root, "the caller holds it"), asReply: true,
 			resolved: new(false), permission: forge.PermissionWrite, wantFingerprint: "fp1"},
 		{name: "a mention in the bot's finding thread is a mention", comment: inReply(root, "@kritika dismiss, the caller holds it"),
-			asReply: true, replies: true, resolved: new(true), permission: forge.PermissionWrite},
+			asReply: true, resolved: new(true), permission: forge.PermissionWrite},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -199,7 +197,6 @@ func TestDisqualified(t *testing.T) {
 			}
 			f := &followUp{client: client, owner: "o", repo: "r", pr: &pullRequest{number: 1}, comment: tt.comment, botLogin: "kritika[bot]",
 				asReply: tt.asReply, logger: slog.New(slog.DiscardHandler)}
-			f.settings.Review.Replies = tt.replies
 			if got := f.disqualified(t.Context()); got != tt.want {
 				t.Errorf("disqualified = %q, want %q", got, tt.want)
 			}

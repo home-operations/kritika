@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -19,7 +20,7 @@ import (
 // What a re-review is shown of a finding's thread: its latest replies, each
 // cut.
 const (
-	maxAnswers  = 3
+	maxAnswers  = 4
 	answerBytes = 600
 )
 
@@ -27,11 +28,12 @@ const (
 // comments roots holds, by that comment's id, oldest first and the latest
 // maxAnswers of each. Only the replies of people with write access count:
 // on a public repository anyone can reply, and an answer can end a finding.
-// A bot's reply, the bot's own among them, is none. A finding's comment can
+// The bot's own replies, login's, are kept as its own, so that a review does
+// not contradict them unknowing. Another bot's reply is none. A finding's comment can
 // itself sit in a conversation that an older one opened, as Forgejo and
 // Gitea group the comments on one line of a review, and then the replies to
 // that conversation are its.
-func threadAnswers(ctx context.Context, client forge.Client, owner, repo string, number int, roots map[int64]bool) (
+func threadAnswers(ctx context.Context, client forge.Client, owner, repo string, number int, login string, roots map[int64]bool) (
 	map[int64][]review.Answer, error,
 ) {
 	if len(roots) == 0 {
@@ -57,7 +59,21 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 	writes := map[string]bool{}
 	replies := map[int64][]review.Answer{}
 	for _, c := range comments {
-		if !wanted[c.InReplyTo] || c.AuthorIsBot {
+		own := strings.EqualFold(c.Author, login)
+		switch {
+		case !wanted[c.InReplyTo]:
+			continue
+		case own:
+			// A finding of its own in the conversation, as Forgejo groups
+			// them, is no reply.
+			if _, finding := review.MarkedFinding(c.Body); finding {
+				continue
+			}
+			a := answerOf(c)
+			a.Own = true
+			replies[c.InReplyTo] = append(replies[c.InReplyTo], a)
+			continue
+		case c.AuthorIsBot:
 			continue
 		}
 		can, known := writes[c.Author]
@@ -166,7 +182,12 @@ func (p *publishPhase) heldAnswers(ctx context.Context, ids []string) map[string
 		}
 	}
 	owner, repo := p.pr.ownerRepo()
-	now, err := threadAnswers(ctx, p.client, owner, repo, p.pr.number, roots)
+	login, err := p.client.BotLogin(ctx)
+	if err != nil {
+		p.logger.Warn("answered findings kept open", "error", err)
+		return nil
+	}
+	now, err := threadAnswers(ctx, p.client, owner, repo, p.pr.number, login, roots)
 	if err != nil {
 		p.logger.Warn("answered findings kept open", "error", err)
 		return nil
@@ -176,13 +197,19 @@ func (p *publishPhase) heldAnswers(ctx context.Context, ids []string) map[string
 
 // heldOf is heldAnswers' answer from what the review was shown, by the
 // finding's id in the prompt, and what the threads hold now, by the id of
-// the comment that opened each.
+// the comment that opened each. The answer held is the last that someone
+// with write access gave: the bot's own reply ends nothing.
 func heldOf(prior []priorFinding, ids []string, shown map[string][]review.Answer, now map[int64][]review.Answer) map[string]review.Answer {
 	held := map[string]review.Answer{}
 	for _, pf := range prior {
 		id := review.PriorID(pf.Finding)
-		if was := shown[id]; pf.commentID != 0 && slices.Contains(ids, id) && len(was) > 0 && slices.Equal(was, now[pf.commentID]) {
-			held[id] = was[len(was)-1]
+		was := shown[id]
+		last := len(was) - 1
+		for last >= 0 && was[last].Own {
+			last--
+		}
+		if pf.commentID != 0 && slices.Contains(ids, id) && last >= 0 && slices.Equal(was, now[pf.commentID]) {
+			held[id] = was[last]
 		}
 	}
 	return held
@@ -217,8 +244,21 @@ func (p *publishPhase) recheckAnswered(ctx context.Context) []review.Finding {
 	for _, d := range p.answered {
 		ids = append(ids, review.PriorID(d.Finding))
 	}
+	// A finding dismissed meanwhile, as the reply in its thread conceded
+	// it, stays out whatever its thread holds now.
+	dismissed := map[string]bool{}
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		ds, err := store.Dismissals(ctx, tx, p.pr.id)
+		for _, d := range ds {
+			dismissed[d.Fingerprint] = true
+		}
+		return err
+	})
+	if err != nil {
+		p.logger.Warn("dismissals not read again", "error", err)
+	}
 	var reopened []review.Finding
-	p.answered, reopened = reopen(p.answered, p.heldAnswers(ctx, ids), p.prior.headSHA)
+	p.answered, reopened = reopen(p.answered, p.heldAnswers(ctx, ids), dismissed, p.prior.headSHA)
 	if len(reopened) > 0 {
 		p.logger.Info("answered findings reopened", "count", len(reopened))
 	}
@@ -226,11 +266,13 @@ func (p *publishPhase) recheckAnswered(ctx context.Context) []review.Finding {
 }
 
 // reopen splits the pending dismissals of answered findings into those whose
-// answer held still holds, the same reply, and the findings of the others,
-// carried on from head.
-func reopen(answered []store.Dismissal, held map[string]review.Answer, head string) (kept []store.Dismissal, reopened []review.Finding) {
+// answer held still holds, the same reply, or that dismissed holds by their
+// fingerprint, and the findings of the others, carried on from head.
+func reopen(answered []store.Dismissal, held map[string]review.Answer, dismissed map[string]bool, head string) (
+	kept []store.Dismissal, reopened []review.Finding,
+) {
 	for _, d := range answered {
-		if a, ok := held[review.PriorID(d.Finding)]; ok && a.ID == d.CommentID {
+		if a, ok := held[review.PriorID(d.Finding)]; ok && a.ID == d.CommentID || dismissed[d.Fingerprint] {
 			kept = append(kept, d)
 			continue
 		}

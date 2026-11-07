@@ -223,7 +223,6 @@ type ReviewSpec struct {
 	Incremental *int          `yaml:"incremental,omitempty"`
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
-	Replies     *bool         `yaml:"replies,omitempty"`
 	// Agents are the agents that a review runs. Those with categories run
 	// beside the default pass. The others replace it when their conditions
 	// hold, and the first that holds does so.
@@ -637,12 +636,7 @@ type Review struct {
 	// Cost is true to have the summary's footer state what the pull
 	// request's reviews have cost together. Off unless set: the comment
 	// is public, and the figure is the instance's spend.
-	Cost bool `json:"cost"`
-	// Replies is true to have kritika answer a reply in one of its own finding
-	// threads. Someone with write access makes the reply without mentioning
-	// kritika, and the reply needs an answer. Off unless set: each answer is a
-	// model call that the repository's reviewers did not ask for.
-	Replies bool          `json:"replies"`
+	Cost    bool          `json:"cost"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes. The API serves them
 	// from the rules routes, with what each enforced, not with the

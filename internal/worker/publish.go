@@ -188,6 +188,17 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	p.unfinished = len(partNotes)
 	notes = append(notes, partNotes...)
 	notes = append(notes, cutShort(run)...)
+	// Dismissals made while the review ran stand, a concession in a
+	// finding's thread among them: the review started on fewer.
+	if err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		now, err := store.Dismissals(ctx, tx, p.pr.id)
+		if err == nil {
+			p.prior.withDismissals(now)
+		}
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("worker: read dismissals: %w", err)
+	}
 	var dismissed, dismissedOff int
 	res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed)
 	unanchored, dismissedOff = dropDismissed(unanchored, p.prior.dismissed)

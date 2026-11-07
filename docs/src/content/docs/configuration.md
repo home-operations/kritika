@@ -396,14 +396,14 @@ to every repository. A repository changes it for itself in its own
 [`.kritika.yaml`](/repository-config/). Its keys come in five groups,
 with a few keys beside them:
 
-| Group        | Keys                                                                                                     | What they set                              |
-| ------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `replies`, `agents` | what a review runs on and what it says     |
-| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when`             | how a review is judged                     |
-| `trigger`    | `include`, `exclude`, `limit`                                                                            | which pull requests are reviewed, and when |
-| `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                              | what is posted                             |
-| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`                   | the bounds of a review's tool loop         |
-| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone                        |                                            |
+| Group        | Keys                                                                                          | What they set                              |
+| ------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `agents` | what a review runs on and what it says     |
+| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when`  | how a review is judged                     |
+| `trigger`    | `include`, `exclude`, `limit`                                                                 | which pull requests are reviewed, and when |
+| `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                   | what is posted                             |
+| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`        | the bounds of a review's tool loop         |
+| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone             |                                            |
 
 `ignore` lists globs of paths left out of a review's initial diff and
 context, the index, and the agent's searches and checkout. These add to
@@ -453,7 +453,6 @@ takes these keys, which are the admin's alone:
 | `confidence.instructions` | guidance on rating risk to the scorer, the second model that scores each reviewed pull request ([risk](/confidence/#risk))                                                                                                                                     |
 | `confidence.floors`       | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](/confidence/#risk))                                                                                                                      |
 | `review.cost`             | `true` ends the summary's footer with what the pull request's reviews cost together. Off unless set                                                                                                                                                            |
-| `review.replies`          | `true` has kritika answer a reply in one of its finding threads that does not mention it. kritika answers when the reply needs the reviewer. Off unless set                                                                                                    |
 | `comments.dashboard`      | `false` keeps the dashboard's URL out of the comments, which anyone can read on a public repository. On unless set                                                                                                                                             |
 | `review.incremental`      | how many files of the change can move since the last review before a re-review covers the whole pull request again. 25 unless set ([incremental reviews](#incremental-reviews))                                                                                |
 | `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them. Unlimited unless set                                                                                                                                                                |
@@ -466,11 +465,6 @@ takes these keys, which are the admin's alone:
 request's reviews. It is off unless set, since the summary comment is
 public, on a fork's pull request too, and the figure is the instance's
 spend.
-
-`review.replies` covers only a reply from someone with write access
-([replies in finding threads](/reviews/#replies-in-finding-threads)). It
-is off unless set, since each answer is a model call nobody asked for by
-name.
 
 `comments.dashboard` set to `false` leaves the summary without a re-run
 badge. It also shows each severity as its label in text rather than an

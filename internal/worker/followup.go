@@ -520,8 +520,6 @@ func (f *followUp) disqualified(ctx context.Context) string {
 		f.asReply = false
 	case !f.asReply:
 		return "does not mention @" + slug
-	case !f.settings.Review.Replies:
-		return "replies in finding threads are off for this repository"
 	}
 	perm, err := f.client.Permission(ctx, f.owner, f.repo, f.comment.Author)
 	if err != nil {

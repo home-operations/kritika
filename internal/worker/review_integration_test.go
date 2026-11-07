@@ -1823,20 +1823,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a reply in a finding thread is answered when it needs the reviewer", func(t *testing.T) {
-		replyConfig := configfiletest.Load(t, strings.Replace(configYAML, "review:\n  model: test/reviewer\n", "review:\n  model: test/reviewer\n  replies: true\n", 1))
-		if err := appStore.ApplyConfig(ctx, replyConfig); err != nil {
-			t.Fatal(err)
-		}
-		current.Set(replyConfig)
-		t.Cleanup(func() {
-			current.Set(file)
-			if err := appStore.ApplyConfig(ctx, file); err != nil {
-				t.Fatal(err)
-			}
-		})
-		// The repository's configuration is read through its account's entry.
-		replyAccount, _ := replyConfig.Account(configfile.ForgeGitHub, "onedr0p")
-		checkReplies(ctx, t, appStore, svc, lf, fc, ingest.Request{File: replyConfig, Account: replyAccount}, account.ID())
+		checkReplies(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account}, account.ID())
 	})
 
 	t.Run("bot PR with the same patch id is skipped", func(t *testing.T) {

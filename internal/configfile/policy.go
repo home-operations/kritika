@@ -23,7 +23,6 @@ const (
 	keyIncremental    = "review.incremental"
 	keyDiagram        = "review.diagram"
 	keyCost           = "review.cost"
-	keyReplies        = "review.replies"
 	keyScorer         = "confidence.model"
 	keyScorerFallback = "confidence.fallback"
 	keyScorerEffort   = "confidence.effort"
@@ -51,7 +50,6 @@ var Policies = []string{
 	keyIncremental,
 	keyDiagram,
 	keyCost,
-	keyReplies,
 	keyScorer,
 	keyScorerFallback,
 	keyScorerEffort,

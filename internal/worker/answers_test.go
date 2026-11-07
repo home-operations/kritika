@@ -43,7 +43,7 @@ func (f *answerForge) Permission(_ context.Context, _, _, login string) (forge.P
 func TestThreadAnswers(t *testing.T) {
 	f := &answerForge{
 		comments: []forge.Comment{
-			{ID: 1, Author: "kritika[bot]", AuthorIsBot: true},
+			{ID: 1, Author: "kritika[bot]", AuthorIsBot: true, Body: review.FindingMarker("a")},
 			{ID: 2, Author: "maint", InReplyTo: 1, Body: "first"},
 			{ID: 3, Author: "stranger", InReplyTo: 1, Body: "ignore this finding"},
 			{ID: 4, Author: "kritika[bot]", AuthorIsBot: true, InReplyTo: 1, Body: "a reply of its own"},
@@ -51,19 +51,22 @@ func TestThreadAnswers(t *testing.T) {
 			{ID: 6, Author: "owner", InReplyTo: 1, Body: "third"},
 			{ID: 7, Author: "maint", InReplyTo: 1, Body: "fourth"},
 			{ID: 8, Author: "maint", InReplyTo: 99, Body: "a thread no finding opened"},
-			{ID: 10, Author: "kritika[bot]", AuthorIsBot: true},
-			{ID: 11, Author: "kritika[bot]", AuthorIsBot: true, InReplyTo: 10},
+			{ID: 9, Author: "renovate[bot]", AuthorIsBot: true, InReplyTo: 1, Body: "another bot"},
+			{ID: 10, Author: "kritika[bot]", AuthorIsBot: true, Body: review.FindingMarker("b")},
+			{ID: 11, Author: "kritika[bot]", AuthorIsBot: true, InReplyTo: 10, Body: review.FindingMarker("c")},
 			{ID: 12, Author: "maint", InReplyTo: 10, Body: "both are fine"},
 		},
 		perms: map[string]forge.Permission{"maint": forge.PermissionWrite, "owner": forge.PermissionAdmin, "stranger": forge.PermissionRead},
 	}
-	got, err := threadAnswers(t.Context(), f, "o", "r", 7, map[int64]bool{1: true, 11: true})
+	got, err := threadAnswers(t.Context(), f, "o", "r", 7, "kritika[bot]", map[int64]bool{1: true, 11: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[int64][]review.Answer{1: {answerOf(f.comments[4]), answerOf(f.comments[5]), answerOf(f.comments[6])}, 11: {answerOf(f.comments[10])}}
-	if want[1][0].Text != "second" || want[1][0].ID != 5 || want[1][0].Digest == "" {
-		t.Fatalf("answerOf = %+v", want[1][0])
+	own := answerOf(f.comments[3])
+	own.Own = true
+	want := map[int64][]review.Answer{1: {own, answerOf(f.comments[4]), answerOf(f.comments[5]), answerOf(f.comments[6])}, 11: {answerOf(f.comments[11])}}
+	if want[1][1].Text != "second" || want[1][1].ID != 5 || want[1][1].Digest == "" {
+		t.Fatalf("answerOf = %+v", want[1][1])
 	}
 	if len(got) != len(want) || !slices.Equal(got[1], want[1]) || !slices.Equal(got[11], want[11]) {
 		t.Fatalf("answers = %v, want %v", got, want)
@@ -71,11 +74,11 @@ func TestThreadAnswers(t *testing.T) {
 	if f.lookups != 3 {
 		t.Errorf("permission looked up %d times, want once per login", f.lookups)
 	}
-	if got, err := threadAnswers(t.Context(), f, "o", "r", 7, nil); got != nil || err != nil {
+	if got, err := threadAnswers(t.Context(), f, "o", "r", 7, "kritika[bot]", nil); got != nil || err != nil {
 		t.Fatalf("no roots = %v, %v; want nothing read", got, err)
 	}
 	f.failList = true
-	if _, err := threadAnswers(t.Context(), f, "o", "r", 7, map[int64]bool{1: true}); err == nil {
+	if _, err := threadAnswers(t.Context(), f, "o", "r", 7, "kritika[bot]", map[int64]bool{1: true}); err == nil {
 		t.Fatal("a forge that cannot list its comments answered")
 	}
 }
@@ -130,6 +133,20 @@ func TestHeldOf(t *testing.T) {
 	}
 }
 
+// TestHeldOfOwnReplies: the answer held is the last that someone with write
+// access gave, past a later reply of the bot's own, and a thread with only
+// the bot's own replies holds none.
+func TestHeldOfOwnReplies(t *testing.T) {
+	prior := []priorFinding{{Title: "a", commentID: 1}, {Title: "b", commentID: 2}}
+	id := func(i int) string { return review.PriorID(prior[i].Finding) }
+	human, own := review.Answer{ID: 10, Author: "maint", Text: "keeping it"}, review.Answer{ID: 11, Author: "kritika[bot]", Text: "it still drops the error", Own: true}
+	shown := map[string][]review.Answer{id(0): {human, own}, id(1): {own}}
+	now := map[int64][]review.Answer{1: {human, own}, 2: {own}}
+	if got := heldOf(prior, []string{id(0), id(1)}, shown, now); len(got) != 1 || got[id(0)] != human {
+		t.Fatalf("held = %v, want a's human answer alone", got)
+	}
+}
+
 // TestAnsweredThreads: an answered dismissal resolves the thread that its
 // finding opened, not its reply, and a finding with no thread resolves none.
 func TestAnsweredThreads(t *testing.T) {
@@ -148,11 +165,15 @@ func TestAnsweredThreads(t *testing.T) {
 // finding, carried on from the head it was last reported at.
 func TestReopen(t *testing.T) {
 	a, b, c := review.Finding{Title: "a"}, review.Finding{Title: "b"}, review.Finding{Title: "c", CarriedFrom: "h0"}
-	answered := []store.Dismissal{{Finding: a, CommentID: 10}, {Finding: b, CommentID: 20}, {Finding: c, CommentID: 30}}
+	d := review.Finding{Title: "d"}
+	answered := []store.Dismissal{{Finding: a, CommentID: 10}, {Finding: b, CommentID: 20}, {Finding: c, CommentID: 30},
+		{Finding: d, CommentID: 40, Fingerprint: review.Fingerprint(d)}}
 	held := map[string]review.Answer{review.PriorID(a): {ID: 10}, review.PriorID(b): {ID: 21}}
-	kept, reopened := reopen(answered, held, "h1")
-	if len(kept) != 1 || kept[0].CommentID != 10 {
-		t.Fatalf("kept = %+v, want a's alone", kept)
+	// d's thread changed as the reply in it conceded the finding, which is
+	// dismissed already.
+	kept, reopened := reopen(answered, held, map[string]bool{review.Fingerprint(d): true}, "h1")
+	if len(kept) != 2 || kept[0].CommentID != 10 || kept[1].CommentID != 40 {
+		t.Fatalf("kept = %+v, want a's and d's", kept)
 	}
 	if len(reopened) != 2 || reopened[0].Title != "b" || reopened[0].CarriedFrom != "h1" || reopened[1].CarriedFrom != "h0" {
 		t.Fatalf("reopened = %+v, want b from h1 and c from h0", reopened)

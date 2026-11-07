@@ -253,12 +253,13 @@ func TestPriorSectionAnswers(t *testing.T) {
 	if strings.Contains(plain, "answered") {
 		t.Fatalf("a section with no answers speaks of them:\n%s", plain)
 	}
-	f.Answers = []Answer{{Author: "maint", Text: "Known limit\nof the beta."}}
+	f.Answers = []Answer{{Author: "maint", Text: "Known limit\nof the beta."}, {Author: "kritika[bot]", Text: "It still drops it.", Own: true}}
 	got := priorSection("abcdef1234", []Finding{f}, 10_000)
 	for _, want := range []string{
-		"[p1] Unchecked error: It drops it.\n  Answered by maint: Known limit of the beta.\n",
+		"[p1] Unchecked error: It drops it.\n  Answered by maint: Known limit of the beta.\n  You replied: It still drops it.\n",
+		answerRule,
 		"list its id in answered and do not report it again",
-		"Report it again only when the code shows the answer wrong",
+		"why the answer does not end it",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("section lacks %q:\n%s", want, got)
