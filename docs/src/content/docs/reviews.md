@@ -105,14 +105,26 @@ A later review can mark a finding fixed. To dismiss one you disagree with,
 reply `@<bot> dismiss <reason>` in its thread. Later reviews of that pull
 request will not raise it again.
 
+A re-review also reads the replies in each finding's thread from people with
+write access, and weighs them. A reply can say that the finding is fixed,
+that the code stays as it is, or why the finding is wrong. When the answer
+holds, kritika dismisses the finding as `@<bot> dismiss` does, with the reply
+as its reason, and does not report it again. The re-review reports it again
+only when the code shows the answer wrong, and then says why. When a reply
+in the thread is added or edited before the review is published, the finding
+stays open for the next review to weigh. This needs no mention and no
+setting, and it makes no model call of its own.
+
 Resolving the thread on GitHub also dismisses the finding, unless GitHub
 marks the thread outdated because its lines changed. In that case, resolution
 counts as a fix. If you want a lasting dismissal, use the dismiss command.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
 
-On Forgejo, kritika neither reads nor resolves threads, so the dismiss
-command is the way, as [Git forges](/forges/#what-works-where) lists. On GitLab
+On Forgejo, kritika does not resolve threads, and resolving one dismisses
+nothing, as [Git forges](/forges/#what-works-where) lists. So the dismiss
+command is the sure way. A re-review still reads the replies in a finding's
+conversation, where kritika can tell which conversation a reply is in. On GitLab
 and Gitea, kritika resolves a fixed finding's thread. Resolving one yourself
 sends no event, so it does not dismiss the finding.
 

@@ -151,7 +151,7 @@ func (p *publishPhase) score(
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			DefaultBranch: defaultBranch, BaseOf: baseOf,
-			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(p.prior.dismissed),
+			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(slices.Concat(p.prior.dismissed, p.answered)),
 		}, res, rec, history, earlier, system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,

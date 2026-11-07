@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -282,6 +283,16 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 		return "", err
 	}
 	res, unanchored := answer.Result, answer.Unanchored
+	if reopened := p.recheckAnswered(ctx); len(reopened) > 0 {
+		res.Findings = append(slices.Clone(res.Findings), reopened...)
+		if c := p.confidence; c != nil {
+			// The score rests on the risk before the instance's floor, as
+			// it was scored. The judge's concern and rejection only ever
+			// took it lower, which the score already holds.
+			counts := review.Result{Findings: slices.Concat(res.Findings, unanchored)}.Counts()
+			c.Score = min(c.Score, review.Score(counts, cmp.Or(c.Rated, c.Risk), false, false))
+		}
+	}
 	notes := slices.Clone(answer.Notes)
 	pauseNote, err := p.autoReviewPauses(ctx)
 	if err != nil {
@@ -307,12 +318,23 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 			Result: review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)},
 			Inline: inline, Model: answer.Model, CommentID: commentID, Confidence: p.confidence, Partial: p.unfinished > 0,
 		}, p.trigger != jobs.TriggerManual, pauseNote != "")
-		return err
+		if err != nil || !completed {
+			return err
+		}
+		// A review that is not published accepts no answer: one superseded
+		// or canceled leaves its findings to the next.
+		for _, d := range p.answered {
+			if err := store.RecordDismissal(fctx, tx, d); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	persistDone()
 	if err != nil || !completed {
 		return "", err
 	}
+	p.resolveThreads(lockCtx, answeredThreads(p.prior.findings, p.answered), false)
 	p.agentElapsed("agent_to_published")
 	p.countFindings(answer.Result)
 	if c := p.confidence; c != nil {
