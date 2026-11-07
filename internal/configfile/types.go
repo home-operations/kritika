@@ -727,10 +727,11 @@ type Egress struct {
 	Credentials map[string]EgressCredential `yaml:"credentials,omitempty"`
 
 	allow, deny egresspolicy.List
-	// tokens are the credentials' tokens, read by resolve, and credentials
-	// the credentials that validateEgress makes of them.
+	// tokens are read by resolve. validateEgress makes credentials of them,
+	// and files of the Docker config files that the others are read from.
 	tokens      map[string]Secret
 	credentials map[string]egresspolicy.Credential
+	files       map[string]*dockerConfig
 }
 
 // File is the running configuration from the file and the operational

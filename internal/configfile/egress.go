@@ -20,14 +20,17 @@ const (
 
 // EgressCredential is one host's credential. Scheme is how the gateway
 // applies it, egresspolicy.SchemeBearer when it is empty. Username goes
-// with the token for the basic and oci schemes. Accounts are the names of
-// the accounts whose runs get it, or "*" alone for every account: what a
-// review reads with it, it can publish on a pull request.
+// with the token for the basic and oci schemes. DockerConfigJSON instead
+// names a Docker config file to read the username and token from, the
+// host's entry under auths. Accounts are the names of the accounts whose
+// runs get it, or "*" alone for every account: what a review reads with
+// it, it can publish on a pull request.
 type EgressCredential struct {
-	Scheme   string    `yaml:"scheme,omitempty"`
-	Username string    `yaml:"username,omitempty"`
-	Token    SecretRef `yaml:"token"`
-	Accounts []string  `yaml:"accounts"`
+	Scheme           string    `yaml:"scheme,omitempty"`
+	Username         string    `yaml:"username,omitempty"`
+	Token            SecretRef `yaml:"token"`
+	DockerConfigJSON string    `yaml:"dockerConfigJson,omitempty"`
+	Accounts         []string  `yaml:"accounts"`
 }
 
 // forgeHosts are the hosts the connections' forges are reached at, each
@@ -64,6 +67,7 @@ func (f *File) validateEgress() error {
 		}
 	}
 	f.Egress.credentials = make(map[string]egresspolicy.Credential, len(f.Egress.Credentials))
+	f.Egress.files = map[string]*dockerConfig{}
 	for _, host := range slices.Sorted(maps.Keys(f.Egress.Credentials)) {
 		if err := checkHost(host); err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
@@ -90,6 +94,20 @@ func (f *File) egressCredential(host string) (egresspolicy.Credential, error) {
 	spec := f.Egress.Credentials[host]
 	cred := egresspolicy.Credential{
 		Scheme: cmp.Or(spec.Scheme, egresspolicy.SchemeBearer), Username: spec.Username, Secret: f.Egress.tokens[host].Value(),
+	}
+	if spec.DockerConfigJSON != "" {
+		switch {
+		case !spec.Token.empty() || spec.Username != "":
+			return cred, fmt.Errorf("configfile: %s: a credential read from dockerConfigJson takes no token or username", where)
+		case cred.Scheme == egresspolicy.SchemeBearer:
+			return cred, fmt.Errorf("configfile: %s.dockerConfigJson: a Docker config holds a username, for the basic or oci scheme", where)
+		}
+		file := &dockerConfig{path: spec.DockerConfigJSON, host: host}
+		if err := file.load(); err != nil {
+			return cred, fmt.Errorf("configfile: %s.dockerConfigJson: %w", where, err)
+		}
+		cred.Username, cred.Secret = file.username, file.secret
+		f.Egress.files[host] = file
 	}
 	switch cred.Scheme {
 	case egresspolicy.SchemeBearer:
@@ -178,9 +196,9 @@ func checkHost(h string) error {
 // configured entries and the connections' forges. The forges are GitHub and
 // its API for an App, because runners fetch from the one and gh reads the
 // other. They also include a Forgejo instance's host for a bot. It also has
-// the denied entries, the credentials, and what its cache never keeps. The
-// cache never keeps the GitHub API, to which the runner and gh send the
-// run's token, not even for a locked install.
+// the denied entries, the credentials as their files hold them now, and
+// what its cache never keeps. The cache never keeps the GitHub API, to which
+// the runner and gh send the run's token, not even for a locked install.
 //
 // Provider endpoints are not among them: a runner reaches its model
 // through the gateway's model endpoint, and the worker calls the provider.
@@ -191,9 +209,31 @@ func (f *File) EgressRules() egresspolicy.Rules {
 			allow.Hosts = append(allow.Hosts, h)
 		}
 	}
-	return egresspolicy.Rules{
-		Allow: allow, Deny: f.Egress.deny, Credentials: maps.Clone(f.Egress.credentials), Uncached: []string{GitHubAPIHost},
+	creds := maps.Clone(f.Egress.credentials)
+	for host, file := range f.Egress.files {
+		cred := creds[host]
+		cred.Username, cred.Secret = file.current()
+		creds[host] = cred
 	}
+	return egresspolicy.Rules{
+		Allow: allow, Deny: f.Egress.deny, Credentials: creds, Uncached: []string{GitHubAPIHost},
+	}
+}
+
+// EgressSecrets are the values of the credentials to mask: each token, and
+// its Basic encoding when it has a username. A credential read from a
+// Docker config gives every value that the file has held.
+func (f *File) EgressSecrets() []string {
+	var secrets []string
+	for _, cred := range f.EgressRules().Credentials {
+		secrets = append(secrets, cred.Secret, cred.Basic())
+	}
+	for _, file := range f.Egress.files {
+		for _, cred := range file.heldCredentials() {
+			secrets = append(secrets, cred.Secret, cred.Basic())
+		}
+	}
+	return secrets
 }
 
 // Registries are the hosts of the oci credentials that a run of account

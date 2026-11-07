@@ -131,6 +131,9 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 	}
 	f.Egress.tokens = make(map[string]Secret, len(f.Egress.Credentials))
 	for _, host := range slices.Sorted(maps.Keys(f.Egress.Credentials)) {
+		if c := f.Egress.Credentials[host]; c.DockerConfigJSON != "" && c.Token.empty() {
+			continue
+		}
 		v, err := s.read(f.Egress.Credentials[host].Token)
 		if err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s.token: %w", host, err)

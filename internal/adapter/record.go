@@ -48,9 +48,7 @@ func Mask(f *configfile.File, p configfile.Provider, extra ...string) func(strin
 	// Every non-empty secret is masked however short: a very short one
 	// garbles the transcript, which is better than leaking it.
 	plain := append(ProviderSecrets(p), extra...)
-	for _, cred := range f.EgressRules().Credentials {
-		plain = append(plain, cred.Secret, cred.Basic())
-	}
+	plain = append(plain, f.EgressSecrets()...)
 	var secrets []string
 	for _, s := range plain {
 		if s != "" {
