@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	cel.dev/cel-go v0.33.2
 	github.com/KimMachineGun/automemlimit v1.0.1
-	github.com/anthropics/anthropic-sdk-go/v2 v2.7.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.8.0
 	github.com/aquaproj/aqua/v2 v2.66.1
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/caarlos0/env/v11 v11.4.2
