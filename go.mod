@@ -17,7 +17,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-github/v93 v93.0.0
 	github.com/google/uuid v1.6.0
-	github.com/gookit/validate/v2 v2.0.3
+	github.com/gookit/validate/v2 v2.0.4
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/klauspost/compress v1.20.3
 	github.com/knadh/koanf/providers/confmap v1.0.1
