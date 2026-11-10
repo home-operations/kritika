@@ -160,7 +160,7 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 	if skip == "" {
 		shares, scope, scopeReason = reviewShares(p, res, scope, scopeReason, deltaPaths)
 	}
-	reportPartCount(ctx, report, p, len(shares), logger)
+	reportPartCount(ctx, report, p, shares, logger)
 	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, shares != nil, logger)
 	if err != nil {
 		return err

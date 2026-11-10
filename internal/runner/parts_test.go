@@ -187,7 +187,7 @@ func TestPartPromptsContext(t *testing.T) {
 	}))
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
-	s.GatewayURL, s.Agent.Parallel = gw.URL, 2
+	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
 	s.Agent.MaxPromptTokens = 24_000
 	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
@@ -274,7 +274,7 @@ func TestRunPartLoops(t *testing.T) {
 			}))
 			t.Cleanup(gw.Close)
 			s := reviewSpec()
-			s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, tt.parallel, 60
+			s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(tt.parallel), 60
 			head := tree(t, map[string]string{"a.go": "package a\n"})
 			parts := make([]reviewPart, tt.parts)
 			for i := range parts {

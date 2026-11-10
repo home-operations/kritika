@@ -209,7 +209,7 @@ func (g *Server) reportParts(w http.ResponseWriter, r *http.Request, c runReport
 	if !ok {
 		return
 	}
-	var slots int
+	var slots map[string]int
 	if !g.runnerWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
 		slots, err = store.ReportRemainingParts(ctx, tx, c.grant.RunID, v.Remaining)

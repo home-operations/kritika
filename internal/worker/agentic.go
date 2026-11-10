@@ -472,7 +472,7 @@ func (w *Review) agentSpec(
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(models.Review), Fallback: string(models.Fallback), FallbackKey: string(settings.Models.Fallback),
-		Effort: string(models.Effort), Budget: admitted.budget(size.parts), Reviewers: grants,
+		Effort: string(models.Effort), Budget: admitted.budget(size.total()), Reviewers: grants,
 	}
 	if cont != nil {
 		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session
@@ -485,7 +485,7 @@ func (w *Review) agentSpec(
 	spec.Model = &runspec.ModelEndpoint{Model: gateway.ModelName, Granted: grant.Model}
 	spec.Agent = &runspec.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
-		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.parts, Parallel: size.slots,
+		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.total(), Slots: size.slots, Pools: size.pools,
 		TimeoutSeconds:        int(settings.Agent.Timeout / time.Second),
 		CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second), Fetches: settings.Agent.MaxFetches,
 	}
@@ -532,14 +532,32 @@ func partsTimeout(rounds int, timeout time.Duration) time.Duration {
 }
 
 // sizing is what a review is sized for: the parts that its runner can split
-// it into, and the slots that it holds on the review model. Its parts can run
-// in those slots at once.
+// it into and the slots that it holds, both by model, and the model of each
+// reviewer. The parts on a model can run in its slots at once.
 type sizing struct {
-	parts, slots int
+	parts, slots map[string]int
+	pools        map[string]string
 }
 
-// rounds is how many parts run one after another at the most.
-func (s sizing) rounds() int { return (s.parts + s.slots - 1) / s.slots }
+// total is how many parts the review has in all.
+func (s sizing) total() int {
+	n := 0
+	for _, parts := range s.parts {
+		n += parts
+	}
+	return n
+}
+
+// rounds is how many parts run one after another at the most: the slowest
+// model's, each in rounds of its slots.
+func (s sizing) rounds() int {
+	rounds := 1
+	for model, parts := range s.parts {
+		slots := max(1, s.slots[model])
+		rounds = max(rounds, (parts+slots-1)/slots)
+	}
+	return rounds
+}
 
 // revokeGatewayTokens ends the run's token once its runner is done. It uses a
 // context of its own, because the job's context can already be over. A token

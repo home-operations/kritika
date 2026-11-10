@@ -309,12 +309,11 @@ vector-search histogram:
 - `similar-code request ended` records the runner's whole retrieval request.
 - The gateway separates `similar embedding slot` wait time from
   `similar queries embedded` provider time.
-- `review model slots granted` records the worker's estimated part count,
-  granted slots and concurrency limit. Compare it with
-  `agent started in parts` for the actual part count and initial
-  parallelism.
+- `review model slots granted` records the worker's estimated part count
+  and the slots granted, both by model. Compare it with `agent started in
+  parts` for the actual part count and initial slots.
 - During a split review, `review model slots adjusted` records changes to the
-  worker's grant, with `slots`, `remaining_parts` and `limit`. Remaining
+  worker's grant, with `slots` and `remaining_parts` by model. Remaining
   parts include active work and exclude completed checkpoints.
 
 The worker and runner read capacity every two seconds, so a review can gain

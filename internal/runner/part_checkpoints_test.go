@@ -24,7 +24,7 @@ func TestPartInputIdentity(t *testing.T) {
 		same bool
 	}{
 		{"run identity", func(s *runspec.Spec, _ []reviewPart) { s.RunID = "another" }, true},
-		{"available slots", func(s *runspec.Spec, _ []reviewPart) { s.Agent.Parallel++ }, true},
+		{"available slots", func(s *runspec.Spec, _ []reviewPart) { s.Agent.Slots = defaultSlots(2) }, true},
 		{"token budget", func(s *runspec.Spec, _ []reviewPart) { s.Agent.MaxTokens-- }, true},
 		{"continuation", func(s *runspec.Spec, _ []reviewPart) {
 			s.Prompt.Continue = &runspec.Continuation{RunID: "r", Session: "s"}
@@ -80,7 +80,7 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 	}))
 	defer gw.Close()
 	s := reviewSpec()
-	s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(2), 5
 	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
 	saved := []partCheckpoint{{SourceRun: "prior", Result: agent.Result{
 		Stop: agent.StopSubmitted, Model: "saved-model", Submitted: json.RawMessage(`{"summary":{"take":"saved"},"findings":[]}`),
@@ -97,9 +97,9 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 		return nil
 	}
 	var remaining []int
-	report := func(_ context.Context, n int) int {
-		remaining = append(remaining, n)
-		return 2
+	report := func(_ context.Context, n map[string]int) map[string]int {
+		remaining = append(remaining, n[review.DefaultReviewer])
+		return defaultSlots(2)
 	}
 	results, _, err := runPartLoops(ctx, s, runspec.Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil, agentTools{}, newPartLocks(), parts,
 		slog.New(slog.DiscardHandler), saved, save, report)
@@ -136,7 +136,7 @@ func TestPartsCheckpointFailureKeepsAnswer(t *testing.T) {
 	}))
 	defer gw.Close()
 	s := reviewSpec()
-	s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(2), 5
 	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
 	saves := 0
 	save := func(context.Context, int, agent.Result) error {
@@ -230,7 +230,7 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 	}))
 	defer gw.Close()
 	s := reviewSpec()
-	s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(2), 5
 	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
 	ctx, cancel := context.WithCancelCause(t.Context())
 	defer cancel(nil)

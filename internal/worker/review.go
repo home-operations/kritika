@@ -161,17 +161,15 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	// Each reviewer can be split as the review alone can be. The run is sized
 	// for all of them.
 	perReviewer := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
-	parts := perReviewer * chosen.count()
-	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID,
-		model: string(settings.Models.Review), limit: file.Slots(account, settings.Models.Review), maxParts: parts, jobID: job.ID}
+	slots := newReviewSlots(w, logger, file, account, settings, chosen, perReviewer, runID, job.ID)
 	defer slots.close(ctx)
-	if err := slots.resize(ctx, parts); err != nil {
+	if err := slots.resize(ctx, nil); err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
-	extra := len(slots.leases)
-	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", slots.limit)
+	logger.Info("review model slots granted", "estimated_parts", slots.parts(), "slots", slots.published)
 	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, args.Focus, pr, eff, granted, prior,
-		cont, admitted, sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger, pull, chosen,
+		cont, admitted, sizing{parts: slots.parts(), slots: slots.published, pools: slots.poolOf()}, &spec, &secrets, deadline, client, logger,
+		pull, chosen,
 		w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs))
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)

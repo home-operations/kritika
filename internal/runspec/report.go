@@ -183,13 +183,15 @@ type PartCheckpoint struct {
 
 // PartsReport says how many parts of a split review are unfinished.
 type PartsReport struct {
-	Remaining int `json:"remaining"`
+	// Remaining is the run's unfinished parts by slot pool
+	// (AgentLimits.Pools).
+	Remaining map[string]int `json:"remaining"`
 }
 
-// PartSlots is how many parts the run can hold at once: capacity that only
-// the worker grants.
+// PartSlots is how many parts the run can hold at once in each slot pool:
+// capacity that only the worker grants.
 type PartSlots struct {
-	Slots int `json:"slots"`
+	Slots map[string]int `json:"slots"`
 }
 
 // TimelineStep is one agent step as agent_runs.timeline records it.

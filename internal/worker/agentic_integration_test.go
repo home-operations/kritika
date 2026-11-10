@@ -2164,7 +2164,7 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 		}
 		rounds := (8 + tc.parallel - 1) / tc.parallel
 		want := min(time.Duration(rounds*limits.TimeoutSeconds)*time.Second, jobtimeout.MaxAgentTimeout) + jobtimeout.AgentFetchHeadroom
-		if limits.Parts != 8 || limits.Parallel != tc.parallel || budget != 8*limits.MaxTokens || deadline != want {
+		if limits.Parts != 8 || limits.Slots[limits.Pools["default"]] != tc.parallel || budget != 8*limits.MaxTokens || deadline != want {
 			t.Fatalf("concurrency %d: agent = %+v, budget = %d, deadline = %s; want 8 parts, %d at once, 8 times the tokens and %s",
 				tc.parallel, limits, budget, deadline, tc.parallel, want)
 		}

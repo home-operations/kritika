@@ -33,7 +33,7 @@ func TestPartSlots(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return SetPartSlots(ctx, tx, runID, 3)
+		return SetPartSlots(ctx, tx, runID, map[string]int{"default": 3})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -43,9 +43,9 @@ func TestPartSlots(t *testing.T) {
 	}
 	for _, remaining := range []int{4, 2, 0} {
 		if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
-			slots, err := ReportRemainingParts(ctx, tx, g.RunID, remaining)
-			if err == nil && slots != 3 {
-				t.Errorf("slots = %d, want 3", slots)
+			slots, err := ReportRemainingParts(ctx, tx, g.RunID, map[string]int{"default": remaining})
+			if err == nil && (len(slots) != 1 || slots["default"] != 3) {
+				t.Errorf("slots = %v, want default: 3", slots)
 			}
 			return err
 		}); err != nil {
@@ -54,8 +54,8 @@ func TestPartSlots(t *testing.T) {
 	}
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		remaining, err := RemainingParts(ctx, tx, runID)
-		if err == nil && (remaining == nil || *remaining != 0) {
-			t.Errorf("remaining = %v, want 0", remaining)
+		if err == nil && (remaining == nil || len(remaining) != 1 || remaining["default"] != 0) {
+			t.Errorf("remaining = %v, want default: 0", remaining)
 		}
 		return err
 	}); err != nil {
