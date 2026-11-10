@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.0.119](https://github.com/home-operations/kritika/compare/0.0.118...0.0.119) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **models:** give each provider its own request timeout, which a step's budget is sized by ([#1442](https://github.com/home-operations/kritika/issues/1442))
+* **review:** run a split review's parts in their own model's slots ([#1440](https://github.com/home-operations/kritika/issues/1440))
+* **models:** give each provider its own concurrency, which a fallback step takes a slot of ([#1438](https://github.com/home-operations/kritika/issues/1438))
+
+### Features
+
+* **models:** give each provider its own concurrency, which a fallback step takes a slot of ([#1438](https://github.com/home-operations/kritika/issues/1438)) ([9dfb3ab](https://github.com/home-operations/kritika/commit/9dfb3abb1b9a6b5cc73f9426f89278dcd2f862d2))
+* **models:** give each provider its own request timeout, which a step's budget is sized by ([#1442](https://github.com/home-operations/kritika/issues/1442)) ([8b9ac5d](https://github.com/home-operations/kritika/commit/8b9ac5d756b0192ecb884a80b1fdda6aba53f3eb))
+* **review:** run a split review's parts in their own model's slots ([#1440](https://github.com/home-operations/kritika/issues/1440)) ([5955a53](https://github.com/home-operations/kritika/commit/5955a53f9f16fc2eea0d503414a1de96e51018e0))
+* **review:** state a clean review in one line and shorten the summary ([#1443](https://github.com/home-operations/kritika/issues/1443)) ([a850f73](https://github.com/home-operations/kritika/commit/a850f73be5a97add8fb568e95d256f1dde350d44))
+
+
+### Build System
+
+* **container:** take the Hardened Images minor version tags without a digest ([#1437](https://github.com/home-operations/kritika/issues/1437)) ([17884de](https://github.com/home-operations/kritika/commit/17884deb8b863778a8350b031fe892a0e2ed0d94))
+
+
+### Miscellaneous Chores
+
+* **container:** update image tools ([#1280](https://github.com/home-operations/kritika/issues/1280)) ([ff1f1bc](https://github.com/home-operations/kritika/commit/ff1f1bc03cffde0aed19b13c9f90fefdcbbc3ac3))
+* **github-action:** update action docker/github-builder (v1.18.1 → v1.19.0) ([#1418](https://github.com/home-operations/kritika/issues/1418)) ([a91a24f](https://github.com/home-operations/kritika/commit/a91a24fbe834eb9a78a8a9abc17e7b8f24e5fa17))
+* **github-action:** update action docker/login-action (v4.7.0 → v4.8.0) ([#1417](https://github.com/home-operations/kritika/issues/1417)) ([3d60bec](https://github.com/home-operations/kritika/commit/3d60bec75a6298b47b765b65696cbb60f0d156ff))
+* **github-action:** update action jdx/mise-action (v5.2.6 → v5.2.7) ([#1427](https://github.com/home-operations/kritika/issues/1427)) ([789fcf6](https://github.com/home-operations/kritika/commit/789fcf661a47a6afe4c0582e0a3a4a1043b04e38))
+* **github-release:** update release home-operations/flate (v0.6.5 → v0.7.3) ([#1419](https://github.com/home-operations/kritika/issues/1419)) ([ccd4812](https://github.com/home-operations/kritika/commit/ccd481237a3cd1cfb6cbf1e8d773dc578d984d2c))
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.7.0 → v2.8.0) ([#1430](https://github.com/home-operations/kritika/issues/1430)) ([9dc06db](https://github.com/home-operations/kritika/commit/9dc06db2d303b71e62468b79f9cd6eda533a12ae))
+* **go:** update module github.com/gookit/validate/v2 (v2.0.3 → v2.0.4) ([#1421](https://github.com/home-operations/kritika/issues/1421)) ([b8e8236](https://github.com/home-operations/kritika/commit/b8e8236c7e74e22655cde652e59e0731cea0ac04))
+* **go:** update module github.com/gookit/validate/v2 (v2.0.3 → v2.0.4) ([#1436](https://github.com/home-operations/kritika/issues/1436)) ([29cb960](https://github.com/home-operations/kritika/commit/29cb960a5c54c44f654776530f42f7bde6202fbf))
+* **go:** update module github.com/klauspost/compress (v1.20.3 → v1.20.4) ([#1428](https://github.com/home-operations/kritika/issues/1428)) ([b0f0115](https://github.com/home-operations/kritika/commit/b0f01151b5911e8fe34c01c8679f7bf345b8a854))
+* **go:** update module github.com/odvcencio/gotreesitter (v0.56.0 → v0.57.0) ([#1415](https://github.com/home-operations/kritika/issues/1415)) ([390723b](https://github.com/home-operations/kritika/commit/390723b0f62671c167f9aa14c63952446d39183e))
+* **go:** update module github.com/openai/openai-go/v3 (v3.96.0 → v3.97.0) ([#1423](https://github.com/home-operations/kritika/issues/1423)) ([9359083](https://github.com/home-operations/kritika/commit/935908353d28b26ceccd98bb2b810fb255cfec24))
+* **go:** update module github.com/openai/openai-go/v3 (v3.97.0 → v3.98.0) ([#1431](https://github.com/home-operations/kritika/issues/1431)) ([58cfc47](https://github.com/home-operations/kritika/commit/58cfc47dfc167704f6d259a59d5640716dfb12c9))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.44.0 → v3.45.0) ([#1420](https://github.com/home-operations/kritika/issues/1420)) ([8248c53](https://github.com/home-operations/kritika/commit/8248c535eb9fc58d2bf13016bc34c8af1a352e36))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.45.0 → v3.46.0) ([#1424](https://github.com/home-operations/kritika/issues/1424)) ([9dda1ae](https://github.com/home-operations/kritika/commit/9dda1ae0af0e43fe0978d9448464437eae59ebf7))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.46.0 → v3.46.1) ([#1435](https://github.com/home-operations/kritika/issues/1435)) ([8e51a0f](https://github.com/home-operations/kritika/commit/8e51a0f541866047b79333d940491bb9da427b2d))
+* **go:** update module golang.org/x/oauth2 (v0.37.0 → v0.38.0) ([#1432](https://github.com/home-operations/kritika/issues/1432)) ([f40ec70](https://github.com/home-operations/kritika/commit/f40ec70a4e524b1b4ffc3f26ad405107385d13b6))
+* **go:** update module golang.org/x/sync (v0.24.0 → v0.25.0) ([#1433](https://github.com/home-operations/kritika/issues/1433)) ([9af36b1](https://github.com/home-operations/kritika/commit/9af36b162a7543670b0d5002b4a26ad2aa332e9c))
+* **go:** update module golang.org/x/sys (v0.49.0 → v0.50.0) ([#1434](https://github.com/home-operations/kritika/issues/1434)) ([36708e8](https://github.com/home-operations/kritika/commit/36708e80090e6578a7c3e036679901c73b844847))
+* **go:** update river monorepo (v0.51.1 → v0.51.2) ([#1429](https://github.com/home-operations/kritika/issues/1429)) ([70bf356](https://github.com/home-operations/kritika/commit/70bf3566888890b05cc7b9f778eac06c1cc5be04))
+* **mise:** update tool pnpm (12.17.0 → 12.18.0) ([#1414](https://github.com/home-operations/kritika/issues/1414)) ([270b241](https://github.com/home-operations/kritika/commit/270b24104dff897ea7cd5c08d6553c7c5e8288bf))
+* **mise:** update tool yq (4.54.1 → 4.54.2) ([#1422](https://github.com/home-operations/kritika/issues/1422)) ([ae27559](https://github.com/home-operations/kritika/commit/ae2755964d6a9d8806ea086b67640b968a7a67cc))
+* **npm:** update dependency oxlint (1.92.0 → 1.93.0) ([#1441](https://github.com/home-operations/kritika/issues/1441)) ([8dd006f](https://github.com/home-operations/kritika/commit/8dd006f808a4e1ce52367d96f5a26485764a01a7))
+* **npm:** update dependency vite (8.3.6 → 8.3.7) ([#1439](https://github.com/home-operations/kritika/issues/1439)) ([8babc05](https://github.com/home-operations/kritika/commit/8babc05a8de00f2e5d18685409f3b2d6f2bf58c1))
+* **npm:** update tanstack-query monorepo (6.3.11 → 6.4.0) ([#1411](https://github.com/home-operations/kritika/issues/1411)) ([06dfc72](https://github.com/home-operations/kritika/commit/06dfc727b30f107830bdeef39ff0f3dd1f67a12a))
+* **npm:** update tanstack-query monorepo (6.4.0 → 6.4.1) ([#1413](https://github.com/home-operations/kritika/issues/1413)) ([847d46d](https://github.com/home-operations/kritika/commit/847d46d0cd777fb8be720d17cdff39844e1d0eab))
+
 ## [0.0.118](https://github.com/home-operations/kritika/compare/0.0.117...0.0.118) (2026-11-07)
 
 
