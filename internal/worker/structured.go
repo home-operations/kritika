@@ -23,6 +23,7 @@ func (p *publishPhase) structured(
 	call.Record = store.ModelCall{AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: kind}
 	call.Usage = store.Usage{AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID,
 		RunnerRunID: p.runID, Role: role}
+	call.Job = func(context.Context) (int64, error) { return p.jobID, nil }
 	return call, nil
 }
 

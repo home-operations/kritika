@@ -178,7 +178,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	} else {
 		logger.Info("index embedding resumed", "run", runID)
 	}
-	n, mode, err := w.embed(ctx, job, account, embedder, emb, commit, runID, runnerRunID, active, settings)
+	n, mode, err := w.embed(ctx, job, account, embedder, emb, commit, runID, runnerRunID, active, indexSlots(file.Slots(account, emb.Ref)))
 	if errors.Is(err, store.ErrGenerationChanged) {
 		logger.Info("index again: another run published while it ran")
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexSuperseded), n)
@@ -322,7 +322,7 @@ func (w *Index) finish(
 // completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
-	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings,
+	commit, runID, runnerRunID string, active *store.Generation, slots int,
 ) (int, string, error) {
 	args := job.Args
 	var pack store.IndexPack
@@ -343,7 +343,7 @@ func (w *Index) embed(
 	if err != nil {
 		return 0, pack.Mode, err
 	}
-	err = w.withLease(ctx, account, "embed:"+emb.Model, indexSlots(settings.Limits.Concurrency), job.ID, func(ctx context.Context) error {
+	err = w.withLease(ctx, account, "embed:"+emb.Model, slots, job.ID, func(ctx context.Context) error {
 		for {
 			var batch []store.StagedChunk
 			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {

@@ -163,13 +163,13 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	perReviewer := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
 	parts := perReviewer * chosen.count()
 	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID,
-		model: string(settings.Models.Review), limit: settings.Limits.Concurrency, maxParts: parts, jobID: job.ID}
+		model: string(settings.Models.Review), limit: file.Slots(account, settings.Models.Review), maxParts: parts, jobID: job.ID}
 	defer slots.close(ctx)
 	if err := slots.resize(ctx, parts); err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
 	extra := len(slots.leases)
-	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", settings.Limits.Concurrency)
+	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", slots.limit)
 	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, args.Focus, pr, eff, granted, prior,
 		cont, admitted, sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger, pull, chosen,
 		w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs))
@@ -472,7 +472,7 @@ func (w *Review) begin(
 	// busy default must not hold back one routed to a free model.
 	routed := len(settings.Models.Routes) > 0
 	if !routed {
-		if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
+		if held, err := w.slotsHeld(ctx, e, job, file, account, settings); held {
 			return begun{}, true, err
 		}
 	}
@@ -517,7 +517,7 @@ func (w *Review) begin(
 	})
 	pickModels(e.logger, &eff, vars, forgeDiff, args.Reviewer)
 	if routed || eff.Models.Review != settings.Models.Review {
-		if held, err := w.slotsHeld(ctx, e, job, account.ID(), eff.Settings); held {
+		if held, err := w.slotsHeld(ctx, e, job, file, account, eff.Settings); held {
 			return begun{}, true, err
 		}
 	}
@@ -577,13 +577,14 @@ func (w *Review) admit(
 }
 
 // slotsHeld snoozes the job when every one of the account's slots on the
-// review model that settings names is held. It reports whether it did, with
+// review model that settings names, as many as its provider has, is held. It reports whether it did, with
 // the error that snoozes it. Slots that it cannot count let the review go on.
 func (w *Review) slotsHeld(
-	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], accountID string, settings configfile.Settings,
+	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
+	settings configfile.Settings,
 ) (bool, error) {
 	ref := string(settings.Models.Review)
-	free, err := w.Store.SlotFree(ctx, accountID, ref, settings.Limits.Concurrency)
+	free, err := w.Store.SlotFree(ctx, account.ID(), ref, file.Slots(account, settings.Models.Review))
 	if err != nil {
 		e.logger.Warn("model slots not read; the review goes on", "error", err)
 		return false, nil

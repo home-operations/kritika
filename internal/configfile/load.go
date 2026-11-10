@@ -630,9 +630,6 @@ func checkLimits(where string, l LimitsSpec) error {
 	if (l.ReviewsPerDay != nil && *l.ReviewsPerDay < 0) || (l.TokensPerMonth != nil && *l.TokensPerMonth < 0) {
 		return fmt.Errorf("configfile: %s: limits must not be negative", where)
 	}
-	if l.Concurrency != nil && *l.Concurrency <= 0 {
-		return fmt.Errorf("configfile: %s.concurrency must be positive", where)
-	}
 	return nil
 }
 

@@ -37,6 +37,7 @@ func TestExecutionAccounting(t *testing.T) {
     type: openai
     baseUrl: https://backup.invalid
     apiKey: { env: BACKUP_KEY }
+    concurrency: 1
 review: { model: primary/review }
 apps:
   execution:
@@ -58,6 +59,7 @@ apps:
 	}{
 		{name: "runner settles reservation"},
 		{name: "runner refunds failure", fail: true},
+		{name: "runner fallback holds the fallback's slot", fallback: true},
 		{name: "structured fallback survives cancellation", structured: true, fallback: true, cancel: true},
 		{name: "invalid structured answer is still billed", structured: true, invalid: true},
 	} {
@@ -111,6 +113,7 @@ apps:
 			call.Recorder = Recorder{Store: st, Metrics: metrics.New(reg)}
 			call.Record = store.ModelCall{AccountID: account.ID(), RunnerRunID: runID, Kind: store.ModelCallAgentStep}
 			call.Usage = store.Usage{AccountID: account.ID(), RepositoryID: repoID, RunnerRunID: runID, Role: store.RoleReview}
+			call.Job = func(context.Context) (int64, error) { return 7, nil }
 			system := "primary-secret"
 			if tt.fallback {
 				system = "backup-secret"
@@ -133,6 +136,17 @@ apps:
 			}
 			if tt.fallback && (call.Attempts != 2 || call.Served.Ref != fallback) {
 				t.Fatalf("attempts=%d served=%s", call.Attempts, call.Served.Ref)
+			}
+			if tt.fallback {
+				// The step took the fallback's one slot, which exists once taken,
+				// and let it go.
+				var slots, held int
+				if err := st.WithAccount(t.Context(), account.ID(), func(tx pgx.Tx) error {
+					return tx.QueryRow(t.Context(), `SELECT count(*), count(*) FILTER (WHERE job_id IS NOT NULL AND expires_at >= now())
+						FROM model_leases WHERE account_id = $1 AND model_key = $2`, account.ID(), string(fallback)).Scan(&slots, &held)
+				}); err != nil || slots != 1 || held != 0 {
+					t.Fatalf("fallback slots = %d, held %d, %v; want 1 slot, none held", slots, held, err)
+				}
 			}
 			assertExecutionRecords(t, st, account.ID(), runID, logs.String(), tt.fail)
 			if r := call.Reservation; r != nil {

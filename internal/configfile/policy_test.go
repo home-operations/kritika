@@ -18,8 +18,8 @@ func TestSpecValue(t *testing.T) {
 	if v, ok := SpecValue(r, "agent.steps"); !ok || *v.(*int) != 5 {
 		t.Fatalf("agent.steps = %v, %v", v, ok)
 	}
-	if v, ok := SpecValue(&Defaults{}, "limits.concurrency"); !ok || v.(*int) != nil {
-		t.Fatalf("limits.concurrency = %v, %v", v, ok)
+	if v, ok := SpecValue(&Defaults{}, "limits.reviewsPerDay"); !ok || v.(*int) != nil {
+		t.Fatalf("limits.reviewsPerDay = %v, %v", v, ok)
 	}
 	if v, ok := SpecValue(&Defaults{}, "agent.nope"); ok {
 		t.Fatalf("agent.nope = %v, %v; want no such key", v, ok)
@@ -48,11 +48,11 @@ func TestSources(t *testing.T) {
 		s["trigger.exclude"] != SourceDefault {
 		t.Fatalf("a file writing nothing = %v", s)
 	}
-	root := mustLoad(t, "limits: { concurrency: 2 }\n"+minimal)
+	root := mustLoad(t, "limits: { reviewsPerDay: 2 }\n"+minimal)
 	if got := root.Sources(&root.Accounts[0])["limits"]; got != SourceDefaults {
 		t.Fatalf("limits the root writes from %s, want %s", got, SourceDefaults)
 	}
-	own := mustLoad(t, "limits: { concurrency: 2 }\n"+acmeAccount("    limits: { concurrency: 7 }\n"))
+	own := mustLoad(t, "limits: { reviewsPerDay: 2 }\n"+acmeAccount("    limits: { reviewsPerDay: 7 }\n"))
 	if got := own.Sources(&own.Accounts[0])["limits"]; got != SourceAccount {
 		t.Fatalf("limits the account writes from %s, want %s", got, SourceAccount)
 	}

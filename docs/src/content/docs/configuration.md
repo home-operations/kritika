@@ -735,8 +735,8 @@ by step, and a follow-up's:
   files and the context built from that diff. It reports findings only
   on its own files, and can still read any other file.
 
-  As many parts run at once as the review model has
-  [`concurrency`](#accounts) slots free when the review starts. The free
+  As many parts run at once as the review model's provider has
+  [`concurrency`](/models/#providers) slots free when the review starts. The free
   slots that count are the review's own and those that no other review
   holds. The rest run as those end. The parts' tool calls run one at a
   time. The parts are published as one review.
@@ -843,11 +843,13 @@ accounts:
 `limits` caps the account. The root's `limits` sets every account's
 limits, and an account's entry replaces them key by key:
 
-| Key              | Default   | What                                                                                                                                                       |
-| ---------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `concurrency`    | 2         | how many model calls it runs at once. Index runs hold all but one while they embed, so a review's similar-code lookup has a slot unless `concurrency` is 1 |
-| `reviewsPerDay`  | unlimited | reviews in a calendar day                                                                                                                                  |
-| `tokensPerMonth` | unlimited | input and output tokens in a calendar month                                                                                                                |
+| Key              | Default   | What                                        |
+| ---------------- | --------- | ------------------------------------------- |
+| `reviewsPerDay`  | unlimited | reviews in a calendar day                   |
+| `tokensPerMonth` | unlimited | input and output tokens in a calendar month |
+
+How many calls run at once on a model is its provider's
+[`concurrency`](/models/#providers), counted per account.
 
 `providers` are its own model keys, which its repositories' models can
 name ([an account's own keys](/models/#an-accounts-own-keys)).

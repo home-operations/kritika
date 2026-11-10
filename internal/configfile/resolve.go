@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"cmp"
 	"maps"
 	"reflect"
 	"slices"
@@ -71,7 +70,6 @@ func (f *File) Settings(a *Account) Settings {
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
 	s.Limits = s.Limits.overlay(a.Limits)
-	s.Limits.Concurrency = cmp.Or(s.Limits.Concurrency, DefaultConcurrency)
 	return s
 }
 
@@ -205,9 +203,6 @@ func (f *File) providerNames(a *Account) []string {
 }
 
 func (l Limits) overlay(o LimitsSpec) Limits {
-	if o.Concurrency != nil {
-		l.Concurrency = *o.Concurrency
-	}
 	if o.ReviewsPerDay != nil {
 		l.ReviewsPerDay = *o.ReviewsPerDay
 	}

@@ -82,6 +82,31 @@ func TestProviderRetries(t *testing.T) {
 	}
 }
 
+// TestProviderConcurrency: a provider's concurrency is what it sets, the
+// default when it sets none, and never negative.
+func TestProviderConcurrency(t *testing.T) {
+	setInstanceEnv(t)
+	f, err := Parse([]byte(fileWithDefaults))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != DefaultConcurrency {
+		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, DefaultConcurrency)
+	}
+	withConcurrency := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, concurrency: 8 }", 1)
+	f, err = Parse([]byte(withConcurrency))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != 8 {
+		t.Fatalf("concurrency = %d, want 8", p.Concurrency)
+	}
+	if _, err := Parse([]byte(strings.Replace(withConcurrency, "concurrency: 8", "concurrency: -1", 1))); err == nil ||
+		!strings.Contains(err.Error(), "providers.openrouter.concurrency must be positive") {
+		t.Fatalf("Parse with negative concurrency = %v", err)
+	}
+}
+
 // TestFileDefaultModelNeedsAProvider: a default model naming a provider
 // the file does not declare is refused.
 func TestFileDefaultModelNeedsAProvider(t *testing.T) {

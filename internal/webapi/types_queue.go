@@ -44,8 +44,8 @@ type InstanceJob struct {
 	Account string `json:"account"`
 }
 
-// ModelSlots is how many of an account's concurrency slots for a model
-// are held by a running review. Slots is the account's limit, 0 for none.
+// ModelSlots is how many of an account's slots for a model are held by a
+// running review. Slots is the concurrency of the model's provider.
 type ModelSlots struct {
 	Account string `json:"account"`
 	Model   string `json:"model"`

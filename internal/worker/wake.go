@@ -64,8 +64,9 @@ func (s *SlotWake) check(ctx context.Context, job *rivertype.JobRow) {
 	if !ok {
 		return
 	}
-	// Limits are set per account, so the review counted these slots.
-	slots := file.Settings(account).Limits.Concurrency
+	// The slots are the model's provider's for the account, as the review
+	// counted them.
+	slots := file.Slots(account, configfile.ModelRef(meta.SlotWait))
 	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
 	defer cancel()
 	logger := s.Logger.With("job", job.ID, "model", meta.SlotWait)

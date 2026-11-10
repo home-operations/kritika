@@ -32,17 +32,44 @@ Everything else is optional:
 
 ## Providers
 
-| Key       | What                                                                                                                                          |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`    | `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`                                                                                  |
-| `apiKey`  | its key, required except for `chatgpt`, which uses a stored sign-in                                                                           |
-| `baseUrl` | its API's URL, the type's default unless set                                                                                                  |
-| `pricing` | the prices of a provider that reports no cost, keyed by model id or [floating alias](#floating-model-aliases) ([local models](#local-models)) |
-| `retries` | how many more times a failed model step is tried, from 0 to 5, and 0 unless set ([retries](#retries))                                         |
-| `headers` | headers sent with every request, keyed by name. Each value is inline or a reference like `apiKey` ([headers](#headers))                       |
+| Key           | What                                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`        | `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`                                                                                  |
+| `apiKey`      | its key, required except for `chatgpt`, which uses a stored sign-in                                                                           |
+| `baseUrl`     | its API's URL, the type's default unless set                                                                                                  |
+| `pricing`     | the prices of a provider that reports no cost, keyed by model id or [floating alias](#floating-model-aliases) ([local models](#local-models)) |
+| `retries`     | how many more times a failed model step is tried, from 0 to 5, and 0 unless set ([retries](#retries))                                         |
+| `concurrency` | how many calls run at once on each of its models, per account, and 2 unless set ([concurrency](#concurrency))                                 |
+| `headers`     | headers sent with every request, keyed by name. Each value is inline or a reference like `apiKey` ([headers](#headers))                       |
 
 Provider credentials never enter a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](/security/#the-model-endpoint)).
+
+### Concurrency
+
+`concurrency` is how many calls can run at once on each model of the
+provider, for each account. A review holds one of the review model's slots
+from the time it is admitted to the time it ends, and one on the model of
+each [agent](#agents-that-replace-the-default-pass) it runs. A follow-up,
+the scorer's call and a split review's summary call hold one of their
+model's for the call. A review that finds every slot held waits on the
+queue for one. Index runs hold all but one of the embedder's slots while
+they embed, so a review's similar-code lookup has a slot unless
+`concurrency` is 1. `concurrency` is one value for the provider; an
+account that needs another on the same endpoint declares a provider of
+its own under [`accounts`](/configuration/#accounts).
+
+A [fallback](#fallback) on another provider has slots of its own: a step
+that goes to it takes one of the fallback model's for the step, and waits
+for one within the step's own time. So a self-hosted fallback with less
+capacity than the review model sets its provider's `concurrency` to what
+it serves at once, and an outage of the review model's provider moves at
+most that many steps onto it, while the review model keeps its own
+parallelism. The slots that reviews hold count: when an agent of a review
+runs on the fallback model, each running review holds one of its slots for
+the whole review, and a fallback step waits for a slot beyond all of them.
+So such a provider needs a `concurrency` above what its agents hold at
+once, or fallback steps on it time out while they are all held.
 
 ### Cost accounting
 
@@ -454,9 +481,12 @@ provider or the adapter tries it when the review model fails.
 The gateway itself tries a fallback on another provider. The same step
 goes to the fallback once both of these are true: a review's step failed
 on the review model, and its provider's `retries` or half of the step's
-12 minutes are spent. The fallback gets that provider's own `retries`, and
-the review carries on there. The step's usage is recorded under the model
-that answered. A follow-up's steps fall back the same way, and so does a split
+12 minutes are spent. The step first takes a slot of the fallback model's
+provider's [`concurrency`](#concurrency), waiting for one within the time
+the step has left; a step that gets none fails as it would with no
+fallback. The fallback gets that provider's own `retries`, and the review
+carries on there. The step's usage is recorded under the model that
+answered. A follow-up's steps fall back the same way, and so does a split
 review's summary call ([large reviews](/configuration/#the-agent)).
 
 `confidence.fallback` does the same for the scorer's call. On the
@@ -561,7 +591,7 @@ An agent with `categories` reviews beside the default pass instead. See
   this kind, replaces the instance's agents of this kind as a whole. Every
   model they name must be of a provider that the account can use, or they
   are all dropped ([repository models](/repository-config/#models)).
-- An agent's model waits for its own [`concurrency`](/configuration/#accounts)
+- An agent's model waits for its own [`concurrency`](#concurrency)
   slots, as a repository's own model does. Follow-ups run on the default.
 
 Since `paths` holds when any changed file matches, these agents suit

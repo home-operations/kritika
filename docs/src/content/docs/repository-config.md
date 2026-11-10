@@ -460,8 +460,8 @@ A specialist takes:
 - Agents share tools. A specialist runs the repository's
   [tools](#repository-tools) and commands, as the default pass does. There
   is no per-agent tool list.
-- A review holds model slots. It holds a slot of the account's
-  [`limits.concurrency`](/configuration/#accounts) on the model of each
+- A review holds model slots. It holds a slot of the provider's
+  [`concurrency`](/models/#concurrency) on the model of each
   specialist it runs. It does the same on the default pass's model. It
   waits for those slots as it waits for the default pass's.
 

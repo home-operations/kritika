@@ -101,7 +101,7 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 			})
 			// No River worker acknowledges this attempt after publication, as
 			// when the process exits before its asynchronous completion lands.
-			_, _, err := w.embed(ctx, job, account, embed, file.Embedding, "new", run, runner, nil, file.Settings(account))
+			_, _, err := w.embed(ctx, job, account, embed, file.Embedding, "new", run, runner, nil, 1)
 			if tt.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
 					t.Fatalf("embed = %v, want error containing %q", err, tt.wantError)

@@ -390,7 +390,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		answering = &store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort)}
 	}
 	var agent *store.AgentRunRow
-	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
+	err = f.w.withLease(ctx, f.account, string(ref), f.file.Slots(f.account, ref), f.jobID, func(ctx context.Context) error {
 		var runID string
 		err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 			var err error
@@ -426,7 +426,8 @@ func (f *followUp) runAgent(
 	models := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, f.settings.Models)
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: f.account.ID(), ReviewID: rec.id, RepositoryID: f.pr.repositoryID, FollowupCommentID: f.comment.ID,
-		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort), Budget: limits.MaxTokens,
+		Model: string(models.Review), Fallback: string(models.Fallback), FallbackKey: string(f.settings.Models.Fallback),
+		Effort: string(models.Effort), Budget: limits.MaxTokens,
 	}
 	if answering != nil {
 		pinned := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, configfile.Models{
@@ -435,7 +436,7 @@ func (f *followUp) runAgent(
 		})
 		ref = pinned.Review
 		grant.Reviewers = map[string]store.ReviewerGrant{prompt.Reviewers[0].Name: {
-			Model: string(pinned.Review), Fallback: string(pinned.Fallback), Effort: string(pinned.Effort),
+			Model: string(pinned.Review), Fallback: string(pinned.Fallback), FallbackKey: answering.Fallback, Effort: string(pinned.Effort),
 		}}
 	}
 	token, err := f.w.Store.MintGatewayToken(ctx, grant, time.Now().Add(deadline+f.w.GatewayTokenTTL))

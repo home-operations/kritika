@@ -179,6 +179,60 @@ func TestCallDo(t *testing.T) {
 	}
 }
 
+// TestCallAdmit: a step reaches the fallback once Admit lets it, and holds
+// what Admit gave it until the fallback answered. A refused admission fails
+// the step as the fallback's. A step the model answers never asks.
+func TestCallAdmit(t *testing.T) {
+	transient := &openai.Error{StatusCode: http.StatusBadGateway}
+	refused := errors.New("no slot")
+	for _, tt := range []struct {
+		name               string
+		errs               []error
+		admit              error
+		wantErr            error
+		admitted, released int
+		served             string
+		fbSteps            int
+	}{
+		{name: "the model answers without asking", served: "p/big"},
+		{name: "the fallback is admitted, then let go", errs: []error{transient}, admitted: 1, released: 1, served: "q/small", fbSteps: 1},
+		{name: "a refused fallback fails the step", errs: []error{transient}, admit: refused, wantErr: refused, admitted: 1, served: "q/small"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var admitted, released, fbSteps int
+			fallback := model.StepperFunc(func(context.Context, model.StepRequest) (model.StepResponse, error) {
+				fbSteps++
+				if admitted != 1 || released != 0 {
+					t.Errorf("the fallback stepped admitted %d times, let go %d times; want once, not yet", admitted, released)
+				}
+				return model.StepResponse{Text: "ok"}, nil
+			})
+			route := Route{Ref: "p/big", Stepper: &stepperFunc{errs: tt.errs}}
+			c := Call{
+				Route:    route,
+				Fallback: &Route{Ref: "q/small", Stepper: fallback},
+				Admit: func(_ context.Context, fb Route) (func(), error) {
+					admitted++
+					if fb.Ref != "q/small" {
+						t.Errorf("admitted %s, want q/small", fb.Ref)
+					}
+					if tt.admit != nil {
+						return nil, tt.admit
+					}
+					return func() { released++ }, nil
+				},
+			}
+			_, _, served, err := c.Do(t.Context(), model.StepRequest{})
+			if !errors.Is(err, tt.wantErr) || string(served.Ref) != tt.served {
+				t.Fatalf("Do = %s, %v; want %s, %v", served.Ref, err, tt.served, tt.wantErr)
+			}
+			if admitted != tt.admitted || released != tt.released || fbSteps != tt.fbSteps {
+				t.Fatalf("admitted %d, let go %d, fallback steps %d; want %d, %d, %d", admitted, released, fbSteps, tt.admitted, tt.released, tt.fbSteps)
+			}
+		})
+	}
+}
+
 // TestCallHalve: a model that never answers spends half the call's time when
 // a fallback on another provider waits for its turn. It spends all of it
 // otherwise, when the fallback will fail the same way.

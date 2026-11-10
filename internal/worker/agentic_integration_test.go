@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -56,14 +57,13 @@ providers:
     type: openai
     baseUrl: %[1]s/v1
     apiKey: { env: TEST_SECRET }
+    concurrency: 1
   opencode:
     type: opencode
     baseUrl: %[1]s/v1
     apiKey: { env: TEST_SECRET }
 review:
   model: gateway/agent-model
-limits:
-  concurrency: 1
 apps:
   acme-bot:
     accounts: [acme]
@@ -2139,7 +2139,10 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 	h.lf.setSize(forge.OpenPullRequest{Additions: 6824, Deletions: 291, ChangedFiles: 188})
 	defer h.lf.setSize(forge.OpenPullRequest{})
 	wide := *h.file
-	wide.Defaults.Limits.Concurrency = new(3)
+	wide.Providers = maps.Clone(h.file.Providers)
+	gw := wide.Providers["gateway"]
+	gw.Concurrency = 3
+	wide.Providers["gateway"] = gw
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	for i, tc := range []struct {
 		file     *configfile.File
@@ -2200,7 +2203,7 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 	config := h.config
 	for _, r := range [][2]string{
-		{"apiKey: { env: TEST_SECRET }\n  opencode:", "apiKey: { env: TEST_SECRET }\n    retries: 1\n  opencode:"},
+		{"concurrency: 1\n  opencode:", "concurrency: 1\n    retries: 1\n  opencode:"},
 		{"model: gateway/agent-model\n", "model: gateway/agent-model\n  fallback: opencode/merge-model\n"},
 	} {
 		if !strings.Contains(config, r[0]) {

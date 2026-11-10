@@ -240,7 +240,6 @@ export interface ModelRoute {
 }
 
 export interface Limits {
-  concurrency: number;
   reviewsPerDay: number;
   tokensPerMonth: number;
 }
@@ -1131,7 +1130,7 @@ export interface InstanceJob extends Job {
   account: string;
 }
 
-// How many of an account's concurrency slots for a model a running review
+// How many of an account's slots for a model a running review
 // holds. slots is the account's limit, 0 for none.
 export interface ModelSlots {
   account: string;
