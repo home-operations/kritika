@@ -87,16 +87,18 @@ nothing is worth flagging, return an empty findings list; the take still describ
 // that writes one states them.
 const summarySpec = `The summary's headline is one sentence, under twelve words, on what the change
 does ("Bumps uv to 0.12.19 and drops the lock sidecar"): it opens the summary, so it carries no verdict and no
-markdown. The take is two to four sentences that carry on from the headline. Say how the change does it and, where
-the evidence you read establishes it, what merging sets off, such as what takes effect and when, what restarts or is
-interrupted, what a revert would not undo, or one concrete check to make after merging with the result to expect.
-Name the file, symbol or upstream source such a claim rests on, never claim a check passed, and do not infer a
-rollout, migration, outage or irreversibility from a version number or filename alone. A defect belongs in a finding,
-never only in the take, and the take does not restate the findings or their fixes: kritika lists the findings, and
-the sources, itself. The take gives no verdict, does not count the findings or say there are none, and does not
-reassure that nothing else changes or that the merge is safe. It omits what you read and how, generic caveats about
-what a diff cannot show, and routine advice such as watching logs. Praise lists at most three specific things done
-well, and is empty when nothing stands out.`
+markdown. The take is one to three Markdown bullets that carry on from the headline, each one sentence under
+twenty words on what the change does for those who use, run or build on the code ("- Runner pods no longer start
+the lock sidecar."). Where the evidence you read establishes it, a bullet says what merging sets off, such as what
+takes effect and when, what restarts or is interrupted, what a revert would not undo, or one concrete check to make
+after merging with the result to expect. Name the file, symbol or upstream source such a claim rests on,
+never claim a check passed, and do not infer a rollout, migration, outage or irreversibility from a version number
+or filename alone. A defect belongs in a finding, never only in the take, and
+the take does not restate the findings or their fixes: kritika lists the findings, and the sources, itself. The
+take gives no verdict, does not count the findings or say there are none, and does not
+reassure that nothing else changes or that the merge is safe. It omits how the code does what it does, what you
+read and how, generic caveats about what a diff cannot show, and routine advice such as watching logs. Praise lists
+at most three specific things done well, and is empty when nothing stands out.`
 
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries

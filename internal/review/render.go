@@ -191,6 +191,31 @@ func codeSpan(s string) string {
 	return fence + s + fence
 }
 
+// Clean reports whether the review is one that the default template states
+// in a line: scored MaxConfidence, nothing found, held back or left
+// unreviewed, no note on what it left out or dropped, and approved where the
+// repository has kritika approve. The template then folds the scorer's
+// reason into the review context.
+func (d RenderData) Clean() bool {
+	return d.Incomplete == "" && d.Confidence != nil && d.Confidence.Score == MaxConfidence &&
+		len(d.Result.Findings) == 0 && len(d.Unanchored) == 0 && len(d.HeldBack) == 0 && len(d.Notes) == 0 &&
+		(d.Approval == nil || d.Approval.Approved)
+}
+
+// OpenPrior are the earlier findings that the default template lists: those
+// that this review listed as resolved and that have a thread it did not
+// resolve, which only the summary then marks fixed. A thread that it resolved
+// shows itself, and a dismissed finding's thread holds the dismissal.
+func (d RenderData) OpenPrior() []PriorFinding {
+	var out []PriorFinding
+	for _, f := range d.Prior {
+		if f.Resolved && f.ThreadURL != "" && !f.ThreadResolved {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // NamedAgents reports whether the review ran a reviewer other than the
 // default one, alone or beside it, which the default template names.
 func (d RenderData) NamedAgents() bool {

@@ -500,8 +500,7 @@ func (p *publishPhase) writeBack(
 	}
 	if p.prior.id != "" {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
-		data.Prior = p.priorFindings()
-		p.resolveThreads(ctx, resolvedThreads(p.resolved), true)
+		data.Prior = p.priorFindings(p.resolveThreads(ctx, resolvedThreads(p.resolved), true))
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -598,9 +597,10 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 
 // priorFindings is the last review's findings as this review's summary lists
 // them. First come those it listed as resolved, linked to their threads where
-// they have one. Then come the findings that maintainers dismissed, each
-// linked to the comment that dismissed it.
-func (p *publishPhase) priorFindings() []review.PriorFinding {
+// they have one, each marked with whether this review resolved its thread,
+// which resolved holds. Then come the findings that maintainers dismissed,
+// each linked to the comment that dismissed it.
+func (p *publishPhase) priorFindings(resolved map[int64]bool) []review.PriorFinding {
 	owner, repo := p.pr.ownerRepo()
 	dismissed := slices.Concat(p.prior.dismissed, p.answered)
 	out := make([]review.PriorFinding, 0, len(p.resolved)+len(dismissed))
@@ -610,7 +610,7 @@ func (p *publishPhase) priorFindings() []review.PriorFinding {
 		if pf.commentID != 0 {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
 		}
-		out = append(out, review.PriorFinding{Finding: f, Resolved: true})
+		out = append(out, review.PriorFinding{Finding: f, Resolved: true, ThreadResolved: resolved[pf.commentID]})
 	}
 	for _, d := range dismissed {
 		f := d.Finding
@@ -644,28 +644,31 @@ func reportedSet(findings []review.Finding) map[string]bool {
 }
 
 // resolveThreads resolves the threads of the findings this review found
-// gone or settled as answered, so the forge agrees with the summary that
-// lists them. With onlyOwn, the forge client leaves a thread someone else
-// wrote in open: an answered one has their reply, and resolves as the
-// dismiss command resolves it. Best effort, like the inline review: the
-// summary is the record either way.
-func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64, onlyOwn bool) {
+// gone or settled as answered, so the forge agrees with the review. With
+// onlyOwn, the forge client leaves a thread someone else wrote in open: an
+// answered one has their reply, and resolves as the dismiss command resolves
+// it. Best effort, like the inline review. It returns the ids of the threads
+// it resolved: the summary marks a finding fixed where its thread was not.
+func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64, onlyOwn bool) map[int64]bool {
+	resolved := make(map[int64]bool, len(ids))
 	if len(ids) == 0 {
-		return
+		return resolved
 	}
 	defer p.timeStage("forge_resolve_threads")()
 	owner, repo := p.pr.ownerRepo()
 	for _, id := range ids {
-		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, onlyOwn)
+		ok, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, onlyOwn)
 		switch {
 		case errors.Is(err, forge.ErrUnsupported):
-			return
+			return resolved
 		case err != nil:
 			p.logger.Warn("finding's thread not resolved", "comment", id, "error", err)
-		case resolved:
+		case ok:
 			p.logger.Info("finding's thread resolved", "comment", id)
+			resolved[id] = true
 		}
 	}
+	return resolved
 }
 
 // upsertSticky edits the pull request's sticky comment to body and returns

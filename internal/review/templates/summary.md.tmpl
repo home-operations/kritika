@@ -3,6 +3,10 @@
 {{ if .Incomplete -}}
 **Review incomplete for {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
 {{ else -}}
+{{ if .Clean -}}
+{{ with .Confidence.Risk }}**[{{ . | toString | capitalize }} risk]** {{ end }}No findings.{{ if .Approval }} Approved.{{ end }}
+
+{{ else -}}
 {{ with .Confidence -}}
 {{ if or .Risk .Explanation -}}
 {{ if .Risk }}**[{{ .Risk | toString | capitalize }} risk]**{{ if .Explanation }} {{ end }}{{ end }}{{ .Explanation }}
@@ -13,7 +17,8 @@
 **{{ if .Approval.Approved }}Approved{{ else }}Not approved{{ end }}**{{ if .Approval.Reason }}: {{ .Approval.Reason }}{{ end }}
 
 {{ end -}}
-{{ if or .Result.Findings .Unanchored .HeldBack .Prior -}}
+{{ end -}}
+{{ if or .Result.Findings .Unanchored .HeldBack .OpenPrior -}}
 ## Findings
 
 {{ if .Result.Findings -}}
@@ -40,14 +45,12 @@
 </details>
 
 {{ end -}}
-{{ if .Prior -}}
-{{ $resolved := 0 }}{{ $dismissed := 0 -}}
-{{ range .Prior }}{{ if .Dismissed }}{{ $dismissed = add $dismissed 1 }}{{ else }}{{ $resolved = add $resolved 1 }}{{ end }}{{ end -}}
+{{ with .OpenPrior -}}
 <details>
-<summary>Earlier findings ({{ if $resolved }}{{ $resolved }} resolved{{ end }}{{ if and $resolved $dismissed }}, {{ end }}{{ if $dismissed }}{{ $dismissed }} dismissed{{ end }})</summary>
+<summary>Earlier findings ({{ len . }} resolved)</summary>
 
-{{ range .Prior -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else }}resolved{{ end }}
+{{ range . -}}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} [{{ .Title }}]({{ .ThreadURL }}){{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }} · resolved
 {{ end }}
 </details>
 
@@ -79,10 +82,13 @@
 {{ end -}}
 {{ end -}}
 {{ end -}}
-{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents .Focus .Overlaps }}
+{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents .Focus .Overlaps (and .Clean .Confidence.Explanation) }}
 <details>
 <summary>Review context{{ if .NamedAgents }} · {{ len .Agents }} {{ plural "agent" "agents" (len .Agents) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}{{ if .Overlaps }} · {{ len .Overlaps }} overlapping {{ plural "pull request" "pull requests" (len .Overlaps) }}{{ end }}</summary>
 
+{{ if and .Clean .Confidence.Explanation -}}
+- **Risk:** {{ .Confidence.Explanation }}
+{{ end -}}
 {{ if .Focus -}}
 - **Focus:** {{ .Focus }}
 {{ end -}}
