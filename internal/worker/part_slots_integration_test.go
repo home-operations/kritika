@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -64,17 +65,19 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	}()
 	logger := slog.New(slog.DiscardHandler)
 	w := &Review{Store: st, Logger: logger}
-	slots := &reviewSlots{worker: w, logger: logger,
-		accountID: account.ID(), runID: runID, model: model, jobID: -1, limit: 3, maxParts: 4}
+	pool := &slotPool{model: model, limit: 3, reviewers: []string{review.DefaultReviewer}}
+	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID, jobID: -1,
+		pools: []*slotPool{pool}, estimate: map[string]int{review.DefaultReviewer: 4}}
 	defer slots.close(context.Background())
+	parts := func(n int) map[string]int { return map[string]int{model: n} }
 	check := func(want int) {
 		t.Helper()
-		if slots.published != want || len(slots.leases) != want-1 {
-			t.Fatalf("grant=%d extras=%d, want %d", slots.published, len(slots.leases), want)
+		if slots.published[model] != want || len(pool.leases) != want-1 {
+			t.Fatalf("grant=%v extras=%d, want %d", slots.published, len(pool.leases), want)
 		}
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			var granted, held int
-			if err := tx.QueryRow(ctx, `SELECT part_slots, (SELECT count(*) FROM model_leases
+			if err := tx.QueryRow(ctx, `SELECT (part_slots->>$3)::int, (SELECT count(*) FROM model_leases
     WHERE account_id=$2 AND model_key=$3 AND job_id=$4 AND expires_at>now()) FROM runner_runs WHERE id=$1`,
 				runID, account.ID(), model, int64(-1)).Scan(&granted, &held); err != nil {
 				return err
@@ -87,7 +90,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := slots.resize(ctx, 4); err != nil {
+	if err := slots.resize(ctx, parts(4)); err != nil {
 		t.Fatal(err)
 	}
 	check(1)
@@ -97,36 +100,41 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 		}
 	}
 	rivals = nil
-	if err := slots.resize(ctx, 4); err != nil {
+	if err := slots.resize(ctx, parts(4)); err != nil {
 		t.Fatal(err)
 	}
 	check(3)
 	slots.runID = "00000000-0000-0000-0000-000000000000"
-	if err := slots.resize(ctx, 1); err == nil {
+	if err := slots.resize(ctx, parts(1)); err == nil {
 		t.Fatal("publishing to a missing run succeeded")
 	}
 	slots.runID = runID
+	// The leases were let go before the grant failed to publish; the grant
+	// still says three until it is published again.
+	if err := slots.resize(ctx, parts(3)); err != nil {
+		t.Fatal(err)
+	}
 	check(3)
-	if err := slots.resize(ctx, 1); err != nil {
+	if err := slots.resize(ctx, parts(1)); err != nil {
 		t.Fatal(err)
 	}
 	check(1)
-	if err := slots.resize(ctx, 4); err != nil {
+	if err := slots.resize(ctx, parts(4)); err != nil {
 		t.Fatal(err)
 	}
 	check(3)
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		_, err := store.ReportRemainingParts(ctx, tx, runID, 1)
+		_, err := store.ReportRemainingParts(ctx, tx, runID, parts(1))
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	stop := slots.watch(ctx)
 	defer stop()
-	waitPartGrant(t, ctx, st, account.ID(), runID, 1)
+	waitPartGrant(t, ctx, st, account.ID(), runID, model, 1)
 	stop()
 	check(1)
-	if err := slots.resize(ctx, 4); err != nil {
+	if err := slots.resize(ctx, parts(4)); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
@@ -148,7 +156,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	}
 }
 
-func waitPartGrant(t *testing.T, ctx context.Context, st *store.Store, accountID, runID string, want int) {
+func waitPartGrant(t *testing.T, ctx context.Context, st *store.Store, accountID, runID, model string, want int) {
 	t.Helper()
 	waitCtx, stopWait := context.WithTimeout(ctx, 10*time.Second)
 	defer stopWait()
@@ -157,7 +165,7 @@ func waitPartGrant(t *testing.T, ctx context.Context, st *store.Store, accountID
 	for {
 		var granted int
 		if err := st.WithAccount(waitCtx, accountID, func(tx pgx.Tx) error {
-			return tx.QueryRow(waitCtx, `SELECT part_slots FROM runner_runs WHERE id=$1`, runID).Scan(&granted)
+			return tx.QueryRow(waitCtx, `SELECT (part_slots->>$2)::int FROM runner_runs WHERE id=$1`, runID, model).Scan(&granted)
 		}); err != nil {
 			t.Fatal(err)
 		}

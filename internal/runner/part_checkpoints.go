@@ -32,7 +32,7 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 	p.RunID = ""
 	if p.Agent != nil {
 		limits := *p.Agent
-		limits.Parallel, limits.MaxTokens = 0, 0
+		limits.Slots, limits.MaxTokens = nil, 0
 		p.Agent = &limits
 	}
 	if p.Prompt != nil {

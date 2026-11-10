@@ -36,7 +36,15 @@ func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]s
 	if scope == review.ScopeIncremental {
 		diff = res.DeltaDiff
 	}
-	return review.SplitDiff(diff, p.Ignore, review.PartBytes, p.Agent.Parts)
+	// Agent.Parts is sized for every reviewer the worker chose. When only
+	// the default pass applies after all, it still gets its own share, as
+	// planReviewers gives each reviewer: the worker's deadline covers that
+	// many parts in its model's slots.
+	parts := p.Agent.Parts
+	if p.Prompt != nil && len(p.Prompt.Reviewers) > 0 {
+		parts = max(1, parts/len(p.Prompt.Reviewers))
+	}
+	return review.SplitDiff(diff, p.Ignore, review.PartBytes, parts)
 }
 
 // reviewPart is one part of a split review: the files it reviews and its
@@ -157,7 +165,7 @@ func partSimilarCode(
 	unique := slices.Compact(slices.Sorted(slices.Values(diffs)))
 	found := make([]contextpack.SimilarResponse, len(unique))
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(max(1, p.Agent.Parallel))
+	g.SetLimit(totalSlots(p.Agent.Slots))
 	for i, diff := range unique {
 		g.Go(func() error {
 			if err := gctx.Err(); err != nil {
@@ -408,13 +416,23 @@ func runParts(
 func runPartLoops(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
 	parts []reviewPart, logger *slog.Logger,
-	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, int) int,
+	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, map[string]int) map[string]int,
 ) ([]agent.Result, []runspec.TimelineStep, error) {
 	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
-	parallel := max(p.Agent.Parallel, 1)
-	rounds := (len(parts) + parallel - 1) / parallel
+	key := func(i int) string { return poolKey(p, parts[i].reviewer) }
+	count := map[string]int{}
+	for i := range parts {
+		count[key(i)]++
+	}
+	// The parts in each slot pool run in rounds of its slots; the slowest
+	// pool sets the time the parts share.
+	rounds := 1
+	for k, n := range count {
+		slots := max(1, granted(p.Agent.Slots, k))
+		rounds = max(rounds, (n+slots-1)/slots)
+	}
 	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout))
-	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "parallel", parallel, "commands", tools.commands(),
+	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "slots", p.Agent.Slots, "commands", tools.commands(),
 		"search", tools.search != nil)
 	results := make([]agent.Result, len(parts))
 	steps := make([][]runspec.TimelineStep, len(parts))
@@ -430,7 +448,7 @@ func runPartLoops(
 	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	err := scheduleParts(ctx, pending, parallel, ticker.C, report, func(gctx context.Context, i int) error {
+	err := scheduleParts(ctx, pending, key, p.Agent.Slots, ticker.C, report, func(gctx context.Context, i int) error {
 		part := parts[i]
 		left := time.Until(deadline)
 		switch {

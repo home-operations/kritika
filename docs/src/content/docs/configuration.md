@@ -738,8 +738,11 @@ by step, and a follow-up's:
   As many parts run at once as the review model's provider has
   [`concurrency`](/models/#providers) slots free when the review starts. The free
   slots that count are the review's own and those that no other review
-  holds. The rest run as those end. The parts' tool calls run one at a
-  time. The parts are published as one review.
+  holds. The rest run as those end. An [agent](/repository-config/#agents)
+  on another model runs its parts in that model's slots, counted the same
+  way, so a slower model's agent never takes the review model's slots or
+  exceeds its own. The parts' tool calls run one at a time. The parts are
+  published as one review.
 
   One more call to the review model writes the review's summary from the
   parts' summaries. That call is tried again and falls back as a

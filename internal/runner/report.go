@@ -101,7 +101,7 @@ func (r *reporter) saveCheckpoint(ctx context.Context, input string, part int, p
 	return r.post(ctx, runspec.ReportCheckpointsPath, runspec.CheckpointReport{Input: input, Part: part, Payload: payload}, nil)
 }
 
-func (r *reporter) partsRemaining(ctx context.Context, remaining int) (int, error) {
+func (r *reporter) partsRemaining(ctx context.Context, remaining map[string]int) (map[string]int, error) {
 	var slots runspec.PartSlots
 	err := r.post(ctx, runspec.ReportPartsPath, runspec.PartsReport{Remaining: remaining}, &slots)
 	return slots.Slots, err

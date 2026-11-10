@@ -35,9 +35,18 @@ func (r reviewers) notes() []string {
 	return []string{r.note}
 }
 
-// count is how many agents the review runs, which its parts, grant and
-// deadline are sized for: one for the default pass alone.
-func (r reviewers) count() int { return max(1, len(r.specs)) }
+// names are the agents' names, which the review's parts, grant and deadline
+// are sized for: the default pass's alone when it runs alone.
+func (r reviewers) names() []string {
+	if len(r.specs) == 0 {
+		return []string{review.DefaultReviewer}
+	}
+	out := make([]string, len(r.specs))
+	for i, spec := range r.specs {
+		out[i] = spec.Name
+	}
+	return out
+}
 
 // chooseReviewers is the agents that a review of a pull request with the
 // filter variables vars runs. settings is the repository's. The agents are

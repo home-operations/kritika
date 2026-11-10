@@ -29,7 +29,7 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 41
+const Version = 42
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -81,12 +81,16 @@ type AgentLimits struct {
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
 	// Parts is the most parts the runner can split a review into, which
 	// the run's grant and deadline cover. Under two, it never splits.
-	// Parallel is the initial capacity held by the worker. A split review
-	// observes later grants through runner_runs.part_slots.
+	// Slots is the capacity the worker holds as the run starts, by slot
+	// pool: how many parts run at once in each. A pool is a model's slots.
+	// Pools names each reviewer's pool, the default pass's under
+	// review.DefaultReviewer; reviewers on one model share a pool. A split
+	// review observes later grants through runner_runs.part_slots.
 	// TimeoutSeconds bounds each part.
-	Parts          int `json:"parts,omitempty"`
-	Parallel       int `json:"parallel,omitempty"`
-	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	Parts          int               `json:"parts,omitempty"`
+	Slots          map[string]int    `json:"slots,omitempty"`
+	Pools          map[string]string `json:"pools,omitempty"`
+	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
 	// CommandTimeoutSeconds bounds one command the run tool executes.
 	// Zero takes configfile.DefaultCommandTimeout.
 	CommandTimeoutSeconds int `json:"commandTimeoutSeconds,omitempty"`

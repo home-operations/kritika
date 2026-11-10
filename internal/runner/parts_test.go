@@ -53,6 +53,19 @@ func TestSplitReview(t *testing.T) {
 	if got := splitReview(s, res, review.ScopeIncremental); got != nil {
 		t.Fatalf("an incremental review of a small delta = %q, want it whole", got)
 	}
+	// A run sized for two reviewers of which only the default pass applies
+	// splits into that pass's share of the parts: two of the four, so the
+	// 100 KiB go in two parts of the two each reviewer was given.
+	s.Agent.Parts = 4
+	s.Prompt.Reviewers = []runspec.Reviewer{{Name: review.DefaultReviewer}, {Name: "security", Paths: []string{"none/**"}}}
+	four := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10, "c/z.go", 50<<10, "d/w.go", 50<<10)}
+	if got := splitReview(s, four, review.ScopeFull); len(got) != 2 {
+		t.Fatalf("a default-only review sized for two reviewers = %d parts, want the default pass's two", len(got))
+	}
+	s.Prompt.Reviewers = nil
+	if got := splitReview(s, four, review.ScopeFull); len(got) != 4 {
+		t.Fatalf("a review of the default pass alone = %d parts, want four", len(got))
+	}
 	s.Agent.Parts = 0
 	if got := splitReview(s, res, review.ScopeFull); got != nil {
 		t.Fatalf("a run its grant sized for one part = %q, want it whole", got)
@@ -187,7 +200,7 @@ func TestPartPromptsContext(t *testing.T) {
 	}))
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
-	s.GatewayURL, s.Agent.Parallel = gw.URL, 2
+	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
 	s.Agent.MaxPromptTokens = 24_000
 	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
@@ -274,7 +287,7 @@ func TestRunPartLoops(t *testing.T) {
 			}))
 			t.Cleanup(gw.Close)
 			s := reviewSpec()
-			s.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, tt.parallel, 60
+			s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(tt.parallel), 60
 			head := tree(t, map[string]string{"a.go": "package a\n"})
 			parts := make([]reviewPart, tt.parts)
 			for i := range parts {

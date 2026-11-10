@@ -463,7 +463,9 @@ A specialist takes:
 - A review holds model slots. It holds a slot of the provider's
   [`concurrency`](/models/#concurrency) on the model of each
   specialist it runs. It does the same on the default pass's model. It
-  waits for those slots as it waits for the default pass's.
+  waits for those slots as it waits for the default pass's. A split
+  review runs each specialist's parts in its own model's slots, as many
+  at once as are free, and specialists on one model share its slots.
 
 Each specialist spends tokens of its own: with two, a review costs about
 three times as much. The dashboard's review timeline shows each part's
