@@ -44,9 +44,11 @@ release, and makes sure that it matches the release's checksums.
 The image's `kritika-runner` is built from `cmd/kritika-runner`, which
 runs `kritika-runner run` alone. Its test fails when the binary links
 one of serve's packages. Grype reads the root's rpm database. Trivy does
-not recognize Hardened Images yet. Renovate bumps the two images' digests,
-and it bumps `gh` through the annotation above its version. The `tools` in
-a repository's `.kritika.yaml` add to the runner image's commands.
+not recognize Hardened Images yet. The two images take the minor version's
+moving tag without a digest, so each build gets the newest Hardened Images
+build. Renovate opens a PR only for a new minor or major version, and it
+bumps `gh` through the annotation above its version. The `tools` in a
+repository's `.kritika.yaml` add to the runner image's commands.
 
 `mise run generate` rebuilds the chart's README and schema from
 `values.yaml`, and fetches Sigstore's trusted root into
