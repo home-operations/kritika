@@ -78,8 +78,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # bumps both images' digests. core-runtime names no user 65532. A runtime that
 # adds none to /etc/passwd leaves a tool unable to look up that user. The root
 # therefore gets a nonroot user and group of that id.
-FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:4163796d8b7f28021178093d31cb97c05336fd3f3a4d7006603a7fef29e997e7 AS core-runtime
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:ec42e5bba671b73f6656e6f9bda14f7d400b55dd7cdce369b41870dfadd00262 AS tools-root
+FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:81280d7fd6afa7a3d2a6da2e90e545cf8e5d187c80a69b2a1c875fdcd731aaed AS core-runtime
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:4273cca14044b69f3a78e9e47122d4ef20fdd5ae2b9d58a68389afd3b64435f7 AS tools-root
 USER 0
 COPY --from=core-runtime / /rootfs
 RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak_deps=False --nodocs \
