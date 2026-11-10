@@ -494,9 +494,13 @@ func gatewayStepper(p runspec.Spec, secrets runspec.Secrets, part int, reviewer 
 	if reviewer == review.DefaultReviewer {
 		reviewer = ""
 	}
+	timeout := time.Duration(p.Model.RequestTimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = model.GatewayRequestTimeout(model.StepBudget(model.DefaultStepTimeout, model.DefaultStepTimeout))
+	}
 	s, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,
-		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout, Part: part, Reviewer: reviewer,
+		Retries: gatewayRetries, RequestTimeout: timeout, Part: part, Reviewer: reviewer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("runner: %w", err)

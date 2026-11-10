@@ -52,13 +52,13 @@ type Execution struct {
 // Execution resolves both routes before the caller reserves a run's budget. A
 // missing fallback is logged. The primary still gets its configured attempts.
 func (c *Steppers) Execution(file *configfile.File, account *configfile.Account, ref, fallback configfile.ModelRef,
-	halve bool, logger *slog.Logger,
+	share bool, logger *slog.Logger,
 ) (*Execution, error) {
 	route, err := c.Route(file, account, ref, logger)
 	if err != nil {
 		return nil, err
 	}
-	e := &Execution{file: file, account: account, logger: logger, call: Call{Route: route, Halve: halve}}
+	e := &Execution{file: file, account: account, logger: logger, call: Call{Route: route, Share: share}}
 	e.call.Failed = func(err error, on, next Route) {
 		msg := Mask(file, on.Provider)(err.Error())
 		if next.Ref != on.Ref {
@@ -80,6 +80,9 @@ func (c *Steppers) Execution(file *configfile.File, account *configfile.Account,
 	}
 	return e, nil
 }
+
+// Budget is what the call gets at most, with its fallback (Call.Budget).
+func (e *Execution) Budget() time.Duration { return e.call.Budget() }
 
 // Step executes a runner's provider-neutral request.
 func (e *Execution) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
@@ -107,7 +110,7 @@ func (e *Execution) Begin(ctx context.Context) error {
 	}
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		deadline = time.Now().Add(model.GatewayStepBudget)
+		deadline = time.Now().Add(e.call.Budget())
 	}
 	var token string
 	var reserved int64

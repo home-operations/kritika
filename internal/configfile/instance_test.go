@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -104,6 +105,54 @@ func TestProviderConcurrency(t *testing.T) {
 	if _, err := Parse([]byte(strings.Replace(withConcurrency, "concurrency: 8", "concurrency: -1", 1))); err == nil ||
 		!strings.Contains(err.Error(), "providers.openrouter.concurrency must be positive") {
 		t.Fatalf("Parse with negative concurrency = %v", err)
+	}
+}
+
+// TestProviderTimeout: a provider's timeout is what it sets, the default
+// when it sets none, and never negative or over the bound. A step's budget
+// is a request to each of the two providers, or two to one.
+func TestProviderTimeout(t *testing.T) {
+	setInstanceEnv(t)
+	f, err := Parse([]byte(fileWithDefaults))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Timeout != model.DefaultStepTimeout {
+		t.Fatalf("timeout unset = %s, want %s", p.Timeout, model.DefaultStepTimeout)
+	}
+	if got := f.StepBudget(&f.Accounts[0], "openrouter/big", "openrouter/small"); got != 12*time.Minute {
+		t.Fatalf("StepBudget by default = %s, want 12m", got)
+	}
+	withTimeout := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }",
+		"apiKey: { env: TEST_PROVIDER_KEY }, timeout: 15m }\n  local: { type: openai, baseUrl: http://llm.local/v1, apiKey: { env: TEST_PROVIDER_KEY } }", 1)
+	f, err = Parse([]byte(withTimeout))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Timeout != 15*time.Minute {
+		t.Fatalf("timeout = %s, want 15m", p.Timeout)
+	}
+	for _, tt := range []struct {
+		name          string
+		ref, fallback ModelRef
+		want          time.Duration
+	}{
+		{"no fallback, two requests to the provider", "openrouter/big", "", 32 * time.Minute},
+		{"a fallback on the provider, the same", "openrouter/big", "openrouter/small", 32 * time.Minute},
+		{"a fallback on another provider, one request to each", "openrouter/big", "local/small", 22 * time.Minute},
+		{"a provider the account cannot reach gets the default", "openrouter/big", "none/small", 22 * time.Minute},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := f.StepBudget(&f.Accounts[0], tt.ref, tt.fallback); got != tt.want {
+				t.Fatalf("StepBudget = %s, want %s", got, tt.want)
+			}
+		})
+	}
+	for _, bad := range []string{"-1s", "31m"} {
+		if _, err := Parse([]byte(strings.Replace(withTimeout, "timeout: 15m", "timeout: "+bad, 1))); err == nil ||
+			!strings.Contains(err.Error(), "providers.openrouter.timeout must be between 0 and 30m0s") {
+			t.Fatalf("Parse with timeout %s = %v", bad, err)
+		}
 	}
 }
 

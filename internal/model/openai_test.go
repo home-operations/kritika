@@ -419,23 +419,32 @@ func TestOpenRouterInFlightBudgetIsTransient(t *testing.T) {
 	}
 }
 
+// TestStalledProviderTimesOut: an adapter built for a provider gives up on a
+// request by the provider's timeout, and the failure is transient.
 func TestStalledProviderTimesOut(t *testing.T) {
-	old := StepTimeout
-	StepTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { StepTimeout = old })
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(release) })
+	steppers := map[string]func() (Stepper, error){
+		"chatgpt": func() (Stepper, error) {
+			return NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Provider: testPlan, Tokens: &tokens{token: "at-1"},
+				RequestTimeout: 50 * time.Millisecond})
+		},
+	}
 	for _, pt := range []ProviderType{ProviderOpenAI, ProviderOpenRouter, ProviderOpenCode, ProviderAnthropic} {
-		t.Run(string(pt), func(t *testing.T) {
-			s, err := NewStepper(pt, srv.URL, "k", nil, Pricing{}, nil)
+		steppers[string(pt)] = func() (Stepper, error) { return NewStepper(pt, srv.URL, "k", nil, Pricing{}, 50*time.Millisecond, nil) }
+	}
+	for name, build := range steppers {
+		t.Run(name, func(t *testing.T) {
+			s, err := build()
 			if err != nil {
 				t.Fatal(err)
 			}
+			start := time.Now()
 			_, err = s.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
-			if err == nil || !Transient(err) {
-				t.Fatalf("err = %v, want a transient timeout", err)
+			if err == nil || !Transient(err) || time.Since(start) > time.Second {
+				t.Fatalf("err = %v after %s, want a transient timeout by the provider's", err, time.Since(start))
 			}
 		})
 	}
@@ -629,12 +638,20 @@ func TestOpenAIConfiguredHeaders(t *testing.T) {
 }
 
 // TestRequestTimeoutOverrides: a client built with its own request timeout
-// gives up on a stalled server by that timeout, not by StepTimeout. The
-// gateway's budgets nest, so the runner always outlasts the gateway, which
-// outlasts one provider request.
+// gives up on a stalled server by that timeout, not by DefaultStepTimeout.
+// The gateway's budgets nest, so the runner always outlasts the gateway,
+// which outlasts one provider request on either of a step's providers.
 func TestRequestTimeoutOverrides(t *testing.T) {
-	if GatewayRequestTimeout <= GatewayStepBudget || GatewayStepBudget <= StepTimeout {
-		t.Fatalf("timeouts do not nest: request %s, budget %s, step %s", GatewayRequestTimeout, GatewayStepBudget, StepTimeout)
+	for _, tt := range []struct{ primary, fallback time.Duration }{
+		{DefaultStepTimeout, DefaultStepTimeout}, {DefaultStepTimeout, 30 * time.Minute}, {30 * time.Minute, time.Minute},
+	} {
+		budget := StepBudget(tt.primary, tt.fallback)
+		if request := GatewayRequestTimeout(budget); request <= budget || budget <= tt.primary+tt.fallback {
+			t.Fatalf("timeouts do not nest: request %s, budget %s, steps %s and %s", request, budget, tt.primary, tt.fallback)
+		}
+	}
+	if got := StepBudget(DefaultStepTimeout, DefaultStepTimeout); got != 12*time.Minute {
+		t.Fatalf("the default budget = %s, want 12m", got)
 	}
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
@@ -646,8 +663,36 @@ func TestRequestTimeoutOverrides(t *testing.T) {
 	}
 	start := time.Now()
 	_, err = s.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
-	if err == nil || !Transient(err) || time.Since(start) > StepTimeout/2 {
-		t.Fatalf("err = %v after %s, want a transient timeout well before StepTimeout", err, time.Since(start))
+	if err == nil || !Transient(err) || time.Since(start) > DefaultStepTimeout/2 {
+		t.Fatalf("err = %v after %s, want a transient timeout well before DefaultStepTimeout", err, time.Since(start))
+	}
+}
+
+// TestOpenAIRequestTimeoutHeader: the runner's client of the gateway names
+// how long it waits on every request, in seconds. A provider's client
+// sends no such header.
+func TestOpenAIRequestTimeoutHeader(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		gateway bool
+		want    string
+	}{{"gateway", true, "1620"}, {"provider", false, ""}} {
+		t.Run(tt.name, func(t *testing.T) {
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Get(RequestTimeoutHeader)
+				http.Error(w, "nope", http.StatusTeapot)
+			}))
+			t.Cleanup(srv.Close)
+			s, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", Gateway: tt.gateway, RequestTimeout: 27 * time.Minute})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = s.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+			if got != tt.want {
+				t.Fatalf("%s = %q, want %q", RequestTimeoutHeader, got, tt.want)
+			}
+		})
 	}
 }
 

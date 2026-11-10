@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"time"
@@ -104,10 +105,30 @@ type Call struct {
 	// step's, as a failure of the fallback is. Unset, the fallback gets the
 	// step at once.
 	Admit func(ctx context.Context, fallback Route) (release func(), err error)
-	// Halve, with a Fallback, bounds the attempts on Route to half the time
-	// ctx has left, so the fallback always gets a turn. Unset, they can take
-	// all of it.
-	Halve bool
+	// Share, with a Fallback, bounds the attempts on Route to Route's
+	// provider's share of the time ctx has left, so the fallback always gets
+	// a turn: its timeout's part of the two providers' timeouts together,
+	// half when they are alike. Unset, they can take all of it.
+	Share bool
+}
+
+// Budget is what the call gets at most: one request to Route's provider and
+// one to the Fallback's, or a second to Route's without a Fallback, and the
+// waits between them (model.StepBudget).
+func (c Call) Budget() time.Duration {
+	primary, fallback := c.timeouts()
+	return model.StepBudget(primary, fallback)
+}
+
+// timeouts are the request timeouts of Route's provider and of the
+// Fallback's, Route's again without a Fallback.
+func (c Call) timeouts() (primary, fallback time.Duration) {
+	primary = cmp.Or(c.Provider.Timeout, model.DefaultStepTimeout)
+	fallback = primary
+	if c.Fallback != nil {
+		fallback = cmp.Or(c.Fallback.Provider.Timeout, model.DefaultStepTimeout)
+	}
+	return primary, fallback
 }
 
 // Do makes the call. It returns the answer or the last error, how many
@@ -117,9 +138,13 @@ type Call struct {
 func (c Call) Do(ctx context.Context, req model.StepRequest) (model.StepResponse, int, Route, error) {
 	req.Model = c.Ref.Model()
 	own := ctx
-	if deadline, ok := ctx.Deadline(); ok && c.Halve && c.Fallback != nil {
+	if deadline, ok := ctx.Deadline(); ok && c.Share && c.Fallback != nil {
+		primary, fallback := c.timeouts()
+		// In floats: the product of two durations in nanoseconds overflows
+		// an int64 at minute scale.
+		share := time.Duration(float64(time.Until(deadline)) * float64(primary) / float64(primary+fallback))
 		var cancel context.CancelFunc
-		own, cancel = context.WithDeadline(ctx, time.Now().Add(time.Until(deadline)/2))
+		own, cancel = context.WithDeadline(ctx, time.Now().Add(share))
 		defer cancel()
 	}
 	resp, attempts, err := Step(own, c.Stepper, req, c.Provider.Retries, c.failedOn(c.Route))

@@ -13,9 +13,9 @@ import (
 
 // structured routes a preparation call through the shared execution lifecycle.
 func (p *publishPhase) structured(
-	ref, fallback configfile.ModelRef, kind store.ModelCallKind, role, what string, halve bool,
+	ref, fallback configfile.ModelRef, kind store.ModelCallKind, role, what string, share bool,
 ) (*adapter.Execution, error) {
-	call, err := p.w.Steppers.Execution(p.file, p.account, ref, fallback, halve, p.logger.With("call", what))
+	call, err := p.w.Steppers.Execution(p.file, p.account, ref, fallback, share, p.logger.With("call", what))
 	if err != nil {
 		return nil, err
 	}

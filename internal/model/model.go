@@ -318,51 +318,74 @@ type Embedder interface {
 	Embed(ctx context.Context, inputs []string) (vectors [][]float32, tokens int64, err error)
 }
 
-// StepTimeout bounds one request to a provider for a step. It is long enough
-// for a step's whole output from a slow model. If a provider takes the
-// request and never answers, the step fails as a timeout, which is Transient.
-// So the gateway's retries and its fallback provider still get their turn. A
-// variable for the tests.
-var StepTimeout = stepTimeout
+// DefaultStepTimeout bounds one request to a provider for a step when the
+// provider sets no timeout of its own (configfile.Provider.Timeout). It is
+// long enough for a step's whole output from a slow model. If a provider
+// takes the request and never answers, the step fails as a timeout, which is
+// Transient. So the gateway's retries and its fallback provider still get
+// their turn.
+const DefaultStepTimeout = 5 * time.Minute
 
-// stepTimeout is StepTimeout as it ships, which the gateway's budgets
-// below are derived from.
-const stepTimeout = 5 * time.Minute
+// StepBudget bounds what the gateway spends on one step: its provider's
+// attempts, their backoff, and the fallback's, all together. primary bounds
+// a request to the step's provider and fallback one to its fallback's; a
+// step with no fallback on another provider gives fallback as primary. The
+// budget is one request to each and the waits between them. The step's
+// provider gets at most its share of it before the fallback takes over
+// (adapter.Call.Share).
+func StepBudget(primary, fallback time.Duration) time.Duration {
+	return primary + fallback + 2*time.Minute
+}
 
-// GatewayStepBudget bounds what the gateway spends on one step: its
-// provider's attempts, their backoff, and the fallback's, all together. It is
-// two provider timeouts and the waits between them. A fallback on another
-// provider waits at most the first half of that for its turn.
-// GatewayRequestTimeout bounds the runner's request to the gateway for that
-// step. It covers the budget, then the time that the gateway can take to
-// charge and record an answered step before it writes the answer. The charge
-// and the record are each bounded at two minutes on a context of its own. So
-// the gateway gives up on, retries, or replaces a provider that stalls, and
-// the runner never cuts that provider off first. And the gateway never
-// abandons an answered step while it settles that step.
-const (
-	GatewayStepBudget     = 2*stepTimeout + 2*time.Minute
-	GatewayRequestTimeout = GatewayStepBudget + 5*time.Minute
-)
+// GatewayRequestTimeout bounds the runner's request to the gateway for a
+// step of budget. It covers the budget, then the time that the gateway can
+// take to charge and record an answered step before it writes the answer.
+// The charge and the record are each bounded at two minutes on a context of
+// its own. So the gateway gives up on, retries, or replaces a provider that
+// stalls, and the runner never cuts that provider off first. And the gateway
+// never abandons an answered step while it settles that step.
+func GatewayRequestTimeout(budget time.Duration) time.Duration {
+	return budget + gatewaySettle
+}
+
+// StepBudgetWithin is the budget a step gets when its runner waits
+// requestTimeout for the answer, GatewayRequestTimeout the other way: what
+// the gateway keeps under a runner that an older configuration, with
+// shorter timeouts, sized. Zero or less when the runner waits no longer
+// than the gateway settles a step.
+func StepBudgetWithin(requestTimeout time.Duration) time.Duration {
+	return requestTimeout - gatewaySettle
+}
+
+// gatewaySettle is what the gateway can take to charge and record an
+// answered step.
+const gatewaySettle = 5 * time.Minute
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
-// provider's default endpoint. headers and client can be nil. The adapter
-// sends each request once: the gateway and the workers retry a step with the
-// provider's retries (adapter.Step).
-func NewStepper(t ProviderType, baseURL, apiKey string, headers map[string]string, pricing Pricing, client *http.Client) (Stepper, error) {
+// provider's default endpoint. headers and client can be nil. timeout bounds
+// one request, DefaultStepTimeout when zero. The adapter sends each request
+// once: the gateway and the workers retry a step with the provider's retries
+// (adapter.Step).
+func NewStepper(
+	t ProviderType, baseURL, apiKey string, headers map[string]string, pricing Pricing, timeout time.Duration, client *http.Client,
+) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:
 		baseURL = cmp.Or(baseURL, OpenRouterBaseURL)
-		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, OpenRouter: true, Pricing: pricing})
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, OpenRouter: true, Pricing: pricing,
+			RequestTimeout: timeout})
 	case ProviderOpenAI:
 		// Set, so the client never falls back to OPENAI_BASE_URL.
 		baseURL = cmp.Or(baseURL, OpenAIBaseURL)
-		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, Pricing: pricing})
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, Pricing: pricing,
+			RequestTimeout: timeout})
 	case ProviderAnthropic:
-		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, Pricing: pricing})
+		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, Pricing: pricing,
+			RequestTimeout: timeout})
 	case ProviderOpenCode:
 		baseURL = cmp.Or(baseURL, OpenCodeBaseURL)
-		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, OpenCode: true, Pricing: pricing})
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, OpenCode: true, Pricing: pricing,
+			RequestTimeout: timeout})
 	case ProviderChatGPT:
 		return nil, errors.New("model: a chatgpt provider takes a token source, not a key")
 	default:

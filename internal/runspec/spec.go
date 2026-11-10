@@ -29,7 +29,7 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 42
+const Version = 43
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -68,6 +68,13 @@ type ModelEndpoint struct {
 	// review's run with, which its runner records with the conversation it
 	// keeps. The runner calls the model only by Model.
 	Granted string `json:"granted,omitempty"`
+	// RequestTimeoutSeconds bounds the runner's request to the gateway for
+	// one step: the gateway's budget for a step on the run's model, or on
+	// the model of any of its reviewers, whichever is the longest, and the
+	// time the gateway then takes to record the answer
+	// (model.GatewayRequestTimeout). Zero takes the budget of two default
+	// timeouts.
+	RequestTimeoutSeconds int `json:"requestTimeoutSeconds,omitempty"`
 }
 
 // AgentLimits bound a review's or a follow-up's agent. A zero limit takes the agent loop's

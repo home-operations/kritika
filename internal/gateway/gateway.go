@@ -223,6 +223,27 @@ func stepPart(h string) (int, error) {
 	return int(n), nil
 }
 
+// stepBudget is what the gateway spends on a step that its call budgets
+// own, under a runner that waits as long as it names in
+// model.RequestTimeoutHeader: the call's budget, or what fits within the
+// runner's wait when that is less, as a runner that an older configuration
+// sized waits. A runner that names no wait, or one the gateway cannot
+// settle a step within, gets the call's budget: the step then ends as the
+// runner gives up, as it would anyway.
+func stepBudget(own time.Duration, h string) (time.Duration, error) {
+	if h == "" {
+		return own, nil
+	}
+	n, err := strconv.ParseInt(h, 10, 32)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%s %q is not a number of seconds", model.RequestTimeoutHeader, h)
+	}
+	if within := model.StepBudgetWithin(time.Duration(n) * time.Second); within > 0 {
+		own = min(own, within)
+	}
+	return own, nil
+}
+
 // promptEstimate is a step's prompt at four characters a token of its
 // request. It leaves out replayed ChatGPT output: that output repeats its
 // turn's text and calls, and its encrypted reasoning is no measure of tokens.
@@ -418,9 +439,15 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	// The step, its retries and its fallback share one budget, inside which
 	// the runner waits for the answer. With a fallback on another provider,
-	// the review model's attempts get at most half of it. So a model that
-	// hangs, or a long Retry-After, still leaves the fallback a turn.
-	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
+	// the review model's attempts get at most its provider's share of it.
+	// So a model that hangs, or a long Retry-After, still leaves the
+	// fallback a turn.
+	budget, err := stepBudget(call.Budget(), r.Header.Get(model.RequestTimeoutHeader))
+	if err != nil {
+		refuse(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	sctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	if err := call.Begin(sctx); err != nil {
 		if errors.Is(err, store.ErrModelBudget) {

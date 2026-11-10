@@ -273,7 +273,7 @@ func TestNewStepper(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := NewStepper(tt.typ, tt.baseURL, "k", nil, nil, nil)
+			s, err := NewStepper(tt.typ, tt.baseURL, "k", nil, nil, 0, nil)
 			if (err != nil) != tt.wantErr || (err == nil && s == nil) {
 				t.Fatalf("NewStepper = %v, %v", s, err)
 			}
@@ -286,7 +286,7 @@ func TestNewStepper(t *testing.T) {
 			host = r.URL.Host
 			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
 		})}
-		s, err := NewStepper(ProviderOpenAI, "", "k", nil, nil, client)
+		s, err := NewStepper(ProviderOpenAI, "", "k", nil, nil, 0, client)
 		if err != nil {
 			t.Fatal(err)
 		}

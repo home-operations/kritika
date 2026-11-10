@@ -64,9 +64,9 @@ type OpenAIConfig struct {
 	// the provider's retries, and the SDK's own retries will otherwise
 	// multiply its attempts.
 	Retries int
-	// RequestTimeout bounds one request. Zero is StepTimeout, a provider's
-	// timeout. The runner's client of the gateway allows the gateway's whole
-	// step budget.
+	// RequestTimeout bounds one request. Zero is DefaultStepTimeout. A
+	// provider's adapter gets the provider's timeout. The runner's client of
+	// the gateway allows the gateway's whole step budget.
 	RequestTimeout time.Duration
 	// Part names, in PartHeader on every request, the part of a split review
 	// that the runner's client of the gateway steps for. Zero sends none.
@@ -83,6 +83,12 @@ const OpenCodeSessionHeader = "x-opencode-session"
 // PartHeader carries, from a runner to the gateway, the part of a split
 // review a step is for.
 const PartHeader = "X-Kritika-Part"
+
+// RequestTimeoutHeader carries, from a runner to the gateway, how long the
+// runner waits for the step's answer, in seconds. The gateway budgets the
+// step within it (StepBudgetWithin), so a runner that an older
+// configuration sized never cuts the gateway's step off first.
+const RequestTimeoutHeader = "X-Kritika-Request-Timeout"
 
 // ReviewerHeader carries, from a runner to the gateway, the reviewer other
 // than the default one a step is for, whose models the gateway calls.
@@ -143,9 +149,12 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
 	opts = append(opts, option.WithHeader("User-Agent", userAgent()), option.WithMaxRetries(cfg.Retries),
-		option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, StepTimeout)))
+		option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, DefaultStepTimeout)))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
+	}
+	if cfg.Gateway && cfg.RequestTimeout > 0 {
+		opts = append(opts, option.WithHeader(RequestTimeoutHeader, strconv.Itoa(int(cfg.RequestTimeout/time.Second))))
 	}
 	if cfg.Part > 0 {
 		opts = append(opts, option.WithHeader(PartHeader, strconv.Itoa(cfg.Part)))
