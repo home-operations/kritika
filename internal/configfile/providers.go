@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -35,6 +36,14 @@ type Provider struct {
 	// routing proxy that picks a model per request is where it earns its keep.
 	// The embedder does not use it.
 	Retries int `yaml:"retries,omitempty"`
+	// Concurrency is how many calls can run at once on each of the
+	// provider's models, per account: the slots of (account, model) that a
+	// review, a follow-up, the scorer, an index run or a fallback step
+	// takes one of. Unset, it is DefaultConcurrency. A self-hosted server
+	// sets it to what it serves at once; a fallback with less capacity
+	// than the review model sets its own, so an outage of the review
+	// model's provider cannot move every slot's load onto it.
+	Concurrency int `yaml:"concurrency,omitempty"`
 	// Headers are sent with every request to the provider, by name, and
 	// replace kritika's own of the same name: a gateway's routing or
 	// tagging headers, or its credential, given by reference as apiKey is.
@@ -50,6 +59,9 @@ type Provider struct {
 // MaxProviderRetries bounds Provider.Retries: with backoff, five more
 // attempts span about a minute, which a runner's deadline absorbs.
 const MaxProviderRetries = 5
+
+// DefaultConcurrency is a provider's Concurrency when it sets none.
+const DefaultConcurrency = 2
 
 // APIKeyValue returns the resolved API key.
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
@@ -87,12 +99,27 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
 		if p, ok := t.Providers[name]; ok {
 			p.sessionKey = chatGPTSessionKey(t, name)
+			p.Concurrency = cmp.Or(p.Concurrency, DefaultConcurrency)
 			return p, true
 		}
 	}
 	p, ok := f.Providers[name]
 	p.sessionKey = chatGPTSessionKey(nil, name)
+	if ok {
+		p.Concurrency = cmp.Or(p.Concurrency, DefaultConcurrency)
+	}
 	return p, ok
+}
+
+// Slots is how many calls can run at once on ref for account t: the
+// concurrency of ref's provider. A ref of a provider that t cannot reach
+// gets DefaultConcurrency, so a lease on it is still possible; the call
+// itself fails on the missing adapter.
+func (f *File) Slots(t *Account, ref ModelRef) int {
+	if p, ok := f.Provider(t, ref.Provider()); ok {
+		return p.Concurrency
+	}
+	return DefaultConcurrency
 }
 
 // UnpricedModel is a configured model whose calls will be unpriced.
@@ -251,6 +278,9 @@ func (p Provider) validate(where string) error {
 	}
 	if p.Retries < 0 || p.Retries > MaxProviderRetries {
 		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, MaxProviderRetries, p.Retries)
+	}
+	if p.Concurrency < 0 {
+		return fmt.Errorf("configfile: %s.concurrency must be positive, got %d", where, p.Concurrency)
 	}
 	if err := p.validateHeaders(where); err != nil {
 		return err

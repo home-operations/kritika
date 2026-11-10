@@ -82,7 +82,7 @@ var goldenRepoSettings = RepoSettings{
 		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, MaxPromptTokens: 24000, MaxParts: 8, Timeout: 20 * time.Minute,
 		CommandTimeout: 30 * time.Second, MaxFetches: 8,
 	},
-	Limits: configfile.Limits{Concurrency: 2},
+	Limits: configfile.Limits{},
 	Skills: configfile.Skills{
 		Paths: []string{".agents/skills", ".claude/skills"},
 		Scope: map[string]configfile.SkillScope{"review-renovate-pr": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}, Load: new(true)}},
@@ -143,7 +143,7 @@ var goldens = map[string]any{
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		},
 		Models: configfile.Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small", Effort: "high"},
-		Limits: configfile.Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filters: configfile.Filters{Include: []configfile.Filter{}, Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}}},
+		Limits: configfile.Limits{ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filters: configfile.Filters{Include: []configfile.Filter{}, Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}}},
 		Usage: goldenSummary.Usage, LastPolledAt: &t1,
 	},
 	"repository":       goldenRepo,

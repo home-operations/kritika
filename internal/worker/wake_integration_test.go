@@ -70,7 +70,7 @@ func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.held {
-				// The account's concurrency is 1, so one lease holds every slot.
+				// The provider's concurrency is 1, so one lease holds every slot.
 				l, err := appStore.TakeLease(ctx, account.ID(), model, 1, -1)
 				if err != nil || l == nil {
 					t.Fatalf("TakeLease = %v, %v", l, err)

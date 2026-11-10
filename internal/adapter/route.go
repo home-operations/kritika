@@ -98,6 +98,12 @@ type Call struct {
 	// which next tries again, or, for the fallback's first attempt, takes
 	// over. It can be nil.
 	Failed func(err error, on, next Route)
+	// Admit, when set, admits the step to fallback before its first attempt
+	// there: the fallback has slots of its own, and the step holds one until
+	// release runs, once the fallback answered or failed. An error is the
+	// step's, as a failure of the fallback is. Unset, the fallback gets the
+	// step at once.
+	Admit func(ctx context.Context, fallback Route) (release func(), err error)
 	// Halve, with a Fallback, bounds the attempts on Route to half the time
 	// ctx has left, so the fallback always gets a turn. Unset, they can take
 	// all of it.
@@ -122,6 +128,13 @@ func (c Call) Do(ctx context.Context, req model.StepRequest) (model.StepResponse
 	}
 	if c.Failed != nil {
 		c.Failed(err, c.Route, *c.Fallback)
+	}
+	if c.Admit != nil {
+		release, err := c.Admit(ctx, *c.Fallback)
+		if err != nil {
+			return resp, attempts, *c.Fallback, err
+		}
+		defer release()
 	}
 	req.Model = c.Fallback.Ref.Model()
 	resp, more, err := Step(ctx, c.Fallback.Stepper, req, c.Fallback.Provider.Retries, c.failedOn(*c.Fallback))

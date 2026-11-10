@@ -95,7 +95,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	chunks, tokens, indexed, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID,
-		slots: c.file.Settings(c.account).Limits.Concurrency, queries: req.Queries, exclude: req.Exclude,
+		queries: req.Queries, exclude: req.Exclude,
 	}, c.logger)
 	cctx, cancel := detach(ctx)
 	defer cancel()
@@ -127,7 +127,6 @@ type similarRequest struct {
 	repositoryID, reviewID string
 	// jobID is the review's job, for which the embedding slot is held.
 	jobID int64
-	slots int
 	// queries are the texts to embed: the embedder's query prompt, then a
 	// query cut to contextpack.SimilarQueryChars. exclude are the paths left
 	// out of the answer.
@@ -163,7 +162,7 @@ func (g *Server) similar(
 		return nil, 0, true, nil
 	}
 	waitStarted := time.Now()
-	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), "embed:"+emb.Model, r.slots, r.jobID)
+	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), "embed:"+emb.Model, file.Slots(r.account, emb.Ref), r.jobID)
 	logger.Info("similar embedding slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
 	if err != nil {
 		return nil, 0, true, err

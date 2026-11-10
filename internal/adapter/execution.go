@@ -1,7 +1,9 @@
 package adapter
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -26,6 +28,18 @@ type Execution struct {
 	Reservation *Reservation
 	Served      Route
 	Attempts    int
+	// Job, when set, reads the review job that the call belongs to. A
+	// fallback on another provider then takes a slot on its own model for
+	// the step, held by that job (Call.Admit): its provider's concurrency
+	// bounds what reaches it when the review model's provider fails for
+	// every review at once. The wait is bounded by the step's own ctx.
+	// Unset, the fallback gets the step at once.
+	Job func(ctx context.Context) (int64, error)
+	// FallbackKey is what the fallback's slot is keyed by when the route's
+	// reference is not: the reference as configured, where the route's is
+	// pinned to the model a floating alias selected. Empty, the route's
+	// reference is the key.
+	FallbackKey string
 
 	invocation string
 	call       Call
@@ -112,6 +126,9 @@ func (e *Execution) invoke(ctx context.Context, req model.StepRequest) (model.St
 	if err := e.Begin(ctx); err != nil {
 		return model.StepResponse{}, err
 	}
+	if e.Job != nil && e.call.Fallback != nil {
+		e.call.Admit = e.admitFallback
+	}
 	req.Fallbacks = e.fallbacks
 	started := time.Now()
 	resp, attempts, served, err := e.call.Do(ctx, req)
@@ -145,4 +162,31 @@ func (e *Execution) charge(ctx context.Context, resp model.StepResponse, answere
 	}
 	_, err := e.Recorder.Store.SettleModelInvocation(ctx, usage.AccountID, e.invocation)
 	return err
+}
+
+// leaseReleaseTimeout bounds letting a fallback's slot go once the step is
+// over, whose ctx is usually done by then.
+const leaseReleaseTimeout = 10 * time.Second
+
+// admitFallback takes a slot on fallback's model for the step (Call.Admit),
+// waiting for one as long as ctx allows, and records the wait.
+func (e *Execution) admitFallback(ctx context.Context, fallback Route) (func(), error) {
+	jobID, err := e.Job(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("adapter: fallback slot: %w", err)
+	}
+	key := cmp.Or(e.FallbackKey, string(fallback.Ref))
+	waited := time.Now()
+	lease, err := e.Recorder.Store.AcquireLease(ctx, e.account.ID(), key, fallback.Provider.Concurrency, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("adapter: fallback slot: %w", err)
+	}
+	e.Recorder.Metrics.LeaseWait(e.account.Key(), key, time.Since(waited))
+	return func() {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), leaseReleaseTimeout)
+		defer cancel()
+		if _, err := lease.Release(rctx); err != nil {
+			e.logger.Warn("lease not released", "key", key, "error", err)
+		}
+	}, nil
 }

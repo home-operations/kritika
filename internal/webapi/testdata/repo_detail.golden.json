@@ -118,7 +118,6 @@
       "maxFetches": 8
     },
     "limits": {
-      "concurrency": 2,
       "reviewsPerDay": 0,
       "tokensPerMonth": 0
     }
@@ -214,7 +213,6 @@
         "maxFetches": 8
       },
       "limits": {
-        "concurrency": 2,
         "reviewsPerDay": 0,
         "tokensPerMonth": 0
       }

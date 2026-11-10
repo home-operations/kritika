@@ -5,11 +5,13 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -159,7 +161,12 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 		}
 		for _, model := range slices.Sorted(maps.Keys(held)) {
 			if held[model] > 0 || model == own {
-				out.Slots = append(out.Slots, ModelSlots{Account: t.Slug(), Model: model, Held: held[model], Slots: settings.Limits.Concurrency})
+				slots := file.Slots(t, configfile.ModelRef(model))
+				if strings.HasPrefix(model, "embed:") && file.Embedding != nil {
+					// The embedder's key names its model without its provider.
+					slots = file.Slots(t, file.Embedding.Ref)
+				}
+				out.Slots = append(out.Slots, ModelSlots{Account: t.Slug(), Model: model, Held: held[model], Slots: slots})
 			}
 		}
 	}

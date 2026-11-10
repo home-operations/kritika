@@ -108,7 +108,7 @@ type Settings struct {
 
 	// ReviewWorkers is the capacity of each of the separate review and
 	// follow-up queues on one replica. Each job can hold a runner pod.
-	// Account limits bound model concurrency separately.
+	// A provider's concurrency bounds model calls separately.
 	ReviewWorkers int `env:"KRITIKA_REVIEW_WORKERS" envDefault:"2" yaml:"reviewWorkers,omitempty"`
 	// IndexWorkers is how many index jobs one worker replica runs at once.
 	// Indexing is rate-limited apart from reviews, so onboarding a large

@@ -409,6 +409,13 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	call.Usage = store.Usage{AccountID: c.grant.AccountID, RepositoryID: c.grant.RepositoryID, ReviewID: c.usageReview(),
 		Role: c.role(), RunnerRunID: c.grant.RunID}
 	call.Reservation = &adapter.Reservation{Token: c.token, Tokens: reserved}
+	call.FallbackKey = cmp.Or(granted.FallbackKey, granted.Fallback)
+	call.Job = func(ctx context.Context) (jobID int64, err error) {
+		return jobID, g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
+			jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID)
+			return err
+		})
+	}
 	// The step, its retries and its fallback share one budget, inside which
 	// the runner waits for the answer. With a fallback on another provider,
 	// the review model's attempts get at most half of it. So a model that

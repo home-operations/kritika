@@ -81,7 +81,7 @@ func TestLoadFull(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				s := f.Settings(tt.account)
 				if !s.Enabled || s.Models.Review != "openrouter/openai/gpt-6-sol" || s.Models.Fallback != "local/claude-sonnet-5" ||
-					s.Limits.Concurrency != 3 || s.Limits.ReviewsPerDay != tt.perDay {
+					s.Limits.ReviewsPerDay != tt.perDay {
 					t.Fatalf("Settings = %+v", s)
 				}
 				if skip, by, err := s.Filters.Skips(SamplePR(), nil); err != nil || skip {
@@ -94,10 +94,15 @@ func TestLoadFull(t *testing.T) {
 		}
 	})
 
-	t.Run("concurrency falls back to the default when unset everywhere", func(t *testing.T) {
-		g := &File{Accounts: []Account{{Forge: ForgeGitHub, Name: "x"}}}
-		if got := g.Settings(&g.Accounts[0]).Limits.Concurrency; got != DefaultConcurrency {
-			t.Fatalf("concurrency = %d, want %d", got, DefaultConcurrency)
+	t.Run("a model's slots are its provider's concurrency", func(t *testing.T) {
+		ho, _ := f.Account(ForgeGitHub, "home-operations")
+		for ref, want := range map[ModelRef]int{"openrouter/openai/gpt-6-sol": 3, "local/claude-sonnet-5": DefaultConcurrency, "nowhere/model": DefaultConcurrency} {
+			if got := f.Slots(ho, ref); got != want {
+				t.Errorf("Slots(%s) = %d, want %d", ref, got, want)
+			}
+		}
+		if p, ok := f.Provider(ho, "local"); !ok || p.Concurrency != DefaultConcurrency {
+			t.Fatalf("Provider(local) = %+v, %v; want concurrency %d", p, ok, DefaultConcurrency)
 		}
 	})
 }
@@ -746,11 +751,6 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 		}
 	})
 
-	t.Run("an explicit concurrency must be positive", func(t *testing.T) {
-		if _, err := load(t, doc("concurrency: 0")); err == nil || !strings.Contains(err.Error(), "concurrency must be positive") {
-			t.Fatalf("Parse = %v", err)
-		}
-	})
 }
 
 // TestReviewPresentation makes sure that every finding goes inline, and the

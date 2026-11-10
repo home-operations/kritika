@@ -148,11 +148,8 @@ type Models struct {
 }
 
 // Limits bound what an account can consume, as resolved. A cap of zero is no
-// cap. Concurrency is never zero once resolved.
+// cap.
 type Limits struct {
-	// Concurrency is the number of advisory-lock slots per account and model:
-	// how many model calls can run at once.
-	Concurrency int `json:"concurrency"`
 	// ReviewsPerDay caps review passes per account per calendar day.
 	ReviewsPerDay int `json:"reviewsPerDay"`
 	// TokensPerMonth caps input plus output tokens per account per calendar
@@ -162,16 +159,11 @@ type Limits struct {
 
 // LimitsSpec sets limits at the file's root or for one account. A limit that
 // an account writes replaces the root's, so an explicit 0 lifts a cap the
-// root set. One left out inherits it. Concurrency, when written, must be
-// positive. Unset everywhere, it is DefaultConcurrency.
+// root set. One left out inherits it.
 type LimitsSpec struct {
-	Concurrency    *int   `yaml:"concurrency,omitempty"`
 	ReviewsPerDay  *int   `yaml:"reviewsPerDay,omitempty"`
 	TokensPerMonth *int64 `yaml:"tokensPerMonth,omitempty"`
 }
-
-// DefaultConcurrency applies when no level of the configuration sets one.
-const DefaultConcurrency = 2
 
 // Defaults are the configuration values that the file writes at its root:
 // they apply to every repository, and Limits to every account unless its

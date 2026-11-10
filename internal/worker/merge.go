@@ -58,7 +58,7 @@ func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart
 	var err error
 	if p.lease == nil {
 		// A resumed answer bypasses runner admission and has no review-model slot.
-		err = p.w.withLease(ctx, p.account, string(p.settings.Models.Review), p.settings.Limits.Concurrency, p.jobID, call)
+		err = p.w.withLease(ctx, p.account, string(p.settings.Models.Review), p.file.Slots(p.account, p.settings.Models.Review), p.jobID, call)
 	} else {
 		err = call(ctx)
 	}

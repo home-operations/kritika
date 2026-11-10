@@ -120,12 +120,13 @@ func (w *Review) reviewerGrants(
 		if spec.Name == review.DefaultReviewer {
 			continue
 		}
-		models := settings.Reviewers[spec.Name].Models(settings.Models)
-		models = pinModels(ctx, logger, w.Steppers, file, account, models)
+		configured := settings.Reviewers[spec.Name].Models(settings.Models)
+		models := pinModels(ctx, logger, w.Steppers, file, account, configured)
 		if out == nil {
 			out = map[string]store.ReviewerGrant{}
 		}
-		out[spec.Name] = store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort)}
+		out[spec.Name] = store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback),
+			FallbackKey: string(configured.Fallback), Effort: string(models.Effort)}
 	}
 	return out
 }

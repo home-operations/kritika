@@ -455,7 +455,7 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   await expect(settings).toContainText(`Include ${conditions(rc.settings.filters.include)}`);
   await expect(settings).toContainText(`Exclude ${conditions(rc.settings.filters.exclude)} (instance)`);
   // Limits the account's entry writes are the account's.
-  await expect(settings).toContainText(`Concurrency ${g.repoDetail.settings.limits.concurrency} (account)`);
+  await expect(settings).toContainText(`Reviews / day ${g.repoDetail.settings.limits.reviewsPerDay || 'unlimited'} (account)`);
   const skills = rc.settings.skills;
   const narrows = (sc: { paths?: string[]; when?: { expr: string }[] }) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
   await expect(settings).toContainText(`Skills ${skills.paths.join(', ') || 'off'}`);

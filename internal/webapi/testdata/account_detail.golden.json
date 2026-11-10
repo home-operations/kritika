@@ -19,7 +19,6 @@
     "effort": "high"
   },
   "limits": {
-    "concurrency": 2,
     "reviewsPerDay": 50,
     "tokensPerMonth": 1000000
   },

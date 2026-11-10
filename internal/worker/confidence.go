@@ -162,7 +162,7 @@ func (p *publishPhase) score(
 		resp, err = call.Complete(ctx, req)
 		return err
 	}
-	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
+	if err := p.w.withLease(ctx, p.account, string(ref), p.file.Slots(p.account, ref), p.jobID, complete); err != nil {
 		return review.Confidence{}, err
 	}
 	parsed, err := review.ParseConfidence(resp.Raw, p.pr.repository, listed)

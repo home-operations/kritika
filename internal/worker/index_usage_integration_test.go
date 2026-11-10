@@ -122,7 +122,7 @@ func TestIndexBatchUsage(t *testing.T) {
 			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler)}
 			w := Index{Base: base, batch: 1}
 			_, _, err = w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
-				file.Embedding, "abc", run, runner, nil, file.Settings(account))
+				file.Embedding, "abc", run, runner, nil, 1)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("embed error = %v, want error %v", err, tt.wantError)
 			}

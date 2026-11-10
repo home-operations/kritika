@@ -65,6 +65,7 @@ providers:
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
     retries: 1
+    concurrency: 1
   other:
     type: anthropic
     baseUrl: http://unused.invalid
@@ -75,8 +76,6 @@ review:
 # step, which the evidence gate does not hold to a file it never read.
 agent:
   steps: 1
-limits:
-  concurrency: 1
 embedding: { model: test/fake-embed, dims: 8 }
 apps:
   bot-ross:

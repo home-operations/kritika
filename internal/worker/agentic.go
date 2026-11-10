@@ -86,7 +86,7 @@ func (w *Review) agentAdmit(
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
 	}
-	l, err := w.Store.TakeLease(ctx, account.ID(), string(ref), settings.Limits.Concurrency, jobID)
+	l, err := w.Store.TakeLease(ctx, account.ID(), string(ref), file.Slots(account, ref), jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
@@ -94,7 +94,7 @@ func (w *Review) agentAdmit(
 		return admission{}, "", "", errNoSlot
 	}
 	a := admission{lease: l}
-	if a.reviewerLeases, err = w.reviewerLeases(ctx, logger, account, settings, jobID); err != nil {
+	if a.reviewerLeases, err = w.reviewerLeases(ctx, logger, file, account, settings, jobID); err != nil {
 		w.releaseLease(ctx, logger, l, string(ref))
 		return admission{}, "", "", err
 	}
@@ -135,11 +135,11 @@ func (e noSlot) Is(target error) bool { return target == errNoSlot }
 // for each reviewer that can have files to read. A model with no free slot
 // lets go of the slots taken and is a noSlot.
 func (w *Review) reviewerLeases(
-	ctx context.Context, logger *slog.Logger, account *configfile.Account, settings configfile.Settings, jobID int64,
+	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings, jobID int64,
 ) (map[string]*store.Lease, error) {
 	var out map[string]*store.Lease
 	for _, model := range reviewerModelKeys(settings) {
-		l, err := w.Store.TakeLease(ctx, account.ID(), model, settings.Limits.Concurrency, jobID)
+		l, err := w.Store.TakeLease(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), jobID)
 		if err == nil && l == nil {
 			err = noSlot{model: model}
 		}
@@ -471,8 +471,8 @@ func (w *Review) agentSpec(
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
-		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort),
-		Budget: admitted.budget(size.parts), Reviewers: grants,
+		Model: string(models.Review), Fallback: string(models.Fallback), FallbackKey: string(settings.Models.Fallback),
+		Effort: string(models.Effort), Budget: admitted.budget(size.parts), Reviewers: grants,
 	}
 	if cont != nil {
 		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session

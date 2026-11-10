@@ -98,7 +98,7 @@ func TestIndexDocumentPrompt(t *testing.T) {
 	})
 	w := Index{Store: st, Logger: slog.New(slog.DiscardHandler)}
 	if _, _, err := w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
-		file.Embedding, "abc", run, runner, nil, file.Settings(account)); err != nil {
+		file.Embedding, "abc", run, runner, nil, 1); err != nil {
 		t.Fatalf("embed: %v", err)
 	}
 	if !slices.Equal(embedded, []string{"passage: main.go\nfunc f() {}"}) {
