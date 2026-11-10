@@ -74,12 +74,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # coreutils, glibc and CA certificates, with curl, find, grep and jq. It also
 # has libstdc++ for a repository's tools, and the timezone database, legacy
 # names included, for a TZ the admin sets. The builder variant's dnf installs
-# them into a copy of it, so the image carries no package manager. Renovate
-# bumps both images' digests. core-runtime names no user 65532. A runtime that
+# them into a copy of it, so the image carries no package manager. Each build
+# has its own tag, <major>.<minor>-[builder-]<release>, and Renovate bumps both
+# tags and digests. core-runtime names no user 65532. A runtime that
 # adds none to /etc/passwd leaves a tool unable to look up that user. The root
 # therefore gets a nonroot user and group of that id.
-FROM registry.access.redhat.com/hi/core-runtime:latest@sha256:81280d7fd6afa7a3d2a6da2e90e545cf8e5d187c80a69b2a1c875fdcd731aaed AS core-runtime
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder@sha256:4273cca14044b69f3a78e9e47122d4ef20fdd5ae2b9d58a68389afd3b64435f7 AS tools-root
+FROM registry.access.redhat.com/hi/core-runtime:2.43-1794282318@sha256:81280d7fd6afa7a3d2a6da2e90e545cf8e5d187c80a69b2a1c875fdcd731aaed AS core-runtime
+FROM registry.access.redhat.com/hi/core-runtime:2.43-builder-1794282318@sha256:4273cca14044b69f3a78e9e47122d4ef20fdd5ae2b9d58a68389afd3b64435f7 AS tools-root
 USER 0
 COPY --from=core-runtime / /rootfs
 RUN dnf install -y --installroot /rootfs --use-host-config --setopt=install_weak_deps=False --nodocs \

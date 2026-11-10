@@ -4,11 +4,24 @@
   postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
   packageRules: [
     {
-      description: "Group the -tools image's Hardened Images and gh and merge them by hand",
+      description: [
+        "Group the -tools image's Hardened Images and gh, bump them weekly and merge them by hand.",
+        "Hardened Images rebuild almost daily. updateNotScheduled defaults to true, which moves an open PR to each new build outside the window.",
+      ],
       matchDepNames: ["cli/cli", "registry.access.redhat.com/hi/core-runtime"],
       groupName: "image tools",
       groupSlug: "image-tools",
       automerge: false,
+      schedule: ["* 0-3 * * 1"],
+      updateNotScheduled: false,
+    },
+    {
+      description: [
+        "Hardened Images tag each build <major>.<minor>-[builder-]<release>, where the release is the Unix time of the source commit.",
+        "Docker versioning reads the text after the first hyphen as a platform suffix, so it never moves the release.",
+      ],
+      matchDepNames: ["registry.access.redhat.com/hi/core-runtime"],
+      versioning: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)-(?:(?<compatibility>builder)-)?(?<patch>\\d+)$",
     },
   ],
 }
