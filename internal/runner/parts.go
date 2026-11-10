@@ -36,7 +36,15 @@ func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]s
 	if scope == review.ScopeIncremental {
 		diff = res.DeltaDiff
 	}
-	return review.SplitDiff(diff, p.Ignore, review.PartBytes, p.Agent.Parts)
+	// Agent.Parts is sized for every reviewer the worker chose. When only
+	// the default pass applies after all, it still gets its own share, as
+	// planReviewers gives each reviewer: the worker's deadline covers that
+	// many parts in its model's slots.
+	parts := p.Agent.Parts
+	if p.Prompt != nil && len(p.Prompt.Reviewers) > 0 {
+		parts = max(1, parts/len(p.Prompt.Reviewers))
+	}
+	return review.SplitDiff(diff, p.Ignore, review.PartBytes, parts)
 }
 
 // reviewPart is one part of a split review: the files it reviews and its
