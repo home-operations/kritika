@@ -220,8 +220,8 @@ func (linkForge) ThreadURL(_, _ string, _ int, id int64) string {
 
 // TestPriorFindings: the summary's earlier findings are the last review's
 // findings that this one listed as resolved. They are linked at the head that
-// their line numbers are from and to their threads. Then come the dismissed
-// ones.
+// their line numbers are from and to their threads, and marked where this
+// review resolved their thread. Then come the dismissed ones.
 func TestPriorFindings(t *testing.T) {
 	p := &publishPhase{
 		client: linkForge{}, pr: &pullRequest{repository: "o/r", number: 1},
@@ -232,13 +232,60 @@ func TestPriorFindings(t *testing.T) {
 		resolved: []priorFinding{
 			{Path: "b.go", Line: 3, Severity: review.SeverityP2, Title: "Typo", commentID: 43},
 			{Path: "c.go", Line: 5, Severity: review.SeverityP2, Title: "Never posted", CarriedFrom: "h0"},
+			{Path: "e.go", Line: 2, Severity: review.SeverityP1, Title: "Left open", commentID: 45},
 		},
 	}
-	got := p.priorFindings()
-	if len(got) != 3 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||
-		got[1].Title != "Never posted" || got[1].ThreadURL != "" || got[1].URL != "https://f/h0/c.go#L5" ||
-		!got[2].Dismissed || got[2].DismissReason != "intended" || got[2].ThreadURL != "https://f/t/44" {
+	got := p.priorFindings(map[int64]bool{43: true})
+	if len(got) != 4 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||
+		!got[0].ThreadResolved ||
+		got[1].Title != "Never posted" || got[1].ThreadURL != "" || got[1].URL != "https://f/h0/c.go#L5" || got[1].ThreadResolved ||
+		got[2].Title != "Left open" || got[2].ThreadURL != "https://f/t/45" || got[2].ThreadResolved ||
+		!got[3].Dismissed || got[3].DismissReason != "intended" || got[3].ThreadURL != "https://f/t/44" {
 		t.Fatalf("priorFindings() = %+v", got)
+	}
+}
+
+// resolveForge resolves the threads in resolves and fails on thread 9.
+type resolveForge struct {
+	forge.Client
+	resolves    map[int64]bool
+	unsupported bool
+	calls       []int64
+}
+
+func (f *resolveForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64, _ bool) (bool, error) {
+	f.calls = append(f.calls, id)
+	switch {
+	case f.unsupported:
+		return false, forge.ErrUnsupported
+	case id == 9:
+		return false, errors.New("forge down")
+	}
+	return f.resolves[id], nil
+}
+
+// TestResolveThreads: the threads that kritika resolved are the ones that
+// the summary leaves out. One the forge left open or failed on is not, and a
+// forge that cannot resolve threads is asked once.
+func TestResolveThreads(t *testing.T) {
+	ids := []int64{1, 2, 9, 3}
+	tests := []struct {
+		name        string
+		unsupported bool
+		want, calls []int64
+	}{
+		{name: "resolved or left", want: []int64{1, 3}, calls: ids},
+		{name: "a forge that cannot resolve", unsupported: true, calls: []int64{1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &resolveForge{resolves: map[int64]bool{1: true, 3: true}, unsupported: tt.unsupported}
+			p := &publishPhase{client: f, pr: &pullRequest{repository: "o/r", number: 7}, logger: slog.New(slog.DiscardHandler)}
+			got := slices.Sorted(maps.Keys(p.resolveThreads(t.Context(), ids, true)))
+			if !slices.Equal(got, tt.want) || !slices.Equal(f.calls, tt.calls) {
+				t.Fatalf("resolved %v after asking for %v, want %v after %v", got, f.calls, tt.want, tt.calls)
+			}
+		})
 	}
 }
 

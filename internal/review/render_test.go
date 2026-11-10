@@ -192,6 +192,126 @@ func TestRenderSummaryConfidence(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryClean: a review scored 5/5 that found nothing, has no
+// notes, and is approved or not asked to approve, states that in one line and
+// folds the scorer's reason into the review context. Any other keeps the
+// reason in view.
+func TestRenderSummaryClean(t *testing.T) {
+	clean := func() RenderData {
+		d := sampleData()
+		d.Result.Findings, d.Counts, d.Notes = nil, Counts{}, nil
+		d.Confidence = &Confidence{Score: 5, Threshold: 4, Risk: RiskLow, Reason: "Docs only."}
+		return d
+	}
+	const folded = "<details>\n<summary>Review context</summary>\n\n- **Risk:** Docs only.\n\n</details>\n"
+	tests := []struct {
+		name        string
+		edit        func(*RenderData)
+		want, avoid []string
+	}{
+		{
+			name: "approved", edit: func(d *RenderData) { d.Approval = &Approval{Approved: true} },
+			want:  []string{"## Confidence Score: 5/5\n\n**[Low risk]** No findings. Approved.\n\n### Summary\n", folded},
+			avoid: []string{"**Approved**", "## Findings"},
+		},
+		{
+			name: "not asked to approve", edit: func(*RenderData) {},
+			want:  []string{"## Confidence Score: 5/5\n\n**[Low risk]** No findings.\n\n### Summary\n", folded},
+			avoid: []string{"pproved"},
+		},
+		{
+			name: "a floor held the risk",
+			edit: func(d *RenderData) {
+				d.Confidence.Risk, d.Confidence.Rated, d.Confidence.Held = RiskHigh, RiskLow, "charts/x.yaml"
+			},
+			want: []string{"**[High risk]** No findings.\n\n",
+				"- **Risk:** Docs only. Held to high risk by the instance's floor for charts/x.yaml.\n"},
+		},
+		{
+			name: "no reason", edit: func(d *RenderData) { d.Confidence.Reason = "" },
+			want: []string{"**[Low risk]** No findings.\n\n### Summary\n"}, avoid: []string{"Review context"},
+		},
+		{
+			name: "beside other context", edit: func(d *RenderData) { d.Sources = []string{"https://example.com/x"} },
+			want: []string{"<summary>Review context · 1 source</summary>\n\n- **Risk:** Docs only.\n- **Sources:**\n  - <https://example.com/x>\n"},
+		},
+		{
+			name: "an earlier finding whose thread it did not resolve",
+			edit: func(d *RenderData) {
+				d.Prior = []PriorFinding{{Path: "a.go", Line: 1, Severity: SeverityP1, Title: "gone", ThreadURL: "https://f/t/1", Resolved: true}}
+			},
+			want: []string{"**[Low risk]** No findings.\n\n## Findings\n\n<details>\n<summary>Earlier findings (1 resolved)</summary>\n"},
+		},
+		{
+			name: "approval withheld",
+			edit: func(d *RenderData) {
+				d.Confidence.Risk = RiskMedium
+				d.Approval = &Approval{Reason: "medium risk is above the low this repository approves"}
+			},
+			want:  []string{"**[Medium risk]** Docs only.\n\n**Not approved**: medium risk is above the low this repository approves\n\n### Summary\n"},
+			avoid: []string{"No findings", "Review context"},
+		},
+		{
+			name: "under 5", edit: func(d *RenderData) { d.Confidence.Score = 4 },
+			want: []string{"**[Low risk]** Docs only.\n\n### Summary\n"}, avoid: []string{"No findings", "Review context"},
+		},
+		{
+			name: "a P2 found",
+			edit: func(d *RenderData) {
+				d.Result.Findings = []Finding{{Path: "a.go", Line: 1, Severity: SeverityP2, Title: "terse name"}}
+				d.Counts = d.Result.Counts()
+			},
+			want: []string{"**[Low risk]** Docs only.\n\n## Findings\n"}, avoid: []string{"No findings", "Review context"},
+		},
+		{
+			name: "a finding outside the diff",
+			edit: func(d *RenderData) {
+				d.Unanchored = []Finding{{Path: "a.go", Line: 1, Severity: SeverityP2, Title: "terse name"}}
+			},
+			want: []string{"**[Low risk]** Docs only.\n\n## Findings\n"}, avoid: []string{"No findings"},
+		},
+		{
+			name: "a finding held back",
+			edit: func(d *RenderData) {
+				d.HeldBack = []Finding{{Path: "a.go", Line: 1, Severity: SeverityP1, Title: "far away"}}
+			},
+			want: []string{"**[Low risk]** Docs only.\n\n## Findings\n"}, avoid: []string{"No findings"},
+		},
+		{
+			name: "a note on what it left out",
+			edit: func(d *RenderData) {
+				d.Notes = []string{"Part 2 of 2 ended before it submitted, so its files went unreviewed: b.go"}
+			},
+			want:  []string{"**[Low risk]** Docs only.\n\n### Summary\n", "_Part 2 of 2 ended before it submitted"},
+			avoid: []string{"No findings", "Review context"},
+		},
+		{
+			name: "incomplete", edit: func(d *RenderData) { d.Incomplete = "agent stopped: max_steps" },
+			want: []string{"**Review incomplete for `0123456`:** agent stopped: max_steps."}, avoid: []string{"No findings", "Docs only"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := clean()
+			tt.edit(&d)
+			body, notes := RenderSummary(t.Context(), Templates{}, d)
+			if len(notes) != 0 || strings.Contains(body, "\n\n\n") {
+				t.Fatalf("notes = %v, or blank lines doubled:\n%s", notes, body)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(body, want) {
+					t.Fatalf("missing %q in:\n%s", want, body)
+				}
+			}
+			for _, avoid := range tt.avoid {
+				if strings.Contains(body, avoid) {
+					t.Fatalf("%q in:\n%s", avoid, body)
+				}
+			}
+		})
+	}
+}
+
 // TestRenderSummaryCost: the footer ends with what the pull request's
 // reviews cost where the repository shows it, and FormatUSD keeps a small
 // amount from reading as free.
@@ -299,7 +419,8 @@ func TestRenderSummaryApproval(t *testing.T) {
 
 // TestRenderSummaryLinks renders what the worker adds once it knows the
 // forge: commit links, a thread per finding, the last review's findings
-// and the ones off the diff, and no praise for a bot's pull request.
+// whose threads this review did not resolve and the ones off the diff, and no
+// praise for a bot's pull request.
 func TestRenderSummaryLinks(t *testing.T) {
 	d := sampleData()
 	d.HeadURL, d.AuthorIsBot = "https://forge.example/o/r/commit/0123456789abcdef", true
@@ -309,8 +430,14 @@ func TestRenderSummaryLinks(t *testing.T) {
 	d.Prior = []PriorFinding{
 		{Path: "main.go", Line: 9, Severity: SeverityP0, Title: "nil map write", Resolved: true,
 			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r2"},
+		// Listed only with a thread that this review did not resolve: one
+		// without a thread, one whose thread it resolved and a dismissed one
+		// are not.
 		{Path: "util.go", Line: 3, Severity: SeverityP1, Title: "unchecked error", Resolved: true},
-		{Path: "cache.go", Line: 5, Severity: SeverityP2, Title: "terse name", Dismissed: true, DismissReason: "house style"},
+		{Path: "io.go", Line: 4, Severity: SeverityP1, Title: "short write", ThreadURL: "https://forge.example/o/r/pull/42#r4", Resolved: true,
+			ThreadResolved: true},
+		{Path: "cache.go", Line: 5, Severity: SeverityP2, Title: "terse name", ThreadURL: "https://forge.example/o/r/pull/42#r6", Dismissed: true,
+			DismissReason: "house style"},
 	}
 	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityP1, Title: "stale cache", Explanation: "The cache is\nnever cleared."}}
 	body, notes := RenderSummary(t.Context(), Templates{}, d)
@@ -321,10 +448,9 @@ func TestRenderSummaryLinks(t *testing.T) {
 		"- **[P0]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1) · correctness\n",
 		"- **[P2]** `README.md:2` typo\n",
 		"**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
-		"<details>\n<summary>Earlier findings (2 resolved, 1 dismissed)</summary>\n\n" +
-			"- **[P0]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n" +
-			"- **[P1]** `util.go:3` unchecked error · resolved\n" +
-			"- **[P2]** `cache.go:5` terse name · dismissed: house style\n\n</details>\n\n### Summary",
+		"<details>\n<summary>Earlier findings (1 resolved)</summary>\n\n" +
+			"- **[P0]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n\n" +
+			"</details>\n\n### Summary",
 		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · vendor/model-x</sub>",
 	} {
 		if !strings.Contains(body, want) {

@@ -126,6 +126,8 @@ or closed pull requests neither approve nor withdraw an approval.
 
 The summary says **Approved** or **Not approved**. **Not approved** gives a
 reason, and so does **Approved** when no confidence score decided it. A
+[clean review](/reviews/#the-summary-comment) says "Approved" at the end of
+its one line. A
 repository's `.kritika.yaml` can turn approvals on or off, and add
 conditions of its own.
 

@@ -2709,7 +2709,8 @@ func checkSettled(
 		fifth, threads[left.Title])
 
 	// The sixth review reports neither: it lists the first as resolved
-	// and passes over the second.
+	// and passes over the second. The first's thread is resolved, so the
+	// summary leaves it out.
 	ageConversation(ctx, t, fifthRow.id)
 	_, before := sticky()
 	sixth := commit(fifthMain + "\nfunc f6() {}\n")
@@ -2720,13 +2721,9 @@ func checkSettled(
 		t.Fatalf("sixth review = %+v, %d inline comment(s); want incremental with nothing posted", sixthRow, inline)
 	}
 	body, resolved := sticky()
-	for _, want := range []string{
-		"- **[P2]** " + leftLink + " · maintainability · not rechecked since `" + fifth[:7] + "`\n",
-		"<summary>Earlier findings (1 resolved)</summary>\n\n- **[P1]** " + fixedLink + " · correctness · resolved\n\n</details>",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("the sixth review's summary lacks %q:\n%s", want, body)
-		}
+	if want := "- **[P2]** " + leftLink + " · maintainability · not rechecked since `" + fifth[:7] + "`\n"; !strings.Contains(body, want) ||
+		strings.Contains(body, "Earlier findings") || strings.Contains(body, fixedLink) {
+		t.Fatalf("the sixth review's summary lacks %q, or lists the resolved finding:\n%s", want, body)
 	}
 	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[fixed.Title]}) {
 		t.Fatalf("the sixth review resolved threads %v, want the fixed finding's alone", got)
@@ -2760,9 +2757,8 @@ func checkSettled(
 		t.Fatalf("the seventh review's prompt lacks %q:\n%s", want, prompt)
 	}
 	body, resolved = sticky()
-	if want := "<summary>Earlier findings (1 resolved)</summary>\n\n- **[P2]** " + leftLink + " · maintainability · resolved\n"; !strings.Contains(body, want) ||
-		strings.Contains(body, "not rechecked") {
-		t.Fatalf("the seventh review's summary lacks %q, or still carries a finding:\n%s", want, body)
+	if strings.Contains(body, "Earlier findings") || strings.Contains(body, leftLink) || strings.Contains(body, "not rechecked") {
+		t.Fatalf("the seventh review's summary lists the resolved finding, or still carries one:\n%s", body)
 	}
 	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[left.Title]}) {
 		t.Fatalf("the seventh review resolved threads %v, want the carried finding's alone", got)

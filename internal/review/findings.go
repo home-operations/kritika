@@ -177,9 +177,9 @@ type Finding struct {
 // as resolved or a maintainer dismissed, as the summary lists them.
 type PriorFinding struct {
 	Finding
-	// Resolved is whether this review listed the finding among those that
-	// no longer hold.
-	Resolved bool
+	// Resolved is whether this review listed the finding among those that no longer hold, and
+	// ThreadResolved whether this review resolved such a finding's thread on the forge.
+	Resolved, ThreadResolved bool
 	// Dismissed is whether a maintainer dismissed the finding, with
 	// DismissReason the reason they gave, "" for none.
 	Dismissed     bool
@@ -471,8 +471,8 @@ func summaryProperties(diagram bool) map[string]*jsonSchema {
 		},
 		keyTake: {
 			Type: schemaString,
-			Description: "Two to four sentences on how the change does it and what merging sets off, as the instructions say; " +
-				"not the findings or a verdict. No markdown headings.",
+			Description: "One to three Markdown bullets, each one sentence under twenty words, on what the change does and " +
+				"what merging sets off, as the instructions say; not the findings or a verdict. No headings.",
 		},
 		keyPraise: {
 			Type:        schemaArray,
@@ -524,7 +524,7 @@ func Check(raw json.RawMessage) error {
 			strings.Join(unknown, ", "), strings.Join(topKeys, ", "), strings.Join(summaryKeys, ", "), strings.Join(findingKeys, ", "))
 	}
 	if strings.TrimSpace(res.Summary.Take) == "" {
-		return errors.New("review: summary.take is required: two to four sentences on the change")
+		return errors.New("review: summary.take is required: one to three bullets on the change")
 	}
 	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
 		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",

@@ -204,9 +204,22 @@ With [confidence scoring](/confidence/) on, the comment's heading is the
 score, and the change's [risk](/confidence/#risk) leads the scorer's reason
 below it. The approval decision, when enabled, comes next. Then come the
 findings, whose suggested fixes are in their inline comments, and then the
-summary of the change. The comment also includes:
+summary of the change.
 
-- Earlier findings that were fixed, dismissed or not rechecked.
+A clean review gets one line in place of the reason and the approval
+decision. A clean review scores 5/5 and has no findings and no notes.
+Also, kritika approved it, or the repository does not use approvals. The line gives the
+risk and says "No findings". It also says "Approved" when kritika approved
+the change. The scorer's reason moves into the review context.
+
+The comment also includes:
+
+- Earlier findings that a re-review did not check again, marked so among
+  the findings.
+- Earlier findings that this review found fixed, when kritika did not
+  resolve their thread. kritika cannot resolve a thread on Forgejo, when
+  someone else replied in it, or without permission to resolve it. A
+  dismissed finding is not listed, because its thread holds the dismissal.
 - Findings that an incremental re-review held back, folded away.
 - What the change does well, left out when a bot opened the pull request.
 - Expandable review context. It includes the agents that ran and the
@@ -219,11 +232,12 @@ summary of the change. The comment also includes:
 - View and Re-run badges linking to the dashboard, when it has a public URL
   and `comments.dashboard` is on.
 
-The summary says what the change does and how. Where the evidence the
-review read shows it, the summary also says what merging sets off: what
-takes effect and when, what restarts, what a revert cannot undo, or a
-check to make afterwards. It does not repeat the findings. A suggested check
-is not evidence that it passed.
+The summary is a headline and one to three short bullets. The bullets say
+what the change does for the people who use, run or build on the code.
+Where the evidence the review read shows it, a bullet also says what
+merging sets off: what takes effect and when, what restarts, what a revert
+cannot undo, or a check to make afterwards. The summary does not repeat the
+findings. A suggested check is not evidence that it passed.
 
 The review context lists some other open pull requests. They are the ones
 whose last review changed a file that this change changes, with the most
