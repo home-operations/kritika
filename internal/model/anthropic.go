@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,8 @@ type AnthropicConfig struct {
 	// HTTPClient can be nil.
 	HTTPClient *http.Client
 	Pricing    Pricing
+	// RequestTimeout is as OpenAIConfig.RequestTimeout.
+	RequestTimeout time.Duration
 }
 
 // Anthropic is a Stepper over the Anthropic Messages API.
@@ -48,7 +51,7 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 		option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey), option.WithHeader("User-Agent", userAgent()),
 		// The gateway owns retrying. The SDK's own retries will otherwise
 		// multiply its attempts.
-		option.WithMaxRetries(0), option.WithRequestTimeout(StepTimeout),
+		option.WithMaxRetries(0), option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, DefaultStepTimeout)),
 	}
 	if cfg.BaseURL != "" {
 		if err := checkBaseURL(cfg.BaseURL); err != nil {

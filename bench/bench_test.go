@@ -193,7 +193,7 @@ func benchStepper(t *testing.T, opts benchOptions, key, modelID string, dry, scr
 	case dry:
 		return nil, nil, nil, modelID
 	}
-	stepper, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, nil)
+	stepper, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

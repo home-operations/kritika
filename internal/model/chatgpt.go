@@ -86,6 +86,8 @@ type ChatGPTConfig struct {
 	HTTPClient *http.Client
 	// ObserveAllowances receives quota data when the upstream supplies it.
 	ObserveAllowances func(context.Context, []chatgpt.Allowance)
+	// RequestTimeout is as OpenAIConfig.RequestTimeout.
+	RequestTimeout time.Duration
 }
 
 // ChatGPT is a Stepper over the Responses API on a ChatGPT Plus or Pro plan,
@@ -118,7 +120,7 @@ func NewChatGPT(cfg ChatGPTConfig) (*ChatGPT, error) {
 	// request carries the plan's token instead.
 	opts := append(withoutEnvironment(),
 		option.WithBaseURL(baseURL), option.WithAPIKey(""), option.WithHeader("User-Agent", userAgent()),
-		option.WithMaxRetries(0), option.WithRequestTimeout(StepTimeout),
+		option.WithMaxRetries(0), option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, DefaultStepTimeout)),
 	)
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))

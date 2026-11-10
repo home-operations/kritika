@@ -34,7 +34,7 @@ func StepperBuilder(sessions PlanSessions) func(configfile.Provider) (model.Step
 		tokens := &planTokens{sessions: sessions, key: p.ChatGPTSessionKey()}
 		return model.NewChatGPT(model.ChatGPTConfig{
 			BaseURL: p.BaseURL, Provider: tokens.key,
-			Tokens: tokens, ObserveAllowances: tokens.observe,
+			Tokens: tokens, ObserveAllowances: tokens.observe, RequestTimeout: p.Timeout,
 		})
 	}
 }

@@ -710,3 +710,33 @@ func TestAgentPromptAnsweredFresh(t *testing.T) {
 		t.Fatalf("user message:\n%s", prompt.user)
 	}
 }
+
+// TestGatewayStepperNamesItsWait: the run's client of the gateway waits as
+// long as the job document says for a step's answer, and names that wait
+// on each request. It waits the budget of two default timeouts when the
+// document says nothing.
+func TestGatewayStepperNamesItsWait(t *testing.T) {
+	for _, tt := range []struct {
+		seconds int
+		want    string
+	}{{1620, "1620"}, {0, "1020"}} {
+		t.Run(tt.want, func(t *testing.T) {
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Get(model.RequestTimeoutHeader)
+				http.Error(w, "nope", http.StatusTeapot)
+			}))
+			t.Cleanup(srv.Close)
+			spec := reviewSpec()
+			spec.GatewayURL, spec.Model.RequestTimeoutSeconds = srv.URL, tt.seconds
+			s, err := gatewayStepper(spec, runspec.Secrets{GatewayToken: "tok"}, 0, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = s.Step(t.Context(), model.StepRequest{Model: "review", Messages: []model.Message{{Role: model.RoleUser, Text: "hi"}}})
+			if got != tt.want {
+				t.Fatalf("%s = %q, want %q", model.RequestTimeoutHeader, got, tt.want)
+			}
+		})
+	}
+}

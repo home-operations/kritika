@@ -40,6 +40,7 @@ Everything else is optional:
 | `pricing`     | the prices of a provider that reports no cost, keyed by model id or [floating alias](#floating-model-aliases) ([local models](#local-models)) |
 | `retries`     | how many more times a failed model step is tried, from 0 to 5, and 0 unless set ([retries](#retries))                                         |
 | `concurrency` | how many calls run at once on each of its models, per account, and 2 unless set ([concurrency](#concurrency))                                 |
+| `timeout`     | how long one request to it can take, up to 30m, and 5m unless set ([timeouts](#timeouts))                                                     |
 | `headers`     | headers sent with every request, keyed by name. Each value is inline or a reference like `apiKey` ([headers](#headers))                       |
 
 Provider credentials never enter a runner pod: the agent reaches its model
@@ -446,14 +447,14 @@ account's in-flight requests, with this request, exceed its balance.
   up to a minute.
 - It never retries a refusal of the request itself, such as a prompt over
   the model's input limit, or a spent budget.
-- A request that the provider does not answer in five minutes counts as a
-  timeout.
+- A request that the provider does not answer in its [`timeout`](#timeouts)
+  counts as a timeout.
 - The provider's client sends nothing again on its own, so `retries` is
   every attempt a step gets.
 - A step's attempts, the waits between them and its [fallback](#fallback)
-  share 12 minutes, so long timeouts end the retries early. With a
+  share the step's budget, so long timeouts end the retries early. With a
   fallback on another provider, the review model's attempts get at most
-  half of that time, so the fallback always gets a turn.
+  its provider's share of that time, so the fallback always gets a turn.
 - The scorer's call has the two minutes a score gets
   ([confidence](/confidence/#the-score)), shared the same way.
 - A split review's summary call has 100 seconds, and the review model's
@@ -472,6 +473,29 @@ two and four minutes. It does this while the agent's
 [`timeout`](/configuration/#the-agent) allows. Only a step that fails
 after the last of those ends the review as failed.
 
+## Timeouts
+
+`timeout` is how long one request to the provider can take. A request it
+has not answered by then fails as a timeout, which its `retries` cover. It
+is 5 minutes unless set, and at most 30 minutes. A self-hosted model that
+takes longer than 5 minutes over a large prompt sets what its slowest
+answer takes. Without that, kritika abandons the request at 5 minutes and
+sends the step again while the server is still at work on the first one,
+which doubles the load on a server that was slow to begin with.
+
+A step's budget is one request to the review model's provider and one to
+the fallback's, plus 2 minutes for the waits between attempts: 12 minutes
+with both at their defaults. A fallback on the review model's own
+provider, or none, counts the review model's `timeout` twice. The step's
+attempts on the review model get the review model's share of the budget,
+the `timeout`'s part of the two together, before a fallback on another
+provider takes over. A runner's request to the gateway for a step
+outlasts the longest budget among the run's models by 5 minutes, and the
+runner names that wait on each step, so a gateway with a newer
+configuration budgets the step within it. A longer
+`timeout` does not change the agent's [`timeout`](/configuration/#the-agent)
+for the whole loop, which bounds how many slow steps a review can take.
+
 ## Fallback
 
 A `review.fallback` on the review model's provider is handed to the
@@ -480,8 +504,8 @@ provider or the adapter tries it when the review model fails.
 
 The gateway itself tries a fallback on another provider. The same step
 goes to the fallback once both of these are true: a review's step failed
-on the review model, and its provider's `retries` or half of the step's
-12 minutes are spent. The step first takes a slot of the fallback model's
+on the review model, and its provider's `retries` or its share of the
+step's budget ([timeouts](#timeouts)) are spent. The step first takes a slot of the fallback model's
 provider's [`concurrency`](#concurrency), waiting for one within the time
 the step has left; a step that gets none fails as it would with no
 fallback. The fallback gets that provider's own `retries`, and the review
@@ -492,8 +516,8 @@ review's summary call ([large reviews](/configuration/#the-agent)).
 `confidence.fallback` does the same for the scorer's call. On the
 confidence model's provider, it goes to the provider with the call. On
 another provider, it gets the call once the confidence model's attempts
-are spent. Those attempts get at most half of the time that remains for
-the score. The call is recorded, charged and counted under the model that
+are spent. Those attempts get at most the confidence model's share of the
+time that remains for the score. The call is recorded, charged and counted under the model that
 answered.
 
 `confidence.fallback` is set wherever `confidence.model` is.
@@ -723,6 +747,8 @@ embedding:
   otherwise. Add the port of a server outside the cluster there. For a
   server in the cluster, allow its pods in `networkPolicy.extraEgress`,
   on the port they listen on rather than its Service's port.
+- A server that takes more than 5 minutes to answer a large prompt sets
+  the provider's [`timeout`](#timeouts) to what its slowest answer takes.
 - A server that reports no cost leaves calls unpriced unless `pricing`
   gives the model's prices. Prices are in dollars per million tokens of
   `input`, `output`, `cacheRead` and `cacheWrite`, keyed by the model's

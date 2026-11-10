@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 
@@ -91,6 +92,32 @@ func TestStepPart(t *testing.T) {
 		got, err := stepPart(tt.header)
 		if got != tt.want || (err != nil) != tt.err {
 			t.Fatalf("stepPart(%q) = %d, %v; want %d, error %v", tt.header, got, err, tt.want, tt.err)
+		}
+	}
+}
+
+// TestStepBudget: a step gets its call's budget, or what fits within the
+// wait its runner names when that is less. A wait the gateway cannot settle
+// a step within, or none, leaves the budget as it is.
+func TestStepBudget(t *testing.T) {
+	const own = 32 * time.Minute
+	for _, tt := range []struct {
+		header string
+		want   time.Duration
+		err    bool
+	}{
+		{header: "", want: own},
+		{header: "2220", want: own},
+		{header: "1020", want: 12 * time.Minute},
+		{header: "300", want: own},
+		{header: "0", err: true},
+		{header: "-60", err: true},
+		{header: "soon", err: true},
+		{header: "99999999999", err: true},
+	} {
+		got, err := stepBudget(own, tt.header)
+		if got != tt.want || (err != nil) != tt.err {
+			t.Fatalf("stepBudget(%q) = %s, %v; want %s, error %v", tt.header, got, err, tt.want, tt.err)
 		}
 	}
 }

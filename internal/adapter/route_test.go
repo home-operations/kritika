@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -233,35 +234,68 @@ func TestCallAdmit(t *testing.T) {
 	}
 }
 
-// TestCallHalve: a model that never answers spends half the call's time when
-// a fallback on another provider waits for its turn. It spends all of it
-// otherwise, when the fallback will fail the same way.
-func TestCallHalve(t *testing.T) {
+// TestCallShare: a model that never answers spends its provider's share of
+// the call's time when a fallback on another provider waits for its turn:
+// half of it with the timeouts alike, a quarter with a fallback whose
+// timeout is three times its own. It spends all of it otherwise, when the
+// fallback will fail the same way. The timeouts are at the minute scale
+// that the gateway's are, so the share's arithmetic is the real one.
+func TestCallShare(t *testing.T) {
+	var held atomic.Int64
 	hang := model.StepperFunc(func(ctx context.Context, _ model.StepRequest) (model.StepResponse, error) {
+		start := time.Now()
 		<-ctx.Done()
+		held.Store(int64(time.Since(start)))
 		return model.StepResponse{}, ctx.Err()
 	})
 	fallback := &stepperFunc{}
+	const total = 400 * time.Millisecond
 	for _, tt := range []struct {
-		name   string
-		halve  bool
-		served string
+		name              string
+		share             bool
+		primary, fallback time.Duration
+		served            string
+		want              time.Duration
 	}{
-		{"halved, the fallback answers", true, "q/small"},
-		{"not halved, the model takes it all", false, "p/big"},
+		{"shared alike, the fallback answers", true, 5 * time.Minute, 5 * time.Minute, "q/small", total / 2},
+		{"shared, a slower fallback gets its larger share", true, 5 * time.Minute, 15 * time.Minute, "q/small", total / 4},
+		{"not shared, the model takes it all", false, 5 * time.Minute, 5 * time.Minute, "p/big", total},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 400*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), total)
 			defer cancel()
-			route := Route{Ref: "p/big", Stepper: hang}
-			c := Call{Route: route, Fallback: &Route{Ref: "q/small", Stepper: fallback}, Halve: tt.halve}
-			start := time.Now()
+			route := Route{Ref: "p/big", Stepper: hang, Provider: configfile.Provider{Timeout: tt.primary}}
+			c := Call{Route: route, Share: tt.share,
+				Fallback: &Route{Ref: "q/small", Stepper: fallback, Provider: configfile.Provider{Timeout: tt.fallback}}}
 			_, _, served, err := c.Do(ctx, model.StepRequest{})
-			if string(served.Ref) != tt.served || (err == nil) != tt.halve {
+			if string(served.Ref) != tt.served || (err == nil) != tt.share {
 				t.Fatalf("Do = %s, %v; want %s", served.Ref, err, tt.served)
 			}
-			if took := time.Since(start); tt.halve && took > 350*time.Millisecond {
-				t.Fatalf("the model held the call %s of its 400ms", took)
+			if got := time.Duration(held.Load()); got < tt.want-tt.want/4 || got > tt.want+tt.want/2 {
+				t.Fatalf("the model held the call %s of its %s, want about %s", got, total, tt.want)
+			}
+		})
+	}
+}
+
+// TestCallBudget: a call's budget is one request to each of its providers,
+// a second to its own without a fallback on another, and the waits between
+// them. A provider that sets no timeout gets the default.
+func TestCallBudget(t *testing.T) {
+	route := func(timeout time.Duration) Route { return Route{Provider: configfile.Provider{Timeout: timeout}} }
+	for _, tt := range []struct {
+		name string
+		call Call
+		want time.Duration
+	}{
+		{"defaults", Call{}, 12 * time.Minute},
+		{"a slow model", Call{Route: route(15 * time.Minute)}, 32 * time.Minute},
+		{"a slow fallback", Call{Route: route(5 * time.Minute), Fallback: new(route(15 * time.Minute))}, 22 * time.Minute},
+		{"a fallback with no timeout", Call{Route: route(time.Minute), Fallback: &Route{}}, 8 * time.Minute},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.call.Budget(); got != tt.want {
+				t.Fatalf("Budget = %s, want %s", got, tt.want)
 			}
 		})
 	}

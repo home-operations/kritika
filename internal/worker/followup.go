@@ -458,7 +458,8 @@ func (f *followUp) runAgent(
 			GatewayURL: f.w.GatewayURL,
 			Forge:      string(f.account.Forge), Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
 			Tools: f.eff.Tools, Prompt: prompt, Thread: thread, Reply: f.asReply,
-			Model: &runspec.ModelEndpoint{Model: gateway.ModelName},
+			Model: &runspec.ModelEndpoint{Model: gateway.ModelName,
+				RequestTimeoutSeconds: int(gatewayRequestTimeout(f.file, f.account, models, grant.Reviewers) / time.Second)},
 			Agent: &runspec.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),

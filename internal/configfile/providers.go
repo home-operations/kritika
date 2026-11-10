@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/net/http/httpguts"
 
@@ -44,6 +45,16 @@ type Provider struct {
 	// than the review model sets its own, so an outage of the review
 	// model's provider cannot move every slot's load onto it.
 	Concurrency int `yaml:"concurrency,omitempty"`
+	// Timeout bounds one request to the provider for a step, the scorer's
+	// call or a split review's summary call: a request it has not answered
+	// by then fails as a timeout, which its Retries cover. Unset, it is
+	// model.DefaultStepTimeout; it is at most MaxProviderTimeout. A
+	// self-hosted model that takes longer than that over a large prompt
+	// sets what its slowest answer takes, so the step is not abandoned and
+	// sent again while the model is still at work on it. A review model's
+	// and its fallback's timeouts, with the waits between attempts, are the
+	// time one step gets at most (model.StepBudget).
+	Timeout time.Duration `yaml:"timeout,omitempty"`
 	// Headers are sent with every request to the provider, by name, and
 	// replace kritika's own of the same name: a gateway's routing or
 	// tagging headers, or its credential, given by reference as apiKey is.
@@ -62,6 +73,11 @@ const MaxProviderRetries = 5
 
 // DefaultConcurrency is a provider's Concurrency when it sets none.
 const DefaultConcurrency = 2
+
+// MaxProviderTimeout bounds Provider.Timeout. A step's budget is two of
+// them, which the runner's request to the gateway and a run's deadline must
+// outlast.
+const MaxProviderTimeout = 30 * time.Minute
 
 // APIKeyValue returns the resolved API key.
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
@@ -100,6 +116,7 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 		if p, ok := t.Providers[name]; ok {
 			p.sessionKey = chatGPTSessionKey(t, name)
 			p.Concurrency = cmp.Or(p.Concurrency, DefaultConcurrency)
+			p.Timeout = cmp.Or(p.Timeout, model.DefaultStepTimeout)
 			return p, true
 		}
 	}
@@ -107,6 +124,7 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	p.sessionKey = chatGPTSessionKey(nil, name)
 	if ok {
 		p.Concurrency = cmp.Or(p.Concurrency, DefaultConcurrency)
+		p.Timeout = cmp.Or(p.Timeout, model.DefaultStepTimeout)
 	}
 	return p, ok
 }
@@ -120,6 +138,26 @@ func (f *File) Slots(t *Account, ref ModelRef) int {
 		return p.Concurrency
 	}
 	return DefaultConcurrency
+}
+
+// StepBudget is what a step on ref with fallback gets at most for account t
+// (model.StepBudget): a request to ref's provider and one to fallback's,
+// or a second to ref's when fallback is empty or on ref's own provider. A
+// provider that t cannot reach gets model.DefaultStepTimeout; the call
+// itself fails on the missing adapter.
+func (f *File) StepBudget(t *Account, ref, fallback ModelRef) time.Duration {
+	primary := f.stepTimeout(t, ref)
+	if fallback == "" || fallback.Provider() == ref.Provider() {
+		return model.StepBudget(primary, primary)
+	}
+	return model.StepBudget(primary, f.stepTimeout(t, fallback))
+}
+
+func (f *File) stepTimeout(t *Account, ref ModelRef) time.Duration {
+	if p, ok := f.Provider(t, ref.Provider()); ok {
+		return p.Timeout
+	}
+	return model.DefaultStepTimeout
 }
 
 // UnpricedModel is a configured model whose calls will be unpriced.
@@ -281,6 +319,9 @@ func (p Provider) validate(where string) error {
 	}
 	if p.Concurrency < 0 {
 		return fmt.Errorf("configfile: %s.concurrency must be positive, got %d", where, p.Concurrency)
+	}
+	if p.Timeout < 0 || p.Timeout > MaxProviderTimeout {
+		return fmt.Errorf("configfile: %s.timeout must be between 0 and %s, got %s", where, MaxProviderTimeout, p.Timeout)
 	}
 	if err := p.validateHeaders(where); err != nil {
 		return err

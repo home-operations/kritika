@@ -167,13 +167,14 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
 	logger.Info("review model slots granted", "estimated_parts", slots.parts(), "slots", slots.published)
+	grants := w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs)
 	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, args.Focus, pr, eff, granted, prior,
 		cont, admitted, sizing{parts: slots.parts(), slots: slots.published, pools: slots.poolOf()}, &spec, &secrets, deadline, client, logger,
-		pull, chosen,
-		w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs))
+		pull, chosen, grants)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
+	spec.Model.RequestTimeoutSeconds = int(gatewayRequestTimeout(file, account, granted, grants) / time.Second)
 	spec.Agent.Hosts = file.EgressHosts()
 	spec.Agent.Registries = file.Registries(account)
 	spec.Agent.CacheLocked = file.GatewayCaches()
