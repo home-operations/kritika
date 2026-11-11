@@ -2709,8 +2709,8 @@ func checkSettled(
 		fifth, threads[left.Title])
 
 	// The sixth review reports neither: it lists the first as resolved
-	// and passes over the second. The first's thread is resolved, so the
-	// summary leaves it out.
+	// and passes over the second. The summary lists the first as fixed,
+	// with the thread that the review resolved.
 	ageConversation(ctx, t, fifthRow.id)
 	_, before := sticky()
 	sixth := commit(fifthMain + "\nfunc f6() {}\n")
@@ -2722,8 +2722,8 @@ func checkSettled(
 	}
 	body, resolved := sticky()
 	if want := "- **[P2]** " + leftLink + " · maintainability · not rechecked since `" + fifth[:7] + "`\n"; !strings.Contains(body, want) ||
-		strings.Contains(body, "Earlier findings") || strings.Contains(body, fixedLink) {
-		t.Fatalf("the sixth review's summary lacks %q, or lists the resolved finding:\n%s", want, body)
+		!listedFixed(body, fixedLink) {
+		t.Fatalf("the sixth review's summary lacks %q, or the fixed finding with its resolved thread:\n%s", want, body)
 	}
 	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[fixed.Title]}) {
 		t.Fatalf("the sixth review resolved threads %v, want the fixed finding's alone", got)
@@ -2757,13 +2757,20 @@ func checkSettled(
 		t.Fatalf("the seventh review's prompt lacks %q:\n%s", want, prompt)
 	}
 	body, resolved = sticky()
-	if strings.Contains(body, "Earlier findings") || strings.Contains(body, leftLink) || strings.Contains(body, "not rechecked") {
-		t.Fatalf("the seventh review's summary lists the resolved finding, or still carries one:\n%s", body)
+	if !listedFixed(body, leftLink) || strings.Contains(body, "not rechecked") {
+		t.Fatalf("the seventh review's summary lacks the fixed finding with its resolved thread, or still carries one:\n%s", body)
 	}
 	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[left.Title]}) {
 		t.Fatalf("the seventh review resolved threads %v, want the carried finding's alone", got)
 	}
 	return seventhRow
+}
+
+// listedFixed reports whether a summary lists one finding as fixed since the
+// last review, at link, with the thread that the review resolved.
+func listedFixed(body, link string) bool {
+	return strings.Contains(body, "<summary>Fixed since the last review (1)</summary>") && strings.Contains(body, link) &&
+		strings.Contains(body, " · thread resolved\n")
 }
 
 // ageConversation makes the conversation reviewID's run kept an hour old, as
@@ -2925,7 +2932,7 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 		!strings.Contains(sticky, "\nflowchart LR\n  A[Request] --> B[Handler]\n```") ||
 		strings.Contains(sticky, prior[:7]) || strings.Contains(sticky, "Incremental review") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
-		strings.Contains(sticky, "Earlier findings") {
+		strings.Contains(sticky, "Fixed since") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
 	// The new finding far from the pushed lines is listed apart.

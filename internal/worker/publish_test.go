@@ -220,8 +220,8 @@ func (linkForge) ThreadURL(_, _ string, _ int, id int64) string {
 
 // TestPriorFindings: the summary's earlier findings are the last review's
 // findings that this one listed as resolved. They are linked at the head that
-// their line numbers are from and to their threads, and marked where this
-// review resolved their thread. Then come the dismissed ones.
+// their line numbers are from and to their threads, and marked where their
+// thread stands resolved. Then come the dismissed ones.
 func TestPriorFindings(t *testing.T) {
 	p := &publishPhase{
 		client: linkForge{}, pr: &pullRequest{repository: "o/r", number: 1},
@@ -284,6 +284,57 @@ func TestResolveThreads(t *testing.T) {
 			got := slices.Sorted(maps.Keys(p.resolveThreads(t.Context(), ids, true)))
 			if !slices.Equal(got, tt.want) || !slices.Equal(f.calls, tt.calls) {
 				t.Fatalf("resolved %v after asking for %v, want %v after %v", got, f.calls, tt.want, tt.calls)
+			}
+		})
+	}
+}
+
+// stateForge resolves threads as resolveForge does and reads the state of
+// the rest from states. It fails to read thread 9.
+type stateForge struct {
+	resolveForge
+	states map[int64]bool
+	reads  []int64
+}
+
+func (f *stateForge) ThreadResolved(_ context.Context, _, _ string, _ int, id int64) (bool, bool, error) {
+	f.reads = append(f.reads, id)
+	if id == 9 {
+		return false, false, errors.New("forge down")
+	}
+	state, found := f.states[id]
+	return state, found, nil
+}
+
+// TestThreadStates: a fixed finding's thread stands resolved when kritika
+// resolved it, or when someone resolved it first. Only the threads kritika
+// left open are read back, and one that cannot be read counts as open.
+func TestThreadStates(t *testing.T) {
+	tests := []struct {
+		name             string
+		ids              []int64
+		resolves, states map[int64]bool
+		unsupported      bool
+		want, wantReads  []int64
+	}{
+		{name: "all resolved by kritika", ids: []int64{1, 3}, resolves: map[int64]bool{1: true, 3: true}, want: []int64{1, 3}},
+		{
+			name: "one a person resolved first", ids: []int64{1, 2, 9, 4},
+			resolves: map[int64]bool{1: true}, states: map[int64]bool{2: true, 4: false},
+			want: []int64{1, 2}, wantReads: []int64{2, 9, 4},
+		},
+		{
+			name: "a forge that cannot resolve", ids: []int64{1, 2}, unsupported: true,
+			states: map[int64]bool{2: true}, want: []int64{2}, wantReads: []int64{1, 2},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &stateForge{resolves: tt.resolves, unsupported: tt.unsupported, states: tt.states}
+			p := &publishPhase{client: f, pr: &pullRequest{repository: "o/r", number: 7}, logger: slog.New(slog.DiscardHandler)}
+			got := slices.Sorted(maps.Keys(p.threadStates(t.Context(), tt.ids)))
+			if !slices.Equal(got, tt.want) || !slices.Equal(f.reads, tt.wantReads) {
+				t.Fatalf("resolved %v after reading %v, want %v after %v", got, f.reads, tt.want, tt.wantReads)
 			}
 		})
 	}

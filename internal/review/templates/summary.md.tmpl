@@ -18,7 +18,7 @@
 
 {{ end -}}
 {{ end -}}
-{{ if or .Result.Findings .Unanchored .HeldBack .OpenPrior -}}
+{{ if or .Result.Findings .Unanchored .HeldBack .FixedPrior -}}
 ## Findings
 
 {{ if .Result.Findings -}}
@@ -45,12 +45,12 @@
 </details>
 
 {{ end -}}
-{{ with .OpenPrior -}}
+{{ with .FixedPrior -}}
 <details>
-<summary>Earlier findings ({{ len . }} resolved)</summary>
+<summary>Fixed since the last review ({{ len . }})</summary>
 
 {{ range . -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} [{{ .Title }}]({{ .ThreadURL }}){{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }} · resolved
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .ThreadURL }} · thread {{ if .ThreadResolved }}resolved{{ else }}open{{ end }}{{ end }}
 {{ end }}
 </details>
 

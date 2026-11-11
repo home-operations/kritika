@@ -178,7 +178,7 @@ type Finding struct {
 type PriorFinding struct {
 	Finding
 	// Resolved is whether this review listed the finding among those that no longer hold, and
-	// ThreadResolved whether this review resolved such a finding's thread on the forge.
+	// ThreadResolved whether such a finding's thread stands resolved on the forge, by anyone.
 	Resolved, ThreadResolved bool
 	// Dismissed is whether a maintainer dismissed the finding, with
 	// DismissReason the reason they gave, "" for none.

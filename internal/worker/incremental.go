@@ -182,3 +182,30 @@ func settlePrior(prior []priorFinding, head string, reported []review.Finding, r
 	}
 	return resolved, answered, carried
 }
+
+// threadStates resolves the threads ids of the findings this review found
+// gone, as resolveThreads does, and returns the ids of those that stand
+// resolved. A thread it left open is read back from the forge: someone may
+// have resolved it before this review, or written in it, which leaves it to
+// them. One whose state cannot be read counts as open.
+func (p *publishPhase) threadStates(ctx context.Context, ids []int64) map[int64]bool {
+	resolved := p.resolveThreads(ctx, ids, true)
+	if len(resolved) == len(ids) {
+		return resolved
+	}
+	defer p.timeStage("forge_thread_states")()
+	owner, repo := p.pr.ownerRepo()
+	for _, id := range ids {
+		if resolved[id] {
+			continue
+		}
+		state, found, err := p.client.ThreadResolved(ctx, owner, repo, p.pr.number, id)
+		switch {
+		case err != nil:
+			p.logger.Warn("finding's thread state not read", "comment", id, "error", err)
+		case found && state:
+			resolved[id] = true
+		}
+	}
+	return resolved
+}
