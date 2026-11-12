@@ -183,29 +183,50 @@ func settlePrior(prior []priorFinding, head string, reported []review.Finding, r
 	return resolved, answered, carried
 }
 
+// threadState is how a fixed finding's thread stands on the forge.
+type threadState int
+
+const (
+	// threadUnknown: the forge did not say, or the finding has no thread.
+	threadUnknown threadState = iota
+	threadOpen
+	threadResolved
+	// threadGone: the thread no longer exists on the forge.
+	threadGone
+)
+
 // threadStates resolves the threads ids of the findings this review found
-// gone, as resolveThreads does, and returns the ids of those that stand
-// resolved. A thread it left open is read back from the forge: someone may
-// have resolved it before this review, or written in it, which leaves it to
-// them. One whose state cannot be read counts as open.
-func (p *publishPhase) threadStates(ctx context.Context, ids []int64) map[int64]bool {
-	resolved := p.resolveThreads(ctx, ids, true)
-	if len(resolved) == len(ids) {
-		return resolved
+// gone, as resolveThreads does, and returns how each stands. The threads it
+// left open are read back from the forge in one pass: someone may have
+// resolved one before this review, or written in it, which leaves it to
+// them. When the forge cannot be read, those stay unknown.
+func (p *publishPhase) threadStates(ctx context.Context, ids []int64) map[int64]threadState {
+	states := make(map[int64]threadState, len(ids))
+	for id := range p.resolveThreads(ctx, ids, true) {
+		states[id] = threadResolved
+	}
+	if len(states) == len(ids) {
+		return states
 	}
 	defer p.timeStage("forge_thread_states")()
 	owner, repo := p.pr.ownerRepo()
+	onForge, err := p.client.ThreadsResolved(ctx, owner, repo, p.pr.number)
+	if err != nil {
+		p.logger.Warn("findings' thread states not read", "error", err)
+		return states
+	}
 	for _, id := range ids {
-		if resolved[id] {
+		if states[id] != threadUnknown {
 			continue
 		}
-		state, found, err := p.client.ThreadResolved(ctx, owner, repo, p.pr.number, id)
-		switch {
-		case err != nil:
-			p.logger.Warn("finding's thread state not read", "comment", id, "error", err)
-		case found && state:
-			resolved[id] = true
+		switch resolved, found := onForge[id]; {
+		case !found:
+			states[id] = threadGone
+		case resolved:
+			states[id] = threadResolved
+		default:
+			states[id] = threadOpen
 		}
 	}
-	return resolved
+	return states
 }

@@ -597,20 +597,22 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 
 // priorFindings is the last review's findings as this review's summary lists
 // them. First come those it listed as resolved, linked to their threads where
-// they have one, each marked with whether its thread stands resolved, which
-// resolved holds. Then come the findings that maintainers dismissed,
-// each linked to the comment that dismissed it.
-func (p *publishPhase) priorFindings(resolved map[int64]bool) []review.PriorFinding {
+// they still have one, each marked with how its thread stands, which states
+// holds. Then come the findings that maintainers dismissed, each linked to
+// the comment that dismissed it.
+func (p *publishPhase) priorFindings(states map[int64]threadState) []review.PriorFinding {
 	owner, repo := p.pr.ownerRepo()
 	dismissed := slices.Concat(p.prior.dismissed, p.answered)
 	out := make([]review.PriorFinding, 0, len(p.resolved)+len(dismissed))
 	for _, pf := range p.resolved {
 		f := pf.Finding
 		f.URL = p.client.FileURL(owner, repo, cmp.Or(f.CarriedFrom, p.prior.headSHA), f.Path, f.Line, f.EndLine)
-		if pf.commentID != 0 {
+		state := states[pf.commentID]
+		if pf.commentID != 0 && state != threadGone {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
 		}
-		out = append(out, review.PriorFinding{Finding: f, Resolved: true, ThreadResolved: resolved[pf.commentID]})
+		out = append(out, review.PriorFinding{Finding: f, Resolved: true,
+			ThreadResolved: state == threadResolved, ThreadOpen: state == threadOpen})
 	}
 	for _, d := range dismissed {
 		f := d.Finding

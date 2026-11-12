@@ -221,7 +221,7 @@ func (d RenderData) FixedPrior() []PriorFinding {
 func (d RenderData) OpenPrior() []PriorFinding {
 	var out []PriorFinding
 	for _, f := range d.Prior {
-		if f.Resolved && f.ThreadURL != "" && !f.ThreadResolved {
+		if f.Resolved && f.ThreadOpen {
 			out = append(out, f)
 		}
 	}

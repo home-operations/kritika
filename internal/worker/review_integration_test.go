@@ -289,6 +289,12 @@ func (l *localForge) ThreadResolved(_ context.Context, _, _ string, _ int, id in
 	return resolved, found, l.threadStateErr
 }
 
+func (l *localForge) ThreadsResolved(context.Context, string, string, int) (map[int64]bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return maps.Clone(l.threadStates), l.threadStateErr
+}
+
 func (l *localForge) GetComment(_ context.Context, _, _ string, _ int, id int64, inline bool) (forge.Comment, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

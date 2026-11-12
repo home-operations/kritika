@@ -407,7 +407,7 @@ answers. Stage labels are fixed operation names:
 | `forge_sticky`                            | Finding, creating or updating the sticky comment                                            |
 | `forge_inline`, `forge_status`            | Posting the inline review or setting commit status                                          |
 | `forge_approval`, `forge_resolve_threads` | Approval processing or resolving the batch of old threads                                   |
-| `forge_thread_states`                     | Reading back the state of the old threads left open                                         |
+| `forge_thread_states`                     | Reading back the state of every thread, when resolving left an old one open                 |
 | `forge_summary_update`                    | Rewriting the summary with thread links and approval                                        |
 | `persist`                                 | Committing the completed publication                                                        |
 | `agent_to_published`                      | Agent row creation to successfully committed publication, across queue handoffs and retries |

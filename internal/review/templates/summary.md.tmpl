@@ -50,7 +50,7 @@
 <summary>Fixed since the last review ({{ len . }})</summary>
 
 {{ range . -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .ThreadURL }} · thread {{ if .ThreadResolved }}resolved{{ else }}open{{ end }}{{ end }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .ThreadResolved }} · thread resolved{{ else if .ThreadOpen }} · thread open{{ end }}
 {{ end }}
 </details>
 

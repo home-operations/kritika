@@ -410,6 +410,12 @@ func (c *Client) ThreadResolved(ctx context.Context, owner, repo string, number 
 	return state, found, nil
 }
 
+// ThreadsResolved implements forge.Client.
+func (c *Client) ThreadsResolved(ctx context.Context, owner, repo string, number int) (map[int64]bool, error) {
+	_, resolved, err := c.inlineComments(ctx, owner, repo, number)
+	return resolved, err
+}
+
 // ResolveThread implements forge.Client.
 func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error) {
 	d, err := c.discussionOf(ctx, owner, repo, number, id)

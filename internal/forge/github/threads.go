@@ -100,9 +100,41 @@ func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number i
 	return out.ResolveReviewThread.Thread.IsResolved, nil
 }
 
+// ThreadsResolved implements forge.Client, under the ids of all of a
+// thread's comments: GraphQL knows the thread, REST the comments.
+func (c *Client) ThreadsResolved(ctx context.Context, owner, repo string, number int) (map[int64]bool, error) {
+	states := map[int64]bool{}
+	err := c.eachThread(ctx, owner, repo, number, func(t *reviewThread) bool {
+		for _, cm := range t.Comments.Nodes {
+			states[cm.DatabaseID] = t.IsResolved
+		}
+		return false
+	})
+	if err != nil {
+		return nil, fmt.Errorf("github: read the threads of #%d: %w", number, err)
+	}
+	return states, nil
+}
+
 // findThread pages through the pull request's review threads for the one
 // holding comment id, nil when none does.
 func (c *Client) findThread(ctx context.Context, owner, repo string, number int, id int64) (*reviewThread, error) {
+	var found *reviewThread
+	err := c.eachThread(ctx, owner, repo, number, func(t *reviewThread) bool {
+		for _, cm := range t.Comments.Nodes {
+			if cm.DatabaseID == id {
+				found = t
+				return true
+			}
+		}
+		return false
+	})
+	return found, err
+}
+
+// eachThread pages through the pull request's review threads, calling visit
+// on each until it returns true.
+func (c *Client) eachThread(ctx context.Context, owner, repo string, number int, visit func(*reviewThread) bool) error {
 	var after *string
 	for {
 		var out struct {
@@ -120,18 +152,16 @@ func (c *Client) findThread(ctx context.Context, owner, repo string, number int,
 		}
 		vars := map[string]any{"owner": owner, "repo": repo, "number": number, "after": after}
 		if err := c.graphql(ctx, threadsQuery, vars, &out); err != nil {
-			return nil, err
+			return err
 		}
 		threads := out.Repository.PullRequest.ReviewThreads
 		for i := range threads.Nodes {
-			for _, cm := range threads.Nodes[i].Comments.Nodes {
-				if cm.DatabaseID == id {
-					return &threads.Nodes[i], nil
-				}
+			if visit(&threads.Nodes[i]) {
+				return nil
 			}
 		}
 		if !threads.PageInfo.HasNextPage {
-			return nil, nil
+			return nil
 		}
 		after = &threads.PageInfo.EndCursor
 	}

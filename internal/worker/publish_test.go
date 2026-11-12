@@ -220,8 +220,8 @@ func (linkForge) ThreadURL(_, _ string, _ int, id int64) string {
 
 // TestPriorFindings: the summary's earlier findings are the last review's
 // findings that this one listed as resolved. They are linked at the head that
-// their line numbers are from and to their threads, and marked where their
-// thread stands resolved. Then come the dismissed ones.
+// their line numbers are from and to their threads, unless the thread is
+// gone, and marked with how their thread stands. Then come the dismissed ones.
 func TestPriorFindings(t *testing.T) {
 	p := &publishPhase{
 		client: linkForge{}, pr: &pullRequest{repository: "o/r", number: 1},
@@ -233,14 +233,18 @@ func TestPriorFindings(t *testing.T) {
 			{Path: "b.go", Line: 3, Severity: review.SeverityP2, Title: "Typo", commentID: 43},
 			{Path: "c.go", Line: 5, Severity: review.SeverityP2, Title: "Never posted", CarriedFrom: "h0"},
 			{Path: "e.go", Line: 2, Severity: review.SeverityP1, Title: "Left open", commentID: 45},
+			{Path: "f.go", Line: 4, Severity: review.SeverityP1, Title: "Unknown", commentID: 46},
+			{Path: "g.go", Line: 6, Severity: review.SeverityP1, Title: "Gone", commentID: 47},
 		},
 	}
-	got := p.priorFindings(map[int64]bool{43: true})
-	if len(got) != 4 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||
-		!got[0].ThreadResolved ||
-		got[1].Title != "Never posted" || got[1].ThreadURL != "" || got[1].URL != "https://f/h0/c.go#L5" || got[1].ThreadResolved ||
-		got[2].Title != "Left open" || got[2].ThreadURL != "https://f/t/45" || got[2].ThreadResolved ||
-		!got[3].Dismissed || got[3].DismissReason != "intended" || got[3].ThreadURL != "https://f/t/44" {
+	got := p.priorFindings(map[int64]threadState{43: threadResolved, 45: threadOpen, 47: threadGone})
+	if len(got) != 6 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||
+		!got[0].ThreadResolved || got[0].ThreadOpen ||
+		got[1].Title != "Never posted" || got[1].ThreadURL != "" || got[1].URL != "https://f/h0/c.go#L5" || got[1].ThreadResolved || got[1].ThreadOpen ||
+		got[2].Title != "Left open" || got[2].ThreadURL != "https://f/t/45" || got[2].ThreadResolved || !got[2].ThreadOpen ||
+		got[3].Title != "Unknown" || got[3].ThreadURL != "https://f/t/46" || got[3].ThreadResolved || got[3].ThreadOpen ||
+		got[4].Title != "Gone" || got[4].ThreadURL != "" || got[4].ThreadResolved || got[4].ThreadOpen ||
+		!got[5].Dismissed || got[5].DismissReason != "intended" || got[5].ThreadURL != "https://f/t/44" {
 		t.Fatalf("priorFindings() = %+v", got)
 	}
 }
@@ -290,51 +294,61 @@ func TestResolveThreads(t *testing.T) {
 }
 
 // stateForge resolves threads as resolveForge does and reads the state of
-// the rest from states. It fails to read thread 9.
+// every thread in one pass from states, or fails to with down.
 type stateForge struct {
 	resolveForge
 	states map[int64]bool
-	reads  []int64
+	down   bool
+	reads  int
 }
 
-func (f *stateForge) ThreadResolved(_ context.Context, _, _ string, _ int, id int64) (bool, bool, error) {
-	f.reads = append(f.reads, id)
-	if id == 9 {
-		return false, false, errors.New("forge down")
+func (f *stateForge) ThreadsResolved(context.Context, string, string, int) (map[int64]bool, error) {
+	f.reads++
+	if f.down {
+		return nil, errors.New("forge down")
 	}
-	state, found := f.states[id]
-	return state, found, nil
+	return f.states, nil
 }
 
 // TestThreadStates: a fixed finding's thread stands resolved when kritika
-// resolved it, or when someone resolved it first. Only the threads kritika
-// left open are read back, and one that cannot be read counts as open.
+// resolved it, or when someone resolved it first. The threads kritika left
+// open are read back in one pass, which finds one gone, and the pass is
+// skipped when it left none. When the forge cannot be read, they stay
+// unknown.
 func TestThreadStates(t *testing.T) {
 	tests := []struct {
-		name             string
-		ids              []int64
-		resolves, states map[int64]bool
-		unsupported      bool
-		want, wantReads  []int64
+		name              string
+		ids               []int64
+		resolves, states  map[int64]bool
+		unsupported, down bool
+		want              map[int64]threadState
+		wantReads         int
 	}{
-		{name: "all resolved by kritika", ids: []int64{1, 3}, resolves: map[int64]bool{1: true, 3: true}, want: []int64{1, 3}},
 		{
-			name: "one a person resolved first", ids: []int64{1, 2, 9, 4},
+			name: "all resolved by kritika", ids: []int64{1, 3}, resolves: map[int64]bool{1: true, 3: true},
+			want: map[int64]threadState{1: threadResolved, 3: threadResolved},
+		},
+		{
+			name: "one a person resolved first, one gone", ids: []int64{1, 2, 4, 5},
 			resolves: map[int64]bool{1: true}, states: map[int64]bool{2: true, 4: false},
-			want: []int64{1, 2}, wantReads: []int64{2, 9, 4},
+			want: map[int64]threadState{1: threadResolved, 2: threadResolved, 4: threadOpen, 5: threadGone}, wantReads: 1,
 		},
 		{
 			name: "a forge that cannot resolve", ids: []int64{1, 2}, unsupported: true,
-			states: map[int64]bool{2: true}, want: []int64{2}, wantReads: []int64{1, 2},
+			states: map[int64]bool{1: false, 2: true}, want: map[int64]threadState{1: threadOpen, 2: threadResolved}, wantReads: 1,
+		},
+		{
+			name: "a forge that cannot be read", ids: []int64{1, 2}, resolves: map[int64]bool{1: true}, down: true,
+			want: map[int64]threadState{1: threadResolved}, wantReads: 1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &stateForge{resolves: tt.resolves, unsupported: tt.unsupported, states: tt.states}
+			f := &stateForge{resolves: tt.resolves, unsupported: tt.unsupported, states: tt.states, down: tt.down}
 			p := &publishPhase{client: f, pr: &pullRequest{repository: "o/r", number: 7}, logger: slog.New(slog.DiscardHandler)}
-			got := slices.Sorted(maps.Keys(p.threadStates(t.Context(), tt.ids)))
-			if !slices.Equal(got, tt.want) || !slices.Equal(f.reads, tt.wantReads) {
-				t.Fatalf("resolved %v after reading %v, want %v after %v", got, f.reads, tt.want, tt.wantReads)
+			got := p.threadStates(t.Context(), tt.ids)
+			if !maps.Equal(got, tt.want) || f.reads != tt.wantReads {
+				t.Fatalf("states %v after %d reads, want %v after %d", got, f.reads, tt.want, tt.wantReads)
 			}
 		})
 	}

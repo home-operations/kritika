@@ -217,11 +217,13 @@ The comment also includes:
 - Earlier findings that a re-review did not check again, marked so among
   the findings.
 - The last review's findings that this review found fixed, folded away,
-  each marked with whether its thread is resolved. kritika resolves the
-  thread of a fixed finding itself, except on Forgejo, when someone else
+  each marked with whether its thread is resolved or open. kritika resolves
+  the thread of a fixed finding itself, except on Forgejo, when someone else
   replied in it, or without permission to resolve it. A thread still open
-  is one left for a person to resolve. A dismissed finding is not listed,
-  because its thread holds the dismissal.
+  is one left for a person to resolve. A finding gets no mark when kritika
+  could not read its thread's state, and no link when its thread no longer
+  exists. A dismissed finding is not listed, because its thread holds the
+  dismissal.
 - Findings that an incremental re-review held back, folded away.
 - What the change does well, left out when a bot opened the pull request.
 - Expandable review context. It includes the agents that ran and the

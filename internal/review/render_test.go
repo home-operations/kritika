@@ -430,13 +430,14 @@ func TestRenderSummaryLinks(t *testing.T) {
 	d.Incremental, d.PriorHeadSHA, d.PriorHeadURL = true, "fedcba9876543210", "https://forge.example/o/r/commit/fedcba9876543210"
 	d.Reviews, d.HeadSubject = 3, "fix(cache): evict stale entries"
 	d.Prior = []PriorFinding{
-		{Path: "main.go", Line: 9, Severity: SeverityP0, Title: "nil map write", Resolved: true,
+		{Path: "main.go", Line: 9, Severity: SeverityP0, Title: "nil map write", Resolved: true, ThreadOpen: true,
 			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r2"},
-		// Every fixed one is listed, with its thread's state where it has a
-		// thread. A dismissed one is not: its thread holds the dismissal.
+		// Every fixed one is listed, with its thread's state where the forge
+		// gave one. A dismissed one is not: its thread holds the dismissal.
 		{Path: "util.go", Line: 3, Severity: SeverityP1, Title: "unchecked error", Resolved: true},
 		{Path: "io.go", Line: 4, Severity: SeverityP1, Title: "short write", ThreadURL: "https://forge.example/o/r/pull/42#r4", Resolved: true,
 			ThreadResolved: true},
+		{Path: "net.go", Line: 5, Severity: SeverityP2, Title: "unread state", ThreadURL: "https://forge.example/o/r/pull/42#r5", Resolved: true},
 		{Path: "cache.go", Line: 5, Severity: SeverityP2, Title: "terse name", ThreadURL: "https://forge.example/o/r/pull/42#r6", Dismissed: true,
 			DismissReason: "house style"},
 	}
@@ -449,10 +450,11 @@ func TestRenderSummaryLinks(t *testing.T) {
 		"- **[P0]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1) · correctness\n",
 		"- **[P2]** `README.md:2` typo\n",
 		"**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
-		"<details>\n<summary>Fixed since the last review (3)</summary>\n\n" +
+		"<details>\n<summary>Fixed since the last review (4)</summary>\n\n" +
 			"- **[P0]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · thread open\n" +
 			"- **[P1]** `util.go:3` unchecked error\n" +
-			"- **[P1]** `io.go:4` [short write](https://forge.example/o/r/pull/42#r4) · thread resolved\n\n" +
+			"- **[P1]** `io.go:4` [short write](https://forge.example/o/r/pull/42#r4) · thread resolved\n" +
+			"- **[P2]** `net.go:5` [unread state](https://forge.example/o/r/pull/42#r5)\n\n" +
 			"</details>\n\n### Summary",
 		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · vendor/model-x</sub>",
 	} {
