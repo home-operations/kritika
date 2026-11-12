@@ -339,6 +339,12 @@ func (c *Client) ThreadResolved(ctx context.Context, owner, repo string, number 
 	return state, found, nil
 }
 
+// ThreadsResolved implements forge.Client.
+func (c *Client) ThreadsResolved(ctx context.Context, owner, repo string, number int) (map[int64]bool, error) {
+	_, resolved, err := c.inlineComments(ctx, owner, repo, number)
+	return resolved, err
+}
+
 // ResolveThread implements forge.Client. Forgejo's API has no call that
 // resolves a conversation, so none is resolved there. Gitea resolves one by
 // its root, the comment that its timeline shows the conversation's state on.

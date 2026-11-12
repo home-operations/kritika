@@ -263,6 +263,10 @@ type Client interface {
 	// ThreadResolved reads the state of the thread inline comment id opened.
 	// Found is false when the thread no longer exists.
 	ThreadResolved(ctx context.Context, owner, repo string, number int, id int64) (resolved, found bool, err error)
+	// ThreadsResolved reads the state of every thread on a pull request in
+	// one pass, under the id of the inline comment that opened it: whether
+	// it stands resolved. A thread that no longer exists has no entry.
+	ThreadsResolved(ctx context.Context, owner, repo string, number int) (map[int64]bool, error)
 
 	// ResolveThread resolves the review thread that inline comment id opened,
 	// when it is still open, and reports whether it did. With onlyOwn, a

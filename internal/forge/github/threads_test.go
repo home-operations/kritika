@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -244,6 +245,22 @@ func TestThreadResolved(t *testing.T) {
 				t.Fatal("read mutated a thread")
 			}
 		})
+	}
+}
+
+// TestThreadsResolved: one pass over every page gives every comment's
+// thread state, replies included.
+func TestThreadsResolved(t *testing.T) {
+	f, c := newFakeAPI(t)
+	api := &threadsAPI{pages: []string{"[" + thread("T1", false, "kritika#11", "dev#12") + "]", "[" + thread("T2", true, "kritika#13") + "]"}}
+	api.serve(f)
+	got, err := c.ThreadsResolved(t.Context(), "o", "r", 7)
+	if err != nil || !maps.Equal(got, map[int64]bool{11: false, 12: false, 13: true}) || len(api.resolved) != 0 {
+		t.Fatalf("ThreadsResolved = %v, %v; resolved %v", got, err, api.resolved)
+	}
+	api.pages = nil
+	if _, err := c.ThreadsResolved(t.Context(), "o", "r", 7); err == nil {
+		t.Fatal("a failed query is no state")
 	}
 }
 

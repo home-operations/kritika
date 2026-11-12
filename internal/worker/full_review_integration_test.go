@@ -75,11 +75,11 @@ func checkFullSettled(
 	}
 	resolved := slices.Clone(lf.resolved[resolvedBefore:])
 	lf.mu.Unlock()
-	// The fixed finding's thread is resolved, so the summary leaves it out.
+	// The summary lists the fixed finding with the thread that it resolved.
 	if want := fmt.Sprintf("[f8 is still wrong](local://onedr0p/home-ops/pull/5#r%d) · correctness · not rechecked since `%s`",
-		threads[left.Title], head[:7]); !strings.Contains(body, want) || strings.Contains(body, "Earlier findings") ||
-		strings.Contains(body, fixed.Title) {
-		t.Fatalf("full summary lacks %q, or lists the resolved finding:\n%s", want, body)
+		threads[left.Title], head[:7]); !strings.Contains(body, want) ||
+		!listedFixed(body, fmt.Sprintf("[%s](local://onedr0p/home-ops/pull/5#r%d)", fixed.Title, threads[fixed.Title])) {
+		t.Fatalf("full summary lacks %q, or the fixed finding with its resolved thread:\n%s", want, body)
 	}
 	if !slices.Equal(resolved, []int64{threads[fixed.Title]}) {
 		t.Fatalf("resolved threads = %v, want only %d", resolved, threads[fixed.Title])

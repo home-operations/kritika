@@ -236,11 +236,13 @@ func TestRenderSummaryClean(t *testing.T) {
 			want: []string{"<summary>Review context · 1 source</summary>\n\n- **Risk:** Docs only.\n- **Sources:**\n  - <https://example.com/x>\n"},
 		},
 		{
-			name: "an earlier finding whose thread it did not resolve",
+			name: "an earlier finding fixed",
 			edit: func(d *RenderData) {
-				d.Prior = []PriorFinding{{Path: "a.go", Line: 1, Severity: SeverityP1, Title: "gone", ThreadURL: "https://f/t/1", Resolved: true}}
+				d.Prior = []PriorFinding{{Path: "a.go", Line: 1, Severity: SeverityP1, Title: "gone", ThreadURL: "https://f/t/1", Resolved: true,
+					ThreadResolved: true}}
 			},
-			want: []string{"**[Low risk]** No findings.\n\n## Findings\n\n<details>\n<summary>Earlier findings (1 resolved)</summary>\n"},
+			want: []string{"**[Low risk]** No findings.\n\n## Findings\n\n<details>\n<summary>Fixed since the last review (1)</summary>\n",
+				"[gone](https://f/t/1) · thread resolved\n"},
 		},
 		{
 			name: "approval withheld",
@@ -419,8 +421,8 @@ func TestRenderSummaryApproval(t *testing.T) {
 
 // TestRenderSummaryLinks renders what the worker adds once it knows the
 // forge: commit links, a thread per finding, the last review's findings
-// whose threads this review did not resolve and the ones off the diff, and no
-// praise for a bot's pull request.
+// that this review found fixed with their threads' state, the ones off the
+// diff, and no praise for a bot's pull request.
 func TestRenderSummaryLinks(t *testing.T) {
 	d := sampleData()
 	d.HeadURL, d.AuthorIsBot = "https://forge.example/o/r/commit/0123456789abcdef", true
@@ -428,14 +430,14 @@ func TestRenderSummaryLinks(t *testing.T) {
 	d.Incremental, d.PriorHeadSHA, d.PriorHeadURL = true, "fedcba9876543210", "https://forge.example/o/r/commit/fedcba9876543210"
 	d.Reviews, d.HeadSubject = 3, "fix(cache): evict stale entries"
 	d.Prior = []PriorFinding{
-		{Path: "main.go", Line: 9, Severity: SeverityP0, Title: "nil map write", Resolved: true,
+		{Path: "main.go", Line: 9, Severity: SeverityP0, Title: "nil map write", Resolved: true, ThreadOpen: true,
 			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r2"},
-		// Listed only with a thread that this review did not resolve: one
-		// without a thread, one whose thread it resolved and a dismissed one
-		// are not.
+		// Every fixed one is listed, with its thread's state where the forge
+		// gave one. A dismissed one is not: its thread holds the dismissal.
 		{Path: "util.go", Line: 3, Severity: SeverityP1, Title: "unchecked error", Resolved: true},
 		{Path: "io.go", Line: 4, Severity: SeverityP1, Title: "short write", ThreadURL: "https://forge.example/o/r/pull/42#r4", Resolved: true,
 			ThreadResolved: true},
+		{Path: "net.go", Line: 5, Severity: SeverityP2, Title: "unread state", ThreadURL: "https://forge.example/o/r/pull/42#r5", Resolved: true},
 		{Path: "cache.go", Line: 5, Severity: SeverityP2, Title: "terse name", ThreadURL: "https://forge.example/o/r/pull/42#r6", Dismissed: true,
 			DismissReason: "house style"},
 	}
@@ -448,8 +450,11 @@ func TestRenderSummaryLinks(t *testing.T) {
 		"- **[P0]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1) · correctness\n",
 		"- **[P2]** `README.md:2` typo\n",
 		"**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
-		"<details>\n<summary>Earlier findings (1 resolved)</summary>\n\n" +
-			"- **[P0]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n\n" +
+		"<details>\n<summary>Fixed since the last review (4)</summary>\n\n" +
+			"- **[P0]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · thread open\n" +
+			"- **[P1]** `util.go:3` unchecked error\n" +
+			"- **[P1]** `io.go:4` [short write](https://forge.example/o/r/pull/42#r4) · thread resolved\n" +
+			"- **[P2]** `net.go:5` [unread state](https://forge.example/o/r/pull/42#r5)\n\n" +
 			"</details>\n\n### Summary",
 		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · vendor/model-x</sub>",
 	} {
@@ -461,12 +466,13 @@ func TestRenderSummaryLinks(t *testing.T) {
 	if full, notes := RenderSummary(t.Context(), Templates{}, d); full != body || len(notes) != 0 {
 		t.Fatalf("a full review renders the same earlier findings and links: notes %v\n%s", notes, full)
 	}
-	if strings.Contains(body, "What's good") || strings.Contains(body, "Clear tests") || strings.Contains(body, "\n\n\n") {
-		t.Fatalf("a bot's pull request is praised, or blank lines doubled:\n%s", body)
+	if strings.Contains(body, "What's good") || strings.Contains(body, "Clear tests") || strings.Contains(body, "\n\n\n") ||
+		strings.Contains(body, "terse name") {
+		t.Fatalf("a bot's pull request is praised, blank lines doubled, or a dismissed finding listed as fixed:\n%s", body)
 	}
 	if strings.Index(body, "## Findings") > strings.Index(body, "**Outside the diff**") ||
-		strings.Index(body, "**Outside the diff**") > strings.Index(body, "<summary>Earlier findings") ||
-		strings.Index(body, "<summary>Earlier findings") > strings.Index(body, "### Summary") || strings.Index(body, "### Summary") > strings.Index(body, "_1 file") {
+		strings.Index(body, "**Outside the diff**") > strings.Index(body, "<summary>Fixed since") ||
+		strings.Index(body, "<summary>Fixed since") > strings.Index(body, "### Summary") || strings.Index(body, "### Summary") > strings.Index(body, "_1 file") {
 		t.Fatalf("sections out of order:\n%s", body)
 	}
 }

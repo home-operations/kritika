@@ -398,6 +398,9 @@ func TestThreads(t *testing.T) {
 	if _, found, _ := c.ThreadResolved(ctx, "acme", "widgets", 4, 23); found {
 		t.Error("a reply opens no thread")
 	}
+	if states, err := c.ThreadsResolved(ctx, "acme", "widgets", 4); err != nil || len(states) != 1 || states[22] {
+		t.Errorf("ThreadsResolved = %v, %v; want the root's state alone", states, err)
+	}
 	f.json("POST", repoAPI+"/merge_requests/4/discussions/d2/notes", 201, map[string]any{"id": 24})
 	if id, err := c.ReplyInline(ctx, "acme", "widgets", 4, inline[1], "Because."); err != nil || id != 24 {
 		t.Fatalf("ReplyInline = %d, %v", id, err)

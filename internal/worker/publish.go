@@ -500,7 +500,7 @@ func (p *publishPhase) writeBack(
 	}
 	if p.prior.id != "" {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
-		data.Prior = p.priorFindings(p.resolveThreads(ctx, resolvedThreads(p.resolved), true))
+		data.Prior = p.priorFindings(p.threadStates(ctx, resolvedThreads(p.resolved)))
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -597,20 +597,22 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 
 // priorFindings is the last review's findings as this review's summary lists
 // them. First come those it listed as resolved, linked to their threads where
-// they have one, each marked with whether this review resolved its thread,
-// which resolved holds. Then come the findings that maintainers dismissed,
-// each linked to the comment that dismissed it.
-func (p *publishPhase) priorFindings(resolved map[int64]bool) []review.PriorFinding {
+// they still have one, each marked with how its thread stands, which states
+// holds. Then come the findings that maintainers dismissed, each linked to
+// the comment that dismissed it.
+func (p *publishPhase) priorFindings(states map[int64]threadState) []review.PriorFinding {
 	owner, repo := p.pr.ownerRepo()
 	dismissed := slices.Concat(p.prior.dismissed, p.answered)
 	out := make([]review.PriorFinding, 0, len(p.resolved)+len(dismissed))
 	for _, pf := range p.resolved {
 		f := pf.Finding
 		f.URL = p.client.FileURL(owner, repo, cmp.Or(f.CarriedFrom, p.prior.headSHA), f.Path, f.Line, f.EndLine)
-		if pf.commentID != 0 {
+		state := states[pf.commentID]
+		if pf.commentID != 0 && state != threadGone {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
 		}
-		out = append(out, review.PriorFinding{Finding: f, Resolved: true, ThreadResolved: resolved[pf.commentID]})
+		out = append(out, review.PriorFinding{Finding: f, Resolved: true,
+			ThreadResolved: state == threadResolved, ThreadOpen: state == threadOpen})
 	}
 	for _, d := range dismissed {
 		f := d.Finding
@@ -648,7 +650,7 @@ func reportedSet(findings []review.Finding) map[string]bool {
 // onlyOwn, the forge client leaves a thread someone else wrote in open: an
 // answered one has their reply, and resolves as the dismiss command resolves
 // it. Best effort, like the inline review. It returns the ids of the threads
-// it resolved: the summary marks a finding fixed where its thread was not.
+// it resolved.
 func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64, onlyOwn bool) map[int64]bool {
 	resolved := make(map[int64]bool, len(ids))
 	if len(ids) == 0 {

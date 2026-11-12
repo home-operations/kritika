@@ -393,6 +393,9 @@ func TestInlineComments(t *testing.T) {
 			t.Fatalf("ThreadResolved(%d) = %v %v %v, want %v", id, resolved, found, err, want)
 		}
 	}
+	if states, err := c.ThreadsResolved(t.Context(), "acme", "widgets", 7); err != nil || len(states) != 7 || !states[10] || states[11] {
+		t.Fatalf("ThreadsResolved = %v, %v; want every code comment's state", states, err)
+	}
 	if _, err := c.ResolveThread(t.Context(), "acme", "widgets", 7, 10, true); !errors.Is(err, forge.ErrUnsupported) {
 		t.Fatalf("ResolveThread = %v, want ErrUnsupported", err)
 	}

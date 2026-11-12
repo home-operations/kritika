@@ -202,14 +202,26 @@ func (d RenderData) Clean() bool {
 		(d.Approval == nil || d.Approval.Approved)
 }
 
-// OpenPrior are the earlier findings that the default template lists: those
-// that this review listed as resolved and that have a thread it did not
-// resolve, which only the summary then marks fixed. A thread that it resolved
-// shows itself, and a dismissed finding's thread holds the dismissal.
+// FixedPrior are the earlier findings that the default template lists: all
+// those that this review listed as resolved, whatever their threads' state.
+// A dismissed finding is not among them: its thread holds the dismissal.
+func (d RenderData) FixedPrior() []PriorFinding {
+	var out []PriorFinding
+	for _, f := range d.Prior {
+		if f.Resolved {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// OpenPrior are the earlier findings that this review listed as resolved
+// and whose thread still stands open on the forge: the threads a reader has
+// left to resolve.
 func (d RenderData) OpenPrior() []PriorFinding {
 	var out []PriorFinding
 	for _, f := range d.Prior {
-		if f.Resolved && f.ThreadURL != "" && !f.ThreadResolved {
+		if f.Resolved && f.ThreadOpen {
 			out = append(out, f)
 		}
 	}
