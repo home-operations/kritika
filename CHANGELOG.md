@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.120](https://github.com/home-operations/kritika/compare/0.0.119...0.0.120) (2026-11-12)
+
+
+### Features
+
+* **review:** list every fixed finding with its thread's state ([#1451](https://github.com/home-operations/kritika/issues/1451)) ([7e09316](https://github.com/home-operations/kritika/commit/7e09316e139a647493dd0815f8b920fa37e3e280))
+
+
+### Miscellaneous Chores
+
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.8.0 → v2.9.0) ([#1445](https://github.com/home-operations/kritika/issues/1445)) ([d2ead65](https://github.com/home-operations/kritika/commit/d2ead65c63372f095cdc3f8af405f71fe9c5da2b))
+* **go:** update module github.com/jackc/pgx/v5 (v5.12.0 → v5.13.0) ([#1453](https://github.com/home-operations/kritika/issues/1453)) ([f354e91](https://github.com/home-operations/kritika/commit/f354e913701630b5bd84d21ab988b9add4f5d8d4))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.46.1 → v3.47.0) ([#1446](https://github.com/home-operations/kritika/issues/1446)) ([2c5341a](https://github.com/home-operations/kritika/commit/2c5341a530cb9dc7a5141487dac880f97be4d19c))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.47.0 → v3.48.0) ([#1449](https://github.com/home-operations/kritika/issues/1449)) ([d723661](https://github.com/home-operations/kritika/commit/d723661ffe75ce7510f1d3e2bf63dac9c2631233))
+* **go:** update module golang.org/x/crypto (v0.58.0 → v0.59.0) ([#1450](https://github.com/home-operations/kritika/issues/1450)) ([e7bdd00](https://github.com/home-operations/kritika/commit/e7bdd003f25e0008e3c9c378360ffa714374a884))
+* **mise:** update tool yq (4.54.2 → 4.54.3) ([#1455](https://github.com/home-operations/kritika/issues/1455)) ([8388544](https://github.com/home-operations/kritika/commit/8388544b9549936f835202d6a68a1199900fa7d5))
+* **npm:** update dependency astro (7.4.7 → 7.4.8) ([#1444](https://github.com/home-operations/kritika/issues/1444)) ([1cd6c25](https://github.com/home-operations/kritika/commit/1cd6c25ba48f4c0fd3859f7f173c86ece2cf76df))
+* **npm:** update dependency astro (7.4.8 → 7.4.10) ([#1452](https://github.com/home-operations/kritika/issues/1452)) ([9093634](https://github.com/home-operations/kritika/commit/90936348d675e21e6048004832adb1e02b2279aa))
+* **npm:** update dependency bits-ui (2.20.6 → 2.21.0) ([#1457](https://github.com/home-operations/kritika/issues/1457)) ([5999eb1](https://github.com/home-operations/kritika/commit/5999eb1c5e351960e10bbb69f12728ff51150f6b))
+* **npm:** update dependency layerchart (2.9.2 → 2.10.0) ([#1454](https://github.com/home-operations/kritika/issues/1454)) ([ce9f718](https://github.com/home-operations/kritika/commit/ce9f71800ede3aa0c7b27d366797319ef5b45b51))
+* **npm:** update dependency marked (18.1.3 → 18.2.0) ([#1447](https://github.com/home-operations/kritika/issues/1447)) ([b263f66](https://github.com/home-operations/kritika/commit/b263f66286d41d6d3bce7c57c0f8fc3141749049))
+* **npm:** update dependency vite (8.3.7 → 8.3.8) ([#1456](https://github.com/home-operations/kritika/issues/1456)) ([2b058b2](https://github.com/home-operations/kritika/commit/2b058b225f70b323e913ab0a9e23c9a7d97992eb))
+
 ## [0.0.119](https://github.com/home-operations/kritika/compare/0.0.118...0.0.119) (2026-11-10)
 
 
