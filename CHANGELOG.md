@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.121](https://github.com/home-operations/kritika/compare/0.0.120...0.0.121) (2026-11-14)
+
+
+### Miscellaneous Chores
+
+* **github-release:** update release cli/cli (v2.103.3 → v2.104.0) ([#1459](https://github.com/home-operations/kritika/issues/1459)) ([a1300e1](https://github.com/home-operations/kritika/commit/a1300e1c458f3fce8b7f5baefc34d29aa9e0755f))
+* **go:** update module github.com/openai/openai-go/v3 (v3.98.0 → v3.99.0) ([#1460](https://github.com/home-operations/kritika/issues/1460)) ([9ebee73](https://github.com/home-operations/kritika/commit/9ebee73d084744651bebb2dd55a2bc15089eea7e))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.48.0 → v3.49.0) ([#1466](https://github.com/home-operations/kritika/issues/1466)) ([139dfff](https://github.com/home-operations/kritika/commit/139dfff73a4ddc2612974614ec184c0e7af435a8))
+* **mise:** update tool go (1.27.3 → 1.27.4) ([#1463](https://github.com/home-operations/kritika/issues/1463)) ([58c4778](https://github.com/home-operations/kritika/commit/58c4778bc8abea307236609d3621042bcd8389c7))
+* **mise:** update tool node (26.13.0 → v26.13.1) ([#1462](https://github.com/home-operations/kritika/issues/1462)) ([36b49b6](https://github.com/home-operations/kritika/commit/36b49b6202945984625bf3cd4fa275c15e03b41d))
+* **npm:** update dependency @astrojs/starlight (0.42.10 → 0.42.11) ([#1464](https://github.com/home-operations/kritika/issues/1464)) ([42996a3](https://github.com/home-operations/kritika/commit/42996a3c8794ee2223959ef79ae8f5614b91daba))
+* **npm:** update dependency astro (7.4.10 → 7.4.11) ([#1458](https://github.com/home-operations/kritika/issues/1458)) ([5810ecd](https://github.com/home-operations/kritika/commit/5810ecd843fdbceee4f3514c7f5482a53f22cf34))
+* **npm:** update dependency layerchart (2.10.0 → 2.10.1) ([#1465](https://github.com/home-operations/kritika/issues/1465)) ([a3ffd06](https://github.com/home-operations/kritika/commit/a3ffd06c71aea13a040b70e44fa21b9e3469aa55))
+
 ## [0.0.120](https://github.com/home-operations/kritika/compare/0.0.119...0.0.120) (2026-11-12)
 
 
