@@ -29,7 +29,7 @@
     "bits-ui": "^2.21.0",
     "layerchart": "^2.10.1",
     "marked": "^18.2.0",
-    "oxlint": "^1.93.0",
+    "oxlint": "^1.94.0",
     "shiki": "^4.6.0",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
