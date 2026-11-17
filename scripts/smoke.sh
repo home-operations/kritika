@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 # renovate: datasource=github-releases depName=cloudnative-pg/cloudnative-pg
-CNPG_VERSION=v1.30.1
+CNPG_VERSION=v1.30.2
 # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
 POSTGRES_TAG=18.6-standard-bookworm
 # renovate: datasource=docker depName=ghcr.io/tensorchord/vchord-scratch
