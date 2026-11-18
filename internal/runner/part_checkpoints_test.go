@@ -97,7 +97,7 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 		return nil
 	}
 	var remaining []int
-	report := func(_ context.Context, n map[string]int) map[string]int {
+	report := func(_ context.Context, n, _ map[string]int) map[string]int {
 		remaining = append(remaining, n[review.DefaultReviewer])
 		return defaultSlots(2)
 	}

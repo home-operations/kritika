@@ -127,6 +127,9 @@ func (g *Server) runnerTx(
 		refuse(w, http.StatusUnauthorized, "invalid_token", "the report token is not valid")
 	case errors.Is(err, store.ErrIndexStaging):
 		refuse(w, http.StatusConflict, "conflict", err.Error())
+	case errors.Is(err, store.ErrStaleReport):
+		// Not a conflict, which a runner sends again: this report stays stale.
+		refuse(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case refusedByDatabase(err):
 		c.logger.Warn("gateway: report refused", "error", err)
 		refuse(w, http.StatusBadRequest, "invalid_request", "the database refused the report")
@@ -212,7 +215,7 @@ func (g *Server) reportParts(w http.ResponseWriter, r *http.Request, c runReport
 	var slots map[string]int
 	if !g.runnerWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
-		slots, err = store.ReportRemainingParts(ctx, tx, c.grant.RunID, v.Remaining)
+		slots, err = store.ReportRemainingParts(ctx, tx, c.grant.RunID, v)
 		return err
 	}) {
 		return

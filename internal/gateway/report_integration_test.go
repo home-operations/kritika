@@ -151,7 +151,7 @@ func everyReport(t *testing.T) map[string][]byte {
 		runspec.ReportCheckpointsPath: runspec.CheckpointReport{
 			Input: "inputs", Part: 1, Payload: json.RawMessage(`{"forged":true}`),
 		},
-		runspec.ReportPartsPath: runspec.PartsReport{Remaining: map[string]int{"default": 9}},
+		runspec.ReportPartsPath: runspec.PartsReport{Sequence: 1, Remaining: map[string]int{"default": 9}, Active: map[string]int{"default": 3}},
 	}
 	out := map[string][]byte{runspec.ReportHeartbeatPath: nil, runspec.ReportIndexPath: []byte("{\"pack\":{\"mode\":\"full\"},\"chunks\":0}\n")}
 	for path, v := range bodies {
@@ -349,7 +349,10 @@ func TestReportPartCheckpointsAndSlots(t *testing.T) {
 	e := newReportEnv(t)
 	ctx := t.Context()
 	id, token := e.run(store.RunnerKindReview)
-	if err := e.st.WithAccount(ctx, e.account, func(tx pgx.Tx) error { return store.SetPartSlots(ctx, tx, id, map[string]int{"default": 3}) }); err != nil {
+	if err := e.st.WithAccount(ctx, e.account, func(tx pgx.Tx) error {
+		_, err := store.SetPartSlots(ctx, tx, id, map[string]int{"default": 3})
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if status := e.post(runspec.ReportCheckpointsPath, token, runspec.CheckpointReport{
@@ -386,10 +389,26 @@ func TestReportPartCheckpointsAndSlots(t *testing.T) {
 	if err := json.Unmarshal(answer, &numbers); err != nil || status != http.StatusOK || len(numbers) != 1 || string(numbers[0].Payload) != huge {
 		t.Fatalf("read = %d %.200s, %v", status, answer, err)
 	}
-	status, answer = e.send(http.MethodPost, runspec.ReportPartsPath, token, []byte(`{"remaining":{"default":2}}`))
+	status, answer = e.send(http.MethodPost, runspec.ReportPartsPath, token, []byte(`{"sequence":1,"remaining":{"default":2},"active":{"default":1}}`))
 	var slots runspec.PartSlots
 	if err := json.Unmarshal(answer, &slots); err != nil || status != http.StatusOK || slots.Slots["default"] != 3 {
 		t.Fatalf("parts = %d %s, %v", status, answer, err)
+	}
+	var progress store.PartProgress
+	if err := e.st.WithAccount(ctx, e.account, func(tx pgx.Tx) (err error) {
+		progress, err = store.ReadPartProgress(ctx, tx, id)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if progress.Remaining["default"] != 2 || progress.Active["default"] != 1 || progress.Seen["default"] != 3 {
+		t.Fatalf("progress = %+v, want 2 remaining, 1 active and the 3 slots read", progress)
+	}
+	// The same report again is not later than the one taken, and a runner
+	// does not send a refusal of this kind again.
+	if status, _ := e.send(http.MethodPost, runspec.ReportPartsPath, token,
+		[]byte(`{"sequence":1,"remaining":{"default":0},"active":{"default":0}}`)); status != http.StatusBadRequest {
+		t.Fatalf("a report that is not later = %d, want 400", status)
 	}
 }
 

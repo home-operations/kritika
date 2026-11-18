@@ -2,13 +2,18 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // defaultSlots grants n slots to the default pass alone.
@@ -28,7 +33,7 @@ func TestPartSlotsGrowWhilePartRuns(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- scheduleParts(ctx, []int{0, 1, 2}, defaultKey, defaultSlots(1), ticks,
-			func(_ context.Context, remaining map[string]int) map[string]int {
+			func(_ context.Context, remaining, _ map[string]int) map[string]int {
 				reports = append(reports, remaining[review.DefaultReviewer])
 				return defaultSlots(int(grant.Load()))
 			}, func(ctx context.Context, i int) error {
@@ -81,6 +86,191 @@ func TestPartSlotsGrowWhilePartRuns(t *testing.T) {
 	}
 }
 
+// TestPartSlotsShrinkWhilePartsRun: a grant that drops leaves the running
+// parts alone and starts no part until fewer run than it allows. Each report
+// carries the parts that run.
+func TestPartSlotsShrinkWhilePartsRun(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	started := make(chan int, 3)
+	release := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	ticks := make(chan time.Time)
+	var grant atomic.Int32
+	grant.Store(2)
+	active := make(chan int, 16)
+	done := make(chan error, 1)
+	go func() {
+		done <- scheduleParts(ctx, []int{0, 1, 2}, defaultKey, defaultSlots(2), ticks,
+			func(_ context.Context, _, running map[string]int) map[string]int {
+				active <- running[review.DefaultReviewer]
+				return defaultSlots(int(grant.Load()))
+			}, func(ctx context.Context, i int) error {
+				started <- i
+				select {
+				case <-release[i]:
+				case <-ctx.Done():
+				}
+				return nil
+			})
+	}()
+	reported := func(want int) {
+		t.Helper()
+		select {
+		case got := <-active:
+			if got != want {
+				t.Fatalf("reported %d active parts, want %d", got, want)
+			}
+		case <-ctx.Done():
+			t.Fatal("active parts not reported")
+		}
+	}
+	begun := func(n int) []int {
+		t.Helper()
+		var got []int
+		for range n {
+			select {
+			case i := <-started:
+				got = append(got, i)
+			case <-ctx.Done():
+				t.Fatalf("parts did not start: %v", got)
+			}
+		}
+		slices.Sort(got)
+		return got
+	}
+	tick := func() {
+		t.Helper()
+		select {
+		case ticks <- time.Now():
+		case <-ctx.Done():
+			t.Fatal("capacity not polled")
+		}
+	}
+	reported(0)
+	if got := begun(2); !slices.Equal(got, []int{0, 1}) {
+		t.Fatalf("started %v, want the first two parts", got)
+	}
+	grant.Store(1)
+	close(release[0])
+	reported(1)
+	// A part started against the lower grant would show in the next report.
+	tick()
+	reported(1)
+	close(release[1])
+	reported(0)
+	if got := begun(1); !slices.Equal(got, []int{2}) {
+		t.Fatalf("started %v, want the last part", got)
+	}
+	close(release[2])
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("parts did not finish")
+	}
+}
+
+// TestPartSlotsReportFails: a report that the gateway does not answer leaves
+// the running parts alone and starts no part beyond the one slot of a pool,
+// since the gateway may have taken it under a lower grant. The next report
+// that is answered restores the grant. The reports are numbered in order.
+func TestPartSlotsReportFails(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var failing atomic.Bool
+	reports := make(chan runspec.PartsReport, 16)
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var report runspec.PartsReport
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil || r.URL.Path != runspec.ReportPartsPath {
+			t.Errorf("report to %s: %v", r.URL.Path, err)
+		}
+		reports <- report
+		if failing.Load() {
+			http.Error(w, "refused", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(runspec.PartSlots{Slots: defaultSlots(2)})
+	}))
+	t.Cleanup(gw.Close)
+	started := make(chan int, 3)
+	release := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	ticks := make(chan time.Time)
+	done := make(chan error, 1)
+	go func() {
+		done <- scheduleParts(ctx, []int{0, 1, 2}, defaultKey, defaultSlots(2), ticks,
+			runnerPartSlots(&reporter{gatewayURL: gw.URL, token: "t"}, slog.New(slog.DiscardHandler)),
+			func(ctx context.Context, i int) error {
+				started <- i
+				select {
+				case <-release[i]:
+				case <-ctx.Done():
+				}
+				return nil
+			})
+	}()
+	var sequence int64
+	reported := func(want int) {
+		t.Helper()
+		select {
+		case got := <-reports:
+			if got.Active[review.DefaultReviewer] != want || got.Sequence <= sequence {
+				t.Fatalf("report %d after %d names %d active parts, want %d and a later report", got.Sequence, sequence,
+					got.Active[review.DefaultReviewer], want)
+			}
+			sequence = got.Sequence
+		case <-ctx.Done():
+			t.Fatal("active parts not reported")
+		}
+	}
+	begun := func(want ...int) {
+		t.Helper()
+		var got []int
+		for range want {
+			select {
+			case i := <-started:
+				got = append(got, i)
+			case <-ctx.Done():
+				t.Fatalf("parts did not start: %v", got)
+			}
+		}
+		if slices.Sort(got); !slices.Equal(got, want) {
+			t.Fatalf("started %v, want %v", got, want)
+		}
+	}
+	tick := func() {
+		t.Helper()
+		select {
+		case ticks <- time.Now():
+		case <-ctx.Done():
+			t.Fatal("capacity not polled")
+		}
+	}
+	reported(0)
+	begun(0, 1)
+	failing.Store(true)
+	close(release[0])
+	reported(1)
+	// A part started after the report that failed would show in the next.
+	tick()
+	reported(1)
+	failing.Store(false)
+	tick()
+	reported(1)
+	begun(2)
+	close(release[1])
+	close(release[2])
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("parts did not finish")
+	}
+}
+
 // TestPartSlotsPerPool: each part runs in its pool's slots. A pool with one
 // slot runs one part at a time while another's two run at once, and the
 // remaining work is reported by pool.
@@ -102,7 +292,7 @@ func TestPartSlotsPerPool(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- scheduleParts(ctx, []int{0, 1, 2, 3}, key, map[string]int{"lens": 1, review.DefaultReviewer: 2}, nil,
-			func(_ context.Context, remaining map[string]int) map[string]int {
+			func(_ context.Context, remaining, _ map[string]int) map[string]int {
 				reports = append(reports, remaining)
 				return map[string]int{"lens": 1, review.DefaultReviewer: 2}
 			}, func(ctx context.Context, i int) error {

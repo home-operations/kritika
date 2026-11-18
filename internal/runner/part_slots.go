@@ -40,7 +40,7 @@ func reportPartCount(ctx context.Context, report *reporter, p runspec.Spec, shar
 	if len(remaining) == 0 {
 		remaining[poolKey(p, "")] = 1
 	}
-	runnerPartSlots(report, p, logger)(ctx, remaining)
+	runnerPartSlots(report, logger)(ctx, remaining, map[string]int{})
 }
 
 // granted is how many parts run at once in the pool key: what the worker
@@ -61,32 +61,36 @@ func totalSlots(slots map[string]int) int {
 	return max(1, total)
 }
 
-func runnerPartSlots(report *reporter, p runspec.Spec, logger *slog.Logger) func(context.Context, map[string]int) map[string]int {
-	held := maps.Clone(p.Agent.Slots)
-	return func(ctx context.Context, remaining map[string]int) map[string]int {
+// partReport reports the run's unfinished parts and those of them that run,
+// both by slot pool, and answers with the slots that the worker grants.
+type partReport func(ctx context.Context, remaining, active map[string]int) map[string]int
+
+func runnerPartSlots(report *reporter, logger *slog.Logger) partReport {
+	return func(ctx context.Context, remaining, active map[string]int) map[string]int {
 		queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		slots, err := report.partsRemaining(queryCtx, remaining)
+		slots, err := report.partsRemaining(queryCtx, remaining, active)
 		if err != nil {
 			if ctx.Err() == nil {
 				logger.Warn("review part capacity not refreshed", "error", err)
 			}
-			// The worker only shrinks to reported unfinished work, which
-			// includes active parts. At most that work can run, so the
-			// previous grant remains safe when a refresh fails.
-			return held
+			// The gateway may have taken the report though its answer was
+			// lost, and the worker then keeps only the slots of that answer.
+			// The one slot of each pool that the worker never lets go is all
+			// that is safe to start a part in.
+			return nil
 		}
-		held = slots
-		return held
+		return slots
 	}
 }
 
-// scheduleParts admits more work when capacity grows, without interrupting
-// running parts. Each part runs in the slots of its pool, key, as slots
-// grants them. Only this goroutine reports remaining work, monotonically.
+// scheduleParts admits more work when capacity grows, and no more than the
+// capacity left when it shrinks, without interrupting running parts. Each
+// part runs in the slots of its pool, key, as slots grants them. Only this
+// goroutine reports remaining work, monotonically, and the parts that run.
 func scheduleParts(
 	ctx context.Context, pending []int, key func(int) string, slots map[string]int, ticks <-chan time.Time,
-	report func(context.Context, map[string]int) map[string]int, run func(context.Context, int) error,
+	report partReport, run func(context.Context, int) error,
 ) error {
 	type ended struct {
 		i   int
@@ -112,7 +116,7 @@ func scheduleParts(
 			}
 		}
 		if report != nil {
-			slots = report(gctx, remaining)
+			slots = report(gctx, remaining, maps.Clone(active))
 		}
 		if left == 0 {
 			return g.Wait()

@@ -99,15 +99,27 @@ func (s *reviewSlots) parts() map[string]int {
 
 // resize holds, on each model, as many slots as its remaining parts can use,
 // within the model's limit and what is free, and publishes the grant by
-// model. remaining is by model; nil, before the runner reports, is the
-// estimate.
-func (s *reviewSlots) resize(ctx context.Context, remaining map[string]int) error {
+// model. A review that waits for its first slot of a model comes before this
+// one's extra slots: the grant drops by what such reviews are short of, and a
+// slot is let go once the runner's parts cannot be in it. progress is the
+// runner's last report; before it reports, the parts are the estimate.
+func (s *reviewSlots) resize(ctx context.Context, progress store.PartProgress) error {
+	remaining := progress.Remaining
 	if remaining == nil {
 		remaining = s.parts()
 	}
 	grant := map[string]int{}
 	for _, pool := range s.pools {
 		want := min(max(1, remaining[pool.model]), pool.limit)
+		if held := len(pool.leases) + 1; held > 1 {
+			owed, err := s.worker.Store.SlotsOwed(ctx, s.accountID, pool.model, pool.limit, s.jobID)
+			if err != nil {
+				s.logger.Warn("waiting reviews not counted; the review keeps its slots", "model", pool.model, "error", err)
+			}
+			if owed > 0 {
+				want = min(want, max(1, held-owed))
+			}
+		}
 		for len(pool.leases)+1 < want {
 			lease, err := s.worker.Store.TakeExtraLease(ctx, s.accountID, pool.model, pool.limit, s.jobID)
 			if err != nil {
@@ -120,22 +132,32 @@ func (s *reviewSlots) resize(ctx context.Context, remaining map[string]int) erro
 			pool.leases = append(pool.leases, lease)
 		}
 		grant[pool.model] = min(want, len(pool.leases)+1)
-		for len(pool.leases)+1 > grant[pool.model] {
+	}
+	if !maps.Equal(grant, s.published) {
+		// The grant is published before a slot is let go, and the runner's
+		// report is read with it: a report made after reads this grant, so
+		// none can start a part in a slot that is let go below.
+		if err := s.worker.Store.WithAccount(ctx, s.accountID, func(tx pgx.Tx) (err error) {
+			progress, err = store.SetPartSlots(ctx, tx, s.runID, grant)
+			return err
+		}); err != nil {
+			// The grant may be published though the commit was not
+			// acknowledged, so the next resize publishes whatever it
+			// grants before it lets a slot go.
+			s.published = nil
+			return err
+		}
+		s.published = grant
+		s.logger.Info("review model slots adjusted", "slots", grant, "remaining_parts", remaining)
+	}
+	for _, pool := range s.pools {
+		keep := max(grant[pool.model], progress.InUse(pool.model, len(pool.leases)+1))
+		for len(pool.leases)+1 > keep {
 			last := len(pool.leases) - 1
 			s.worker.releaseLease(ctx, s.logger, pool.leases[last], pool.model)
 			pool.leases = pool.leases[:last]
 		}
 	}
-	if maps.Equal(grant, s.published) {
-		return nil
-	}
-	if err := s.worker.Store.WithAccount(ctx, s.accountID, func(tx pgx.Tx) error {
-		return store.SetPartSlots(ctx, tx, s.runID, grant)
-	}); err != nil {
-		return err
-	}
-	s.published = grant
-	s.logger.Info("review model slots adjusted", "slots", grant, "remaining_parts", remaining)
 	return nil
 }
 
@@ -159,14 +181,14 @@ func (s *reviewSlots) watch(ctx context.Context) func() {
 				return
 			case <-ticker.C:
 			}
-			var remaining map[string]int
+			var progress store.PartProgress
 			err := s.worker.Store.WithAccount(ctx, s.accountID, func(tx pgx.Tx) error {
 				var err error
-				remaining, err = store.RemainingParts(ctx, tx, s.runID)
+				progress, err = store.ReadPartProgress(ctx, tx, s.runID)
 				return err
 			})
 			if err == nil {
-				err = s.resize(ctx, remaining)
+				err = s.resize(ctx, progress)
 			}
 			if err != nil && ctx.Err() == nil {
 				s.logger.Warn("review model slots not adjusted", "error", err)

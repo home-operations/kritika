@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
@@ -104,4 +105,68 @@ func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 			t.Fatalf("job is %s and due = %v once Run returned, want available now", state, due)
 		}
 	})
+}
+
+// TestAdmissionWakesNextWaiter: a review that has its slots clears its mark
+// of the slot it waited for. It wakes the review that is next in line for
+// each of its models, and for the model of the mark, when the model has a
+// slot free, and leaves it asleep when every slot is held.
+func TestAdmissionWakesNextWaiter(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	// Models of a provider that the configuration does not list have the
+	// default two slots. The review waited for the third model before a
+	// change of the configuration took that model's agent from it.
+	const reviewModel, agentModel, staleModel = "unlisted/next-review", "unlisted/next-agent", "unlisted/next-stale"
+	t.Cleanup(func() {
+		_, _ = st.App().Exec(context.Background(), `DELETE FROM model_leases WHERE model_key IN ($1, $2, $3)`,
+			reviewModel, agentModel, staleModel)
+	})
+	job := func(state, model string) int64 {
+		t.Helper()
+		var id int64
+		if err := st.App().QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, state, max_attempts, scheduled_at, metadata)
+			VALUES ('review', 'review', jsonb_build_object('account_id', $1::text), $2::text::river_job_state, 8,
+				now() + interval '5 minutes', jsonb_build_object('slot_wait', $3::text)) RETURNING id`,
+			account.ID(), state, model).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id = $1`, id) })
+		return id
+	}
+	review := job("running", staleModel)
+	take := func(model string, jobID int64) *store.Lease {
+		t.Helper()
+		l, err := st.TakeReviewLease(ctx, account.ID(), model, 2, jobID)
+		if err != nil || l == nil {
+			t.Fatalf("TakeReviewLease = %v, %v", l, err)
+		}
+		t.Cleanup(func() { _, _ = l.Release(context.Background()) })
+		return l
+	}
+	// The review holds one of the two slots of each of its models. The
+	// agent's model has its other slot held too.
+	admitted := admission{lease: take(reviewModel, review), reviewerLeases: map[string]*store.Lease{agentModel: take(agentModel, review)}}
+	take(agentModel, -1)
+	next, behind, stale := job("scheduled", reviewModel), job("scheduled", agentModel), job("scheduled", staleModel)
+	logger := slog.New(slog.DiscardHandler)
+	(&Review{Store: st, Logger: logger}).wakeNext(ctx, logger, file, account, admitted, reviewModel, review)
+	for id, want := range map[int64]string{next: "available", behind: "scheduled", stale: "available"} {
+		var state string
+		if err := st.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, id).Scan(&state); err != nil || state != want {
+			t.Errorf("waiter %d is %s (%v), want %s", id, state, err, want)
+		}
+	}
+	var marked bool
+	if err := st.App().QueryRow(ctx, `SELECT metadata ? 'slot_wait' FROM river_job WHERE id = $1`, review).Scan(&marked); err != nil || marked {
+		t.Errorf("the admitted review is marked as waiting = %v, %v", marked, err)
+	}
 }

@@ -153,8 +153,9 @@ func TestAdmissionBudget(t *testing.T) {
 	}
 }
 
-// TestPartsTimeout: a review's agent time covers its parts in rounds of
-// as many as it holds model slots for, up to the cap.
+// TestPartsTimeout: a review's agent time covers the parts of the model with
+// the most, one at a time, up to the cap. The slots that it starts with do
+// not shorten it, since it gives them to the reviews that wait.
 func TestPartsTimeout(t *testing.T) {
 	for _, tt := range []struct {
 		size    sizing
@@ -163,12 +164,10 @@ func TestPartsTimeout(t *testing.T) {
 	}{
 		{size: sizing{parts: map[string]int{"default": 1}, slots: map[string]int{"default": 1}}, timeout: 20 * time.Minute, want: 20 * time.Minute},
 		{size: sizing{parts: map[string]int{"default": 3}, slots: map[string]int{"default": 1}}, timeout: 20 * time.Minute, want: time.Hour},
-		{size: sizing{parts: map[string]int{"default": 3}, slots: map[string]int{"default": 2}}, timeout: 20 * time.Minute, want: 40 * time.Minute},
-		{size: sizing{parts: map[string]int{"default": 8}, slots: map[string]int{"default": 8}}, timeout: 20 * time.Minute, want: 20 * time.Minute},
-		{size: sizing{parts: map[string]int{"default": 8}, slots: map[string]int{"default": 1}}, timeout: 50 * time.Minute, want: jobtimeout.MaxAgentTimeout},
-		// The slowest model sets the rounds: a lens's model with two parts in one slot.
-		{size: sizing{parts: map[string]int{"a/big": 8, "b/small": 2}, slots: map[string]int{"a/big": 8, "b/small": 1}}, timeout: 20 * time.Minute, want: 40 * time.Minute},
-		// A model granted no slot yet still counts as running one part at a time.
+		{size: sizing{parts: map[string]int{"default": 3}, slots: map[string]int{"default": 3}}, timeout: 20 * time.Minute, want: time.Hour},
+		{size: sizing{parts: map[string]int{"default": 8}, slots: map[string]int{"default": 8}}, timeout: 20 * time.Minute, want: jobtimeout.MaxAgentTimeout},
+		// The model with the most parts sets the rounds.
+		{size: sizing{parts: map[string]int{"a/big": 4, "b/small": 2}, slots: map[string]int{"a/big": 4, "b/small": 1}}, timeout: 20 * time.Minute, want: 80 * time.Minute},
 		{size: sizing{parts: map[string]int{"a/big": 2, "b/small": 3}, slots: map[string]int{"a/big": 2}}, timeout: 20 * time.Minute, want: time.Hour},
 	} {
 		if got := partsTimeout(tt.size.rounds(), tt.timeout); got != tt.want {

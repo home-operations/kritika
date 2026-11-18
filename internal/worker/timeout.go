@@ -18,8 +18,10 @@ func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 
 // agentRunTimeout is the timeout of a job that runs an agent in a runner for
 // a repository of the account: a review, or a follow-up. A review can be
-// split, each part with the agent's timeout. Its size is read only once the
-// job runs, so its timeout allows for the most parts.
+// split, each part with the agent's timeout, and its Job deadline covers the
+// parts of its agents on one model, one at a time (sizing.rounds). Its size
+// and its agents are read only once the job runs, so its timeout allows for
+// the most agents, each with the most parts.
 func agentRunTimeout(file *configfile.File, accountID string, review bool) time.Duration {
 	account, _ := file.AccountByID(accountID)
 	deadline := file.RunnerDeadline()
@@ -27,7 +29,7 @@ func agentRunTimeout(file *configfile.File, accountID string, review bool) time.
 		agent := file.Settings(account).Agent
 		timeout := agent.Timeout
 		if review {
-			timeout = partsTimeout(agent.MaxParts, timeout)
+			timeout = partsTimeout(agent.MaxParts*(configfile.MaxReviewers+1), timeout)
 		}
 		deadline = agentDeadline(deadline, timeout)
 	}

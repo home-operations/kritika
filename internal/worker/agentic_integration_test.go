@@ -2132,9 +2132,9 @@ func checkAgentReadsDiff(t *testing.T, h *agenticHarness) {
 // checkAgentSizedForParts reviews a pull request that the forge reports at
 // the size of #667's. Its runner can split it into the eight parts that
 // agent.parts allows, and its grant covers them. Its Job deadline covers them
-// in rounds of as many as run at once in the model slots that the review
-// holds. Those are its own slot and the slots it found free, all of which it
-// lets go once it ends.
+// one at a time, however many model slots the review holds as it starts.
+// Those are its own slot and the slots it found free, all of which it lets go
+// once it ends.
 func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 	h.lf.setSize(forge.OpenPullRequest{Additions: 6824, Deletions: 291, ChangedFiles: 188})
 	defer h.lf.setSize(forge.OpenPullRequest{})
@@ -2162,8 +2162,7 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 		if limits == nil {
 			t.Fatalf("concurrency %d: the run had no agent", tc.parallel)
 		}
-		rounds := (8 + tc.parallel - 1) / tc.parallel
-		want := min(time.Duration(rounds*limits.TimeoutSeconds)*time.Second, jobtimeout.MaxAgentTimeout) + jobtimeout.AgentFetchHeadroom
+		want := min(time.Duration(8*limits.TimeoutSeconds)*time.Second, jobtimeout.MaxAgentTimeout) + jobtimeout.AgentFetchHeadroom
 		if limits.Parts != 8 || limits.Slots[limits.Pools["default"]] != tc.parallel || budget != 8*limits.MaxTokens || deadline != want {
 			t.Fatalf("concurrency %d: agent = %+v, budget = %d, deadline = %s; want 8 parts, %d at once, 8 times the tokens and %s",
 				tc.parallel, limits, budget, deadline, tc.parallel, want)

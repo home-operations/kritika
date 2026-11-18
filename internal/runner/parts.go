@@ -369,7 +369,7 @@ func runParts(
 		return savePart(ctx, report, secrets, hash, part, result, tools)
 	}
 	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, locks, parts, logger, saved, save,
-		runnerPartSlots(report, p, logger))
+		runnerPartSlots(report, logger))
 	if err != nil {
 		return err
 	}
@@ -416,7 +416,7 @@ func runParts(
 func runPartLoops(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
 	parts []reviewPart, logger *slog.Logger,
-	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, map[string]int) map[string]int,
+	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report partReport,
 ) ([]agent.Result, []runspec.TimelineStep, error) {
 	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
 	key := func(i int) string { return poolKey(p, parts[i].reviewer) }
@@ -424,12 +424,12 @@ func runPartLoops(
 	for i := range parts {
 		count[key(i)]++
 	}
-	// The parts in each slot pool run in rounds of its slots; the slowest
-	// pool sets the time the parts share.
+	// The worker can take every slot of a pool but one for reviews that
+	// wait, so the parts share the time that the pool with the most takes
+	// one part at a time.
 	rounds := 1
-	for k, n := range count {
-		slots := max(1, granted(p.Agent.Slots, k))
-		rounds = max(rounds, (n+slots-1)/slots)
+	for _, n := range count {
+		rounds = max(rounds, n)
 	}
 	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout))
 	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "slots", p.Agent.Slots, "commands", tools.commands(),

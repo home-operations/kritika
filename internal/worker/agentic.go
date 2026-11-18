@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"time"
 
@@ -86,7 +87,7 @@ func (w *Review) agentAdmit(
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
 	}
-	l, err := w.Store.TakeLease(ctx, account.ID(), string(ref), file.Slots(account, ref), jobID)
+	l, err := w.Store.TakeReviewLease(ctx, account.ID(), string(ref), file.Slots(account, ref), jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
@@ -109,7 +110,33 @@ func (w *Review) agentAdmit(
 		return admission{}, store.ReviewCapped, capped, nil
 	}
 	a.maxTokens, a.monthLeft = budget, left
+	w.wakeNext(ctx, logger, file, account, a, ref, jobID)
 	return a, "", "", nil
+}
+
+// wakeNext ends the wait of the review job jobID, which has the slots a, ref
+// being the review model. It clears the review's mark of the slot it waited
+// for (store.ClearSlotWait). It then wakes the review that is next in line
+// for a slot of each model that a holds one of, and of the model that the
+// mark named, when the model has a slot free: a draft's review stayed asleep
+// while this one waited, and no slot is let go to wake it now.
+func (w *Review) wakeNext(
+	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, a admission, ref configfile.ModelRef,
+	jobID int64,
+) {
+	models := append([]string{string(ref)}, slices.Sorted(maps.Keys(a.reviewerLeases))...)
+	waited, err := w.Store.ClearSlotWait(ctx, account.ID(), jobID)
+	if err != nil {
+		logger.Warn("review's slot wait mark not cleared; it holds drafts' reviews back until it ends", "error", err)
+	}
+	if waited != "" && !slices.Contains(models, waited) {
+		models = append(models, waited)
+	}
+	for _, model := range models {
+		if _, err := w.Store.WakeIfSlotFree(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), 0); err != nil {
+			logger.Warn("next waiting review not woken; it wakes when its snooze ends", "model", model, "error", err)
+		}
+	}
 }
 
 // release lets go of every slot a holds, ref being the review model.
@@ -139,7 +166,7 @@ func (w *Review) reviewerLeases(
 ) (map[string]*store.Lease, error) {
 	var out map[string]*store.Lease
 	for _, model := range reviewerModelKeys(settings) {
-		l, err := w.Store.TakeLease(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), jobID)
+		l, err := w.Store.TakeReviewLease(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), jobID)
 		if err == nil && l == nil {
 			err = noSlot{model: model}
 		}
@@ -532,8 +559,8 @@ func partsTimeout(rounds int, timeout time.Duration) time.Duration {
 }
 
 // sizing is what a review is sized for: the parts that its runner can split
-// it into and the slots that it holds, both by model, and the model of each
-// reviewer. The parts on a model can run in its slots at once.
+// it into and the slots that it holds as it starts, both by model, and the
+// model of each reviewer. The parts on a model can run in its slots at once.
 type sizing struct {
 	parts, slots map[string]int
 	pools        map[string]string
@@ -548,13 +575,13 @@ func (s sizing) total() int {
 	return n
 }
 
-// rounds is how many parts run one after another at the most: the slowest
-// model's, each in rounds of its slots.
+// rounds is how many parts run one after another at the most: the parts of
+// the model with the most, since a review gives every slot but one of a model
+// to the reviews that wait for their first.
 func (s sizing) rounds() int {
 	rounds := 1
-	for model, parts := range s.parts {
-		slots := max(1, s.slots[model])
-		rounds = max(rounds, (parts+slots-1)/slots)
+	for _, parts := range s.parts {
+		rounds = max(rounds, parts)
 	}
 	return rounds
 }

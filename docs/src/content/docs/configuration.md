@@ -735,14 +735,17 @@ by step, and a follow-up's:
   files and the context built from that diff. It reports findings only
   on its own files, and can still read any other file.
 
-  As many parts run at once as the review model's provider has
-  [`concurrency`](/models/#providers) slots free when the review starts. The free
-  slots that count are the review's own and those that no other review
-  holds. The rest run as those end. An [agent](/repository-config/#agents)
-  on another model runs its parts in that model's slots, counted the same
-  way, so a slower model's agent never takes the review model's slots or
-  exceeds its own. The parts' tool calls run one at a time. The parts are
-  published as one review.
+  As many parts run at once as the review holds slots of the review
+  model's provider [`concurrency`](/models/#concurrency). Those are the
+  review's own slot and the slots that no other review holds, which it
+  takes as they come free. The rest of the parts run as those end. A
+  review that waits for its first slot of the model comes before those
+  extra slots: as its parts end, the split review gives the extra slots
+  back, down to its own, and it takes them again once no review waits. An
+  [agent](/repository-config/#agents) on another model runs its parts in
+  that model's slots, counted the same way, so a slower model's agent
+  never takes the review model's slots or exceeds its own. The parts' tool
+  calls run one at a time. The parts are published as one review.
 
   One more call to the review model writes the review's summary from the
   parts' summaries. That call is tried again and falls back as a
@@ -758,7 +761,9 @@ by step, and a follow-up's:
   An incremental re-review splits only the diff since the last review,
   when that is over 64 KiB. The token grant and the Job deadline are
   sized for the parts from the pull request's size as the forge reports
-  it. The deadline is sized for running the parts in the slots taken.
+  it. The deadline is sized for running the parts of each model one at a
+  time, because a review can give every slot but its own to the reviews
+  that wait.
 
 - The commands that the runner's `-tools` image offers are `curl`,
   `find`, `gh`, `grep` and `jq`. The
@@ -907,7 +912,7 @@ environment variables remain supported.
 | `indexGrace`                   | `KRITIKA_INDEX_GRACE`                       | how long the index of a repository that stopped running is kept. 720h unless set                                                                                                                                                                                                                                                                  |
 | `transcriptRetention`          | `KRITIKA_TRANSCRIPT_RETENTION`              | how long a review's full model transcript is kept, with the hosts that the gateway refused its runs and its settled model-call records. At least 24h. 720h unless set                                                                                                                                                                             |
 | `diffRetention`                | `KRITIKA_DIFF_RETENTION`                    | how long a review keeps the diff that it was made from, the context that it read and the repository files that it named. At least 24h. 720h unless set                                                                                                                                                                                            |
-| `reviewWorkers`                | `KRITIKA_REVIEW_WORKERS`                    | jobs that one replica runs at once in each of the separate review and follow-up queues. 2 per queue unless set                                                                                                                                                                                                                                    |
+| `reviewWorkers`                | `KRITIKA_REVIEW_WORKERS`                    | jobs that one replica runs at once in each of the separate review and follow-up queues. 2 per queue unless set. A review holds one for as long as it runs, so a provider [`concurrency`](/models/#concurrency) above it needs this raised for more reviews to run at once                                                                         |
 | `threadWorkers`                | `KRITIKA_THREAD_WORKERS`                    | finding resolution/restoration jobs that one replica runs at once, independently of model follow-ups. 1 unless set                                                                                                                                                                                                                                |
 | `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs that one replica runs at once. 1 unless set                                                                                                                                                                                                                                                                                            |
 | `leaderRetryInterval`          | `KRITIKA_LEADER_RETRY_INTERVAL`             | how often a replica retries the leader lock, and the holder makes sure that it still has it. 15s unless set                                                                                                                                                                                                                                       |

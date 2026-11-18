@@ -183,9 +183,16 @@ type PartCheckpoint struct {
 
 // PartsReport says how many parts of a split review are unfinished.
 type PartsReport struct {
+	// Sequence numbers the run's reports of its parts, from 1. The gateway
+	// refuses one that is not later than the last it took: its answer was
+	// not the one that the runner went on with.
+	Sequence int64 `json:"sequence"`
 	// Remaining is the run's unfinished parts by slot pool
 	// (AgentLimits.Pools).
 	Remaining map[string]int `json:"remaining"`
+	// Active is how many of them run, by slot pool. The worker keeps a
+	// slot while a part can be in it.
+	Active map[string]int `json:"active"`
 }
 
 // PartSlots is how many parts the run can hold at once in each slot pool:
