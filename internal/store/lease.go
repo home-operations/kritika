@@ -94,7 +94,8 @@ func (s *Store) TakeLease(ctx context.Context, accountID, modelKey string, slots
 // TakeReviewLease claims the first slot of (account, model) for the review
 // job jobID, as TakeLease does. When the review is of a draft, it leaves a
 // free slot to each review of a ready pull request that waits for its first
-// slot of the model, and claims one only beyond those.
+// slot of the model, and claims one only beyond those, and only once each of
+// those reviews is running.
 func (s *Store) TakeReviewLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
 	return s.takeLease(ctx, accountID, modelKey, slots, jobID, claimReview)
 }
@@ -130,11 +131,15 @@ func heldSQL(slots string) string {
 		AND job_id IS NOT NULL AND expires_at >= now())`
 }
 
-// readyShort is whether the reviews of ready pull requests that wait for
-// their first slot (readyWaiters) are as many as the free ones of the first
-// slots, a parameter, or more: no free slot is left over for a draft's review.
-func readyShort(slots string) string {
-	return `(SELECT count(*) ` + readyWaiters + `) >= ` + slots + `::int - ` + heldSQL(slots)
+// draftWaits is whether a draft's review gets none of the first slots, a
+// parameter. The reviews of ready pull requests that wait for their first
+// slot (readyWaiters) are as many as the free slots, or more, so none is
+// left over. Or one of those reviews is not running yet: a draft's review
+// that started its runner could hold the worker that review needs, for as
+// long as it runs.
+func draftWaits(slots string) string {
+	return `((SELECT count(*) ` + readyWaiters + `) >= ` + slots + `::int - ` + heldSQL(slots) + `
+		OR EXISTS (SELECT 1 ` + readyWaiters + ` AND j.state <> 'running'))`
 }
 
 // SlotsOwed is how many slots of (account, model) the reviews that wait for
@@ -179,7 +184,7 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 				WHERE account_id = $1 AND model_key = $2 AND slot <= $5 AND (job_id IS NULL OR expires_at < now())
 				AND ($6::int <> `+claimSQL(claimExtra)+` OR NOT EXISTS (SELECT 1 `+slotWaiters+`))
 				AND ($6::int <> `+claimSQL(claimReview)+` OR NOT (coalesce((SELECT `+draftReview+` FROM river_job j WHERE j.id = $3), false)
-					AND `+readyShort("$5")+`))
+					AND `+draftWaits("$5")+`))
 				ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
 			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots, int(claim)).Scan(&slot)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -328,9 +333,9 @@ func (s *Store) ClearSlotWait(ctx context.Context, accountID string, jobID int64
 // there is none. The review is one of the account's snoozed for a slot of
 // modelKey: the oldest of a pull request that is ready, or else the oldest of
 // a draft. A draft's is left asleep while the reviews of ready pull requests
-// that wait for their first slot, asleep or not, leave it none of the slots
-// free, since it can claim none until then (see TakeReviewLease). When jobID
-// is not 0, the review is the one of them that jobID names.
+// that wait for their first slot leave it none of the slots free, or are not
+// all running, since it can claim none until then (see TakeReviewLease). When
+// jobID is not 0, the review is the one of them that jobID names.
 func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, slots int, jobID int64) (int64, error) {
 	var woken int64
 	// River keeps a job snoozed, or retried, for less than its scheduler
@@ -340,7 +345,7 @@ func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, slot
 		WHERE id = (SELECT j.id FROM river_job j WHERE j.kind = 'review' AND j.state IN ('scheduled', 'available')
 			AND j.scheduled_at > now() AND j.args->>'account_id' = $1 AND j.metadata->>'`+SlotWaitKey+`' = $2
 			AND ($3::bigint = 0 OR j.id = $3::bigint)
-			AND NOT (`+draftReview+` AND `+readyShort("$4")+`)
+			AND NOT (`+draftReview+` AND `+draftWaits("$4")+`)
 			ORDER BY `+draftReview+`, j.id
 			LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id`, accountID, modelKey, jobID, slots).Scan(&woken)

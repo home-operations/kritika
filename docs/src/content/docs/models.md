@@ -57,7 +57,7 @@ model's for the call. A review that finds every slot held waits on the
 queue for one. A slot that comes free wakes the oldest waiting review of a
 pull request that is ready. The review of a draft takes a slot only when
 the model has more slots free than reviews of ready pull requests that
-wait for one. A review
+wait for one, and each of those reviews has started. A review
 that is split into parts ([large reviews](/configuration/#the-agent)) also
 takes the slots that no other review holds. While another review waits for
 its first slot, it gives those extra slots back as its parts end, and it

@@ -213,14 +213,13 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	}
 	defer func() { _, _ = l.Release(context.Background()) }()
 
-	insert(firstPull + 2)
-	draftTakesOnlySpareSlot(t, s, alpha, model, insert(firstPull))
+	draftTakesOnlySpareSlot(t, s, alpha, model, insert(firstPull), insert(firstPull+2))
 }
 
 // draftTakesOnlySpareSlot has the review job draft, of a draft, claim a slot
-// of model for which three slots are given: one is held, and one review of a
-// ready pull request waits.
-func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft int64) {
+// of model for which three slots are given: one is held, and the review job
+// ready, of a ready pull request, waits for one.
+func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft, ready int64) {
 	t.Helper()
 	ctx := t.Context()
 	// The slots are there before the claims, which then race for the two
@@ -231,6 +230,20 @@ func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft 
 		t.Fatalf("TakeLease = %v, %v", wide, err)
 	}
 	if _, err := wide.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Two slots are free and one review waits, but that review has no
+	// worker yet: the draft's review would hold one for as long as it runs.
+	if l, err := s.TakeReviewLease(ctx, alpha, model, 3, draft); err != nil || l != nil {
+		if l != nil {
+			_, _ = l.Release(ctx)
+		}
+		t.Fatalf("a draft's review took a slot ahead of a ready one that is not running: %v", err)
+	}
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 3, draft); err != nil || woken {
+		t.Fatalf("WakeIfSlotFree of a draft's review ahead of a ready one that is not running = %v, %v", woken, err)
+	}
+	if _, err := s.owner.Exec(ctx, `UPDATE river_job SET state = 'running' WHERE id = $1`, ready); err != nil {
 		t.Fatal(err)
 	}
 	// The claims of the first round follow one another while each
