@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.0.121](https://github.com/home-operations/kritika/compare/0.0.120...0.0.121) (2026-11-18)
+
+
+### Bug Fixes
+
+* **worker:** give a split review's extra model slots to reviews that wait ([#1495](https://github.com/home-operations/kritika/issues/1495)) ([d339a1c](https://github.com/home-operations/kritika/commit/d339a1c1af8e60657d8d9874a02aba664dc1a673))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action jdx/mise-action (v5.2.7 → v5.2.8) ([#1472](https://github.com/home-operations/kritika/issues/1472)) ([b2fa1ef](https://github.com/home-operations/kritika/commit/b2fa1efe2ee6ab945d8a8a096c514ed83aa9107a))
+* **github-release:** update release cli/cli (v2.103.3 → v2.104.0) ([#1459](https://github.com/home-operations/kritika/issues/1459)) ([a1300e1](https://github.com/home-operations/kritika/commit/a1300e1c458f3fce8b7f5baefc34d29aa9e0755f))
+* **github-release:** update release cli/cli (v2.104.0 → v2.105.0) ([#1490](https://github.com/home-operations/kritika/issues/1490)) ([31f43c6](https://github.com/home-operations/kritika/commit/31f43c6816715b91e467aec344e3544dba3b51f2))
+* **github-release:** update release cloudnative-pg/cloudnative-pg (v1.30.1 → v1.30.2) ([#1481](https://github.com/home-operations/kritika/issues/1481)) ([dcd2ed8](https://github.com/home-operations/kritika/commit/dcd2ed872e583469a7d83e61415d463e994f30a3))
+* **go:** update module cel.dev/cel-go (v0.33.2 → v0.33.4) ([#1489](https://github.com/home-operations/kritika/issues/1489)) ([1d1f3fc](https://github.com/home-operations/kritika/commit/1d1f3fca79c70a20b0b1a7bff1df6aac347c5968))
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.10.0 → v2.11.0) ([#1483](https://github.com/home-operations/kritika/issues/1483)) ([353c524](https://github.com/home-operations/kritika/commit/353c52448455635eb7330e32974e3e720b5ed16a))
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.9.0 → v2.10.0) ([#1476](https://github.com/home-operations/kritika/issues/1476)) ([4021f04](https://github.com/home-operations/kritika/commit/4021f0439394e32d80255f9f092624e55e1c7e2f))
+* **go:** update module github.com/kimmachinegun/automemlimit (v1.0.1 → v1.0.2) ([#1474](https://github.com/home-operations/kritika/issues/1474)) ([647bcab](https://github.com/home-operations/kritika/commit/647bcab661957635a83b07531895702733e2564d))
+* **go:** update module github.com/openai/openai-go/v3 (v3.100.0 → v3.101.0) ([#1484](https://github.com/home-operations/kritika/issues/1484)) ([9c65f4c](https://github.com/home-operations/kritika/commit/9c65f4cece108fb8b974c01bd577eadf24a66e96))
+* **go:** update module github.com/openai/openai-go/v3 (v3.101.0 → v3.102.0) ([#1491](https://github.com/home-operations/kritika/issues/1491)) ([d345a3e](https://github.com/home-operations/kritika/commit/d345a3e2d406979173d5fef402149d53da62793a))
+* **go:** update module github.com/openai/openai-go/v3 (v3.98.0 → v3.99.0) ([#1460](https://github.com/home-operations/kritika/issues/1460)) ([9ebee73](https://github.com/home-operations/kritika/commit/9ebee73d084744651bebb2dd55a2bc15089eea7e))
+* **go:** update module github.com/openai/openai-go/v3 (v3.99.0 → v3.100.0) ([#1478](https://github.com/home-operations/kritika/issues/1478)) ([0730de1](https://github.com/home-operations/kritika/commit/0730de18a72ca557ee352c87f25f6c8af22103fa))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.48.0 → v3.49.0) ([#1466](https://github.com/home-operations/kritika/issues/1466)) ([139dfff](https://github.com/home-operations/kritika/commit/139dfff73a4ddc2612974614ec184c0e7af435a8))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.49.0 → v3.50.0) ([#1467](https://github.com/home-operations/kritika/issues/1467)) ([6ccd5f8](https://github.com/home-operations/kritika/commit/6ccd5f85af5c97db2aae015403c646a46abe19b8))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.50.0 → v3.51.0) ([#1473](https://github.com/home-operations/kritika/issues/1473)) ([340ba5b](https://github.com/home-operations/kritika/commit/340ba5bd19fa715f3481bfee669037c6d391ba80))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.51.0 → v3.52.0) ([#1479](https://github.com/home-operations/kritika/issues/1479)) ([c4cdb65](https://github.com/home-operations/kritika/commit/c4cdb65d10b166e2f503fab5b047ba25f62f2524))
+* **go:** update module golang.org/x/net (v0.62.0 → v0.63.0) ([#1485](https://github.com/home-operations/kritika/issues/1485)) ([ab83060](https://github.com/home-operations/kritika/commit/ab83060667efb17543ee5293d7238bbe8cdf48e1))
+* **mise:** install oxfmt from GitHub releases ([#1488](https://github.com/home-operations/kritika/issues/1488)) ([bfd17d8](https://github.com/home-operations/kritika/commit/bfd17d85fb015723323be56970417d75effad1bb))
+* **mise:** update tool github:oxc-project/oxc (0.75.0 → 0.78.0) ([#1492](https://github.com/home-operations/kritika/issues/1492)) ([ca53de9](https://github.com/home-operations/kritika/commit/ca53de9d89a9260900b9a033a8e633e560b3c654))
+* **mise:** update tool go (1.27.3 → 1.27.4) ([#1463](https://github.com/home-operations/kritika/issues/1463)) ([58c4778](https://github.com/home-operations/kritika/commit/58c4778bc8abea307236609d3621042bcd8389c7))
+* **mise:** update tool go:golang.org/x/vuln/cmd/govulncheck (1.9.0 → v1.10.0) ([#1493](https://github.com/home-operations/kritika/issues/1493)) ([00e46e0](https://github.com/home-operations/kritika/commit/00e46e0d63d1d53681249512679929fc5016c985))
+* **mise:** update tool helm (4.3.1 → 4.3.2) ([#1475](https://github.com/home-operations/kritika/issues/1475)) ([ce75ec2](https://github.com/home-operations/kritika/commit/ce75ec201cd77d58996f5418429683cd4cab79a5))
+* **mise:** update tool node (26.13.0 → v26.13.1) ([#1462](https://github.com/home-operations/kritika/issues/1462)) ([36b49b6](https://github.com/home-operations/kritika/commit/36b49b6202945984625bf3cd4fa275c15e03b41d))
+* **mise:** update tool pnpm (12.18.0 → 12.20.0) ([#1471](https://github.com/home-operations/kritika/issues/1471)) ([2342503](https://github.com/home-operations/kritika/commit/234250314c6edf168bb1d3ae0ee7a383272873ca))
+* **mise:** update tool pnpm (12.20.0 → 12.21.0) ([#1477](https://github.com/home-operations/kritika/issues/1477)) ([c92d498](https://github.com/home-operations/kritika/commit/c92d4982a06d75c43e930bed77a2883cfb7f1f10))
+* **npm:** update dependency @astrojs/starlight (0.42.10 → 0.42.11) ([#1464](https://github.com/home-operations/kritika/issues/1464)) ([42996a3](https://github.com/home-operations/kritika/commit/42996a3c8794ee2223959ef79ae8f5614b91daba))
+* **npm:** update dependency @astrojs/starlight (0.42.11 → 0.43.1) ([#1470](https://github.com/home-operations/kritika/issues/1470)) ([0510611](https://github.com/home-operations/kritika/commit/05106118c753be368035c338046bbddffe127dbc))
+* **npm:** update dependency @playwright/test (1.65.0 → 1.65.1) ([#1468](https://github.com/home-operations/kritika/issues/1468)) ([0800530](https://github.com/home-operations/kritika/commit/08005306fd0e6261368281dda65fd7154ba65cca))
+* **npm:** update dependency astro (7.4.10 → 7.4.11) ([#1458](https://github.com/home-operations/kritika/issues/1458)) ([5810ecd](https://github.com/home-operations/kritika/commit/5810ecd843fdbceee4f3514c7f5482a53f22cf34))
+* **npm:** update dependency astro (7.4.11 → 7.4.12) ([#1469](https://github.com/home-operations/kritika/issues/1469)) ([fdc2fce](https://github.com/home-operations/kritika/commit/fdc2fce6bcb88903e88db9349adf25df75ef6eac))
+* **npm:** update dependency layerchart (2.10.0 → 2.10.1) ([#1465](https://github.com/home-operations/kritika/issues/1465)) ([a3ffd06](https://github.com/home-operations/kritika/commit/a3ffd06c71aea13a040b70e44fa21b9e3469aa55))
+* **npm:** update dependency layerchart (2.10.1 → 2.11.0) ([#1494](https://github.com/home-operations/kritika/issues/1494)) ([2c6f463](https://github.com/home-operations/kritika/commit/2c6f46385adf4e57fca1e6a24b55df8e17b092da))
+* **npm:** update dependency marked (18.2.0 → 18.2.1) ([#1482](https://github.com/home-operations/kritika/issues/1482)) ([08da0c9](https://github.com/home-operations/kritika/commit/08da0c9ba8402c605f38c730d405314d35e59968))
+* **npm:** update dependency oxlint (1.93.0 → 1.94.0) ([#1486](https://github.com/home-operations/kritika/issues/1486)) ([cb49b3f](https://github.com/home-operations/kritika/commit/cb49b3fe9bfcbb314668546b4bfe1f0aaf893bf1))
+* **npm:** update tanstack-query monorepo (6.4.1 → 6.4.3) ([#1496](https://github.com/home-operations/kritika/issues/1496)) ([3ca7243](https://github.com/home-operations/kritika/commit/3ca72431e2583139f2d5858d86d468b37f30ce49))
+
 ## [0.0.120](https://github.com/home-operations/kritika/compare/0.0.119...0.0.120) (2026-11-12)
 
 
