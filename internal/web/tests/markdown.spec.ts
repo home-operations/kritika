@@ -37,7 +37,7 @@ test.describe('markdown: links', () => {
   });
 
   test('quotes and angle brackets in an href are percent-encoded, not attribute breakers', () => {
-    const [link] = parseInline('[x](<https://example.com/"onmouseover="alert(1)<b>>)');
+    const [link] = parseInline('[x](<https://example.com/"onmouseover="alert(1)\\<b\\>>)');
     expect(link?.kind).toBe('link');
     if (link?.kind !== 'link') return;
     expect(link.href).not.toContain('"');
