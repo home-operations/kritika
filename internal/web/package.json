@@ -28,7 +28,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "bits-ui": "^2.21.0",
     "layerchart": "^2.11.0",
-    "marked": "^18.2.0",
+    "marked": "^18.2.1",
     "oxlint": "^1.94.0",
     "shiki": "^4.6.0",
     "svelte": "^5.57.3",
