@@ -44,6 +44,7 @@ type Lease struct {
 	accountID string
 	modelKey  string
 	slot      int
+	slots     int
 	jobID     int64
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -91,9 +92,9 @@ func (s *Store) TakeLease(ctx context.Context, accountID, modelKey string, slots
 }
 
 // TakeReviewLease claims the first slot of (account, model) for the review
-// job jobID, as TakeLease does. When the review is of a draft, it claims none
-// while a review of a ready pull request waits for its first slot of the
-// model, even with one free: that review comes first.
+// job jobID, as TakeLease does. When the review is of a draft, it leaves a
+// free slot to each review of a ready pull request that waits for its first
+// slot of the model, and claims one only beyond those.
 func (s *Store) TakeReviewLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
 	return s.takeLease(ctx, accountID, modelKey, slots, jobID, claimReview)
 }
@@ -122,6 +123,20 @@ const draftReview = `coalesce((SELECT p.draft FROM pull_requests p WHERE p.repos
 // readyWaiters is the slotWaiters of pull requests that are ready.
 const readyWaiters = slotWaiters + ` AND NOT ` + draftReview
 
+// heldSQL counts the slots of account $1 and model $2 that a live lease
+// holds, out of the first slots, a parameter.
+func heldSQL(slots string) string {
+	return `(SELECT count(*) FROM model_leases WHERE account_id = $1::uuid AND model_key = $2 AND slot <= ` + slots + `::int
+		AND job_id IS NOT NULL AND expires_at >= now())`
+}
+
+// readyShort is whether the reviews of ready pull requests that wait for
+// their first slot (readyWaiters) are as many as the free ones of the first
+// slots, a parameter, or more: no free slot is left over for a draft's review.
+func readyShort(slots string) string {
+	return `(SELECT count(*) ` + readyWaiters + `) >= ` + slots + `::int - ` + heldSQL(slots)
+}
+
 // SlotsOwed is how many slots of (account, model) the reviews that wait for
 // their first one are short of: those reviews, less the slots that are free.
 // The review jobID, which holds extra slots, gives that many back.
@@ -149,13 +164,22 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 			SELECT $1, $2, s FROM generate_series(1, $3::int) AS s ON CONFLICT DO NOTHING`, accountID, modelKey, slots); err != nil {
 			return fmt.Errorf("store: ensure lease slots: %w", err)
 		}
+		if claim == claimReview {
+			// One review at a time counts the free slots against the
+			// reviews that wait, so two drafts' reviews cannot both take
+			// the one slot that is left over.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text || ' ' || $2::text, 0))`,
+				accountID, modelKey); err != nil {
+				return fmt.Errorf("store: lock review claims: %w", err)
+			}
+		}
 		err := tx.QueryRow(ctx, `UPDATE model_leases SET job_id = $3, expires_at = now() + $4::interval
 			WHERE (account_id, model_key, slot) = (
 				SELECT account_id, model_key, slot FROM model_leases
 				WHERE account_id = $1 AND model_key = $2 AND slot <= $5 AND (job_id IS NULL OR expires_at < now())
 				AND ($6::int <> `+claimSQL(claimExtra)+` OR NOT EXISTS (SELECT 1 `+slotWaiters+`))
 				AND ($6::int <> `+claimSQL(claimReview)+` OR NOT (coalesce((SELECT `+draftReview+` FROM river_job j WHERE j.id = $3), false)
-					AND EXISTS (SELECT 1 `+readyWaiters+`)))
+					AND `+readyShort("$5")+`))
 				ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
 			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots, int(claim)).Scan(&slot)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -164,22 +188,12 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 		if err != nil {
 			return fmt.Errorf("store: claim lease: %w", err)
 		}
-		if claim != claimReview {
-			return nil
-		}
-		// River clears the mark of the review's wait only as its attempt
-		// ends. Until then the review would count as waiting again from
-		// the time it lets the slot go, and hold a draft's review back.
-		if _, err := tx.Exec(ctx, `UPDATE river_job SET metadata = metadata - '`+SlotWaitKey+`'
-			WHERE id = $1 AND metadata->>'`+SlotWaitKey+`' = $2`, jobID, modelKey); err != nil {
-			return fmt.Errorf("store: clear the review's slot wait: %w", err)
-		}
 		return nil
 	})
 	if err != nil || slot == 0 {
 		return nil, err
 	}
-	l := &Lease{st: s, accountID: accountID, modelKey: modelKey, slot: slot, jobID: jobID, done: make(chan struct{})}
+	l := &Lease{st: s, accountID: accountID, modelKey: modelKey, slot: slot, slots: slots, jobID: jobID, done: make(chan struct{})}
 	hctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	l.cancel = cancel
 	go l.heartbeat(hctx)
@@ -201,8 +215,7 @@ func (s *Store) SlotFree(ctx context.Context, accountID, modelKey string, slots 
 // heldSlots counts the slots of (account, model) a live lease holds.
 func heldSlots(ctx context.Context, tx pgx.Tx, accountID, modelKey string, slots int) (int, error) {
 	var held int
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM model_leases WHERE account_id = $1 AND model_key = $2 AND slot <= $3
-		AND job_id IS NOT NULL AND expires_at >= now()`, accountID, modelKey, slots).Scan(&held)
+	err := tx.QueryRow(ctx, `SELECT `+heldSQL("$3"), accountID, modelKey, slots).Scan(&held)
 	if err != nil {
 		return 0, fmt.Errorf("store: read lease slots: %w", err)
 	}
@@ -266,7 +279,7 @@ func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 		return 0, err
 	}
 	err = l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) (err error) {
-		woken, err = wakeWaiter(ctx, tx, l.accountID, l.modelKey, 0)
+		woken, err = wakeWaiter(ctx, tx, l.accountID, l.modelKey, l.slots, 0)
 		return err
 	})
 	return woken, err
@@ -284,20 +297,41 @@ func (s *Store) WakeIfSlotFree(ctx context.Context, accountID, modelKey string, 
 		if err != nil || held >= slots {
 			return err
 		}
-		woken, err = wakeWaiter(ctx, tx, accountID, modelKey, jobID)
+		woken, err = wakeWaiter(ctx, tx, accountID, modelKey, slots, jobID)
 		return err
 	})
 	return woken != 0, err
 }
 
+// ClearSlotWait removes the mark of the model that the review job jobID
+// waited for a slot of, and returns that model, or "" when the job has no
+// mark. A review that has its slots clears it. River saves the worker's own
+// clear only as the attempt ends, and until then the review would count as
+// waiting for a slot of that model whenever it holds none: once it lets its
+// slot go, or all along when it no longer reviews with that model.
+func (s *Store) ClearSlotWait(ctx context.Context, accountID string, jobID int64) (string, error) {
+	var model string
+	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `WITH marked AS (SELECT id, metadata->>'`+SlotWaitKey+`' AS model FROM river_job
+				WHERE id = $1 AND metadata->>'`+SlotWaitKey+`' IS NOT NULL FOR UPDATE)
+			UPDATE river_job j SET metadata = j.metadata - '`+SlotWaitKey+`' FROM marked WHERE j.id = marked.id
+			RETURNING marked.model`, jobID).Scan(&model)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("store: clear a review's slot wait: %w", err)
+		}
+		return nil
+	})
+	return model, err
+}
+
 // wakeWaiter makes a review available now and returns its id, or 0 when
 // there is none. The review is one of the account's snoozed for a slot of
 // modelKey: the oldest of a pull request that is ready, or else the oldest of
-// a draft. A draft's is left asleep while a review of a ready pull request
-// waits for its first slot, asleep or not, since it can claim none until then
-// (see TakeReviewLease). When jobID is not 0, the review is the one of them
-// that jobID names.
-func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, jobID int64) (int64, error) {
+// a draft. A draft's is left asleep while the reviews of ready pull requests
+// that wait for their first slot, asleep or not, leave it none of the slots
+// free, since it can claim none until then (see TakeReviewLease). When jobID
+// is not 0, the review is the one of them that jobID names.
+func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, slots int, jobID int64) (int64, error) {
 	var woken int64
 	// River keeps a job snoozed, or retried, for less than its scheduler
 	// interval available with a scheduled_at ahead, rather than scheduled
@@ -306,10 +340,10 @@ func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, jobI
 		WHERE id = (SELECT j.id FROM river_job j WHERE j.kind = 'review' AND j.state IN ('scheduled', 'available')
 			AND j.scheduled_at > now() AND j.args->>'account_id' = $1 AND j.metadata->>'`+SlotWaitKey+`' = $2
 			AND ($3::bigint = 0 OR j.id = $3::bigint)
-			AND NOT (`+draftReview+` AND EXISTS (SELECT 1 `+readyWaiters+`))
+			AND NOT (`+draftReview+` AND `+readyShort("$4")+`)
 			ORDER BY `+draftReview+`, j.id
 			LIMIT 1 FOR UPDATE SKIP LOCKED)
-		RETURNING id`, accountID, modelKey, jobID).Scan(&woken)
+		RETURNING id`, accountID, modelKey, jobID, slots).Scan(&woken)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, fmt.Errorf("store: wake a snoozed review: %w", err)
 	}

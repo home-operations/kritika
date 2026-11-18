@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/sync/errgroup"
 )
 
 // TestReleaseWakesSnoozedReview: letting a slot go wakes the oldest review
@@ -189,6 +190,12 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	}
 	// The review that has its slot waits no more, also once it lets the
 	// slot go, though River clears its mark only as its attempt ends.
+	if waited, err := s.ClearSlotWait(ctx, alpha, marked); err != nil || waited != model {
+		t.Fatalf("ClearSlotWait = %q, %v, want %q", waited, err, model)
+	}
+	if waited, err := s.ClearSlotWait(ctx, alpha, marked); err != nil || waited != "" {
+		t.Fatalf("ClearSlotWait of a review with no mark = %q, %v", waited, err)
+	}
 	var waits bool
 	if err := s.owner.QueryRow(ctx, `SELECT metadata ? 'slot_wait' FROM river_job WHERE id = $1`, marked).Scan(&waits); err != nil || waits {
 		t.Fatalf("the review with a slot is marked as waiting = %v, %v", waits, err)
@@ -204,9 +211,63 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	if l == nil {
 		t.Fatal("a draft's review took no slot with no other review waiting")
 	}
-	if _, err := l.Release(ctx); err != nil {
+	defer func() { _, _ = l.Release(context.Background()) }()
+
+	insert(firstPull + 2)
+	draftTakesOnlySpareSlot(t, s, alpha, model, insert(firstPull))
+}
+
+// draftTakesOnlySpareSlot has the review job draft, of a draft, claim a slot
+// of model for which three slots are given: one is held, and one review of a
+// ready pull request waits.
+func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft int64) {
+	t.Helper()
+	ctx := t.Context()
+	// The slots are there before the claims, which then race for the two
+	// that are free. One is left to the review that waits, so only one of
+	// the claims made at once takes a slot.
+	wide, err := s.TakeLease(ctx, alpha, model, 3, 7)
+	if err != nil || wide == nil {
+		t.Fatalf("TakeLease = %v, %v", wide, err)
+	}
+	if _, err := wide.Release(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// The claims of the first round follow one another while each
+	// connection prepares its statements. Those of the later rounds
+	// overlap.
+	for round := range 5 {
+		count, err := claimAtOnce(ctx, 8, func() (*Lease, error) { return s.TakeReviewLease(ctx, alpha, model, 3, draft) })
+		if err != nil || count != 1 {
+			t.Fatalf("round %d: drafts' reviews took %d slots, %v, want the 1 that the waiting review leaves", round+1, count, err)
+		}
+	}
+}
+
+// claimAtOnce makes n claims at once and returns how many took a slot. It
+// lets the slots go.
+func claimAtOnce(ctx context.Context, n int, claim func() (*Lease, error)) (int, error) {
+	var g errgroup.Group
+	taken := make(chan *Lease, n)
+	start := make(chan struct{})
+	for range n {
+		g.Go(func() error {
+			<-start
+			l, err := claim()
+			if l != nil {
+				taken <- l
+			}
+			return err
+		})
+	}
+	close(start)
+	err := g.Wait()
+	close(taken)
+	count := len(taken)
+	for l := range taken {
+		_, _ = l.Release(ctx)
+	}
+	return count, err
 }
 
 // TestWakeIfSlotFree: a review snoozed for a model slot is woken when a

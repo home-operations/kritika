@@ -110,18 +110,29 @@ func (w *Review) agentAdmit(
 		return admission{}, store.ReviewCapped, capped, nil
 	}
 	a.maxTokens, a.monthLeft = budget, left
-	w.wakeNext(ctx, logger, file, account, a, ref)
+	w.wakeNext(ctx, logger, file, account, a, ref, jobID)
 	return a, "", "", nil
 }
 
-// wakeNext wakes the review that is next in line for a slot of each model
-// that a holds one of, ref being the review model, when the model has a slot
-// free. A draft's review stays asleep while this one waits for its first
-// slot, and no slot is let go to wake it once this one has it.
+// wakeNext ends the wait of the review job jobID, which has the slots a, ref
+// being the review model. It clears the review's mark of the slot it waited
+// for (store.ClearSlotWait). It then wakes the review that is next in line
+// for a slot of each model that a holds one of, and of the model that the
+// mark named, when the model has a slot free: a draft's review stayed asleep
+// while this one waited, and no slot is let go to wake it now.
 func (w *Review) wakeNext(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, a admission, ref configfile.ModelRef,
+	jobID int64,
 ) {
-	for _, model := range append([]string{string(ref)}, slices.Sorted(maps.Keys(a.reviewerLeases))...) {
+	models := append([]string{string(ref)}, slices.Sorted(maps.Keys(a.reviewerLeases))...)
+	waited, err := w.Store.ClearSlotWait(ctx, account.ID(), jobID)
+	if err != nil {
+		logger.Warn("review's slot wait mark not cleared; it holds drafts' reviews back until it ends", "error", err)
+	}
+	if waited != "" && !slices.Contains(models, waited) {
+		models = append(models, waited)
+	}
+	for _, model := range models {
 		if _, err := w.Store.WakeIfSlotFree(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), 0); err != nil {
 			logger.Warn("next waiting review not woken; it wakes when its snooze ends", "model", model, "error", err)
 		}
