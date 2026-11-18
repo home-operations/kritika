@@ -3,7 +3,7 @@ module github.com/home-operations/kritika
 go 1.27.3
 
 require (
-	cel.dev/cel-go v0.33.2
+	cel.dev/cel-go v0.33.4
 	github.com/KimMachineGun/automemlimit v1.0.2
 	github.com/anthropics/anthropic-sdk-go/v2 v2.11.0
 	github.com/aquaproj/aqua/v2 v2.66.1
