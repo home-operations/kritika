@@ -4,10 +4,14 @@ package store
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 func TestPartSlots(t *testing.T) {
@@ -25,42 +29,151 @@ func TestPartSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id = $1`, runID) })
-	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		remaining, err := RemainingParts(ctx, tx, runID)
-		if remaining != nil {
-			t.Errorf("initial remaining = %v", remaining)
-		}
-		if err != nil {
-			return err
-		}
-		return SetPartSlots(ctx, tx, runID, map[string]int{"default": 3})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	token, err := s.MintRunnerToken(ctx, account, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, remaining := range []int{4, 2, 0} {
-		if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
-			slots, err := ReportRemainingParts(ctx, tx, g.RunID, map[string]int{"default": remaining})
-			if err == nil && (len(slots) != 1 || slots["default"] != 3) {
-				t.Errorf("slots = %v, want default: 3", slots)
-			}
+	parts := func(n int) map[string]int { return map[string]int{"default": n} }
+	publish := func(slots int) PartProgress {
+		t.Helper()
+		var before PartProgress
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) (err error) {
+			before, err = SetPartSlots(ctx, tx, runID, parts(slots))
 			return err
 		}); err != nil {
 			t.Fatal(err)
 		}
+		return before
 	}
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		remaining, err := RemainingParts(ctx, tx, runID)
-		if err == nil && (remaining == nil || len(remaining) != 1 || remaining["default"] != 0) {
-			t.Errorf("remaining = %v, want default: 0", remaining)
+		progress, err := ReadPartProgress(ctx, tx, runID)
+		if progress.Remaining != nil || progress.Active != nil || progress.Seen != nil {
+			t.Errorf("initial progress = %+v", progress)
 		}
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if before := publish(3); before.Seen != nil {
+		t.Errorf("progress before the first report = %+v", before)
+	}
+	token, err := s.MintRunnerToken(ctx, account, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := func(sequence int64, remaining int) error {
+		return s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
+			slots, err := ReportRemainingParts(ctx, tx, g.RunID,
+				runspec.PartsReport{Sequence: sequence, Remaining: parts(remaining), Active: parts(min(remaining, 3))})
+			if err == nil && (len(slots) != 1 || slots["default"] != 3) {
+				t.Errorf("slots = %v, want default: 3", slots)
+			}
+			return err
+		})
+	}
+	for i, remaining := range []int{4, 2, 0} {
+		if err := report(int64(i+1), remaining); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A report that arrives after a later one, or again, is refused: the
+	// runner went on with another answer than the slots it would read.
+	for _, sequence := range []int64{2, 3} {
+		if err := report(sequence, 4); !errors.Is(err, ErrStaleReport) {
+			t.Errorf("report %d after report 3 = %v, want ErrStaleReport", sequence, err)
+		}
+	}
+	// A new grant is returned with the report made before it, which read
+	// the grant before.
+	want := PartProgress{Remaining: parts(0), Active: parts(0), Seen: parts(3)}
+	if before := publish(2); !reflect.DeepEqual(before, want) {
+		t.Errorf("progress as the grant changed = %+v, want %+v", before, want)
+	}
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		progress, err := ReadPartProgress(ctx, tx, runID)
+		if err == nil && !reflect.DeepEqual(progress, want) {
+			t.Errorf("progress = %+v, want %+v", progress, want)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		_, err := SetPartSlots(ctx, tx, "00000000-0000-0000-0000-000000000000", parts(1))
+		return err
+	}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("publishing to a missing run = %v, want ErrNotFound", err)
+	}
+}
+
+// TestSlotsOwed: the reviews that wait for their first slot of a model are
+// owed a slot each, less the slots that are free. A review that waits for
+// another model or holds a slot already is owed none, and neither is the
+// review that asks.
+func TestSlotsOwed(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	const model = "test/slots-owed"
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
+	})
+	waiter := func(account, waitingModel string) int64 {
+		t.Helper()
+		var id int64
+		if err := s.owner.QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, state, max_attempts, metadata)
+    VALUES ('review', 'review', jsonb_build_object('account_id', $1::text), 'scheduled', 8,
+    jsonb_build_object('slot_wait', $2::text)) RETURNING id`, account, waitingModel).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE id = $1`, id) })
+		return id
+	}
+	const holder = -10
+	owed := func(want int) {
+		t.Helper()
+		if got, err := s.SlotsOwed(ctx, alpha, model, 3, holder); err != nil || got != want {
+			t.Fatalf("SlotsOwed = %d, %v, want %d", got, err, want)
+		}
+	}
+	var leases []*Lease
+	for range 3 {
+		lease, err := s.TakeLease(ctx, alpha, model, 3, holder)
+		if err != nil || lease == nil {
+			t.Fatalf("take lease = %v, %v", lease, err)
+		}
+		leases = append(leases, lease)
+	}
+	defer func() {
+		for _, lease := range leases {
+			_, _ = lease.Release(context.Background())
+		}
+	}()
+	owed(0)
+	waiter(beta, model)
+	waiter(alpha, "test/another-model")
+	owed(0)
+	first, second := waiter(alpha, model), waiter(alpha, model)
+	owed(2)
+	if got, err := s.SlotsOwed(ctx, alpha, model, 3, first); err != nil || got != 1 {
+		t.Fatalf("SlotsOwed to the others of a waiter = %d, %v, want 1", got, err)
+	}
+	// A slot let go is one of the two that the waiters are short of.
+	if _, err := leases[2].Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	leases = leases[:2]
+	owed(1)
+	admitted, err := s.TakeLease(ctx, alpha, model, 3, first)
+	if err != nil || admitted == nil {
+		t.Fatalf("waiter admission = %v, %v", admitted, err)
+	}
+	leases = append(leases, admitted)
+	owed(1)
+	if _, err := s.owner.Exec(ctx, `DELETE FROM river_job WHERE id = $1`, second); err != nil {
+		t.Fatal(err)
+	}
+	owed(0)
 }
 
 func TestExtraLeaseConcurrentLimit(t *testing.T) {

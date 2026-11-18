@@ -35,6 +35,9 @@ const maxReportAnswer = 256 << 20
 // way to do that.
 type reporter struct {
 	gatewayURL, token string
+	// partsSequence numbers the reports of the run's parts. Only one
+	// goroutine at a time makes them.
+	partsSequence int64
 }
 
 func newReporter(p runspec.Spec, secrets runspec.Secrets) *reporter {
@@ -101,9 +104,10 @@ func (r *reporter) saveCheckpoint(ctx context.Context, input string, part int, p
 	return r.post(ctx, runspec.ReportCheckpointsPath, runspec.CheckpointReport{Input: input, Part: part, Payload: payload}, nil)
 }
 
-func (r *reporter) partsRemaining(ctx context.Context, remaining map[string]int) (map[string]int, error) {
+func (r *reporter) partsRemaining(ctx context.Context, remaining, active map[string]int) (map[string]int, error) {
 	var slots runspec.PartSlots
-	err := r.post(ctx, runspec.ReportPartsPath, runspec.PartsReport{Remaining: remaining}, &slots)
+	r.partsSequence++
+	err := r.post(ctx, runspec.ReportPartsPath, runspec.PartsReport{Sequence: r.partsSequence, Remaining: remaining, Active: active}, &slots)
 	return slots.Slots, err
 }
 

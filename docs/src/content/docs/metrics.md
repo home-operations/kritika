@@ -318,10 +318,12 @@ vector-search histogram:
 
 The worker and runner read capacity every two seconds, so a review can gain
 slots after it starts. Recorded reviews that wait for their first slot take
-priority over extra slots. Elapsed fields are Go durations, and the JSON
-logger encodes them as nanoseconds. Split parts retrieve similar code
-concurrently, bounded by their granted parallelism. These request durations
-can overlap, so do not sum them to estimate preparation wall time.
+priority over extra slots: the grant drops by what they are short of, and the
+worker lets a slot go once the runner's parts cannot be in it. Elapsed fields
+are Go durations, and the JSON logger encodes them as nanoseconds. Split parts
+retrieve similar code concurrently, bounded by their granted parallelism.
+These request durations can overlap, so do not sum them to estimate
+preparation wall time.
 
 Run on a machine with Docker through the integration task, which creates and
 removes a disposable database. No provider credentials or model calls are needed:

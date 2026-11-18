@@ -163,7 +163,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	perReviewer := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
 	slots := newReviewSlots(w, logger, file, account, settings, chosen, perReviewer, runID, job.ID)
 	defer slots.close(ctx)
-	if err := slots.resize(ctx, nil); err != nil {
+	if err := slots.resize(ctx, store.PartProgress{}); err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
 	logger.Info("review model slots granted", "estimated_parts", slots.parts(), "slots", slots.published)

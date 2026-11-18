@@ -54,7 +54,17 @@ from the time it is admitted to the time it ends, and one on the model of
 each [agent](#agents-that-replace-the-default-pass) it runs. A follow-up,
 the scorer's call and a split review's summary call hold one of their
 model's for the call. A review that finds every slot held waits on the
-queue for one. Index runs hold all but one of the embedder's slots while
+queue for one. A slot that comes free goes first to the oldest waiting
+review of a pull request that is ready, and then to the oldest of a draft.
+A review that is split into parts ([large reviews](/configuration/#the-agent))
+also takes the slots that no other review holds, and gives them back as
+its parts end while another review waits for its first slot. So a waiting
+review waits for a part of a large review to end, and not for the whole
+review. A review also
+takes one of the replica's `reviewWorkers`
+([how kritika runs](/configuration/#how-kritika-runs)) for as long as it
+runs, so a review cannot take a free slot while every one of them is busy.
+Index runs hold all but one of the embedder's slots while
 they embed, so a review's similar-code lookup has a slot unless
 `concurrency` is 1. `concurrency` is one value for the provider; an
 account that needs another on the same endpoint declares a provider of

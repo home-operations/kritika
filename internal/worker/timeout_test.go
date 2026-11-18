@@ -44,12 +44,14 @@ func TestJobTimeouts(t *testing.T) {
 		index     time.Duration
 		followUp  time.Duration
 	}{
-		// The agent's 20m plus 5m of fetch headroom outlasts the runner
-		// deadline, plus 15m to take the lease and 5m to publish. The index
-		// has 15m + 60m to embed.
-		{name: "a review that is never split", root: "agent: { parts: 1 }\n", accountID: "acme", review: 45 * time.Minute,
-			index: 75 * time.Minute, followUp: 45 * time.Minute},
-		// Eight parts of 20m each pass the agent's cap, so a review can run
+		// A review's nine agents, each with one part of 10m, can run one
+		// at a time: 90m, plus 5m of fetch headroom, 15m to take the lease
+		// and 5m to publish. A follow-up is one agent, whose 10m plus the
+		// fetch headroom is the runner deadline. The index has 15m + 60m to
+		// embed.
+		{name: "a review that is never split", root: "agent: { parts: 1, timeout: 10m }\n", accountID: "acme", review: 115 * time.Minute,
+			index: 75 * time.Minute, followUp: 35 * time.Minute},
+		// The parts of 20m each pass the agent's cap, so a review can run
 		// to the job cap. A follow-up is never split.
 		{name: "the default agent timeout", accountID: "acme", review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
 		{name: "a longer agent timeout", root: "agent: { timeout: 50m }\n", accountID: "acme",
@@ -80,13 +82,25 @@ func TestJobTimeouts(t *testing.T) {
 			if got != tt.followUp {
 				t.Errorf("follow-up timeout = %s, want %s", got, tt.followUp)
 			}
+			account, ok := file.AccountByID(accountID)
+			if !ok {
+				return
+			}
+			// The job outlasts the runner Job of the largest review: every
+			// agent on one model, each split into the most parts.
+			agent := file.Settings(account).Agent
+			largest := sizing{parts: map[string]int{"m": agent.MaxParts * (configfile.MaxReviewers + 1)}}
+			runner := agentDeadline(file.RunnerDeadline(), partsTimeout(largest.rounds(), agent.Timeout))
+			if want := min(runner+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout); tt.review < want {
+				t.Errorf("review timeout = %s, under the largest review's %s", tt.review, want)
+			}
 		})
 	}
 
 	// A runner deadline at configfile's max: the index job lands exactly on
-	// MaxJobTimeout.
+	// MaxJobTimeout. The review's agents, of 1m each, fit in that deadline.
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline/time.Second)))
-	file := configfiletest.Load(t, "agent: { parts: 1 }\n"+timeoutConfigYAML)
+	file := configfiletest.Load(t, "agent: { parts: 1, timeout: 1m }\n"+timeoutConfigYAML)
 	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
 	current := configfile.NewCurrent(file)
 	review, index := &Review{Current: current}, &Index{Current: current}

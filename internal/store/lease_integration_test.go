@@ -5,6 +5,8 @@ package store
 import (
 	"context"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // TestReleaseWakesSnoozedReview: letting a slot go wakes the oldest review
@@ -83,6 +85,82 @@ func TestReleaseWakesSnoozedReview(t *testing.T) {
 	for _, o := range others {
 		if state, due := jobState(o.id); state != o.state || due {
 			t.Errorf("%s is %s and due = %v, want %s at its own time", o.name, state, due, o.state)
+		}
+	}
+}
+
+// TestReleaseWakesReadyBeforeDraft: a slot let go wakes the oldest review of
+// a pull request that is ready before any review of a draft, and a draft's
+// once it is marked ready as any other's.
+func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	alpha := accountID(t, s, "alpha")
+	const model = "test/wake-ready-model"
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
+	})
+	var repo string
+	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'alpha/one'`, alpha).Scan(&repo); err != nil {
+		t.Fatal(err)
+	}
+	// Numbers that no other test's pull requests of the repository have.
+	const firstPull = 91001
+	pull := func(number int, draft bool) {
+		t.Helper()
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			_, err := UpsertPullRequest(ctx, tx, PullRequestRow{AccountID: alpha, RepositoryID: repo, Number: number, Draft: draft, HeadSHA: "abc", Labels: []byte("[]")})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		if err := s.WithAccount(context.Background(), alpha, func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `DELETE FROM pull_requests WHERE repository_id = $1 AND number BETWEEN $2 AND $2 + 3`, repo, firstPull)
+			return err
+		}); err != nil {
+			t.Error(err)
+		}
+	})
+	insert := func(number int) int64 {
+		t.Helper()
+		var id int64
+		if err := s.owner.QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, state, max_attempts, scheduled_at, metadata)
+			VALUES ('review', 'review', jsonb_build_object('account_id', $1::text, 'repository_id', $2::text, 'number', $3::int),
+				'scheduled', 8, now() + interval '5 minutes', jsonb_build_object('slot_wait', $4::text)) RETURNING id`,
+			alpha, repo, number, model).Scan(&id); err != nil {
+			t.Fatalf("insert river job: %v", err)
+		}
+		t.Cleanup(func() { _, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE id = $1`, id) })
+		return id
+	}
+	release := func() int64 {
+		t.Helper()
+		l, err := s.TakeLease(ctx, alpha, model, 1, 7)
+		if err != nil || l == nil {
+			t.Fatalf("TakeLease = %v, %v", l, err)
+		}
+		woken, err := l.Release(ctx)
+		if err != nil {
+			t.Fatalf("Release: %v", err)
+		}
+		return woken
+	}
+	pull(firstPull, true)
+	pull(firstPull+1, true)
+	pull(firstPull+2, false)
+	pull(firstPull+3, false)
+	draft, marked, ready, later := insert(firstPull), insert(firstPull+1), insert(firstPull+2), insert(firstPull+3)
+	// The second draft is marked ready while its review waits.
+	pull(firstPull+1, false)
+	for i, want := range []int64{marked, ready, later, draft, 0} {
+		if got := release(); got != want {
+			t.Fatalf("release %d woke job %d, want %d", i+1, got, want)
 		}
 	}
 }

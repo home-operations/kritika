@@ -79,6 +79,35 @@ func (s *Store) TakeExtraLease(ctx context.Context, accountID, modelKey string, 
 	return s.takeLease(ctx, accountID, modelKey, slots, jobID, true)
 }
 
+// slotWaiters selects the reviews of account $1, other than job $3, that wait
+// for their first slot of model $2: marked as waiting for one, and holding
+// none.
+const slotWaiters = `FROM river_job j WHERE j.kind = 'review' AND j.id <> $3
+	AND j.state IN ('available', 'scheduled', 'running')
+	AND j.args->>'account_id' = $1::uuid::text AND j.metadata->>'` + SlotWaitKey + `' = $2
+	AND NOT EXISTS (SELECT 1 FROM model_leases held
+		WHERE held.account_id = $1 AND held.model_key = $2 AND held.job_id = j.id AND held.expires_at >= now())`
+
+// SlotsOwed is how many slots of (account, model) the reviews that wait for
+// their first one are short of: those reviews, less the slots that are free.
+// The review jobID, which holds extra slots, gives that many back.
+func (s *Store) SlotsOwed(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (int, error) {
+	var owed int
+	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		held, err := heldSlots(ctx, tx, accountID, modelKey, slots)
+		if err != nil {
+			return err
+		}
+		var waiting int
+		if err := tx.QueryRow(ctx, `SELECT count(*) `+slotWaiters, accountID, modelKey, jobID).Scan(&waiting); err != nil {
+			return fmt.Errorf("store: count slot waiters: %w", err)
+		}
+		owed = max(0, waiting-(slots-held))
+		return nil
+	})
+	return owed, err
+}
+
 func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, extra bool) (*Lease, error) {
 	slot := 0
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -90,12 +119,7 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 			WHERE (account_id, model_key, slot) = (
 				SELECT account_id, model_key, slot FROM model_leases
 				WHERE account_id = $1 AND model_key = $2 AND slot <= $5 AND (job_id IS NULL OR expires_at < now())
-				AND (NOT $6::boolean OR NOT EXISTS (
-					SELECT 1 FROM river_job j WHERE j.kind = 'review' AND j.id <> $3
-					AND j.state IN ('available', 'scheduled', 'running')
-					AND j.args->>'account_id' = $1::text AND j.metadata->>'slot_wait' = $2
-					AND NOT EXISTS (SELECT 1 FROM model_leases held
-						WHERE held.account_id = $1 AND held.model_key = $2 AND held.job_id = j.id AND held.expires_at >= now())))
+				AND (NOT $6::boolean OR NOT EXISTS (SELECT 1 `+slotWaiters+`))
 				ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
 			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots, extra).Scan(&slot)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -219,8 +243,9 @@ func (s *Store) WakeIfSlotFree(ctx context.Context, accountID, modelKey string, 
 }
 
 // wakeWaiter makes a review available now and returns its id, or 0 when
-// there is none. The review is the oldest of the account snoozed for a slot
-// of modelKey. When jobID is not 0, it is the one of them that jobID names.
+// there is none. The review is one of the account's snoozed for a slot of
+// modelKey: the oldest of a pull request that is ready, or else the oldest of
+// a draft. When jobID is not 0, it is the one of them that jobID names.
 func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, jobID int64) (int64, error) {
 	var woken int64
 	// River keeps a job snoozed, or retried, for less than its scheduler
@@ -230,7 +255,9 @@ func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, jobI
 		WHERE id = (SELECT id FROM river_job WHERE kind = 'review' AND state IN ('scheduled', 'available')
 			AND scheduled_at > now() AND args->>'account_id' = $1 AND metadata->>'`+SlotWaitKey+`' = $2
 			AND ($3::bigint = 0 OR id = $3::bigint)
-			ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+			ORDER BY coalesce((SELECT p.draft FROM pull_requests p WHERE p.repository_id = (args->>'repository_id')::uuid
+				AND p.number = (args->>'number')::int), false), id
+			LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id`, accountID, modelKey, jobID).Scan(&woken)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, fmt.Errorf("store: wake a snoozed review: %w", err)

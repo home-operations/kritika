@@ -532,8 +532,8 @@ func partsTimeout(rounds int, timeout time.Duration) time.Duration {
 }
 
 // sizing is what a review is sized for: the parts that its runner can split
-// it into and the slots that it holds, both by model, and the model of each
-// reviewer. The parts on a model can run in its slots at once.
+// it into and the slots that it holds as it starts, both by model, and the
+// model of each reviewer. The parts on a model can run in its slots at once.
 type sizing struct {
 	parts, slots map[string]int
 	pools        map[string]string
@@ -548,13 +548,13 @@ func (s sizing) total() int {
 	return n
 }
 
-// rounds is how many parts run one after another at the most: the slowest
-// model's, each in rounds of its slots.
+// rounds is how many parts run one after another at the most: the parts of
+// the model with the most, since a review gives every slot but one of a model
+// to the reviews that wait for their first.
 func (s sizing) rounds() int {
 	rounds := 1
-	for model, parts := range s.parts {
-		slots := max(1, s.slots[model])
-		rounds = max(rounds, (parts+slots-1)/slots)
+	for _, parts := range s.parts {
+		rounds = max(rounds, parts)
 	}
 	return rounds
 }
