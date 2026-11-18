@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"time"
 
@@ -86,7 +87,7 @@ func (w *Review) agentAdmit(
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
 	}
-	l, err := w.Store.TakeLease(ctx, account.ID(), string(ref), file.Slots(account, ref), jobID)
+	l, err := w.Store.TakeReviewLease(ctx, account.ID(), string(ref), file.Slots(account, ref), jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
@@ -109,7 +110,22 @@ func (w *Review) agentAdmit(
 		return admission{}, store.ReviewCapped, capped, nil
 	}
 	a.maxTokens, a.monthLeft = budget, left
+	w.wakeNext(ctx, logger, file, account, a, ref)
 	return a, "", "", nil
+}
+
+// wakeNext wakes the review that is next in line for a slot of each model
+// that a holds one of, ref being the review model, when the model has a slot
+// free. A draft's review stays asleep while this one waits for its first
+// slot, and no slot is let go to wake it once this one has it.
+func (w *Review) wakeNext(
+	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, a admission, ref configfile.ModelRef,
+) {
+	for _, model := range append([]string{string(ref)}, slices.Sorted(maps.Keys(a.reviewerLeases))...) {
+		if _, err := w.Store.WakeIfSlotFree(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), 0); err != nil {
+			logger.Warn("next waiting review not woken; it wakes when its snooze ends", "model", model, "error", err)
+		}
+	}
 }
 
 // release lets go of every slot a holds, ref being the review model.
@@ -139,7 +155,7 @@ func (w *Review) reviewerLeases(
 ) (map[string]*store.Lease, error) {
 	var out map[string]*store.Lease
 	for _, model := range reviewerModelKeys(settings) {
-		l, err := w.Store.TakeLease(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), jobID)
+		l, err := w.Store.TakeReviewLease(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), jobID)
 		if err == nil && l == nil {
 			err = noSlot{model: model}
 		}

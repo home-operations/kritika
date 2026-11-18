@@ -55,7 +55,8 @@ each [agent](#agents-that-replace-the-default-pass) it runs. A follow-up,
 the scorer's call and a split review's summary call hold one of their
 model's for the call. A review that finds every slot held waits on the
 queue for one. A slot that comes free wakes the oldest waiting review of a
-pull request that is ready first, and then the oldest of a draft. A review
+pull request that is ready. The review of a draft takes a slot only when
+no review of a ready pull request waits for one of that model. A review
 that is split into parts ([large reviews](/configuration/#the-agent)) also
 takes the slots that no other review holds. While another review waits for
 its first slot, it gives those extra slots back as its parts end, and it

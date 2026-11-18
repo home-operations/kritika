@@ -91,7 +91,9 @@ func TestReleaseWakesSnoozedReview(t *testing.T) {
 
 // TestReleaseWakesReadyBeforeDraft: a slot let go wakes the oldest review of
 // a pull request that is ready before any review of a draft, and a draft's
-// once it is marked ready as any other's.
+// once it is marked ready as any other's. A draft's review is neither woken
+// nor given a free slot while a review of a ready pull request waits for its
+// first.
 func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -158,10 +160,52 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	draft, marked, ready, later := insert(firstPull), insert(firstPull+1), insert(firstPull+2), insert(firstPull+3)
 	// The second draft is marked ready while its review waits.
 	pull(firstPull+1, false)
-	for i, want := range []int64{marked, ready, later, draft, 0} {
+	claim := func(job int64) *Lease {
+		t.Helper()
+		l, err := s.TakeReviewLease(ctx, alpha, model, 1, job)
+		if err != nil {
+			t.Fatalf("TakeReviewLease: %v", err)
+		}
+		return l
+	}
+	// The slot is free, and the draft's review does not get it.
+	if l := claim(draft); l != nil {
+		_, _ = l.Release(ctx)
+		t.Fatal("a draft's review took a slot that reviews of ready pull requests wait for")
+	}
+	// The reviews of ready pull requests are woken in turn. They have no
+	// slot yet, so the draft's stays asleep.
+	for i, want := range []int64{marked, ready, later, 0} {
 		if got := release(); got != want {
 			t.Fatalf("release %d woke job %d, want %d", i+1, got, want)
 		}
+	}
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 1, draft); err != nil || woken {
+		t.Fatalf("WakeIfSlotFree of a draft's review behind ready ones = %v, %v, want false", woken, err)
+	}
+	held := claim(marked)
+	if held == nil {
+		t.Fatal("the review of a pull request marked ready took no slot")
+	}
+	// The review that has its slot waits no more, also once it lets the
+	// slot go, though River clears its mark only as its attempt ends.
+	var waits bool
+	if err := s.owner.QueryRow(ctx, `SELECT metadata ? 'slot_wait' FROM river_job WHERE id = $1`, marked).Scan(&waits); err != nil || waits {
+		t.Fatalf("the review with a slot is marked as waiting = %v, %v", waits, err)
+	}
+	// Two ready reviews still wait, and then none does: the draft's is next.
+	if _, err := s.owner.Exec(ctx, `DELETE FROM river_job WHERE id = ANY($1)`, []int64{ready, later}); err != nil {
+		t.Fatal(err)
+	}
+	if woken, err := held.Release(ctx); err != nil || woken != draft {
+		t.Fatalf("Release woke job %d, %v, want the draft's review %d", woken, err, draft)
+	}
+	l := claim(draft)
+	if l == nil {
+		t.Fatal("a draft's review took no slot with no other review waiting")
+	}
+	if _, err := l.Release(ctx); err != nil {
+		t.Fatal(err)
 	}
 }
 

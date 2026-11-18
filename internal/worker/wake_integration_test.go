@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
@@ -104,4 +105,59 @@ func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 			t.Fatalf("job is %s and due = %v once Run returned, want available now", state, due)
 		}
 	})
+}
+
+// TestAdmissionWakesNextWaiter: a review that has its slots wakes the review
+// that is next in line for each of their models when the model has a slot
+// free, and leaves it asleep when every slot is held.
+func TestAdmissionWakesNextWaiter(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	// Models of a provider that the configuration does not list have the
+	// default two slots.
+	const reviewModel, agentModel = "unlisted/next-review", "unlisted/next-agent"
+	t.Cleanup(func() {
+		_, _ = st.App().Exec(context.Background(), `DELETE FROM model_leases WHERE model_key IN ($1, $2)`, reviewModel, agentModel)
+	})
+	waiter := func(model string) int64 {
+		t.Helper()
+		var id int64
+		if err := st.App().QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, state, max_attempts, scheduled_at, metadata)
+			VALUES ('review', 'review', jsonb_build_object('account_id', $1::text), 'scheduled', 8, now() + interval '5 minutes',
+				jsonb_build_object('slot_wait', $2::text)) RETURNING id`, account.ID(), model).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id = $1`, id) })
+		return id
+	}
+	take := func(model string) *store.Lease {
+		t.Helper()
+		l, err := st.TakeReviewLease(ctx, account.ID(), model, 2, -1)
+		if err != nil || l == nil {
+			t.Fatalf("TakeReviewLease = %v, %v", l, err)
+		}
+		t.Cleanup(func() { _, _ = l.Release(context.Background()) })
+		return l
+	}
+	// The review holds one of the two slots of each of its models. The
+	// agent's model has its other slot held too.
+	admitted := admission{lease: take(reviewModel), reviewerLeases: map[string]*store.Lease{agentModel: take(agentModel)}}
+	take(agentModel)
+	next, behind := waiter(reviewModel), waiter(agentModel)
+	logger := slog.New(slog.DiscardHandler)
+	(&Review{Store: st, Logger: logger}).wakeNext(ctx, logger, file, account, admitted, reviewModel)
+	for id, want := range map[int64]string{next: "available", behind: "scheduled"} {
+		var state string
+		if err := st.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, id).Scan(&state); err != nil || state != want {
+			t.Errorf("waiter %d is %s (%v), want %s", id, state, err, want)
+		}
+	}
 }

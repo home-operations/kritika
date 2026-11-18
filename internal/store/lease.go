@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -66,17 +67,42 @@ func (s *Store) AcquireLease(ctx context.Context, accountID, modelKey string, sl
 	}
 }
 
+// leaseClaim is whose claim of a slot it is, which decides the reviews that
+// come before it.
+type leaseClaim int
+
+const (
+	// claimAny takes any free slot.
+	claimAny leaseClaim = iota
+	// claimReview is a review's first slot of a model. A draft's comes
+	// after the reviews of ready pull requests that wait for theirs.
+	claimReview
+	// claimExtra is a slot beyond a review's first. It comes after every
+	// review that waits for its first.
+	claimExtra
+)
+
+func claimSQL(c leaseClaim) string { return strconv.Itoa(int(c)) }
+
 // TakeLease claims a free slot for (account, model) without waiting: nil
 // when every slot is held.
 func (s *Store) TakeLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
-	return s.takeLease(ctx, accountID, modelKey, slots, jobID, false)
+	return s.takeLease(ctx, accountID, modelKey, slots, jobID, claimAny)
+}
+
+// TakeReviewLease claims the first slot of (account, model) for the review
+// job jobID, as TakeLease does. When the review is of a draft, it claims none
+// while a review of a ready pull request waits for its first slot of the
+// model, even with one free: that review comes first.
+func (s *Store) TakeReviewLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
+	return s.takeLease(ctx, accountID, modelKey, slots, jobID, claimReview)
 }
 
 // TakeExtraLease claims capacity for an already admitted review only when
 // no recorded slot waiter needs its first lease. An awakened waiter keeps
 // priority until it acquires a lease or leaves the review queue.
 func (s *Store) TakeExtraLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
-	return s.takeLease(ctx, accountID, modelKey, slots, jobID, true)
+	return s.takeLease(ctx, accountID, modelKey, slots, jobID, claimExtra)
 }
 
 // slotWaiters selects the reviews of account $1, other than job $3, that wait
@@ -86,7 +112,15 @@ const slotWaiters = `FROM river_job j WHERE j.kind = 'review' AND j.id <> $3
 	AND j.state IN ('available', 'scheduled', 'running')
 	AND j.args->>'account_id' = $1::uuid::text AND j.metadata->>'` + SlotWaitKey + `' = $2
 	AND NOT EXISTS (SELECT 1 FROM model_leases held
-		WHERE held.account_id = $1 AND held.model_key = $2 AND held.job_id = j.id AND held.expires_at >= now())`
+		WHERE held.account_id = $1::uuid AND held.model_key = $2 AND held.job_id = j.id AND held.expires_at >= now())`
+
+// draftReview is whether the pull request that the review job j is of is a
+// draft, as the forge last said.
+const draftReview = `coalesce((SELECT p.draft FROM pull_requests p WHERE p.repository_id = (j.args->>'repository_id')::uuid
+	AND p.number = (j.args->>'number')::int), false)`
+
+// readyWaiters is the slotWaiters of pull requests that are ready.
+const readyWaiters = slotWaiters + ` AND NOT ` + draftReview
 
 // SlotsOwed is how many slots of (account, model) the reviews that wait for
 // their first one are short of: those reviews, less the slots that are free.
@@ -108,7 +142,7 @@ func (s *Store) SlotsOwed(ctx context.Context, accountID, modelKey string, slots
 	return owed, err
 }
 
-func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, extra bool) (*Lease, error) {
+func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, claim leaseClaim) (*Lease, error) {
 	slot := 0
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot)
@@ -119,14 +153,26 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 			WHERE (account_id, model_key, slot) = (
 				SELECT account_id, model_key, slot FROM model_leases
 				WHERE account_id = $1 AND model_key = $2 AND slot <= $5 AND (job_id IS NULL OR expires_at < now())
-				AND (NOT $6::boolean OR NOT EXISTS (SELECT 1 `+slotWaiters+`))
+				AND ($6::int <> `+claimSQL(claimExtra)+` OR NOT EXISTS (SELECT 1 `+slotWaiters+`))
+				AND ($6::int <> `+claimSQL(claimReview)+` OR NOT (coalesce((SELECT `+draftReview+` FROM river_job j WHERE j.id = $3), false)
+					AND EXISTS (SELECT 1 `+readyWaiters+`)))
 				ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
-			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots, extra).Scan(&slot)
+			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots, int(claim)).Scan(&slot)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("store: claim lease: %w", err)
+		}
+		if claim != claimReview {
+			return nil
+		}
+		// River clears the mark of the review's wait only as its attempt
+		// ends. Until then the review would count as waiting again from
+		// the time it lets the slot go, and hold a draft's review back.
+		if _, err := tx.Exec(ctx, `UPDATE river_job SET metadata = metadata - '`+SlotWaitKey+`'
+			WHERE id = $1 AND metadata->>'`+SlotWaitKey+`' = $2`, jobID, modelKey); err != nil {
+			return fmt.Errorf("store: clear the review's slot wait: %w", err)
 		}
 		return nil
 	})
@@ -228,7 +274,9 @@ func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 
 // WakeIfSlotFree wakes the review job jobID, snoozed for a slot of
 // modelKey, when a slot is free, and reports whether it did. It runs once
-// River saves the snooze, for the slot that a release let go before then.
+// River saves the snooze, for the slot that a release let go before then. A
+// jobID of 0 is the review that is first in line. It runs once a review has
+// its first slot, for a draft's review that waited for that one to take it.
 func (s *Store) WakeIfSlotFree(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (bool, error) {
 	var woken int64
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -245,18 +293,21 @@ func (s *Store) WakeIfSlotFree(ctx context.Context, accountID, modelKey string, 
 // wakeWaiter makes a review available now and returns its id, or 0 when
 // there is none. The review is one of the account's snoozed for a slot of
 // modelKey: the oldest of a pull request that is ready, or else the oldest of
-// a draft. When jobID is not 0, it is the one of them that jobID names.
+// a draft. A draft's is left asleep while a review of a ready pull request
+// waits for its first slot, asleep or not, since it can claim none until then
+// (see TakeReviewLease). When jobID is not 0, the review is the one of them
+// that jobID names.
 func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, jobID int64) (int64, error) {
 	var woken int64
 	// River keeps a job snoozed, or retried, for less than its scheduler
 	// interval available with a scheduled_at ahead, rather than scheduled
 	// or retryable. Only the key tells a slot's waiter.
 	err := tx.QueryRow(ctx, `UPDATE river_job SET state = 'available', scheduled_at = now()
-		WHERE id = (SELECT id FROM river_job WHERE kind = 'review' AND state IN ('scheduled', 'available')
-			AND scheduled_at > now() AND args->>'account_id' = $1 AND metadata->>'`+SlotWaitKey+`' = $2
-			AND ($3::bigint = 0 OR id = $3::bigint)
-			ORDER BY coalesce((SELECT p.draft FROM pull_requests p WHERE p.repository_id = (args->>'repository_id')::uuid
-				AND p.number = (args->>'number')::int), false), id
+		WHERE id = (SELECT j.id FROM river_job j WHERE j.kind = 'review' AND j.state IN ('scheduled', 'available')
+			AND j.scheduled_at > now() AND j.args->>'account_id' = $1 AND j.metadata->>'`+SlotWaitKey+`' = $2
+			AND ($3::bigint = 0 OR j.id = $3::bigint)
+			AND NOT (`+draftReview+` AND EXISTS (SELECT 1 `+readyWaiters+`))
+			ORDER BY `+draftReview+`, j.id
 			LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id`, accountID, modelKey, jobID).Scan(&woken)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
