@@ -31,7 +31,7 @@
     "marked": "^18.2.1",
     "oxlint": "^1.94.0",
     "shiki": "^4.6.0",
-    "svelte": "^5.57.3",
+    "svelte": "^5.58.0",
     "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3",
