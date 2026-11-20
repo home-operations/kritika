@@ -168,7 +168,7 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
 			return nil, fmt.Errorf("gitfetch: fetch: the repository is missing or the token cannot see it: %w", err)
 		}
-		if commitRefused(err) {
+		if commitRefused(err, f.Head, f.Base) {
 			return nil, fmt.Errorf("gitfetch: fetch: %w: %w", ErrCommitUnavailable, err)
 		}
 		return nil, fmt.Errorf("gitfetch: fetch: %w", err)
@@ -346,12 +346,13 @@ func renderChanges(ctx context.Context, changes object.Changes, gained map[strin
 }
 
 // commitRefused reports whether a fetch failed because the remote would not
-// serve a commit that it was asked for: git's upload-pack answers "not our
-// ref" over the wire, and go-git's own server, which a local path reaches,
-// does not find the object.
-func commitRefused(err error) bool {
+// serve a commit that it was asked for, one of wanted: git's upload-pack
+// answers "not our ref" over the wire, and go-git's own server, which a local
+// path reaches, does not find the object and names it. Another object missing
+// is the fetch's own trouble, not the commit's.
+func commitRefused(err error, wanted ...string) bool {
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return true
+		return slices.ContainsFunc(wanted, func(sha string) bool { return sha != "" && strings.Contains(err.Error(), sha) })
 	}
 	var text string
 	if e, ok := errors.AsType[*pktline.ErrorLine](err); ok {

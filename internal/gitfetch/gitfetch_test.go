@@ -249,23 +249,28 @@ func TestTreesCommitUnavailable(t *testing.T) {
 }
 
 // TestCommitRefused: the server's refusal to serve a commit by SHA, as git's
-// upload-pack words it, counts as the commit being unavailable. Other errors
-// that the server or the transport send do not.
+// upload-pack words it, counts as the commit being unavailable, and so does
+// go-git's own server not finding a commit that was asked for. Other errors
+// that the server or the transport send do not, nor an object missing that
+// was not asked for.
 func TestCommitRefused(t *testing.T) {
+	head, base := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	for _, tc := range []struct {
 		name string
 		err  error
 		want bool
 	}{
-		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("a", 40)}), want: true},
-		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + strings.Repeat("a", 40)), want: true},
-		{name: "object not found", err: fmt.Errorf("getting wanted object: %w", plumbing.ErrObjectNotFound), want: true},
+		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + head}), want: true},
+		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + head), want: true},
+		{name: "wanted object not found", err: fmt.Errorf("getting wanted object %s: %w", base, plumbing.ErrObjectNotFound), want: true},
+		{name: "other object not found", err: fmt.Errorf("getting tree %s: %w", strings.Repeat("c", 40), plumbing.ErrObjectNotFound)},
+		{name: "object not found unnamed", err: fmt.Errorf("decoding pack: %w", plumbing.ErrObjectNotFound)},
 		{name: "other error line", err: &pktline.ErrorLine{Text: "upload-pack: internal error"}},
 		{name: "repository not found", err: transport.ErrRepositoryNotFound},
 		{name: "cut short", err: io.ErrUnexpectedEOF},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := commitRefused(tc.err); got != tc.want {
+			if got := commitRefused(tc.err, head, base); got != tc.want {
 				t.Fatalf("commitRefused(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
