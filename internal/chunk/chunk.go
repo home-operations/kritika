@@ -17,7 +17,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -56,8 +55,13 @@ type Limits struct {
 
 const defaultMaxBytes = 1 << 20
 
-// parseTimeout stops a pathological parse.
-const parseTimeout = 5 * time.Second
+// A parse has no timeout. Every limit on it counts the parser's work, not
+// time, so that a file is cut the same on a loaded machine as on an idle
+// one, which the index's chunks and the vectors kept by their text rely on.
+// A gotreesitter v0.57.0 parse that its deadline stops partway can also
+// return, with no error, a tree of one error node, which is cut as one
+// declaration in place of many. The limits below and the library's own
+// per-byte ones stop pathological inputs in about a second.
 
 // parseMemoryBudget bounds one parse's arena and scratch memory. The
 // library's default is the larger of 512 MiB and 512 bytes per input byte.
@@ -68,7 +72,7 @@ const parseMemoryBudget = 256 << 20
 
 // parseStackDepthLimit stops a parse whose stack runs deep, as a long run of
 // open brackets drives it: the library recovers at the end of such a file
-// without heeding parseTimeout, for minutes.
+// for minutes otherwise.
 const parseStackDepthLimit = 4096
 
 // Parser cuts files. It caches one tree-sitter parser per language and
@@ -165,7 +169,6 @@ func (p *Parser) language(path string) *languageParser {
 	}
 	lang := entry.Language()
 	parser := gotreesitter.NewParser(lang)
-	parser.SetTimeoutMicros(uint64(parseTimeout.Microseconds()))
 	parser.SetMemoryBudgetBytes(parseMemoryBudget)
 	parser.SetParseWorkLimits(gotreesitter.ParseWorkLimits{StackDepthLimit: parseStackDepthLimit})
 	lp := &languageParser{entry: *entry, lang: lang, parser: parser}

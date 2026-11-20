@@ -227,20 +227,26 @@ func contains(ss []string, s string) bool {
 	return slices.Contains(ss, s)
 }
 
-// TestParseBounds: every parser has its memory budget. A file built to drive
-// the parse stack deep falls back to fixed windows within the parse timeout,
-// which alone does not stop it.
+// TestParseBounds: every parser has its memory budget, and no parser has a
+// timeout, which would make a file's declarations depend on how loaded the
+// machine is: a parse that the deadline stops partway can return a tree of
+// one error node and no error. A file built to drive the parse stack deep
+// falls back to fixed windows at once.
 func TestParseBounds(t *testing.T) {
 	var p Parser
 	for _, path := range []string{"x.go", "x.js"} {
-		if got := p.language(path).parser.MemoryBudgetBytes(); got != parseMemoryBudget {
+		parser := p.language(path).parser
+		if got := parser.MemoryBudgetBytes(); got != parseMemoryBudget {
 			t.Errorf("%s: memory budget = %d, want %d", path, got, parseMemoryBudget)
+		}
+		if got := parser.TimeoutMicros(); got != 0 {
+			t.Errorf("%s: timeout = %dµs, want none", path, got)
 		}
 	}
 	start := time.Now()
 	f := p.Parse("deep.js", bytes.Repeat([]byte("("), 128<<10))
-	if took := time.Since(start); took > parseTimeout {
-		t.Errorf("a deep parse took %s, past the %s timeout", took, parseTimeout)
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a deep parse took %s", took)
 	}
 	if len(f.Decls) != 0 {
 		t.Errorf("a deep parse found %d declarations", len(f.Decls))
