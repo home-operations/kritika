@@ -90,7 +90,7 @@ func TestPartSimilarCodeOptionalFailure(t *testing.T) {
 		}
 		switch {
 		case len(req.Queries) == 0:
-			_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{})
+			t.Error("a part with nothing to search for asked")
 		case strings.HasPrefix(req.Queries[0], "failed.go"):
 			http.Error(w, "unavailable", http.StatusBadGateway)
 		case strings.HasPrefix(req.Queries[0], "unindexed.go"):
@@ -104,7 +104,7 @@ func TestPartSimilarCodeOptionalFailure(t *testing.T) {
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
 	diffs := []string{fileDiff("", "failed.go", added("failed.go")), fileDiff("", "ok.go", added("ok.go")), fileDiff("", "unindexed.go", added("unindexed.go")), ""}
 	out, err := partSimilarCode(t.Context(), s, runspec.Secrets{}, diffs, slog.New(slog.DiscardHandler))
-	if err != nil || len(out) != len(diffs) || out[0].Indexed || !out[1].Indexed || out[2].Indexed || out[3].Indexed {
+	if err != nil || len(out) != len(diffs) || out[0].Indexed || !out[1].Indexed || out[2].Indexed || !out[3].Indexed {
 		t.Fatalf("optional retrieval = %+v, %v", out, err)
 	}
 }

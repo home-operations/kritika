@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
@@ -60,34 +61,56 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// TestSimilarContextExclusions: a run reports the paths its searches leave
-// out once, both names of a rename among them, and its requests carry none.
-// A run whose report is refused searches nothing: the index would answer
+// TestSimilarContextExclusions: a run first asks, with no queries, whether
+// its repository has an index. It reports the paths its searches leave out
+// once, both names of a rename among them, and only when there is an index.
+// Its requests carry none. A run whose report is refused, or still fails
+// once similarReportWindow is over, searches nothing: the index would answer
 // with the old copies of the files the prompt shows.
 func TestSimilarContextExclusions(t *testing.T) {
 	const diff = "diff --git a/old.go b/new.go\nsimilarity index 80%\nrename from old.go\nrename to new.go\n" +
 		"--- a/old.go\n+++ b/new.go\n@@ -1,1 +1,2 @@\n package main\n+func n() {}\n"
 	res := &gitfetch.Result{Diff: diff, Changed: []string{"new.go", "main.go"}, RenamedFrom: []string{"old.go"}}
+	window := similarReportWindow
+	similarReportWindow = 300 * time.Millisecond
+	t.Cleanup(func() { similarReportWindow = window })
+	excluded := [][]string{{"main.go", "new.go", "old.go"}}
 	for _, tt := range []struct {
 		name     string
 		status   int
-		requests int
+		indexed  bool
+		excluded [][]string
+		queries  []int
 		offered  bool
 	}{
-		{name: "reported", status: http.StatusNoContent, requests: 1, offered: true},
-		{name: "refused", status: http.StatusBadRequest},
+		{name: "reported", status: http.StatusNoContent, indexed: true, excluded: excluded, queries: []int{0, 1}, offered: true},
+		{name: "refused", status: http.StatusBadRequest, indexed: true, excluded: excluded, queries: []int{0}},
+		{name: "never answered", status: http.StatusServiceUnavailable, indexed: true, queries: []int{0}},
+		{name: "no index", status: http.StatusNoContent, queries: []int{0}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: true}}
+			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: tt.indexed}}
 			s := reviewSpec()
 			s.GatewayURL = gw.serve(t).URL
+			started := time.Now()
 			_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
 				slog.New(slog.DiscardHandler))
-			if want := [][]string{{"main.go", "new.go", "old.go"}}; !slices.EqualFunc(gw.excluded, want, slices.Equal) {
-				t.Fatalf("reported exclusions %q, want %q", gw.excluded, want)
+			if elapsed := time.Since(started); elapsed > 5*time.Second {
+				t.Fatalf("similar context took %s", elapsed)
 			}
-			if len(gw.requests) != tt.requests || (search != nil) != tt.offered {
-				t.Fatalf("%d similar requests, search_code offered %t; want %d, %t", len(gw.requests), search != nil, tt.requests, tt.offered)
+			gw.mu.Lock()
+			defer gw.mu.Unlock()
+			// A report that the gateway fails is sent again until the window
+			// ends, however many times that is.
+			if tt.status != http.StatusServiceUnavailable && !slices.EqualFunc(gw.excluded, tt.excluded, slices.Equal) {
+				t.Fatalf("reported exclusions %q, want %q", gw.excluded, tt.excluded)
+			}
+			var queries []int
+			for _, req := range gw.requests {
+				queries = append(queries, len(req.Queries))
+			}
+			if !slices.Equal(queries, tt.queries) || (search != nil) != tt.offered {
+				t.Fatalf("similar requests of %v queries, search_code offered %t; want %v, %t", queries, search != nil, tt.queries, tt.offered)
 			}
 			for _, req := range gw.requests {
 				if req.Exclude != nil || req.Kind != contextpack.SimilarKindDiff {

@@ -126,9 +126,10 @@ func TestMergeParts(t *testing.T) {
 }
 
 // TestPartPrompts: each part is shown its own files' diff and told which part
-// it is. It is given the similar code of its own hunks and offered
-// search_code. It is given the rules of its own paths and refused a finding
-// on the other part's file. The first part looks at the earlier finding on a
+// it is. It is given the similar code of its own hunks, asked for once the run
+// learns that there is an index, and offered search_code. It is given the
+// rules of its own paths and refused a finding on the other part's file. The
+// first part looks at the earlier finding on a
 // file that no part reviews. A split with no rules reports an empty list, not
 // a nil one, which the pack's rule_ids column will refuse.
 func TestPartPrompts(t *testing.T) {
@@ -155,7 +156,7 @@ func TestPartPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parts) != 2 || asked != 2 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
+	if len(parts) != 2 || asked != 3 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
 		t.Fatalf("%d parts, %d similar requests, search %v, %d chunks, rules %q; want each part's own", len(parts), asked,
 			tools.search != nil, len(chunks), rules)
 	}

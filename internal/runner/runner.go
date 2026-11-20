@@ -342,11 +342,31 @@ func similarContext(
 	return similarShown(head, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
 }
 
-// excludeFromSimilar reports the paths the run's similar-code searches leave
-// out: every changed path, and the old name of each rename, whose copy in the
+// similarReportWindow bounds what a run spends, before it searches, on
+// learning whether its repository has an index and reporting its exclusions.
+// Similar code is best effort, and the review waits for it. A variable for
+// the tests.
+var similarReportWindow = 20 * time.Second
+
+// excludeFromSimilar readies the run's similar-code searches. It asks the
+// gateway, with no queries, whether the repository has an index, which embeds
+// nothing. When it has one, it reports the paths the searches leave out:
+// every changed path, and the old name of each rename, whose copy in the
 // index otherwise matches its renamed self best of all. It reports false when
-// the report failed, and the run must then not search.
+// there is no index or either request failed within similarReportWindow, and
+// the run must then not search.
 func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger) bool {
+	ctx, cancel := context.WithTimeout(ctx, similarReportWindow)
+	defer cancel()
+	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Kind: contextpack.SimilarKindDiff})
+	if err != nil {
+		logger.Warn("similar-code retrieval skipped: whether there is an index is unknown", "error", err)
+		return false
+	}
+	if !out.Indexed {
+		logger.Info("similar-code retrieval skipped: the repository has no index")
+		return false
+	}
 	paths := slices.Compact(slices.Sorted(slices.Values(slices.Concat(res.Changed, res.RenamedFrom))))
 	if err := newReporter(p, secrets).similarExclude(ctx, paths); err != nil {
 		logger.Warn("similar-code retrieval skipped: its exclusions were not reported", "error", err)
@@ -356,14 +376,16 @@ func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Sec
 }
 
 // similarCodeFor is the code elsewhere in the repository that resembles
-// diff's hunks, best effort: false when the repository has no index or the
-// request failed. A diff with nothing to search for still asks, with no
-// queries, which embeds nothing and only learns whether there is an index
-// for search_code.
+// diff's hunks, best effort: false when the request failed. It is asked once
+// excludeFromSimilar has found an index, so a diff with nothing to search for
+// asks nothing.
 func similarCodeFor(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
 	queries := hunkQueries(diff, p.Ignore)
+	if len(queries) == 0 {
+		return contextpack.SimilarResponse{Indexed: true}, true
+	}
 	started := time.Now()
 	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{
 		Queries: queries, Kind: contextpack.SimilarKindDiff,
