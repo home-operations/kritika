@@ -130,8 +130,11 @@ func (p *Parser) Parse(path string, src []byte) *File {
 	p.mu.Lock()
 	tree, err := lp.parser.ParseStrict(src)
 	p.mu.Unlock()
-	if err != nil || tree == nil || tree.RootNode() == nil {
-		// A parse stopped early returns its partial tree with the error.
+	// A parse stopped early returns its partial tree with the error. One
+	// that recovers from errors can also return a tree that ends before the
+	// source does, with none.
+	if err != nil || tree == nil || tree.RootNode() == nil ||
+		int(tree.RootNode().EndByte()) < len(bytes.TrimRightFunc(src, unicode.IsSpace)) {
 		tree.Release()
 		return f
 	}
@@ -180,8 +183,8 @@ func (p *Parser) language(path string) *languageParser {
 
 // declarations merges two views of the tree. One is the outline: named
 // symbols from the grammar's tags query, nested where the language nests
-// them. The other is the root's named children: every top-level statement, so
-// a type or constant block that the tags query does not cover still becomes a
+// them. The other is the root's children: every top-level statement, so a
+// type or constant block that the tags query does not cover still becomes a
 // chunk.
 func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Decl {
 	root := tree.RootNode()
@@ -235,10 +238,13 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	// loose holds the attributes and decorators at the top level, which the
 	// declaration below them usually takes in.
 	var loose []Decl
-	for i := range root.NamedChildCount() {
-		c := root.NamedChild(i)
+	for i := range root.ChildCount() {
+		c := root.Child(i)
 		typ := c.Type(lp.lang)
-		if comment(typ) || bytes.IndexFunc(src[c.StartByte():c.EndByte()], worded) < 0 {
+		// Error recovery can leave a grammar's hidden nodes (a
+		// translation_unit_repeat1) at the top level in place of the
+		// statements they hold, so only an anonymous token is passed over.
+		if !c.IsNamed() && c.ChildCount() == 0 || comment(typ) || bytes.IndexFunc(src[c.StartByte():c.EndByte()], worded) < 0 {
 			continue
 		}
 		d := Decl{

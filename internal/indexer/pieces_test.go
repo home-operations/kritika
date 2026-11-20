@@ -87,6 +87,18 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			name: "a long line before a closing one", path: "data.go",
 			src: "package demo\n\nconst blob = `\n" + strings.Repeat("QUJD", 2000) + "\n`\n",
 		},
+		// Two parses that error recovery leaves broken without an error: one
+		// stops before the end of the source, and one leaves hidden nodes
+		// where the top-level statements belong.
+		{
+			name: "a parse that stops short", path: "short.hpp",
+			src: "public:\n#if !defined(DOCS)\n  typedef int type;\n#endif\n\nint run() { return 1; }\n",
+		},
+		{
+			name: "a parse with hidden nodes at the top level", path: "hidden.hpp",
+			src: "  typedef detached_t default_completion_token_type;\n  {\n  }\n  return typename decay_t<T>::template rebind_executor<\n    T>::other;\n\n" +
+				"int after() { return 1; }\n",
+		},
 		{
 			name: "markdown of long lines", path: "notes.md",
 			src: lines(100, "Line %d "+strings.Repeat("word ", 60)),
