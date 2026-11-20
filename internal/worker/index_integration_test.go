@@ -4,7 +4,9 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -345,5 +347,40 @@ func checkRunStatus(ctx context.Context, t *testing.T, st *store.Store, account,
 	}
 	if status != string(want) {
 		t.Fatalf("run %s status = %s, want %s", run, status, want)
+	}
+}
+
+// checkIndexWaitsOutForge runs an update while the forge does not answer for
+// the branch tip: the job is snoozed, its wait counted and no attempt spent.
+// Once the forge answers, the job runs and completes on its first attempt.
+func checkIndexWaitsOutForge(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository string,
+) {
+	t.Helper()
+	lf.failTip(&url.Error{Op: "Get", URL: "https://api.github.com/repos/onedr0p/home-ops/branches/main", Err: errors.New("connection reset by peer")})
+	t.Cleanup(func() { lf.failTip(nil) })
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = queue.JobCancel(context.Background(), job.Job.ID) })
+	waitFor(t, 20*time.Second, "the index job to wait out the forge", func() bool {
+		var state string
+		var attempt, waits int
+		if err := st.App().QueryRow(ctx, `SELECT state, attempt, coalesce((metadata->>'forge_waits')::int, 0) FROM river_job WHERE id = $1`,
+			job.Job.ID).Scan(&state, &attempt, &waits); err != nil {
+			t.Fatal(err)
+		}
+		if state == "retryable" || state == "discarded" {
+			t.Fatalf("index job %s after attempt %d, want it snoozed", state, attempt)
+		}
+		return state == "scheduled" && attempt == 0 && waits == 1
+	})
+	lf.failTip(nil)
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET scheduled_at = now() WHERE id = $1`, job.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if attempt, snoozes := indexJobDone(ctx, t, st, job.Job.ID); attempt != 1 || snoozes != 1 {
+		t.Fatalf("index job attempt=%d snoozes=%d, want 1 and 1", attempt, snoozes)
 	}
 }

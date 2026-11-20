@@ -93,6 +93,7 @@ type localForge struct {
 	mu       sync.Mutex
 	base     string
 	tip      string
+	tipErr   error
 	comments map[int64]string
 	authors  map[int64]string
 	// threads are the inline comments GetComment serves, by id.
@@ -212,7 +213,17 @@ func (l *localForge) CommitSubject(context.Context, string, string, string) (str
 func (l *localForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.tipErr != nil {
+		return "", "", l.tipErr
+	}
 	return l.tip, "main", nil
+}
+
+// failTip makes BranchTip fail with err, nil to answer again.
+func (l *localForge) failTip(err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tipErr = err
 }
 
 // fakeEmbedder maps text to an 8-dimensional vector of character-bigram
@@ -1814,6 +1825,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("an update over a replaced generation snoozes and builds again", func(t *testing.T) {
 		checkUpdateOverRebuild(ctx, t, appStore, insertOnly, exec, account.ID(), repoID, head)
+	})
+
+	t.Run("an index job waits out a forge that fails transiently", func(t *testing.T) {
+		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, account.ID(), repoID)
 	})
 
 	t.Run("ignore rules rebuild unchanged files", func(t *testing.T) {

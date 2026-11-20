@@ -1,9 +1,14 @@
 package worker
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -295,4 +300,23 @@ func (c *ForgeCache) PullRequestAuthor(ctx context.Context, in *configfile.Conne
 		return "", false, err
 	}
 	return pr.Author, pr.AuthorIsBot, nil
+}
+
+// transientForge reports whether err, from a forge call, may not recur on a
+// later try: the forge answered 5xx, 408 or 429, or gave no answer, as when
+// its connection was refused, reset or cut short. GitHub's rate limit is left
+// out: ForgeRateLimit waits it out for as long as the limit says. An answer
+// that refused the request, such as 401, 403 or 404, is not transient.
+func transientForge(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, limited := github.RetryAfter(err, time.Now()); limited {
+		return false
+	}
+	if status := cmp.Or(github.Status(err), gitlab.Status(err), forgejo.Status(err)); status != 0 {
+		return status >= http.StatusInternalServerError || status == http.StatusRequestTimeout || status == http.StatusTooManyRequests
+	}
+	_, unanswered := errors.AsType[*url.Error](err)
+	return unanswered || errors.Is(err, io.ErrUnexpectedEOF)
 }

@@ -1775,9 +1775,22 @@
           "instant": false,
           "format": "time_series",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(kritika_index_snoozes_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "snoozed {{reason}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
         }
       ],
-      "description": "Index runs finished, by mode and status."
+      "description": "Index runs finished, by mode and status, and index jobs put back on the queue to wait, by reason."
     },
     {
       "id": 30,

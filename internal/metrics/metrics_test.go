@@ -28,6 +28,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.InitVectorSearch("account")
 	none.VectorSearch("account", "ok", time.Second)
 	none.CacheUploadSkipped("queue_full")
+	none.IndexSnoozed("t", "forge")
 
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
@@ -58,6 +59,11 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	m.Review("onedr0p", "completed", 12*time.Second)
 	m.Findings("onedr0p", "p1", "correctness", 2)
 	m.IndexRun("onedr0p", "full", "completed", 565)
+	m.IndexSnoozed("onedr0p", "forge")
+	m.IndexSnoozed("onedr0p", "forge")
+	if v := testutil.ToFloat64(m.indexSnoozes.WithLabelValues("onedr0p", "forge")); v != 2 {
+		t.Fatalf("index snoozes = %v", v)
+	}
 	m.RunnerRun("onedr0p", "index", "success", 4*time.Second)
 	m.LeaseWait("onedr0p", "openai/gpt-6-sol", 5*time.Millisecond)
 	m.ModelCall("onedr0p", "openai/gpt-6-sol", "review", "ok", 1706, 1574, 83, 0.005029, false)
@@ -129,8 +135,8 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 42 {
-		t.Fatalf("metric families = %d, want all 42", len(families))
+	if len(families) != 43 {
+		t.Fatalf("metric families = %d, want all 43", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)

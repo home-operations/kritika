@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -676,5 +677,27 @@ func TestReactOnACommentNamingItsMergeRequest(t *testing.T) {
 	id, err := f.client(t).React(context.Background(), "acme", "widgets", forge.Comment{ID: 23, Number: 9, Inline: true}, forge.ReactionEyes)
 	if err != nil || id != 5 || f.called("GET "+repoAPI+"/merge_requests") != 0 {
 		t.Fatalf("React = %d, %v", id, err)
+	}
+}
+
+// TestStatus: the status of GitLab's answer is read through the wrapping
+// that the client adds, the SDK's not found among them. An error that
+// carries no answer has none.
+func TestStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: fmt.Errorf("gitlab: branch main of o/r: %w", &gl.ErrorResponse{StatusCode: http.StatusBadGateway}),
+			want: http.StatusBadGateway},
+		{name: "not found", err: fmt.Errorf("gitlab: branch main of o/r: %w", gl.ErrNotFound), want: http.StatusNotFound},
+		{name: "no answer", err: errors.New("connection reset")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

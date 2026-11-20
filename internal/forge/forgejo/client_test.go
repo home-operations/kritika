@@ -743,3 +743,23 @@ func TestBearerIsReused(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestStatus: the status of the instance's answer is read through the
+// wrapping that the client adds. An error that carries no answer has none.
+func TestStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: fmt.Errorf("forgejo: branch main of o/r: %w", &apiError{status: http.StatusBadGateway}),
+			want: http.StatusBadGateway},
+		{name: "no answer", err: errors.New("connection reset")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

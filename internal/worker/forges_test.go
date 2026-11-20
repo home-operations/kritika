@@ -7,14 +7,20 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	gh "github.com/google/go-github/v93/github"
+	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -414,5 +420,41 @@ func TestForgeCachePullRequestAuthor(t *testing.T) {
 	login, bot, err := cache.PullRequestAuthor(t.Context(), gitlabConnection(t, ""), "acme/sub/widgets", 7)
 	if err != nil || login != "renovate" || !bot {
 		t.Fatalf("PullRequestAuthor = %q, %v, %v", login, bot, err)
+	}
+}
+
+// TestTransientForge: a forge that answers 5xx, 408 or 429, or does not
+// answer, may answer a later try. A forge that refused the request, a
+// missing file, and GitHub's rate limit, which ForgeRateLimit waits out for
+// as long as the limit says, are not transient.
+func TestTransientForge(t *testing.T) {
+	answer := func(status int) error {
+		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "bad gateway", err: answer(http.StatusBadGateway), want: true},
+		{name: "unavailable", err: fmt.Errorf("gitlab: branch main of o/r: %w", &gl.ErrorResponse{StatusCode: http.StatusServiceUnavailable}),
+			want: true},
+		{name: "request timeout", err: answer(http.StatusRequestTimeout), want: true},
+		{name: "too many requests", err: answer(http.StatusTooManyRequests), want: true},
+		{name: "connection refused", err: &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection refused")}, want: true},
+		{name: "cut short", err: fmt.Errorf("github: read: %w", io.ErrUnexpectedEOF), want: true},
+		{name: "not found", err: answer(http.StatusNotFound)},
+		{name: "forbidden", err: answer(http.StatusForbidden)},
+		{name: "no file", err: fmt.Errorf("github: .kritika.yaml: %w", fs.ErrNotExist)},
+		{name: "rate limit", err: &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Now().Add(time.Minute)}},
+			Response: &http.Response{StatusCode: http.StatusForbidden}}},
+		{name: "other", err: errors.New("worker: no connection serves account")},
+		{name: "none"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := transientForge(tc.err); got != tc.want {
+				t.Fatalf("transientForge(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

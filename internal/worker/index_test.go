@@ -3,8 +3,12 @@ package worker
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
+	"fmt"
+	"net/url"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -132,6 +136,36 @@ func TestIndexContentHash(t *testing.T) {
 			got := contentHash(&tc.emb, tc.text)
 			if len(got) != sha256.Size || bytes.Equal(got, base) != tc.same {
 				t.Fatalf("hash %x against %x, want same %v", got, base, tc.same)
+			}
+		})
+	}
+}
+
+// TestForgeWait: an index job waits out a forge failing transiently for
+// longer each time, up to forgeWaits times, without spending an attempt.
+// Then, or for any other failure, the failure spends one.
+func TestForgeWait(t *testing.T) {
+	transient := &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection reset")}
+	for _, tc := range []struct {
+		name      string
+		err       error
+		metadata  string
+		wantWaits int
+		min, max  time.Duration
+	}{
+		{name: "first", err: transient, metadata: `{}`, wantWaits: 1, min: forgeWaitMin / 2, max: forgeWaitMin},
+		{name: "after snoozes for other reasons", err: transient, metadata: `{"snoozes": 9}`, wantWaits: 1, min: forgeWaitMin / 2, max: forgeWaitMin},
+		{name: "third", err: transient, metadata: `{"forge_waits": 2}`, wantWaits: 3, min: 2 * forgeWaitMin, max: 4 * forgeWaitMin},
+		{name: "last", err: transient, metadata: fmt.Sprintf(`{"forge_waits": %d}`, forgeWaits-1), wantWaits: forgeWaits,
+			min: forgeWaitMax / 2, max: forgeWaitMax},
+		{name: "spent", err: transient, metadata: fmt.Sprintf(`{"forge_waits": %d}`, forgeWaits)},
+		{name: "permanent", err: errors.New("github: branch main of o/r: 404 Not Found"), metadata: `{}`},
+		{name: "unreadable metadata", err: transient, metadata: `not json`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, waits := forgeWait(tc.err, []byte(tc.metadata))
+			if waits != tc.wantWaits || d < tc.min || d > tc.max {
+				t.Fatalf("forgeWait = %s, %d, want %d waits for %s to %s", d, waits, tc.wantWaits, tc.min, tc.max)
 			}
 		})
 	}

@@ -39,6 +39,7 @@ type Metrics struct {
 	queueWait      *prometheus.HistogramVec
 	vectorSearch   *prometheus.HistogramVec
 	reviewSnoozes  *prometheus.CounterVec
+	indexSnoozes   *prometheus.CounterVec
 	jobsRescued    *prometheus.CounterVec
 	modelCalls     *prometheus.CounterVec
 	modelTokens    *prometheus.CounterVec
@@ -59,6 +60,7 @@ const (
 	lblConnection = "connection"
 	lblKind       = "kind"
 	lblQueue      = "queue"
+	lblReason     = "reason"
 )
 
 // New builds the collectors, each registered on reg as it is made.
@@ -168,6 +170,9 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviewSnoozes: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
 		}, []string{lblAccount, lblModel}),
+		indexSnoozes: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_index_snoozes_total", Help: "Index jobs put back on the queue to wait, by reason.",
+		}, []string{lblAccount, lblReason}),
 		jobsRescued: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_jobs_rescued_total", Help: "Jobs of a dead replica handed back to the queue by the leader, by kind and state.",
 		}, []string{lblKind, "state"}),
@@ -311,6 +316,14 @@ func (m *Metrics) LeaseWait(account, model string, took time.Duration) {
 func (m *Metrics) ReviewSnoozed(account, model string) {
 	if m != nil {
 		m.reviewSnoozes.WithLabelValues(account, model).Inc()
+	}
+}
+
+// IndexSnoozed counts an index job put back on the queue to wait for reason:
+// forge, a forge that failed transiently.
+func (m *Metrics) IndexSnoozed(account, reason string) {
+	if m != nil {
+		m.indexSnoozes.WithLabelValues(account, reason).Inc()
 	}
 }
 

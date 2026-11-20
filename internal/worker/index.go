@@ -96,14 +96,14 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	client, err := w.client(ctx, file, account, repo.Name)
 	if err != nil {
-		return err
+		return w.waitOutForge(ctx, job, account.Key(), logger, err)
 	}
 	owner, name, _ := strings.Cut(repo.Name, "/")
 	// The job indexes the tip, not the commit of the push that queued it:
 	// pushes while it waited were absorbed into it.
 	commit, branch, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
 	if err != nil {
-		return err
+		return w.waitOutForge(ctx, job, account.Key(), logger, err)
 	}
 	if repo.DefaultBranch == "" {
 		// Best effort: the run has the branch either way, and the next one
@@ -121,7 +121,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// indexing and add ignore globs.
 	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
 	if err != nil {
-		return err
+		return w.waitOutForge(ctx, job, account.Key(), logger, err)
 	}
 	eff, _ := effective(settings, doc)
 	if !eff.Enabled {
@@ -239,6 +239,56 @@ const (
 	appliedBuildWait = time.Minute
 	tipCheckWait     = time.Minute
 )
+
+// An index job waits out a forge that failed transiently before its run
+// starts, from forgeWaitMin doubling to forgeWaitMax, forgeWaits times: up to
+// about an hour in all. River's backoff would spend the job's few attempts
+// within seconds and drop the push that queued it. A snooze spends none, so
+// forgeWaitsKey counts the waits in the job's metadata, where River's own
+// snooze count also counts waits for other reasons. Past forgeWaits, the
+// failure spends an attempt.
+const (
+	forgeWaitMin  = 30 * time.Second
+	forgeWaitMax  = 15 * time.Minute
+	forgeWaits    = 8
+	forgeWaitsKey = "forge_waits"
+)
+
+// forgeWait is how long an index job, with metadata, waits out err from a
+// forge, and the count of its waits with this one. A count of 0 says that it
+// does not wait: err is not transient, the job used up its waits, or its
+// count cannot be read.
+func forgeWait(err error, metadata []byte) (time.Duration, int) {
+	if !transientForge(err) {
+		return 0, 0
+	}
+	var meta struct {
+		Waits int `json:"forge_waits"`
+	}
+	if json.Unmarshal(metadata, &meta) != nil || meta.Waits >= forgeWaits {
+		return 0, 0
+	}
+	return store.Backoff(meta.Waits, forgeWaitMin, forgeWaitMax), meta.Waits + 1
+}
+
+// waitOutForge snoozes the job, as its error, when forgeWait says that it
+// waits out err. Otherwise it returns err.
+func (w *Index) waitOutForge(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger, err error) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	d, waits := forgeWait(err, job.Metadata)
+	if waits == 0 {
+		return err
+	}
+	if serr := river.MetadataSet(ctx, forgeWaitsKey, waits); serr != nil {
+		logger.Warn("forge wait not counted, the failure spends an attempt", "error", serr)
+		return err
+	}
+	logger.Warn("index waits out a forge failure", "waits", waits, "of", forgeWaits, "for", d.Round(time.Second), "error", err)
+	w.Metrics.IndexSnoozed(account, "forge")
+	return river.JobSnooze(d)
+}
 
 // buildApplied reports whether emb is the embedder that the leader applied,
 // and this build's index format the format that it applied. index_schema

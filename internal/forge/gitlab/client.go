@@ -150,6 +150,15 @@ func apiError(err error) error {
 	return err
 }
 
+// Status is the HTTP status of GitLab's answer that err carries, 0 when err
+// carries none, as when the request never got an answer.
+func Status(err error) int {
+	if e, ok := errors.AsType[*gl.ErrorResponse](err); ok {
+		return e.StatusCode
+	}
+	return 0
+}
+
 // list reads every page of a listing. Its page function is called with the
 // page to read and answers it with what GitLab says of the next.
 func list[T any](page func(gl.ListOptions) ([]T, *gl.Response, error)) ([]T, error) {
