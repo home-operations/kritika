@@ -24,7 +24,13 @@ func TestWords(t *testing.T) {
 		{"minus is not a joiner", "n-1 and a-b", nil},
 		{"short and numeric", "x 42 0x1f", nil},
 		{"non-ASCII letters", "naïveCache", []string{"naïvecache", "naïve", "cache"}},
+		{"one non-ASCII letter", "é ü", nil},
 		{"repeated", "lease Lease LEASE", []string{"lease"}},
+		{"plural acronym", "IDs", []string{"ids"}},
+		{"plural acronym inside", "getURLs URLsByID", []string{"geturls", "get", "urls", "urlsbyid", "id"}},
+		{"acronym before a word", "HTTPSConnection", []string{"httpsconnection", "https", "connection"}},
+		{"letters around digits", "k8s i18n v2 x", []string{"k8s", "i18n", "v2"}},
+		{"a hyphen in a query joins", "rate-limit", []string{"ratelimit", "rate", "limit"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -48,8 +54,29 @@ func TestWordsKeepTheSpelling(t *testing.T) {
 	}
 }
 
+// TestDocumentHyphens: a hyphen joins the words around it in a path, and in
+// the code of a language whose names can hold one, but is a minus in the
+// code of one whose names cannot.
+func TestDocumentHyphens(t *testing.T) {
+	for _, tt := range []struct {
+		name, language, path, text string
+		want                       []string
+	}{
+		{"minus in Go", "go", "internal/rate-limit/limit.go", "n := end-start", []string{"internal", "ratelimit", "rate", "limit", "go",
+			"end", "start"}},
+		{"kebab case in CSS", "css", "web/site.css", ".max-width { }", []string{"web", "site", "css", "maxwidth", "max", "width"}},
+		{"no language", "", "notes.txt", "end-start", []string{"notes", "txt", "endstart", "end", "start"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Document(tt.language, tt.path, "", "", tt.text); !slices.Equal(got, tt.want) {
+				t.Errorf("Document = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDocument(t *testing.T) {
-	got := Document("internal/store/lease.go", "Store", "AcquireLease", "// AcquireLease takes a slot.\nfunc (s *Store) AcquireLease() {}")
+	got := Document("go", "internal/store/lease.go", "Store", "AcquireLease", "// AcquireLease takes a slot.\nfunc (s *Store) AcquireLease() {}")
 	for _, want := range []string{"internal", "lease", "go", "store", "acquirelease", "acquire", "takes", "slot"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("Document lacks %q: %q", want, got)
@@ -69,11 +96,11 @@ func TestDocumentBounds(t *testing.T) {
 		}
 		b.WriteByte(' ')
 	}
-	if got := Document("", "", "", b.String()); len(got) != maxDocumentLexemes {
+	if got := Document("", "", "", "", b.String()); len(got) != maxDocumentLexemes {
 		t.Errorf("Document kept %d lexemes, want %d", len(got), maxDocumentLexemes)
 	}
 	long := strings.Repeat("a", 3*maxLexemeBytes)
-	for _, l := range Document("", "", "", long+" "+long+"Tail") {
+	for _, l := range Document("", "", "", "", long+" "+long+"Tail") {
 		if len(l) > maxLexemeBytes {
 			t.Errorf("lexeme of %d bytes, want at most %d", len(l), maxLexemeBytes)
 		}

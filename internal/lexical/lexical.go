@@ -8,7 +8,10 @@
 // parseHTTPRequest and parse_http_request both give parsehttprequest, parse,
 // http and request. So a query finds the code that names what it names,
 // whatever the language's convention, and a description's words find the
-// identifiers made of them.
+// identifiers made of them. Nothing is stemmed: stripping -s, -ed and -ing
+// from both sides merged names that differ, and found fewer of the
+// definitions a change uses in the retrieval evaluation (see the
+// development docs).
 package lexical
 
 import (
@@ -36,23 +39,26 @@ type Word struct {
 
 // Words are the lexemes of text, each once, in the order they first appear:
 // each identifier whole, then its parts. Language keywords, the names every
-// file uses, English stop words, numbers, and words under two bytes are
-// left out.
-func Words(text string) []Word {
+// file uses, English stop words, numbers, and words of one letter are left
+// out. A hyphen between two letters joins them, as a query's text can be
+// any language's, or prose, where rate-limit names rateLimit.
+func Words(text string) []Word { return words(text, true) }
+
+func words(text string, hyphens bool) []Word {
 	var out []Word
 	seen := map[string]bool{}
 	add := func(lexeme, spelling string, whole bool) {
-		if len(lexeme) < 2 || len(lexeme) > maxLexemeBytes || seen[lexeme] || stop[lexeme] || !startsWithLetter(lexeme) {
+		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || seen[lexeme] || stop[lexeme] || !startsWithLetter(lexeme) {
 			return
 		}
 		seen[lexeme] = true
 		out = append(out, Word{Lexeme: lexeme, Spelling: spelling, Whole: whole})
 	}
-	for _, id := range identifiers(text) {
+	for _, id := range identifiers(text, hyphens) {
 		parts := split(id)
 		whole := strings.ToLower(separators.Replace(id))
-		// a-b is two names and a minus, not one name.
-		if slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
+		// a_b is two names, not one, but k8s and v2 are one each.
+		if !strings.ContainsAny(id, "_-") || slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
 			add(whole, id, true)
 		}
 		if len(parts) == 1 && strings.ToLower(parts[0]) == whole {
@@ -67,14 +73,17 @@ func Words(text string) []Word {
 
 var separators = strings.NewReplacer("_", "", "-", "")
 
-// Document is the lexemes of an index chunk: of its path, the scope and
-// symbol of its declaration, and its text, each once and at most
-// maxDocumentLexemes.
-func Document(path, scope, symbol, text string) []string {
+// Document is the lexemes of an index chunk of the language (package chunk
+// names it): of its path, the scope and symbol of its declaration, and its
+// text, each once and at most maxDocumentLexemes. A hyphen joins the words
+// of the path, but is a minus in the code of a language whose names hold
+// none (minusLanguages).
+func Document(language, path, scope, symbol, text string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, s := range []string{path, scope, symbol, text} {
-		for _, w := range Words(s) {
+	joins := !minusLanguages[language]
+	for i, s := range []string{path, scope, symbol, text} {
+		for _, w := range words(s, i == 0 || joins) {
 			if len(out) == maxDocumentLexemes {
 				return out
 			}
@@ -87,11 +96,25 @@ func Document(path, scope, symbol, text string) []string {
 	return out
 }
 
-// identifiers are text's runs of letters, digits and underscores, with a
-// hyphen between two letters kept inside one: a kebab-case name is one
-// identifier, n-1 is two tokens. A run that starts with a digit is a number
-// and is left out.
-func identifiers(text string) []string {
+// minusLanguages are the languages, as package chunk names them, in whose
+// code a hyphen is a minus and never part of a name: end-start is two names
+// there, where max-width is one in CSS or YAML.
+var minusLanguages = func() map[string]bool {
+	m := map[string]bool{}
+	for l := range strings.FieldsSeq(`ada apex arduino c c_sharp cairo cpp crystal cuda d dart elixir elm erlang fortran fsharp gdscript
+		gleam glsl go groovy hack hare haskell haxe hlsl java javascript julia kotlin lua luau matlab mojo move nim objc ocaml odin pascal
+		perl php proto purescript python r rescript ruby rust scala solidity sql squirrel starlark swift teal thrift tsx typescript v
+		verilog vhdl wgsl zig`) {
+		m[l] = true
+	}
+	return m
+}()
+
+// identifiers are text's runs of letters, digits and underscores. With
+// hyphens, a hyphen between two letters is kept inside one: a kebab-case
+// name is one identifier, n-1 is two tokens. A run that starts with a digit
+// is a number and is left out.
+func identifiers(text string, hyphens bool) []string {
 	var out []string
 	start := -1
 	flush := func(end int) {
@@ -108,7 +131,7 @@ func identifiers(text string) []string {
 			if start < 0 {
 				start = i
 			}
-		case r == '-' && start >= 0 && i > 0:
+		case r == '-' && hyphens && start >= 0 && i > 0:
 			prev, _ := utf8.DecodeLastRuneInString(text[:i])
 			next, _ := utf8.DecodeRuneInString(text[i+1:])
 			if !unicode.IsLetter(prev) || !unicode.IsLetter(next) {
@@ -125,8 +148,8 @@ func identifiers(text string) []string {
 // split cuts an identifier into its parts: at underscores and hyphens, where
 // a lower-case letter or a digit meets an upper-case one, before the last
 // upper-case letter of a run that a lower-case one follows (HTTPServer is
-// HTTP and Server), and where letters meet digits. A part of digits alone is
-// dropped.
+// HTTP and Server) unless that is the s of a plural (IDs, URLsByID), and
+// where letters meet digits. A part of digits alone is dropped.
 func split(id string) []string {
 	runes := []rune(id)
 	var parts []string
@@ -153,7 +176,7 @@ func split(id string) []string {
 		switch {
 		case unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)):
 			cut(i)
-		case unicode.IsUpper(prev) && unicode.IsUpper(r) && i+1 < len(runes) && unicode.IsLower(runes[i+1]):
+		case unicode.IsUpper(prev) && unicode.IsUpper(r) && i+1 < len(runes) && unicode.IsLower(runes[i+1]) && !plural(runes[i+1:]):
 			cut(i)
 		case unicode.IsDigit(r) != unicode.IsDigit(prev):
 			cut(i)
@@ -161,6 +184,12 @@ func split(id string) []string {
 	}
 	cut(len(runes))
 	return parts
+}
+
+// plural reports whether rest, what follows an upper-case run, is the s of
+// its plural: an s that no lower-case letter follows.
+func plural(rest []rune) bool {
+	return rest[0] == 's' && (len(rest) == 1 || !unicode.IsLower(rest[1]))
 }
 
 func startsWithLetter(s string) bool {

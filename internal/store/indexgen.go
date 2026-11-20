@@ -240,7 +240,7 @@ func InsertIndexChunks(
 		embeddings[i], hashes[i] = model.VectorLiteral(vectors[i]), c.ContentHash
 		// A lexeme holds no space, so one string carries a chunk's lexemes
 		// through unnest, which flattens an array of arrays.
-		lexemes[i] = strings.Join(lexical.Document(c.Path, c.Scope, c.Symbol, c.Text), " ")
+		lexemes[i] = strings.Join(lexical.Document(c.Language, c.Path, c.Scope, c.Symbol, c.Text), " ")
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO index_chunks
