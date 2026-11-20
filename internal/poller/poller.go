@@ -382,8 +382,9 @@ func (p *Poller) closeMissed(
 
 // branchUnknown logs, once per process, a default branch of r that the forge
 // does not have: r was deleted, or its default branch renamed, and no event
-// said so. The branch is asked for again at the next poll anyway, after the
-// repository sync has recorded a renamed one or disabled a deleted one.
+// said so. The branch is asked for again at the next look at the account's
+// branches anyway, after the repository sync has recorded a renamed one or
+// disabled a deleted one.
 func (p *Poller) branchUnknown(in *configfile.Connection, r store.PollRepo, err error) {
 	key := r.Name + "@" + r.DefaultBranch
 	if p.isUnknown(key) {
