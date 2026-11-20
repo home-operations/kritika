@@ -98,7 +98,27 @@ type builder struct {
 	stats  Stats
 }
 
-func (b *builder) ignored(path string) bool { return chunk.Matches(b.ignore, path) }
+// unindexed are the paths the index leaves out on top of the ignore rules:
+// files that SOPS encrypted, whose text a search has no use for, and code
+// that generators write. They are not review ignores, which add to every
+// repository's ignore hash: a change to those rebuilds each index at its next
+// push, where a change here raises runspec.IndexFormat and so rebuilds at the
+// onboarding feeder's pace. A pull request that changes one is still
+// reviewed. The ".sops.yaml" that configures SOPS is not encrypted.
+var unindexed = []string{
+	"**/?*.sops.*",
+	"**/*_pb2.py",
+	"**/*_pb2.pyi",
+	"**/*_pb2_grpc.py",
+	"**/*.pb.cc",
+	"**/*.pb.h",
+	"**/*.g.dart",
+	"**/*.freezed.dart",
+}
+
+func (b *builder) ignored(path string) bool {
+	return chunk.Matches(b.ignore, path) || chunk.Matches(unindexed, path)
+}
 
 func (b *builder) walkAll(ctx context.Context, head *object.Tree) error {
 	iter := head.Files()

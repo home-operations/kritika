@@ -185,3 +185,51 @@ func TestBuildKeepsTextValidUTF8(t *testing.T) {
 func contains(ss []string, s string) bool {
 	return slices.Contains(ss, s)
 }
+
+// TestBuildSkipsUnindexedFiles: files that SOPS encrypted or a code generator
+// wrote are left out of the index without an ignore rule.
+func TestBuildSkipsUnindexedFiles(t *testing.T) {
+	tests := []struct {
+		path    string
+		indexed bool
+	}{
+		{"kubernetes/apps/foo/secret.sops.yaml", false},
+		{"talos/talsecret.sops.yml", false},
+		{"secret.sops.json", false},
+		{"api/v1/service_pb2.py", false},
+		{"api/v1/service_pb2.pyi", false},
+		{"api/v1/service_pb2_grpc.py", false},
+		{"cpp/service.pb.cc", false},
+		{"cpp/service.pb.h", false},
+		{"lib/model.g.dart", false},
+		{"lib/model.freezed.dart", false},
+		{".sops.yaml", true},
+		{"lib/model.dart", true},
+		{"api/v1/service.py", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			fs := memfs.New()
+			r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+			gittest.Unsigned(t, r)
+			wt, _ := r.Worktree()
+			f, _ := fs.Create(tt.path)
+			_, _ = f.Write([]byte("value = 1\n"))
+			_ = f.Close()
+			_, _ = wt.Add(tt.path)
+			hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, _ := r.CommitObject(hash)
+			head, _ := c.Tree()
+			chunks, _, _, err := Build(t.Context(), head, nil, nil, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if indexed := len(chunks) > 0; indexed != tt.indexed {
+				t.Fatalf("indexed = %v, want %v: %+v", indexed, tt.indexed, chunks)
+			}
+		})
+	}
+}

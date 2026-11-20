@@ -409,6 +409,8 @@ with a few keys beside them:
 context, the index, and the agent's searches and checkout. These add to
 kritika's own: vendored trees, lockfiles, generated and minified code,
 source maps and logs. A pull request that changes nothing else is skipped.
+The index also leaves out files that SOPS encrypted (`*.sops.*`) and
+generated protobuf and Dart code, which a review still reads.
 The agent can still read an ignored path with `read_file`, or its diff
 with `read_diff`. `ignore` is not an access restriction.
 
