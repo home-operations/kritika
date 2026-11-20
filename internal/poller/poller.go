@@ -28,6 +28,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/ingest"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/webhook"
@@ -194,8 +195,11 @@ func (p *Poller) pollAccounts(ctx context.Context) {
 // looks at the default branch of each indexed repository with no index job
 // queued or running, whatever webhooks arrive: one push webhook missed, or
 // one index job that failed, leaves the index behind until the next push
-// otherwise. A branch that the forge will not give is logged and asked for
-// again at the next poll. A repository whose pull requests the forge will not
+// otherwise. A repository whose last index job ended without moving its
+// index waits jobs.OnboardRetryAfter for its next look, as the onboarding
+// feeder waits to offer a repository whose first index failed again. A
+// branch that the forge will not give is logged and asked for again at the
+// next poll. A repository whose pull requests the forge will not
 // list is skipped, and the rest are polled. The poll state is then left where
 // it was, so the next poll covers the skipped repository's window too. The
 // error names each one.
@@ -210,7 +214,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	var state store.PollState
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if repos, err = store.PollRepositories(ctx, tx); err != nil {
+		if repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter); err != nil {
 			return err
 		}
 		state, err = store.ReadPollState(ctx, tx, account.ID())
@@ -245,8 +249,12 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		}
 		owner, name, _ := strings.Cut(repo, "/")
 		// A queued or running index job reads the tip itself, and a push
-		// dedupes onto it: the forge is not asked again.
-		if r.IndexedCommit != "" && !r.Indexing {
+		// dedupes onto it: the forge is not asked again. An index job that
+		// ended lately without moving the index will end so again, as when
+		// it fails on the repository or its .kritika.yaml turns indexing
+		// off: one every poll would cost a job and its forge calls each
+		// time, and a runner pod for one that fails in its run.
+		if r.IndexedCommit != "" && !r.Indexing && !r.IndexUnmoved {
 			// The tip has no part in the pull requests' window that the poll
 			// state records.
 			err := p.pollTip(ctx, file, account, in, client, r, started)

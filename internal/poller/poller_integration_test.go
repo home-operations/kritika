@@ -486,6 +486,56 @@ func TestPollerLogsAMissingBranchOnce(t *testing.T) {
 	}
 }
 
+// TestPollerBacksOffAfterAnIndexJobThatPublishedNothing: an index job that
+// ended without bringing the index to its commit, failed or skipped because
+// the repository's .kritika.yaml turns indexing off, will end so again. So
+// the poll leaves the branch alone for jobs.OnboardRetryAfter after it, as
+// the onboarding feeder does a repository whose first index failed.
+func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/home-ops")
+	for _, tc := range []struct {
+		name string
+		// end finalizes the job the first poll queued, id, in its own way.
+		end      string
+		backsOff bool
+	}{
+		{name: "skipped", end: `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`, backsOff: true},
+		{name: "failed", end: `UPDATE river_job SET state = 'discarded', finalized_at = now() WHERE id = $1`, backsOff: true},
+		{name: "cancelled", end: `UPDATE river_job SET state = 'cancelled', finalized_at = now() WHERE id = $1`, backsOff: true},
+		{name: "ended long ago", end: `UPDATE river_job SET state = 'discarded', finalized_at = now() - interval '61 minutes' WHERE id = $1`},
+		{name: "published", end: `WITH run AS (INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT (args->>'account_id')::uuid, (args->>'repository_id')::uuid, 'published', 'fake-embed', 8, 'incremental', 'superseded'
+			FROM river_job WHERE id = $1)
+			UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`},
+		{name: "found the index at its commit", end: `UPDATE river_job SET state = 'completed', finalized_at = now(),
+			args = jsonb_set(args, '{commit_sha}', '"indexed"') WHERE id = $1`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				s.exec(`DELETE FROM index_runs WHERE commit_sha = 'published' AND repository_id = $1`, s.repoIDs[0])
+			})
+			s.clearIndexJobs()
+			s.tf.tip = "moved"
+			s.poll()
+			var id int64
+			if err := s.st.App().QueryRow(t.Context(), `SELECT id FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1`,
+				s.repoIDs[0]).Scan(&id); err != nil {
+				t.Fatalf("the first poll's index job: %v", err)
+			}
+			s.exec(tc.end, id)
+			calls := s.tf.calls
+			s.poll()
+			asked, queued := s.tf.calls-calls, len(s.indexJobs())-1
+			if tc.backsOff && (asked != 0 || queued != 0) {
+				t.Fatalf("%d tip checks and %d index jobs queued, want the branch left alone", asked, queued)
+			}
+			if !tc.backsOff && (asked != 1 || queued != 1) {
+				t.Fatalf("%d tip checks and %d index jobs queued, want one of each", asked, queued)
+			}
+		})
+	}
+}
+
 // TestSyncRepositories: the repositories that a running connection's App
 // reaches are registered on the accounts it serves, with what the forge says
 // of them. A second sync adds none. An account that it does not serve gets

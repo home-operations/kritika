@@ -264,28 +264,37 @@ func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, reposit
 
 // PollRepo is one enabled repository as a poll sees it. IndexedCommit is
 // the commit its active index generation covers, "" when it has none.
-// Indexing says that an index job of it is queued or running.
+// Indexing says that an index job of it is queued or running. IndexUnmoved
+// says that an index job of it ended lately without publishing an index or
+// finding the index at the commit it was queued for: it failed, or the
+// repository's .kritika.yaml turns indexing off.
 type PollRepo struct {
 	Name, DefaultBranch, IndexedCommit string
-	Indexing                           bool
+	Indexing, IndexUnmoved             bool
 	Traits                             configfile.RepoTraits
 	TurnedAt                           *time.Time
 }
 
-// PollRepositories lists the account's enabled repositories, by name.
-func PollRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
+// PollRepositories lists the account's enabled repositories, by name. An
+// index job counts toward IndexUnmoved for unmovedFor after it ends.
+func PollRepositories(ctx context.Context, tx pgx.Tx, unmovedFor time.Duration) ([]PollRepo, error) {
 	rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''),
 		EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text),
+		EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
+			AND j.finalized_at > now() - make_interval(secs => $1)
+			AND coalesce(j.args->>'commit_sha', '') NOT IN ('', coalesce(g.commit_sha, ''))
+			AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
+				AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at)),
 		r.archived, r.fork, r.turned_on, r.turned_at
 		FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
-		WHERE r.enabled ORDER BY r.name`)
+		WHERE r.enabled ORDER BY r.name`, unmovedFor.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("store: list repositories to poll: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PollRepo, error) {
 		var r PollRepo
-		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.Indexing, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn,
-			&r.TurnedAt)
+		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.Indexing, &r.IndexUnmoved, &r.Traits.Archived, &r.Traits.Fork,
+			&r.Traits.TurnedOn, &r.TurnedAt)
 		return r, err
 	})
 	if err != nil {
