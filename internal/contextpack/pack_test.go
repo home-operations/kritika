@@ -401,3 +401,113 @@ func TestBuildStopsAtTheScanBudget(t *testing.T) {
 		t.Fatalf("Build = %+v, %v; want a truncated scan and no error", stats, err)
 	}
 }
+
+// TestScanReadsDeclarationsFromTheirHead: a mention in the comments above a
+// declaration does not make it a caller, while a decorator does. A caller
+// whose comments would push its body past the byte budget loses comments
+// from the top until its body fits.
+func TestScanReadsDeclarationsFromTheirHead(t *testing.T) {
+	head := headTree(t, map[string]string{
+		"callers.go": "package demo\n\n// Doc is like Target, but louder.\nfunc Doc() {}\n\n" +
+			"// Long calls Target.\n" + strings.Repeat("// padding padding padding\n", 20) + "func Long() {\n\tTarget()\n}\n\n" +
+			"// Short is short.\nfunc Short() {\n\tTarget()\n}\n",
+		"deco.py": "# Plain mentions Target.\ndef plain():\n    pass\n\n\n@Target\ndef wrapped():\n    pass\n",
+	})
+	opts := DefaultOptions
+	opts.MaxChunkBytes = 200
+	b := &builder{in: Input{Head: head}, opts: opts, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
+	if err := scanParts(t.Context(), []*builder{b}, &b.stats); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Chunk{}
+	for _, c := range b.callers["Target"].chunks {
+		got[c.Symbol] = c
+	}
+	tests := []struct {
+		symbol, start, end string
+		line               int
+	}{
+		{symbol: "Long", start: "// padding", end: "}", line: 21},
+		{symbol: "Short", start: "// Short is short.", end: "}", line: 31},
+		{symbol: "wrapped", start: "@Target", end: "pass", line: 6},
+	}
+	for _, tt := range tests {
+		c, ok := got[tt.symbol]
+		if !ok {
+			t.Errorf("no caller %s in %+v", tt.symbol, got)
+			continue
+		}
+		if !strings.HasPrefix(c.Text, tt.start) || !strings.HasSuffix(c.Text, tt.end) || c.StartLine != tt.line ||
+			strings.Count(c.Text, "\n") != c.EndLine-c.StartLine {
+			t.Errorf("caller %s = L%d-%d %q, want it whole from line %d with %q", tt.symbol, c.StartLine, c.EndLine, c.Text, tt.line, tt.start)
+		}
+		delete(got, tt.symbol)
+	}
+	if len(got) > 0 {
+		t.Errorf("callers %+v are only mentioned in comments", got)
+	}
+}
+
+// TestOverlayTakesADeclarationItsCommentsPushOver: a change in a declaration
+// that fits the line limit only without the comments above it is shown with
+// the declaration from its head line, not with a window.
+func TestOverlayTakesADeclarationItsCommentsPushOver(t *testing.T) {
+	src := "package demo\n\n" + strings.Repeat("// F does things.\n", 15) + "func F() {\n" + strings.Repeat("\t_ = 0\n", 138) + "}\n"
+	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -100,1 +100,1 @@\n-\t_ = 1\n+\t_ = 0\n"
+	b := &builder{
+		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
+		opts: DefaultOptions, parser: &chunk.Parser{},
+	}
+	if err := b.overlay(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.overlayChunks) != 1 {
+		t.Fatalf("overlay = %+v, want one chunk", b.overlayChunks)
+	}
+	if c := b.overlayChunks[0]; c.Symbol != "F" || c.StartLine != 18 || c.EndLine != 157 || !strings.HasPrefix(c.Text, "func F() {") {
+		t.Fatalf("overlay = %+v, want F from its head line 18 to 157", c)
+	}
+}
+
+// headTree commits files to an in-memory repository and returns the tree.
+func headTree(t *testing.T, files map[string]string) *object.Tree {
+	t.Helper()
+	fs := memfs.New()
+	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gittest.Unsigned(t, r)
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range files {
+		f, err := fs.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte(src)); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h, err := wt.Commit("head", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := r.CommitObject(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := c.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head
+}

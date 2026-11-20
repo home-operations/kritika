@@ -3,6 +3,7 @@ package contextpack
 import (
 	"bytes"
 	"context"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -89,7 +90,9 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 		seenDecl := map[string]bool{}
 		for _, h := range hits {
 			decl := pf.Enclosing([]int{h.line}, b.opts.MaxDeclLines)
-			if decl == nil {
+			// A word in the comments above a declaration does not use it, as
+			// one in a decorator or an attribute there does.
+			if decl == nil || h.line < decl.HeadLine && !slices.Contains(pf.Identifiers([]int{h.line}), h.word) {
 				continue
 			}
 			key := h.word + "\x00" + f.Name + "\x00" + decl.Symbol
@@ -99,7 +102,7 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 			seenDecl[key] = true
 			for _, target := range wanted[h.word] {
 				if !target.builder.overlayDecls[f.Name+"\x00"+decl.Symbol] {
-					target.builder.addCandidate(pf, decl, h.word, target.changed)
+					target.builder.addCandidate(pf, decl, h.line, h.word, target.changed)
 				}
 			}
 		}

@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -270,9 +271,10 @@ func (b *builder) overlay(ctx context.Context) error {
 			}
 			var c Chunk
 			if decl := f.Enclosing([]int{run[0], run[1]}, b.opts.MaxDeclLines); decl != nil {
+				start, text := b.declText(f, decl, run[0])
 				c = Chunk{
 					Stage: StageOverlay, Path: path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-					StartLine: decl.StartLine, EndLine: decl.EndLine, Text: f.Text(decl.StartLine, decl.EndLine),
+					StartLine: start, EndLine: decl.EndLine, Text: text,
 				}
 			} else {
 				s, e, text := f.Window(run[0], run[1], b.opts.WindowRadius)
@@ -324,7 +326,7 @@ func subset(start, end int, shown map[int]string) bool {
 // wordStart reports whether c can start an identifier: [A-Za-z_].
 func wordStart(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' }
 
-func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, changed bool) {
+func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, line int, word string, changed bool) {
 	var stage string
 	var target map[string]*candidates
 	var limit int
@@ -336,9 +338,10 @@ func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, cha
 	default:
 		return
 	}
+	start, text := b.declText(f, decl, line)
 	c := Chunk{
 		Stage: stage, Path: f.Path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-		StartLine: decl.StartLine, EndLine: decl.EndLine, Ref: word,
+		StartLine: start, EndLine: decl.EndLine, Ref: word,
 	}
 	set := target[word]
 	if set == nil {
@@ -349,8 +352,20 @@ func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, cha
 	if !keepCandidate(set.chunks, c, limit) {
 		return
 	}
-	c.Text = b.cutText(f.Text(decl.StartLine, decl.EndLine))
+	c.Text = b.cutText(text)
 	set.chunks = append(set.chunks, c)
+}
+
+// declText is decl's text and the line it starts on. When the text is over
+// MaxChunkBytes, the comments above decl's head line go first, from the top,
+// so the cut keeps more of its body. Line line, which pulled decl in, stays.
+func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int, text string) {
+	start, text = decl.StartLine, f.Text(decl.StartLine, decl.EndLine)
+	for len(text) > b.opts.MaxChunkBytes && start < min(decl.HeadLine, line) {
+		_, text, _ = strings.Cut(text, "\n")
+		start++
+	}
+	return start, text
 }
 
 func (b *builder) cutText(text string) string {

@@ -524,14 +524,19 @@ func kindFromType(typ string) string {
 }
 
 // Enclosing returns the smallest declaration that contains every line in
-// lines and spans at most maxLines, or nil. Declarations are nested, so
-// "smallest" prefers a method over its class.
+// lines and spans at most maxLines from its head line, or nil. Declarations
+// are nested, so "smallest" prefers a method over its class. A declaration
+// that the comments above it put over maxLines is returned from its head
+// line, and holds only the lines from there.
 func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 	var best *Decl
-	for i := range f.Decls {
-		d := &f.Decls[i]
-		if d.Lines() > maxLines {
+	for _, d := range f.Decls {
+		head := max(d.HeadLine, d.StartLine)
+		if d.EndLine-head+1 > maxLines {
 			continue
+		}
+		if d.Lines() > maxLines {
+			d.StartLine, d.StartByte = head, f.offsets()[head-1]
 		}
 		ok := true
 		for _, l := range lines {
@@ -540,8 +545,8 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 				break
 			}
 		}
-		if ok && (best == nil || d.Lines() < best.Lines()) {
-			best = d
+		if ok && (best == nil || d.EndLine-head < best.EndLine-max(best.HeadLine, best.StartLine)) {
+			best = &d
 		}
 	}
 	return best
@@ -612,10 +617,7 @@ func lineStarts(src []byte) []int {
 // last+radius, clamped to the file. Lines are 1-based, inclusive. Repeated
 // calls reuse the file's line offsets, including after Close.
 func (f *File) Window(first, last, radius int) (startLine, endLine int, text string) {
-	if f.lineOffsets == nil && len(f.Source) > 0 {
-		f.lineOffsets = lineStarts(f.Source)
-	}
-	startLine, endLine = max(first-radius, 1), min(last+radius, len(f.lineOffsets))
+	startLine, endLine = max(first-radius, 1), min(last+radius, len(f.offsets()))
 	if startLine > endLine {
 		return 0, 0, ""
 	}
@@ -626,6 +628,14 @@ func (f *File) Window(first, last, radius int) (startLine, endLine int, text str
 		end--
 	}
 	return startLine, endLine, string(f.Source[start:end])
+}
+
+// offsets is the byte offset of each line of the source, computed once.
+func (f *File) offsets() []int {
+	if f.lineOffsets == nil && len(f.Source) > 0 {
+		f.lineOffsets = lineStarts(f.Source)
+	}
+	return f.lineOffsets
 }
 
 // Text returns the source of a line range, 1-based and inclusive.

@@ -455,3 +455,37 @@ T min_of(T a, T b) {
 		})
 	}
 }
+
+// TestEnclosingMeasuresFromTheHeadLine: the comments above a declaration
+// do not count against the line limit. A declaration they push over it is
+// returned from its head line.
+func TestEnclosingMeasuresFromTheHeadLine(t *testing.T) {
+	src := "package demo\n\n" + strings.Repeat("// F does things.\n", 15) + "func F() {\n" +
+		strings.Repeat("\t_ = 1\n", 138) + "}\n\n// G is small.\nfunc G() {}\n"
+	f := (&Parser{}).Parse("demo.go", []byte(src))
+	defer f.Close()
+	tests := []struct {
+		name       string
+		lines      []int
+		max        int
+		start, end int
+	}{
+		{name: "body of a declaration its doc pushes over", lines: []int{100}, max: 150, start: 18, end: 157},
+		{name: "head line", lines: []int{18}, max: 150, start: 18, end: 157},
+		{name: "doc of a declaration its doc pushes over", lines: []int{5}, max: 150},
+		{name: "everything fits", lines: []int{5, 100}, max: 155, start: 3, end: 157},
+		{name: "body over the limit", lines: []int{100}, max: 139},
+		{name: "small declaration keeps its doc", lines: []int{160}, max: 150, start: 159, end: 160},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := f.Enclosing(tt.lines, tt.max)
+			switch {
+			case tt.start == 0 && d != nil:
+				t.Fatalf("Enclosing(%v, %d) = %+v, want nil", tt.lines, tt.max, d)
+			case tt.start != 0 && (d == nil || d.StartLine != tt.start || d.EndLine != tt.end):
+				t.Fatalf("Enclosing(%v, %d) = %+v, want L%d-%d", tt.lines, tt.max, d, tt.start, tt.end)
+			}
+		})
+	}
+}
