@@ -90,16 +90,16 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 // before partitioning created, by the suffix of their names.
 var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_idx", "account_id_idx", "embedding_idx"}
 
-// The partitioner waits for locks that publications and embedding batches
-// also take, in another order, so it can close a cycle with one of them. It
-// is to be the one that gives way: yieldLocks bounds each of its waits to
-// 1/lockYieldShare of deadlock_timeout. Its waits together then end before a
-// transaction that began to wait on it after its first request runs the
-// deadlock check, which aborts that transaction. lockYieldShare leaves room
-// for the four waits of PartitionIndexChunks. While it waits for
-// index_chunks, every search and build queues behind it, which the short
-// waits also bound. A schema change tries partitionTries times,
-// partitionRetryPause apart, and the next sweep tries again.
+// PartitionIndexChunks waits for locks that publications and embedding
+// batches also take, in another order, so it can close a cycle with one of
+// them. It is to give way, not the other transaction: yieldLocks bounds each
+// of its waits to 1/lockYieldShare of deadlock_timeout. A transaction that
+// waits on it began to wait after its first lock request, so its waits, four
+// at most, end before that transaction runs the deadlock check, which would
+// abort it. While it, or DropLegacyIndexChunks, waits for index_chunks, every
+// search and build queues behind it, which the short waits also bound. Each
+// tries partitionTries times, partitionRetryPause apart, and the next sweep
+// tries again.
 const (
 	lockYieldShare      = 8
 	partitionTries      = 5
