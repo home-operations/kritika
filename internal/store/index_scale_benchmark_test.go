@@ -577,13 +577,16 @@ $$)`, lists)
 			name: "drained", query: similarChunksSQL,
 			setup: func(ctx context.Context, s *Store) error {
 				for {
-					n, err := s.DrainLegacyIndexChunks(ctx)
+					moved, removed, err := s.DrainLegacyIndexChunks(ctx)
 					if err != nil {
 						return err
 					}
-					if n == 0 {
+					if moved+removed == 0 {
 						break
 					}
+				}
+				if _, err := s.DropLegacyIndexChunks(ctx); err != nil {
+					return err
 				}
 				// Autovacuum's work, once it catches up.
 				return exec(`VACUUM ANALYZE index_chunks`)(ctx, s)

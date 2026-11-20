@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // indexChunkPartitions is how many hash partitions of index_run_id hold the
@@ -146,7 +147,8 @@ func retryLocks(ctx context.Context, fn func() error) error {
 // seconds for millions of chunks.
 //
 // New chunks go to the hash partitions. DrainLegacyIndexChunks moves the
-// active generations' chunks there, a repository at a time. Until it does, a
+// legacy partition's chunks there, or deletes those that no build needs, a
+// slice at a time, and DropLegacyIndexChunks then drops it. Until then, a
 // search reads the legacy partition's vector index too, which costs about
 // what a vector search of the plain table did. Leader only.
 func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool, error) {
@@ -235,20 +237,29 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 	return partitioned, err
 }
 
-// DrainLegacyIndexChunks moves one repository's active generation from
-// index_chunks_legacy to the hash partitions, so that its searches read its
-// partition alone. It returns how many chunks it moved: none once no active
-// generation is left there, or when another holds the lock of every
-// repository that has one. It takes the repository's lock, as a publication
-// does, so no publication changes the generation while it moves. The chunks of
-// other generations stay in the legacy partition until their generation is
-// dropped. Leader only.
-func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (int64, error) {
+// legacyDrainSlice is how many chunks DrainLegacyIndexChunks moves or
+// deletes at a time. It holds the repository's lock while it does, which
+// bounds how long a publication or a webhook's write to the repository waits
+// for it.
+var legacyDrainSlice = 5000
+
+// DrainLegacyIndexChunks empties index_chunks_legacy a slice at a time: up
+// to legacyDrainSlice chunks of one generation, in a transaction of their
+// own. An active generation's chunks go first, moved to the hash partitions,
+// so that its searches read its partition alone. A generation is split
+// between the two while it moves, which a search reads as one. Then the
+// chunks of the other generations: moved when a build can still publish or
+// resume them, deleted otherwise, as the next build's stray sweep would. It
+// returns how many chunks it moved and how many it deleted: none once the
+// legacy partition is empty, or when another holds the lock of every
+// repository or chunk left there. Each slice takes the repository's lock, as a
+// publication does, and reads the generation again under it, so no
+// publication changes the generation while a slice moves it. Leader only.
+func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int64, err error) {
 	if s.owner == nil {
-		return 0, errors.New("store: DrainLegacyIndexChunks needs the owner connection")
+		return 0, 0, errors.New("store: DrainLegacyIndexChunks needs the owner connection")
 	}
-	var moved int64
-	err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		// The index schema's lock, so a rebuild for a new embedder, which
 		// drops the table, runs before or after the move.
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
@@ -258,24 +269,32 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (int64, error) {
 		if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil || !legacy {
 			return err
 		}
-		var run string
-		err := tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories r WHERE active_index_run_id IS NOT NULL
-			AND EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = r.active_index_run_id)
-			LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&run)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+		run, keep, err := lockLegacyGeneration(ctx, tx)
+		if err != nil || run == "" {
+			return err
 		}
+		rows, err := tx.Query(ctx, `SELECT id FROM index_chunks_legacy WHERE index_run_id = $1 LIMIT $2 FOR UPDATE SKIP LOCKED`,
+			run, legacyDrainSlice)
 		if err != nil {
+			return err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[pgtype.UUID])
+		if err != nil || len(ids) == 0 {
+			return err
+		}
+		if !keep {
+			tag, err := tx.Exec(ctx, `DELETE FROM index_chunks_legacy WHERE id = ANY($1)`, ids)
+			removed = tag.RowsAffected()
 			return err
 		}
 		// A new created_at routes the chunks out of the legacy partition.
 		tag, err := tx.Exec(ctx, `UPDATE index_chunks SET created_at = statement_timestamp()
-			WHERE index_run_id = $1 AND tableoid = 'index_chunks_legacy'::regclass`, run)
+			WHERE index_run_id = $1 AND id = ANY($2) AND tableoid = 'index_chunks_legacy'::regclass`, run, ids)
 		if err != nil {
 			return err
 		}
 		var left bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy WHERE index_run_id = $1)`, run).Scan(&left); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy WHERE id = ANY($1))`, ids).Scan(&left); err != nil {
 			return err
 		}
 		if left {
@@ -285,7 +304,78 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (int64, error) {
 		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("store: drain legacy index chunks: %w", err)
+		return 0, 0, fmt.Errorf("store: drain legacy index chunks: %w", err)
 	}
-	return moved, nil
+	return moved, removed, nil
+}
+
+// lockLegacyGeneration locks the repository of a generation that holds
+// chunks in index_chunks_legacy, an active one when there is one, and
+// returns it, "" for none. keep says that its chunks are moved rather than
+// deleted: it is active, or a build can still publish or resume it. Only a
+// publication makes a generation active, under the repository's lock.
+func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories r WHERE active_index_run_id IS NOT NULL
+		AND EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = r.active_index_run_id)
+		LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&run)
+	if err == nil {
+		return run, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, err
+	}
+	err = tx.QueryRow(ctx, `SELECT x.id::text, x.id IS NOT DISTINCT FROM r.active_index_run_id OR x.status = 'running' OR x.resume_key <> ''
+		FROM index_runs x JOIN repositories r ON r.id = x.repository_id
+		WHERE EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = x.id)
+		LIMIT 1 FOR UPDATE OF r SKIP LOCKED`).Scan(&run, &keep)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	return run, keep, err
+}
+
+// DropLegacyIndexChunks drops index_chunks_legacy once DrainLegacyIndexChunks
+// has emptied it, and reports whether it did. Searches then read the hash
+// partition of their generation alone. Dropping it takes the exclusive lock
+// of index_chunks, for which it gives way as PartitionIndexChunks does, but
+// none on the tables that its foreign keys reference, which detaching it
+// first would take. Leader only.
+func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
+	if s.owner == nil {
+		return false, errors.New("store: DropLegacyIndexChunks needs the owner connection")
+	}
+	var dropped bool
+	err := retryLocks(ctx, func() error {
+		dropped = false
+		return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
+				return err
+			}
+			var legacy, empty bool
+			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil || !legacy {
+				return err
+			}
+			// Read before the lock, so that the read does not hold up
+			// searches. Every created_at that a write sets is past the
+			// partition's bound, so no chunk enters it again.
+			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
+				return err
+			}
+			if err := yieldLocks(ctx, tx); err != nil {
+				return err
+			}
+			for _, stmt := range []string{`LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`, `DROP TABLE index_chunks_legacy`} {
+				if _, err := tx.Exec(ctx, stmt); err != nil {
+					return err
+				}
+			}
+			s.logger.Info("index_chunks_legacy dropped: every chunk is in the hash partitions")
+			dropped = true
+			return nil
+		})
+	})
+	if err != nil {
+		return false, fmt.Errorf("store: drop legacy index chunks: %w", err)
+	}
+	return dropped, nil
 }

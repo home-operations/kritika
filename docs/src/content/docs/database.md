@@ -469,18 +469,25 @@ starts. It copies and rebuilds nothing:
    become those of the partitioned table. Attaching reads the old table once,
    under the lock, to check `created_at`. That read takes seconds for millions
    of chunks. Searches and index builds wait for it.
-3. Every later sweep moves the active generations out of
-   `index_chunks_legacy` into the hash partitions, one repository per
-   transaction. Each move holds that repository's lock, as a publication
-   does, and skips a repository whose lock another transaction holds. A
-   move rewrites the generation's rows. Until autovacuum reclaims the old
-   rows, the table needs room for both copies.
+3. That sweep, and each later one, empties `index_chunks_legacy`, up to
+   5,000 chunks of one generation per transaction. The active generations
+   go first, moved into the hash partitions. Then the chunks of the other
+   generations: those of a build that can still publish or resume are
+   moved, and the rest are deleted, as the next index build of their
+   repository would delete them. Each transaction holds that repository's
+   lock, as a publication does, for the few seconds its slice takes, and
+   skips a repository whose lock another transaction holds. A generation
+   whose move is under way is split between the two partitions, and a
+   search reads it whole. A move rewrites the generation's rows. Until
+   autovacuum reclaims the old rows, the table needs room for both copies.
+4. Once the legacy partition is empty, the sweep drops it. Dropping it
+   takes the exclusive lock on `index_chunks` alone, with the same short,
+   retried waits as the first step.
 
-A search reads the legacy partition's vector index until its generation has
-moved, so it costs what a search of the plain table did. Chunks of a generation
-that is not active stay in the legacy partition until kritika deletes them,
-as it always did. A rebuild for a new embedder drops the whole table, legacy
-partition included, and creates it partitioned.
+A search reads the legacy partition's vector index until it is dropped, so
+until then it costs what a search of the plain table did. A rebuild for a
+new embedder drops the whole table, legacy partition included, and creates
+it partitioned.
 
 The legacy partition keeps the original table's vector index. If its
 definition was changed by hand, attaching builds a new one, under the lock.

@@ -425,7 +425,7 @@ default it compares `flat`, `exact`, `partitioned` and `drained`:
 | `flat`                                                | The plain table of a build before partitioning, with its one `vchordrq` index and no index options                                              |
 | `exact`                                               | The same table with `vchordrq.enable_scan` off, which leaves the generation's B-tree and a sort                                                 |
 | `partitioned`                                         | The plain table just partitioned by `PartitionIndexChunks`, with every chunk still in the legacy partition                                      |
-| `drained`                                             | The partitioned table after `DrainLegacyIndexChunks` moved every active generation to the hash partitions, and `VACUUM`                         |
+| `drained`                                             | The partitioned table after `DrainLegacyIndexChunks` emptied the legacy partition, `DropLegacyIndexChunks` dropped it, and `VACUUM`             |
 | `ivf-probes1pct`, `ivf-probes5pct`, `ivf-probes20pct` | The plain table with VectorChord's own partitioning: `lists` as its documentation recommends for the row count, and `probes` that share of them |
 | `repo-hash`                                           | A copy of the table hash partitioned by repository, which the search then also filters on                                                       |
 
@@ -494,6 +494,8 @@ moved nothing, and the `VACUUM ANALYZE` after it took 4 minutes 58 seconds on
 runs. A smaller run of 1,000,000 chunks in 138
 repositories on 1.1.1 gave the plain table 4.8, 37.2 and 40.4 ms at p50 for the
 three targets, and 64 hash partitions by generation 0.6, 1.1 and 10.0 ms.
+These runs kept the emptied legacy partition attached. The sweep now drops
+it, which takes its empty vector index out of every search's plan.
 
 What the measurements show:
 
@@ -506,10 +508,11 @@ What the measurements show:
 - Partitioned by generation and drained, a search reads one of 64 partitions:
   6 to 28 ms at p50 for the large repository, and under 8 ms for the others,
   with the recall of the plain table's vector index.
-- Until the drain moves a generation, its search also reads the legacy
-  partition's vector index. That costs about 110 ms at this size, which is
-  slower than the plain table's exact plan for the 10,000-chunk repository on
-  1.1.1. The sweep drains right after it partitions, so this lasts minutes.
+- Until the sweep drops the legacy partition, a search also reads its vector
+  index. While the partition holds the chunks, that costs about 110 ms at this
+  size, which is slower than the plain table's exact plan for the
+  10,000-chunk repository on 1.1.1. The sweep drains and drops it right after
+  it partitions, so this lasts minutes.
 - VectorChord's own partitioning (`lists`) did not help the application's
   query. Postgres's generic plan never chose the index and read the B-tree
   instead, so the results equal `exact`. A custom plan did use it, at about

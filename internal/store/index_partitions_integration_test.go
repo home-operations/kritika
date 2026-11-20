@@ -194,25 +194,8 @@ func TestIndexChunksPartitioned(t *testing.T) {
 	if got := similarPaths(t, s, account, run); strings.Join(got, ",") != "a.go,b.go" {
 		t.Fatalf("search found %v, want a.go,b.go", got)
 	}
-	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {
-			return err
-		}
-		rows, err := tx.Query(ctx, "EXPLAIN "+similarChunksSQL, "[1,0,0,0,0,0,0,0]", run, []string{}, 4)
-		if err != nil {
-			return err
-		}
-		plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return err
-		}
-		text := strings.Join(plan, "\n")
-		if strings.Count(text, " on index_chunks_") != 1 {
-			return fmt.Errorf("the search did not read one partition alone:\n%s", text)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+	if plan := searchPlan(t, s, account, run); strings.Count(plan, " on index_chunks_") != 1 {
+		t.Fatalf("the search did not read one partition alone:\n%s", plan)
 	}
 	appDenied(t, s, account, "index_chunks_00")
 	// An incremental step's chunks move to the generation's partition.
@@ -241,11 +224,10 @@ func TestIndexChunksPartitioned(t *testing.T) {
 	}
 }
 
-// partitionLegacy partitions the plain index_chunks as the retention sweep
-// does and checks that its chunks, indexes and foreign keys became the
-// legacy partition's. Behind a writer that holds the table past the lock
-// timeout, the sweep first gives up and leaves the table as it was.
-func partitionLegacy(t *testing.T, s *Store) {
+// partitionBehindWriter checks that, behind a writer that holds the plain
+// index_chunks past the lock timeout, the sweep gives up and leaves the table
+// as it was.
+func partitionBehindWriter(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := t.Context()
 	writer, err := s.owner.Begin(ctx)
@@ -261,6 +243,14 @@ func partitionLegacy(t *testing.T, s *Store) {
 	if err := writer.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// partitionLegacy partitions the plain index_chunks as the retention sweep
+// does and checks that its chunks, indexes and foreign keys became the
+// legacy partition's.
+func partitionLegacy(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := t.Context()
 	for i, want := range []bool{true, false} {
 		if got, err := s.PartitionIndexChunks(ctx, "kritika_app"); err != nil || got != want {
 			t.Fatalf("PartitionIndexChunks call %d = %v, %v; want %v", i+1, got, err, want)
@@ -285,20 +275,51 @@ func partitionLegacy(t *testing.T, s *Store) {
 }
 
 // drainLegacy drains the legacy partition as the retention sweep does and
-// returns how many chunks it moved.
-func drainLegacy(t *testing.T, s *Store) int64 {
+// returns how many chunks it moved and how many it deleted.
+func drainLegacy(t *testing.T, s *Store) (moved, removed int64) {
 	t.Helper()
-	var moved int64
 	for {
-		n, err := s.DrainLegacyIndexChunks(t.Context())
+		m, r, err := s.DrainLegacyIndexChunks(t.Context())
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n == 0 {
-			return moved
+		if m+r == 0 {
+			return moved, removed
 		}
-		moved += n
+		moved, removed = moved+m, removed+r
 	}
+}
+
+// legacyExists reports whether index_chunks_legacy exists.
+func legacyExists(t *testing.T, s *Store) bool {
+	t.Helper()
+	var legacy bool
+	if err := s.owner.QueryRow(t.Context(), `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil {
+		t.Fatal(err)
+	}
+	return legacy
+}
+
+// searchPlan is the plan of the application's search of the generation.
+func searchPlan(t *testing.T, s *Store, account, run string) string {
+	t.Helper()
+	ctx := t.Context()
+	var text string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, "EXPLAIN "+similarChunksSQL, "[1,0,0,0,0,0,0,0]", run, []string{}, 4)
+		if err != nil {
+			return err
+		}
+		plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		text = strings.Join(plan, "\n")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return text
 }
 
 // waitForLockWait waits until a transaction waits for a lock of mode on the
@@ -400,9 +421,10 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 // TestPartitionIndexChunksFromLegacy: the retention sweep makes an
 // index_chunks of a build before partitioning the legacy partition of a
 // partitioned one, keeping its chunks, indexes and foreign keys. New chunks
-// go to the hash partitions, and the drain moves the active generations
-// there, leaving the others. A rebuild for a new embedder drops the legacy
-// partition with the table.
+// go to the hash partitions. The drain moves the chunks that a build needs
+// there, the active generations' first, and deletes the others. The empty
+// legacy partition is then dropped, and a search reads its generation's
+// partition alone.
 func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -417,12 +439,18 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	two := configfile.RepositoryID(account, "index-legacy/two")
 	runOne := partitionRun(t, s, account, one, true, "a.go", "b.go")
 	stray := partitionRun(t, s, account, one, false, "old.go")
+	deleted := partitionRun(t, s, account, one, false, "gone.go")
+	resumable := partitionRun(t, s, account, two, false, "next.go")
+	if _, err := s.owner.Exec(ctx, `UPDATE index_runs SET status = 'failed', resume_key = 'resume' WHERE id = $1`, resumable); err != nil {
+		t.Fatal(err)
+	}
 	runTwo := partitionRun(t, s, account, two, true, "c.go")
 
 	// The leader keeps the table for the same embedder.
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
+	partitionBehindWriter(t, s)
 	partitionLegacy(t, s)
 	if got := similarPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
 		t.Fatalf("search of the legacy generation found %v, want a.go,b.go", got)
@@ -432,40 +460,213 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	if parts := chunkPartitions(t, s, added); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
 		t.Fatalf("a new chunk is in %v, want a hash partition", parts)
 	}
-
-	if moved := drainLegacy(t, s); moved != 3 {
-		t.Fatalf("drain moved %d chunks, want the active generations' 3", moved)
+	// The legacy partition's foreign keys still cascade.
+	if _, err := s.owner.Exec(ctx, `DELETE FROM index_runs WHERE id = $1`, deleted); err != nil {
+		t.Fatal(err)
 	}
-	for _, run := range []string{runOne, runTwo} {
+	if parts := chunkPartitions(t, s, deleted); len(parts) != 0 {
+		t.Fatalf("chunks of a deleted generation are left in %v", parts)
+	}
+	// Nothing is dropped while the legacy partition holds a chunk.
+	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || dropped {
+		t.Fatalf("DropLegacyIndexChunks of a legacy partition with chunks = %v, %v", dropped, err)
+	}
+
+	if moved, removed := drainLegacy(t, s); moved != 4 || removed != 1 {
+		t.Fatalf("drain moved %d and deleted %d chunks, want the active and resumable generations' 4 moved and the stray's 1 deleted",
+			moved, removed)
+	}
+	for _, run := range []string{runOne, runTwo, resumable} {
 		if parts := chunkPartitions(t, s, run); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
-			t.Fatalf("an active generation is in %v after the drain, want a hash partition", parts)
+			t.Fatalf("generation %s is in %v after the drain, want a hash partition", run, parts)
 		}
+	}
+	if parts := chunkPartitions(t, s, stray); len(parts) != 0 {
+		t.Fatalf("an inactive generation is in %v after the drain, want it deleted", parts)
+	}
+	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || !dropped {
+		t.Fatalf("DropLegacyIndexChunks of the empty legacy partition = %v, %v", dropped, err)
+	}
+	if legacyExists(t, s) {
+		t.Fatal("the empty legacy partition was kept")
 	}
 	if got := similarPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
 		t.Fatalf("search after the drain found %v, want a.go,b.go", got)
 	}
-	if parts := chunkPartitions(t, s, stray); parts["index_chunks_legacy"] != 1 {
-		t.Fatalf("an inactive generation is in %v, want it left in the legacy partition", parts)
+	if plan := searchPlan(t, s, account, runOne); strings.Count(plan, " on index_chunks_") != 1 {
+		t.Fatalf("the search after the drain did not read one partition alone:\n%s", plan)
 	}
-	// The legacy partition's foreign keys still cascade.
-	if _, err := s.owner.Exec(ctx, `DELETE FROM index_runs WHERE id = $1`, stray); err != nil {
+	if moved, removed, err := s.DrainLegacyIndexChunks(ctx); err != nil || moved+removed != 0 {
+		t.Fatalf("drain without a legacy partition = %d, %d, %v", moved, removed, err)
+	}
+	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || dropped {
+		t.Fatalf("DropLegacyIndexChunks without a legacy partition = %v, %v", dropped, err)
+	}
+}
+
+// TestDrainLegacyIndexChunksInSlices: the drain moves a slice of a
+// generation at a time, and a search reads the generation split between the
+// legacy and hash partitions as one.
+func TestDrainLegacyIndexChunksInSlices(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-slices"))); err != nil {
 		t.Fatal(err)
 	}
-	if parts := chunkPartitions(t, s, stray); len(parts) != 0 {
-		t.Fatalf("chunks of a deleted generation are left in %v", parts)
+	listRepos(t, s, "index-slices", "index-slices/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	account := accountID(t, s, "index-slices")
+	repo := configfile.RepositoryID(account, "index-slices/one")
+	run := partitionRun(t, s, account, repo, true, "a.go", "b.go", "c.go")
+	partitionLegacy(t, s)
+	slice := legacyDrainSlice
+	legacyDrainSlice = 2
+	t.Cleanup(func() { legacyDrainSlice = slice })
+
+	if moved, removed, err := s.DrainLegacyIndexChunks(ctx); err != nil || moved != 2 || removed != 0 {
+		t.Fatalf("first slice moved %d and deleted %d, %v; want 2 moved", moved, removed, err)
+	}
+	if parts := chunkPartitions(t, s, run); len(parts) != 2 || parts["index_chunks_legacy"] != 1 {
+		t.Fatalf("the generation is in %v after a slice, want 1 chunk left in the legacy partition", parts)
+	}
+	if got := similarPaths(t, s, account, run); strings.Join(got, ",") != "a.go,b.go,c.go" {
+		t.Fatalf("search of the split generation found %v, want a.go,b.go,c.go", got)
+	}
+	if moved, removed := drainLegacy(t, s); moved != 1 || removed != 0 {
+		t.Fatalf("the rest of the drain moved %d and deleted %d, want 1 moved", moved, removed)
+	}
+}
+
+// TestDrainLegacyIndexChunksBesidePublications: incremental steps and a full
+// build publish while the drain moves the generation a chunk at a time. No
+// chunk is lost or doubled.
+func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-drain-race"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-drain-race", "index-drain-race/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	account := accountID(t, s, "index-drain-race")
+	repo := configfile.RepositoryID(account, "index-drain-race/one")
+	const files = 40
+	paths := make([]string, files)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("f%02d.go", i)
+	}
+	run := partitionRun(t, s, account, repo, true, paths...)
+	partitionLegacy(t, s)
+	slice := legacyDrainSlice
+	legacyDrainSlice = 1
+	t.Cleanup(func() { legacyDrainSlice = slice })
+
+	drained := make(chan error, 1)
+	go func() {
+		drained <- func() error {
+			for {
+				moved, removed, err := s.DrainLegacyIndexChunks(ctx)
+				if err != nil {
+					return err
+				}
+				if moved+removed > 0 {
+					continue
+				}
+				var left bool
+				if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&left); err != nil || !left {
+					return err
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}()
+	}()
+
+	// Each step replaces one file's chunk with its own.
+	active := Generation{ID: run, Commit: "abc"}
+	want := map[string]string{}
+	for i := range files / 2 {
+		path, text, commit := paths[2*i], fmt.Sprintf("step %d", i), fmt.Sprintf("c%02d", i)
+		var step string
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+				VALUES ($1, $2, $3, 'test-embed', 8, 'incremental', 'running') RETURNING id`, account, repo, commit).Scan(&step); err != nil {
+				return err
+			}
+			return InsertIndexChunks(ctx, tx, account, repo, step,
+				[]StagedChunk{{Path: path, StartLine: 1, EndLine: 2, Text: text}}, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return AdvanceGeneration(ctx, tx, repo, active, step, commit, []string{path})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		active.Commit = commit
+		want[path] = text
+	}
+	rows, err := s.owner.Query(ctx, `SELECT path, text FROM index_chunks WHERE index_run_id = $1`, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	var path, text string
+	n := 0
+	if _, err := pgx.ForEachRow(rows, []any{&path, &text}, func() error {
+		n++
+		got[path] = text
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n != files || len(got) != files {
+		t.Fatalf("the generation holds %d chunks of %d paths after the steps, want one of each of %d", n, len(got), files)
+	}
+	for p, w := range want {
+		if got[p] != w {
+			t.Fatalf("%s holds %q after the steps, want %q", p, got[p], w)
+		}
 	}
 
+	// A full build supersedes the generation, wherever its chunks are.
+	full := partitionRun(t, s, account, repo, false, "new.go")
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repo, full) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-drained; err != nil {
+		t.Fatal(err)
+	}
+	if parts := chunkPartitions(t, s, run); len(parts) != 0 {
+		t.Fatalf("the superseded generation is left in %v", parts)
+	}
+	if got := similarPaths(t, s, account, full); strings.Join(got, ",") != "new.go" {
+		t.Fatalf("search of the full build found %v, want new.go", got)
+	}
+	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || !dropped {
+		t.Fatalf("DropLegacyIndexChunks after the drain = %v, %v", dropped, err)
+	}
+}
+
+// TestRebuildDropsLegacyIndexChunks: a rebuild for a new embedder drops the
+// legacy partition with the table.
+func TestRebuildDropsLegacyIndexChunks(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-legacy-rebuild"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-legacy-rebuild", "index-legacy-rebuild/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	account := accountID(t, s, "index-legacy-rebuild")
+	partitionRun(t, s, account, configfile.RepositoryID(account, "index-legacy-rebuild/one"), true, "a.go")
+	partitionLegacy(t, s)
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 16, ""); err != nil {
 		t.Fatal(err)
 	}
-	var legacy bool
-	if err := s.owner.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil {
-		t.Fatal(err)
-	}
-	if legacy {
+	if legacyExists(t, s) {
 		t.Fatal("a rebuild for a new embedder kept the legacy partition")
-	}
-	if n, err := s.DrainLegacyIndexChunks(ctx); err != nil || n != 0 {
-		t.Fatalf("drain without a legacy partition = %d, %v", n, err)
 	}
 }

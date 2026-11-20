@@ -1,9 +1,12 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,9 +46,9 @@ type sweepCall struct {
 type fakeRetentionStore struct {
 	calls chan sweepCall
 	fail  bool
-	// drained is what DrainLegacyIndexChunks moves on its calls in turn, and
-	// then none.
-	drained []int64
+	// drained is what DrainLegacyIndexChunks moves and deletes on its calls
+	// in turn, and then none.
+	drained [][2]int64
 }
 
 func (s *fakeRetentionStore) SweepModelCalls(_ context.Context, olderThan time.Duration) (int64, error) {
@@ -121,7 +124,7 @@ func (h *warnCounter) WithGroup(string) slog.Handler      { return h }
 
 func TestRetentionSweep(t *testing.T) {
 	current := configfile.NewCurrent(retentionAccount(t))
-	st := &fakeRetentionStore{calls: make(chan sweepCall, 16), drained: []int64{3, 2}}
+	st := &fakeRetentionStore{calls: make(chan sweepCall, 16), drained: [][2]int64{{3, 0}, {0, 2}}}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
@@ -182,11 +185,15 @@ func TestRetentionSweep(t *testing.T) {
 	if got := next(); got.name != "partitionIndex" || got.role != "kritika_app" {
 		t.Fatalf("call = %q for role %q, want partitionIndex for kritika_app", got.name, got.role)
 	}
-	// The legacy partition is drained until a call moves nothing.
+	// The legacy partition is drained until a call moves and deletes
+	// nothing, and then dropped.
 	for range 3 {
 		if got := next(); got.name != "legacyIndexChunks" {
 			t.Fatalf("call = %q, want legacyIndexChunks", got.name)
 		}
+	}
+	if got := next(); got.name != "dropLegacyIndexChunks" {
+		t.Fatalf("call = %q, want dropLegacyIndexChunks", got.name)
 	}
 	if got := next(); got.name != "modelCalls" {
 		t.Fatalf("second pass's first call = %q, want modelCalls", got.name)
@@ -197,6 +204,61 @@ func TestRetentionSweep(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Retention did not return once ctx ended")
+	}
+}
+
+// lockedBuffer is a log destination that a test reads while a sweep writes.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// TestRetentionSweepLogsLegacyDrain: the chunks that the drain moved to the
+// hash partitions are logged apart from those it deleted.
+func TestRetentionSweepLogsLegacyDrain(t *testing.T) {
+	current := configfile.NewCurrent(retentionAccount(t))
+	st := &fakeRetentionStore{calls: make(chan sweepCall, 64), drained: [][2]int64{{3, 1}, {2, 0}}}
+	var logs lockedBuffer
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		(&Retention{Store: st, Current: current, Logger: slog.New(slog.NewTextHandler(&logs, nil)), every: time.Hour}).Run(ctx)
+		close(done)
+	}()
+	for {
+		select {
+		case c := <-st.calls:
+			if c.name != "dropLegacyIndexChunks" {
+				continue
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Retention never dropped the legacy partition")
+		}
+		break
+	}
+	// The pass logs the drain after the drop's call and before Run returns.
+	cancel()
+	<-done
+	text := logs.String()
+	for _, want := range []string{
+		`msg="retention sweep moved" sweep="legacy index partition" moved=5 unit=chunks`,
+		`msg="retention sweep removed" sweep="legacy index partition" removed=1 unit=chunks`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("logs lack %s:\n%s", want, text)
+		}
 	}
 }
 
@@ -241,15 +303,23 @@ func (s *fakeRetentionStore) PartitionIndexChunks(_ context.Context, appRole str
 	return false, nil
 }
 
-func (s *fakeRetentionStore) DrainLegacyIndexChunks(context.Context) (int64, error) {
+func (s *fakeRetentionStore) DrainLegacyIndexChunks(context.Context) (int64, int64, error) {
 	s.calls <- sweepCall{name: "legacyIndexChunks"}
 	if s.fail {
-		return 0, errors.New("db down")
+		return 0, 0, errors.New("db down")
 	}
 	if len(s.drained) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 	n := s.drained[0]
 	s.drained = s.drained[1:]
-	return n, nil
+	return n[0], n[1], nil
+}
+
+func (s *fakeRetentionStore) DropLegacyIndexChunks(context.Context) (bool, error) {
+	s.calls <- sweepCall{name: "dropLegacyIndexChunks"}
+	if s.fail {
+		return false, errors.New("db down")
+	}
+	return true, nil
 }
