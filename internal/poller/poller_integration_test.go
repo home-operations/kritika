@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -533,6 +535,59 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 				t.Fatalf("%d tip checks and %d index jobs queued, want one of each", asked, queued)
 			}
 		})
+	}
+}
+
+// TestPollerChecksTipsHourlyWhileWebhooksArrive: while the connection's
+// webhooks arrive, a push webhook is rarely missed, so the default branches
+// are looked at once every tipCheckInterval, not every poll: a check costs a
+// request per indexed repository. A connection whose webhooks have been
+// silent for the poll lookback, or never arrived, has them looked at every
+// poll. A newly elected leader looks at once.
+func TestPollerChecksTipsHourlyWhileWebhooksArrive(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/home-ops")
+	s.tf.tip = "indexed"
+	for _, tc := range []struct {
+		name string
+		// delivered is when the webhook last arrived, as SQL.
+		delivered string
+		// checked is how long before the first poll this process last
+		// looked, 0 for never.
+		checked time.Duration
+		want    int
+	}{
+		{name: "arriving, first poll", delivered: "now()", want: 1},
+		{name: "arriving, checked lately", delivered: "now()", checked: 10 * time.Minute},
+		{name: "arriving, checked over an interval ago", delivered: "now()", checked: tipCheckInterval + time.Minute, want: 1},
+		{name: "silent past the lookback", delivered: "now() - interval '25 hours'", checked: time.Minute, want: 2},
+		{name: "never arrived", delivered: "NULL", checked: time.Minute, want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s.exec(`UPDATE connections SET last_webhook_at = `+tc.delivered+` WHERE id = $1`, s.in.ID())
+			s.p.tipsChecked = nil
+			if tc.checked > 0 {
+				s.p.tipsChecked = map[string]time.Time{s.account.ID(): time.Now().Add(-tc.checked)}
+			}
+			calls := s.tf.calls
+			s.poll()
+			s.poll()
+			if got := s.tf.calls - calls; got != tc.want {
+				t.Fatalf("two polls looked at the branch %d times, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPollerStopsTipChecksAtARateLimit: past the forge's rate limit, every
+// other branch of the poll would only be refused too.
+func TestPollerStopsTipChecksAtARateLimit(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
+	s.tf.err = fmt.Errorf("github: branch main of onedr0p/flux: %w", &gh.RateLimitError{
+		Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Now().Add(time.Hour)}}, Response: &http.Response{StatusCode: http.StatusForbidden},
+	})
+	s.poll()
+	if s.tf.calls != 1 || !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
+		t.Fatalf("%d tip checks, logs:\n%s\nwant one, and the rest logged as left", s.tf.calls, s.logs.String())
 	}
 }
 

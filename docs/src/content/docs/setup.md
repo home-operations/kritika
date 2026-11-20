@@ -188,13 +188,18 @@ For everyday use, see [reviews and commands](/reviews/).
 
 Polling catches missed pull request updates every 10 minutes by default.
 Set `config.pollInterval` to change the interval, or `0s` to disable it.
-Each poll also asks for the default branch of every indexed repository that
-has no index job queued or running, and catches its code index up when the
-branch moved, so a missed push or a failed index job does not leave the index
-behind. That is one more API request per indexed repository each poll. A
-repository whose last index job ended within the hour without moving its
-index, because it failed or the repository's `.kritika.yaml` sets
-`enabled: false`, is left until the hour is up.
+Polls also ask for the default branch of every indexed repository that has no
+index job queued or running, and catch its code index up when the branch
+moved, so a missed push or a failed index job does not leave the index
+behind. Each ask is one API request per indexed repository. While the
+connection's webhooks arrive, a poll asks once an hour: on GitHub, with 100
+indexed repositories, that is 100 requests an hour against the installation's
+limit of 5,000 or more. Once no webhook has arrived for `config.pollLookback`
+(24h unless set), every poll asks, 600 requests an hour at the default
+interval. A newly elected leader asks at its first poll. A poll stops asking
+at GitHub's rate limit. A repository whose last index job ended within the
+hour without moving its index, because it failed or the repository's
+`.kritika.yaml` sets `enabled: false`, is left until the hour is up.
 The leader is the replica that runs the polls. A newly elected leader polls
 at once, so a restart catches up on the pull requests opened, pushed to or
 closed while kritika was down.

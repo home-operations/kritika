@@ -303,19 +303,20 @@ func PollRepositories(ctx context.Context, tx pgx.Tx, unmovedFor time.Duration) 
 	return out, nil
 }
 
-// PollState is what a poll builds on: when the account became known, and
-// when it was last polled, nil for never.
+// PollState is what a poll builds on: when the account became known, when
+// it was last polled, and when its connection's webhook last delivered, nil
+// for never.
 type PollState struct {
-	Known  time.Time
-	Polled *time.Time
+	Known             time.Time
+	Polled, Delivered *time.Time
 }
 
-// ReadPollState reads the account's poll state.
-func ReadPollState(ctx context.Context, tx pgx.Tx, accountID string) (PollState, error) {
+// ReadPollState reads the account's poll state through its connection.
+func ReadPollState(ctx context.Context, tx pgx.Tx, accountID, connectionID string) (PollState, error) {
 	var s PollState
-	if err := tx.QueryRow(ctx, `SELECT a.created_at, s.last_polled_at FROM accounts a
-		LEFT JOIN poll_state s ON s.account_id = a.id
-		WHERE a.id = $1`, accountID).Scan(&s.Known, &s.Polled); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT a.created_at, s.last_polled_at, c.last_webhook_at FROM accounts a
+		CROSS JOIN connections c LEFT JOIN poll_state s ON s.account_id = a.id
+		WHERE a.id = $1 AND c.id = $2`, accountID, connectionID).Scan(&s.Known, &s.Polled, &s.Delivered); err != nil {
 		return s, fmt.Errorf("store: read poll state: %w", err)
 	}
 	return s, nil

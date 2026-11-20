@@ -27,6 +27,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -54,7 +55,17 @@ type Poller struct {
 	// did not know, so each is logged once.
 	mu      sync.Mutex
 	unknown map[string]bool
+	// tipsChecked is when a poll last looked at an account's default
+	// branches, by account ID.
+	tipsChecked map[string]time.Time
 }
+
+// tipCheckInterval is how often a poll looks at the default branches of an
+// account whose connection's webhooks arrive. A look costs one request per
+// indexed repository: every poll, it would double what polling costs a
+// GitHub App installation, and a missed push webhook is rare while the rest
+// arrive.
+const tipCheckInterval = time.Hour
 
 // pollOffRecheck is how often Run looks again at a file that turns
 // polling off, so turning it back on takes effect without a restart.
@@ -195,14 +206,15 @@ func (p *Poller) pollAccounts(ctx context.Context) {
 // looks at the default branch of each indexed repository with no index job
 // queued or running, whatever webhooks arrive: one push webhook missed, or
 // one index job that failed, leaves the index behind until the next push
-// otherwise. A repository whose last index job ended without moving its
-// index waits jobs.OnboardRetryAfter for its next look, as the onboarding
-// feeder waits to offer a repository whose first index failed again. A
-// branch that the forge will not give is logged and asked for again at the
-// next poll. A repository whose pull requests the forge will not
-// list is skipped, and the rest are polled. The poll state is then left where
-// it was, so the next poll covers the skipped repository's window too. The
-// error names each one.
+// otherwise. It looks every poll while the connection's webhooks have been
+// silent for the poll lookback, and every tipCheckInterval while they
+// arrive. A repository whose last index job ended without moving its index
+// waits jobs.OnboardRetryAfter for its next look, as the onboarding feeder
+// waits to offer a repository whose first index failed again. A branch that
+// the forge will not give is logged and asked for again at the next look. A
+// repository whose pull requests the forge will not list is skipped, and the
+// rest are polled. The poll state is then left where it was, so the next poll
+// covers the skipped repository's window too. The error names each one.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
 	// Capture the boundary before reading enablement, on the same clock as
 	// turned_at, so a concurrent enablement is caught by the next poll.
@@ -217,7 +229,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter); err != nil {
 			return err
 		}
-		state, err = store.ReadPollState(ctx, tx, account.ID())
+		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
 		return err
 	})
 	if err != nil {
@@ -227,6 +239,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	if state.Polled != nil && state.Polled.After(since) {
 		since = *state.Polled
 	}
+	checkTips := p.tipsDue(account.ID(), state.Delivered, file.PollLookback())
 	handled := 0
 	runs := map[string]bool{}
 	var skipped []error
@@ -254,16 +267,8 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		// it fails on the repository or its .kritika.yaml turns indexing
 		// off: one every poll would cost a job and its forge calls each
 		// time, and a runner pod for one that fails in its run.
-		if r.IndexedCommit != "" && !r.Indexing && !r.IndexUnmoved {
-			// The tip has no part in the pull requests' window that the poll
-			// state records.
-			err := p.pollTip(ctx, file, account, in, client, r, started)
-			switch {
-			case errors.Is(err, forge.ErrNotFound):
-				p.branchUnknown(in, r, err)
-			case err != nil:
-				p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", repo, "error", err)
-			}
+		if checkTips && r.IndexedCommit != "" && !r.Indexing && !r.IndexUnmoved {
+			checkTips = p.checkTip(ctx, file, account, in, client, r, started)
 		}
 		// Every open pull request is listed, not only those updated since
 		// the last poll. The ones that kritika holds open and that the forge
@@ -452,6 +457,50 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 		}
 	}
 	return nil
+}
+
+// tipsDue reports whether this poll of the account looks at its default
+// branches, and records that it does. It looks when the connection's
+// webhook, which last delivered at delivered, has been silent for lookback,
+// and otherwise when tipCheckInterval has passed since this process last
+// looked: a newly elected leader looks at once.
+func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.Duration) bool {
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	arriving := delivered != nil && delivered.After(now.Add(-lookback))
+	if last, ok := p.tipsChecked[accountID]; arriving && ok && now.Sub(last) < tipCheckInterval {
+		return false
+	}
+	if p.tipsChecked == nil {
+		p.tipsChecked = map[string]time.Time{}
+	}
+	p.tipsChecked[accountID] = now
+	return true
+}
+
+// checkTip looks at r's default branch with pollTip, and reports whether the
+// poll looks at the next repository's: past GitHub's rate limit, each would
+// only be refused too.
+func (p *Poller) checkTip(
+	ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection, client forge.Client, r store.PollRepo,
+	started time.Time,
+) bool {
+	// The tip has no part in the pull requests' window that the poll state
+	// records.
+	err := p.pollTip(ctx, file, account, in, client, r, started)
+	if _, limited := github.RetryAfter(err, time.Now()); limited {
+		p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
+			"repository", r.Name, "error", err)
+		return false
+	}
+	switch {
+	case errors.Is(err, forge.ErrNotFound):
+		p.branchUnknown(in, r, err)
+	case err != nil:
+		p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", r.Name, "error", err)
+	}
+	return true
 }
 
 // pollTip hands the dispatcher a push to r's default branch when its tip is
