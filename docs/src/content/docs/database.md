@@ -486,9 +486,15 @@ starts. It copies and rebuilds nothing:
    whose move is under way is split between the two partitions, and a
    search reads it whole. A move rewrites the generation's rows. Until
    autovacuum reclaims the old rows, the table needs room for both copies.
-4. Once the legacy partition is empty, the sweep drops it. Dropping it
-   takes the exclusive lock on `index_chunks` alone, with the same short,
-   retried waits as the first step.
+4. Once the legacy partition is empty, the sweep drops it. In the same
+   transaction it attaches the hash partitions again to cover every
+   `created_at`, as in a table created partitioned. So a chunk whose
+   `created_at` falls before the old bound, from a database clock that
+   stepped back, still has a partition. Attaching them again reads no chunk
+   and builds no index. It takes the exclusive lock on `index_chunks`, then
+   on `accounts`, `repositories` and `index_runs`, whose foreign key
+   triggers it moves, for a moment, with the same short, retried waits as
+   the first step.
 
 A search reads the legacy partition's vector index until it is dropped, so
 until then it costs what a search of the plain table did. A rebuild for a

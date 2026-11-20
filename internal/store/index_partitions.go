@@ -25,7 +25,8 @@ const indexChunkPartitions = 64
 // range bound, on, and is hash partitioned by index_run_id. A table
 // partitioned from one of a build before partitioning also has
 // index_chunks_legacy for the chunks created before from (see
-// PartitionIndexChunks).
+// PartitionIndexChunks), until DropLegacyIndexChunks drops it and extends
+// index_chunks_current to MINVALUE.
 //
 // Every partition has the vector index. Its access method is VectorChord's:
 // it partitions and quantises rather than building a graph, so it builds fast
@@ -337,10 +338,18 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool
 
 // DropLegacyIndexChunks drops index_chunks_legacy once DrainLegacyIndexChunks
 // has emptied it, and reports whether it did. Searches then read the hash
-// partition of their generation alone. Dropping it takes the exclusive lock
-// of index_chunks, for which it gives way as PartitionIndexChunks does, but
-// none on the tables that its foreign keys reference, which detaching it
-// first would take. Leader only.
+// partition of their generation alone.
+//
+// In the same transaction, index_chunks_current is attached again to cover
+// every created_at, from MINVALUE, as in a table created partitioned.
+// Otherwise a chunk created before the legacy bound, by a database clock
+// that stepped back, has no partition and its insert fails. Attaching it
+// again reads no chunk: created_at is NOT NULL, which is all the new bound
+// asks, and its indexes and foreign keys become the table's again rather
+// than being built. Detaching and attaching it does take the exclusive lock
+// of the tables that its foreign keys reference, for a moment, as their
+// triggers are moved. It takes index_chunks first and gives way for each
+// lock, as PartitionIndexChunks does. Leader only.
 func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: DropLegacyIndexChunks needs the owner connection")
@@ -356,16 +365,27 @@ func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil || !legacy {
 				return err
 			}
-			// Read before the lock, so that the read does not hold up
-			// searches. Every created_at that a write sets is past the
-			// partition's bound, so no chunk enters it again.
+			// Read before the lock, so that a partition with chunks does not
+			// hold up searches, and again under it, as a write whose clock is
+			// behind the bound can still add one.
 			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
 				return err
 			}
 			if err := yieldLocks(ctx, tx); err != nil {
 				return err
 			}
-			for _, stmt := range []string{`LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`, `DROP TABLE index_chunks_legacy`} {
+			if _, err := tx.Exec(ctx, `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
+				return err
+			}
+			for _, stmt := range []string{
+				`LOCK TABLE accounts, repositories, index_runs IN ACCESS EXCLUSIVE MODE`,
+				`DROP TABLE index_chunks_legacy`,
+				`ALTER TABLE index_chunks DETACH PARTITION index_chunks_current`,
+				`ALTER TABLE index_chunks ATTACH PARTITION index_chunks_current FOR VALUES FROM (MINVALUE) TO (MAXVALUE)`,
+			} {
 				if _, err := tx.Exec(ctx, stmt); err != nil {
 					return err
 				}

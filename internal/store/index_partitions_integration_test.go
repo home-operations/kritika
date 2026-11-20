@@ -232,6 +232,7 @@ func TestIndexChunksPartitioned(t *testing.T) {
 		t.Fatalf("index_chunks kind %q with %d hash partitions and %d vector indexes; want partitioned, %d of each",
 			kind, leaves, vectorIndexes, indexChunkPartitions)
 	}
+	checkFreshLayout(t, s)
 	account := accountID(t, s, "index-parts")
 	repo := configfile.RepositoryID(account, "index-parts/one")
 	run := partitionRun(t, s, account, repo, true, "a.go", "b.go")
@@ -348,6 +349,29 @@ func legacyExists(t *testing.T, s *Store) bool {
 		t.Fatal(err)
 	}
 	return legacy
+}
+
+// checkFreshLayout checks that index_chunks is laid out as a new one is: the
+// hash partitions cover every created_at, and they keep the partitioned
+// table's indexes and foreign keys, not copies of them.
+func checkFreshLayout(t *testing.T, s *Store) {
+	t.Helper()
+	var bound string
+	var partitions, indexes, keys, inherited int
+	if err := s.owner.QueryRow(t.Context(), `SELECT
+			(SELECT pg_get_expr(relpartbound, oid) FROM pg_class WHERE oid = 'index_chunks_current'::regclass),
+			(SELECT count(*) FROM pg_inherits WHERE inhparent = 'index_chunks'::regclass),
+			(SELECT count(*) FROM pg_inherits h JOIN pg_index i ON i.indexrelid = h.inhrelid
+			 WHERE i.indrelid = 'index_chunks_current'::regclass),
+			(SELECT count(*) FROM pg_constraint WHERE conrelid = 'index_chunks_current'::regclass AND contype = 'f'),
+			(SELECT count(*) FROM pg_constraint WHERE conrelid = 'index_chunks_current'::regclass AND contype = 'f' AND conparentid <> 0)`).
+		Scan(&bound, &partitions, &indexes, &keys, &inherited); err != nil {
+		t.Fatal(err)
+	}
+	if bound != "FOR VALUES FROM (MINVALUE) TO (MAXVALUE)" || partitions != 1 || indexes != 4 || keys != 3 || inherited != 3 {
+		t.Fatalf("index_chunks_current %s, one of %d partitions, with %d of the table's indexes and %d foreign keys, %d inherited;"+
+			" want FROM (MINVALUE) TO (MAXVALUE), one of 1, 4 and 3, 3 inherited", bound, partitions, indexes, keys, inherited)
+	}
 }
 
 // searchPlan is the plan of the application's search of the generation.
@@ -488,6 +512,78 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	}
 }
 
+// TestDropLegacyIndexChunksYieldsToSearch: a search that read repositories
+// and then waits for index_chunks behind the drop, which then waits for
+// repositories, finishes. The drop gives way, and drops the legacy partition
+// once the search ends.
+func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-drop-yield"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-drop-yield", "index-drop-yield/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+	account := accountID(t, s, "index-drop-yield")
+	repo := configfile.RepositoryID(account, "index-drop-yield/one")
+	run := partitionRun(t, s, account, repo, true, "a.go")
+	partitionLegacy(t, s)
+	drainLegacy(t, s)
+	var table uint32
+	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid`).Scan(&table); err != nil {
+		t.Fatal(err)
+	}
+
+	// A writer holds index_chunks, so the drop queues for it.
+	writer, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = writer.Rollback(context.Background()) }()
+	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	dropped := make(chan error, 1)
+	go func() {
+		_, err := s.DropLegacyIndexChunks(ctx)
+		dropped <- err
+	}()
+	waitForLockWait(t, s, table, "AccessExclusiveLock", nil)
+	searched := make(chan error, 1)
+	searchedDone := make(chan struct{})
+	go func() {
+		defer close(searchedDone)
+		searched <- s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM repositories`).Scan(&n); err != nil {
+				return err
+			}
+			return tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, run).Scan(&n)
+		})
+	}()
+	waitForLockWait(t, s, table, "AccessShareLock", searchedDone)
+	if err := writer.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-searched; err != nil {
+		t.Fatalf("the search failed beside the drop: %v", err)
+	}
+	if err := <-dropped; err != nil {
+		t.Logf("the drop gave way: %v", err)
+	}
+	if _, err := s.DropLegacyIndexChunks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if legacyExists(t, s) {
+		t.Fatal("the empty legacy partition was kept")
+	}
+	checkFreshLayout(t, s)
+	if got := similarPaths(t, s, account, run); strings.Join(got, ",") != "a.go" {
+		t.Fatalf("search after the drop found %v, want a.go", got)
+	}
+}
+
 // TestPartitionIndexChunksFromLegacy: the retention sweep makes an
 // index_chunks of a build before partitioning the legacy partition of a
 // partitioned one, keeping its chunks, indexes and foreign keys. New chunks
@@ -563,6 +659,21 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	if legacyExists(t, s) {
 		t.Fatal("the empty legacy partition was kept")
 	}
+	checkSearchAfterLegacyDrop(t, s, account, one, runOne)
+	if moved, removed, err := s.DrainLegacyIndexChunks(ctx); err != nil || moved+removed != 0 {
+		t.Fatalf("drain without a legacy partition = %d, %d, %v", moved, removed, err)
+	}
+	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || dropped {
+		t.Fatalf("DropLegacyIndexChunks without a legacy partition = %v, %v", dropped, err)
+	}
+}
+
+// checkSearchAfterLegacyDrop checks that once the legacy partition is
+// dropped, both searches read runOne's partition alone, the table has the
+// layout of a fresh one, and a chunk dated before the dropped partition's
+// bound still has a partition.
+func checkSearchAfterLegacyDrop(t *testing.T, s *Store, account, repository, runOne string) {
+	t.Helper()
 	if got := similarPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
 		t.Fatalf("search after the drain found %v, want a.go,b.go", got)
 	}
@@ -575,11 +686,20 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	if plan := lexicalPlan(t, s, account, runOne); len(partitionsRead(plan)) != 1 {
 		t.Fatalf("the search by name after the drain read %v, not one partition alone:\n%s", partitionsRead(plan), strings.Join(plan, "\n"))
 	}
-	if moved, removed, err := s.DrainLegacyIndexChunks(ctx); err != nil || moved+removed != 0 {
-		t.Fatalf("drain without a legacy partition = %d, %d, %v", moved, removed, err)
+	checkFreshLayout(t, s)
+	// A chunk created before the dropped partition's bound, as by a database
+	// clock that stepped back, still has a partition.
+	if _, err := s.owner.Exec(t.Context(), `INSERT INTO index_chunks
+			(account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding, created_at)
+		VALUES ($1, $2, $3, 'early.go', 1, 2, 'package main', '[1,2,0,0,0,0,0,0]', now() - interval '1 day')`,
+		account, repository, runOne); err != nil {
+		t.Fatalf("insert of a chunk created before the legacy bound: %v", err)
 	}
-	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || dropped {
-		t.Fatalf("DropLegacyIndexChunks without a legacy partition = %v, %v", dropped, err)
+	if got := similarPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go,early.go" {
+		t.Fatalf("search after an early chunk found %v, want a.go,b.go,early.go", got)
+	}
+	if plan := searchPlan(t, s, account, runOne); strings.Count(plan, " on index_chunks_") != 1 {
+		t.Fatalf("the search after an early chunk did not read one partition alone:\n%s", plan)
 	}
 }
 
