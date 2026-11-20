@@ -692,7 +692,7 @@ and the GitHub repository for Renovate to follow:
 ```yaml
 tools:
   # renovate: datasource=github-releases depName=home-operations/flate
-  aqua:home-operations/flate: v0.7.3
+  aqua:home-operations/flate: v0.8.0
 ```
 
 Then give Renovate the manager. It takes the tag as the version, so the
