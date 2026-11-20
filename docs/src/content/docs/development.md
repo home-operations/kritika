@@ -311,6 +311,79 @@ must count against a candidate. Neither stage harness reproduces production
 slot waits, gateway accounting or fallback routing, so its latency measures
 model calls rather than the entire publication stage.
 
+### Similar-code retrieval
+
+The similar-code search is measured offline too, against a repository's own
+history, with no model key. The evaluation indexes the tree a number of
+first-parent commits before the head, as an index run would, and asks for
+each of those commits what a review of it asks: its changed regions, with
+its changed paths left out. It reports the vector search alone, the search
+by name alone and the two fused, and with a reranker, each search reranked.
+
+```sh
+KRITIKA_RETRIEVAL_EVAL=1 \
+KRITIKA_EVAL_EMBED_URL=http://localhost:8080/v1 \
+KRITIKA_EVAL_EMBED_MODEL=jinaai/jina-embeddings-v2-base-code \
+KRITIKA_EVAL_EMBED_DIMS=768 \
+KRITIKA_EVAL_CACHE=/tmp/kritika-eval \
+  mise run test-integration -- -run '^TestRetrievalEval$' -v -timeout 3h
+```
+
+| Variable                          | Default            | Purpose                                                                                      |
+| --------------------------------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| `KRITIKA_EVAL_REPO`               | this repository    | the repository whose history is measured                                                     |
+| `KRITIKA_EVAL_COMMITS`            | 60                 | the commits asked about; the tree indexed is the one before them                             |
+| `KRITIKA_EVAL_EMBED_URL`          | hashed trigrams    | an OpenAI-compatible embeddings endpoint. Without it, a stand-in that measures plumbing only |
+| `KRITIKA_EVAL_EMBED_MODEL`/`DIMS` | `trigrams`, 256    | the model and its dimension                                                                  |
+| `KRITIKA_EVAL_CACHE`              | a temporary folder | where vectors are kept, by text, between runs                                                |
+| `KRITIKA_EVAL_FLOOR`              | 0.5                | `similarFloor`                                                                               |
+| `KRITIKA_EVAL_DEPTH`              | 4                  | how many chunks each search finds for a query without a reranker                             |
+| `KRITIKA_EVAL_RERANK_URL`         |                    | a Text Embeddings Inference reranker, which adds the reranked variants                       |
+| `KRITIKA_EVAL_RERANK_CANDIDATES`  | 50                 | the candidates of each query reranked                                                        |
+
+No reviewer judges the answers. Two proxies stand in for relevance:
+
+- Definitions: the chunks outside the change that declare a name, declared
+  at most twice in the tree, that its added lines use (for a query, that
+  its text uses).
+- Co-change: the files that changed with the change's files (for a query,
+  with its file) in at least two other commits.
+
+For each commit, `hit@10` is whether the answer of up to ten chunks holds
+any relevant chunk, `recall` the share of the definitions it holds and
+`precision` the share of its chunks in co-changed files. For each query,
+`hit@4` and `mrr` (mean reciprocal rank) are of its four best candidates,
+before the answer's limits across queries.
+
+On 2026-11-20 this repository was measured with
+`jinaai/jina-embeddings-v2-base-code` served by Text Embeddings Inference
+1.9.4 on a CPU: 9,499 chunks of 1,034 files, 60 commits (341 queries with
+definitions, 285 with co-changed files), the defaults otherwise:
+
+| Variant | defs hit@10 | co hit@10 | co precision | query defs hit@4 | query defs mrr | query co hit@4 | query co mrr |
+| ------- | ----------- | --------- | ------------ | ---------------- | -------------- | -------------- | ------------ |
+| vector  | 0.326       | 0.724     | 0.342        | 0.103            | 0.063          | 0.533          | 0.385        |
+| lexical | 0.419       | 0.638     | 0.368        | 0.129            | 0.085          | 0.463          | 0.363        |
+| hybrid  | 0.372       | 0.741     | 0.363        | 0.126            | 0.083          | 0.604          | 0.430        |
+
+The fused search found more of both kinds than the vector search alone on
+every measure, so it is on by default. The proxies favour different
+searches, definitions the search by name and co-change the vector search,
+and the fused one comes close to the better of the two on each. The
+sample is one repository's recent history, small enough that a difference
+of a few commits moves a figure by several hundredths.
+
+A run with `BAAI/bge-reranker-base`, a general-purpose text reranker, over
+20 candidates, over an earlier window of 60 commits, found fewer
+definitions than the fused search without it (query hit@4 0.074 against 0.117) and about as
+many co-changed files (0.540 against 0.520). A reranker is off by default.
+Measure one meant for code on your own repositories before you turn it on.
+
+In the run above, the search by name took 70 ms a request, of up to twelve
+queries, against 4 ms for the vector search, both with the race detector
+on. It reads every word of the generation's chunks once, so its time grows
+with the repository.
+
 ## Cluster development loop
 
 Everything that touches a private cluster lives in the gitignored
