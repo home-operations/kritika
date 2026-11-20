@@ -695,6 +695,15 @@ release from before index formats does not wait: it can update an index
 that the new release built with chunks of its own format. The leader then
 rebuilds that index too, as it does one of another format.
 
+A runner of the new release can also report to a replica of the release
+before it. That replica refuses a report with a field that only the new
+release sends, such as the signature of a declaration's window. The runner
+sends the report again for up to three minutes, as it does one that a
+replica without the route refuses, by which time a rollout has usually
+replaced the old replicas. A runner that still fails costs its index job one
+of three attempts. When a job spends them all, the next poll queues the
+push again, and the onboarding feeder offers an index not yet built again.
+
 ### Prompts
 
 Many embedding models are trained with a task prompt in front of what
