@@ -413,7 +413,8 @@ The agent can still read an ignored path with `read_file`, or its diff
 with `read_diff`. `ignore` is not an access restriction.
 
 Changing the effective ignore rules triggers a full rebuild on the next
-index run. The rebuild includes files whose contents did not change.
+index run. The rebuild chunks every file again, but it sends the embedder
+only the chunks whose text the repository's index does not already hold.
 Editing instance configuration does not queue index jobs by itself. To
 apply new ignore rules immediately, reindex an idle repository from the
 dashboard.

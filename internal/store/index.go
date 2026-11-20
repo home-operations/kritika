@@ -45,6 +45,9 @@ func (s *Store) EnsureIndexSchema(
 		case !ok:
 			return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
 		case cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt:
+			if err := addContentHash(ctx, tx); err != nil {
+				return err
+			}
 			return s.applyIndexFormat(ctx, tx, cur.Format)
 		}
 		// No generation is valid for a different embedder, so detach every
@@ -105,6 +108,33 @@ func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (IndexSchema, bool, error) {
 	return s, true, nil
 }
 
+// contentHashIndex finds the chunks of a repository that hold a content
+// hash, as migration 0064 creates it.
+const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_idx ON index_chunks (repository_id, content_hash)
+	WHERE content_hash IS NOT NULL`
+
+// addContentHash adds the content hash column, and its index, to an
+// index_chunks that a build before them created. During a rollout, such a
+// build can still be leader after the migration ran and rebuild the table
+// for a new embedder. It looks first, as ALTER TABLE takes the table's
+// exclusive lock even when the column exists.
+func addContentHash(ctx context.Context, tx pgx.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
+		WHERE attrelid = 'index_chunks'::regclass AND attname = 'content_hash' AND NOT attisdropped)`).Scan(&exists); err != nil {
+		return fmt.Errorf("store: read index_chunks columns: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	for _, stmt := range []string{`ALTER TABLE index_chunks ADD COLUMN content_hash bytea`, contentHashIndex} {
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("store: add index content hash: %w", err)
+		}
+	}
+	return nil
+}
+
 func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
 	app := pgx.Identifier{appRole}.Sanitize()
 	stmts := []string{
@@ -122,9 +152,11 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 			scope         text        NOT NULL DEFAULT '',
 			text          text        NOT NULL,
 			embedding     halfvec(%d) NOT NULL,
+			content_hash  bytea,
 			created_at    timestamptz NOT NULL DEFAULT now()
 		)`, dims),
 		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
+		contentHashIndex,
 		`CREATE INDEX IF NOT EXISTS index_chunks_account_id_idx ON index_chunks (account_id)`,
 		// VectorChord's access method: it partitions and quantises rather
 		// than building a graph, so it builds fast and answers a filtered

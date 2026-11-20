@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -94,7 +96,7 @@ func TestIndexBatchUsage(t *testing.T) {
 					return err
 				}
 				_, err = tx.Exec(ctx, `INSERT INTO index_staging(runner_run_id,account_id,path,start_line,end_line,text)
-     SELECT $1,$2,'main.go',n,n,'func f() {}' FROM generate_series(1,2) n`, runner, account.ID())
+     SELECT $1,$2,'main.go',n,n,'func f'||n||'() {}' FROM generate_series(1,2) n`, runner, account.ID())
 				return err
 			}); err != nil {
 				t.Fatal(err)
@@ -143,5 +145,138 @@ func TestIndexBatchUsage(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestIndexReusesVectors: a chunk whose text the account's index already
+// holds, embedded by the same embedder, takes the vector it holds rather
+// than be embedded again, and a text that a batch holds twice is embedded
+// once. Only what the embedder is sent counts as usage.
+func TestIndexReusesVectors(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	repo := configfile.RepositoryID(account.ID(), "reuse/repo")
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name) VALUES($1,$2,'reuse/repo')`, repo, account.ID())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush}
+	inserted, err := queue.Insert(ctx, args, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id=$1`, inserted.Job.ID); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = 'running', attempt = 1 WHERE id = $1`, inserted.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	inserted.Job.State, inserted.Job.Attempt = "running", 1
+	job := &river.Job[jobs.IndexArgs]{JobRow: inserted.Job, Args: args}
+
+	// Each text the embedder is sent gets a vector of its own, which halfvec
+	// stores exactly.
+	vectors := map[string][]float32{}
+	var sent [][]string
+	embed := indexEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+		sent = append(sent, slices.Clone(inputs))
+		out := make([][]float32, len(inputs))
+		for i, in := range inputs {
+			v := make([]float32, 8)
+			v[len(vectors)%8] = float32(len(vectors) + 1)
+			vectors[in], out[i] = v, v
+		}
+		return out, int64(10 * len(inputs)), nil
+	})
+	w := Index{Store: st, Logger: slog.New(slog.DiscardHandler), batch: 2}
+	// build stages texts as one file's chunks, in order, and embeds them as
+	// a full build at commit. It returns the run's usage rows and tokens.
+	build := func(commit string, texts ...string) (rows int, tokens int64) {
+		t.Helper()
+		sent = nil
+		var run, runner string
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			var err error
+			run, runner, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
+				AccountID: account.ID(), RepositoryID: repo, Commit: commit, Mode: store.IndexModeFull, Trigger: jobs.TriggerPush,
+				Embedding: *file.Embedding, IgnoreHash: indexIgnoreHash(nil), JobID: job.ID, StrayAfter: time.Hour,
+			})
+			if err != nil {
+				return err
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO index_packs(runner_run_id,account_id,mode,chunk_count) VALUES($1,$2,'full',$3)`,
+				runner, account.ID(), len(texts)); err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx, `INSERT INTO index_staging(runner_run_id,account_id,path,start_line,end_line,text)
+				SELECT $1, $2, 'main.go', n, n, t FROM unnest($3::text[]) WITH ORDINALITY AS s(t, n)`, runner, account.ID(), texts)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, nil, 1); err != nil {
+			t.Fatalf("embed: %v", err)
+		}
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(sum(input_tokens), 0) FROM usage WHERE runner_run_id = $1 AND role = 'embedding'`,
+				runner).Scan(&rows, &tokens); err != nil {
+				return err
+			}
+			// Every chunk holds the vector its text was first embedded to.
+			var wrong []string
+			for text, v := range vectors {
+				var n int
+				if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1 AND text = $2
+					AND (embedding <> $3::halfvec OR content_hash IS NULL)`, run, text, model.VectorLiteral(v)).Scan(&n); err != nil {
+					return err
+				}
+				if n > 0 {
+					wrong = append(wrong, text)
+				}
+			}
+			if len(wrong) > 0 {
+				t.Errorf("chunks of %q hold another vector than their text's, or no content hash", wrong)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return rows, tokens
+	}
+	// Batches of two: A twice in one, A again in the next.
+	if rows, tokens := build("one", "func reuseA() {}", "func reuseA() {}", "func reuseB() {}", "func reuseA() {}", "func reuseC() {}"); rows != 3 || tokens != 30 {
+		t.Fatalf("first build: %d usage rows, %d tokens; want 3 and 30 for the three texts", rows, tokens)
+	}
+	if want := [][]string{{"main.go\nfunc reuseA() {}"}, {"main.go\nfunc reuseB() {}"}, {"main.go\nfunc reuseC() {}"}}; !slices.EqualFunc(sent, want, slices.Equal) {
+		t.Fatalf("first build sent %q, want %q: each text once", sent, want)
+	}
+	// A rebuild that changed one function embeds that one alone.
+	if rows, tokens := build("two", "func reuseA() {}", "func reuseB() {}", "func reuseC2() {}", "func reuseC() {}"); rows != 1 || tokens != 10 {
+		t.Fatalf("rebuild: %d usage rows, %d tokens; want 1 and 10", rows, tokens)
+	}
+	if want := [][]string{{"main.go\nfunc reuseC2() {}"}}; !slices.EqualFunc(sent, want, slices.Equal) {
+		t.Fatalf("rebuild sent %q, want %q", sent, want)
+	}
+	// A rebuild of an unchanged tree sends nothing.
+	if rows, tokens := build("three", "func reuseA() {}", "func reuseB() {}", "func reuseC2() {}", "func reuseC() {}"); rows != 0 || tokens != 0 || len(sent) != 0 {
+		t.Fatalf("unchanged rebuild: %d usage rows, %d tokens, sent %q; want none", rows, tokens, sent)
 	}
 }

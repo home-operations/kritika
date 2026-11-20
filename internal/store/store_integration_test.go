@@ -499,6 +499,53 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	}
 }
 
+// TestIndexContentHashColumn: index_chunks has its content hash column and
+// index however it was made: created by the leader, migrated from a table
+// made before them, or made without them by the leader of a build before
+// them, as during a rollout, and then kept by a leader of this build.
+func TestIndexContentHashColumn(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	check := func(how string) {
+		t.Helper()
+		var column, index bool
+		if err := s.owner.QueryRow(ctx, `SELECT
+			EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_chunks'::regclass AND attname = 'content_hash' AND NOT attisdropped),
+			to_regclass('index_chunks_content_hash_idx') IS NOT NULL`).Scan(&column, &index); err != nil {
+			t.Fatal(err)
+		}
+		if !column || !index {
+			t.Fatalf("%s: content_hash column %v, index %v; want both", how, column, index)
+		}
+	}
+	drop := func() {
+		t.Helper()
+		if _, err := s.owner.Exec(ctx, `ALTER TABLE index_chunks DROP COLUMN content_hash`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	check("created")
+	drop()
+	if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = '0064_index_content_hash'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	check("migrated")
+	drop()
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	check("kept by a leader")
+}
+
 // TestEnsureIndexSchemaRebuildsForANewEmbedder: the same embedder leaves
 // the index alone. Another document prompt, model or dimension drops every
 // generation with the table and leaves each repository to onboard afresh.

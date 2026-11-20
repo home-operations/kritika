@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // embedBatch is how many staged chunks are embedded and inserted at once.
@@ -357,24 +359,7 @@ func (w *Index) embed(
 			if err != nil || len(batch) == 0 {
 				return err
 			}
-			texts := make([]string, len(batch))
-			for i, c := range batch {
-				texts[i] = embedText(emb.DocumentPrompt, c)
-			}
-			vectors, used, err := embedder.Embed(ctx, texts)
-			w.Metrics.ModelCall(account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
-			if err == nil || used > 0 {
-				// Provider usage survives cancellation and failures to store its vectors.
-				dctx, cancel := detach(ctx)
-				uerr := w.Store.WithAccount(dctx, args.AccountID, func(tx pgx.Tx) error {
-					return store.InsertUsage(dctx, tx, store.Usage{
-						AccountID: args.AccountID, RepositoryID: args.RepositoryID, RunnerRunID: runnerRunID,
-						Role: store.RoleEmbedding, Model: emb.Model, Input: used,
-					})
-				})
-				cancel()
-				err = errors.Join(err, uerr)
-			}
+			vectors, err := w.vectorsFor(ctx, args, account, embedder, emb, runnerRunID, batch)
 			if err != nil {
 				return err
 			}
@@ -433,6 +418,84 @@ func (w *Index) embed(
 		return nil
 	})
 	return total, pack.Mode, err
+}
+
+// vectorsFor returns a vector for each chunk of batch and sets each chunk's
+// content hash. A chunk whose hash the repository's index already holds
+// takes the vector held. The others are embedded, each distinct text once, and
+// only their tokens count as usage.
+func (w *Index) vectorsFor(
+	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
+	runnerRunID string, batch []store.StagedChunk,
+) ([][]float32, error) {
+	texts := make([]string, len(batch))
+	hashes := make([][]byte, len(batch))
+	for i := range batch {
+		texts[i] = embedText(emb.DocumentPrompt, batch[i])
+		hashes[i] = contentHash(emb, texts[i])
+		batch[i].ContentHash = hashes[i]
+	}
+	var held map[string][]float32
+	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		var err error
+		held, err = store.IndexVectors(ctx, tx, args.RepositoryID, hashes)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	vectors := make([][]float32, len(batch))
+	var missing []string
+	sent := map[string]int{}
+	for i, h := range hashes {
+		if v, ok := held[string(h)]; ok {
+			vectors[i] = v
+		} else if _, ok := sent[string(h)]; !ok {
+			sent[string(h)] = len(missing)
+			missing = append(missing, texts[i])
+		}
+	}
+	w.Metrics.IndexVectors(account.Key(), len(batch)-len(missing), len(missing))
+	if len(missing) == 0 {
+		return vectors, nil
+	}
+	embedded, used, err := embedder.Embed(ctx, missing)
+	w.Metrics.ModelCall(account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
+	if err == nil || used > 0 {
+		// Provider usage survives cancellation and failures to store its vectors.
+		dctx, cancel := detach(ctx)
+		uerr := w.Store.WithAccount(dctx, args.AccountID, func(tx pgx.Tx) error {
+			return store.InsertUsage(dctx, tx, store.Usage{
+				AccountID: args.AccountID, RepositoryID: args.RepositoryID, RunnerRunID: runnerRunID,
+				Role: store.RoleEmbedding, Model: emb.Model, Input: used,
+			})
+		})
+		cancel()
+		err = errors.Join(err, uerr)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(embedded) != len(missing) {
+		return nil, fmt.Errorf("worker: %d vectors for %d texts", len(embedded), len(missing))
+	}
+	for i, h := range hashes {
+		if vectors[i] == nil {
+			vectors[i] = embedded[sent[string(h)]]
+		}
+	}
+	return vectors, nil
+}
+
+// contentHash identifies the vector of an index chunk whose embedded text is
+// text: the text as the embedder is sent it, cut to its item limit, and the
+// embedder that embeds it. Two chunks of one hash take the same vector.
+func contentHash(emb *configfile.Embedding, text string) []byte {
+	_, _, itemChars := emb.Bounds()
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "%q %d %q\n", emb.Model, emb.Dims, emb.DocumentPrompt) // A hash.Hash never fails to write.
+	_, _ = io.WriteString(h, textcut.Prefix(text, itemChars))
+	return h.Sum(nil)
 }
 
 // indexMatches reports whether a job of trigger can step g, the active

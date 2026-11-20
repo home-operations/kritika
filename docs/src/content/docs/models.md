@@ -670,6 +670,11 @@ builds each index again, a few at a time, as `KRITIKA_ONBOARD_WINDOW`
 paces them. Removing the embedder keeps the index, and adding back the
 same model, dimension and document prompt uses it again.
 
+Any rebuild of a repository's index, and any update for a push, sends the
+embedder only the chunks whose text its index does not already hold for
+the same embedder. The others take the vector already stored, so the
+provider is not paid twice for code that did not change.
+
 A kritika release can also change how it chunks code or what it embeds
 for each chunk: the index format. A new format drops no index. Each
 repository's index keeps answering similar-code lookups, and pushes keep

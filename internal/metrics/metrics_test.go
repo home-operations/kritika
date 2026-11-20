@@ -86,6 +86,12 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if v := testutil.ToFloat64(m.indexChunks.WithLabelValues("onedr0p")); v != 565 {
 		t.Fatalf("index chunks = %v", v)
 	}
+	m.IndexVectors("onedr0p", 500, 65)
+	m.IndexVectors("onedr0p", 0, 3)
+	if r, e := testutil.ToFloat64(m.indexVectors.WithLabelValues("onedr0p", "reused")),
+		testutil.ToFloat64(m.indexVectors.WithLabelValues("onedr0p", "embedded")); r != 500 || e != 68 {
+		t.Fatalf("index vectors reused = %v, embedded = %v", r, e)
+	}
 	if v := testutil.ToFloat64(m.modelCost.WithLabelValues("onedr0p", "openai/gpt-6-sol", "review")); v != 0.005029 {
 		t.Fatalf("cost = %v", v)
 	}
@@ -119,8 +125,8 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 40 {
-		t.Fatalf("metric families = %d, want all 40", len(families))
+	if len(families) != 41 {
+		t.Fatalf("metric families = %d, want all 41", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)

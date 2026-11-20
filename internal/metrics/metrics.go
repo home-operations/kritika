@@ -30,6 +30,7 @@ type Metrics struct {
 	confidenceHeld *prometheus.CounterVec
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
+	indexVectors   *prometheus.CounterVec
 	contextChunks  *prometheus.CounterVec
 	runnerRuns     *prometheus.CounterVec
 	runnerDuration *prometheus.HistogramVec
@@ -131,6 +132,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		indexChunks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_chunks_total", Help: "Chunks embedded into the index.",
 		}, []string{lblAccount}),
+		indexVectors: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_index_vectors_total",
+			Help: "Vectors of index chunks, by outcome: reused from a chunk of the same text already indexed, or embedded.",
+		}, []string{lblAccount, lblOutcome}),
 		contextChunks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_context_chunks_total",
 			Help: "Context chunks a review's prompt was given, by stage (overlay, definition, caller, similar).",
@@ -248,6 +253,20 @@ func (m *Metrics) IndexRun(account, mode, status string, chunks int) {
 		if chunks > 0 {
 			m.indexChunks.WithLabelValues(account).Add(float64(chunks))
 		}
+	}
+}
+
+// IndexVectors counts the vectors of a batch of index chunks: those reused
+// from chunks of the same text already indexed, and those embedded.
+func (m *Metrics) IndexVectors(account string, reused, embedded int) {
+	if m == nil {
+		return
+	}
+	if reused > 0 {
+		m.indexVectors.WithLabelValues(account, "reused").Add(float64(reused))
+	}
+	if embedded > 0 {
+		m.indexVectors.WithLabelValues(account, "embedded").Add(float64(embedded))
 	}
 }
 

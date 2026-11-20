@@ -5,12 +5,14 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 func TestGenerationPublication(t *testing.T) {
@@ -249,4 +251,91 @@ func publishConcurrently(t *testing.T, s *Store, account string, publishFirst, p
 		t.Fatal(err)
 	}
 	return <-second
+}
+
+// TestIndexVectors: a chunk's vector is found by its content hash within its
+// repository, and copied as stored. A chunk of the same hash in another
+// repository is not found, nor one in another account, which row-level
+// security hides even when the query names its repository, nor a chunk
+// without a hash.
+func TestIndexVectors(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	listRepos(t, s, "beta", "beta/one")
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+   DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	one, two, betaOne := configfile.RepositoryID(alpha, "alpha/one"), configfile.RepositoryID(alpha, "alpha/two"), configfile.RepositoryID(beta, "beta/one")
+	// A vector that halfvec stores exactly, which a round trip through text
+	// or float32 must keep bit for bit.
+	stored := []float32{0.1, -0.333, 1e-3, 65504, 0, 0.5, -2, 3.14159}
+	insert := func(account, repository string, hash []byte, vector []float32) {
+		t.Helper()
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var run string
+			if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+				VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'running') RETURNING id`, account, repository).Scan(&run); err != nil {
+				return err
+			}
+			return InsertIndexChunks(ctx, tx, account, repository, run,
+				[]StagedChunk{{Path: "main.go", Text: "text", ContentHash: hash}}, [][]float32{vector})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shared, other, copied := []byte("shared-hash-0123456789abcdef0123"), []byte("other-hash-0123456789abcdef01234"), []byte("copied-hash-0123456789abcdef0123")
+	insert(alpha, one, shared, stored)
+	insert(alpha, one, nil, []float32{1, 0, 0, 0, 0, 0, 0, 0})
+	insert(alpha, two, other, []float32{0, 1, 0, 0, 0, 0, 0, 0})
+	insert(beta, betaOne, shared, []float32{0, 0, 1, 0, 0, 0, 0, 0})
+	lookup := func(account, repository string, hashes ...[]byte) map[string][]float32 {
+		t.Helper()
+		var found map[string][]float32
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var err error
+			found, err = IndexVectors(ctx, tx, repository, hashes)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	want := halfvecRound(t, s, stored)
+	found := lookup(alpha, one, shared, other, []byte("missing-hash-0123456789abcdef012"))
+	if len(found) != 1 || !slices.Equal(found[string(shared)], want) {
+		t.Fatalf("alpha/one found %v, want only the shared hash's stored vector %v", found, want)
+	}
+	if found := lookup(alpha, betaOne, shared); len(found) != 0 {
+		t.Fatalf("alpha found %v of beta's", found)
+	}
+	// The copy is the stored vector exactly: inserted again from what was
+	// read, it equals the source.
+	insert(alpha, one, copied, found[string(shared)])
+	var equal bool
+	if err := s.owner.QueryRow(ctx, `SELECT (SELECT embedding FROM index_chunks WHERE content_hash = $1 AND account_id = $3) =
+		(SELECT embedding FROM index_chunks WHERE content_hash = $2)`, shared, copied, alpha).Scan(&equal); err != nil {
+		t.Fatal(err)
+	}
+	if !equal {
+		t.Fatal("the copied vector differs from the one it was read from")
+	}
+}
+
+// halfvecRound is v as halfvec stores it.
+func halfvecRound(t *testing.T, s *Store, v []float32) []float32 {
+	t.Helper()
+	var out []float32
+	if err := s.owner.QueryRow(t.Context(), `SELECT $1::halfvec::real[]`, model.VectorLiteral(v)).Scan(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"slices"
 	"testing"
 
@@ -101,5 +103,36 @@ func TestIndexMatches(t *testing.T) {
 	}
 	if indexMatches(nil, emb, "ignore", jobs.TriggerPush) {
 		t.Fatal("no generation matches")
+	}
+}
+
+// TestIndexContentHash: two chunks share a content hash only when the
+// embedder gets the same text from them and embeds it the same way. Text
+// past the embedder's item limit is cut before it is sent, so it changes
+// nothing.
+func TestIndexContentHash(t *testing.T) {
+	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", MaxItemChars: 10}
+	base := contentHash(emb, "main.go\nfunc f() {}")
+	for _, tc := range []struct {
+		name string
+		emb  configfile.Embedding
+		text string
+		same bool
+	}{
+		{"same", *emb, "main.go\nfunc f() {}", true},
+		{"past the item limit", *emb, "main.go\nfunc g() {}", true},
+		{"other text", *emb, "util.go\nfunc f() {}", false},
+		{"another model", configfile.Embedding{Model: "other", Dims: 8, DocumentPrompt: "text: ", MaxItemChars: 10}, "main.go\nfunc f() {}", false},
+		{"another dimension", configfile.Embedding{Model: "model", Dims: 16, DocumentPrompt: "text: ", MaxItemChars: 10}, "main.go\nfunc f() {}", false},
+		{"another document prompt", configfile.Embedding{Model: "model", Dims: 8, MaxItemChars: 10}, "main.go\nfunc f() {}", false},
+		{"a longer item limit", configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", MaxItemChars: 20}, "main.go\nfunc f() {}", false},
+		{"a query prompt", configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", QueryPrompt: "q: ", MaxItemChars: 10}, "main.go\nfunc f() {}", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := contentHash(&tc.emb, tc.text)
+			if len(got) != sha256.Size || bytes.Equal(got, base) != tc.same {
+				t.Fatalf("hash %x against %x, want same %v", got, base, tc.same)
+			}
+		})
 	}
 }

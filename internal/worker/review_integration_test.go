@@ -1068,6 +1068,14 @@ func checkIndexEmbedFailure(
 	t.Helper()
 	active := activeIndexGeneration(ctx, t, st, accountID, repoID)
 	live := runChunks(ctx, t, st, accountID, active)
+	// The rebuild must embed: chunks without a content hash, as an index
+	// built before hashes holds, do not lend their vectors.
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE index_chunks SET content_hash = NULL WHERE index_run_id = $1`, active)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	fe.passes.Store(1)
 	fe.fail.Store(true)
 	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)

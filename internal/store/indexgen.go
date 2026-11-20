@@ -162,6 +162,10 @@ type StagedChunk struct {
 	ID                                        int64
 	Path, Language, Symbol, Kind, Scope, Text string
 	StartLine, EndLine                        int
+	// ContentHash identifies the vector that the worker embeds for the
+	// chunk, which it sets before InsertIndexChunks. IndexVectors finds a
+	// vector by it. Nil records none.
+	ContentHash []byte
 }
 
 // ReadStagedChunks reads up to limit of a runner run's staged chunks with
@@ -194,21 +198,49 @@ func InsertIndexChunks(
 	strs := func() []string { return make([]string, n) }
 	paths, langs, symbols, kinds, scopes, texts, embeddings := strs(), strs(), strs(), strs(), strs(), strs(), strs()
 	starts, ends := make([]int32, n), make([]int32, n)
+	hashes := make([][]byte, n)
 	for i, c := range batch {
 		paths[i], langs[i], symbols[i], kinds[i], scopes[i], texts[i] = c.Path, c.Language, c.Symbol, c.Kind, c.Scope, c.Text
 		starts[i], ends[i] = int32(c.StartLine), int32(c.EndLine)
-		embeddings[i] = model.VectorLiteral(vectors[i])
+		embeddings[i], hashes[i] = model.VectorLiteral(vectors[i]), c.ContentHash
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO index_chunks
-			(account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding)
-		SELECT $1, $2, $3, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text, c.embedding::halfvec
-		FROM unnest($4::text[], $5::int[], $6::int[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding)`,
-		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings); err != nil {
+			(account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding,
+			 content_hash)
+		SELECT $1, $2, $3, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text, c.embedding::halfvec,
+			c.content_hash
+		FROM unnest($4::text[], $5::int[], $6::int[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[],
+			$13::bytea[])
+			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash)`,
+		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings, hashes); err != nil {
 		return fmt.Errorf("store: insert chunks: %w", err)
 	}
 	return nil
+}
+
+// IndexVectors returns, by content hash, a vector that the repository's
+// index chunks hold for each of hashes that any holds. A chunk of any run
+// will do, the active generation's, the run being built or one left behind:
+// the hash covers the text and the embedder, and index_chunks holds the
+// vectors of one embedder alone. The vectors are as halfvec stores them,
+// which an insert stores again unchanged.
+func IndexVectors(ctx context.Context, tx pgx.Tx, repositoryID string, hashes [][]byte) (map[string][]float32, error) {
+	rows, err := tx.Query(ctx, `SELECT DISTINCT ON (content_hash) content_hash, embedding::real[] FROM index_chunks
+		WHERE repository_id = $1 AND content_hash = ANY($2::bytea[]) AND content_hash IS NOT NULL`, repositoryID, hashes)
+	if err != nil {
+		return nil, fmt.Errorf("store: find index vectors: %w", err)
+	}
+	found := map[string][]float32{}
+	var hash []byte
+	var vector []float32
+	if _, err := pgx.ForEachRow(rows, []any{&hash, &vector}, func() error {
+		found[string(hash)] = vector
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("store: find index vectors: %w", err)
+	}
+	return found, nil
 }
 
 // ErrGenerationChanged means another index run published after an
