@@ -119,11 +119,11 @@ func TestOnboardCandidates(t *testing.T) {
 	}
 	// east/stale's index was built with another document prompt.
 	exec(`WITH g AS (
-			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, document_prompt, mode, status)
-			SELECT r.account_id, r.id, 'abc', 'm', 8, p.prompt, 'full', 'completed'
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, document_prompt, mode, status, index_format)
+			SELECT r.account_id, r.id, 'abc', 'm', 8, p.prompt, 'full', 'completed', $3
 			FROM repositories r JOIN (VALUES ($1::uuid, ''), ($2::uuid, 'passage: ')) p (id, prompt) ON p.id = r.id
 			RETURNING id, repository_id)
-		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"], ids["east/stale"])
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"], ids["east/stale"], runspec.IndexFormat)
 	// east/reformat's index was built by a build of another index format.
 	exec(`WITH g AS (
 			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)

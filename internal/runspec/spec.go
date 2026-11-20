@@ -29,7 +29,7 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 43
+const Version = 44
 
 // IndexFormat is the format of an embedding index: how the runner chunks a
 // tree (internal/indexer) and the text that the worker embeds for each
@@ -38,7 +38,7 @@ const Version = 43
 // at a time, once the leader runs the new build. Raise Version with it when
 // the runner's chunks change, so a runner of the other build refuses the job
 // rather than stage chunks of a format that the worker does not record.
-const IndexFormat = 1
+const IndexFormat = 2
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
