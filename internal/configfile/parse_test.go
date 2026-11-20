@@ -104,6 +104,7 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"an embedder with a floor that is not a number", embeddingDoc("similarFloor: .nan"), "embedding.similarFloor must be between 0 and 1"},
 		{"a query prompt without a floor", embeddingDoc(`queryPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"a document prompt without a floor", embeddingDoc(`documentPrompt: "passage: "`), "need embedding.similarFloor set"},
+		{"a search prompt without a floor", embeddingDoc(`searchPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,13 +156,29 @@ func TestParseEmbedding(t *testing.T) {
 			t.Fatalf("Parse(similarMargin: %g) = %v, margin %v", margin, err, f)
 		}
 	}
-	if e.QueryPrompt != "" || e.DocumentPrompt != "" {
-		t.Fatalf("prompts = %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt)
+	if e.QueryPrompt != "" || e.DocumentPrompt != "" || e.SearchPrompt != "" {
+		t.Fatalf("prompts = %q, %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt, e.SearchPrompt)
 	}
 	f, err = Parse([]byte(strings.Replace(embeddingDoc("similarFloor: 0.3"), "embedding:\n",
 		"embedding:\n  queryPrompt: \"Instruct: find similar code\\nQuery:\"\n  documentPrompt: \"text: \"\n", 1)))
 	if err != nil || f.Embedding.QueryPrompt != "Instruct: find similar code\nQuery:" || f.Embedding.DocumentPrompt != "text: " {
 		t.Fatalf("prompts = %+v, %v; want them exactly as written", f.Embedding, err)
+	}
+	for _, tt := range []struct {
+		name, searchPrompt, diff, search string
+	}{
+		{name: "a search without a prompt of its own takes the query prompt", diff: "Instruct: find similar code\nQuery:",
+			search: "Instruct: find similar code\nQuery:"},
+		{name: "a search prompt of its own", searchPrompt: "Instruct: find the code described\nQuery:",
+			diff: "Instruct: find similar code\nQuery:", search: "Instruct: find the code described\nQuery:"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := *f.Embedding
+			e.SearchPrompt = tt.searchPrompt
+			if diff, search := e.PromptFor(false), e.PromptFor(true); diff != tt.diff || search != tt.search {
+				t.Fatalf("PromptFor = %q for a hunk, %q for a search; want %q, %q", diff, search, tt.diff, tt.search)
+			}
+		})
 	}
 	f, err = Parse([]byte("providers:\n  gw: { type: openai, baseUrl: https://gw.example/v1, apiKey: { env: TEST_KEY } }\n" +
 		"embedding: { model: gw/embed-large, dims: 8 }\n"))

@@ -283,7 +283,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	}
 	s.calls++
 	out, err := similarCode(ctx, s.gatewayURL, s.token, contextpack.SimilarRequest{
-		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)},
+		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)}, Kind: contextpack.SimilarKindSearch,
 	})
 	if err != nil {
 		return "", fmt.Errorf("agent: search_code: %w", err)

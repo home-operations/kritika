@@ -90,8 +90,8 @@ func TestSimilarContextExclusions(t *testing.T) {
 				t.Fatalf("%d similar requests, search_code offered %t; want %d, %t", len(gw.requests), search != nil, tt.requests, tt.offered)
 			}
 			for _, req := range gw.requests {
-				if req.Exclude != nil {
-					t.Fatalf("a request carries exclusions: %q", req.Exclude)
+				if req.Exclude != nil || req.Kind != contextpack.SimilarKindDiff {
+					t.Fatalf("a request carries exclusions %q, or is of kind %q", req.Exclude, req.Kind)
 				}
 			}
 		})

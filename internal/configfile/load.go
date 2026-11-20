@@ -326,8 +326,8 @@ func (f *File) validateEmbedding() error {
 	}
 	// Prompts move every score, up or down depending on the model, so the
 	// default floor can keep everything or nothing without a sign of it.
-	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "") {
-		return errors.New("configfile: embedding.queryPrompt and documentPrompt need embedding.similarFloor set, " +
+	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "" || e.SearchPrompt != "") {
+		return errors.New("configfile: embedding.queryPrompt, searchPrompt and documentPrompt need embedding.similarFloor set, " +
 			"since prompts move the scores the floor compares")
 	}
 	return nil

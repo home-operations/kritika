@@ -370,6 +370,11 @@ type Embedding struct {
 	// every repository's index, as a change of the model does.
 	QueryPrompt    string `yaml:"queryPrompt,omitempty"`
 	DocumentPrompt string `yaml:"documentPrompt,omitempty"`
+	// SearchPrompt goes in front of each search_code query in place of
+	// QueryPrompt: such a query mostly describes code, where a review's is
+	// code, and instruction-tuned embedders want a task for each. Unset, it
+	// is QueryPrompt.
+	SearchPrompt string `yaml:"searchPrompt,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load:
 	// its endpoint, the model's id on it, and its key.
@@ -380,6 +385,15 @@ type Embedding struct {
 
 // APIKeyValue returns the resolved API key.
 func (e *Embedding) APIKeyValue() Secret { return e.apiKey }
+
+// PromptFor is the prompt of a search_code query when search is true, and
+// of a review's hunk query otherwise.
+func (e *Embedding) PromptFor(search bool) string {
+	if search {
+		return cmp.Or(e.SearchPrompt, e.QueryPrompt)
+	}
+	return e.QueryPrompt
+}
 
 // MaxEmbedDims is the largest dimension the index's halfvec column takes.
 const MaxEmbedDims = 4000

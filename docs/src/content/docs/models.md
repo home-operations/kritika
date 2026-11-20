@@ -646,7 +646,8 @@ documentation alone.
 | `maxItemChars`   | 16,000  | characters in one input                                                                                                                            |
 | `similarFloor`   | 0.5     | the least cosine similarity a chunk needs to be offered as similar code. Required with a [prompt](#prompts)                                        |
 | `similarMargin`  | 0.1     | how far below the best match of its query a chunk can score and still be offered                                                                   |
-| `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query                                                                                  |
+| `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query of a review's diff                                                               |
+| `searchPrompt`   |         | text put, exactly as written, in front of each `search_code` query. Unset, `queryPrompt`                                                           |
 | `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                                                       |
 
 An embedder builds each repository's similar-code index. With an embedder,
@@ -691,20 +692,24 @@ Many embedding models are trained with a task prompt in front of what
 they embed, and their documentation recommends sending it. The prompt
 goes on queries, and for some models on documents too.
 
-`queryPrompt` goes in front of every similar-code query, both the
-review's diff hunks and the agent's `search_code` queries.
-`documentPrompt` goes in front of every indexed chunk, ahead of the path
-and symbol the chunk starts with. Each is used exactly as written: quote
-it so YAML keeps a trailing space, and write a newline as `\n` inside
-double quotes. When a prompt is unset, its inputs go as they are. In
-Helm, both go under `config.embedding`.
+The two kinds of query ask different things. A review's query is code: the
+changed lines of a hunk with a few lines around them, without the file's
+path, matched against code like it. A `search_code` query is mostly a
+description of code. `queryPrompt` goes in front of every query of a
+review's diff, and `searchPrompt` in front of every `search_code` query.
+Unset, `searchPrompt` is `queryPrompt`. `documentPrompt` goes in front of
+every indexed chunk, ahead of the path and symbol the chunk starts with.
+Each is used exactly as written: quote it so YAML keeps a trailing space,
+and write a newline as `\n` inside double quotes. When a prompt is unset,
+its inputs go as they are. In Helm, all three go under
+`config.embedding`.
 
 The model's documentation gives its prompts. These suit a review, where
-both sides are code:
+the documents are code:
 
 ```yaml
-# Voyage models, such as voyageai/voyage-code-4: what Voyage itself adds
-# for an input_type of query and of document
+# Voyage code models, such as voyageai/voyage-code-4: what Voyage itself
+# adds for an input_type of query and of document, for either kind of query
 queryPrompt: "Represent the query for retrieving supporting documents: "
 documentPrompt: "Represent the document for retrieval: "
 
@@ -713,14 +718,27 @@ documentPrompt: "Represent the document for retrieval: "
 queryPrompt: "task: sentence similarity | query: "
 documentPrompt: "task: sentence similarity | query: "
 
-# Qwen3-Embedding: a one-sentence instruction, on queries only
+# Qwen3-Embedding: a one-sentence instruction for each task, on queries
+# only, as "Instruct: {task}\nQuery:"
 queryPrompt: "Instruct: Given a code change, retrieve code that implements similar logic\nQuery:"
+searchPrompt: "Instruct: Given a description of code, retrieve the code it describes\nQuery:"
+
+# jina-code-embeddings: its code-to-code task for a review's hunks and its
+# text-to-code task for search_code, whose documents take the same prefix
+queryPrompt: "Find an equivalent code snippet given the following code snippet:\n"
+searchPrompt: "Find the most relevant code snippet given the following query:\n"
+documentPrompt: "Candidate code snippet:\n"
+
+# nomic-embed-code: a prefix on a query that searches for code, and none
+# on code, so a review's hunks go as they are
+searchPrompt: "Represent this query for searching relevant code: "
 ```
 
 The similarity task fits how a review compares a change with code like
 it. The same models' code-search pair, `task: code retrieval | query: `
 with `title: none | text: `, is for searching code with a query. That is
-closer to what `search_code` does, but kritika sends one pair for both.
+closer to what `search_code` does, but the index holds chunks embedded
+with one `documentPrompt`, so the similarity pair serves both kinds.
 OpenAI's `text-embedding-3` models and Mistral's `codestral-embed` take
 no prompt.
 
@@ -734,7 +752,7 @@ worth keeping, and set the margin to the gap that still holds the chunks
 worth keeping. A prompt counts toward `maxItemChars`, and at the defaults
 it leaves every query and chunk whole.
 
-A new `queryPrompt` applies once kritika restarts with it, as any
+A new `queryPrompt` or `searchPrompt` applies once kritika restarts with it, as any
 configuration change does, and needs no new index. `documentPrompt`
 shapes the stored vectors, so changing it rebuilds every repository's
 index, as a new model does.

@@ -43,7 +43,17 @@ const (
 type SimilarRequest struct {
 	Queries []string `json:"queries"`
 	Exclude []string `json:"exclude,omitempty"`
+	// Kind is what the queries are, which picks the embedder's prompt for
+	// them: SimilarKindDiff, as "" is, or SimilarKindSearch.
+	Kind string `json:"kind,omitempty"`
 }
+
+// Similar-code query kinds: the hunks of a review's diff, and the agent's
+// search_code queries.
+const (
+	SimilarKindDiff   = "diff"
+	SimilarKindSearch = "search"
+)
 
 // SimilarResponse is the gateway's answer: the nearest chunks, StageSimilar
 // each, and whether the repository has an index to search at all. So a run

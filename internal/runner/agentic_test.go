@@ -567,7 +567,7 @@ func TestSearchTool(t *testing.T) {
 		calls++
 		var req contextpack.SimilarRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		if len(req.Queries) != 1 || req.Queries[0] != "where is the retry" || req.Exclude != nil {
+		if len(req.Queries) != 1 || req.Queries[0] != "where is the retry" || req.Exclude != nil || req.Kind != contextpack.SimilarKindSearch {
 			t.Errorf("request = %+v", req)
 		}
 		_, _ = w.Write([]byte(`{"chunks":[{"stage":"similar","path":"retry.go","start_line":3,"end_line":9,"symbol":"retry","kind":"function",` +

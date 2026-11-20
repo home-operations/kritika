@@ -161,7 +161,7 @@ apps:
 	}
 }
 
-// TestSimilarPrompts: a query reaches the embedder led by the query
+// TestSimilarPrompts: a query reaches the embedder led by its kind's
 // prompt, and only an index built with the document prompt answers it.
 func TestSimilarPrompts(t *testing.T) {
 	ctx := t.Context()
@@ -173,7 +173,7 @@ func TestSimilarPrompts(t *testing.T) {
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
 review: { model: test/reviewer }
-embedding: { model: test/embed, dims: 8, queryPrompt: "query: ", documentPrompt: "passage: ", similarFloor: 0.5 }
+embedding: { model: test/embed, dims: 8, queryPrompt: "query: ", searchPrompt: "search: ", documentPrompt: "passage: ", similarFloor: 0.5 }
 apps:
   test:
     accounts: [similar-prompts]
@@ -225,7 +225,7 @@ apps:
 		Logger:    slog.New(slog.DiscardHandler),
 		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
 	}
-	search := func() contextpack.SimilarResponse {
+	search := func(body string, status int) contextpack.SimilarResponse {
 		t.Helper()
 		token, err := st.MintGatewayToken(ctx, store.GatewayGrant{
 			RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1000,
@@ -233,12 +233,15 @@ apps:
 		if err != nil {
 			t.Fatal(err)
 		}
-		req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(`{"queries":["hello"]}`))
+		req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		out := httptest.NewRecorder()
 		g.ServeHTTP(out, req)
-		if out.Code != http.StatusOK {
+		if out.Code != status {
 			t.Fatalf("status=%d: %s", out.Code, out.Body.String())
+		}
+		if status != http.StatusOK {
+			return contextpack.SimilarResponse{}
 		}
 		var resp contextpack.SimilarResponse
 		if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
@@ -247,15 +250,18 @@ apps:
 		return resp
 	}
 	seed("")
-	if resp := search(); resp.Indexed || len(resp.Chunks) != 0 {
+	if resp := search(`{"queries":["hello"]}`, http.StatusOK); resp.Indexed || len(resp.Chunks) != 0 {
 		t.Fatalf("an index built without the document prompt answered: %+v", resp)
 	}
 	seed("passage: ")
-	if resp := search(); !resp.Indexed || len(resp.Chunks) != 1 {
+	if resp := search(`{"queries":["hello"]}`, http.StatusOK); !resp.Indexed || len(resp.Chunks) != 1 {
 		t.Fatalf("the index built with the document prompt did not answer: %+v", resp)
 	}
-	if !slices.Equal(embedded, []string{"query: hello"}) {
-		t.Fatalf("embedded %q, want the query led by its prompt", embedded)
+	search(`{"queries":["hello"],"kind":"diff"}`, http.StatusOK)
+	search(`{"queries":["where is the retry"],"kind":"search"}`, http.StatusOK)
+	search(`{"queries":["hello"],"kind":"other"}`, http.StatusBadRequest)
+	if want := []string{"query: hello", "query: hello", "search: where is the retry"}; !slices.Equal(embedded, want) {
+		t.Fatalf("embedded %q, want %q: each query led by its kind's prompt", embedded, want)
 	}
 }
 

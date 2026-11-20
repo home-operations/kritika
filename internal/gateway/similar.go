@@ -68,9 +68,16 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("the request must carry between 1 and %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
 		return
 	}
+	switch req.Kind {
+	case "", contextpack.SimilarKindDiff, contextpack.SimilarKindSearch:
+	default:
+		refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("the query kind %q is neither %q nor %q", req.Kind,
+			contextpack.SimilarKindDiff, contextpack.SimilarKindSearch))
+		return
+	}
 	var prompt string
 	if e := c.file.Embedding; e != nil {
-		prompt = e.QueryPrompt
+		prompt = e.PromptFor(req.Kind == contextpack.SimilarKindSearch)
 	}
 	var chars int
 	for i, q := range req.Queries {
