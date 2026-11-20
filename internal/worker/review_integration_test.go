@@ -1735,7 +1735,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{
-			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueFollowUp: {MaxWorkers: 1},
+			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueIndexUpdate: {MaxWorkers: 1},
+			jobs.QueueFollowUp: {MaxWorkers: 1},
 		}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
 		Middleware: []rivertype.Middleware{river.WorkerMiddlewareFunc(deadline.wrap)},

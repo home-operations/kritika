@@ -915,7 +915,7 @@ environment variables remain supported.
 | `diffRetention`                | `KRITIKA_DIFF_RETENTION`                    | how long a review keeps the diff that it was made from, the context that it read and the repository files that it named. At least 24h. 720h unless set                                                                                                                                                                                            |
 | `reviewWorkers`                | `KRITIKA_REVIEW_WORKERS`                    | jobs that one replica runs at once in each of the separate review and follow-up queues. 2 per queue unless set. A review holds one for as long as it runs, so a provider [`concurrency`](/models/#concurrency) above it needs this raised for more reviews to run at once                                                                         |
 | `threadWorkers`                | `KRITIKA_THREAD_WORKERS`                    | finding resolution/restoration jobs that one replica runs at once, independently of model follow-ups. 1 unless set                                                                                                                                                                                                                                |
-| `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs that one replica runs at once. 1 unless set                                                                                                                                                                                                                                                                                            |
+| `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs that one replica runs at once in each of the `index` (first indexes, forced rebuilds) and `index_update` queues. 1 per queue unless set                                                                                                                                                                                                |
 | `leaderRetryInterval`          | `KRITIKA_LEADER_RETRY_INTERVAL`             | how often a replica retries the leader lock, and the holder makes sure that it still has it. 15s unless set                                                                                                                                                                                                                                       |
 | `gatewayTokenTtl`              | `KRITIKA_GATEWAY_TOKEN_TTL`                 | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first. 1h unless set                                                                                                                                                                                                                          |
 | `gatewayCacheDir`              | `KRITIKA_GATEWAY_CACHE_DIR`                 | where the gateway keeps downloads, in a directory of its own. It keeps what a repository's lock pins, from any host the egress rules allow. Nothing is kept unless set. The chart's `gatewayCache.enabled` renders it ([the gateway's cache](/security/#the-gateways-download-cache))                                                             |
@@ -977,6 +977,13 @@ parallelism than two idle follow-up workers. If queue-delay metrics show
 that it is needed, increase `threadWorkers`. Database connections and
 forge API limits remain shared with reviews, so raising worker counts
 does not guarantee higher throughput.
+
+Index jobs that keep indexed repositories at their default branch use an
+`index_update` queue of their own. An onboarding wave holds an `index`
+worker for each repository's whole first build, so it can fill every
+`index` worker in the fleet, but never delays an update. Each replica runs
+up to `indexWorkers` jobs on each queue, each with a runner pod. Updates
+queued on `index` by an earlier version finish there.
 
 Other keys in the file are `webUrl` (required public URL), `addr`,
 `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `executor` and

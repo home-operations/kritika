@@ -536,12 +536,13 @@ func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivert
 
 func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
-		jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueuePrepare:  {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueuePublish:  {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueueThread:   {MaxWorkers: cfg.ThreadWorkers},
-		jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
+		jobs.QueueReview:      {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueuePrepare:     {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueuePublish:     {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueueFollowUp:    {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueueThread:      {MaxWorkers: cfg.ThreadWorkers},
+		jobs.QueueIndex:       {MaxWorkers: cfg.IndexWorkers},
+		jobs.QueueIndexUpdate: {MaxWorkers: cfg.IndexWorkers},
 	}
 }
 

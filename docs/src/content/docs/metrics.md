@@ -80,10 +80,12 @@ across replicas. Keep the deployment's cluster label as well when querying
 multiple clusters. A failed read emits `kritika_queue_stats_up = 0` and omits
 the queue gauges. It does not report an empty queue or retain stale values.
 Known queues emit zero when empty. Queue labels are limited to `review`,
-`review_prepare`, `review_publish`, `followup`, `thread` and `index`.
-Preparation and publication each have their own worker capacity and retry
-attempts. Thread jobs already queued on `followup` remain attributed to that
-queue until they finish.
+`review_prepare`, `review_publish`, `followup`, `thread`, `index` and
+`index_update`. Preparation and publication each have their own worker
+capacity and retry attempts. Thread jobs already queued on `followup` remain
+attributed to that queue until they finish. `index` holds first indexes and
+forced rebuilds, and `index_update` the updates that keep indexes current.
+Updates already queued on `index` remain attributed to it until they finish.
 
 Runnable work includes overdue retries and scheduled jobs that wait for
 River's scheduler to promote them. It excludes future work, pending jobs,
