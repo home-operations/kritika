@@ -10,7 +10,7 @@ cluster in the same Kubernetes cluster, which this page sets up.
 ## What kritika needs
 
 - kritika needs Postgres 18 with VectorChord. The `vchord`
-  ([VectorChord](https://github.com/tensorchord/VectorChord)) and `vector`
+  ([VectorChord](https://github.com/pgsty/vchord)) and `vector`
   (pgvector) extensions must exist before the first start. `vchord` builds
   on the types from pgvector, and it must be in `shared_preload_libraries`.
 - kritika needs two roles. The chart requires them, and at start kritika
@@ -34,10 +34,13 @@ cluster in the same Kubernetes cluster, which this page sets up.
 ## The cluster
 
 CNPG's own `standard` image ships pgvector. VectorChord mounts into it from
-TensorChord's
-[`vchord-scratch`](https://docs.vectorchord.ai/vectorchord/admin/kubernetes.html)
+the
+[`ghcr.io/home-operations/vchord`](https://github.com/home-operations/containers/tree/main/apps/vchord)
 image as an
 [image volume extension](https://cloudnative-pg.io/docs/1.30/imagevolume_extensions/).
+That image packages the releases of [pgsty/vchord](https://github.com/pgsty/vchord),
+a maintained fork of VectorChord under AGPL-3.0-only. TensorChord's own
+releases stop at 1.1.1.
 The two-instance example favors availability when its standby is unavailable.
 While synchronous replication is active and commits use
 `synchronous_commit=on`, acknowledgement waits for the standby to flush WAL
@@ -60,7 +63,7 @@ spec:
     extensions:
       - name: vchord
         image:
-          reference: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
+          reference: ghcr.io/home-operations/vchord:1.3.0
         # The image keeps Debian's paths rather than CNPG's default
         # /extensions/vchord/lib and /extensions/vchord/share.
         dynamic_library_path:
@@ -96,7 +99,9 @@ spec:
   them, use TensorChord's
   [`cloudnative-vectorchord`](https://github.com/tensorchord/cloudnative-vectorchord)
   image instead and leave out `extensions`. That image has VectorChord built
-  in and is tagged `<postgres>-<vchord>` (`18.6-1.1.1`).
+  in and is tagged `<postgres>-<vchord>` (`18.6-1.1.1`). It stays on
+  TensorChord's 1.1.1, without the fork's fixes, so set the `Database`'s
+  `vchord` version to `"1.1.1"` with it.
 - `dataDurability: preferred` relaxes the synchronous requirement while the
   standby is unavailable. `required` keeps the requested synchronous quorum
   and blocks commits without enough standbys. Neither replaces backups or
@@ -115,7 +120,7 @@ spec:
 A `Database` resource creates the extensions. The operator runs it as
 superuser, so the owner never needs that privilege. The `version` of
 `vchord` is the version CNPG installs. When that value changes, CNPG updates
-the extension to the new version, so move it with the `vchord-scratch` tag:
+the extension to the new version, so move it with the `vchord` image tag:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -131,8 +136,32 @@ spec:
     - name: vector
       ensure: present
     - name: vchord
-      version: "1.1.1"
+      version: "1.3.0"
       ensure: present
+```
+
+### Upgrading VectorChord
+
+Change the Cluster's image reference first, so that every instance restarts
+with the new library, and then the `Database`'s `version`, so that CNPG
+updates the extension. The new library works with the old extension in
+between. 1.3.0 upgrades in place from 1.1.1, TensorChord's last release, and
+keeps the on-disk index format. Outside CNPG, a superuser runs this in the
+`kritika` database after the restart:
+
+```sql
+ALTER EXTENSION vchord UPDATE;
+```
+
+The upgrade leaves existing index pages as they are. kritika's embedding
+index is a `halfvec` cosine index. One built before 1.2.0 on a CPU with fp16
+arithmetic (ARM with fp16, or x86 with AVX512-FP16) can have lost recall to
+an fp16 overflow. One built before 1.3.0 that holds a zero vector stores it
+wrongly. Rebuild the index after the upgrade when either can apply. The owner
+role can do it without blocking writes:
+
+```sql
+REINDEX INDEX CONCURRENTLY index_chunks_embedding_idx;
 ```
 
 The application role is a `DatabaseRole` resource, which CNPG

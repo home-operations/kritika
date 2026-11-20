@@ -11,7 +11,7 @@ Self-hosted AI pull request reviewer for GitHub, Forgejo, GitLab and Gitea, back
 ## Usage
 
 kritika ships as an OCI Helm chart. It needs a Postgres with
-[VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
+[VectorChord](https://github.com/pgsty/vchord) and pgvector, three
 roles, its public URL, a way to sign in, and its configuration file:
 
 ```sh

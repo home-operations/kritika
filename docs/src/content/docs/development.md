@@ -8,7 +8,7 @@ Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-op
 mise install
 mise run build
 mise run test               # unit tests; mise run test -- ./internal/worker/ runs one package's
-mise run test-integration   # Postgres suites against a throwaway VectorChord container
+mise run test-integration   # Postgres suites against a throwaway VectorChord container (needs Docker 28+)
 mise run lint
 mise run smoke              # kritika serve in a kind cluster with CloudNativePG (needs docker, kind, kubectl, helm, openssl)
 mise run ui-mock            # the dashboard at http://localhost:5544/ on mocked data; mise watch ui-mock -r rebuilds on change
