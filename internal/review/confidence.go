@@ -298,6 +298,10 @@ in the reason which were not shown.
 An unverified prerequisite for merging, such as an upstream compatibility change whose release notes the
 description does not carry, may be a concern for the score, but uncertainty alone never raises the risk.
 
+Where the pull request is in a stack on the forge, the base branch line names the pull requests below it. The forge
+merges those first, so what would happen if this change merged before one of them is neither a concern nor a ground
+for the risk. What one of them must have deployed before this change takes effect is a prerequisite like any other.
+
 When the prompt gives the risk the last review of this pull request was rated, keep that rating unless the change now
 does something the rating and its reason do not account for: a second reading of the same change is no reason to
 move it. When it says a review of this pull request has had a concern of its own, and that review's reason names a

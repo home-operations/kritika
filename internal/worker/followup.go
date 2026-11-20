@@ -406,6 +406,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		if err != nil {
 			return err
 		}
+		prompt.Below = stackBelow(ctx, f.client, f.pr, f.logger)
 		prompt.Trim()
 		agent, err = f.runAgent(ctx, runID, gitToken, prompt, thread, rec, answering)
 		return err

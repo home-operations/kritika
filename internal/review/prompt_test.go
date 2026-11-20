@@ -44,7 +44,8 @@ func TestBuildKeepsTheTitleOnItsLine(t *testing.T) {
 // TestBuildBaseBranch: a base that is another open pull request's head is
 // named as work that has not merged. Another base other than the default
 // branch is named without that claim, and the default branch or one not
-// known adds nothing.
+// known adds nothing. The pull requests below this one in its stack follow
+// whatever the base is.
 func TestBuildBaseBranch(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -57,6 +58,16 @@ func TestBuildBaseBranch(t *testing.T) {
 		{"an open pull request's head", Input{BaseRef: "feat/a", DefaultBranch: "main", BaseOf: 7},
 			"Base branch: feat/a (not the default branch, main, but the head of pull request #7, which is open). " +
 				"What that pull request changes has not merged into main: do not take state, a migration or an interface"},
+		{"a stack whose lower pull request merged", Input{BaseRef: "main", DefaultBranch: "main", Below: []StackEntry{{Number: 7, Merged: true}}},
+			"Base branch: main. This pull request is in a stack on the forge. Below it in the stack, lowest first: #7 (merged). " +
+				"The forge merges a stack from the bottom up: this pull request cannot merge before one below it, and merging it " +
+				"merges with it each one that is still open. That one of them merged does not show that what it changes is deployed\n"},
+		{"a stack on an open pull request's head", Input{BaseRef: "feat/b", DefaultBranch: "main", BaseOf: 8, Below: []StackEntry{
+			{Number: 6, Merged: true}, {Number: 7}, {Number: 8, Open: true}}},
+			"only where something shows that form shipped. This pull request is in a stack on the forge. Below it in the stack, " +
+				"lowest first: #6 (merged), #7 (closed without merging), #8 (open). The forge merges"},
+		{"a stack with no default branch known", Input{BaseRef: "main", Below: []StackEntry{{Number: 7, Open: true}}},
+			"Base branch: main. This pull request is in a stack on the forge. Below it in the stack, lowest first: #7 (open). "},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.in.Repository, tt.in.Number, tt.in.Title = "a/b", 1, "t"

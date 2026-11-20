@@ -82,7 +82,7 @@ func runFollowUp(ctx context.Context, report *reporter, p runspec.Spec, secrets 
 	pr := p.Prompt.PullRequest
 	user := build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
-		BaseRef: pr.BaseRef, DefaultBranch: p.Prompt.DefaultBranch, BaseOf: p.Prompt.BaseOf,
+		BaseRef: pr.BaseRef, DefaultBranch: p.Prompt.DefaultBranch, BaseOf: p.Prompt.BaseOf, Below: p.Prompt.Below,
 		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	}, p.Prompt.Prior, p.Thread)

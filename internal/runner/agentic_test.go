@@ -686,7 +686,7 @@ func TestAgentPromptNotesReferenceOmissions(t *testing.T) {
 }
 
 // TestAgentPromptBaseOf: a review whose base is another open pull request's
-// head is told so, from the spec.
+// head is told so, and of the stack below it, from the spec.
 func TestAgentPromptBaseOf(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.PullRequest.BaseRef, s.Prompt.DefaultBranch, s.Prompt.BaseOf = "feat/a", "main", 6
@@ -694,6 +694,11 @@ func TestAgentPromptBaseOf(t *testing.T) {
 	prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
 	if !strings.Contains(prompt.user, "Base branch: feat/a (not the default branch, main, but the head of pull request #6, which is open).") {
 		t.Fatalf("user message lacks the base:\n%s", prompt.user[:min(len(prompt.user), 400)])
+	}
+	s.Prompt.Below = []review.StackEntry{{Number: 5, Merged: true}, {Number: 6, Open: true}}
+	prompt = newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
+	if !strings.Contains(prompt.user, "This pull request is in a stack on the forge. Below it in the stack, lowest first: #5 (merged), #6 (open). ") {
+		t.Fatalf("user message lacks the stack:\n%s", prompt.user[:min(len(prompt.user), 900)])
 	}
 }
 

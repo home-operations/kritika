@@ -69,6 +69,14 @@ type Issue struct {
 	PullRequest bool
 }
 
+// StackEntry is a pull request under another in the same stack on the forge.
+type StackEntry struct {
+	Number int
+	// Merged says that it merged, and Open that it can still merge. One
+	// that is neither was closed without merging.
+	Merged, Open bool
+}
+
 // InlineComment is one finding attached to a line on the head side of the
 // PR diff. The forge rejects lines the diff does not show, so callers anchor
 // first.
@@ -185,6 +193,10 @@ type Client interface {
 	// Issue returns issue number of the repository. A number that names
 	// none is an error wrapping ErrNotFound.
 	Issue(ctx context.Context, owner, repo string, number int) (Issue, error)
+	// StackBelow returns the pull requests under pull request number in
+	// its stack, lowest first. It returns none for a pull request in no
+	// stack or at the bottom of one, and on a forge that has no stacks.
+	StackBelow(ctx context.Context, owner, repo string, number int) ([]StackEntry, error)
 
 	// BotLogin is the login comments posted through this client carry, so
 	// the sticky comment can be matched by author and marker together.

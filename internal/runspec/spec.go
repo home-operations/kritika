@@ -149,6 +149,9 @@ type Prompt struct {
 	// pull request whose head the pull request's base branch is, 0 for none.
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 	BaseOf        int    `json:"baseOf,omitempty"`
+	// Below are the pull requests under the pull request in its stack on
+	// the forge, lowest first, as the worker read them.
+	Below []review.StackEntry `json:"below,omitempty"`
 	// Issues are the issues the pull request's description says it
 	// closes, as the worker read them from the forge.
 	Issues []review.Issue `json:"issues,omitempty"`

@@ -81,6 +81,8 @@ func TestCarryOn(t *testing.T) {
 		{name: "an older description", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Messages[0].Text = opening("Adds a.") })},
 		{name: "a parent pull request opened on the base since", status: http.StatusOK, body: conversation(nil),
 			spec: func(s *runspec.Spec) { s.Prompt.DefaultBranch, s.Prompt.BaseOf = "trunk", 3 }},
+		{name: "the pull request below in the stack merged since", status: http.StatusOK, body: conversation(nil),
+			spec: func(s *runspec.Spec) { s.Prompt.Below = []review.StackEntry{{Number: 3, Merged: true}} }},
 		{name: "too large for the run's budget", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Tokens = 60_000 })},
 		{name: "none served", status: http.StatusNotFound, body: `{"error":{"code":"not_found"}}`},
 		{name: "not a conversation", status: http.StatusOK, body: `[`},

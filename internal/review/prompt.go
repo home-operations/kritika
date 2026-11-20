@@ -26,6 +26,9 @@ type Input struct {
 	// base is then work that has not merged.
 	DefaultBranch string
 	BaseOf        int
+	// Below are the pull requests under this one in its stack on the forge,
+	// lowest first.
+	Below []StackEntry
 	// Body is the pull request description. The author wrote it, so it is
 	// shown to the model as data to judge the change against, never as
 	// instructions.
@@ -516,23 +519,6 @@ func priorDiagramSection(inc *IncrementalInput, room int) string {
 		return ""
 	}
 	return s
-}
-
-// baseNote says what a base other than the default branch is. The head of an
-// open pull request has not merged into the default branch, so what it brings
-// is not known to be deployed. It may still be, as a release branch with a
-// back-merge open is, so the note claims no more than that.
-func baseNote(in Input) string {
-	switch {
-	case in.DefaultBranch == "" || in.BaseRef == "" || in.BaseRef == in.DefaultBranch:
-		return ""
-	case in.BaseOf == 0:
-		return fmt.Sprintf(" (not the default branch, %s)", in.DefaultBranch)
-	}
-	return fmt.Sprintf(" (not the default branch, %s, but the head of pull request #%d, which is open). What that pull "+
-		"request changes has not merged into %s: do not take state, a migration or an interface that only it brings as "+
-		"deployed, and ask for compatibility with an earlier form of it only where something shows that form shipped",
-		in.DefaultBranch, in.BaseOf, in.DefaultBranch)
 }
 
 // priorSection lists the findings that the last review made at head in at
