@@ -89,6 +89,10 @@ func SimilarChunks(
 	return hits, nil
 }
 
+const termCountsSQL = `SELECT q.t, (SELECT count(*) FROM (SELECT 1 FROM index_chunks
+		WHERE index_run_id = $1 AND lexemes @@ q.q LIMIT $3) s)
+	FROM unnest($2::text[], $4::text[]::tsquery[]) AS q (t, q)`
+
 // TermCounts counts, for each term, the chunks of the generation that hold
 // it, up to limit. A count at limit says that the term is too common to
 // tell chunks apart, and limit bounds what counting a common one costs. It
@@ -98,9 +102,7 @@ func TermCounts(ctx context.Context, tx pgx.Tx, runID string, terms []string, li
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, runID).Scan(&chunks); err != nil {
 		return nil, 0, fmt.Errorf("store: count index chunks: %w", err)
 	}
-	rows, err := tx.Query(ctx, `SELECT q.t, (SELECT count(*) FROM (SELECT 1 FROM index_chunks
-			WHERE index_run_id = $1 AND lexemes @@ q.q LIMIT $3) s)
-		FROM unnest($2::text[], $4::text[]::tsquery[]) AS q (t, q)`, runID, terms, limit, tsLexemes(terms))
+	rows, err := tx.Query(ctx, termCountsSQL, runID, terms, limit, tsLexemes(terms))
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: count terms: %w", err)
 	}
@@ -135,7 +137,7 @@ const lexicalChunksSQL = `WITH top AS (
 	)
 	SELECT c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
 		1 - (c.embedding <=> $1::halfvec), top.score, top.matched
-	FROM top JOIN index_chunks c ON c.id = top.id
+	FROM top JOIN index_chunks c ON c.index_run_id = $2 AND c.id = top.id
 	ORDER BY top.score DESC, c.path, c.start_line`
 
 // LexicalChunks finds, for each query, the perQuery chunks of the generation

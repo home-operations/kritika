@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +20,9 @@ import (
 )
 
 // createUnpartitionedIndexChunks creates index_chunks as a build before
-// partitioning did, a plain table, and records its index schema. With index
-// false it leaves out the vector index, to be built once rows are loaded.
+// partitioning did, a plain table, with the lexemes that migration 0065
+// adds, and records its index schema. With index false it leaves out the
+// vector index, to be built once rows are loaded.
 // With hash false it leaves out the content hash, as a leader of a build
 // before content hashes recreated the table for a new embedder.
 func createUnpartitionedIndexChunks(t testing.TB, s *Store, model string, dims int, index, hash bool) {
@@ -45,9 +48,11 @@ func createUnpartitionedIndexChunks(t testing.TB, s *Store, model string, dims i
 			text          text        NOT NULL,
 			embedding     halfvec(%d) NOT NULL,
 			%s
+			lexemes       tsvector,
 			created_at    timestamptz NOT NULL DEFAULT now()
 		)`, dims, hashColumn),
 		`CREATE INDEX index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
+		lexemesIndex,
 		`CREATE INDEX index_chunks_account_id_idx ON index_chunks (account_id)`,
 		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
 		`CREATE POLICY account_isolation ON index_chunks TO kritika_app
@@ -130,6 +135,38 @@ func similarPaths(t *testing.T, s *Store, account, run string) []string {
 	return paths
 }
 
+// lexicalPaths is what the application's search by name of the generation
+// finds for main, which every chunk of partitionRun holds.
+func lexicalPaths(t *testing.T, s *Store, account, run string) []string {
+	t.Helper()
+	ctx := t.Context()
+	var paths []string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		q := LexicalQuery{Terms: []string{"main"}, Weights: []float64{1}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 10)
+		for _, h := range hits {
+			paths = append(paths, h.Chunk.Path)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
+// partitionsRead are the partitions of index_chunks that a plan reads.
+func partitionsRead(plan []string) []string {
+	var out []string
+	for _, m := range partitionRe.FindAllStringSubmatch(strings.Join(plan, "\n"), -1) {
+		if !slices.Contains(out, m[1]) {
+			out = append(out, m[1])
+		}
+	}
+	return out
+}
+
+var partitionRe = regexp.MustCompile(` on (index_chunks_\w+)`)
+
 // chunkPartitions counts the generation's chunks in each partition that
 // holds some.
 func chunkPartitions(t *testing.T, s *Store, run string) map[string]int {
@@ -205,6 +242,14 @@ func TestIndexChunksPartitioned(t *testing.T) {
 	if plan := searchPlan(t, s, account, run); strings.Count(plan, " on index_chunks_") != 1 {
 		t.Fatalf("the search did not read one partition alone:\n%s", plan)
 	}
+	if got := lexicalPaths(t, s, account, run); strings.Join(got, ",") != "a.go,b.go" {
+		t.Fatalf("search by name found %v, want a.go,b.go", got)
+	}
+	for _, plan := range lexicalPlans(t, s, account, run) {
+		if read := partitionsRead(plan); len(read) != 1 {
+			t.Fatalf("the search by name read %v, not one partition alone:\n%s", read, strings.Join(plan, "\n"))
+		}
+	}
 	appDenied(t, s, account, "index_chunks_00")
 	// An incremental step's chunks move to the generation's partition.
 	step := partitionRun(t, s, account, repo, false, "c.go")
@@ -276,8 +321,8 @@ func partitionLegacy(t *testing.T, s *Store) {
 		Scan(&kind, &attached, &indexes, &keys); err != nil {
 		t.Fatal(err)
 	}
-	if kind != "p" || !attached || indexes != 4 || keys != 3 {
-		t.Fatalf("index_chunks kind %q, legacy attached %v with %d of its indexes and %d foreign keys; want partitioned, attached, 4 and 3",
+	if kind != "p" || !attached || indexes != 5 || keys != 3 {
+		t.Fatalf("index_chunks kind %q, legacy attached %v with %d of its indexes and %d foreign keys; want partitioned, attached, 5 and 3",
 			kind, attached, indexes, keys)
 	}
 }
@@ -328,6 +373,37 @@ func searchPlan(t *testing.T, s *Store, account, run string) string {
 		t.Fatal(err)
 	}
 	return text
+}
+
+// lexicalPlans are the plans of the application's search by name of the
+// generation and of its count of each word.
+func lexicalPlans(t *testing.T, s *Store, account, run string) [][]string {
+	t.Helper()
+	ctx := t.Context()
+	var plans [][]string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		for _, q := range []struct {
+			sql  string
+			args []any
+		}{
+			{lexicalChunksSQL, []any{"[1,0,0,0,0,0,0,0]", run, []string{}, []string{"main"}, []float64{1}, []string{"'main'"}, "'main'", 4}},
+			{termCountsSQL, []any{run, []string{"main"}, 200, []string{"'main'"}}},
+		} {
+			rows, err := tx.Query(ctx, "EXPLAIN "+q.sql, q.args...)
+			if err != nil {
+				return err
+			}
+			plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			if err != nil {
+				return err
+			}
+			plans = append(plans, plan)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return plans
 }
 
 // waitForLockWait waits until a transaction waits for a lock of mode on the
@@ -463,6 +539,9 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	if got := similarPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
 		t.Fatalf("search of the legacy generation found %v, want a.go,b.go", got)
 	}
+	if got := lexicalPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
+		t.Fatalf("search by name of the legacy generation found %v, want a.go,b.go", got)
+	}
 	appDenied(t, s, account, "index_chunks_legacy")
 	added := partitionRun(t, s, account, two, false, "d.go")
 	if parts := chunkPartitions(t, s, added); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
@@ -503,6 +582,14 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	}
 	if plan := searchPlan(t, s, account, runOne); strings.Count(plan, " on index_chunks_") != 1 {
 		t.Fatalf("the search after the drain did not read one partition alone:\n%s", plan)
+	}
+	if got := lexicalPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
+		t.Fatalf("search by name after the drain found %v, want a.go,b.go", got)
+	}
+	for _, plan := range lexicalPlans(t, s, account, runOne) {
+		if read := partitionsRead(plan); len(read) != 1 {
+			t.Fatalf("the search by name after the drain read %v, not one partition alone:\n%s", read, strings.Join(plan, "\n"))
+		}
 	}
 	if moved, removed, err := s.DrainLegacyIndexChunks(ctx); err != nil || moved+removed != 0 {
 		t.Fatalf("drain without a legacy partition = %d, %d, %v", moved, removed, err)
