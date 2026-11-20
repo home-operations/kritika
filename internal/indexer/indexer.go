@@ -124,8 +124,12 @@ var unindexed = []string{
 	"**/*.freezed.dart",
 }
 
+// Unindexed reports whether the index leaves path out whatever the ignore
+// rules say: a file that SOPS encrypted, or generated code.
+func Unindexed(path string) bool { return chunk.Matches(unindexed, path) }
+
 func (b *builder) ignored(path string) bool {
-	return chunk.Matches(b.ignore, path) || chunk.Matches(unindexed, path)
+	return chunk.Matches(b.ignore, path) || Unindexed(path)
 }
 
 func (b *builder) walkAll(ctx context.Context, head *object.Tree) error {

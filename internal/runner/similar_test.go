@@ -144,6 +144,13 @@ func TestHunkQueries(t *testing.T) {
 			ignore: []string{"vendor/**"}, want: []string{"func a() {}\n"},
 		},
 		{
+			name: "encrypted and generated files the index leaves out",
+			diff: fileDiff("", "secrets.sops.yaml", added("password: ENC[AES256_GCM,data:x]")) +
+				fileDiff("", "api/v1/api_pb2.py", added("DESCRIPTOR = _descriptor.FileDescriptor()")) +
+				fileDiff("", "a.go", added("func a() {}")),
+			want: []string{"func a() {}\n"},
+		},
+		{
 			name: "a hunk that adds nothing and a deleted file",
 			diff: fileDiff("a.go", "a.go", "@@ -1,3 +1,2 @@\n x\n-y\n z\n", "@@ -9,2 +8,3 @@\n p\n+\n q\n") +
 				fileDiff("gone.go", "", "@@ -1,1 +0,0 @@\n-func g() {}\n"),

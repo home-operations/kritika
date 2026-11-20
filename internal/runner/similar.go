@@ -75,10 +75,11 @@ const queryContext = 3
 
 // hunkQueries is what stage 4 embeds: the changed regions of the diff's
 // hunks as the head has them, each its changed lines and a little context.
-// It leaves out the files that the index holds no chunk of, ignored or of no
-// language, and the hunks that add nothing, whose text is only context. The
-// files take turns, the most changed first, so a query of each of the most
-// changed files comes before a second of any. A region over the gateway's
+// It leaves out the files that the index holds no chunk of, ignored, left
+// out by the indexer (indexer.Unindexed) or of no language, and the hunks
+// that add nothing, whose text is only context. The files take turns, the
+// most changed first, so a query of each of the most changed files comes
+// before a second of any. A region over the gateway's
 // bound is asked about by the declarations its changes are in, as the index
 // cuts a file, or else in windows of its lines, rather than by its start,
 // which in a new file is its license and imports.
@@ -89,7 +90,7 @@ const queryContext = 3
 func hunkQueries(diff string, ignore []string) []string {
 	var files []*queryFile
 	for _, f := range udiff.Parse(diff) {
-		if f.NewPath == "" || chunk.Matches(ignore, f.NewPath) {
+		if f.NewPath == "" || chunk.Matches(ignore, f.NewPath) || indexer.Unindexed(f.NewPath) {
 			continue
 		}
 		if lang, _ := chunk.Language(f.NewPath); lang == "" {
