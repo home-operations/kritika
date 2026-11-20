@@ -15,16 +15,16 @@ import (
 )
 
 // runIndex fetches the commit to index and stages its chunks. With Base
-// set, it tries an incremental step from that commit first. If the base
-// cannot be fetched, it falls back to a full build and says so in the pack.
-// So the worker never has to retry the Job. The base cannot be fetched when
-// it is unreachable after a force push, or older than the server will serve
-// by SHA.
+// set, it tries an incremental step from that commit first. When the remote
+// does not serve the base, it falls back to a full build and says so in the
+// pack: the base is unreachable after a force push, or older than the server
+// will serve by SHA, and no retry changes that. Any other failure to fetch
+// fails the run, and the worker tries the job again.
 func runIndex(ctx context.Context, report *reporter, p runspec.Spec, secrets runspec.Secrets, logger *slog.Logger) error {
 	if err := report.phase(ctx, "fetching"); err != nil {
 		return err
 	}
-	res, mode, err := fetchForIndex(ctx, p, secrets.GitToken, logger)
+	res, mode, err := fetchForIndex(ctx, p, secrets.GitToken, gitfetch.Trees, logger)
 	if err != nil {
 		return err
 	}
@@ -91,18 +91,25 @@ func buildIndex(
 	return chunks, changed, stats, mode, err
 }
 
-func fetchForIndex(ctx context.Context, p runspec.Spec, token string, logger *slog.Logger) (*gitfetch.Result, string, error) {
+// fetchForIndex fetches head, and base for an incremental step, with trees.
+// A base that the remote does not serve falls back to a full build. Any
+// other failure is returned, so a fetch cut short is tried again rather than
+// the whole repository embedded anew.
+func fetchForIndex(
+	ctx context.Context, p runspec.Spec, token string, trees func(context.Context, gitfetch.Fetch) (*gitfetch.Result, error),
+	logger *slog.Logger,
+) (*gitfetch.Result, string, error) {
 	if p.Base != "" {
-		res, err := gitfetch.Trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head, Base: p.Base})
+		res, err := trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head, Base: p.Base})
 		if err == nil {
 			return res, runspec.IndexModeIncremental, nil
 		}
-		if ctx.Err() != nil {
+		if !errors.Is(err, gitfetch.ErrCommitUnavailable) {
 			return nil, "", err
 		}
 		logger.Warn("incremental fetch failed, building the index in full", "base", p.Base[:7], "error", err)
 	}
-	res, err := gitfetch.Trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head})
+	res, err := trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head})
 	if err != nil {
 		return nil, "", err
 	}

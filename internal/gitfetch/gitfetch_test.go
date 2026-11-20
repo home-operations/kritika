@@ -3,6 +3,8 @@ package gitfetch
 import (
 	"cmp"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,7 @@ import (
 
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
@@ -214,6 +217,58 @@ func TestRunNotFoundNamesTheToken(t *testing.T) {
 	_, err := Run(t.Context(), Fetch{CloneURL: srv.URL + "/acme/webapp.git", Token: "scoped", Head: strings.Repeat("a", 40)})
 	if !errors.Is(err, transport.ErrRepositoryNotFound) || !strings.Contains(err.Error(), "the token cannot see it") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestTreesCommitUnavailable: a commit that the remote does not serve fails
+// the fetch with ErrCommitUnavailable, and a remote that fails for any other
+// reason does not.
+func TestTreesCommitUnavailable(t *testing.T) {
+	r := build(t)
+	missing := "0123456789abcdef0123456789abcdef01234567"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		name        string
+		fetch       Fetch
+		unavailable bool
+	}{
+		{name: "base the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: r.head, Base: missing}, unavailable: true},
+		{name: "head the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: missing, Base: r.base}, unavailable: true},
+		{name: "remote unavailable", fetch: Fetch{CloneURL: srv.URL + "/acme/webapp.git", Head: r.head, Base: r.base}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Trees(t.Context(), tc.fetch)
+			if err == nil || errors.Is(err, ErrCommitUnavailable) != tc.unavailable {
+				t.Fatalf("err = %v, want unavailable %v", err, tc.unavailable)
+			}
+		})
+	}
+}
+
+// TestCommitRefused: the server's refusal to serve a commit by SHA, as git's
+// upload-pack words it, counts as the commit being unavailable. Other errors
+// that the server or the transport send do not.
+func TestCommitRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("a", 40)}), want: true},
+		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + strings.Repeat("a", 40)), want: true},
+		{name: "object not found", err: fmt.Errorf("getting wanted object: %w", plumbing.ErrObjectNotFound), want: true},
+		{name: "other error line", err: &pktline.ErrorLine{Text: "upload-pack: internal error"}},
+		{name: "repository not found", err: transport.ErrRepositoryNotFound},
+		{name: "cut short", err: io.ErrUnexpectedEOF},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := commitRefused(tc.err); got != tc.want {
+				t.Fatalf("commitRefused(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 

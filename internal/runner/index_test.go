@@ -1,8 +1,12 @@
 package runner
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,8 +15,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 
+	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/indexer"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -86,5 +92,42 @@ func TestBuildIndexFallsBackOnTruncation(t *testing.T) {
 	_, changed, stats, mode, err := buildIndex(t.Context(), head, base, nil, indexer.DefaultOptions, slog.New(slog.DiscardHandler))
 	if err != nil || mode != store.IndexModeIncremental || len(changed) != 3 || stats.Truncated {
 		t.Fatalf("unlimited build = %v, %+v, %s, %v", changed, stats, mode, err)
+	}
+}
+
+// TestFetchForIndex: an incremental step whose base the remote does not
+// serve falls back to a full build. Any other failure to fetch is the run's
+// error, so the job is tried again rather than re-embedding the repository.
+func TestFetchForIndex(t *testing.T) {
+	head, base := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, tc := range []struct {
+		name     string
+		base     string
+		incr     error
+		wantMode string
+		wantErr  bool
+		fetches  int
+	}{
+		{name: "incremental", base: base, wantMode: store.IndexModeIncremental, fetches: 1},
+		{name: "no base", wantMode: store.IndexModeFull, fetches: 1},
+		{name: "base unavailable", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", gitfetch.ErrCommitUnavailable),
+			wantMode: store.IndexModeFull, fetches: 2},
+		{name: "fetch failed", base: base, incr: errors.New("gitfetch: fetch: connection reset"), wantErr: true, fetches: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var fetches []gitfetch.Fetch
+			trees := func(_ context.Context, f gitfetch.Fetch) (*gitfetch.Result, error) {
+				fetches = append(fetches, f)
+				if f.Base != "" && tc.incr != nil {
+					return nil, tc.incr
+				}
+				return &gitfetch.Result{}, nil
+			}
+			_, mode, err := fetchForIndex(t.Context(), runspec.Spec{Head: head, Base: tc.base}, "", trees, slog.New(slog.DiscardHandler))
+			if (err != nil) != tc.wantErr || mode != tc.wantMode || len(fetches) != tc.fetches {
+				t.Fatalf("fetchForIndex = %q, %v after %d fetches, want %q, error %v after %d", mode, err, len(fetches),
+					tc.wantMode, tc.wantErr, tc.fetches)
+			}
+		})
 	}
 }

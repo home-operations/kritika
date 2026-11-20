@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
@@ -38,6 +39,11 @@ const (
 )
 
 const remoteName = "origin"
+
+// ErrCommitUnavailable is the remote not serving a commit asked for by SHA:
+// one unreachable after a force push, or older than the server will serve.
+// Trying again does not change that, unlike a fetch cut short.
+var ErrCommitUnavailable = errors.New("gitfetch: the remote does not serve the commit")
 
 // Fetch describes what to fetch.
 type Fetch struct {
@@ -162,11 +168,14 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
 			return nil, fmt.Errorf("gitfetch: fetch: the repository is missing or the token cannot see it: %w", err)
 		}
+		if commitRefused(err) {
+			return nil, fmt.Errorf("gitfetch: fetch: %w: %w", ErrCommitUnavailable, err)
+		}
 		return nil, fmt.Errorf("gitfetch: fetch: %w", err)
 	}
 	head, err := repo.CommitObject(plumbing.NewHash(f.Head))
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: head %s: %w", f.Head, err)
+		return nil, fmt.Errorf("gitfetch: head %s: %w", f.Head, unavailable(err))
 	}
 	if f.Base == "" {
 		// Head only: no diff, the caller walks the tree.
@@ -174,7 +183,7 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 	}
 	base, err := repo.CommitObject(plumbing.NewHash(f.Base))
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, err)
+		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, unavailable(err))
 	}
 	if treesOnly {
 		return &Result{Head: head, Base: base, Dir: dir, repo: repo}, nil
@@ -334,6 +343,32 @@ func renderChanges(ctx context.Context, changes object.Changes, gained map[strin
 		changed = append(changed, cmp.Or(c.To.Name, c.From.Name))
 	}
 	return b.String(), changed, nil
+}
+
+// commitRefused reports whether a fetch failed because the remote would not
+// serve a commit that it was asked for: git's upload-pack answers "not our
+// ref" over the wire, and go-git's own server, which a local path reaches,
+// does not find the object.
+func commitRefused(err error) bool {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return true
+	}
+	var text string
+	if e, ok := errors.AsType[*pktline.ErrorLine](err); ok {
+		text = e.Text
+	} else if e, ok := errors.AsType[*transport.RemoteError](err); ok {
+		text = e.Reason
+	}
+	return strings.Contains(text, "not our ref")
+}
+
+// unavailable marks a commit missing from the fetched repository as
+// ErrCommitUnavailable: the remote answered the fetch without it.
+func unavailable(err error) error {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return fmt.Errorf("%w: %w", ErrCommitUnavailable, err)
+	}
+	return err
 }
 
 func refSpecs(f Fetch) []config.RefSpec {
