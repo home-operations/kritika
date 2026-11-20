@@ -981,7 +981,8 @@ does not guarantee higher throughput.
 Index jobs that keep indexed repositories at their default branch use an
 `index_update` queue of their own. An onboarding wave holds an `index`
 worker for each repository's whole first build, so it can fill every
-`index` worker in the fleet, but never delays an update. Each replica runs
+`index` worker in the fleet without taking one that an update needs. Updates
+still share the embedder's slots with first builds. Each replica runs
 up to `indexWorkers` jobs on each queue, each with a runner pod. Updates
 queued on `index` by an earlier version finish there.
 

@@ -176,7 +176,7 @@ most of them wait. The **Index** column shows each one's place in line, such as
 **Waiting · #3**. The leader queues the next as each first index ends. It
 queues the rebuilds that a new embedder or a new release's index format
 needs the same way. Keeping indexed repositories current runs on a queue of
-its own, so the wait never holds back an update.
+its own, with workers that first indexes do not take.
 
 A reindex goes ahead of the first indexes still waiting.
 
