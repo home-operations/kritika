@@ -45,7 +45,7 @@ func (s *Store) EnsureIndexSchema(
 		case !ok:
 			return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
 		case cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt:
-			if err := addContentHash(ctx, tx); err != nil {
+			if err := addColumns(ctx, tx); err != nil {
 				return err
 			}
 			return s.applyIndexFormat(ctx, tx, cur.Format)
@@ -113,23 +113,38 @@ func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (IndexSchema, bool, error) {
 const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_idx ON index_chunks (repository_id, content_hash)
 	WHERE content_hash IS NOT NULL`
 
-// addContentHash adds the content hash column, and its index, to an
-// index_chunks that a build before them created. During a rollout, such a
-// build can still be leader after the migration ran and rebuild the table
-// for a new embedder. It looks first, as ALTER TABLE takes the table's
-// exclusive lock even when the column exists.
-func addContentHash(ctx context.Context, tx pgx.Tx) error {
-	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
-		WHERE attrelid = 'index_chunks'::regclass AND attname = 'content_hash' AND NOT attisdropped)`).Scan(&exists); err != nil {
-		return fmt.Errorf("store: read index_chunks columns: %w", err)
-	}
-	if exists {
-		return nil
-	}
-	for _, stmt := range []string{`ALTER TABLE index_chunks ADD COLUMN content_hash bytea`, contentHashIndex} {
-		if _, err := tx.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("store: add index content hash: %w", err)
+// lexemesIndex finds the chunks that hold a word, as migration 0065 creates
+// it. A search filters it by generation, which the planner combines with
+// index_chunks_run_path_idx.
+const lexemesIndex = `CREATE INDEX IF NOT EXISTS index_chunks_lexemes_idx ON index_chunks USING gin (lexemes)
+	WHERE lexemes IS NOT NULL`
+
+// addedColumns are the columns of index_chunks that migrations added, with
+// their types and indexes.
+var addedColumns = []struct{ name, typ, index string }{
+	{"content_hash", "bytea", contentHashIndex},
+	{"lexemes", "tsvector", lexemesIndex},
+}
+
+// addColumns adds each of addedColumns, and its index, to an index_chunks
+// that a build before it created. During a rollout, such a build can still
+// be leader after the migration ran and rebuild the table for a new
+// embedder. It looks first, as ALTER TABLE takes the table's exclusive lock
+// even when the column exists.
+func addColumns(ctx context.Context, tx pgx.Tx) error {
+	for _, c := range addedColumns {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
+			WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped)`, c.name).Scan(&exists); err != nil {
+			return fmt.Errorf("store: read index_chunks columns: %w", err)
+		}
+		if exists {
+			continue
+		}
+		for _, stmt := range []string{`ALTER TABLE index_chunks ADD COLUMN ` + c.name + ` ` + c.typ, c.index} {
+			if _, err := tx.Exec(ctx, stmt); err != nil {
+				return fmt.Errorf("store: add index_chunks.%s: %w", c.name, err)
+			}
 		}
 	}
 	return nil

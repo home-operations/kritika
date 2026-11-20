@@ -499,51 +499,59 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	}
 }
 
-// TestIndexContentHashColumn: index_chunks has its content hash column and
-// index however it was made: created by the leader, migrated from a table
-// made before them, or made without them by the leader of a build before
-// them, as during a rollout, and then kept by a leader of this build.
-func TestIndexContentHashColumn(t *testing.T) {
-	ctx := t.Context()
-	s := openStore(t)
-	t.Cleanup(func() {
-		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
-	})
-	check := func(how string) {
-		t.Helper()
-		var column, index bool
-		if err := s.owner.QueryRow(ctx, `SELECT
-			EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_chunks'::regclass AND attname = 'content_hash' AND NOT attisdropped),
-			to_regclass('index_chunks_content_hash_idx') IS NOT NULL`).Scan(&column, &index); err != nil {
-			t.Fatal(err)
-		}
-		if !column || !index {
-			t.Fatalf("%s: content_hash column %v, index %v; want both", how, column, index)
-		}
+// TestIndexAddedColumns: index_chunks has each column that a migration
+// added, and its index, however it was made: created by the leader, migrated
+// from a table made before them, or made without them by the leader of a
+// build before them, as during a rollout, and then kept by a leader of this
+// build.
+func TestIndexAddedColumns(t *testing.T) {
+	for _, tt := range []struct{ column, index, migration string }{
+		{"content_hash", "index_chunks_content_hash_idx", "0064_index_content_hash"},
+		{"lexemes", "index_chunks_lexemes_idx", "0065_index_lexemes"},
+	} {
+		t.Run(tt.column, func(t *testing.T) {
+			ctx := t.Context()
+			s := openStore(t)
+			t.Cleanup(func() {
+				_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+			})
+			check := func(how string) {
+				t.Helper()
+				var column, index bool
+				if err := s.owner.QueryRow(ctx, `SELECT
+					EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped),
+					to_regclass($2) IS NOT NULL`, tt.column, tt.index).Scan(&column, &index); err != nil {
+					t.Fatal(err)
+				}
+				if !column || !index {
+					t.Fatalf("%s: %s column %v, index %v; want both", how, tt.column, column, index)
+				}
+			}
+			drop := func() {
+				t.Helper()
+				if _, err := s.owner.Exec(ctx, `ALTER TABLE index_chunks DROP COLUMN `+tt.column); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+				t.Fatalf("EnsureIndexSchema: %v", err)
+			}
+			check("created")
+			drop()
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = $1`, tt.migration); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Migrate(ctx, "kritika_app"); err != nil {
+				t.Fatalf("Migrate: %v", err)
+			}
+			check("migrated")
+			drop()
+			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+				t.Fatalf("EnsureIndexSchema: %v", err)
+			}
+			check("kept by a leader")
+		})
 	}
-	drop := func() {
-		t.Helper()
-		if _, err := s.owner.Exec(ctx, `ALTER TABLE index_chunks DROP COLUMN content_hash`); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
-		t.Fatalf("EnsureIndexSchema: %v", err)
-	}
-	check("created")
-	drop()
-	if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = '0064_index_content_hash'`); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Migrate(ctx, "kritika_app"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	check("migrated")
-	drop()
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
-		t.Fatalf("EnsureIndexSchema: %v", err)
-	}
-	check("kept by a leader")
 }
 
 // TestEnsureIndexSchemaRebuildsForANewEmbedder: the same embedder leaves

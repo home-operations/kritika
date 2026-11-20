@@ -55,6 +55,7 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 			text          text        NOT NULL,
 			embedding     halfvec(%d) NOT NULL,
 			content_hash  bytea,
+			lexemes       tsvector,
 			created_at    timestamptz NOT NULL DEFAULT now()
 		) PARTITION BY RANGE (created_at)`, dims),
 		// A unique key must hold the partition keys, so the primary key is
@@ -69,6 +70,7 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 	stmts = append(stmts,
 		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
 		contentHashIndex,
+		lexemesIndex,
 		`CREATE INDEX IF NOT EXISTS index_chunks_account_id_idx ON index_chunks (account_id)`,
 		`CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`,
 		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
@@ -88,7 +90,7 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 
 // legacyIndexChunksIndexes are the indexes of an index_chunks that a build
 // before partitioning created, by the suffix of their names.
-var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_idx", "account_id_idx", "embedding_idx"}
+var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_idx", "lexemes_idx", "account_id_idx", "embedding_idx"}
 
 // PartitionIndexChunks waits for locks that publications and embedding
 // batches also take, in another order, so it can close a cycle with one of
@@ -202,7 +204,7 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 				return err
 			}
 		}
-		if err := addContentHash(ctx, tx); err != nil {
+		if err := addColumns(ctx, tx); err != nil {
 			return err
 		}
 		// The lock waited for every transaction that wrote a chunk, so each

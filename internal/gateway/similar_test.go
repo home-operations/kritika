@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestKeepSimilar(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			original := slices.Clone(tt.hits)
 			got, _ := keepSimilar(tt.hits, tt.floor, tt.margin)
-			if !slices.Equal(original, tt.hits) {
+			if !reflect.DeepEqual(original, tt.hits) {
 				t.Error("caller hits were mutated")
 			}
 			if len(got) != len(tt.want) {

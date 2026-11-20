@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/lexical"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
 )
@@ -205,7 +207,8 @@ func ReadStagedChunks(ctx context.Context, tx pgx.Tx, runnerRunID string, after 
 	return out, nil
 }
 
-// InsertIndexChunks records a batch of embedded chunks under the run.
+// InsertIndexChunks records a batch of embedded chunks under the run, each
+// with its lexemes (package lexical) for the lexical search.
 func InsertIndexChunks(
 	ctx context.Context, tx pgx.Tx, accountID, repositoryID, runID string, batch []StagedChunk, vectors [][]float32,
 ) error {
@@ -214,24 +217,28 @@ func InsertIndexChunks(
 	}
 	n := len(batch)
 	strs := func() []string { return make([]string, n) }
-	paths, langs, symbols, kinds, scopes, texts, embeddings := strs(), strs(), strs(), strs(), strs(), strs(), strs()
+	paths, langs, symbols, kinds, scopes, texts, embeddings, lexemes := strs(), strs(), strs(), strs(), strs(), strs(), strs(), strs()
 	starts, ends := make([]int32, n), make([]int32, n)
 	hashes := make([][]byte, n)
 	for i, c := range batch {
 		paths[i], langs[i], symbols[i], kinds[i], scopes[i], texts[i] = c.Path, c.Language, c.Symbol, c.Kind, c.Scope, c.Text
 		starts[i], ends[i] = int32(c.StartLine), int32(c.EndLine)
 		embeddings[i], hashes[i] = model.VectorLiteral(vectors[i]), c.ContentHash
+		// A lexeme holds no space, so one string carries a chunk's lexemes
+		// through unnest, which flattens an array of arrays.
+		lexemes[i] = strings.Join(lexical.Document(c.Path, c.Scope, c.Symbol, c.Text), " ")
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO index_chunks
 			(account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding,
-			 content_hash)
+			 content_hash, lexemes)
 		SELECT $1, $2, $3, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text, c.embedding::halfvec,
-			c.content_hash
+			c.content_hash, array_to_tsvector(string_to_array(c.lexemes, ' '))
 		FROM unnest($4::text[], $5::int[], $6::int[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[],
-			$13::bytea[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash)`,
-		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings, hashes); err != nil {
+			$13::bytea[], $14::text[])
+			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash, lexemes)`,
+		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings, hashes,
+		lexemes); err != nil {
 		return fmt.Errorf("store: insert chunks: %w", err)
 	}
 	return nil
