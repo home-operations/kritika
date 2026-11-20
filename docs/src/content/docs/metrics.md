@@ -223,16 +223,16 @@ The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
 (`monitoring.prometheusRule.*For`). `additionalRuleLabels` adds a routing
 label to every rule, and `additionalRuleAnnotations` adds an annotation.
 
-| Alert                          | Fires when                                                                                                                        | Severity | Wait |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
-| `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                      | critical | 5m   |
-| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`           | critical | 2m   |
-| `KritikaConfigError`           | `kritika_config_error == 1`: the leader failed to apply the file                                                                  | warning  | 5m   |
-| `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                        | warning  | 15m  |
-| `KritikaQueueDelayed`          | Oldest runnable review/followup/thread job exceeds 600 seconds. Uses the last successful sample within 5m and max across replicas | warning  | 15m  |
-| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m                                                                | warning  | 5m   |
-| `KritikaCacheStorageErrors`    | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m. Cold misses are not errors                    | warning  | 10m  |
-| `KritikaVectorSearchErrors`    | More than 10% database search errors, with at least 10 non-canceled requests in 15m                                               | warning  | 10m  |
+| Alert                          | Fires when                                                                                                                                               | Severity | Wait |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
+| `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                                             | critical | 5m   |
+| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`                                  | critical | 2m   |
+| `KritikaConfigError`           | `kritika_config_error == 1`: the leader failed to apply the file                                                                                         | warning  | 5m   |
+| `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                                               | warning  | 15m  |
+| `KritikaQueueDelayed`          | Oldest runnable job outside the `index` and `index_update` queues exceeds 600 seconds. Uses the last successful sample within 5m and max across replicas | warning  | 15m  |
+| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m                                                                                       | warning  | 5m   |
+| `KritikaCacheStorageErrors`    | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m. Cold misses are not errors                                           | warning  | 10m  |
+| `KritikaVectorSearchErrors`    | More than 10% database search errors, with at least 10 non-canceled requests in 15m                                                                      | warning  | 10m  |
 
 Without a leader, nothing migrates, applies configuration, polls or rescues
 the jobs a dead replica left. A standby takes the lock within one leader

@@ -102,7 +102,7 @@ spec:
     - name: kritika.queue
       rules:
         - alert: KritikaQueueDelayed
-          expr: max by (namespace, job, queue) (last_over_time(kritika_queue_oldest_runnable_seconds{queue!="index"}[5m])) > {{ .Values.monitoring.prometheusRule.queueAgeSeconds }}
+          expr: max by (namespace, job, queue) (last_over_time(kritika_queue_oldest_runnable_seconds{queue!~"index|index_update"}[5m])) > {{ .Values.monitoring.prometheusRule.queueAgeSeconds }}
           for: {{ .Values.monitoring.prometheusRule.queueDelayFor }}
           labels:
             {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
@@ -112,7 +112,8 @@ spec:
             description: >-
               The oldest runnable job has waited more than {{ .Values.monitoring.prometheusRule.queueAgeSeconds }} seconds.
               Check worker capacity, paused queues, model-slot contention and database health.
-              Future scheduled work and the index queue are excluded.
+              Future scheduled work and the index and index_update queues are excluded: an index job can
+              wait behind other repositories' builds for the embedder, and reviews do not wait on it.
               The latest successful snapshot is retained for up to 5 minutes across read failures.
             {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
             {{- toYaml . | nindent 12 }}
