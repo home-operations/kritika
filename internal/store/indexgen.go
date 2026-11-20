@@ -61,18 +61,30 @@ func RecordDefaultBranch(ctx context.Context, tx pgx.Tx, repositoryID, branch st
 
 // Generation is a repository's active index generation: what it covers,
 // the embedder it was built with, and the index format (runspec.IndexFormat)
-// of the build that built it.
+// of the build that built it. Mixed says that an incremental step of another
+// format advanced it, so it holds chunks of both.
 type Generation struct {
 	ID, Commit, Model, IgnoreHash, DocumentPrompt string
 	Dims, Format                                  int
+	Mixed                                         bool
 }
+
+// steppedInAnotherFormat holds for a generation, g, that an incremental step
+// of another index format advanced. A step reads the active generation
+// before its run starts, and a step whose generation changed before it
+// published is superseded. So a step run started after g was published,
+// which completed, advanced g. A build from before index formats records
+// its runs as format 1, and during a rollout it steps the generations that
+// the new build publishes.
+const steppedInAnotherFormat = `EXISTS (SELECT 1 FROM index_runs st WHERE st.repository_id = g.repository_id
+	AND st.mode = 'incremental' AND st.status = 'completed' AND st.index_format <> g.index_format AND st.created_at > g.finished_at)`
 
 // FindGeneration reads a completed index generation, or ErrNotFound.
 func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, error) {
 	g := Generation{ID: runID}
-	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash, document_prompt, index_format FROM index_runs
-		WHERE id = $1 AND status = 'completed'`, runID).
-		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash, &g.DocumentPrompt, &g.Format)
+	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash, document_prompt, index_format,
+		`+steppedInAnotherFormat+` FROM index_runs g WHERE id = $1 AND status = 'completed'`, runID).
+		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash, &g.DocumentPrompt, &g.Format, &g.Mixed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}

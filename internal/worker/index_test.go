@@ -80,8 +80,9 @@ func TestIndexResumeIdentity(t *testing.T) {
 
 // TestIndexMatches: an index is kept, and stepped incrementally, only when
 // the embedder that built it builds the same vectors. The query prompt
-// changes no stored vector. A push steps an index of another format, which
-// the onboarding feeder rebuilds in its turn.
+// changes no stored vector. A push steps an index of another format, or one
+// that a step of another format advanced, which the onboarding feeder
+// rebuilds in its turn.
 func TestIndexMatches(t *testing.T) {
 	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: "}
 	built := store.Generation{Model: "model", Dims: 8, DocumentPrompt: "text: ", IgnoreHash: "ignore", Format: runspec.IndexFormat}
@@ -101,6 +102,8 @@ func TestIndexMatches(t *testing.T) {
 		{"newer format pushed", func(g *store.Generation) { g.Format = runspec.IndexFormat + 1 }, jobs.TriggerPush, true},
 		{"older format onboarded", func(g *store.Generation) { g.Format = runspec.IndexFormat - 1 }, jobs.TriggerOnboard, false},
 		{"older format reindexed", func(g *store.Generation) { g.Format = runspec.IndexFormat - 1 }, jobs.TriggerReindex, false},
+		{"stepped in another format pushed", func(g *store.Generation) { g.Mixed = true }, jobs.TriggerPush, true},
+		{"stepped in another format onboarded", func(g *store.Generation) { g.Mixed = true }, jobs.TriggerOnboard, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := built

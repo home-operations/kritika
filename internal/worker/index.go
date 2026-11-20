@@ -609,10 +609,11 @@ func contentHash(emb *configfile.Embedding, text string) []byte {
 // this build's format, and the generation keeps its own, so the onboarding
 // feeder still rebuilds it in full. That paces the rebuilds of a new format
 // to the feeder's window, where every push after a deploy will otherwise
-// rebuild its repository at once.
+// rebuild its repository at once. A generation of this format that a step
+// of another format advanced is rebuilt the same way.
 func indexMatches(g *store.Generation, emb *configfile.Embedding, ignoreHash, trigger string) bool {
 	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.DocumentPrompt == emb.DocumentPrompt && g.IgnoreHash == ignoreHash &&
-		(g.Format == runspec.IndexFormat || trigger == jobs.TriggerPush)
+		(g.Format == runspec.IndexFormat && !g.Mixed || trigger == jobs.TriggerPush)
 }
 
 // indexIgnoreHash treats ignore rules as a set. Order and duplicates do not

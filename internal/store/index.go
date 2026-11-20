@@ -277,13 +277,15 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 }
 
 // onboardCandidate holds for a repository, r, that OnboardCandidates can
-// offer, whatever enabled says of it. $1 is the retryAfter, in seconds.
+// offer, whatever enabled says of it: one without an active generation, or
+// whose generation another embedder or index format built, or a step of
+// another format advanced. $1 is the retryAfter, in seconds.
 // onboardActivity is when its pull requests last moved, which orders an
 // account's candidates.
 var onboardCandidate = `r.enabled AND r.turned_on IS DISTINCT FROM false
 	AND (r.active_index_run_id IS NULL OR EXISTS (SELECT 1 FROM index_runs g, index_schema s
-	    WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt, g.index_format)
-	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt, s.index_format)))
+	    WHERE g.id = r.active_index_run_id AND ((g.embed_model, g.embed_dims, g.document_prompt, g.index_format)
+	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt, s.index_format) OR ` + steppedInAnotherFormat + `)))
 	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE ` + liveIndexJob + ` AND j.args->>'repository_id' = r.id::text)
 	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
 	                AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)
@@ -325,7 +327,8 @@ func OnboardBacklog(ctx context.Context, tx pgx.Tx, retryAfter time.Duration) ([
 // OnboardCandidates lists up to limit enabled repositories, of those that
 // enabled also admits by account ID and traits. A listed repository's active
 // index generation is missing, or another embedder or index format than
-// index_schema records built it. A listed repository has no index job queued
+// index_schema records built it, or a step of another index format advanced
+// it. A listed repository has no index job queued
 // or running. It also has no onboarding job that finished within retryAfter
 // without building an index: one that failed or was skipped will fail or be
 // skipped again.

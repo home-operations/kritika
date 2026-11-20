@@ -60,11 +60,33 @@ func checkBacklog(t *testing.T, s *Store, account string, names map[string]strin
 	}
 }
 
+// checkMixed checks whether FindGeneration says that a step of another
+// index format advanced the repository's active generation.
+func checkMixed(t *testing.T, s *Store, account, repository string, want bool) {
+	t.Helper()
+	ctx := t.Context()
+	var g Generation
+	if err := s.WithAccount(ctx, accountID(t, s, account), func(tx pgx.Tx) error {
+		var run string
+		if err := tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories WHERE id = $1`, repository).Scan(&run); err != nil {
+			return err
+		}
+		var err error
+		g, err = FindGeneration(ctx, tx, run)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if g.Mixed != want {
+		t.Fatalf("generation of %s mixed = %v, want %v", repository, g.Mixed, want)
+	}
+}
+
 // TestOnboardCandidates makes sure that the onboarding feeder is offered the
 // correct repositories in the correct order: accounts take turns, and an
 // account's repositories whose pull requests moved last go first. A
-// repository whose index another embedder or index format built is offered
-// again.
+// repository whose index another embedder or index format built, or a step
+// of another index format advanced, is offered again.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -72,7 +94,7 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/reformat", "east/off")
+	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/reformat", "east/mixed", "east/stepped", "east/off")
 	listRepos(t, s, "west", "west/one", "west/old-failure")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "m", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
@@ -94,7 +116,7 @@ func TestOnboardCandidates(t *testing.T) {
 		}
 		ids[name], names[id] = id, name
 	}
-	if rows.Err() != nil || len(ids) != 13 {
+	if rows.Err() != nil || len(ids) != 15 {
 		t.Fatalf("repositories = %v, %v", ids, rows.Err())
 	}
 	exec := func(sql string, args ...any) {
@@ -110,7 +132,7 @@ func TestOnboardCandidates(t *testing.T) {
 	})
 	// One apply gives every repository the same created_at.
 	for name, age := range map[string]string{"east/quiet": "3 hours", "west/old-failure": "2 hours", "east/later": "1 hour", "east/rebuilt": "30 minutes",
-		"east/reformat": "20 minutes"} {
+		"east/reformat": "20 minutes", "east/mixed": "10 minutes", "east/stepped": "5 minutes"} {
 		exec(`UPDATE repositories SET created_at = now() - $2::interval WHERE id = $1`, ids[name], age)
 	}
 	for name, age := range map[string]string{"east/busy": "1 minute", "west/one": "1 day"} {
@@ -130,6 +152,27 @@ func TestOnboardCandidates(t *testing.T) {
 			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2 FROM repositories WHERE id = $1
 			RETURNING id, repository_id)
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/reformat"], runspec.IndexFormat+1)
+	// east/mixed's index, of this format, was since stepped by a build of
+	// another format. east/stepped's was stepped by one of this format, and a
+	// step of another format advanced the generation before it.
+	exec(`WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format, finished_at)
+			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2, now() - interval '1 hour' FROM repositories WHERE id = ANY($1)
+			RETURNING id, repository_id)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`,
+		[]string{ids["east/mixed"], ids["east/stepped"]}, runspec.IndexFormat)
+	step := func(name string, format int, age string) {
+		t.Helper()
+		exec(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format, created_at,
+				finished_at)
+			SELECT account_id, id, 'def', 'm', 8, 'incremental', 'completed', $2, now() - $3::interval, now() - $3::interval
+			FROM repositories WHERE id = $1`, ids[name], format, age)
+	}
+	step("east/mixed", runspec.IndexFormat-1, "1 minute")
+	step("east/stepped", runspec.IndexFormat, "1 minute")
+	step("east/stepped", runspec.IndexFormat-1, "2 hours")
+	checkMixed(t, s, "east", ids["east/mixed"], true)
+	checkMixed(t, s, "east", ids["east/stepped"], false)
 
 	before, err := s.OnboardingInFlight(ctx)
 	if err != nil {
@@ -174,7 +217,7 @@ func TestOnboardCandidates(t *testing.T) {
 			got = append(got, name)
 		}
 	}
-	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/reformat", "east/stale"}
+	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/reformat", "east/mixed", "east/stale"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("candidates = %v, want %v", got, want)
 	}
@@ -183,7 +226,7 @@ func TestOnboardCandidates(t *testing.T) {
 	}
 	// The dashboard's backlog of one account is the feeder's order, less
 	// the other accounts' turns.
-	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/reformat", "east/stale"})
+	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/reformat", "east/mixed", "east/stale"})
 	// A repository that its configuration leaves off is passed over, and takes
 	// none of the limit: here, every one of east's.
 	west := accountID(t, s, "west")

@@ -690,7 +690,10 @@ for each chunk: the index format. A new format drops no index. Each
 repository's index keeps answering similar-code lookups, and pushes keep
 it current, while the leader rebuilds it in the new format, a few at a
 time as `KRITIKA_ONBOARD_WINDOW` paces them. During a rollout, index jobs
-wait for a replica of the release that the leader runs.
+wait for a replica of the release that the leader runs. A replica of a
+release from before index formats does not wait: it can update an index
+that the new release built with chunks of its own format. The leader then
+rebuilds that index too, as it does one of another format.
 
 ### Prompts
 
