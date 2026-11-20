@@ -22,11 +22,12 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// Similarity retrieval bounds: neighbours per query and chunks kept. The
-// floor and the margin below a query's best match, under which a
-// neighbour is noise, are the embedder's.
+// Similarity retrieval bounds: neighbours per query, chunks kept of one
+// file, and chunks kept. The floor and the margin below a query's best
+// match, under which a neighbour is noise, are the embedder's.
 const (
 	similarPerQuery = 4
+	similarPerFile  = 2
 	similarMax      = 10
 )
 
@@ -221,11 +222,14 @@ func (g *Server) similar(
 }
 
 // keepSimilar is the hits at or above floor and within margin of the best hit
-// of their query. It keeps each chunk once, the most similar first and at
-// most similarMax of them, and labels each with its similarity. Each query's
-// scores sit at a height of their own, set by the code that it is near. So
-// one floor cuts one query's good matches and keeps another's noise. The
-// margin is measured from each query's best instead.
+// of their query. It keeps each chunk once, at most similarPerFile of one
+// file and at most similarMax in all, and labels each with its similarity.
+// It takes every query's best hit, the most similar first, before any
+// query's second, and so on. So neither one query whose neighbours all score
+// high nor one file's neighbouring declarations take every place. Each
+// query's scores sit at a height of their own, set by the code that it is
+// near. So one floor cuts one query's good matches and keeps another's
+// noise. The margin is measured from each query's best instead.
 func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.Chunk {
 	best := map[int]float64{}
 	for _, h := range hits {
@@ -242,19 +246,36 @@ func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.C
 		}
 	}
 	slices.SortStableFunc(kept, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
+	// A hit's rank is its place among its own query's kept hits.
+	ranked := make([]rankedHit, len(kept))
+	next := map[int]int{}
+	for i, h := range kept {
+		ranked[i] = rankedHit{hit: h, rank: next[h.Query]}
+		next[h.Query]++
+	}
+	slices.SortStableFunc(ranked, func(a, b rankedHit) int { return cmp.Compare(a.rank, b.rank) })
 	seen := map[string]bool{}
+	perFile := map[string]int{}
 	chunks := make([]contextpack.Chunk, 0, min(len(kept), similarMax))
-	for _, h := range kept {
+	for _, r := range ranked {
+		h := r.hit
 		if len(chunks) == similarMax {
 			break
 		}
 		key := fmt.Sprintf("%s:%d", h.Chunk.Path, h.Chunk.StartLine)
-		if seen[key] {
+		if seen[key] || perFile[h.Chunk.Path] == similarPerFile {
 			continue
 		}
 		seen[key] = true
+		perFile[h.Chunk.Path]++
 		h.Chunk.Ref = fmt.Sprintf("similarity %.2f", h.Similarity)
 		chunks = append(chunks, h.Chunk)
 	}
 	return chunks
+}
+
+// rankedHit is a hit and its place among its query's hits, 0 for the best.
+type rankedHit struct {
+	hit  store.SimilarHit
+	rank int
 }

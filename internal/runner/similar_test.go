@@ -81,7 +81,7 @@ func TestSimilarContextExclusions(t *testing.T) {
 			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: true}}
 			s := reviewSpec()
 			s.GatewayURL = gw.serve(t).URL
-			_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, res,
+			_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, res, nil,
 				slog.New(slog.DiscardHandler))
 			if want := [][]string{{"main.go", "new.go", "old.go"}}; !slices.EqualFunc(gw.excluded, want, slices.Equal) {
 				t.Fatalf("reported exclusions %q, want %q", gw.excluded, want)
@@ -190,4 +190,25 @@ func TestHunkQueries(t *testing.T) {
 			t.Fatalf("queries of an empty diff = %q", got)
 		}
 	})
+}
+
+// TestWithoutOverlap: a similar chunk is left out when another stage already
+// shows any of its lines.
+func TestWithoutOverlap(t *testing.T) {
+	similar := func(path string, start, end int) contextpack.Chunk {
+		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end}
+	}
+	others := []contextpack.Chunk{
+		{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 10, EndLine: 20},
+		{Stage: contextpack.StageCaller, Path: "caller.go", StartLine: 5, EndLine: 5},
+		similar("kept.go", 1, 9),
+	}
+	got := withoutOverlap([]contextpack.Chunk{
+		similar("util.go", 1, 9), similar("util.go", 18, 30), similar("util.go", 21, 40), similar("caller.go", 1, 5),
+		similar("other.go", 10, 20), similar("kept.go", 1, 9),
+	}, others)
+	want := []contextpack.Chunk{similar("util.go", 1, 9), similar("util.go", 21, 40), similar("other.go", 10, 20), similar("kept.go", 1, 9)}
+	if !slices.Equal(got, want) {
+		t.Fatalf("withoutOverlap = %+v, want %+v", got, want)
+	}
 }

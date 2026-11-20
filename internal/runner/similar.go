@@ -306,3 +306,13 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 }
 
 var _ agent.Tool = (*searchTool)(nil)
+
+// withoutOverlap is the similar chunks that share no line with a chunk of
+// another stage, which already shows that code.
+func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
+	return slices.DeleteFunc(slices.Clone(similar), func(c contextpack.Chunk) bool {
+		return slices.ContainsFunc(others, func(o contextpack.Chunk) bool {
+			return o.Stage != contextpack.StageSimilar && o.Path == c.Path && o.StartLine <= c.EndLine && c.StartLine <= o.EndLine
+		})
+	})
+}

@@ -654,7 +654,10 @@ a review's prompt carries the index's chunks (pieces of files) nearest the
 change. The agent gets a `search_code` tool over the same index. Both
 keep a chunk only when it scores at least `similarFloor` and no more than
 `similarMargin` below the best match of its query. A query is either a
-hunk of the diff or a `search_code` query.
+hunk of the diff or a `search_code` query. Of the chunks kept, an answer
+takes each query's best match before any query's second, at most two
+chunks of one file and ten in all. The review's prompt also leaves out a
+chunk whose lines another context stage already shows.
 
 How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and

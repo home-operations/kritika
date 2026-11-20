@@ -60,6 +60,12 @@ func TestKeepSimilar(t *testing.T) {
 			0.5, 0.1, []string{"a.go:1:similarity 0.80"}},
 		{"no margin keeps each query's best", []store.SimilarHit{near(0, "a.go", 0.8), near(0, "b.go", 0.79), near(1, "c.go", 0.6)},
 			0.5, 0, []string{"a.go:1:similarity 0.80", "c.go:1:similarity 0.60"}},
+		{"each query's best before any query's second", []store.SimilarHit{
+			near(0, "a.go", 0.95), near(0, "b.go", 0.94), near(0, "c.go", 0.93), near(1, "d.go", 0.80),
+		}, 0.5, 0.1, []string{"a.go:1:similarity 0.95", "d.go:1:similarity 0.80", "b.go:1:similarity 0.94", "c.go:1:similarity 0.93"}},
+		{"at most two chunks of a file", []store.SimilarHit{
+			hit("f.go", 1, 0.90), hit("f.go", 10, 0.89), hit("f.go", 20, 0.88), hit("g.go", 1, 0.87),
+		}, 0.5, 0.1, []string{"f.go:1:similarity 0.90", "f.go:10:similarity 0.89", "g.go:1:similarity 0.87"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

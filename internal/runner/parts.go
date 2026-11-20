@@ -95,7 +95,7 @@ func partPrompts(
 		}
 		for i, out := range similar {
 			if out.Indexed {
-				chunks[i] = append(chunks[i], out.Chunks...)
+				chunks[i] = append(chunks[i], withoutOverlap(out.Chunks, chunks[i])...)
 				tools.search = newSearchTool(p, secrets)
 			}
 		}

@@ -311,7 +311,7 @@ func wholePrompt(
 	})
 	p.Prompt = &promptSpec
 	var similar []contextpack.Chunk
-	similar, tools.search = similarContext(ctx, p, secrets, res, logger)
+	similar, tools.search = similarContext(ctx, p, secrets, res, chunks, logger)
 	chunks = append(chunks, similar...)
 	prompt := newAgentPrompt(p, in, packView{
 		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
@@ -324,11 +324,12 @@ func wholePrompt(
 
 // similarContext is context stage 4, best effort: the code elsewhere in
 // the repository that resembles the diff's hunks, and the search_code tool
-// over the same index. An instance without an embedder, a repository
-// without a completed index, or a refused or failed request leaves both
-// out and the run goes on.
+// over the same index. It leaves out the code that others, the other
+// stages' chunks, already show. An instance without an embedder, a
+// repository without a completed index, or a refused or failed request
+// leaves both out and the run goes on.
 func similarContext(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, others []contextpack.Chunk, logger *slog.Logger,
 ) ([]contextpack.Chunk, *searchTool) {
 	if !excludeFromSimilar(ctx, p, secrets, res, logger) {
 		return nil, nil
@@ -337,7 +338,7 @@ func similarContext(
 	if !ok {
 		return nil, nil
 	}
-	return out.Chunks, newSearchTool(p, secrets)
+	return withoutOverlap(out.Chunks, others), newSearchTool(p, secrets)
 }
 
 // excludeFromSimilar reports the paths the run's similar-code searches leave
