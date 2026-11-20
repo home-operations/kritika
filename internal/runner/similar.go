@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 
@@ -339,8 +340,11 @@ func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
 // moved, at the nearest place the head holds it, and shown at those lines. A
 // chunk whose text the head no longer holds is left out rather than shown
 // by its old lines: those now hold code that its similarity was not measured
-// for. The index cuts a long chunk's text short, so its last line need only
-// begin the head's, and the chunk claims the lines its text covers.
+// for. The index cuts a long chunk's text short at MaxChunkBytes, which
+// leaves it fewer lines than its range or a text of that length. Only then
+// need its last line merely begin the head's, and the chunk claims the lines
+// its text covers. Any other chunk's lines must all be the head's, or a line
+// that the head has since extended would be shown as the head's.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string][]string{}
 	var out []contextpack.Chunk
@@ -350,9 +354,10 @@ func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 			lines = headLines(head, c.Path)
 			files[c.Path] = lines
 		}
-		if start, ok := findText(lines, c.Text, c.StartLine-1); ok {
-			c.EndLine = start + strings.Count(strings.TrimSuffix(c.Text, "\n"), "\n") + 1
-			c.StartLine = start + 1
+		n := strings.Count(strings.TrimSuffix(c.Text, "\n"), "\n") + 1
+		cut := n < c.EndLine-c.StartLine+1 || len(c.Text) > indexer.DefaultOptions.MaxChunkBytes-utf8.UTFMax
+		if start, ok := findText(lines, c.Text, c.StartLine-1, cut); ok {
+			c.StartLine, c.EndLine = start+1, start+n
 			out = append(out, c)
 		}
 	}
@@ -374,8 +379,9 @@ func headLines(head *object.Tree, path string) []string {
 }
 
 // findText is the 0-based line of lines where text starts, the one nearest
-// near when it is in more than one place, false when it is in none.
-func findText(lines []string, text string, near int) (int, bool) {
+// near when it is in more than one place, false when it is in none. A cut
+// text's last line need only begin the line it is at.
+func findText(lines []string, text string, near int, cut bool) (int, bool) {
 	text = strings.TrimSuffix(text, "\n")
 	if text == "" {
 		return 0, false
@@ -386,6 +392,9 @@ func findText(lines []string, text string, near int) (int, bool) {
 			return false
 		}
 		last := len(want) - 1
+		if !cut {
+			return slices.Equal(lines[i:i+len(want)], want)
+		}
 		return slices.Equal(lines[i:i+last], want[:last]) && strings.HasPrefix(lines[i+last], want[last])
 	}
 	for d := 0; near-d >= 0 || near+d < len(lines); d++ {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/runspec"
 )
 
@@ -264,10 +265,12 @@ func TestSimilarContextWithoutQueries(t *testing.T) {
 }
 
 // TestAtHead: a similar chunk is shown as the head has it. One whose text
-// moved is shown at its new lines, one cut short claims only the lines it
-// shows, and one whose text or file the head no longer has is left out.
+// moved is shown at its new lines, and one cut short claims only the lines
+// it shows. One whose text or file the head no longer has is left out, as is
+// one not cut short whose last line the head has more of.
 func TestAtHead(t *testing.T) {
-	head := tree(t, map[string]string{"lib.go": "package lib\n\nfunc a() {\n\treturn\n}\n\nfunc b() {}\n"})
+	long := "var x = \"" + strings.Repeat("x", indexer.DefaultOptions.MaxChunkBytes) + "\""
+	head := tree(t, map[string]string{"lib.go": "package lib\n\nfunc a() {\n\treturn\n}\n\nfunc b() {}\n", "long.go": "package lib\n" + long + "\n"})
 	chunk := func(path string, start, end int, text string) contextpack.Chunk {
 		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end, Text: text}
 	}
@@ -279,6 +282,11 @@ func TestAtHead(t *testing.T) {
 		{"where the index has it", chunk("lib.go", 3, 5, "func a() {\n\treturn\n}"), []contextpack.Chunk{chunk("lib.go", 3, 5, "func a() {\n\treturn\n}")}},
 		{"moved", chunk("lib.go", 1, 3, "func a() {\n\treturn\n}"), []contextpack.Chunk{chunk("lib.go", 3, 5, "func a() {\n\treturn\n}")}},
 		{"cut short", chunk("lib.go", 3, 5, "func a() {\n\tret"), []contextpack.Chunk{chunk("lib.go", 3, 4, "func a() {\n\tret")}},
+		{
+			"one line cut short", chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes]),
+			[]contextpack.Chunk{chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes])},
+		},
+		{"a last line the head has more of", chunk("lib.go", 3, 4, "func a() {\n\tret"), nil},
 		{"changed", chunk("lib.go", 3, 5, "func a() {\n\tpanic(1)\n}"), nil},
 		{"past the file's end", chunk("lib.go", 7, 9, "func b() {}\n\nfunc c() {}"), nil},
 		{"gone", chunk("old.go", 1, 1, "func b() {}"), nil},
