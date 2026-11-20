@@ -448,6 +448,10 @@ func (w *Index) embed(
 	if err != nil {
 		return 0, pack, err
 	}
+	var activeRun string
+	if active != nil {
+		activeRun = active.ID
+	}
 	err = w.withLease(ctx, account, "embed:"+emb.Model, slots, job.ID, func(ctx context.Context) error {
 		for {
 			var batch []store.StagedChunk
@@ -459,7 +463,7 @@ func (w *Index) embed(
 			if err != nil || len(batch) == 0 {
 				return err
 			}
-			vectors, err := w.vectorsFor(ctx, args, account, embedder, emb, runnerRunID, batch)
+			vectors, err := w.vectorsFor(ctx, args, account, embedder, emb, runID, runnerRunID, activeRun, batch)
 			if err != nil {
 				return err
 			}
@@ -521,12 +525,13 @@ func (w *Index) embed(
 }
 
 // vectorsFor returns a vector for each chunk of batch and sets each chunk's
-// content hash. A chunk whose hash the repository's index already holds
-// takes the vector held. The others are embedded, each distinct text once, and
-// only their tokens count as usage.
+// content hash. A chunk whose hash run, the run being built, or activeRun,
+// the repository's active generation, already holds takes the vector held.
+// The others are embedded, each distinct text once, and only their tokens
+// count as usage.
 func (w *Index) vectorsFor(
 	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
-	runnerRunID string, batch []store.StagedChunk,
+	runID, runnerRunID, activeRun string, batch []store.StagedChunk,
 ) ([][]float32, error) {
 	texts := make([]string, len(batch))
 	hashes := make([][]byte, len(batch))
@@ -538,7 +543,7 @@ func (w *Index) vectorsFor(
 	var held map[string][]float32
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		var err error
-		held, err = store.IndexVectors(ctx, tx, args.RepositoryID, hashes)
+		held, err = store.IndexVectors(ctx, tx, args.RepositoryID, runID, activeRun, hashes)
 		return err
 	})
 	if err != nil {

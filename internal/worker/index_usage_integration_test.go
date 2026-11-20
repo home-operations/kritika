@@ -148,10 +148,11 @@ func TestIndexBatchUsage(t *testing.T) {
 	}
 }
 
-// TestIndexReusesVectors: a chunk whose text the account's index already
-// holds, embedded by the same embedder, takes the vector it holds rather
-// than be embedded again, and a text that a batch holds twice is embedded
-// once. Only what the embedder is sent counts as usage.
+// TestIndexReusesVectors: a chunk whose text the repository's active
+// generation or the run being built already holds, embedded by the same
+// embedder, takes the vector it holds rather than be embedded again, and a
+// text that a batch holds twice is embedded once. Only what the embedder is
+// sent counts as usage.
 func TestIndexReusesVectors(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -213,7 +214,15 @@ func TestIndexReusesVectors(t *testing.T) {
 		t.Helper()
 		sent = nil
 		var run, runner string
+		var active *store.Generation
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			var activeRun *string
+			if err := tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories WHERE id = $1`, repo).Scan(&activeRun); err != nil {
+				return err
+			}
+			if activeRun != nil {
+				active = &store.Generation{ID: *activeRun}
+			}
 			var err error
 			run, runner, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
 				AccountID: account.ID(), RepositoryID: repo, Commit: commit, Mode: store.IndexModeFull, Trigger: jobs.TriggerPush,
@@ -232,7 +241,7 @@ func TestIndexReusesVectors(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, nil, 1); err != nil {
+		if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, active, 1); err != nil {
 			t.Fatalf("embed: %v", err)
 		}
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {

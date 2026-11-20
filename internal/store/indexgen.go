@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -224,15 +225,20 @@ func InsertIndexChunks(
 	return nil
 }
 
-// IndexVectors returns, by content hash, a vector that the repository's
-// index chunks hold for each of hashes that any holds. A chunk of any run
-// will do, the active generation's, the run being built or one left behind:
-// the hash covers the text and the embedder, and index_chunks holds the
-// vectors of one embedder alone. The vectors are as halfvec stores them,
-// which an insert stores again unchanged.
-func IndexVectors(ctx context.Context, tx pgx.Tx, repositoryID string, hashes [][]byte) (map[string][]float32, error) {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT ON (content_hash) content_hash, embedding::real[] FROM index_chunks
-		WHERE repository_id = $1 AND content_hash = ANY($2::bytea[]) AND content_hash IS NOT NULL`, repositoryID, hashes)
+// indexVectorsSQL finds the vectors of IndexVectors. Naming the runs, rather
+// than the repository alone, reads their hash partitions alone.
+const indexVectorsSQL = `SELECT DISTINCT ON (content_hash) content_hash, embedding::real[] FROM index_chunks
+	WHERE repository_id = $1 AND index_run_id IN ($2, $3) AND content_hash = ANY($4::bytea[]) AND content_hash IS NOT NULL`
+
+// IndexVectors returns, by content hash, a vector that the index chunks of
+// run, the run being built, or of active, the repository's active generation
+// ("" for none), hold for each of hashes that any holds. The hash covers the
+// text and the embedder, and index_chunks holds the vectors of one embedder
+// alone. A run that a build left behind is not read, so that the lookup
+// reads two partitions rather than every one. The vectors are as halfvec
+// stores them, which an insert stores again unchanged.
+func IndexVectors(ctx context.Context, tx pgx.Tx, repositoryID, run, active string, hashes [][]byte) (map[string][]float32, error) {
+	rows, err := tx.Query(ctx, indexVectorsSQL, repositoryID, run, cmp.Or(active, run), hashes)
 	if err != nil {
 		return nil, fmt.Errorf("store: find index vectors: %w", err)
 	}

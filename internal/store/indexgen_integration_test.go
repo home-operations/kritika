@@ -5,7 +5,9 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -253,11 +255,13 @@ func publishConcurrently(t *testing.T, s *Store, account string, publishFirst, p
 	return <-second
 }
 
-// TestIndexVectors: a chunk's vector is found by its content hash within its
-// repository, and copied as stored. A chunk of the same hash in another
-// repository is not found, nor one in another account, which row-level
-// security hides even when the query names its repository, nor a chunk
-// without a hash.
+// TestIndexVectors: a chunk's vector is found by its content hash within the
+// run being built and the repository's active generation, and copied as
+// stored. A chunk of the same hash in another run of the repository is not
+// found, nor one in another repository, nor one in another account, which
+// row-level security hides even when the query names its repository and
+// run, nor a chunk without a hash. The lookup reads the two runs' partitions
+// alone.
 func TestIndexVectors(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -293,14 +297,20 @@ apps:
 	// A vector that halfvec stores exactly, which a round trip through text
 	// or float32 must keep bit for bit.
 	stored := []float32{0.1, -0.333, 1e-3, 65504, 0, 0.5, -2, 3.14159}
-	insert := func(account, repository string, hash []byte, vector []float32) {
+	newRun := func(account, repository string) string {
+		t.Helper()
+		var run string
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+				VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'running') RETURNING id`, account, repository).Scan(&run)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return run
+	}
+	insert := func(account, repository, run string, hash []byte, vector []float32) {
 		t.Helper()
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			var run string
-			if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-				VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'running') RETURNING id`, account, repository).Scan(&run); err != nil {
-				return err
-			}
 			return InsertIndexChunks(ctx, tx, account, repository, run,
 				[]StagedChunk{{Path: "main.go", Text: "text", ContentHash: hash}}, [][]float32{vector})
 		}); err != nil {
@@ -308,16 +318,21 @@ apps:
 		}
 	}
 	shared, other, copied := []byte("shared-hash-0123456789abcdef0123"), []byte("other-hash-0123456789abcdef01234"), []byte("copied-hash-0123456789abcdef0123")
-	insert(ours, one, shared, stored)
-	insert(ours, one, nil, []float32{1, 0, 0, 0, 0, 0, 0, 0})
-	insert(ours, two, other, []float32{0, 1, 0, 0, 0, 0, 0, 0})
-	insert(theirs, theirsOne, shared, []float32{0, 0, 1, 0, 0, 0, 0, 0})
-	lookup := func(account, repository string, hashes ...[]byte) map[string][]float32 {
+	built, active, abandoned := newRun(ours, one), newRun(ours, one), newRun(ours, one)
+	unhashed := []byte("abandoned-hash-0123456789abcdef0")
+	insert(ours, one, active, shared, stored)
+	insert(ours, one, built, nil, []float32{1, 0, 0, 0, 0, 0, 0, 0})
+	insert(ours, one, abandoned, unhashed, []float32{0, 0, 0, 1, 0, 0, 0, 0})
+	twoRun := newRun(ours, two)
+	insert(ours, two, twoRun, other, []float32{0, 1, 0, 0, 0, 0, 0, 0})
+	theirsRun := newRun(theirs, theirsOne)
+	insert(theirs, theirsOne, theirsRun, shared, []float32{0, 0, 1, 0, 0, 0, 0, 0})
+	lookup := func(account, repository, run, activeRun string, hashes ...[]byte) map[string][]float32 {
 		t.Helper()
 		var found map[string][]float32
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var err error
-			found, err = IndexVectors(ctx, tx, repository, hashes)
+			found, err = IndexVectors(ctx, tx, repository, run, activeRun, hashes)
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -325,16 +340,35 @@ apps:
 		return found
 	}
 	want := halfvecRound(t, s, stored)
-	found := lookup(ours, one, shared, other, []byte("missing-hash-0123456789abcdef012"))
+	found := lookup(ours, one, built, active, shared, other, unhashed, []byte("missing-hash-0123456789abcdef012"))
 	if len(found) != 1 || !slices.Equal(found[string(shared)], want) {
 		t.Fatalf("vectors/one found %v, want only the shared hash's stored vector %v", found, want)
 	}
-	if found := lookup(ours, theirsOne, shared); len(found) != 0 {
+	if found := lookup(ours, one, built, "", shared); len(found) != 0 {
+		t.Fatalf("vectors/one found %v without the active generation, want none", found)
+	}
+	if found := lookup(ours, theirsOne, theirsRun, "", shared); len(found) != 0 {
 		t.Fatalf("vectors found %v of strangers'", found)
+	}
+	if err := s.WithAccount(ctx, ours, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, "EXPLAIN "+indexVectorsSQL, one, built, active, [][]byte{shared})
+		if err != nil {
+			return err
+		}
+		plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if text := strings.Join(plan, "\n"); strings.Count(text, " on index_chunks_") > 2 {
+			return fmt.Errorf("the lookup read more than the two runs' partitions:\n%s", text)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	// The copy is the stored vector exactly: inserted again from what was
 	// read, it equals the source.
-	insert(ours, one, copied, found[string(shared)])
+	insert(ours, one, built, copied, found[string(shared)])
 	var equal bool
 	if err := s.owner.QueryRow(ctx, `SELECT (SELECT embedding FROM index_chunks WHERE content_hash = $1 AND account_id = $3) =
 		(SELECT embedding FROM index_chunks WHERE content_hash = $2)`, shared, copied, ours).Scan(&equal); err != nil {
