@@ -148,11 +148,14 @@ type IndexReport struct {
 
 // IndexPack is what an index runner wrote: the mode it built in, which
 // can be full where an incremental step was asked for, and the paths that
-// changed since the base.
+// changed since the base. Truncated says that a full build stopped at the
+// indexer's budget and left out the files past it. It is omitted when
+// false, so a gateway of a build before it takes the pack.
 type IndexPack struct {
 	Mode         string   `json:"mode"`
 	Base         string   `json:"base"`
 	ChangedPaths []string `json:"changedPaths"`
+	Truncated    bool     `json:"truncated,omitempty"`
 }
 
 // IndexChunk is one chunk that an index runner staged, before embedding.

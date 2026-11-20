@@ -86,7 +86,7 @@ func (s *Server) getIndex(w http.ResponseWriter, r *http.Request, t *accountScop
 	}
 	writeJSON(w, http.StatusOK, IndexContents{
 		Indexed: true, Commit: c.Commit, EmbedModel: c.EmbedModel, EmbedDims: c.EmbedDims,
-		BuiltAt: &c.CreatedAt, FinishedAt: c.FinishedAt, Chunks: c.Chunks, Files: c.Files, Current: c.Current,
+		BuiltAt: &c.CreatedAt, FinishedAt: c.FinishedAt, Chunks: c.Chunks, Files: c.Files, Current: c.Current, Truncated: c.Truncated,
 	})
 	return nil
 }

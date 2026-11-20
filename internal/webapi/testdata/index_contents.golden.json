@@ -7,5 +7,6 @@
   "finishedAt": "2026-09-01T12:01:30Z",
   "chunks": 12,
   "files": 3,
-  "current": true
+  "current": true,
+  "truncated": false
 }

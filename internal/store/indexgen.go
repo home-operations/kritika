@@ -144,14 +144,16 @@ func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRu
 type IndexPack = runspec.IndexPack
 
 // ReadIndexPack reads the index pack that a runner run wrote and records
-// its mode on the run. The runner can fall back to a full build.
+// its mode, and whether it was truncated, on the run. The runner can fall
+// back to a full build.
 func ReadIndexPack(ctx context.Context, tx pgx.Tx, runID, runnerRunID string) (IndexPack, error) {
 	var p IndexPack
-	if err := tx.QueryRow(ctx, `SELECT mode, base_sha, changed_paths FROM index_packs WHERE runner_run_id = $1`, runnerRunID).
-		Scan(&p.Mode, &p.Base, &p.ChangedPaths); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT mode, base_sha, changed_paths, truncated FROM index_packs WHERE runner_run_id = $1`, runnerRunID).
+		Scan(&p.Mode, &p.Base, &p.ChangedPaths, &p.Truncated); err != nil {
 		return p, fmt.Errorf("store: read index pack: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET mode = $2, base_sha = $3 WHERE id = $1`, runID, p.Mode, p.Base); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE index_runs SET mode = $2, base_sha = $3, truncated = $4 WHERE id = $1`,
+		runID, p.Mode, p.Base, p.Truncated); err != nil {
 		return p, fmt.Errorf("store: record index mode: %w", err)
 	}
 	return p, nil

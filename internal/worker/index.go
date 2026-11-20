@@ -180,7 +180,8 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	} else {
 		logger.Info("index embedding resumed", "run", runID)
 	}
-	n, mode, err := w.embed(ctx, job, account, embedder, emb, commit, runID, runnerRunID, active, indexSlots(file.Slots(account, emb.Ref)))
+	n, pack, err := w.embed(ctx, job, account, embedder, emb, commit, runID, runnerRunID, active, indexSlots(file.Slots(account, emb.Ref)))
+	mode = pack.Mode
 	if errors.Is(err, store.ErrGenerationChanged) {
 		logger.Info("index again: another run published while it ran")
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexSuperseded), n)
@@ -198,8 +199,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		defer fcancel()
 		return errors.Join(err, w.finish(fctx, job, runID, runnerRunID, store.IndexFailed, n, err.Error()))
 	}
-	logger.Info("index completed", "mode", mode, "chunks", n)
-	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
+	w.completed(account, pack, n, logger)
 	// A forced rebuild leaves the tip to the catch-up it queued as it published.
 	if args.Full {
 		return nil
@@ -219,6 +219,16 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return river.JobSnooze(0)
 	}
 	return nil
+}
+
+// completed logs and counts an index run that published n chunks from pack.
+func (w *Index) completed(account *configfile.Account, pack store.IndexPack, n int, logger *slog.Logger) {
+	logger.Info("index completed", "mode", pack.Mode, "chunks", n)
+	w.Metrics.IndexRun(account.Key(), pack.Mode, string(store.IndexCompleted), n)
+	if pack.Truncated {
+		logger.Warn("index published truncated: the build stopped at the indexer's budget and left out the files past it", "chunks", n)
+		w.Metrics.IndexTruncated(account.Key())
+	}
 }
 
 // appliedBuildWait is how long an index job waits on a pod whose embedder or
@@ -322,13 +332,13 @@ func (w *Index) finish(
 // review never sees a half-built index, and a retry never finds an active
 // generation still running. A full build makes its run the active generation.
 // An incremental step moves its chunks into the active generation, in place
-// of the changed paths' chunks.
+// of the changed paths' chunks. It returns the runner's pack.
 // For a forced rebuild, this transaction also completes the River job. That
 // completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
 	commit, runID, runnerRunID string, active *store.Generation, slots int,
-) (int, string, error) {
+) (int, store.IndexPack, error) {
 	args := job.Args
 	var pack store.IndexPack
 	var last int64
@@ -346,7 +356,7 @@ func (w *Index) embed(
 		return err
 	})
 	if err != nil {
-		return 0, pack.Mode, err
+		return 0, pack, err
 	}
 	err = w.withLease(ctx, account, "embed:"+emb.Model, slots, job.ID, func(ctx context.Context) error {
 		for {
@@ -380,7 +390,7 @@ func (w *Index) embed(
 		}
 	})
 	if err != nil {
-		return total, pack.Mode, err
+		return total, pack, err
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		if err := store.LockIndexBuild(ctx, tx, args.AccountID, args.RepositoryID, job.ID, job.Attempt); err != nil {
@@ -417,7 +427,7 @@ func (w *Index) embed(
 		}
 		return nil
 	})
-	return total, pack.Mode, err
+	return total, pack, err
 }
 
 // vectorsFor returns a vector for each chunk of batch and sets each chunk's

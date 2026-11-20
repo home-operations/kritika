@@ -6,6 +6,7 @@
   import type { RepoDetail, Repository } from '../types';
   import StateView from './StateView.svelte';
   import Time from './Time.svelte';
+  import Pill from './Pill.svelte';
 
   let { slug, repo }: { slug: string; repo: Repository } = $props();
   const res = Resource.live<RepoDetail>(() => `${accountApi(slug)}/repos/${repoPath(repo.fullName)}`);
@@ -30,7 +31,11 @@
       <div class="min-w-0">
         <h2 class="preview-heading">Code index</h2>
         <dl class="preview-facts">
-          <dt>Indexed commit</dt><dd class="mono" title={d.index.activeCommit ?? undefined}>{d.index.activeCommit ? shortSha(d.index.activeCommit) : 'Not indexed'}</dd>
+          <dt>Indexed commit</dt>
+          <dd>
+            <span class="mono" title={d.index.activeCommit ?? undefined}>{d.index.activeCommit ? shortSha(d.index.activeCommit) : 'Not indexed'}</span>
+            {#if d.index.truncated}<Pill tone="warn" label="partial" title="The build stopped at the indexer's limit on files, bytes or chunks: the files past it are not indexed." />{/if}
+          </dd>
           {#if run}
             <dt>Latest run</dt><dd>{run.status} · {run.mode}</dd>
             <dt>Started</dt><dd><Time iso={run.createdAt} /></dd>

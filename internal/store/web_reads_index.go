@@ -66,6 +66,9 @@ type IndexContents struct {
 	// Current is false when another embedder than the applied one built
 	// it: the gateway does not query it, and onboarding rebuilds it.
 	Current bool
+	// Truncated is true when its full build stopped at the indexer's
+	// budget and left out the files past it.
+	Truncated bool
 }
 
 // ReadIndexContents reads what repositoryID's active index generation
@@ -74,10 +77,11 @@ func ReadIndexContents(ctx context.Context, tx pgx.Tx, repositoryID string) (Ind
 	var c IndexContents
 	err := tx.QueryRow(ctx, `SELECT g.id::text, g.commit_sha, g.embed_model, g.embed_dims, g.created_at, g.finished_at,
 			EXISTS (SELECT 1 FROM index_schema s
-				WHERE (s.embed_model, s.embed_dims, s.document_prompt) = (g.embed_model, g.embed_dims, g.document_prompt))
+				WHERE (s.embed_model, s.embed_dims, s.document_prompt) = (g.embed_model, g.embed_dims, g.document_prompt)),
+			g.truncated
 		FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
 		WHERE r.id = $1`, repositoryID).
-		Scan(&c.RunID, &c.Commit, &c.EmbedModel, &c.EmbedDims, &c.CreatedAt, &c.FinishedAt, &c.Current)
+		Scan(&c.RunID, &c.Commit, &c.EmbedModel, &c.EmbedDims, &c.CreatedAt, &c.FinishedAt, &c.Current, &c.Truncated)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}

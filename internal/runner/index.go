@@ -49,6 +49,10 @@ func runIndex(ctx context.Context, report *reporter, p runspec.Spec, secrets run
 	}
 	logger.Info("chunked", "mode", mode, "chunks", len(chunks), "changed_paths", len(changed), "files", stats.Files,
 		"parsed", stats.Parsed, "skipped", stats.Skipped, "truncated", stats.Truncated, "elapsed", stats.Elapsed.Round(time.Millisecond))
+	if stats.Truncated {
+		logger.Warn("index truncated at the indexer's budget: the files past it are left out", "files", stats.Files, "bytes", stats.Bytes,
+			"chunks", len(chunks))
+	}
 
 	if err := report.phase(ctx, "writing"); err != nil {
 		return err
@@ -62,7 +66,7 @@ func runIndex(ctx context.Context, report *reporter, p runspec.Spec, secrets run
 			Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text}
 	}
 	err = report.index(ctx, runspec.IndexPack{
-		Base: baseFor(mode, p.Base), Mode: mode, ChangedPaths: changed,
+		Base: baseFor(mode, p.Base), Mode: mode, ChangedPaths: changed, Truncated: stats.Truncated,
 	}, staged)
 	if err != nil {
 		return err

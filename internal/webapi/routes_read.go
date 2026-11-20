@@ -300,7 +300,10 @@ func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
 		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, DefaultBranch: r.DefaultBranch,
 		Archived: r.Archived, Fork: r.Fork, Visibility: r.Visibility, TurnedOn: r.TurnedOn,
-		Index: IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
+		Index: IndexState{
+			ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt,
+			Truncated: r.IndexTruncated,
+		},
 	}
 	if r.LastReview != nil {
 		out.LastReview = &ReviewRef{ID: r.LastReview.ID, Status: r.LastReview.Status, CreatedAt: r.LastReview.CreatedAt}

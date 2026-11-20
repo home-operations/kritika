@@ -171,6 +171,7 @@ test("a repository's index lists its files and their chunks, the text for an adm
     chunks: 5,
     files: 2,
     current: true,
+    truncated: true,
   };
   const files: IndexFile[] = [
     { path: 'cmd/app/main.go', language: 'go', chunks: 3 },
@@ -204,6 +205,8 @@ test("a repository's index lists its files and their chunks, the text for an adm
   await page.goto(`${account}/repos/alpha/one`);
   await page.getByRole('button', { name: 'Index contents', exact: true }).click();
   await expect(page.locator('dt').filter({ hasText: 'Chunks' }).locator('+ dd')).toHaveText('5');
+  // The build stopped at the indexer's budget.
+  await expect(page.locator('dt').filter({ hasText: 'Files' }).locator('+ dd')).toHaveText('2 partial');
   await expect(page.getByRole('cell', { name: 'docs/readme.md', exact: true })).toBeVisible();
   await page.getByPlaceholder('Filter by path').fill('cmd');
   await expect(page.getByRole('cell', { name: 'docs/readme.md', exact: true })).toHaveCount(0);

@@ -169,9 +169,9 @@ func FinishRunnerIndex(ctx context.Context, tx pgx.Tx, runID, upload string, p r
 		return fmt.Errorf("%w: %d chunks staged, %d uploaded", ErrIndexStaging, staged, count)
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count)
-		SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
-		runID, p.Base, p.Mode, p.ChangedPaths, count); err != nil {
+		INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count, truncated)
+		SELECT id, account_id, $2, $3, $4, $5, $6 FROM runner_runs WHERE id = $1`,
+		runID, p.Base, p.Mode, p.ChangedPaths, count, p.Truncated); err != nil {
 		return fmt.Errorf("store: write runner index: %w", err)
 	}
 	return SetRunnerPhase(ctx, tx, runID, "done")

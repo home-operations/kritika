@@ -184,7 +184,11 @@ current while there are any. The **Reindex** button reads **Reindex queued**
 while a reindex is queued. Expand **Repository settings** to inspect the
 effective configuration. Expand **Index runs** to investigate indexing
 failures. Expand **Index contents** to see what the similar-code index holds:
-the commit and embedder it was built at, and its files and their chunks.
+the commit and embedder it was built at, and its files and their chunks. A
+**partial** pill there, and in the repository's preview, marks an index whose
+build stopped at the indexer's limits of 50,000 files, 500 MB or 100,000
+chunks. The files past them are not indexed. The mark stays while pushes
+update the index, until a full rebuild fits within the limits.
 
 Only admins see a chunk's text. The paths that the indexer skipped, such as
 those an ignore rule matches, are not recorded, so they are not listed. See

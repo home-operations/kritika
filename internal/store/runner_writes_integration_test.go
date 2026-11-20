@@ -75,7 +75,7 @@ func TestRunnerWriteTransactions(t *testing.T) {
 }
 
 // TestRunnerIndexUpload stages an upload over several transactions, as the
-// gateway does, and seals it with its pack.
+// gateway does, and seals it with its pack, a truncated build's here.
 func TestRunnerIndexUpload(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -91,7 +91,7 @@ func TestRunnerIndexUpload(t *testing.T) {
 		}
 		return out
 	}
-	pack := runspec.IndexPack{Mode: IndexModeFull, ChangedPaths: []string{}}
+	pack := runspec.IndexPack{Mode: IndexModeFull, ChangedPaths: []string{}, Truncated: true}
 	id, token := runnerWriteFixture(t, s, account, RunnerKindIndex)
 	begin := func() (string, bool) {
 		t.Helper()
@@ -160,6 +160,10 @@ func TestRunnerIndexUpload(t *testing.T) {
 		t.Fatal("a sealed upload sent again must count as written")
 	}
 	assertRunnerWriteState(t, s, id, "done", tables, true)
+	var truncated bool
+	if err := s.owner.QueryRow(ctx, `SELECT truncated FROM index_packs WHERE runner_run_id = $1`, id).Scan(&truncated); err != nil || !truncated {
+		t.Fatalf("pack truncated = %v, %v; want the runner's true", truncated, err)
+	}
 }
 
 func runnerWriteFixture(t *testing.T, s *Store, account string, kind RunnerKind) (string, string) {

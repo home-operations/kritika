@@ -6,3 +6,9 @@
 -- the column inserts while a rollout is part done.
 ALTER TABLE index_runs ADD COLUMN index_format int NOT NULL DEFAULT 1;
 ALTER TABLE index_schema ADD COLUMN index_format int NOT NULL DEFAULT 1;
+
+-- A full build truncated by the indexer's budget leaves out the files past
+-- it. The runner says so in its pack, and the run records it. An
+-- incremental step leaves the generation's flag as it is.
+ALTER TABLE index_packs ADD COLUMN truncated boolean NOT NULL DEFAULT false;
+ALTER TABLE index_runs ADD COLUMN truncated boolean NOT NULL DEFAULT false;

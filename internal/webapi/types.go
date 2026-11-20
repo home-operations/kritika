@@ -174,6 +174,9 @@ type IndexState struct {
 	// index. The feeder keeps only a few of these indexes queued or running
 	// at once. Backlog is 0 when the repository is not waiting.
 	Backlog int `json:"backlog,omitzero"`
+	// Truncated is true when the active generation's full build stopped at
+	// the indexer's budget and left out the files past it.
+	Truncated bool `json:"truncated,omitzero"`
 }
 
 // IndexJob is an index job queued or running.
@@ -201,6 +204,9 @@ type IndexContents struct {
 	// Current is false when another embedder than the applied one built
 	// the generation: similar-code lookups skip it until it is rebuilt.
 	Current bool `json:"current"`
+	// Truncated is true when the generation's full build stopped at the
+	// indexer's budget and left out the files past it.
+	Truncated bool `json:"truncated"`
 }
 
 // IndexFile is one file an index generation holds.

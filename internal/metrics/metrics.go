@@ -31,6 +31,7 @@ type Metrics struct {
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
 	indexVectors   *prometheus.CounterVec
+	indexTruncated *prometheus.CounterVec
 	contextChunks  *prometheus.CounterVec
 	runnerRuns     *prometheus.CounterVec
 	runnerDuration *prometheus.HistogramVec
@@ -136,6 +137,10 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_index_vectors_total",
 			Help: "Vectors of index chunks, by outcome: reused from a chunk of the same text already indexed, or embedded.",
 		}, []string{lblAccount, lblOutcome}),
+		indexTruncated: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_index_truncated_total",
+			Help: "Full index builds published truncated: stopped at the indexer's budget, leaving out the files past it.",
+		}, []string{lblAccount}),
 		contextChunks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_context_chunks_total",
 			Help: "Context chunks a review's prompt was given, by stage (overlay, definition, caller, similar).",
@@ -267,6 +272,13 @@ func (m *Metrics) IndexVectors(account string, reused, embedded int) {
 	}
 	if embedded > 0 {
 		m.indexVectors.WithLabelValues(account, "embedded").Add(float64(embedded))
+	}
+}
+
+// IndexTruncated counts a full index build published truncated.
+func (m *Metrics) IndexTruncated(account string) {
+	if m != nil {
+		m.indexTruncated.WithLabelValues(account).Inc()
 	}
 }
 

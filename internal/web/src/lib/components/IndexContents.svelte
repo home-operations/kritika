@@ -53,7 +53,11 @@
           <span class="mono">{c.embedModel}</span>, {wholeNumber(c.embedDims)} dimensions
           {#if !c.current}<Pill tone="warn" label="stale" title="Built by another embedder than the configured one: similar-code lookups skip it until it is rebuilt." />{/if}
         </dd>
-        <dt>Files</dt><dd>{wholeNumber(c.files)}</dd>
+        <dt>Files</dt>
+        <dd>
+          {wholeNumber(c.files)}
+          {#if c.truncated}<Pill tone="warn" label="partial" title="The build stopped at the indexer's limit on files, bytes or chunks: the files past it are not indexed." />{/if}
+        </dd>
         <dt>Chunks</dt><dd>{wholeNumber(c.chunks)}</dd>
         {#if c.builtAt}<dt>Built</dt><dd><Time iso={c.builtAt} /></dd>{/if}
       </dl>
