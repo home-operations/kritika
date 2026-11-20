@@ -395,7 +395,7 @@ func loadIndexScale(b *testing.B, rows, dims int) (*Store, *scaleCorpus) {
 	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`); err != nil {
 		b.Fatal(err)
 	}
-	createUnpartitionedIndexChunks(b, s, "scale-embed", dims, false)
+	createUnpartitionedIndexChunks(b, s, "scale-embed", dims, false, true)
 	b.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()

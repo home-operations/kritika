@@ -20,9 +20,15 @@ import (
 // createUnpartitionedIndexChunks creates index_chunks as a build before
 // partitioning did, a plain table, and records its index schema. With index
 // false it leaves out the vector index, to be built once rows are loaded.
-func createUnpartitionedIndexChunks(t testing.TB, s *Store, model string, dims int, index bool) {
+// With hash false it leaves out the content hash, as a leader of a build
+// before content hashes recreated the table for a new embedder.
+func createUnpartitionedIndexChunks(t testing.TB, s *Store, model string, dims int, index, hash bool) {
 	t.Helper()
 	ctx := t.Context()
+	hashColumn := ""
+	if hash {
+		hashColumn = "content_hash  bytea,"
+	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE index_chunks (
 			id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -38,17 +44,19 @@ func createUnpartitionedIndexChunks(t testing.TB, s *Store, model string, dims i
 			scope         text        NOT NULL DEFAULT '',
 			text          text        NOT NULL,
 			embedding     halfvec(%d) NOT NULL,
-			content_hash  bytea,
+			%s
 			created_at    timestamptz NOT NULL DEFAULT now()
-		)`, dims),
+		)`, dims, hashColumn),
 		`CREATE INDEX index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
-		contentHashIndex,
 		`CREATE INDEX index_chunks_account_id_idx ON index_chunks (account_id)`,
 		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
 		`CREATE POLICY account_isolation ON index_chunks TO kritika_app
 			USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
 			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO kritika_app`,
+	}
+	if hash {
+		stmts = append(stmts, contentHashIndex)
 	}
 	if index {
 		stmts = append(stmts, `CREATE INDEX index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`)
@@ -358,7 +366,7 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	}
 	listRepos(t, s, "index-yield", "index-yield/one")
 	dropIndexChunks(t, s)
-	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
 	account := accountID(t, s, "index-yield")
 	repo := configfile.RepositoryID(account, "index-yield/one")
 	partitionRun(t, s, account, repo, true, "a.go")
@@ -433,7 +441,7 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	}
 	listRepos(t, s, "index-legacy", "index-legacy/one", "index-legacy/two")
 	dropIndexChunks(t, s)
-	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
 	account := accountID(t, s, "index-legacy")
 	one := configfile.RepositoryID(account, "index-legacy/one")
 	two := configfile.RepositoryID(account, "index-legacy/two")
@@ -515,7 +523,7 @@ func TestDrainLegacyIndexChunksInSlices(t *testing.T) {
 	}
 	listRepos(t, s, "index-slices", "index-slices/one")
 	dropIndexChunks(t, s)
-	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
 	account := accountID(t, s, "index-slices")
 	repo := configfile.RepositoryID(account, "index-slices/one")
 	run := partitionRun(t, s, account, repo, true, "a.go", "b.go", "c.go")
@@ -549,7 +557,7 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 	}
 	listRepos(t, s, "index-drain-race", "index-drain-race/one")
 	dropIndexChunks(t, s)
-	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
 	account := accountID(t, s, "index-drain-race")
 	repo := configfile.RepositoryID(account, "index-drain-race/one")
 	const files = 40
@@ -649,6 +657,72 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 	}
 }
 
+// TestPartitionIndexChunksAddsContentHash: a plain index_chunks that a
+// leader of a build before content hashes recreated, without the column,
+// gains it as it becomes the legacy partition. Its chunks keep no hash, and
+// new chunks record theirs.
+func TestPartitionIndexChunksAddsContentHash(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-unhashed"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-unhashed", "index-unhashed/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, false)
+	account := accountID(t, s, "index-unhashed")
+	repo := configfile.RepositoryID(account, "index-unhashed/one")
+	var run string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, account, repo).Scan(&run); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			VALUES ($1, $2, $3, 'a.go', 1, 2, 'package main', '[1,0,0,0,0,0,0,0]')`, account, repo, run); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repo, run)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	partitionLegacy(t, s)
+	var columns int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM pg_attribute WHERE attname = 'content_hash' AND NOT attisdropped
+		AND attrelid IN ('index_chunks'::regclass, 'index_chunks_legacy'::regclass)`).Scan(&columns); err != nil {
+		t.Fatal(err)
+	}
+	if columns != 2 {
+		t.Fatalf("content_hash is on %d of index_chunks and its legacy partition, want both", columns)
+	}
+	if got := similarPaths(t, s, account, run); strings.Join(got, ",") != "a.go" {
+		t.Fatalf("search of the legacy generation found %v, want a.go", got)
+	}
+	hash := []byte("unhashed-hash-0123456789abcdef01")
+	step := partitionRun(t, s, account, repo, false)
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if err := InsertIndexChunks(ctx, tx, account, repo, step,
+			[]StagedChunk{{Path: "b.go", Text: "package main", ContentHash: hash}}, [][]float32{{0, 1, 0, 0, 0, 0, 0, 0}}); err != nil {
+			return err
+		}
+		found, err := IndexVectors(ctx, tx, repo, step, run, [][]byte{hash})
+		if err != nil {
+			return err
+		}
+		if len(found) != 1 {
+			return fmt.Errorf("IndexVectors found %v, want the new chunk's vector", found)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if moved, removed := drainLegacy(t, s); moved != 1 || removed != 0 {
+		t.Fatalf("drain moved %d and deleted %d, want the generation's 1 moved", moved, removed)
+	}
+}
+
 // TestRebuildDropsLegacyIndexChunks: a rebuild for a new embedder drops the
 // legacy partition with the table.
 func TestRebuildDropsLegacyIndexChunks(t *testing.T) {
@@ -659,7 +733,7 @@ func TestRebuildDropsLegacyIndexChunks(t *testing.T) {
 	}
 	listRepos(t, s, "index-legacy-rebuild", "index-legacy-rebuild/one")
 	dropIndexChunks(t, s)
-	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
 	account := accountID(t, s, "index-legacy-rebuild")
 	partitionRun(t, s, account, configfile.RepositoryID(account, "index-legacy-rebuild/one"), true, "a.go")
 	partitionLegacy(t, s)
