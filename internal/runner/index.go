@@ -63,7 +63,7 @@ func runIndex(ctx context.Context, report *reporter, p runspec.Spec, secrets run
 	staged := make([]runspec.IndexChunk, len(chunks))
 	for n, c := range chunks {
 		staged[n] = runspec.IndexChunk{Path: c.Path, StartLine: c.StartLine, EndLine: c.EndLine,
-			Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text}
+			Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Signature: c.Signature, Text: c.Text}
 	}
 	err = report.index(ctx, runspec.IndexPack{
 		Base: baseFor(mode, p.Base), Mode: mode, ChangedPaths: changed, Truncated: stats.Truncated,

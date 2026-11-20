@@ -164,6 +164,9 @@ type StagedChunk struct {
 	ID                                        int64
 	Path, Language, Symbol, Kind, Scope, Text string
 	StartLine, EndLine                        int
+	// Signature is the line that names the declaration of a window that
+	// does not show it. Only the embedded text holds it.
+	Signature string
 	// ContentHash identifies the vector that the worker embeds for the
 	// chunk, which it sets before InsertIndexChunks. IndexVectors finds a
 	// vector by it. Nil records none.
@@ -173,14 +176,14 @@ type StagedChunk struct {
 // ReadStagedChunks reads up to limit of a runner run's staged chunks with
 // an id past after, in id order.
 func ReadStagedChunks(ctx context.Context, tx pgx.Tx, runnerRunID string, after int64, limit int) ([]StagedChunk, error) {
-	rows, err := tx.Query(ctx, `SELECT id, path, start_line, end_line, language, symbol, kind, scope, text
+	rows, err := tx.Query(ctx, `SELECT id, path, start_line, end_line, language, symbol, kind, scope, signature, text
 		FROM index_staging WHERE runner_run_id = $1 AND id > $2 ORDER BY id LIMIT $3`, runnerRunID, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: read staged chunks: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (StagedChunk, error) {
 		var c StagedChunk
-		err := row.Scan(&c.ID, &c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text)
+		err := row.Scan(&c.ID, &c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Signature, &c.Text)
 		return c, err
 	})
 	if err != nil {

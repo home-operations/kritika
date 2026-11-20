@@ -149,6 +149,30 @@ func TestIndexContentHash(t *testing.T) {
 	}
 }
 
+// TestIndexContentHashSignature: two windows of the same text share a
+// content hash, and so a vector, only when they carry the same signature.
+func TestIndexContentHashSignature(t *testing.T) {
+	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: "}
+	window := store.StagedChunk{Path: "main.go", Symbol: "f", Kind: "function", Signature: "func f(a int) int {", Text: "\ta++\n\treturn a\n"}
+	base := contentHash(emb, embedText(emb.DocumentPrompt, window))
+	for _, tc := range []struct {
+		name, signature string
+		same            bool
+	}{
+		{"the same signature", "func f(a int) int {", true},
+		{"another signature", "func f(a, b int) int {", false},
+		{"no signature", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := window
+			c.Signature = tc.signature
+			if got := contentHash(emb, embedText(emb.DocumentPrompt, c)); bytes.Equal(got, base) != tc.same {
+				t.Fatalf("hash %x against %x, want same %v", got, base, tc.same)
+			}
+		})
+	}
+}
+
 // TestForgeWait: an index job waits out a forge failing transiently for
 // longer each time, up to forgeWaits times, without spending an attempt.
 // Then, or for any other failure, the failure spends one.

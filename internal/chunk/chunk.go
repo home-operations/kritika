@@ -35,6 +35,10 @@ type Decl struct {
 	EndLine   int
 	StartByte int
 	EndByte   int
+	// HeadLine is the first line of the declaration that is not blank and
+	// not a comment, decorator or attribute leading into it: the line that
+	// names it. It is zero for a window.
+	HeadLine int
 }
 
 // Lines is how many lines the declaration spans.
@@ -262,11 +266,27 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		if line < out[i].StartLine {
 			out[i].StartLine, out[i].StartByte = line, starts[line-1]
 		}
+		out[i].HeadLine = headLine(out[i], lead, src, starts)
 	}
 	slices.SortFunc(out, func(a, b Decl) int {
 		return cmp.Or(cmp.Compare(a.StartByte, b.StartByte), cmp.Compare(b.EndByte, a.EndByte))
 	})
 	return out
+}
+
+// headLine is the first line of d that holds more than lead nodes and
+// white space, or d's first line when none does.
+func headLine(d Decl, lead []bool, src []byte, starts []int) int {
+	for l := d.StartLine; l <= d.EndLine && l <= len(starts); l++ {
+		end := len(src)
+		if l < len(starts) {
+			end = starts[l]
+		}
+		if !lead[l] && len(bytes.TrimSpace(src[starts[l-1]:end])) > 0 {
+			return l
+		}
+	}
+	return d.StartLine
 }
 
 // leads reports whether a node of type typ leads into the declaration

@@ -152,17 +152,19 @@ func StageRunnerChunks(ctx context.Context, tx pgx.Tx, runID, upload string, chu
 	n := len(chunks)
 	paths, langs, symbols := make([]string, n), make([]string, n), make([]string, n)
 	kinds, scopes, texts := make([]string, n), make([]string, n), make([]string, n)
+	signatures := make([]string, n)
 	starts, ends := make([]int32, n), make([]int32, n)
 	for i, c := range chunks {
 		paths[i], starts[i], ends[i] = c.Path, int32(c.StartLine), int32(c.EndLine)
 		langs[i], symbols[i], kinds[i], scopes[i], texts[i] = c.Language, c.Symbol, c.Kind, c.Scope, c.Text
+		signatures[i] = c.Signature
 	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO index_staging (runner_run_id, account_id, path, start_line, end_line, language, symbol, kind, scope, text)
-		SELECT r.id, r.account_id, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text
-		FROM runner_runs r, unnest($2::text[], $3::int[], $4::int[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text)
-		WHERE r.id = $1`, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts)
+		INSERT INTO index_staging (runner_run_id, account_id, path, start_line, end_line, language, symbol, kind, scope, signature, text)
+		SELECT r.id, r.account_id, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.signature, c.text
+		FROM runner_runs r, unnest($2::text[], $3::int[], $4::int[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[])
+			AS c (path, start_line, end_line, language, symbol, kind, scope, signature, text)
+		WHERE r.id = $1`, runID, paths, starts, ends, langs, symbols, kinds, scopes, signatures, texts)
 	if err != nil {
 		return fmt.Errorf("store: stage chunks: %w", err)
 	}

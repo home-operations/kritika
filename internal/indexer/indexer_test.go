@@ -233,3 +233,104 @@ func TestBuildSkipsUnindexedFiles(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildSignatures: a window of a declaration that does not show the line
+// naming the declaration carries that line, cut to maxSignatureBytes, and its
+// text stays the source's lines. A piece that shows the line, a declaration
+// stored whole and a window of a file with no declarations carry none.
+func TestBuildSignatures(t *testing.T) {
+	type sig struct {
+		head      int
+		signature string
+	}
+	tests := []struct {
+		name, path, src string
+		// signatures gives, by symbol, the line that names the
+		// declaration and the signature of its windows that do not show it.
+		signatures map[string]sig
+	}{
+		{
+			name: "go function with a long body", path: "long.go",
+			src: "package demo\n\n// Long does things.\n// It is long.\nfunc Long(a int) int {\n\tt := a\n" + lines(200, "\tt += %d") +
+				"\treturn t\n}\n\nfunc Small() {}\n",
+			signatures: map[string]sig{"Long": {5, "func Long(a int) int {"}},
+		},
+		{
+			name: "go function of long lines within the line bound", path: "wide.go",
+			src:        "package demo\n\nfunc Wide() {\n" + lines(120, "\t_ = %03d // "+strings.Repeat("x", 90)) + "}\n",
+			signatures: map[string]sig{"Wide": {3, "func Wide() {"}},
+		},
+		{
+			name: "python class with a long method", path: "foo.py",
+			src: "class Foo:\n    \"\"\"Doc.\"\"\"\n\n    @staticmethod\n    def big(x):\n        total = 0\n" + lines(200, "        total += %d") +
+				"        return total\n\n    def small(self):\n        return 1\n",
+			signatures: map[string]sig{"big": {5, "def big(x):"}},
+		},
+		{
+			name: "typescript class with fields after its methods", path: "store.ts",
+			src: "export class Store {\n  get(): number { return 1; }\n  big(): number {\n    let t = 0;\n" + lines(160, "    t += %d;") +
+				"    return t;\n  }\n" + lines(70, "  private a%d = 0;") + "}\n",
+			signatures: map[string]sig{"Store": {1, "export class Store {"}, "big": {3, "big(): number {"}},
+		},
+		{
+			name: "javascript function with a long signature", path: "render.js",
+			src: "/** Renders. */\nfunction render(items, sep = \"-" + strings.Repeat("é", 150) + "\") {\n  const out = [];\n" +
+				lines(200, "  out.push(%d);") + "  return out.join(sep);\n}\n",
+			signatures: map[string]sig{"render": {2, "function render(items, sep = \"-" + strings.Repeat("é", 84)}},
+		},
+		{
+			name: "yaml", path: "values.yaml", src: strings.Repeat("key: value\n", 130),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks, _, _, err := Build(t.Context(), oneFileTree(t, tt.path, tt.src), nil, nil, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			src := strings.Split(tt.src, "\n")
+			carried := map[string]int{}
+			for _, c := range chunks {
+				want := ""
+				if s, ok := tt.signatures[c.Symbol]; ok && (s.head < c.StartLine || s.head > c.EndLine) {
+					want = s.signature
+					carried[c.Symbol]++
+				}
+				if c.Signature != want {
+					t.Errorf("chunk %s L%d-%d signature = %q, want %q", c.Symbol, c.StartLine, c.EndLine, c.Signature, want)
+				}
+				if len(c.Signature) > maxSignatureBytes || !utf8.ValidString(c.Signature) {
+					t.Errorf("chunk %s L%d-%d signature %q is over %d bytes or not UTF-8", c.Symbol, c.StartLine, c.EndLine, c.Signature, maxSignatureBytes)
+				}
+				if first, _, _ := strings.Cut(c.Text, "\n"); first != src[c.StartLine-1] {
+					t.Errorf("chunk %s L%d-%d starts %q, want the source's line %q", c.Symbol, c.StartLine, c.EndLine, first, src[c.StartLine-1])
+				}
+			}
+			for symbol := range tt.signatures {
+				if carried[symbol] == 0 {
+					t.Errorf("no window of %s carries its signature: %+v", symbol, chunks)
+				}
+			}
+		})
+	}
+}
+
+// oneFileTree is the tree of a commit that holds one file.
+func oneFileTree(t *testing.T, path, content string) *object.Tree {
+	t.Helper()
+	fs := memfs.New()
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
+	wt, _ := r.Worktree()
+	f, _ := fs.Create(path)
+	_, _ = f.Write([]byte(content))
+	_ = f.Close()
+	_, _ = wt.Add(path)
+	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.CommitObject(hash)
+	tree, _ := c.Tree()
+	return tree
+}

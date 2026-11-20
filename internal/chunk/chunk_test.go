@@ -245,11 +245,11 @@ func TestParseBounds(t *testing.T) {
 // TestDeclarationsTakeTheirLead: a declaration's range takes in the comments,
 // decorators and attributes directly above it, and a statement that only
 // wraps one declaration (an export, a decorated definition) is that
-// declaration, under its symbol.
+// declaration, under its symbol. Its head line is the first below them.
 func TestDeclarationsTakeTheirLead(t *testing.T) {
 	type want struct {
 		symbol, kind, scope string
-		start, end          int
+		start, end, head    int
 	}
 	tests := []struct {
 		name, path, src string
@@ -267,7 +267,7 @@ type Widget struct{ Name string }
 
 func Build() {}
 `,
-			want: []want{{"Widget", "struct", "", 3, 5}, {"Build", "function", "", 9, 9}},
+			want: []want{{"Widget", "struct", "", 3, 5, 5}, {"Build", "function", "", 9, 9, 9}},
 		},
 		{
 			name: "python decorators and comments", path: "demo.py",
@@ -293,10 +293,10 @@ class Foo:
         return 2
 `,
 			want: []want{
-				{"helper", "function", "", 3, 8},
-				{"Foo", "class", "", 11, 20},
-				{"bar", "function", "Foo", 14, 16},
-				{"baz", "function", "Foo", 18, 20},
+				{"helper", "function", "", 3, 8, 7},
+				{"Foo", "class", "", 11, 20, 11},
+				{"bar", "function", "Foo", 14, 16, 15},
+				{"baz", "function", "Foo", 18, 20, 19},
 			},
 		},
 		{
@@ -316,10 +316,10 @@ export class Box {
 export const limit = 1;
 `,
 			want: []want{
-				{"add", "function", "", 3, 6},
-				{"Box", "class", "", 8, 11},
-				{"get", "method", "Box", 9, 10},
-				{"limit", "", "", 13, 13},
+				{"add", "function", "", 3, 6, 4},
+				{"Box", "class", "", 8, 11, 8},
+				{"get", "method", "Box", 9, 10, 10},
+				{"limit", "", "", 13, 13, 13},
 			},
 		},
 		{
@@ -338,7 +338,7 @@ public class Demo {
     public int get() { return x; }
 }
 `,
-			want: []want{{"Demo", "class", "", 3, 13}, {"get", "method", "Demo", 8, 12}},
+			want: []want{{"Demo", "class", "", 3, 13, 5}, {"get", "method", "Demo", 8, 12, 12}},
 		},
 		{
 			name: "rust doc comments and attributes", path: "demo.rs",
@@ -354,7 +354,7 @@ impl Point {
     pub fn new() -> Self { Point { x: 0 } }
 }
 `,
-			want: []want{{"Point", "type", "", 3, 5}, {"new", "function", "", 8, 10}},
+			want: []want{{"Point", "type", "", 3, 5, 5}, {"new", "function", "", 8, 10, 10}},
 		},
 	}
 	for _, tt := range tests {
@@ -368,8 +368,8 @@ impl Point {
 					continue
 				}
 				d := f.Decls[i]
-				if d.EndLine != w.end || d.Scope != w.scope || w.kind != "" && d.Kind != w.kind {
-					t.Errorf("%s = %+v, want kind=%s scope=%s L%d-%d", w.symbol, d, w.kind, w.scope, w.start, w.end)
+				if d.EndLine != w.end || d.HeadLine != w.head || d.Scope != w.scope || w.kind != "" && d.Kind != w.kind {
+					t.Errorf("%s = %+v, want kind=%s scope=%s L%d-%d head L%d", w.symbol, d, w.kind, w.scope, w.start, w.end, w.head)
 				}
 			}
 			for _, d := range f.Decls {

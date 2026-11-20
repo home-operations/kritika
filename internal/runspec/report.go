@@ -170,12 +170,15 @@ type IndexPack struct {
 }
 
 // IndexChunk is one chunk that an index runner staged, before embedding.
+// Signature is omitted when empty, as it is for every chunk but a window of
+// a declaration, so a gateway of a build before it takes the other chunks.
 type IndexChunk struct {
 	Path      string `json:"path"`
 	Language  string `json:"language"`
 	Symbol    string `json:"symbol"`
 	Kind      string `json:"kind"`
 	Scope     string `json:"scope"`
+	Signature string `json:"signature,omitempty"`
 	Text      string `json:"text"`
 	StartLine int    `json:"startLine"`
 	EndLine   int    `json:"endLine"`

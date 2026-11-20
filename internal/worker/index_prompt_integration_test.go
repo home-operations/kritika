@@ -27,8 +27,9 @@ import (
 )
 
 // TestIndexDocumentPrompt: the worker embeds every chunk led by the document
-// prompt, and the index that it publishes records the prompt. So the
-// configuration that built it finds it, and one without the prompt does not.
+// prompt, and a staged window's signature under its header. The index that
+// it publishes records the prompt. So the configuration that built it finds
+// it, and one without the prompt does not.
 func TestIndexDocumentPrompt(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -79,11 +80,15 @@ func TestIndexDocumentPrompt(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO index_packs(runner_run_id,account_id,mode,chunk_count) VALUES($1,$2,'full',1)`, runner, account.ID()); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO index_packs(runner_run_id,account_id,mode,chunk_count) VALUES($1,$2,'full',2)`, runner, account.ID()); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO index_staging(runner_run_id,account_id,path,start_line,end_line,text)
-     VALUES($1,$2,'main.go',1,1,'func f() {}')`, runner, account.ID())
+		if _, err = tx.Exec(ctx, `INSERT INTO index_staging(runner_run_id,account_id,path,start_line,end_line,text)
+     VALUES($1,$2,'main.go',1,1,'func f() {}')`, runner, account.ID()); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO index_staging(runner_run_id,account_id,path,start_line,end_line,symbol,kind,signature,text)
+     VALUES($1,$2,'big.go',60,61,'G','function','func G(a int) int {',E'\ta++\n\treturn a')`, runner, account.ID())
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -102,8 +107,8 @@ func TestIndexDocumentPrompt(t *testing.T) {
 		file.Embedding, "abc", run, runner, nil, 1); err != nil {
 		t.Fatalf("embed: %v", err)
 	}
-	if !slices.Equal(embedded, []string{"passage: main.go\nfunc f() {}"}) {
-		t.Fatalf("embedded %q, want each chunk led by the document prompt", embedded)
+	if !slices.Equal(embedded, []string{"passage: main.go\nfunc f() {}", "passage: big.go function G\nfunc G(a int) int {\n\ta++\n\treturn a"}) {
+		t.Fatalf("embedded %q, want each chunk led by the document prompt, and a window by its signature", embedded)
 	}
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		g, err := store.FindGeneration(ctx, tx, run)

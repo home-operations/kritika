@@ -31,7 +31,15 @@ type Chunk struct {
 	StartLine int
 	EndLine   int
 	Text      string
+	// Signature is the line that names the chunk's declaration when the
+	// chunk is a window of it that does not show that line, so that the
+	// window's embedding is attributable. Text does not hold it.
+	Signature string
 }
+
+// maxSignatureBytes bounds a signature, which a minified or generated
+// declaration can make one long line.
+const maxSignatureBytes = 200
 
 // Options bound the work.
 type Options struct {
@@ -206,9 +214,13 @@ func (b *builder) file(f *object.File) error {
 		if text == "" {
 			continue
 		}
+		var signature string
+		if d.HeadLine > 0 && !d.Contains(d.HeadLine) {
+			signature = textcut.Prefix(strings.TrimSpace(pf.Text(d.HeadLine, d.HeadLine)), maxSignatureBytes)
+		}
 		b.chunks = append(b.chunks, Chunk{
 			Path: f.Name, Language: pf.Language, Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
-			StartLine: d.StartLine, EndLine: d.EndLine, Text: text,
+			StartLine: d.StartLine, EndLine: d.EndLine, Text: text, Signature: signature,
 		})
 	}
 	return nil
@@ -339,7 +351,9 @@ func (c *cutter) cover(i int) []chunk.Decl {
 			end--
 		}
 		if start <= end {
-			segs = append(segs, segment{Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope, StartLine: start, EndLine: end, gap: true})
+			segs = append(segs, segment{
+				Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope, StartLine: start, EndLine: end, HeadLine: d.HeadLine, gap: true,
+			})
 		}
 	}
 	next := d.StartLine
