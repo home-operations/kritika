@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -180,6 +181,32 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	tip, branch, err := c.BranchTip(t.Context(), "o", "r", "")
 	if err != nil || tip != "tip456" || branch != "trunk" {
 		t.Fatalf("BranchTip = %q %q, %v", tip, branch, err)
+	}
+	// A branch or repository that is gone is forge.ErrNotFound, and still
+	// carries GitHub's status.
+	f.reply("GET /api/v3/repos/o/r/branches/gone", 404, `{"message":"Branch not found"}`)
+	f.reply("GET /api/v3/repos/o/deleted", 404, `{"message":"Not Found"}`)
+	for _, tc := range []struct{ repo, branch string }{{"r", "gone"}, {"deleted", ""}} {
+		_, _, err := c.BranchTip(t.Context(), "o", tc.repo, tc.branch)
+		if !errors.Is(err, forge.ErrNotFound) || Status(err) != http.StatusNotFound {
+			t.Fatalf("BranchTip(%s, %q) = %v, want forge.ErrNotFound with status 404", tc.repo, tc.branch, err)
+		}
+	}
+	// The branch read bypasses go-github's response checks, yet its other
+	// failures carry their status and rate limits as the rest of the client's.
+	f.reply("GET /api/v3/repos/o/r/branches/flaky", 502, `{"message":"Bad Gateway"}`)
+	if _, _, err := c.BranchTip(t.Context(), "o", "r", "flaky"); Status(err) != http.StatusBadGateway || errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("BranchTip of a failing forge = %v, want status 502", err)
+	}
+	reset := time.Now().Add(time.Hour).Unix()
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/limited", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		w.WriteHeader(http.StatusForbidden)
+	})
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "limited")
+	if _, limited := RetryAfter(err, time.Now()); !limited {
+		t.Fatalf("BranchTip over the rate limit = %v, want a rate limit", err)
 	}
 	if c.CloneURL("o", "r") != "https://github.com/o/r.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))

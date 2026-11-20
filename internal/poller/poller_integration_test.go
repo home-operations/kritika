@@ -299,15 +299,24 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) 
 	return d.Dispatcher.Dispatch(ctx, req)
 }
 
-// TestPollerIndexesAMovedDefaultBranch: every poll looks at the default
-// branches of the indexed repositories, whether webhooks reach the
-// connection or not, since one push webhook missed or one index job failed
-// leaves the index behind otherwise. It queues an index job when a branch
-// moved. It does not ask the forge about a repository whose index job is
-// already queued or running: that job indexes the tip it finds.
-func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
+// tipPoll polls onedr0p's repositories through tf, with each of repos
+// indexed at "indexed", no index job of any of them and no webhook delivered.
+type tipPoll struct {
+	t          *testing.T
+	st         *store.Store
+	file       *configfile.File
+	account    *configfile.Account
+	in         *configfile.Connection
+	repoIDs    []string
+	tf         *tipForge
+	dispatched *recordingDispatcher
+	p          *Poller
+	logs       bytes.Buffer
+}
+
+func newTipPoll(t *testing.T, repos ...string) *tipPoll {
+	t.Helper()
 	ctx := t.Context()
-	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
@@ -319,69 +328,106 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, _ := file.Connection("bot-ross")
-	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
-	storetest.Repositories(t, st, file, "onedr0p/home-ops")
-	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
-	exec := func(sql string, args ...any) {
-		t.Helper()
-		if err := st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(context.Background(), sql, args...)
-			return err
+	s := &tipPoll{t: t, st: st, file: file, tf: &tipForge{tip: "moved"}}
+	s.in, _ = file.Connection("bot-ross")
+	s.account, _ = file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, repos...)
+	for _, name := range repos {
+		repoID := configfile.RepositoryID(s.account.ID(), name)
+		var runID string
+		if err := st.WithAccount(ctx, s.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+				VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, s.account.ID(), repoID).Scan(&runID)
 		}); err != nil {
 			t.Fatal(err)
 		}
+		s.exec(`UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
+		// The worker's tests share the database and index these repositories
+		// from nothing.
+		t.Cleanup(func() {
+			s.exec(`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
+			s.exec(`DELETE FROM index_runs WHERE id = $1`, runID)
+		})
+		s.repoIDs = append(s.repoIDs, repoID)
 	}
-	var runID string
-	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, account.ID(), repoID).Scan(&runID)
-	}); err != nil {
-		t.Fatal(err)
+	t.Cleanup(s.clearIndexJobs)
+	// Earlier suites leave index jobs of these repositories behind.
+	s.clearIndexJobs()
+	s.webhooks(false)
+	s.dispatched = &recordingDispatcher{Dispatcher: ingest.NewService(st, queue)}
+	s.p = &Poller{
+		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: s.tf}, Dispatcher: s.dispatched,
+		Logger: slog.New(slog.NewTextHandler(&s.logs, nil)),
 	}
-	exec(`UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
-	// The worker's tests share the database and index this repository from
-	// nothing.
-	t.Cleanup(func() {
-		exec(`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
-		exec(`DELETE FROM index_runs WHERE id = $1`, runID)
-		_, _ = st.App().Exec(context.Background(), `DELETE FROM river_job WHERE kind = 'index'`)
-	})
-	indexJobs := func() []string {
-		t.Helper()
-		rows, err := st.App().Query(ctx, `SELECT args->>'commit_sha' FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1`, repoID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		commits, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			t.Fatal(err)
-		}
-		return commits
-	}
-	tf := &tipForge{tip: "moved"}
-	dispatched := &recordingDispatcher{Dispatcher: ingest.NewService(st, queue)}
-	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: tf}, Dispatcher: dispatched, Logger: logger}
-	poll := func() {
-		t.Helper()
-		if _, err := p.Poll(ctx, file, account, in); err != nil {
-			t.Fatal(err)
-		}
-	}
+	return s
+}
 
-	// Earlier suites leave index jobs of this repository behind.
-	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
-		t.Fatal(err)
+func (s *tipPoll) exec(sql string, args ...any) {
+	s.t.Helper()
+	if err := s.st.WithAccount(context.Background(), s.account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), sql, args...)
+		return err
+	}); err != nil {
+		s.t.Fatal(err)
 	}
-	exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, in.ID())
-	poll()
-	if got := indexJobs(); len(got) != 1 || got[0] != "moved" {
+}
+
+func (s *tipPoll) clearIndexJobs() {
+	s.t.Helper()
+	if _, err := s.st.App().Exec(context.Background(), `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
+		s.t.Fatal(err)
+	}
+}
+
+// webhooks marks the connection's webhook as delivered just now, or as
+// never delivered.
+func (s *tipPoll) webhooks(arriving bool) {
+	s.t.Helper()
+	if arriving {
+		s.exec(`UPDATE connections SET last_webhook_at = now() WHERE id = $1`, s.in.ID())
+		return
+	}
+	s.exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, s.in.ID())
+}
+
+func (s *tipPoll) poll() {
+	s.t.Helper()
+	if _, err := s.p.Poll(s.t.Context(), s.file, s.account, s.in); err != nil {
+		s.t.Fatal(err)
+	}
+}
+
+// indexJobs are the commits of the index jobs of the first repository.
+func (s *tipPoll) indexJobs() []string {
+	s.t.Helper()
+	rows, err := s.st.App().Query(s.t.Context(), `SELECT args->>'commit_sha' FROM river_job
+		WHERE kind = 'index' AND args->>'repository_id' = $1 ORDER BY id`, s.repoIDs[0])
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	commits, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return commits
+}
+
+// TestPollerIndexesAMovedDefaultBranch: a poll looks at the default branches
+// of the indexed repositories, since one push webhook missed or one index job
+// failed leaves the index behind otherwise. It queues an index job when a
+// branch moved. It does not ask the forge about a repository whose index job
+// is already queued or running: that job indexes the tip it finds.
+func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
+	ctx := t.Context()
+	s := newTipPoll(t, "onedr0p/home-ops")
+	s.poll()
+	if got := s.indexJobs(); len(got) != 1 || got[0] != "moved" {
 		t.Fatalf("index jobs = %v, want one at the moved tip", got)
 	}
 	// The push carries the traits the poll read, which ingest writes back
 	// only for a webhook's report, not a poll's.
 	var pushes []webhook.Event
-	for _, ev := range dispatched.events {
+	for _, ev := range s.dispatched.events {
 		if ev.Kind == webhook.KindPush && ev.Repository.FullName == "onedr0p/home-ops" {
 			pushes = append(pushes, ev)
 		}
@@ -391,50 +437,52 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	}
 
 	// The job is still queued: the branch is not asked for again.
-	calls := tf.calls
-	tf.tip = "moved again"
-	poll()
-	if got := indexJobs(); tf.calls != calls || len(got) != 1 || got[0] != "moved" {
-		t.Fatalf("with an index job queued: %d tip checks and index jobs %v, want none and the one queued", tf.calls-calls, got)
+	calls := s.tf.calls
+	s.tf.tip = "moved again"
+	s.poll()
+	if got := s.indexJobs(); s.tf.calls != calls || len(got) != 1 || got[0] != "moved" {
+		t.Fatalf("with an index job queued: %d tip checks and index jobs %v, want none and the one queued", s.tf.calls-calls, got)
 	}
 
-	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
-		t.Fatal(err)
-	}
-	exec(`UPDATE connections SET last_webhook_at = now() WHERE id = $1`, in.ID())
-	poll()
-	if got := indexJobs(); tf.calls != calls+1 || len(got) != 1 || got[0] != "moved again" {
-		t.Fatalf("with webhooks arriving: %d tip checks and index jobs %v, want one at the moved tip", tf.calls-calls, got)
-	}
-
-	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
-		t.Fatal(err)
-	}
-	tf.tip = "indexed"
-	poll()
-	if got := indexJobs(); len(got) != 0 {
+	s.clearIndexJobs()
+	s.tf.tip = "indexed"
+	s.poll()
+	if got := s.indexJobs(); len(got) != 0 {
 		t.Fatalf("index jobs = %v, want none for a tip the index covers", got)
 	}
 
 	// A tip the forge does not give is asked for at the next poll. It has
 	// no part in the pull requests' window, which the poll still records.
-	var before time.Time
-	exec(`UPDATE poll_state SET last_polled_at = now() - interval '1 hour' WHERE account_id = $1`, account.ID())
-	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&before)
-	}); err != nil {
-		t.Fatal(err)
+	polledAt := func() time.Time {
+		t.Helper()
+		var at time.Time
+		if err := s.st.WithAccount(ctx, s.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE account_id = $1`, s.account.ID()).Scan(&at)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return at
 	}
-	tf.err = errors.New("branch not found")
-	poll()
-	var after time.Time
-	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&after)
-	}); err != nil {
-		t.Fatal(err)
+	s.exec(`UPDATE poll_state SET last_polled_at = now() - interval '1 hour' WHERE account_id = $1`, s.account.ID())
+	before := polledAt()
+	s.tf.err = errors.New("branch not found")
+	s.poll()
+	if after := polledAt(); !after.After(before) || len(s.indexJobs()) != 0 {
+		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, s.indexJobs())
 	}
-	if !after.After(before) || len(indexJobs()) != 0 {
-		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, indexJobs())
+}
+
+// TestPollerLogsAMissingBranchOnce: a default branch the forge does not
+// have, of a repository deleted or a default branch renamed without an
+// event, is logged once, not every poll.
+func TestPollerLogsAMissingBranchOnce(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/home-ops")
+	s.tf.err = fmt.Errorf("github: branch main of onedr0p/home-ops: %w", forge.ErrNotFound)
+	s.poll()
+	s.poll()
+	logs := s.logs.String()
+	if s.tf.calls != 2 || strings.Count(logs, "default branch unknown to the forge") != 1 || strings.Contains(logs, "default branch not polled") {
+		t.Fatalf("%d tip checks, logs after two polls of a missing branch:\n%s\nwant it asked for twice and logged once", s.tf.calls, logs)
 	}
 }
 

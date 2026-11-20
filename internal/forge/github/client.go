@@ -104,20 +104,35 @@ func (c *Client) GitToken(ctx context.Context, repo string) (string, error) {
 // BranchTip implements forge.Client.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
 	if branch == "" {
-		r, _, err := c.api.Repositories.Get(ctx, owner, repo)
+		r, resp, err := c.api.Repositories.Get(ctx, owner, repo)
 		if err != nil {
-			return "", "", fmt.Errorf("github: repository %s/%s: %w", owner, repo, err)
+			return "", "", fmt.Errorf("github: repository %s/%s: %w", owner, repo, notFound(resp, err))
 		}
 		branch = r.GetDefaultBranch()
 	}
-	b, _, err := c.api.Repositories.GetBranch(ctx, owner, repo, branch, 1)
+	b, resp, err := c.api.Repositories.GetBranch(ctx, owner, repo, branch, 1)
 	if err != nil {
-		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, err)
+		// GetBranch answers a refusal with a bare "unexpected status code"
+		// error, past go-github's response checks: they make it the
+		// ErrorResponse or rate limit that every other call returns.
+		if resp != nil && resp.StatusCode != http.StatusOK {
+			err = gh.CheckResponse(resp.Response)
+		}
+		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, notFound(resp, err))
 	}
 	if b.GetCommit().GetSHA() == "" {
 		return "", "", fmt.Errorf("github: branch %s of %s/%s has no commit", branch, owner, repo)
 	}
 	return b.GetCommit().GetSHA(), branch, nil
+}
+
+// notFound wraps err, from a call that GitHub answered with resp, as
+// forge.ErrNotFound too when the answer was 404.
+func notFound(resp *gh.Response, err error) error {
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%w: %w", forge.ErrNotFound, err)
+	}
+	return err
 }
 
 // CommitSubject implements forge.Client.

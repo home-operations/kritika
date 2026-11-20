@@ -48,7 +48,9 @@ type Poller struct {
 
 	// unknown are the pull requests held open that the forge did not know
 	// when asked, by "owner/name#number". They are asked once per process, so
-	// they neither cost a request every poll nor use up the poll's checks.
+	// they neither cost a request every poll nor use up the poll's checks. It
+	// also holds the default branches, by "owner/name@branch", that the forge
+	// did not know, so each is logged once.
 	mu      sync.Mutex
 	unknown map[string]bool
 }
@@ -247,7 +249,11 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if r.IndexedCommit != "" && !r.Indexing {
 			// The tip has no part in the pull requests' window that the poll
 			// state records.
-			if err := p.pollTip(ctx, file, account, in, client, r, started); err != nil {
+			err := p.pollTip(ctx, file, account, in, client, r, started)
+			switch {
+			case errors.Is(err, forge.ErrNotFound):
+				p.branchUnknown(in, r, err)
+			case err != nil:
 				p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", repo, "error", err)
 			}
 		}
@@ -359,6 +365,20 @@ func (p *Poller) closeMissed(
 		p.Logger.Info("pull request closed without its event", "connection", in.Name, "repository", r.Name, "pr", number, "merged", pr.Merged)
 	}
 	return nil
+}
+
+// branchUnknown logs, once per process, a default branch of r that the forge
+// does not have: r was deleted, or its default branch renamed, and no event
+// said so. The branch is asked for again at the next poll anyway, after the
+// repository sync has recorded a renamed one or disabled a deleted one.
+func (p *Poller) branchUnknown(in *configfile.Connection, r store.PollRepo, err error) {
+	key := r.Name + "@" + r.DefaultBranch
+	if p.isUnknown(key) {
+		return
+	}
+	p.markUnknown(key)
+	p.Logger.Warn("default branch unknown to the forge", "connection", in.Name, "repository", r.Name, "branch", r.DefaultBranch,
+		"error", err)
 }
 
 func (p *Poller) isUnknown(key string) bool {
