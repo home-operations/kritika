@@ -392,14 +392,141 @@ used a sequential scan and top-N sort. The filters included both the generation
 and the RLS account predicate. Plans reported shared-buffer hits for these warm
 queries. The command above emits the full buffer counts.
 
-The current index performed well on this fixture. The longer requests with
-large exclusion lists include their client-side encoding and transfer, so do not
-attribute all of that difference to the index. These small, synthetic samples
-are not evidence of production recall or an SLO. They do not justify a change
-to partitioning, search parameters, prewarming or worker concurrency. Before
-you tune that configuration, use the runtime histograms and repeat with
+The index, then one plain table, performed well on this fixture. The longer
+requests with large exclusion lists include their client-side encoding and
+transfer, so do not attribute all of that difference to the index. These
+small, synthetic samples are not evidence of production recall or an SLO. They
+do not justify a change to search parameters, prewarming or worker concurrency.
+Before you tune that configuration, use the runtime histograms and repeat with
 representative embeddings and traffic. No production database was measured for
-this baseline.
+this baseline. At 30,000 rows it did not show how search cost grows with the
+table. The [index scale benchmark](#reproducing-the-index-scale-benchmark)
+does, and led to partitioning the table.
+
+## Reproducing the index scale benchmark
+
+`BenchmarkIndexScale` measures similar-code search when the index table holds
+many repositories, as on an instance that indexes many of them. It is opt-in,
+because loading millions of vectors takes minutes and tens of gigabytes of
+disk:
+
+```sh
+KRITIKA_INDEX_SCALE_ROWS=3000000 mise run test-integration -- \
+  -run '^$' -bench BenchmarkIndexScale -benchtime 1x -timeout 6h -v ./internal/store/
+```
+
+`KRITIKA_INDEX_SCALE_DIMS` (1,024 unless set) sets the dimension, and
+`KRITIKA_INDEX_SCALE_QUERIES` (50) the queries for each target repository.
+`KRITIKA_INDEX_SCALE_LAYOUTS` names the layouts to compare, comma-separated. By
+default it compares `flat`, `exact`, `partitioned` and `drained`:
+
+| Layout                                                | What it is                                                                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flat`                                                | The plain table of a build before partitioning, with its one `vchordrq` index and no index options                                              |
+| `exact`                                               | The same table with `vchordrq.enable_scan` off, which leaves the generation's B-tree and a sort                                                 |
+| `partitioned`                                         | The plain table just partitioned by `PartitionIndexChunks`, with every chunk still in the legacy partition                                      |
+| `drained`                                             | The partitioned table after `DrainLegacyIndexChunks` moved every active generation to the hash partitions, and `VACUUM`                         |
+| `ivf-probes1pct`, `ivf-probes5pct`, `ivf-probes20pct` | The plain table with VectorChord's own partitioning: `lists` as its documentation recommends for the row count, and `probes` that share of them |
+| `repo-hash`                                           | A copy of the table hash partitioned by repository, which the search then also filters on                                                       |
+
+The corpus is synthetic and clustered: 512 topic centroids, and repositories
+that each draw on 24 topics and add a style vector of their own. Repository
+sizes follow a log-normal distribution with a median of 3,000 chunks, clipped
+to between 100 and 100,000. Eight accounts own them. Three target repositories,
+of 1,000, 10,000 and 100,000 chunks, belong to one account. Each query is a new
+chunk drawn from its target's distribution.
+
+Recall@10 compares the application's ten results with an exact search of the
+same generation, made before any vector index exists. Every search runs the
+application's SQL as the application role, with row-level security,
+`vchordrq.prefilter` on and pgx's statement cache. After five executions,
+Postgres can therefore switch to a generic plan, as it does in production. The
+timed loop runs each query once, after an untimed pass that warms the cache and
+logs the first query's `EXPLAIN (ANALYZE, BUFFERS)`. This is a warm,
+single-client measurement under the integration task's race detector, on
+synthetic data. It is not evidence of production recall or an SLO.
+
+### Local measurement, 2026-11-20
+
+The measurements ran on Linux amd64, AMD Ryzen 9 9950X3D (16 cores), 60 GiB of
+RAM and NVMe storage, with PostgreSQL 18 in Docker. Postgres ran with
+`shared_buffers=8GB`, `maintenance_work_mem=4GB`,
+`max_parallel_maintenance_workers=8`, `max_wal_size=32GB` and
+`effective_cache_size=32GB`. The integration task's container keeps Postgres's
+defaults, with 128 MB of shared buffers, so its absolute numbers differ.
+VectorChord 1.1.1 ran in `ghcr.io/tensorchord/vchord-postgres:pg18-v1.1.1`.
+VectorChord 1.3.0 ran in `ghcr.io/cloudnative-pg/postgresql:18.6-standard-bookworm`
+with `ghcr.io/home-operations/vchord:1.3.0` mounted.
+
+The table held 3,000,000 chunks of 1,024 dimensions in 434 repositories. Each
+cell gives the p50 and p95 latency in milliseconds over 50 queries, then
+recall@10. Other workloads shared the host during the VectorChord 1.3.0 runs
+and the end of the 1.1.1 run, so compare layouts within one run. On 1.1.1:
+
+| Layout           | 1,000 chunks    | 10,000 chunks       | 100,000 chunks      |
+| ---------------- | --------------- | ------------------- | ------------------- |
+| `flat`           | 6.7 / 7.3, 1.00 | 28.5 / 29.3, 1.00   | 302.5 / 311.6, 1.00 |
+| `exact`          | 5.9 / 6.0, 1.00 | 28.6 / 29.8, 1.00   | 304.2 / 310.3, 1.00 |
+| `partitioned`    | 6.9 / 8.2, 1.00 | 109.0 / 117.8, 0.98 | 111.8 / 123.3, 0.98 |
+| `drained`        | 3.6 / 4.2, 1.00 | 4.1 / 5.8, 0.98     | 13.2 / 17.1, 0.98   |
+| `ivf-probes1pct` | 7.4 / 8.0, 1.00 | 34.2 / 35.0, 1.00   | 300.8 / 307.7, 1.00 |
+| `ivf-probes5pct` | 7.5 / 8.2, 1.00 | 34.3 / 36.7, 1.00   | 301.4 / 305.2, 1.00 |
+| `repo-hash`      | 3.1 / 3.7, 1.00 | 1.3 / 1.5, 0.98     | 13.4 / 22.2, 0.98   |
+
+On 1.3.0, in two runs. The second ran while the host's load average was near
+30, from work outside the benchmark:
+
+| Layout        | Run | 1,000 chunks      | 10,000 chunks      | 100,000 chunks      |
+| ------------- | --- | ----------------- | ------------------ | ------------------- |
+| `flat`        | 1   | 7.0 / 7.9, 1.00   | 34.5 / 36.1, 1.00  | 304.3 / 312.7, 1.00 |
+| `exact`       | 1   | 5.9 / 7.0, 1.00   | 30.7 / 33.7, 1.00  | 301.6 / 309.6, 1.00 |
+| `partitioned` | 1   | 7.3 / 7.7, 1.00   | 28.7 / 34.7, 1.00  | 113.3 / 138.9, 1.00 |
+| `drained`     | 1   | 6.9 / 8.8, 1.00   | 4.9 / 21.8, 1.00   | 28.1 / 83.2, 1.00   |
+| `repo-hash`   | 1   | 3.2 / 3.9, 1.00   | 2.0 / 3.1, 1.00    | 13.9 / 16.0, 1.00   |
+| `flat`        | 2   | 16.6 / 37.4, 1.00 | 77.2 / 125.4, 1.00 | 703.6 / 862.7, 1.00 |
+| `partitioned` | 2   | 15.9 / 23.2, 1.00 | 85.1 / 207.0, 1.00 | 271.9 / 359.4, 1.00 |
+| `drained`     | 2   | 2.9 / 3.0, 1.00   | 7.4 / 12.9, 1.00   | 6.2 / 16.1, 1.00    |
+
+`PartitionIndexChunks` took 1 to 2 seconds on the 3,000,000-chunk table, most
+of it attaching the legacy partition. `DrainLegacyIndexChunks`, called until it
+moved nothing, and the `VACUUM ANALYZE` after it took 4 minutes 58 seconds on
+1.1.1, and 6 minutes 36 seconds and 8 minutes 18 seconds in the two 1.3.0
+runs. A smaller run of 1,000,000 chunks in 138
+repositories on 1.1.1 gave the plain table 4.8, 37.2 and 40.4 ms at p50 for the
+three targets, and 64 hash partitions by generation 0.6, 1.1 and 10.0 ms.
+
+What the measurements show:
+
+- The plain table's search cost follows the table, not the repository. The
+  `vchordrq` index of the plain table reads every chunk's quantized vector.
+  The prefilter then checks each candidate against the generation. At
+  100,000 rows that took about 3 ms. At 3,000,000 rows it took about 110 ms,
+  so Postgres's generic plan read the generation through its B-tree and sorted
+  it instead: exact, but 300 ms for a repository of 100,000 chunks.
+- Partitioned by generation and drained, a search reads one of 64 partitions:
+  6 to 28 ms at p50 for the large repository, and under 8 ms for the others,
+  with the recall of the plain table's vector index.
+- Until the drain moves a generation, its search also reads the legacy
+  partition's vector index. That costs about 110 ms at this size, which is
+  slower than the plain table's exact plan for the 10,000-chunk repository on
+  1.1.1. The sweep drains right after it partitions, so this lasts minutes.
+- VectorChord's own partitioning (`lists`) did not help the application's
+  query. Postgres's generic plan never chose the index and read the B-tree
+  instead, so the results equal `exact`. A custom plan did use it, at about
+  7 ms for the large repository. It would also need the vectors to exist when
+  the index is built, and a rebuild as they change, while kritika builds the
+  index on an empty table. With a filter this selective, the lists that a
+  search probes can also hold too few of the repository's chunks. This run did
+  not measure that, as no timed plan used the index.
+- Partitioning by repository performed like partitioning by generation. The
+  search must then also filter on the repository, and with that filter on the
+  plain table Postgres underestimated the rows that the correlated repository
+  and generation filters match. It chose the exact plan for the large
+  repository: 287 ms at 1,000,000 rows, against 44 ms without the filter.
+  Partitioning by generation needs no change to the query.
+- The first 1.3.0 run's `drained` p95 latencies are high. Its logged plans
+  read the partitions that the drain had just written from outside shared
+  buffers.
 
 ## Review completion timings
 

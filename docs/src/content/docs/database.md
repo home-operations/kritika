@@ -444,7 +444,9 @@ table is partitioned:
 
 The application role is granted `index_chunks` alone, and its row-level
 security policy applies to every partition read through it. The role cannot
-read a partition directly.
+read a partition directly. The
+[index scale benchmark](/metrics/#reproducing-the-index-scale-benchmark)
+measures the effect.
 
 ### Partitioning an existing index
 
