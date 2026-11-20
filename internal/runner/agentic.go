@@ -193,6 +193,7 @@ func newAgentPrompt(p runspec.Spec, in promptInputs, pack packView, commands []s
 	user, omitted, contextOmitted, referencesOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, DefaultBranch: p.Prompt.DefaultBranch, BaseOf: p.Prompt.BaseOf,
+		Below:   p.Prompt.Below,
 		Changed: pack.Changed, Diff: pack.Diff, Bumps: bumps, Context: pack.Context,
 		Focus:       p.Prompt.Focus,
 		Incremental: incremental, Earlier: earlier, Answered: answered, Dismissed: p.Prompt.Dismissed, References: in.references,

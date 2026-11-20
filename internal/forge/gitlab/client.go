@@ -349,6 +349,11 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	return file.content, nil
 }
 
+// StackBelow implements forge.Client. GitLab has no stacks.
+func (c *Client) StackBelow(context.Context, string, string, int) ([]forge.StackEntry, error) {
+	return nil, nil
+}
+
 // Issue implements forge.Client. GitLab numbers issues and merge requests
 // apart, so a number names an issue alone.
 func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (forge.Issue, error) {

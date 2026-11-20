@@ -232,6 +232,46 @@ func TestIssue(t *testing.T) {
 	}
 }
 
+func TestStackBelow(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/stacks", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("pull_request") == "9" {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"number":10,"base":{"ref":"main"},"open":true,"pull_requests":[
+			{"number":5,"state":"closed","merged_at":"2026-11-19T21:12:37Z"},
+			{"number":6,"state":"closed","merged_at":null},
+			{"number":7,"state":"open","merged_at":null},
+			{"number":8,"state":"open","merged_at":null}]}]`))
+	})
+	for _, tt := range []struct {
+		name   string
+		number int
+		want   []forge.StackEntry
+	}{
+		{"the top of a stack", 8, []forge.StackEntry{{Number: 5, Merged: true}, {Number: 6}, {Number: 7, Open: true}}},
+		{"the middle of a stack", 6, []forge.StackEntry{{Number: 5, Merged: true}}},
+		{"the bottom of a stack", 5, nil},
+		{"in no stack", 9, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, err := c.StackBelow(t.Context(), "o", "r", tt.number); err != nil || !slices.Equal(got, tt.want) {
+				t.Fatalf("StackBelow = %+v, %v; want %+v", got, err, tt.want)
+			}
+		})
+	}
+	f.reply("GET /api/v3/repos/o/gone/stacks", 404, `{"message":"Not Found"}`)
+	if got, err := c.StackBelow(t.Context(), "o", "gone", 8); err != nil || got != nil {
+		t.Fatalf("StackBelow on a server without stacks = %+v, %v; want none", got, err)
+	}
+	f.reply("GET /api/v3/repos/o/down/stacks", 500, `{"message":"boom"}`)
+	if _, err := c.StackBelow(t.Context(), "o", "down", 8); err == nil {
+		t.Fatal("a stack the forge failed to give must be an error")
+	}
+}
+
 func TestPullRequestDiff(t *testing.T) {
 	f, c := newFakeAPI(t)
 	const diff = "diff --git a/a.go b/a.go\n+b\n"

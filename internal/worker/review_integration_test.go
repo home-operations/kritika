@@ -115,6 +115,9 @@ type localForge struct {
 	// reacted is every comment that it reacted to, in order.
 	reactions map[int64]string
 	reacted   []int64
+	// below are the pull requests under each pull request in its stack, by
+	// number.
+	below map[int][]forge.StackEntry
 	// size is what PullRequest reports, none when it changes no files.
 	size forge.OpenPullRequest
 	// pullReactions are the bot's reactions on each pull request, by
@@ -193,6 +196,11 @@ func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, 
 func (l *localForge) CloneURL(string, string) string { return l.dir }
 func (l *localForge) Issue(_ context.Context, _, _ string, number int) (forge.Issue, error) {
 	return forge.Issue{}, fmt.Errorf("issue %d: %w", number, forge.ErrNotFound)
+}
+func (l *localForge) StackBelow(_ context.Context, _, _ string, number int) ([]forge.StackEntry, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.below[number], nil
 }
 func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
 func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
@@ -2186,6 +2194,9 @@ review:
 	codeHead := commit("code", map[string]string{"main.go": "package main\n\nfunc d() {}\n"})
 	// The scorer's first attempt fails. The provider's one retry answers.
 	fc.failScore(1)
+	lf.mu.Lock()
+	lf.below = map[int][]forge.StackEntry{3: {{Number: 2, Merged: true}}}
+	lf.mu.Unlock()
 	dispatchPR(3, codeHead, false)
 	if status, _, _ := waitReview(codeHead); status != "completed" {
 		t.Fatalf("status = %s, want completed", status)
@@ -2196,6 +2207,9 @@ review:
 	user := fc.users[len(fc.users)-2]
 	fc.mu.Unlock()
 	checkRepoConfigPrompt(t, system, user)
+	if !strings.Contains(user, stackLine) {
+		t.Fatalf("the review was not told of the stack:\n%s", user[:min(len(user), 600)])
+	}
 	// The finding keeps the rule it was given and loses the one it was not.
 	var cited []string
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -2321,6 +2335,10 @@ func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, acc
 	t.Fatalf("reviews of %s = %v, want %v", head, got, want)
 }
 
+// stackLine opens what a prompt says of pull request 3's stack, as the forge
+// gave it.
+const stackLine = ". This pull request is in a stack on the forge. Below it in the stack, lowest first: #2 (merged). "
+
 // checkConfidence asserts what a review does where the merge-base
 // .kritika.yaml asks for a confidence score that its findings keep the pull
 // request under. The score is held to the ceiling of the blocking one, though
@@ -2342,6 +2360,9 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	if !strings.Contains(asked, "\nIts summary: Changes main.go.\n") || !strings.Contains(asked, "\n- main.go: package clause read\n") ||
 		strings.Contains(asked, "The last review of this pull request") {
 		t.Fatalf("the scorer was not shown the review's account alone:\n%s", asked)
+	}
+	if !strings.Contains(asked, stackLine) {
+		t.Fatalf("the scorer was not told of the stack:\n%s", asked[:min(len(asked), 600)])
 	}
 	var confidence string
 	var calls, charged int

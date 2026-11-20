@@ -89,7 +89,19 @@ be somewhere it cannot happen.
 When the base branch is the head of another open pull request, the review
 is told so. What that pull request changes has not merged into the default
 branch, so the review does not take it as deployed unless something shows
-that it shipped. When the description says that the change
+that it shipped.
+
+On GitHub, a pull request in a [stack](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)
+is reviewed with the pull requests below it in the stack and the state of
+each: merged, open, or closed without merging. GitHub merges a stack from the
+bottom up. So the review and the confidence score do not weigh what happens
+if the change merges before a pull request below it. That holds after the
+one below merged and GitHub moved this pull request's base to the default
+branch. A merge is not a deployment: what a lower pull request must have
+deployed first is still a prerequisite that the review weighs. When kritika
+fails to read the stack from GitHub, the review runs without it.
+
+When the description says that the change
 is one part of a series or a split, the review judges it against that plan.
 Work that the description leaves to another part is no finding, unless this
 part breaks something on its own.

@@ -347,6 +347,7 @@ func (w *Review) agentPrompt(
 	owner, repo := pr.ownerRepo()
 	var notes []string
 	p.Issues, notes = linkedIssues(ctx, client, owner, repo, p.PullRequest.Body, logger)
+	p.Below = stackBelow(ctx, client, pr, logger)
 	p.Trim()
 	return p, notes, nil
 }

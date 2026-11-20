@@ -205,6 +205,23 @@ func TestSameBrief(t *testing.T) {
 	if SameBrief(opening, retargeted) {
 		t.Fatal("the description stood in for the base branch line")
 	}
+	// The one below merging is what the forge retargets this one for.
+	stacked.Below = []StackEntry{{Number: 3, Open: true}}
+	opening, _, _, _ = Build(stacked)
+	merged := stacked
+	merged.BaseRef, merged.BaseOf, merged.Below = "main", 0, []StackEntry{{Number: 3, Merged: true}}
+	later, _, _, _ := Build(merged)
+	if !SameBrief(opening, stacked) || SameBrief(opening, merged) || !SameBrief(later, merged) {
+		t.Fatal("a conversation is not carried on by the stack it opened on alone")
+	}
+	// A pull request further down changes state under a base that stays.
+	deeper := merged
+	deeper.Below = []StackEntry{{Number: 2, Merged: true}, {Number: 3, Merged: true}}
+	unstacked := merged
+	unstacked.Below = nil
+	if SameBrief(later, deeper) || SameBrief(later, unstacked) {
+		t.Fatal("a conversation opened on another stack is carried on")
+	}
 	bare := then
 	bare.Body, bare.Issues = "", nil
 	opening, _, _, _ = Build(bare)

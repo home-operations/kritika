@@ -427,6 +427,11 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	return content, nil
 }
 
+// StackBelow implements forge.Client. Forgejo has no stacks.
+func (c *Client) StackBelow(context.Context, string, string, int) ([]forge.StackEntry, error) {
+	return nil, nil
+}
+
 // Issue implements forge.Client. Forgejo files pull requests among a
 // repository's issues, so one is returned as such.
 func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (forge.Issue, error) {

@@ -169,6 +169,29 @@ func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (for
 	}, nil
 }
 
+// StackBelow implements forge.Client. A GitHub Enterprise Server without
+// stacked pull requests has no such endpoint and answers 404, which is no
+// stack.
+func (c *Client) StackBelow(ctx context.Context, owner, repo string, number int) ([]forge.StackEntry, error) {
+	stacks, resp, err := c.api.PullRequests.ListStacks(ctx, owner, repo, &gh.PullRequestListStacksOptions{PullRequest: number})
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("github: stack of pull request %d of %s/%s: %w", number, owner, repo, err)
+	}
+	for _, stack := range stacks {
+		var below []forge.StackEntry
+		for _, pr := range stack.PullRequests {
+			if pr.Number == number {
+				return below, nil
+			}
+			below = append(below, forge.StackEntry{Number: pr.Number, Merged: pr.MergedAt != nil, Open: pr.State == "open"})
+		}
+	}
+	return nil, nil
+}
+
 // BotLogin implements forge.Client. An App's comments are authored by the
 // user "<slug>[bot]". The slug comes from the App itself, so nothing in the
 // configuration has to repeat it.
