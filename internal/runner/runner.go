@@ -200,7 +200,7 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
 			notes = append(notes, prompt.notes()...)
 		} else if parts, chunks, ruleIDs, err = partPrompts(
-			ctx, p, secrets, headTree, baseTree, res, promptFiles, found, shares, &tools, logger,
+			ctx, p, secrets, headTree, baseTree, res, promptFiles, found, shares, &tools, locks.head, logger,
 		); err != nil {
 			return err
 		} else {
@@ -339,7 +339,7 @@ func similarContext(
 	if !ok {
 		return nil, nil
 	}
-	return similarShown(head, out.Chunks, others, logger), newSearchTool(p, secrets, head)
+	return similarShown(head, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
 }
 
 // excludeFromSimilar reports the paths the run's similar-code searches leave
@@ -378,10 +378,12 @@ func similarCodeFor(
 }
 
 // newSearchTool is search_code over the repository's index. It leaves out
-// the paths that excludeFromSimilar reported, which the prompt shows.
-func newSearchTool(p runspec.Spec, secrets runspec.Secrets, head *object.Tree) *searchTool {
+// the paths that excludeFromSimilar reported, which the prompt shows. It
+// reads head holding headLock, nil for a review that is not split.
+func newSearchTool(p runspec.Spec, secrets runspec.Secrets, head *object.Tree, headLock chan struct{}) *searchTool {
 	return &searchTool{
-		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, head: head, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
+		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, head: head, headLock: headLock,
+		maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
 	}
 }
 

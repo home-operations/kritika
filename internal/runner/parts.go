@@ -70,11 +70,12 @@ type reviewPart struct {
 // rules, and skills, and the findings of the last review its reviewer
 // raised. Its submission can hold only the categories that its reviewer
 // reports. tools gets search_code when the repository has an index, and
-// load_skill offers every part's skills. It returns the parts, and the
-// context and the rules they were given together, which the pack keeps.
+// load_skill offers every part's skills. search_code reads the head holding
+// headLock, which the parts share. It returns the parts, and the context and
+// the rules they were given together, which the pack keeps.
 func partPrompts(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head, base *object.Tree, res *gitfetch.Result, files repoconfig.Files,
-	found []repoconfig.Skill, shares []partShare, tools *agentTools, logger *slog.Logger,
+	found []repoconfig.Skill, shares []partShare, tools *agentTools, headLock chan struct{}, logger *slog.Logger,
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
 	diffs := make([]string, len(shares))
 	inputs := make([]contextpack.Part, len(shares))
@@ -96,7 +97,7 @@ func partPrompts(
 		for i, out := range similar {
 			if out.Indexed {
 				chunks[i] = append(chunks[i], similarShown(head, out.Chunks, chunks[i], logger.With("part", i+1))...)
-				tools.search = newSearchTool(p, secrets, head)
+				tools.search = newSearchTool(p, secrets, head, headLock)
 			}
 		}
 	}
@@ -344,7 +345,6 @@ func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 		case *fetchOCITool:
 			lock = locks.oci
 		case *searchTool:
-			t.headLock = locks.head
 			lock = locks.search
 		default:
 			lock = locks.head

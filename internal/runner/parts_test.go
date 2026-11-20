@@ -151,7 +151,7 @@ func TestPartPrompts(t *testing.T) {
 	split := [][]string{{"a/x.go"}, {"b/y.go"}}
 	var tools agentTools
 	parts, chunks, rules, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
+		splitShares(split, review.ScopeFull), &tools, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestPartPrompts(t *testing.T) {
 	}
 	s.Prompt.Rules = nil
 	if _, _, rules, err = partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler)); err != nil {
+		splitShares(split, review.ScopeFull), &tools, nil, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	if rules == nil || len(rules) != 0 {
@@ -213,7 +213,7 @@ func TestPartPromptsContext(t *testing.T) {
 		Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
 	parts, chunks, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
+		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,6 +324,64 @@ func TestRunPartLoops(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRunPartLoopsShareSearch: parts that run at once share one search_code,
+// and each searches through it, which the race detector checks.
+func TestRunPartLoopsShareSearch(t *testing.T) {
+	answer := func(name, input string) string {
+		return `{"id":"x","object":"chat.completion","created":1,"model":"acme/large","choices":[{"index":0,"message":` +
+			`{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"` + name +
+			`","arguments":` + strconv.Quote(input) + `}}]},"finish_reason":"tool_calls"}],` +
+			`"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150}}`
+	}
+	var mu sync.Mutex
+	asked := map[string]int{}
+	searched := 0
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/similar" {
+			mu.Lock()
+			searched++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"a.go","start_line":1,"end_line":1,"text":"package a"}]}`))
+			return
+		}
+		mu.Lock()
+		asked[r.Header.Get(model.PartHeader)]++
+		step := asked[r.Header.Get(model.PartHeader)]
+		mu.Unlock()
+		out := answer("search_code", `{"query":"package"}`)
+		if step > 1 {
+			out = answer(submitReview, `{"summary":{"take":"t","praise":[]},"findings":[]}`)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(out))
+	}))
+	t.Cleanup(gw.Close)
+	s := reviewSpec()
+	s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(4), 60
+	secrets := runspec.Secrets{GatewayToken: "t"}
+	head := tree(t, map[string]string{"a.go": "package a\n"})
+	locks := newPartLocks()
+	parts := make([]reviewPart, 4)
+	for i := range parts {
+		parts[i] = reviewPart{paths: []string{fmt.Sprintf("p%d.go", i+1)}, prompt: loopPrompt(s, false)}
+	}
+	tools := agentTools{search: newSearchTool(s, secrets, head, locks.head)}
+	results, _, err := runPartLoops(t.Context(), s, secrets, head, nil, tools, locks, parts, slog.New(slog.DiscardHandler), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, res := range results {
+		if res.Stop != agent.StopSubmitted || res.ToolCalls["search_code"] != 1 {
+			t.Fatalf("part %d stopped %s after %v: %s", i+1, res.Stop, res.ToolCalls, res.Err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if searched != len(parts) {
+		t.Fatalf("%d searches, want one a part", searched)
 	}
 }
 
