@@ -1829,7 +1829,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("an index job waits out a forge that fails transiently", func(t *testing.T) {
-		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, account.ID(), repoID)
+		newer := commitOnBase(t, dir, base, "tip after a forge wait", "package main\n\nfunc waited() {}\n")
+		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head, newer)
 	})
 
 	t.Run("ignore rules rebuild unchanged files", func(t *testing.T) {

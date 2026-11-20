@@ -350,13 +350,28 @@ func checkRunStatus(ctx context.Context, t *testing.T, st *store.Store, account,
 	}
 }
 
-// checkIndexWaitsOutForge runs an update while the forge does not answer for
-// the branch tip: the job is snoozed, its wait counted and no attempt spent.
-// Once the forge answers, the job runs and completes on its first attempt.
+// checkIndexWaitsOutForge runs an update to newer while the forge does not
+// answer for the branch tip: the job is snoozed, its wait counted and no
+// attempt spent. Once the forge answers, the job runs, publishes and
+// completes on its first attempt. The publication clears the count, so a job
+// that indexes again after it has every wait again. The index is left at
+// head again.
 func checkIndexWaitsOutForge(
-	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository string,
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository, head, newer string,
 ) {
 	t.Helper()
+	lf.setTip(newer)
+	t.Cleanup(func() {
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
 	lf.failTip(&url.Error{Op: "Get", URL: "https://api.github.com/repos/onedr0p/home-ops/branches/main", Err: errors.New("connection reset by peer")})
 	t.Cleanup(func() { lf.failTip(nil) })
 	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
@@ -382,5 +397,23 @@ func checkIndexWaitsOutForge(
 	}
 	if attempt, snoozes := indexJobDone(ctx, t, st, job.Job.ID); attempt != 1 || snoozes != 1 {
 		t.Fatalf("index job attempt=%d snoozes=%d, want 1 and 1", attempt, snoozes)
+	}
+	var waits int
+	if err := st.App().QueryRow(ctx, `SELECT coalesce((metadata->>'forge_waits')::int, 0) FROM river_job WHERE id = $1`,
+		job.Job.ID).Scan(&waits); err != nil {
+		t.Fatal(err)
+	}
+	if waits != 0 {
+		t.Fatalf("forge waits = %d after publication, want 0", waits)
+	}
+	var indexed string
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT g.commit_sha FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.id = $1`, repository).Scan(&indexed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if indexed != newer {
+		t.Fatalf("index at %s after the wait, want %s", indexed, newer)
 	}
 }

@@ -200,6 +200,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return errors.Join(err, w.finish(fctx, job, runID, runnerRunID, store.IndexFailed, n, err.Error()))
 	}
 	w.completed(account, pack, n, logger)
+	clearForgeWaits(ctx, job.Metadata, logger)
 	// A forced rebuild leaves the tip to the catch-up it queued as it published.
 	if args.Full {
 		return nil
@@ -246,7 +247,8 @@ const (
 // within seconds and drop the push that queued it. A snooze spends none, so
 // forgeWaitsKey counts the waits in the job's metadata, where River's own
 // snooze count also counts waits for other reasons. Past forgeWaits, the
-// failure spends an attempt.
+// failure spends an attempt. A publication clears the count, so a job that
+// indexes again, for a branch that moved while it ran, has every wait again.
 const (
 	forgeWaitMin  = 30 * time.Second
 	forgeWaitMax  = 15 * time.Minute
@@ -269,6 +271,20 @@ func forgeWait(err error, metadata []byte) (time.Duration, int) {
 		return 0, 0
 	}
 	return store.Backoff(meta.Waits, forgeWaitMin, forgeWaitMax), meta.Waits + 1
+}
+
+// clearForgeWaits clears the forge waits that metadata counts, when it
+// counts any, as the job's attempt ends.
+func clearForgeWaits(ctx context.Context, metadata []byte, logger *slog.Logger) {
+	var meta struct {
+		Waits int `json:"forge_waits"`
+	}
+	if json.Unmarshal(metadata, &meta) != nil || meta.Waits == 0 {
+		return
+	}
+	if err := river.MetadataSet(ctx, forgeWaitsKey, 0); err != nil {
+		logger.Warn("forge waits not cleared after publication", "error", err)
+	}
 }
 
 // waitOutForge snoozes the job, as its error, when forgeWait says that it
