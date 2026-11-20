@@ -261,11 +261,25 @@ func publishConcurrently(t *testing.T, s *Store, account string, publishFirst, p
 func TestIndexVectors(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+	// Accounts of its own: the suites share one database, and others count
+	// alpha's and beta's repositories.
+	if err := s.ApplyConfig(ctx, parse(t, `
+apps:
+  vectors-bot:
+    accounts: [vectors]
+    clientId: Iv1.vectors
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
+  strangers-bot:
+    accounts: [strangers]
+    clientId: Iv1.strangers
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
+`)); err != nil {
 		t.Fatal(err)
 	}
-	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	listRepos(t, s, "beta", "beta/one")
+	listRepos(t, s, "vectors", "vectors/one", "vectors/two")
+	listRepos(t, s, "strangers", "strangers/one")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -273,8 +287,9 @@ func TestIndexVectors(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
    DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
-	one, two, betaOne := configfile.RepositoryID(alpha, "alpha/one"), configfile.RepositoryID(alpha, "alpha/two"), configfile.RepositoryID(beta, "beta/one")
+	ours, theirs := accountID(t, s, "vectors"), accountID(t, s, "strangers")
+	one, two, theirsOne := configfile.RepositoryID(ours, "vectors/one"), configfile.RepositoryID(ours, "vectors/two"),
+		configfile.RepositoryID(theirs, "strangers/one")
 	// A vector that halfvec stores exactly, which a round trip through text
 	// or float32 must keep bit for bit.
 	stored := []float32{0.1, -0.333, 1e-3, 65504, 0, 0.5, -2, 3.14159}
@@ -293,10 +308,10 @@ func TestIndexVectors(t *testing.T) {
 		}
 	}
 	shared, other, copied := []byte("shared-hash-0123456789abcdef0123"), []byte("other-hash-0123456789abcdef01234"), []byte("copied-hash-0123456789abcdef0123")
-	insert(alpha, one, shared, stored)
-	insert(alpha, one, nil, []float32{1, 0, 0, 0, 0, 0, 0, 0})
-	insert(alpha, two, other, []float32{0, 1, 0, 0, 0, 0, 0, 0})
-	insert(beta, betaOne, shared, []float32{0, 0, 1, 0, 0, 0, 0, 0})
+	insert(ours, one, shared, stored)
+	insert(ours, one, nil, []float32{1, 0, 0, 0, 0, 0, 0, 0})
+	insert(ours, two, other, []float32{0, 1, 0, 0, 0, 0, 0, 0})
+	insert(theirs, theirsOne, shared, []float32{0, 0, 1, 0, 0, 0, 0, 0})
 	lookup := func(account, repository string, hashes ...[]byte) map[string][]float32 {
 		t.Helper()
 		var found map[string][]float32
@@ -310,19 +325,19 @@ func TestIndexVectors(t *testing.T) {
 		return found
 	}
 	want := halfvecRound(t, s, stored)
-	found := lookup(alpha, one, shared, other, []byte("missing-hash-0123456789abcdef012"))
+	found := lookup(ours, one, shared, other, []byte("missing-hash-0123456789abcdef012"))
 	if len(found) != 1 || !slices.Equal(found[string(shared)], want) {
-		t.Fatalf("alpha/one found %v, want only the shared hash's stored vector %v", found, want)
+		t.Fatalf("vectors/one found %v, want only the shared hash's stored vector %v", found, want)
 	}
-	if found := lookup(alpha, betaOne, shared); len(found) != 0 {
-		t.Fatalf("alpha found %v of beta's", found)
+	if found := lookup(ours, theirsOne, shared); len(found) != 0 {
+		t.Fatalf("vectors found %v of strangers'", found)
 	}
 	// The copy is the stored vector exactly: inserted again from what was
 	// read, it equals the source.
-	insert(alpha, one, copied, found[string(shared)])
+	insert(ours, one, copied, found[string(shared)])
 	var equal bool
 	if err := s.owner.QueryRow(ctx, `SELECT (SELECT embedding FROM index_chunks WHERE content_hash = $1 AND account_id = $3) =
-		(SELECT embedding FROM index_chunks WHERE content_hash = $2)`, shared, copied, alpha).Scan(&equal); err != nil {
+		(SELECT embedding FROM index_chunks WHERE content_hash = $2)`, shared, copied, ours).Scan(&equal); err != nil {
 		t.Fatal(err)
 	}
 	if !equal {
