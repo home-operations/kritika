@@ -29,6 +29,9 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.VectorSearch("account", "ok", time.Second)
 	none.CacheUploadSkipped("queue_full")
 	none.IndexSnoozed("t", "forge")
+	none.SimilarRequest("account", "diff", "ok")
+	none.SimilarBest("account", "diff", 0.8)
+	none.SimilarHits("account", "kept", 3)
 
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
@@ -131,12 +134,26 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader after stepping down = %v", v)
 	}
+	m.SimilarRequest("onedr0p", "search", "empty")
+	m.SimilarRequest("onedr0p", "search", "empty")
+	if v := testutil.ToFloat64(m.similarRequests.WithLabelValues("onedr0p", "search", "empty")); v != 2 {
+		t.Fatalf("similar requests = %v", v)
+	}
+	m.SimilarBest("onedr0p", "diff", 0.83)
+	m.SimilarHits("onedr0p", "margin", 4)
+	m.SimilarHits("onedr0p", "floor", 0)
+	if v := testutil.ToFloat64(m.similarHits.WithLabelValues("onedr0p", "margin")); v != 4 {
+		t.Fatalf("similar hits = %v", v)
+	}
+	if n := testutil.CollectAndCount(m.similarHits); n != 1 {
+		t.Fatalf("similar hit series = %d, want none for a count of 0", n)
+	}
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 43 {
-		t.Fatalf("metric families = %d, want all 43", len(families))
+	if len(families) != 46 {
+		t.Fatalf("metric families = %d, want all 46", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)

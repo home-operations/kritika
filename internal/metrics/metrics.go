@@ -15,40 +15,43 @@ import (
 // (accounts, connections, models) or by fixed vocabularies (status, stage,
 // outcome). Nothing per PR or per commit is ever a label.
 type Metrics struct {
-	cache          cacheMetrics
-	webhooks       *prometheus.CounterVec
-	polls          *prometheus.CounterVec
-	polled         *prometheus.CounterVec
-	reviews        *prometheus.CounterVec
-	reviewDuration *prometheus.HistogramVec
-	reviewStage    *prometheus.HistogramVec
-	reviewSlotWait *prometheus.HistogramVec
-	followups      *prometheus.CounterVec
-	threads        *prometheus.CounterVec
-	findings       *prometheus.CounterVec
-	confidence     *prometheus.CounterVec
-	confidenceHeld *prometheus.CounterVec
-	indexRuns      *prometheus.CounterVec
-	indexChunks    *prometheus.CounterVec
-	indexVectors   *prometheus.CounterVec
-	indexTruncated *prometheus.CounterVec
-	contextChunks  *prometheus.CounterVec
-	runnerRuns     *prometheus.CounterVec
-	runnerDuration *prometheus.HistogramVec
-	leaseWait      *prometheus.HistogramVec
-	queueWait      *prometheus.HistogramVec
-	vectorSearch   *prometheus.HistogramVec
-	reviewSnoozes  *prometheus.CounterVec
-	indexSnoozes   *prometheus.CounterVec
-	jobsRescued    *prometheus.CounterVec
-	modelCalls     *prometheus.CounterVec
-	modelTokens    *prometheus.CounterVec
-	modelCost      *prometheus.CounterVec
-	modelUnpriced  *prometheus.CounterVec
-	egress         *prometheus.CounterVec
-	forgeLimits    *prometheus.CounterVec
-	transcripts    *prometheus.CounterVec
-	leader         prometheus.Gauge
+	cache           cacheMetrics
+	webhooks        *prometheus.CounterVec
+	polls           *prometheus.CounterVec
+	polled          *prometheus.CounterVec
+	reviews         *prometheus.CounterVec
+	reviewDuration  *prometheus.HistogramVec
+	reviewStage     *prometheus.HistogramVec
+	reviewSlotWait  *prometheus.HistogramVec
+	followups       *prometheus.CounterVec
+	threads         *prometheus.CounterVec
+	findings        *prometheus.CounterVec
+	confidence      *prometheus.CounterVec
+	confidenceHeld  *prometheus.CounterVec
+	indexRuns       *prometheus.CounterVec
+	indexChunks     *prometheus.CounterVec
+	indexVectors    *prometheus.CounterVec
+	indexTruncated  *prometheus.CounterVec
+	contextChunks   *prometheus.CounterVec
+	runnerRuns      *prometheus.CounterVec
+	runnerDuration  *prometheus.HistogramVec
+	leaseWait       *prometheus.HistogramVec
+	queueWait       *prometheus.HistogramVec
+	vectorSearch    *prometheus.HistogramVec
+	similarRequests *prometheus.CounterVec
+	similarBest     *prometheus.HistogramVec
+	similarHits     *prometheus.CounterVec
+	reviewSnoozes   *prometheus.CounterVec
+	indexSnoozes    *prometheus.CounterVec
+	jobsRescued     *prometheus.CounterVec
+	modelCalls      *prometheus.CounterVec
+	modelTokens     *prometheus.CounterVec
+	modelCost       *prometheus.CounterVec
+	modelUnpriced   *prometheus.CounterVec
+	egress          *prometheus.CounterVec
+	forgeLimits     *prometheus.CounterVec
+	transcripts     *prometheus.CounterVec
+	leader          prometheus.Gauge
 }
 
 // Label names shared across series.
@@ -162,6 +165,21 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name:    "kritika_vector_search_seconds",
 			Help:    "Database vector-search transaction time per request, excluding embedding and model-slot waits.",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
+		}, []string{lblAccount, lblOutcome}),
+		similarRequests: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_similar_requests_total",
+			Help: "Similar-code requests, by query kind (diff, search, unknown) and outcome: ok, empty, no_queries, no_embedder, " +
+				"no_index, too_large, invalid, refused, error.",
+		}, []string{lblAccount, lblKind, lblOutcome}),
+		similarBest: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "kritika_similar_best_similarity",
+			Help:    "Cosine similarity of each similar-code query's best match in the index, by query kind (diff, search).",
+			Buckets: []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1},
+		}, []string{lblAccount, lblKind}),
+		similarHits: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_similar_hits_total",
+			Help: "Index chunks that similar-code searches found, by what became of them: kept, or dropped by floor, margin, " +
+				"duplicate, file_cap or limit.",
 		}, []string{lblAccount, lblOutcome}),
 		leaseWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
@@ -428,6 +446,29 @@ func (m *Metrics) InitVectorSearch(account string) {
 func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
 	if m != nil {
 		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
+	}
+}
+
+// SimilarRequest counts one similar-code request by its query kind and what
+// became of it.
+func (m *Metrics) SimilarRequest(account, kind, outcome string) {
+	if m != nil {
+		m.similarRequests.WithLabelValues(account, kind, outcome).Inc()
+	}
+}
+
+// SimilarBest observes the similarity of one query's best match.
+func (m *Metrics) SimilarBest(account, kind string, similarity float64) {
+	if m != nil {
+		m.similarBest.WithLabelValues(account, kind).Observe(similarity)
+	}
+}
+
+// SimilarHits counts n chunks that searches found and outcome kept or
+// dropped.
+func (m *Metrics) SimilarHits(account, outcome string, n int) {
+	if m != nil && n > 0 {
+		m.similarHits.WithLabelValues(account, outcome).Add(float64(n))
 	}
 }
 

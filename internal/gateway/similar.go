@@ -37,20 +37,47 @@ const (
 // holds however many files a change touches.
 const maxSimilarBody = 256 << 10
 
+// What became of a similar-code request, as kritika_similar_requests_total
+// counts it, and of a hit that it found, as kritika_similar_hits_total does.
+const (
+	similarOK         = "ok"
+	similarEmpty      = "empty"
+	similarNoQueries  = "no_queries"
+	similarNoEmbedder = "no_embedder"
+	similarNoIndex    = "no_index"
+	similarTooLarge   = "too_large"
+	similarInvalid    = "invalid"
+	similarRefused    = "refused"
+	similarError      = "error"
+
+	hitKept      = "kept"
+	hitFloor     = "floor"
+	hitMargin    = "margin"
+	hitDuplicate = "duplicate"
+	hitFileCap   = "file_cap"
+	hitLimit     = "limit"
+)
+
 // similarCode searches the run's repository index for the request's queries.
 // It serves stage 4 of the review, asked once over the diff's hunks before
 // the agent starts, and the agent's own search_code tool. The embedding is
 // reserved against the run's budget at four characters a token before it
-// runs. What similarCode returns is code of the repository that the runner
-// already checked out.
+// runs. A request without queries embeds nothing and only learns whether
+// the repository has an index, which the runner asks when the diff gives it
+// nothing to search for, to know whether to offer search_code. The answer
+// is the default branch's code as the index has it, which can be older or
+// newer than the pull request's head and base.
 func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)
 	if !ok {
 		return
 	}
+	kind, outcome := "unknown", similarInvalid
+	defer func() { g.Metrics.SimilarRequest(c.account.Key(), kind, outcome) }()
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSimilarBody))
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		outcome = similarTooLarge
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
 		return
 	}
@@ -63,21 +90,24 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusBadRequest, "invalid_request", "decoding the request: "+err.Error())
 		return
 	}
-	if len(req.Queries) == 0 || len(req.Queries) > contextpack.SimilarQueries {
-		refuse(w, http.StatusBadRequest, "invalid_request",
-			fmt.Sprintf("the request must carry between 1 and %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
-		return
-	}
 	switch req.Kind {
-	case "", contextpack.SimilarKindDiff, contextpack.SimilarKindSearch:
+	case "", contextpack.SimilarKindDiff:
+		kind = contextpack.SimilarKindDiff
+	case contextpack.SimilarKindSearch:
+		kind = contextpack.SimilarKindSearch
 	default:
 		refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("the query kind %q is neither %q nor %q", req.Kind,
 			contextpack.SimilarKindDiff, contextpack.SimilarKindSearch))
 		return
 	}
+	if len(req.Queries) > contextpack.SimilarQueries {
+		refuse(w, http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("the request must carry at most %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
+		return
+	}
 	var prompt string
 	if e := c.file.Embedding; e != nil {
-		prompt = e.PromptFor(req.Kind == contextpack.SimilarKindSearch)
+		prompt = e.PromptFor(kind == contextpack.SimilarKindSearch)
 	}
 	var chars int
 	for i, q := range req.Queries {
@@ -88,6 +118,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		req.Queries[i] = prompt + textcut.Prefix(q, contextpack.SimilarQueryChars)
 		chars += len(req.Queries[i])
 	}
+	outcome = similarError
 	var jobID int64
 	var excluded []string
 	err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
@@ -103,18 +134,25 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusInternalServerError, "server_error", "the run could not be read")
 		return
 	}
-	reserved := int64(chars)/4 + 1
-	if !g.reserve(ctx, w, c, reserved) {
-		return
+	var reserved int64
+	if chars > 0 {
+		reserved = int64(chars)/4 + 1
+		if !g.reserve(ctx, w, c, reserved) {
+			outcome = similarRefused
+			return
+		}
 	}
-	chunks, tokens, indexed, err := g.similar(ctx, c.file, similarRequest{
-		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID,
+	chunks, tokens, searched, err := g.similar(ctx, c.file, similarRequest{
+		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
 		queries: req.Queries, exclude: slices.Concat(excluded, req.Exclude),
 	}, c.logger)
-	cctx, cancel := detach(ctx)
-	defer cancel()
-	if cerr := g.Store.ChargeGatewayToken(cctx, c.token, tokens-reserved); cerr != nil {
-		c.logger.Error("gateway: similar code not charged", "error", cerr)
+	outcome = searched
+	if reserved > 0 || tokens > 0 {
+		cctx, cancel := detach(ctx)
+		defer cancel()
+		if cerr := g.Store.ChargeGatewayToken(cctx, c.token, tokens-reserved); cerr != nil {
+			c.logger.Error("gateway: similar code not charged", "error", cerr)
+		}
 	}
 	if err != nil {
 		// The embedder's error can carry its key or URL. The runner only
@@ -126,8 +164,10 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	if chunks == nil {
 		chunks = []contextpack.Chunk{}
 	}
+	indexed := searched != similarNoEmbedder && searched != similarNoIndex
 	out, err := json.Marshal(contextpack.SimilarResponse{Chunks: chunks, Indexed: indexed})
 	if err != nil {
+		outcome = similarError
 		refuse(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
@@ -141,24 +181,27 @@ type similarRequest struct {
 	repositoryID, reviewID string
 	// jobID is the review's job, for which the embedding slot is held.
 	jobID int64
-	// queries are the texts to embed: the embedder's query prompt, then a
-	// query cut to contextpack.SimilarQueryChars. exclude are the paths left
-	// out of the answer.
+	// kind is the queries' contextpack kind, never "".
+	kind string
+	// queries are the texts to embed: the embedder's prompt for their kind,
+	// then a query cut to contextpack.SimilarQueryChars. exclude are the
+	// paths left out of the answer.
 	queries []string
 	exclude []string
 }
 
 // similar searches the repository's active index generation for the chunks
-// nearest each query and leaves out the given paths. indexed is false, with
-// no chunks, when the instance has no embedder or the repository has no
-// completed generation built with it. It returns the tokens that the
-// embedding spent, recorded as the review's usage.
+// nearest each query and leaves out the given paths. Its outcome says what
+// became of the search: no chunks, when the instance has no embedder, the
+// repository has no completed generation built with it, or there are no
+// queries. It returns the tokens that the embedding spent, recorded as the
+// review's usage.
 func (g *Server) similar(
 	ctx context.Context, file *configfile.File, r similarRequest, logger *slog.Logger,
-) (chunks []contextpack.Chunk, tokens int64, indexed bool, err error) {
+) (chunks []contextpack.Chunk, tokens int64, outcome string, err error) {
 	embedder, emb := g.Embedders.Embedder(file)
 	if embedder == nil {
-		return nil, 0, false, nil
+		return nil, 0, similarNoEmbedder, nil
 	}
 	var runID string
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
@@ -167,19 +210,19 @@ func (g *Server) similar(
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, 0, false, nil
+		return nil, 0, similarNoIndex, nil
 	}
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, similarError, err
 	}
 	if len(r.queries) == 0 {
-		return nil, 0, true, nil
+		return nil, 0, similarNoQueries, nil
 	}
 	waitStarted := time.Now()
 	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), "embed:"+emb.Model, file.Slots(r.account, emb.Ref), r.jobID)
 	logger.Info("similar embedding slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
 	if err != nil {
-		return nil, 0, true, err
+		return nil, 0, similarError, err
 	}
 	var vectors [][]float32
 	embedStarted := time.Now()
@@ -205,7 +248,7 @@ func (g *Server) similar(
 		err = errors.Join(err, uerr)
 	}
 	if err != nil {
-		return nil, tokens, true, err
+		return nil, tokens, similarError, err
 	}
 	var hits []store.SimilarHit
 	started := time.Now()
@@ -214,18 +257,39 @@ func (g *Server) similar(
 		hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, similarPerQuery)
 		return err
 	})
-	outcome := adapter.Outcome(err)
+	searched := adapter.Outcome(err)
 	if err != nil && ctx.Err() != nil {
-		outcome = "canceled"
+		searched = "canceled"
 	}
-	g.Metrics.VectorSearch(r.account.Key(), outcome, time.Since(started))
+	g.Metrics.VectorSearch(r.account.Key(), searched, time.Since(started))
 	if err != nil {
-		return nil, tokens, true, err
+		return nil, tokens, similarError, err
 	}
-	chunks = keepSimilar(hits, emb.Floor(), emb.Margin())
+	for _, s := range bestSimilarity(hits) {
+		g.Metrics.SimilarBest(r.account.Key(), r.kind, s)
+	}
+	chunks, counts := keepSimilar(hits, emb.Floor(), emb.Margin())
+	for reason, n := range counts {
+		g.Metrics.SimilarHits(r.account.Key(), reason, n)
+	}
 	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "margin", emb.Margin(), "kept", len(chunks),
-		"tokens", tokens)
-	return chunks, tokens, true, nil
+		"tokens", tokens, "hits", counts)
+	if len(chunks) == 0 {
+		return chunks, tokens, similarEmpty, nil
+	}
+	return chunks, tokens, similarOK, nil
+}
+
+// bestSimilarity is the similarity of each query's best hit, of the queries
+// that have any.
+func bestSimilarity(hits []store.SimilarHit) map[int]float64 {
+	best := map[int]float64{}
+	for _, h := range hits {
+		if s, ok := best[h.Query]; !ok || h.Similarity > s {
+			best[h.Query] = h.Similarity
+		}
+	}
+	return best
 }
 
 // keepSimilar is the hits at or above floor and within margin of the best hit
@@ -237,18 +301,19 @@ func (g *Server) similar(
 // query's scores sit at a height of their own, set by the code that it is
 // near. So one floor cuts one query's good matches and keeps another's
 // noise. The margin is measured from each query's best instead.
-func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.Chunk {
-	best := map[int]float64{}
-	for _, h := range hits {
-		if s, ok := best[h.Query]; !ok || h.Similarity > s {
-			best[h.Query] = h.Similarity
-		}
-	}
+func keepSimilar(hits []store.SimilarHit, floor, margin float64) ([]contextpack.Chunk, map[string]int) {
+	counts := map[string]int{}
+	best := bestSimilarity(hits)
 	kept := make([]store.SimilarHit, 0, len(hits))
 	for _, h := range hits {
+		switch {
+		case h.Similarity < floor:
+			counts[hitFloor]++
 		// The tolerance keeps a hit right at the margin, which the
 		// subtraction's rounding can put a hair below it.
-		if h.Similarity >= floor && h.Similarity >= best[h.Query]-margin-1e-9 {
+		case h.Similarity < best[h.Query]-margin-1e-9:
+			counts[hitMargin]++
+		default:
 			kept = append(kept, h)
 		}
 	}
@@ -266,19 +331,25 @@ func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.C
 	chunks := make([]contextpack.Chunk, 0, min(len(kept), similarMax))
 	for _, r := range ranked {
 		h := r.hit
-		if len(chunks) == similarMax {
-			break
-		}
 		key := fmt.Sprintf("%s:%d", h.Chunk.Path, h.Chunk.StartLine)
-		if seen[key] || perFile[h.Chunk.Path] == similarPerFile {
+		switch {
+		case len(chunks) == similarMax:
+			counts[hitLimit]++
+			continue
+		case seen[key]:
+			counts[hitDuplicate]++
+			continue
+		case perFile[h.Chunk.Path] == similarPerFile:
+			counts[hitFileCap]++
 			continue
 		}
 		seen[key] = true
 		perFile[h.Chunk.Path]++
 		h.Chunk.Ref = fmt.Sprintf("similarity %.2f", h.Similarity)
 		chunks = append(chunks, h.Chunk)
+		counts[hitKept]++
 	}
-	return chunks
+	return chunks, counts
 }
 
 // rankedHit is a hit and its place among its query's hits, 0 for the best.

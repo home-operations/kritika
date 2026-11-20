@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 
@@ -70,7 +71,7 @@ func TestKeepSimilar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			original := slices.Clone(tt.hits)
-			got := keepSimilar(tt.hits, tt.floor, tt.margin)
+			got, _ := keepSimilar(tt.hits, tt.floor, tt.margin)
 			if !slices.Equal(original, tt.hits) {
 				t.Error("caller hits were mutated")
 			}
@@ -81,6 +82,37 @@ func TestKeepSimilar(t *testing.T) {
 				if key := fmt.Sprintf("%s:%d:%s", c.Path, c.StartLine, c.Ref); key != tt.want[i] {
 					t.Errorf("chunk %d = %q, want %q", i, key, tt.want[i])
 				}
+			}
+		})
+	}
+}
+
+// TestKeepSimilarCounts: each hit is counted once, kept or dropped, by the
+// first thing that drops it.
+func TestKeepSimilarCounts(t *testing.T) {
+	hit := func(path string, line int, sim float64) store.SimilarHit {
+		return store.SimilarHit{Chunk: contextpack.Chunk{Path: path, StartLine: line}, Similarity: sim}
+	}
+	many := make([]store.SimilarHit, 0, similarMax+2)
+	for i := range similarMax + 2 {
+		many = append(many, hit(fmt.Sprintf("f%d.go", i), 1, 0.9))
+	}
+	for _, tt := range []struct {
+		name string
+		hits []store.SimilarHit
+		want map[string]int
+	}{
+		{"every reason", []store.SimilarHit{
+			hit("a.go", 1, 0.9), hit("a.go", 1, 0.9), hit("f.go", 1, 0.85), hit("f.go", 10, 0.84), hit("f.go", 20, 0.83),
+			hit("c.go", 1, 0.3), hit("d.go", 1, 0.7),
+		}, map[string]int{hitKept: 3, hitDuplicate: 1, hitFileCap: 1, hitFloor: 1, hitMargin: 1}},
+		{"past the limit", many, map[string]int{hitKept: similarMax, hitLimit: 2}},
+		{"none", nil, map[string]int{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got := keepSimilar(tt.hits, 0.5, 0.1)
+			if !maps.Equal(got, tt.want) {
+				t.Fatalf("counts = %v, want %v", got, tt.want)
 			}
 		})
 	}

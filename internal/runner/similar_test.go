@@ -212,3 +212,23 @@ func TestWithoutOverlap(t *testing.T) {
 		t.Fatalf("withoutOverlap = %+v, want %+v", got, want)
 	}
 }
+
+// TestSimilarContextWithoutQueries: a diff with nothing to search for still
+// asks whether the repository has an index, with no queries, and offers
+// search_code when it has.
+func TestSimilarContextWithoutQueries(t *testing.T) {
+	res := &gitfetch.Result{Diff: fileDiff("go.sum", "go.sum", "@@ -1,1 +1,2 @@\n a\n+b\n"), Changed: []string{"go.sum"}}
+	for _, indexed := range []bool{true, false} {
+		t.Run(fmt.Sprint(indexed), func(t *testing.T) {
+			gw := &fakeSimilarGateway{status: http.StatusNoContent, answer: contextpack.SimilarResponse{Indexed: indexed, Chunks: []contextpack.Chunk{}}}
+			s := reviewSpec()
+			s.GatewayURL = gw.serve(t).URL
+			chunks, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, res, nil,
+				slog.New(slog.DiscardHandler))
+			if len(gw.requests) != 1 || len(gw.requests[0].Queries) != 0 || len(chunks) != 0 || (search != nil) != indexed {
+				t.Fatalf("requests %+v, %d chunks, search_code offered %t; want one without queries, offered %t", gw.requests, len(chunks),
+					search != nil, indexed)
+			}
+		})
+	}
+}

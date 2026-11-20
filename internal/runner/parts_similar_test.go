@@ -89,6 +89,8 @@ func TestPartSimilarCodeOptionalFailure(t *testing.T) {
 			return
 		}
 		switch {
+		case len(req.Queries) == 0:
+			_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{})
 		case strings.HasPrefix(req.Queries[0], "failed.go"):
 			http.Error(w, "unavailable", http.StatusBadGateway)
 		case strings.HasPrefix(req.Queries[0], "unindexed.go"):

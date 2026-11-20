@@ -355,15 +355,14 @@ func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Sec
 }
 
 // similarCodeFor is the code elsewhere in the repository that resembles
-// diff's hunks, best effort: false when diff has no hunk to ask about, the
-// repository has no index, or the request failed.
+// diff's hunks, best effort: false when the repository has no index or the
+// request failed. A diff with nothing to search for still asks, with no
+// queries, which embeds nothing and only learns whether there is an index
+// for search_code.
 func similarCodeFor(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
 	queries := hunkQueries(diff, p.Ignore)
-	if len(queries) == 0 {
-		return contextpack.SimilarResponse{}, false
-	}
 	started := time.Now()
 	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{
 		Queries: queries, Kind: contextpack.SimilarKindDiff,

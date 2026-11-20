@@ -2561,7 +2561,7 @@ func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoI
 }
 
 // checkSimilarRoute calls /v1/similar the way a runner does: refused
-// without a valid token or without queries, answered from the index, and
+// without a valid token or with an empty query, answered from the index, and
 // refused once the run's budget is spent.
 func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	t.Helper()
@@ -2605,12 +2605,17 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"no queries": `{"queries":[]}`, "an empty query": `{"queries":[" "]}`, "not json": `{`,
+		"an empty query": `{"queries":[" "]}`, "not json": `{`, "an unknown kind": `{"queries":["x"],"kind":"other"}`,
 		"too many queries": encode(contextpack.SimilarRequest{Queries: slices.Repeat([]string{query}, contextpack.SimilarQueries+1)}),
 	} {
 		if code, _ := similar(token, body); code != http.StatusBadRequest {
 			t.Fatalf("%s = %d", name, code)
 		}
+	}
+	// No queries embed nothing and spend nothing: they only ask whether there
+	// is an index.
+	if code, out := similar(token, `{"queries":[]}`); code != http.StatusOK || !out.Indexed || len(out.Chunks) != 0 {
+		t.Fatalf("no queries = %d %+v", code, out)
 	}
 	code200, out := similar(token, encode(contextpack.SimilarRequest{Queries: []string{query}, Exclude: []string{"main.go"}}))
 	if code200 != http.StatusOK || !out.Indexed || len(out.Chunks) != 1 || out.Chunks[0].Path != "other.go" || out.Chunks[0].Stage != contextpack.StageSimilar {

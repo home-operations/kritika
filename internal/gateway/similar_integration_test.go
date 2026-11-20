@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -363,7 +364,8 @@ apps:
 	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
 		return slices.Repeat([][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, len(inputs)), 1, nil
 	})
-	g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: st, Current: configfile.NewCurrent(file),
+	reg := prometheus.NewRegistry()
+	g := Server{Metrics: metrics.New(reg), Store: st, Current: configfile.NewCurrent(file),
 		Logger:    slog.New(slog.DiscardHandler),
 		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
 	}
@@ -409,4 +411,45 @@ apps:
 	if got := found(`{"queries":["hello"],"exclude":["other.go"]}`); len(got) != 0 {
 		t.Fatalf("with a request's own exclusions: %q", got)
 	}
+	// A request without queries embeds nothing, and learns that there is an
+	// index.
+	if out := call("/v1/similar", gatewayToken, `{"queries":[],"kind":"diff"}`); out.Code != http.StatusOK ||
+		strings.TrimSpace(out.Body.String()) != `{"chunks":[],"indexed":true}` {
+		t.Fatalf("no queries = %d %s", out.Code, out.Body.String())
+	}
+	if out := call("/v1/similar", gatewayToken, `{"queries":["hello"],"kind":"other"}`); out.Code != http.StatusBadRequest {
+		t.Fatalf("an unknown kind = %d", out.Code)
+	}
+	want := map[string]float64{"diff/ok": 2, "diff/empty": 1, "diff/no_queries": 1, "unknown/invalid": 1}
+	if got := similarRequests(t, reg); !maps.Equal(got, want) {
+		t.Fatalf("requests counted %v, want %v", got, want)
+	}
+}
+
+// similarRequests is kritika_similar_requests_total by kind and outcome.
+func similarRequests(t *testing.T, reg *prometheus.Registry) map[string]float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() != "kritika_similar_requests_total" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			var kind, outcome string
+			for _, label := range metric.Label {
+				switch label.GetName() {
+				case "kind":
+					kind = label.GetValue()
+				case "outcome":
+					outcome = label.GetValue()
+				}
+			}
+			out[kind+"/"+outcome] += metric.GetCounter().GetValue()
+		}
+	}
+	return out
 }

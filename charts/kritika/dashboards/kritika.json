@@ -2502,6 +2502,215 @@
       "description": "1 when all scraped replicas can read the queue snapshot; 0 when any replica fails. Queue gauges are omitted on failure."
     },
     {
+      "id": 55,
+      "type": "timeseries",
+      "title": "Similar-code requests",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, job, kind, outcome) (rate(kritika_similar_requests_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} {{kind}} {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "description": "Similar-code requests by query kind (diff: a review's stage 4, search: the agent's search_code) and outcome. ok and empty searched the index; no_queries only asked whether there is one; no_embedder and no_index skipped stage 4; too_large, invalid, refused (the run's budget) and error failed it."
+    },
+    {
+      "id": 56,
+      "type": "timeseries",
+      "title": "Similar-code best match",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum by (namespace, job, kind, le) (rate(kritika_similar_best_similarity_bucket{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval])))",
+          "legendFormat": "{{namespace}}/{{job}} {{kind}} p50",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.1, sum by (namespace, job, kind, le) (rate(kritika_similar_best_similarity_bucket{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval])))",
+          "legendFormat": "{{namespace}}/{{job}} {{kind}} p10",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
+        }
+      ],
+      "description": "Cosine similarity of each query's best match in the index. Compare it with the embedder's similarFloor: a p10 under the floor means many queries find nothing worth keeping."
+    },
+    {
+      "id": 57,
+      "type": "timeseries",
+      "title": "Similar-code hits",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, job, outcome) (rate(kritika_similar_hits_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "description": "Index chunks the searches found, kept or dropped: under the floor, past the margin below their query's best, a duplicate, past two of one file, or past the ten an answer keeps. Paths the run excluded never leave the database and are not counted."
+    },
+    {
       "id": 42,
       "type": "row",
       "title": "Download cache",
@@ -2510,7 +2719,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 107
       },
       "panels": []
     },
@@ -2526,7 +2735,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 100
+        "y": 108
       },
       "fieldConfig": {
         "defaults": {
@@ -2592,7 +2801,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 100
+        "y": 108
       },
       "fieldConfig": {
         "defaults": {
@@ -2657,7 +2866,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 100
+        "y": 108
       },
       "fieldConfig": {
         "defaults": {
@@ -2722,7 +2931,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 108
+        "y": 116
       },
       "fieldConfig": {
         "defaults": {
@@ -2787,7 +2996,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 108
+        "y": 116
       },
       "fieldConfig": {
         "defaults": {
@@ -2852,7 +3061,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 108
+        "y": 116
       },
       "fieldConfig": {
         "defaults": {
@@ -2917,7 +3126,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 116
+        "y": 124
       },
       "fieldConfig": {
         "defaults": {
@@ -2982,7 +3191,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 116
+        "y": 124
       },
       "fieldConfig": {
         "defaults": {
@@ -3047,7 +3256,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 116
+        "y": 124
       },
       "fieldConfig": {
         "defaults": {
@@ -3112,7 +3321,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 124
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {
@@ -3177,7 +3386,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 124
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {
@@ -3255,7 +3464,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 124
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {
