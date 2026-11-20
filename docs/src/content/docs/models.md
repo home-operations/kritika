@@ -660,13 +660,14 @@ keep a chunk only when it scores at least `similarFloor` and no more than
 hunk of the diff or a `search_code` query. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
 chunks of one file and ten in all. The review's prompt also leaves out a
-chunk whose lines another context stage already shows.
+chunk more than half of whose lines another context stage already shows.
 
 The index is of the default branch, which can be ahead of or behind the
 pull request. Both show a chunk as the pull request's head has it: found
 by its text, at its lines in the head, which differ from the index's when
 code above it moved. A chunk whose text or file the head no longer has
-is left out.
+is left out, as is one found at lines that a chunk before it mostly
+shows.
 
 How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and

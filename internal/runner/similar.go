@@ -323,14 +323,26 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 
 var _ agent.Tool = (*searchTool)(nil)
 
-// withoutOverlap is the similar chunks that share no line with a chunk of
-// another stage, which already shows that code.
+// withoutOverlap is the similar chunks of which the other stages' chunks
+// among others show no more than half the lines. A similar chunk is a whole
+// declaration or window: one that shares a line or two with a definition
+// that another stage shows still shows code that the prompt otherwise lacks,
+// while one mostly shown already adds little but its lines again.
 func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
-	return slices.DeleteFunc(slices.Clone(similar), func(c contextpack.Chunk) bool {
-		return slices.ContainsFunc(others, func(o contextpack.Chunk) bool {
-			return o.Stage != contextpack.StageSimilar && o.Path == c.Path && o.StartLine <= c.EndLine && c.StartLine <= o.EndLine
-		})
-	})
+	others = slices.DeleteFunc(slices.Clone(others), func(o contextpack.Chunk) bool { return o.Stage == contextpack.StageSimilar })
+	return slices.DeleteFunc(slices.Clone(similar), func(c contextpack.Chunk) bool { return mostlyShown(c, others) })
+}
+
+// mostlyShown reports whether the chunks of shown cover more than half of
+// c's lines.
+func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
+	covered := 0
+	for l := c.StartLine; l <= c.EndLine; l++ {
+		if slices.ContainsFunc(shown, func(o contextpack.Chunk) bool { return o.Path == c.Path && o.StartLine <= l && l <= o.EndLine }) {
+			covered++
+		}
+	}
+	return 2*covered > c.EndLine-c.StartLine+1
 }
 
 // atHead is the similar chunks as the pull request's head has them. The
@@ -344,7 +356,9 @@ func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
 // leaves it fewer lines than its range or a text of that length. Only then
 // need its last line merely begin the head's, and the chunk claims the lines
 // its text covers. Any other chunk's lines must all be the head's, or a line
-// that the head has since extended would be shown as the head's.
+// that the head has since extended would be shown as the head's. Two chunks
+// of the index can be found at the same head lines, so one whose lines an
+// earlier one mostly shows is left out.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string][]string{}
 	var out []contextpack.Chunk
@@ -356,8 +370,12 @@ func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 		}
 		n := strings.Count(strings.TrimSuffix(c.Text, "\n"), "\n") + 1
 		cut := n < c.EndLine-c.StartLine+1 || len(c.Text) > indexer.DefaultOptions.MaxChunkBytes-utf8.UTFMax
-		if start, ok := findText(lines, c.Text, c.StartLine-1, cut); ok {
-			c.StartLine, c.EndLine = start+1, start+n
+		start, ok := findText(lines, c.Text, c.StartLine-1, cut)
+		if !ok {
+			continue
+		}
+		c.StartLine, c.EndLine = start+1, start+n
+		if !mostlyShown(c, out) {
 			out = append(out, c)
 		}
 	}

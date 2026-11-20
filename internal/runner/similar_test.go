@@ -223,8 +223,8 @@ func TestHunkQueries(t *testing.T) {
 	})
 }
 
-// TestWithoutOverlap: a similar chunk is left out when another stage already
-// shows any of its lines.
+// TestWithoutOverlap: a similar chunk is left out when other stages already
+// show more than half of its lines, and kept when they show fewer.
 func TestWithoutOverlap(t *testing.T) {
 	similar := func(path string, start, end int) contextpack.Chunk {
 		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end}
@@ -232,15 +232,30 @@ func TestWithoutOverlap(t *testing.T) {
 	others := []contextpack.Chunk{
 		{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 10, EndLine: 20},
 		{Stage: contextpack.StageCaller, Path: "caller.go", StartLine: 5, EndLine: 5},
+		{Stage: contextpack.StageCaller, Path: "two.go", StartLine: 1, EndLine: 3},
+		{Stage: contextpack.StageDefinition, Path: "two.go", StartLine: 6, EndLine: 8},
 		similar("kept.go", 1, 9),
 	}
-	got := withoutOverlap([]contextpack.Chunk{
-		similar("util.go", 1, 9), similar("util.go", 18, 30), similar("util.go", 21, 40), similar("caller.go", 1, 5),
-		similar("other.go", 10, 20), similar("kept.go", 1, 9),
-	}, others)
-	want := []contextpack.Chunk{similar("util.go", 1, 9), similar("util.go", 21, 40), similar("other.go", 10, 20), similar("kept.go", 1, 9)}
-	if !slices.Equal(got, want) {
-		t.Fatalf("withoutOverlap = %+v, want %+v", got, want)
+	for _, tt := range []struct {
+		name string
+		in   contextpack.Chunk
+		kept bool
+	}{
+		{"apart", similar("util.go", 1, 9), true},
+		{"a few lines shown", similar("util.go", 18, 30), true},
+		{"half shown", similar("util.go", 16, 25), true},
+		{"most shown", similar("util.go", 15, 24), false},
+		{"inside", similar("util.go", 12, 14), false},
+		{"one line of five", similar("caller.go", 1, 5), true},
+		{"most shown by two", similar("two.go", 2, 8), false},
+		{"another file", similar("other.go", 10, 20), true},
+		{"under another similar chunk", similar("kept.go", 1, 9), true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := withoutOverlap([]contextpack.Chunk{tt.in}, others); (len(got) == 1) != tt.kept {
+				t.Fatalf("withoutOverlap = %+v, want kept %t", got, tt.kept)
+			}
+		})
 	}
 }
 
@@ -298,4 +313,11 @@ func TestAtHead(t *testing.T) {
 			}
 		})
 	}
+	t.Run("found at lines an earlier one mostly shows", func(t *testing.T) {
+		a := "func a() {\n\treturn\n}"
+		got := atHead(head, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")})
+		if want := []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}; !slices.Equal(got, want) {
+			t.Fatalf("atHead = %+v, want %+v", got, want)
+		}
+	})
 }
