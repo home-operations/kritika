@@ -76,6 +76,14 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			},
 		},
 		{
+			name: "one-character statements", path: "run.sh",
+			src: "f() { echo hi; }\nf\n",
+		},
+		{
+			name: "sql comment statements", path: "schema.sql",
+			src: "CREATE TABLE t (a int);\nCOMMENT ON COLUMN t.a IS 'the a column';\nCREATE INDEX i ON t (a);\n",
+		},
+		{
 			name: "markdown of long lines", path: "notes.md",
 			src: lines(100, "Line %d "+strings.Repeat("word ", 60)),
 		},

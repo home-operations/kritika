@@ -238,7 +238,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	for i := range root.NamedChildCount() {
 		c := root.NamedChild(i)
 		typ := c.Type(lp.lang)
-		if strings.Contains(typ, "comment") || c.EndPoint().Row == c.StartPoint().Row && c.EndByte()-c.StartByte() < 2 {
+		if comment(typ) || bytes.IndexFunc(src[c.StartByte():c.EndByte()], worded) < 0 {
 			continue
 		}
 		d := Decl{
@@ -319,6 +319,9 @@ func endLine(start, end gotreesitter.Point) int {
 	return int(end.Row) + 1
 }
 
+// worded reports whether r is a letter or a digit.
+func worded(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
 // headLine is the first line of d that holds more than lead nodes and
 // white space, or d's first line when none does.
 func headLine(d Decl, lead []bool, src []byte, starts []int) int {
@@ -357,8 +360,12 @@ func leads(typ string) bool {
 	case "attribute_item", "attribute_list", "annotation", "marker_annotation":
 		return true
 	}
-	return strings.Contains(typ, "comment") || strings.Contains(typ, "decorator")
+	return comment(typ) || strings.Contains(typ, "decorator")
 }
+
+// comment reports whether a node of type typ is a comment. A SQL
+// comment_statement (COMMENT ON) is a statement.
+func comment(typ string) bool { return strings.HasSuffix(typ, "comment") }
 
 // leadLines marks, by 1-based line, the lines that lead nodes fill: every
 // character on the line that is not white space belongs to one such node,
