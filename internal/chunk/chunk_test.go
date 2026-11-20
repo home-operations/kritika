@@ -356,6 +356,53 @@ impl Point {
 `,
 			want: []want{{"Point", "type", "", 3, 5, 5}, {"new", "function", "", 8, 10, 10}},
 		},
+		{
+			name: "rust attributes that share a line", path: "demo.rs",
+			src: `/// A point in space
+#[derive(Debug, Clone)] // Copy would be wrong here
+pub struct Point { x: i32 }
+
+#[allow(clippy::too_many_arguments)] // the API needs them
+#[inline] #[must_use]
+pub fn build(a: i32) -> i32 { a }
+
+#[allow(dead_code)]
+
+fn lone() {}
+`,
+			want: []want{
+				{"Point", "type", "", 1, 3, 3}, {"build", "function", "", 5, 7, 7},
+				{"", "other", "", 9, 9, 9}, {"lone", "function", "", 11, 11, 11},
+			},
+		},
+		{
+			name: "java annotations on one line", path: "A.java",
+			src: `class A {
+    @Override @Deprecated
+    public int get() { return 1; }
+}
+`,
+			want: []want{{"A", "class", "", 1, 4, 1}, {"get", "method", "A", 2, 3, 3}},
+		},
+		{
+			name: "byte order mark", path: "bom.go",
+			src:  "\ufeff// Package c does things.\npackage c\n\nfunc F() {}\n",
+			want: []want{{"c", "import", "", 1, 2, 2}, {"F", "function", "", 4, 4, 4}},
+		},
+		{
+			name: "c preprocessor and a comment after code", path: "demo.c",
+			src: `#include <stdio.h>
+// Adds.
+int add(int a) { return a; }
+int x = 1; /* a
+ b */
+int f(void) { return x; }
+`,
+			want: []want{
+				{"", "other", "", 1, 1, 1}, {"add", "function", "", 2, 3, 3},
+				{"x", "", "", 4, 4, 4}, {"f", "function", "", 6, 6, 6},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

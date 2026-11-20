@@ -67,6 +67,15 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			symbols: map[string]string{"func Long() {": "Long", "\t_ = 119 // " + strings.Repeat("x", 90): "Long"},
 		},
 		{
+			name: "rust attributes that share a line", path: "point.rs",
+			src: "/// A point in space\n#[derive(Debug, Clone)] // Copy would be wrong here\npub struct Point { x: i32 }\n\n" +
+				"#[allow(clippy::too_many_arguments)] // the API needs them\npub fn build(a: i32) -> i32 { a }\n\n#[allow(dead_code)]\n\nfn lone() {}\n",
+			symbols: map[string]string{
+				"/// A point in space": "Point", "#[derive(Debug, Clone)] // Copy would be wrong here": "Point",
+				"#[allow(clippy::too_many_arguments)] // the API needs them": "build", "fn lone() {}": "lone",
+			},
+		},
+		{
 			name: "markdown of long lines", path: "notes.md",
 			src: lines(100, "Line %d "+strings.Repeat("word ", 60)),
 		},

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/odvcencio/gotreesitter"
@@ -184,6 +185,8 @@ func (p *Parser) language(path string) *languageParser {
 // chunk.
 func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Decl {
 	root := tree.RootNode()
+	starts := lineStarts(src)
+	lead := leadLines(root, lp.lang, src, starts)
 	var out []Decl
 	seen := map[[2]int]bool{}
 	// A statement holding one outlined symbol over the same lines (a Go
@@ -199,6 +202,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 			return false
 		}
 		seen[key], named[lines] = true, true
+		d.HeadLine = headLine(d, lead, src, starts)
 		out = append(out, d)
 		return true
 	}
@@ -210,7 +214,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 			scope := cmp.Or(s.Owner, owner)
 			if add(Decl{
 				Symbol: s.Name, Kind: s.Kind, Scope: scope,
-				StartLine: int(s.Range.StartPoint.Row) + 1, EndLine: int(s.Range.EndPoint.Row) + 1,
+				StartLine: int(s.Range.StartPoint.Row) + 1, EndLine: endLine(s.Range.StartPoint, s.Range.EndPoint),
 				StartByte: int(s.Range.StartByte), EndByte: int(s.Range.EndByte),
 			}) && owner == "" {
 				top = append(top, len(out)-1)
@@ -228,19 +232,25 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		}
 	}
 	slices.SortFunc(top, func(a, b int) int { return cmp.Compare(out[a].StartByte, out[b].StartByte) })
-	starts := lineStarts(src)
-	lead := leadLines(root, lp.lang, src, starts)
+	// loose holds the attributes and decorators at the top level, which the
+	// declaration below them usually takes in.
+	var loose []Decl
 	for i := range root.NamedChildCount() {
 		c := root.NamedChild(i)
 		typ := c.Type(lp.lang)
-		if leads(typ) || c.EndPoint().Row == c.StartPoint().Row && c.EndByte()-c.StartByte() < 2 {
+		if strings.Contains(typ, "comment") || c.EndPoint().Row == c.StartPoint().Row && c.EndByte()-c.StartByte() < 2 {
 			continue
 		}
 		d := Decl{
 			Kind:      kindFromType(typ),
-			StartLine: int(c.StartPoint().Row) + 1, EndLine: int(c.EndPoint().Row) + 1,
+			StartLine: int(c.StartPoint().Row) + 1, EndLine: endLine(c.StartPoint(), c.EndPoint()),
 			StartByte: int(c.StartByte()), EndByte: int(c.EndByte()),
 		}
+		if leads(typ) {
+			loose = append(loose, d)
+			continue
+		}
+		d.Symbol, d.Scope = nameOf(c, lp.lang, src)
 		// An export or a decorated definition around one outlined
 		// declaration widens that declaration, which keeps its symbol.
 		if j := wrapped(out, top, d, lead); j >= 0 {
@@ -250,7 +260,6 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		if dn := c.ChildByFieldName("declaration", lp.lang); dn != nil && d.Kind == "other" {
 			d.Kind = kindFromType(dn.Type(lp.lang))
 		}
-		d.Symbol, d.Scope = nameOf(c, lp.lang, src)
 		add(d)
 	}
 	// A lead line that ends another declaration is that declaration's.
@@ -266,7 +275,9 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		if line < out[i].StartLine {
 			out[i].StartLine, out[i].StartByte = line, starts[line-1]
 		}
-		out[i].HeadLine = headLine(out[i], lead, src, starts)
+	}
+	for _, d := range unheld(out, loose, len(starts)) {
+		add(d)
 	}
 	slices.SortFunc(out, func(a, b Decl) int {
 		return cmp.Or(cmp.Compare(a.StartByte, b.StartByte), cmp.Compare(b.EndByte, a.EndByte))
@@ -274,20 +285,68 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	return out
 }
 
+// unheld returns the declarations of loose that hold a line which no
+// declaration of out holds, in a file of lines lines.
+func unheld(out, loose []Decl, lines int) []Decl {
+	if len(loose) == 0 {
+		return nil
+	}
+	// held counts, by line, the declarations that hold it.
+	held := make([]int, lines+2)
+	for _, d := range out {
+		held[d.StartLine]++
+		held[min(d.EndLine+1, len(held)-1)]--
+	}
+	for l := 1; l < len(held); l++ {
+		held[l] += held[l-1]
+	}
+	var alone []Decl
+	for _, d := range loose {
+		if slices.Contains(held[d.StartLine:min(d.EndLine+1, len(held))], 0) {
+			alone = append(alone, d)
+		}
+	}
+	return alone
+}
+
+// endLine is the 1-based last line of a node from start to end. A node that
+// ends at the start of a line, as a C preprocessor directive that holds its
+// newline does, ends on the line before.
+func endLine(start, end gotreesitter.Point) int {
+	if end.Column == 0 && end.Row > start.Row {
+		return int(end.Row)
+	}
+	return int(end.Row) + 1
+}
+
 // headLine is the first line of d that holds more than lead nodes and
 // white space, or d's first line when none does.
 func headLine(d Decl, lead []bool, src []byte, starts []int) int {
 	for l := d.StartLine; l <= d.EndLine && l <= len(starts); l++ {
-		end := len(src)
-		if l < len(starts) {
-			end = starts[l]
-		}
-		if !lead[l] && len(bytes.TrimSpace(src[starts[l-1]:end])) > 0 {
+		if lo, hi := lineText(src, starts, l-1); !lead[l] && lo < hi {
 			return l
 		}
 	}
 	return d.StartLine
 }
+
+// lineText is the byte range of the text of 0-based row, without the white
+// space around it or the byte order mark that starts a file.
+func lineText(src []byte, starts []int, row int) (lo, hi int) {
+	lo, hi = starts[row], len(src)
+	if row+1 < len(starts) {
+		hi = starts[row+1]
+	}
+	if row == 0 && bytes.HasPrefix(src, byteOrderMark) {
+		lo += len(byteOrderMark)
+	}
+	line := src[lo:hi]
+	text := bytes.TrimLeftFunc(line, unicode.IsSpace)
+	lo += len(line) - len(text)
+	return lo, lo + len(bytes.TrimRightFunc(text, unicode.IsSpace))
+}
+
+var byteOrderMark = []byte("\ufeff")
 
 // leads reports whether a node of type typ leads into the declaration
 // below it rather than standing alone: a comment, a decorator, or an
@@ -302,9 +361,13 @@ func leads(typ string) bool {
 }
 
 // leadLines marks, by 1-based line, the lines that lead nodes fill: every
-// character on the line that is not white space belongs to one such node.
+// character on the line that is not white space belongs to one such node,
+// and a node that continues onto the line began on a lead line.
 func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, starts []int) []bool {
-	lead := make([]bool, len(starts)+1)
+	// reach is, by 0-based row, the end of the row's text that lead nodes
+	// fill from its start, with only white space between them. from is the
+	// 1-based line where a lead node that continues onto the row began.
+	reach, from := make([]int, len(starts)), make([]int, len(starts))
 	var walk func(n *gotreesitter.Node)
 	walk = func(n *gotreesitter.Node) {
 		if !leads(n.Type(lang)) {
@@ -318,23 +381,32 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 			last-- // a line comment that holds its newline
 		}
 		for row := first; row <= last && row < len(starts); row++ {
-			end := len(src)
-			if row+1 < len(starts) {
-				end = starts[row+1]
+			lo, hi := lineText(src, starts, row)
+			if p := skipSpace(src, cmp.Or(reach[row], lo), hi); int(n.StartByte()) <= p {
+				reach[row] = max(p, int(n.EndByte()))
 			}
-			line := src[starts[row]:end]
-			text := bytes.TrimSpace(line)
-			if len(text) == 0 {
-				continue
-			}
-			lo := starts[row] + bytes.Index(line, text)
-			if int(n.StartByte()) <= lo && int(n.EndByte()) >= lo+len(text) {
-				lead[row+1] = true
+			if row > first {
+				from[row] = first + 1
 			}
 		}
 	}
 	walk(root)
+	lead := make([]bool, len(starts)+1)
+	for row := range starts {
+		lo, hi := lineText(src, starts, row)
+		lead[row+1] = lo < hi && reach[row] > 0 && skipSpace(src, reach[row], hi) >= hi &&
+			(from[row] == 0 || lead[from[row]])
+	}
 	return lead
+}
+
+// skipSpace is the offset of the first byte from i to hi that is not white
+// space, or hi.
+func skipSpace(src []byte, i, hi int) int {
+	for i < hi && (src[i] == ' ' || src[i] == '\t' || src[i] == '\r' || src[i] == '\n' || src[i] == '\v' || src[i] == '\f') {
+		i++
+	}
+	return i
 }
 
 // wrapped returns the index in out of the one outlined top-level
