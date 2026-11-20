@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.0.122](https://github.com/home-operations/kritika/compare/0.0.121...0.0.122) (2026-11-20)
+
+
+### Features
+
+* **review:** tell the review and the judge what a pull request is stacked on ([#1510](https://github.com/home-operations/kritika/issues/1510)) ([07e9585](https://github.com/home-operations/kritika/commit/07e9585db313745e77a1b985125a54e3dd726f95))
+
+
+### Bug Fixes
+
+* **review:** bound the stack read and let a settled merge order move a kept rating ([#1511](https://github.com/home-operations/kritika/issues/1511)) ([f9fb5d6](https://github.com/home-operations/kritika/commit/f9fb5d618813f4428fc5328562fe21609320ab78))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action jdx/mise-action (v5.2.8 → v5.2.9) ([#1497](https://github.com/home-operations/kritika/issues/1497)) ([614b00b](https://github.com/home-operations/kritika/commit/614b00b5160e09c878204dd7402c4a36a0243c66))
+* **github-release:** update release home-operations/flate (v0.7.3 → v0.8.0) ([#1504](https://github.com/home-operations/kritika/issues/1504)) ([d172f9e](https://github.com/home-operations/kritika/commit/d172f9ea6afe1895fc9a786fba7fece9a64e5f43))
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.11.0 → v2.12.0) ([#1505](https://github.com/home-operations/kritika/issues/1505)) ([9ff22fb](https://github.com/home-operations/kritika/commit/9ff22fb56077f3503e51d65647f61a85ede7d59a))
+* **go:** update module github.com/openai/openai-go/v3 (v3.102.0 → v3.103.0) ([#1499](https://github.com/home-operations/kritika/issues/1499)) ([870e174](https://github.com/home-operations/kritika/commit/870e174de52462fbf16aad20acd49596090fb4cc))
+* **go:** update module github.com/openai/openai-go/v3 (v3.103.0 → v3.105.0) ([#1506](https://github.com/home-operations/kritika/issues/1506)) ([23f8921](https://github.com/home-operations/kritika/commit/23f89218ca920d4d5e25d95a3acee5303cbf639a))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.52.0 → v3.53.0) ([#1500](https://github.com/home-operations/kritika/issues/1500)) ([57de858](https://github.com/home-operations/kritika/commit/57de858cff2fdac4f6ddfd081bd0fd9fd82777bc))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.53.0 → v3.54.0) ([#1507](https://github.com/home-operations/kritika/issues/1507)) ([91c161d](https://github.com/home-operations/kritika/commit/91c161d575e936580e5f4b0b400d22da5f783a3a))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.54.0 → v3.54.1) ([#1509](https://github.com/home-operations/kritika/issues/1509)) ([b7ea69e](https://github.com/home-operations/kritika/commit/b7ea69eee9fa2e1eba0fb9596ea00977ebecf379))
+* **mise:** update tool github:oxc-project/oxc (0.78.0 → 0.79.0) ([#1508](https://github.com/home-operations/kritika/issues/1508)) ([13d0254](https://github.com/home-operations/kritika/commit/13d02543ce28f4652c4d19bbc5fbc9578ff2b2ed))
+* **npm:** update dependency astro (7.4.12 → 7.4.13) ([#1503](https://github.com/home-operations/kritika/issues/1503)) ([8a5184f](https://github.com/home-operations/kritika/commit/8a5184f6441c548aeaebd947e55488b08fd1f358))
+* **npm:** update dependency svelte (5.57.3 → 5.58.0) ([#1502](https://github.com/home-operations/kritika/issues/1502)) ([2591db0](https://github.com/home-operations/kritika/commit/2591db03d7732656a29af351f1caf75e1e78d54f))
+
 ## [0.0.121](https://github.com/home-operations/kritika/compare/0.0.120...0.0.121) (2026-11-18)
 
 
