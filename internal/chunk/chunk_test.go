@@ -403,6 +403,26 @@ int f(void) { return x; }
 				{"x", "", "", 4, 4, 4}, {"f", "function", "", 6, 6, 6},
 			},
 		},
+		{
+			name: "c++ templates", path: "demo.cpp",
+			src: `#include <vector>
+#include <string>
+
+template <typename T>
+T max_of(T a, T b) {
+  return a > b ? a : b;
+}
+
+template <typename T>
+T min_of(T a, T b) {
+  return a < b ? a : b;
+}
+`,
+			want: []want{
+				{"", "other", "", 1, 1, 1}, {"", "other", "", 2, 2, 2},
+				{"max_of", "function", "", 4, 7, 5}, {"min_of", "function", "", 9, 12, 10},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

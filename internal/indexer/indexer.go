@@ -238,13 +238,15 @@ func readBlob(f *object.File) ([]byte, error) {
 
 // pieces picks the line ranges to store, which cover every line of the file
 // that holds a word, but for comments that lead into no declaration. A
-// declaration that fits MaxDeclLines is one piece. An oversized one is
-// covered by its nested declarations, each cut the same way, and by windows
-// of the lines between them, under its own symbol. Unnamed statements at the
-// top level (a package clause, imports, assignments) are merged into runs of
-// up to WindowLines. Named declarations are never merged, so each keeps the
-// symbol that a search result reports. A file with no declarations is cut
-// into windows. No piece's text is over MaxChunkBytes unless it is one line.
+// declaration that fits MaxDeclLines is one piece. An oversized one, and an
+// unnamed one that holds named ones (a C++ namespace, a Python if, an HCL
+// body), is covered by its nested declarations, each cut the same way, and
+// by windows of the lines between them, under its own symbol. Imports and
+// unnamed statements at the top level (a package clause, assignments) are
+// merged into runs of up to WindowLines. Other named declarations are not
+// merged, so each keeps the symbol that a search result reports. A file with
+// no declarations is cut into windows. No piece's text is over MaxChunkBytes
+// unless it is one line.
 func pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
 		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, opts.MaxChunkBytes)
@@ -259,7 +261,7 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 	}
 	for _, i := range c.kids[0] {
 		d := f.Decls[i]
-		if d.Symbol != "" && d.Kind != importKind || d.Lines() > opts.WindowLines {
+		if d.Symbol != "" && d.Kind != importKind || d.Lines() > opts.WindowLines || c.split(i) {
 			flush()
 			out = append(out, c.cover(i)...)
 			continue
@@ -336,10 +338,28 @@ type segment struct {
 	whole, gap bool
 }
 
+// split reports whether declaration i is stored as its nested declarations
+// and the lines between them rather than whole: it is over MaxDeclLines, or
+// it has no symbol and holds a declaration that has one.
+func (c *cutter) split(i int) bool {
+	d := c.f.Decls[i]
+	return d.Lines() > c.opts.MaxDeclLines || d.Symbol == "" && c.named(i)
+}
+
+// named reports whether a declaration nested in declaration i has a symbol.
+func (c *cutter) named(i int) bool {
+	for _, k := range c.kids[i+1] {
+		if c.f.Decls[k].Symbol != "" || c.named(k) {
+			return true
+		}
+	}
+	return false
+}
+
 // cover returns the pieces of declaration i.
 func (c *cutter) cover(i int) []chunk.Decl {
 	d := c.f.Decls[i]
-	if d.Lines() <= c.opts.MaxDeclLines {
+	if !c.split(i) {
 		return []chunk.Decl{d}
 	}
 	var segs []segment
@@ -360,7 +380,7 @@ func (c *cutter) cover(i int) []chunk.Decl {
 	for _, k := range c.kids[i+1] {
 		n := c.f.Decls[k]
 		gap(next, n.StartLine-1)
-		if n.Lines() <= c.opts.MaxDeclLines {
+		if !c.split(k) {
 			segs = append(segs, segment{Decl: n, whole: true})
 		} else {
 			for _, p := range c.cover(k) {

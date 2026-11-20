@@ -165,6 +165,38 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 			src:  "package demo\n\nfunc Long() {\n" + lines(100, "\t_ = %d") + "}\n",
 			want: []span{{"demo", "import", 1, 1}, {"Long", "function", 3, 104}},
 		},
+		{
+			name: "c++ templates", path: "max.cpp",
+			src: "#include <vector>\n#include <string>\n\ntemplate <typename T>\nT max_of(T a, T b) {\n  return a > b ? a : b;\n}\n\n" +
+				"template <typename T>\nT min_of(T a, T b) {\n  return a < b ? a : b;\n}\n",
+			want: []span{{"", "other", 1, 2}, {"max_of", "function", 4, 7}, {"min_of", "function", 9, 12}},
+		},
+		{
+			name: "c++ blocks around declarations", path: "blocks.cpp",
+			src: "#include <cstdio>\n\nnamespace {\nint helper(int x) { return x + 1; }\n}\n\nextern \"C\" {\nint exported(int x) { return helper(x); }\n}\n\n" +
+				"#if defined(FOO)\nint foo_only(void) { return 1; }\n#endif\n\nint main() { return 0; }\n",
+			want: []span{
+				{"", "other", 1, 1}, {"helper", "function", 3, 4}, {"exported", "function", 7, 8},
+				{"foo_only", "function", 11, 13}, {"main", "function", 15, 15},
+			},
+		},
+		{
+			name: "python blocks around definitions", path: "compat.py",
+			src: "import os\n\ntry:\n    import ujson as json\nexcept ImportError:\n    import json\n\n" +
+				"if os.name == \"nt\":\n    def path_sep():\n        return \"\\\\\"\nelse:\n    def path_sep():\n        return \"/\"\n",
+			want: []span{{"", "other", 1, 6}, {"path_sep", "function", 8, 10}, {"path_sep", "function", 11, 13}},
+		},
+		{
+			name: "go alias group", path: "alias.go",
+			src:  "package e\n\nimport \"fmt\"\n\ntype (\n\tA = fmt.Stringer\n\tB = error\n)\n",
+			want: []span{{"", "import", 1, 3}, {"A", "", 5, 6}, {"B", "", 7, 7}},
+		},
+		{
+			name: "hcl blocks", path: "main.tf",
+			src: "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"x\"\n}\n\nvariable \"region\" {\n  default = \"us-east-1\"\n}\n\n" +
+				"output \"id\" {\n  value = aws_s3_bucket.b.id\n}\n",
+			want: []span{{"b", "", 1, 3}, {"region", "", 5, 7}, {"id", "", 9, 11}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
