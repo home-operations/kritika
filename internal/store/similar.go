@@ -27,6 +27,17 @@ func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedMode
 	return runID, nil
 }
 
+// SimilarExclude is the paths that the run reported its similar-code
+// searches leave out, none before it reports them.
+func SimilarExclude(ctx context.Context, tx pgx.Tx, runID string) ([]string, error) {
+	var paths []string
+	err := tx.QueryRow(ctx, `SELECT coalesce(similar_exclude, '{}') FROM runner_runs WHERE id = $1`, runID).Scan(&paths)
+	if err != nil {
+		return nil, fmt.Errorf("store: read similar exclusions: %w", err)
+	}
+	return paths, nil
+}
+
 // SimilarHit is one index chunk near a query, with its cosine similarity.
 type SimilarHit struct {
 	Chunk      contextpack.Chunk

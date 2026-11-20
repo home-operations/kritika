@@ -134,6 +134,10 @@ func TestMergeParts(t *testing.T) {
 func TestPartPrompts(t *testing.T) {
 	asked := 0
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == runspec.ReportSimilarExcludePath {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		asked++
 		_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"lib/z.go","start_line":1,"end_line":1,"text":"func z() {}"}]}`))
 	}))

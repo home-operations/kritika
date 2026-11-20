@@ -28,7 +28,7 @@ const maxSimilarBody = 1 << 20
 const searchCalls = 10
 
 // similarCode asks the gateway for the chunks of the repository's index
-// nearest each query, outside the excluded paths.
+// nearest each query, outside the paths that the run reported.
 func similarCode(ctx context.Context, gatewayURL, token string, req contextpack.SimilarRequest) (contextpack.SimilarResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, similarTimeout)
 	defer cancel()
@@ -88,7 +88,6 @@ var searchSchema = json.RawMessage(`{
 // the same gateway route as stage 4, bounded to searchCalls per run.
 type searchTool struct {
 	gatewayURL, token string
-	exclude           []string
 	maxBytes          int
 	calls             int
 }
@@ -118,7 +117,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	}
 	s.calls++
 	out, err := similarCode(ctx, s.gatewayURL, s.token, contextpack.SimilarRequest{
-		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)}, Exclude: s.exclude,
+		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)},
 	})
 	if err != nil {
 		return "", fmt.Errorf("agent: search_code: %w", err)

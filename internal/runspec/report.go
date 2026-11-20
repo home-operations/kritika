@@ -36,6 +36,8 @@ const (
 	// ReportPartsPath takes a POST of a PartsReport and answers with a
 	// PartSlots.
 	ReportPartsPath = ReportPrefix + "parts-remaining"
+	// ReportSimilarExcludePath takes a POST of a SimilarExcludeReport.
+	ReportSimilarExcludePath = ReportPrefix + "similar-exclude"
 )
 
 // ReportCheckpointInput names a part input hash on ReportCheckpointsPath.
@@ -98,6 +100,15 @@ type ContextPack struct {
 	SkipReason   string          `json:"skipReason"`
 	SkipDetail   string          `json:"skipDetail"`
 	RuleIDs      []string        `json:"ruleIds"`
+}
+
+// SimilarExcludeReport is what the run's similar-code searches leave out:
+// the paths the change touches, by both names of a rename. The prompt shows
+// them as they are at the head, and the index holds them as the default
+// branch has them. A run reports them once, before it first searches, so a
+// search does not carry them however many files the change touches.
+type SimilarExcludeReport struct {
+	Paths []string `json:"paths"`
 }
 
 // AgentReport commits an agent's result, its retained conversation and the

@@ -37,8 +37,9 @@ const (
 )
 
 // SimilarRequest is what a run sends the gateway to search its
-// repository's index: the texts to embed, and the paths to leave out of
-// the answer, which the prompt already carries.
+// repository's index: the texts to embed. The answer leaves out the paths
+// the run reported (runspec.SimilarExcludeReport), and Exclude besides,
+// which a runner of an earlier version sends in place of that report.
 type SimilarRequest struct {
 	Queries []string `json:"queries"`
 	Exclude []string `json:"exclude,omitempty"`

@@ -88,14 +88,16 @@ func partPrompts(
 	}
 	logger.Info("parts context built", "parts", len(shares), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
 		"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
-	similar, err := partSimilarCode(ctx, p, secrets, diffs, res.Changed, logger)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
-	}
-	for i, out := range similar {
-		if out.Indexed {
-			chunks[i] = append(chunks[i], out.Chunks...)
-			tools.search = newSearchTool(p, secrets, res.Changed)
+	if excludeFromSimilar(ctx, p, secrets, res, logger) {
+		similar, err := partSimilarCode(ctx, p, secrets, diffs, logger)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
+		}
+		for i, out := range similar {
+			if out.Indexed {
+				chunks[i] = append(chunks[i], out.Chunks...)
+				tools.search = newSearchTool(p, secrets)
+			}
 		}
 	}
 	ins := make([]promptInputs, len(shares))
@@ -158,7 +160,7 @@ func partPrompts(
 // parallelism. It reads no git objects. Those belong to the serial context
 // pass.
 func partSimilarCode(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs, changed []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs []string, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
 	// Reviewers that review the same files have the same diffs, each of
 	// which is asked about once.
@@ -171,7 +173,7 @@ func partSimilarCode(
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			found[i], _ = similarCodeFor(gctx, p, secrets, diff, changed, logger.With("part", slices.Index(diffs, diff)+1))
+			found[i], _ = similarCodeFor(gctx, p, secrets, diff, logger.With("part", slices.Index(diffs, diff)+1))
 			return gctx.Err()
 		})
 	}

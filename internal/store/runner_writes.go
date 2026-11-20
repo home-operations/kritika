@@ -62,6 +62,20 @@ func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.
 	return SetRunnerPhase(ctx, tx, runID, phase)
 }
 
+// SetSimilarExclude records the paths the run's similar-code searches leave
+// out. The first report holds: a later one, which can only be the same
+// report sent again, leaves it as it is.
+func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []string) error {
+	if paths == nil {
+		paths = []string{}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET similar_exclude = $2 WHERE id = $1 AND similar_exclude IS NULL`,
+		runID, paths); err != nil {
+		return fmt.Errorf("store: set similar exclusions: %w", err)
+	}
+	return nil
+}
+
 // WriteRunnerAgent commits the result, retained conversation, and phase
 // together.
 func WriteRunnerAgent(ctx context.Context, tx pgx.Tx, runID string, rec runspec.AgentRecord, phase string) error {

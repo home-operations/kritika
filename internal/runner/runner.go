@@ -330,25 +330,41 @@ func wholePrompt(
 func similarContext(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger,
 ) ([]contextpack.Chunk, *searchTool) {
-	out, ok := similarCodeFor(ctx, p, secrets, res.Diff, res.Changed, logger)
+	if !excludeFromSimilar(ctx, p, secrets, res, logger) {
+		return nil, nil
+	}
+	out, ok := similarCodeFor(ctx, p, secrets, res.Diff, logger)
 	if !ok {
 		return nil, nil
 	}
-	return out.Chunks, newSearchTool(p, secrets, res.Changed)
+	return out.Chunks, newSearchTool(p, secrets)
+}
+
+// excludeFromSimilar reports the paths the run's similar-code searches leave
+// out: every changed path, and the old name of each rename, whose copy in the
+// index otherwise matches its renamed self best of all. It reports false when
+// the report failed, and the run must then not search.
+func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger) bool {
+	paths := slices.Compact(slices.Sorted(slices.Values(slices.Concat(res.Changed, res.RenamedFrom))))
+	if err := newReporter(p, secrets).similarExclude(ctx, paths); err != nil {
+		logger.Warn("similar-code retrieval skipped: its exclusions were not reported", "error", err)
+		return false
+	}
+	return true
 }
 
 // similarCodeFor is the code elsewhere in the repository that resembles
 // diff's hunks, best effort: false when diff has no hunk to ask about, the
 // repository has no index, or the request failed.
 func similarCodeFor(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, changed []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
 	queries := hunkQueries(diff)
 	if len(queries) == 0 {
 		return contextpack.SimilarResponse{}, false
 	}
 	started := time.Now()
-	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: changed})
+	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries})
 	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
 		"elapsed", time.Since(started))
 	if err != nil {
@@ -359,11 +375,9 @@ func similarCodeFor(
 }
 
 // newSearchTool is search_code over the repository's index. It leaves out
-// the changed paths, which the prompt shows.
-func newSearchTool(p runspec.Spec, secrets runspec.Secrets, changed []string) *searchTool {
-	return &searchTool{
-		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
-	}
+// the paths that excludeFromSimilar reported, which the prompt shows.
+func newSearchTool(p runspec.Spec, secrets runspec.Secrets) *searchTool {
+	return &searchTool{gatewayURL: p.GatewayURL, token: secrets.GatewayToken, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes}
 }
 
 // notIgnored returns the paths no ignore glob matches, never nil.

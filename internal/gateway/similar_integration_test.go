@@ -285,3 +285,122 @@ func checkVectorSearchMetric(t *testing.T, reg *prometheus.Registry, wantSearche
 		t.Errorf("database searches = %d, want %d; embedding failures must not count", searches, wantSearches)
 	}
 }
+
+// TestSimilarReportedExclusions: a search leaves out the paths that its run
+// reported, which the first report sets for good, and the paths that an
+// older runner's request still carries.
+func TestSimilarReportedExclusions(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_SECRET", "test-key")
+	file := configfiletest.Load(t, `providers:
+  test:
+    type: openai
+    baseUrl: http://unused.invalid/v1
+    apiKey: { env: TEST_SECRET }
+review: { model: test/reviewer }
+embedding: { model: test/embed, dims: 8 }
+apps:
+  test:
+    accounts: [similar-exclude]
+    clientId: Iv1.test
+    privateKey: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_SECRET }
+`)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	storetest.Repositories(t, st, file, "similar-exclude/repo")
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "similar-exclude")
+	repo := configfile.RepositoryID(account.ID(), "similar-exclude/repo")
+	var runner string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var run string
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status)
+   VALUES($1,$2,'abc','embed',8,'full','completed') RETURNING id`, account.ID(), repo).Scan(&run); err != nil {
+			return err
+		}
+		for _, path := range []string{"main.go", "old.go", "other.go"} {
+			if _, err := tx.Exec(ctx, `INSERT INTO index_chunks(account_id,repository_id,index_run_id,path,start_line,end_line,text,embedding)
+   VALUES($1,$2,$3,$4,1,1,'func f() {}','[1,0,0,0,0,0,0,0]')`, account.ID(), repo, run, path); err != nil {
+				return err
+			}
+		}
+		if err := store.ActivateGeneration(ctx, tx, repo, run); err != nil {
+			return err
+		}
+		var err error
+		runner, err = store.InsertRunnerRun(ctx, tx, account.ID(), store.RunnerKindReview, "", 0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error { return store.FailRunnerRun(ctx, tx, runner, "test finished") }); err != nil {
+			t.Error(err)
+		}
+	})
+	gatewayToken, err := st.MintGatewayToken(ctx, store.GatewayGrant{
+		RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1 << 20,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportToken, err := st.MintRunnerToken(ctx, account.ID(), runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+		return slices.Repeat([][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, len(inputs)), 1, nil
+	})
+	g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: st, Current: configfile.NewCurrent(file),
+		Logger:    slog.New(slog.DiscardHandler),
+		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+	}
+	call := func(path, token, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		out := httptest.NewRecorder()
+		g.ServeHTTP(out, req)
+		return out
+	}
+	found := func(body string) []string {
+		t.Helper()
+		out := call("/v1/similar", gatewayToken, body)
+		if out.Code != http.StatusOK {
+			t.Fatalf("status=%d: %s", out.Code, out.Body.String())
+		}
+		var resp contextpack.SimilarResponse
+		if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		paths := make([]string, 0, len(resp.Chunks))
+		for _, c := range resp.Chunks {
+			paths = append(paths, c.Path)
+		}
+		slices.Sort(paths)
+		return paths
+	}
+	if got := found(`{"queries":["hello"]}`); !slices.Equal(got, []string{"main.go", "old.go", "other.go"}) {
+		t.Fatalf("before the report: %q", got)
+	}
+	if out := call("/v1/run/similar-exclude", gatewayToken, `{"paths":["main.go"]}`); out.Code != http.StatusUnauthorized {
+		t.Fatalf("exclusions reported with the run token: %d %s", out.Code, out.Body.String())
+	}
+	for _, body := range []string{`{"paths":["main.go","old.go"]}`, `{"paths":["other.go"]}`} {
+		if out := call("/v1/run/similar-exclude", reportToken, body); out.Code != http.StatusNoContent {
+			t.Fatalf("report %s: %d %s", body, out.Code, out.Body.String())
+		}
+	}
+	if got := found(`{"queries":["hello"]}`); !slices.Equal(got, []string{"other.go"}) {
+		t.Fatalf("after the report: %q, want the first report's exclusions to hold", got)
+	}
+	if got := found(`{"queries":["hello"],"exclude":["other.go"]}`); len(got) != 0 {
+		t.Fatalf("with a request's own exclusions: %q", got)
+	}
+}

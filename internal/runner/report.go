@@ -70,6 +70,10 @@ func (r *reporter) context(ctx context.Context, pack runspec.ContextPack, phase 
 	return r.post(ctx, runspec.ReportContextPath, runspec.ContextReport{Pack: pack, Phase: phase}, nil)
 }
 
+func (r *reporter) similarExclude(ctx context.Context, paths []string) error {
+	return r.post(ctx, runspec.ReportSimilarExcludePath, runspec.SimilarExcludeReport{Paths: paths}, nil)
+}
+
 func (r *reporter) agent(ctx context.Context, rec runspec.AgentRecord, phase string) error {
 	return r.post(ctx, runspec.ReportAgentPath, runspec.AgentReport{Record: rec, Phase: phase}, nil)
 }

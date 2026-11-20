@@ -31,7 +31,9 @@ const (
 )
 
 // maxSimilarBody bounds a similar-code request: its queries, each cut to
-// contextpack.SimilarQueryChars, with room for their encoding.
+// contextpack.SimilarQueryChars, with room for their encoding. The paths a
+// search leaves out are the run's report, not the request's, so the bound
+// holds however many files a change touches.
 const maxSimilarBody = 256 << 10
 
 // similarCode searches the run's repository index for the request's queries.
@@ -79,9 +81,13 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		chars += len(req.Queries[i])
 	}
 	var jobID int64
+	var excluded []string
 	err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
 		var err error
-		jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID)
+		if jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID); err != nil {
+			return err
+		}
+		excluded, err = store.SimilarExclude(ctx, tx, c.grant.RunID)
 		return err
 	})
 	if err != nil {
@@ -95,7 +101,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	chunks, tokens, indexed, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID,
-		queries: req.Queries, exclude: req.Exclude,
+		queries: req.Queries, exclude: slices.Concat(excluded, req.Exclude),
 	}, c.logger)
 	cctx, cancel := detach(ctx)
 	defer cancel()

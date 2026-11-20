@@ -323,9 +323,11 @@ it, so it has no switch:
   part of a split review. The agent's `search_code` asks it at most 10
   more times. The gateway embeds the diff or the query with the instance's
   embedder, answers from the repository's index, and charges the embedding
-  to the run.
-- A run reports here what it found: its phase, its context, its agent's
-  result and its index. This takes the run's report token, not the token
+  to the run. It searches only the index of the run's own repository,
+  whatever the request says. A search leaves out the files the change
+  touches, which the run reports once before it first searches.
+- A run reports here what it found: its phase, its context, its similar-code
+  exclusions, its agent's result and its index. This takes the run's report token, not the token
   that the model endpoint takes.
 
 ## Runner tools
