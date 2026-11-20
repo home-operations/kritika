@@ -621,12 +621,18 @@ func indexIgnoreHash(ignore []string) string {
 }
 
 // embedText is what the embedder sees: the embedder's document prompt, then
-// the path and symbol. They give the vector a little of the file's identity,
-// the way a reader knows where a snippet came from.
+// the path and symbol, qualified by its scope. They give the vector a little
+// of the file's identity, the way a reader knows where a snippet came from.
+// A window of a large declaration has the declaration's symbol, so it is
+// placed though it does not show the declaration's first line.
 func embedText(prompt string, c store.StagedChunk) string {
 	head := c.Path
 	if c.Symbol != "" {
-		head += " " + c.Kind + " " + c.Symbol
+		head += " " + c.Kind + " "
+		if c.Scope != "" {
+			head += c.Scope + "."
+		}
+		head += c.Symbol
 	}
 	return prompt + head + "\n" + c.Text
 }

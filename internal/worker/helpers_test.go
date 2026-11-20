@@ -34,6 +34,10 @@ func TestEmbedText(t *testing.T) {
 	}{
 		{name: "with a symbol", chunk: store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"},
 			want: "a/b.go function Build\nfunc Build() {}"},
+		{name: "with a scope", chunk: store.StagedChunk{Path: "a/b.py", Symbol: "bar", Kind: "function", Scope: "Foo", Text: "def bar(self): pass"},
+			want: "a/b.py function Foo.bar\ndef bar(self): pass"},
+		{name: "a scope without a symbol", chunk: store.StagedChunk{Path: "a/b.go", Kind: "import", Scope: "Foo", Text: "import \"x\""},
+			want: "a/b.go\nimport \"x\""},
 		{name: "without a symbol", chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "values.yaml\na: 1"},
 		{name: "with a document prompt", prompt: "Represent the document for retrieval: ",
 			chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "Represent the document for retrieval: values.yaml\na: 1"},
