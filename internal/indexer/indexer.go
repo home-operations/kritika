@@ -206,7 +206,7 @@ func readBlob(f *object.File) ([]byte, error) {
 // file with no declarations is cut into windows.
 func pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
-		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap)
+		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, 0)
 	}
 	var out []chunk.Decl
 	var lastEnd int
@@ -230,7 +230,7 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 			}
 		}
 		if !nested {
-			for _, w := range chunk.Windows([]byte(f.Text(d.StartLine, d.EndLine)), opts.WindowLines, opts.WindowOverlap) {
+			for _, w := range chunk.Windows([]byte(f.Text(d.StartLine, d.EndLine)), opts.WindowLines, opts.WindowOverlap, 0) {
 				out = append(out, chunk.Decl{
 					Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
 					StartLine: d.StartLine + w.StartLine - 1, EndLine: d.StartLine + w.EndLine - 1,

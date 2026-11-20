@@ -189,42 +189,32 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		start, end int
 	}
 	named := map[span]bool{}
-	add := func(d Decl) {
+	add := func(d Decl) bool {
 		key, lines := [2]int{d.StartByte, d.EndByte}, span{d.Symbol, d.StartLine, d.EndLine}
 		if seen[key] || named[lines] || d.EndByte <= d.StartByte {
-			return
+			return false
 		}
 		seen[key], named[lines] = true, true
 		out = append(out, d)
+		return true
 	}
 	symbols, _ := lp.outliner.OutlineTree(tree)
+	var top []int
 	var walk func(ss []gotreesitter.OutlineSymbol, owner string)
 	walk = func(ss []gotreesitter.OutlineSymbol, owner string) {
 		for _, s := range ss {
 			scope := cmp.Or(s.Owner, owner)
-			add(Decl{
+			if add(Decl{
 				Symbol: s.Name, Kind: s.Kind, Scope: scope,
 				StartLine: int(s.Range.StartPoint.Row) + 1, EndLine: int(s.Range.EndPoint.Row) + 1,
 				StartByte: int(s.Range.StartByte), EndByte: int(s.Range.EndByte),
-			})
+			}) && owner == "" {
+				top = append(top, len(out)-1)
+			}
 			walk(s.Children, s.Name)
 		}
 	}
 	walk(symbols, "")
-	for i := range root.NamedChildCount() {
-		c := root.NamedChild(i)
-		typ := c.Type(lp.lang)
-		if strings.Contains(typ, "comment") || c.EndPoint().Row == c.StartPoint().Row && c.EndByte()-c.StartByte() < 2 {
-			continue
-		}
-		d := Decl{
-			Kind:      kindFromType(typ),
-			StartLine: int(c.StartPoint().Row) + 1, EndLine: int(c.EndPoint().Row) + 1,
-			StartByte: int(c.StartByte()), EndByte: int(c.EndByte()),
-		}
-		d.Symbol, d.Scope = nameOf(c, lp.lang, src)
-		add(d)
-	}
 	// Methods carry their receiver as scope when the outline gave none.
 	for i := range out {
 		if out[i].Scope == "" && out[i].Kind == "method" {
@@ -233,10 +223,119 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 			}
 		}
 	}
+	slices.SortFunc(top, func(a, b int) int { return cmp.Compare(out[a].StartByte, out[b].StartByte) })
+	starts := lineStarts(src)
+	lead := leadLines(root, lp.lang, src, starts)
+	for i := range root.NamedChildCount() {
+		c := root.NamedChild(i)
+		typ := c.Type(lp.lang)
+		if leads(typ) || c.EndPoint().Row == c.StartPoint().Row && c.EndByte()-c.StartByte() < 2 {
+			continue
+		}
+		d := Decl{
+			Kind:      kindFromType(typ),
+			StartLine: int(c.StartPoint().Row) + 1, EndLine: int(c.EndPoint().Row) + 1,
+			StartByte: int(c.StartByte()), EndByte: int(c.EndByte()),
+		}
+		// An export or a decorated definition around one outlined
+		// declaration widens that declaration, which keeps its symbol.
+		if j := wrapped(out, top, d, lead); j >= 0 {
+			out[j].StartLine, out[j].StartByte = d.StartLine, d.StartByte
+			continue
+		}
+		if dn := c.ChildByFieldName("declaration", lp.lang); dn != nil && d.Kind == "other" {
+			d.Kind = kindFromType(dn.Type(lp.lang))
+		}
+		d.Symbol, d.Scope = nameOf(c, lp.lang, src)
+		add(d)
+	}
+	// A lead line that ends another declaration is that declaration's.
+	ends := map[int]bool{}
+	for _, d := range out {
+		ends[d.EndLine] = true
+	}
+	for i := range out {
+		line := out[i].StartLine
+		for line > 1 && lead[line-1] && !ends[line-1] {
+			line--
+		}
+		if line < out[i].StartLine {
+			out[i].StartLine, out[i].StartByte = line, starts[line-1]
+		}
+	}
 	slices.SortFunc(out, func(a, b Decl) int {
 		return cmp.Or(cmp.Compare(a.StartByte, b.StartByte), cmp.Compare(b.EndByte, a.EndByte))
 	})
 	return out
+}
+
+// leads reports whether a node of type typ leads into the declaration
+// below it rather than standing alone: a comment, a decorator, or an
+// attribute or annotation. A Rust inner attribute (inner_attribute_item)
+// applies to what encloses it, so it does not lead.
+func leads(typ string) bool {
+	switch typ {
+	case "attribute_item", "attribute_list", "annotation", "marker_annotation":
+		return true
+	}
+	return strings.Contains(typ, "comment") || strings.Contains(typ, "decorator")
+}
+
+// leadLines marks, by 1-based line, the lines that lead nodes fill: every
+// character on the line that is not white space belongs to one such node.
+func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, starts []int) []bool {
+	lead := make([]bool, len(starts)+1)
+	var walk func(n *gotreesitter.Node)
+	walk = func(n *gotreesitter.Node) {
+		if !leads(n.Type(lang)) {
+			for i := range n.ChildCount() {
+				walk(n.Child(i))
+			}
+			return
+		}
+		first, last := int(n.StartPoint().Row), int(n.EndPoint().Row)
+		if last > first && n.EndPoint().Column == 0 {
+			last-- // a line comment that holds its newline
+		}
+		for row := first; row <= last && row < len(starts); row++ {
+			end := len(src)
+			if row+1 < len(starts) {
+				end = starts[row+1]
+			}
+			line := src[starts[row]:end]
+			text := bytes.TrimSpace(line)
+			if len(text) == 0 {
+				continue
+			}
+			lo := starts[row] + bytes.Index(line, text)
+			if int(n.StartByte()) <= lo && int(n.EndByte()) >= lo+len(text) {
+				lead[row+1] = true
+			}
+		}
+	}
+	walk(root)
+	return lead
+}
+
+// wrapped returns the index in out of the one outlined top-level
+// declaration that d wraps, or -1. d wraps it when it holds no other one,
+// ends on its last line, and holds nothing above it but lead lines. top
+// indexes the top-level declarations of out by StartByte.
+func wrapped(out []Decl, top []int, d Decl, lead []bool) int {
+	k, _ := slices.BinarySearchFunc(top, d.StartByte, func(i, b int) int { return cmp.Compare(out[i].StartByte, b) })
+	if k == len(top) || k+1 < len(top) && out[top[k+1]].EndByte <= d.EndByte {
+		return -1
+	}
+	o := out[top[k]]
+	if o.EndByte > d.EndByte || o.EndLine != d.EndLine {
+		return -1
+	}
+	for l := d.StartLine; l < o.StartLine; l++ {
+		if !lead[l] {
+			return -1
+		}
+	}
+	return top[k]
 }
 
 // nodeAt finds the node with exactly the given byte range. It descends from
@@ -274,6 +373,10 @@ func nameOf(n *gotreesitter.Node, lang *gotreesitter.Language, src []byte) (name
 		if len(fields) > 0 {
 			scope = strings.TrimLeft(fields[len(fields)-1], "*&")
 		}
+	}
+	if dn := n.ChildByFieldName("declaration", lang); name == "" && dn != nil {
+		// An export statement names what it exports.
+		name, _ = nameOf(dn, lang, src)
 	}
 	if name == "" {
 		// A block of specs (Go's const and type groups) takes its first
@@ -387,17 +490,23 @@ func lineCount(src []byte) int {
 	return n
 }
 
+// lineStarts is the byte offset of each line of src.
+func lineStarts(src []byte) []int {
+	starts := make([]int, 1, lineCount(src))
+	for i, c := range src {
+		if c == '\n' && i+1 < len(src) {
+			starts = append(starts, i+1)
+		}
+	}
+	return starts
+}
+
 // Window returns the fixed-size fallback: the lines from first-radius to
 // last+radius, clamped to the file. Lines are 1-based, inclusive. Repeated
 // calls reuse the file's line offsets, including after Close.
 func (f *File) Window(first, last, radius int) (startLine, endLine int, text string) {
 	if f.lineOffsets == nil && len(f.Source) > 0 {
-		f.lineOffsets = make([]int, 1, lineCount(f.Source))
-		for i, c := range f.Source {
-			if c == '\n' && i+1 < len(f.Source) {
-				f.lineOffsets = append(f.lineOffsets, i+1)
-			}
-		}
+		f.lineOffsets = lineStarts(f.Source)
 	}
 	startLine, endLine = max(first-radius, 1), min(last+radius, len(f.lineOffsets))
 	if startLine > endLine {
@@ -418,10 +527,12 @@ func (f *File) Text(startLine, endLine int) string {
 	return text
 }
 
-// Windows cuts a file with no declarations into fixed-size pieces for the
-// index. Each piece is size lines, and the pieces overlap by overlap lines so
-// a boundary does not hide a match. Lines are 1-based, inclusive.
-func Windows(src []byte, size, overlap int) []Decl {
+// Windows cuts a file with no declarations into pieces for the index. Each
+// piece is at most size lines and, unless maxBytes is 0, at most maxBytes
+// bytes of text. A line longer than maxBytes is a piece of its own. The
+// pieces overlap by overlap lines, fewer for a piece that the byte bound cut
+// short, so a boundary does not hide a match. Lines are 1-based, inclusive.
+func Windows(src []byte, size, overlap, maxBytes int) []Decl {
 	lines := lineCount(src)
 	if lines == 0 || size <= 0 {
 		return nil
@@ -429,15 +540,27 @@ func Windows(src []byte, size, overlap int) []Decl {
 	if overlap >= size {
 		overlap = size / 4
 	}
+	starts := lineStarts(src)
+	// length is line l's text without its newline.
+	length := func(l int) int {
+		if l < len(starts) {
+			return starts[l] - starts[l-1] - 1
+		}
+		return len(bytes.TrimSuffix(src[starts[l-1]:], []byte{'\n'}))
+	}
 	var out []Decl
-	for start := 1; start <= lines; start += size - overlap {
-		end := min(start+size-1, lines)
+	for start := 1; ; {
+		end, used := start, length(start)
+		for end < lines && end-start+1 < size && (maxBytes <= 0 || used+1+length(end+1) <= maxBytes) {
+			end++
+			used += 1 + length(end)
+		}
 		out = append(out, Decl{Kind: "window", StartLine: start, EndLine: end})
 		if end == lines {
-			break
+			return out
 		}
+		start = max(end+1-overlap*(end-start+1)/size, start+1)
 	}
-	return out
 }
 
 // Matches reports whether path matches any of the doublestar globs. The code

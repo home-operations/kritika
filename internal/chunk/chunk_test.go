@@ -47,7 +47,7 @@ func BenchmarkFileWindows(b *testing.B) {
 	for _, lines := range []int{1000, 10000, 50000} {
 		b.Run(fmt.Sprint(lines), func(b *testing.B) {
 			src := []byte(strings.Repeat("value: abcdefghijklmnopqrstuvwxyz\n", lines))
-			windows := Windows(src, 60, 10)
+			windows := Windows(src, 60, 10, 0)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
@@ -102,7 +102,7 @@ func TestParseGoDeclarations(t *testing.T) {
 		symbol, kind, scope string
 		start, end          int
 	}{
-		{"Widget", "struct", "", 6, 8},
+		{"Widget", "struct", "", 5, 8},
 		{"Describe", "method", "Widget", 15, 17},
 		{"Build", "function", "", 19, 23},
 	}
@@ -185,16 +185,36 @@ func TestParseFallsBackForConfigAndUnknown(t *testing.T) {
 }
 
 func TestWindows(t *testing.T) {
-	src := []byte(strings.Repeat("x\n", 130))
-	w := Windows(src, 60, 10)
-	if len(w) != 3 || w[0] != (Decl{Kind: "window", StartLine: 1, EndLine: 60}) || w[1].StartLine != 51 || w[2].StartLine != 101 || w[2].EndLine != 130 {
-		t.Fatalf("Windows = %+v", w)
+	type span struct{ start, end int }
+	tests := []struct {
+		name                    string
+		src                     string
+		size, overlap, maxBytes int
+		want                    []span
+	}{
+		{name: "empty", size: 60, overlap: 10},
+		{name: "one line", src: "one", size: 60, overlap: 10, want: []span{{1, 1}}},
+		{name: "by lines", src: strings.Repeat("x\n", 130), size: 60, overlap: 10, maxBytes: 6000, want: []span{{1, 60}, {51, 110}, {101, 130}}},
+		{name: "no byte cap", src: strings.Repeat("x\n", 130), size: 60, overlap: 10, want: []span{{1, 60}, {51, 110}, {101, 130}}},
+		// Ten bytes a line with its newline: 30 bytes hold three lines, and
+		// the overlap shrinks with the window.
+		{name: "by bytes", src: strings.Repeat("123456789\n", 7), size: 60, overlap: 10, maxBytes: 30, want: []span{{1, 3}, {4, 6}, {7, 7}}},
+		{name: "by bytes with overlap", src: strings.Repeat("123456789\n", 14), size: 6, overlap: 3, maxBytes: 60, want: []span{{1, 6}, {4, 9}, {7, 12}, {10, 14}}},
+		{name: "line over the cap", src: "short\n" + strings.Repeat("y", 50) + "\nshort\n", size: 60, overlap: 10, maxBytes: 20, want: []span{{1, 1}, {2, 2}, {3, 3}}},
 	}
-	if got := Windows([]byte("one"), 60, 10); len(got) != 1 || got[0].EndLine != 1 {
-		t.Fatalf("Windows(one line) = %+v", got)
-	}
-	if Windows(nil, 60, 10) != nil {
-		t.Fatal("empty file must give no windows")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []span
+			for _, w := range Windows([]byte(tt.src), tt.size, tt.overlap, tt.maxBytes) {
+				if w.Kind != "window" {
+					t.Fatalf("kind = %q", w.Kind)
+				}
+				got = append(got, span{w.StartLine, w.EndLine})
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("Windows = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -219,5 +239,147 @@ func TestParseBounds(t *testing.T) {
 	}
 	if len(f.Decls) != 0 {
 		t.Errorf("a deep parse found %d declarations", len(f.Decls))
+	}
+}
+
+// TestDeclarationsTakeTheirLead: a declaration's range takes in the comments,
+// decorators and attributes directly above it, and a statement that only
+// wraps one declaration (an export, a decorated definition) is that
+// declaration, under its symbol.
+func TestDeclarationsTakeTheirLead(t *testing.T) {
+	type want struct {
+		symbol, kind, scope string
+		start, end          int
+	}
+	tests := []struct {
+		name, path, src string
+		want            []want
+	}{
+		{
+			name: "go doc comment", path: "demo.go",
+			src: `package demo
+
+// Widget is a thing.
+// It has a name.
+type Widget struct{ Name string }
+
+// unattached
+
+func Build() {}
+`,
+			want: []want{{"Widget", "struct", "", 3, 5}, {"Build", "function", "", 9, 9}},
+		},
+		{
+			name: "python decorators and comments", path: "demo.py",
+			src: `import os
+
+# A helper.
+@decorator(
+    "x",
+)
+def helper(x):
+    return x
+
+
+class Foo:
+    """Foo doc."""
+
+    # bar doc
+    def bar(self):
+        return 1
+
+    @property
+    def baz(self):
+        return 2
+`,
+			want: []want{
+				{"helper", "function", "", 3, 8},
+				{"Foo", "class", "", 11, 20},
+				{"bar", "function", "Foo", 14, 16},
+				{"baz", "function", "Foo", 18, 20},
+			},
+		},
+		{
+			name: "typescript exports", path: "demo.ts",
+			src: `import { x } from "y";
+
+/** Adds. */
+export function add(a: number, b: number): number {
+  return a + b;
+}
+
+export class Box {
+  // get doc
+  get(): number { return 1; }
+}
+
+export const limit = 1;
+`,
+			want: []want{
+				{"add", "function", "", 3, 6},
+				{"Box", "class", "", 8, 11},
+				{"get", "method", "Box", 9, 10},
+				{"limit", "", "", 13, 13},
+			},
+		},
+		{
+			name: "java javadoc", path: "Demo.java",
+			src: `package demo;
+
+/** A class. */
+@Deprecated
+public class Demo {
+    private int x;
+
+    /**
+     * Gets.
+     */
+    @Override
+    public int get() { return x; }
+}
+`,
+			want: []want{{"Demo", "class", "", 3, 13}, {"get", "method", "Demo", 8, 12}},
+		},
+		{
+			name: "rust doc comments and attributes", path: "demo.rs",
+			src: `use std::fmt;
+
+/// A point.
+#[derive(Debug)]
+pub struct Point { x: i32 }
+
+impl Point {
+    /// New.
+    #[inline]
+    pub fn new() -> Self { Point { x: 0 } }
+}
+`,
+			want: []want{{"Point", "type", "", 3, 5}, {"new", "function", "", 8, 10}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := (&Parser{}).Parse(tt.path, []byte(tt.src))
+			defer f.Close()
+			for _, w := range tt.want {
+				i := slices.IndexFunc(f.Decls, func(d Decl) bool { return d.Symbol == w.symbol && d.StartLine == w.start })
+				if i < 0 {
+					t.Errorf("no declaration %s at line %d in %+v", w.symbol, w.start, f.Decls)
+					continue
+				}
+				d := f.Decls[i]
+				if d.EndLine != w.end || d.Scope != w.scope || w.kind != "" && d.Kind != w.kind {
+					t.Errorf("%s = %+v, want kind=%s scope=%s L%d-%d", w.symbol, d, w.kind, w.scope, w.start, w.end)
+				}
+			}
+			for _, d := range f.Decls {
+				if d.Symbol != "" {
+					continue
+				}
+				if slices.ContainsFunc(f.Decls, func(o Decl) bool { return o.Symbol != "" && o.EndLine == d.EndLine && o.StartLine >= d.StartLine }) {
+					t.Errorf("unnamed %+v wraps a named declaration in %+v", d, f.Decls)
+				}
+			}
+		})
 	}
 }
