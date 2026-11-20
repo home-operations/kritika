@@ -233,9 +233,10 @@ request can be refused while one is already queued or running.
 
 A configuration that fails validation prevents startup. If the leader cannot
 apply it to the database, kritika keeps the last applied configuration and
-sets `kritika_config_error`. The index keeps the last applied embedder too, so
-when the new file changed the embedder, every index job waits for it, and
-`kritika_index_snoozes_total{reason="embedder"}` keeps rising. Fix the problem
+sets `kritika_config_error`. The index keeps the last applied embedder and
+index format too, so when the new file changed the embedder, or the new
+release changed the index format, every index job waits for them, and
+`kritika_index_snoozes_total{reason="build"}` keeps rising. Fix the problem
 and restart to try again.
 
 See [monitoring](/metrics/) for alerts and [security](/security/) for access controls.

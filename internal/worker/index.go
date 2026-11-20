@@ -319,7 +319,7 @@ func (w *Index) waitForAppliedBuild(
 	if err != nil || applied {
 		return err
 	}
-	return w.awaitEmbedder(ctx, job, account, logger)
+	return w.awaitAppliedBuild(ctx, job, account, logger)
 }
 
 // lockAppliedIndexBuild locks the repository's index build, as
@@ -338,39 +338,42 @@ func (w *Index) lockAppliedIndexBuild(
 	if err != nil || applied {
 		return err
 	}
-	return w.awaitEmbedder(ctx, job, account, logger)
+	return w.awaitAppliedBuild(ctx, job, account, logger)
 }
 
-// embedderWaitWarn is the wait for a pod on the applied embedder from which
-// an index job logs each wait as a warning. A rollout's waits end within
-// minutes. A leader that never applies the pods' embedder, as when the store
-// refused the configuration that names it, keeps every index job waiting,
-// with the pushes that its unique key folds into it, until a restart.
-// embedderWaitsKey counts the waits in the job's metadata.
+// buildWaitWarn is the wait for a pod on the applied build from which an
+// index job logs each wait as a warning. A rollout's waits end within
+// minutes. A leader that never applies the pods' embedder or index format, as
+// when the store refused the configuration that the leader applies them with,
+// keeps every index job waiting, with the pushes that its unique key folds
+// into it, until a restart. buildWaitsKey counts the waits in the job's
+// metadata.
 const (
-	embedderWaitWarn = 10
-	embedderWaitsKey = "embedder_waits"
+	buildWaitWarn = 10
+	buildWaitsKey = "build_waits"
 )
 
-// awaitEmbedder snoozes the job, as its error, for appliedBuildWait, to
-// leave it to a pod on the embedder that the leader applied.
-func (w *Index) awaitEmbedder(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger) error {
+// awaitAppliedBuild snoozes the job, as its error, for appliedBuildWait, to
+// leave it to a pod on the embedder and index format that the leader applied.
+func (w *Index) awaitAppliedBuild(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger) error {
 	var meta struct {
-		Waits int `json:"embedder_waits"`
+		Waits int `json:"build_waits"`
 	}
 	if err := json.Unmarshal(job.Metadata, &meta); err != nil {
-		logger.Warn("job metadata not read; counting the embedder wait as the first", "error", err)
+		logger.Warn("job metadata not read; counting the build wait as the first", "error", err)
 	}
 	waits := meta.Waits + 1
-	if err := river.MetadataSet(ctx, embedderWaitsKey, waits); err != nil {
-		logger.Warn("embedder wait not counted", "error", err)
+	if err := river.MetadataSet(ctx, buildWaitsKey, waits); err != nil {
+		logger.Warn("build wait not counted", "error", err)
 	}
-	w.Metrics.IndexSnoozed(account, "embedder")
-	if waits >= embedderWaitWarn {
-		logger.Warn("index has waited long for a pod on the embedder the leader applied; "+
-			"check kritika_config_error for a configuration the store refused", "waits", waits, "for", appliedBuildWait)
+	w.Metrics.IndexSnoozed(account, "build")
+	if waits >= buildWaitWarn {
+		logger.Warn("index has waited long for a pod on the embedder and index format the leader applied; "+
+			"check kritika_config_error for a configuration the store refused",
+			"waits", waits, "for", appliedBuildWait, "format", runspec.IndexFormat)
 	} else {
-		logger.Info("index waits for a pod on the embedder the leader applied", "waits", waits, "for", appliedBuildWait)
+		logger.Info("index waits for a pod on the embedder and index format the leader applied",
+			"waits", waits, "for", appliedBuildWait, "format", runspec.IndexFormat)
 	}
 	return river.JobSnooze(appliedBuildWait)
 }

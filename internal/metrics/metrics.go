@@ -320,8 +320,8 @@ func (m *Metrics) ReviewSnoozed(account, model string) {
 }
 
 // IndexSnoozed counts an index job put back on the queue to wait for reason:
-// forge, a forge that failed transiently, or embedder, a pod on another
-// embedder than the one the leader applied.
+// forge, a forge that failed transiently, or build, a pod on another
+// embedder or index format than the ones the leader applied.
 func (m *Metrics) IndexSnoozed(account, reason string) {
 	if m != nil {
 		m.indexSnoozes.WithLabelValues(account, reason).Inc()

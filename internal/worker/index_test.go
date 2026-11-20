@@ -179,34 +179,34 @@ func TestForgeWait(t *testing.T) {
 	}
 }
 
-// TestAwaitEmbedder: an index job on a pod whose embedder the leader did not
-// apply is snoozed, counted on the metric, and logged as a warning once it has
-// waited embedderWaitWarn times.
-func TestAwaitEmbedder(t *testing.T) {
+// TestAwaitAppliedBuild: an index job on a pod whose embedder or index format
+// the leader did not apply is snoozed, counted on the metric, and logged as a
+// warning once it has waited buildWaitWarn times.
+func TestAwaitAppliedBuild(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		metadata string
 		warn     bool
 	}{
 		{name: "first", metadata: `{}`},
-		{name: "a rollout's", metadata: fmt.Sprintf(`{"embedder_waits": %d}`, embedderWaitWarn-2)},
-		{name: "long", metadata: fmt.Sprintf(`{"embedder_waits": %d}`, embedderWaitWarn-1), warn: true},
+		{name: "a rollout's", metadata: fmt.Sprintf(`{"build_waits": %d}`, buildWaitWarn-2)},
+		{name: "long", metadata: fmt.Sprintf(`{"build_waits": %d}`, buildWaitWarn-1), warn: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
 			reg := prometheus.NewRegistry()
 			w := &Index{Metrics: metrics.New(reg)}
 			job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(tc.metadata)}}
-			err := w.awaitEmbedder(t.Context(), job, "onedr0p", slog.New(slog.NewTextHandler(&logs, nil)))
+			err := w.awaitAppliedBuild(t.Context(), job, "onedr0p", slog.New(slog.NewTextHandler(&logs, nil)))
 			if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != appliedBuildWait {
-				t.Fatalf("awaitEmbedder = %v, want a snooze of %s", err, appliedBuildWait)
+				t.Fatalf("awaitAppliedBuild = %v, want a snooze of %s", err, appliedBuildWait)
 			}
 			if got := strings.Contains(logs.String(), "level=WARN msg=\"index has waited long"); got != tc.warn {
 				t.Fatalf("warned = %v, want %v:\n%s", got, tc.warn, logs.String())
 			}
 			want := "# HELP kritika_index_snoozes_total Index jobs put back on the queue to wait, by reason.\n" +
 				"# TYPE kritika_index_snoozes_total counter\n" +
-				"kritika_index_snoozes_total{account=\"onedr0p\",reason=\"embedder\"} 1\n"
+				"kritika_index_snoozes_total{account=\"onedr0p\",reason=\"build\"} 1\n"
 			if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_index_snoozes_total"); err != nil {
 				t.Fatal(err)
 			}

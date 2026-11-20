@@ -709,10 +709,10 @@ func lead(
 // change without asking. Without an embedder, the table is left as it is.
 //
 // lead calls it only once the store applied the configuration. A refused one
-// leaves the last applied state, the embedder included, and is likely to be
-// edited again: rebuilding for it could embed every repository twice. Index
-// jobs wait for the applied embedder meanwhile, which kritika_config_error and
-// the index snooze count show.
+// leaves the last applied state, the embedder and index format included, and
+// is likely to be edited again: rebuilding for it could embed every repository
+// twice. Index jobs wait for the applied embedder and format meanwhile, which
+// kritika_config_error and the index snooze count show.
 func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *configfile.Embedding, logger *slog.Logger) error {
 	if e == nil {
 		return nil
