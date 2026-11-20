@@ -4,18 +4,21 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -424,12 +427,17 @@ func TestForgeCachePullRequestAuthor(t *testing.T) {
 }
 
 // TestTransientForge: a forge that answers 5xx, 408 or 429, or does not
-// answer, may answer a later try. A forge that refused the request, a
-// missing file, and GitHub's rate limit, which ForgeRateLimit waits out for
-// as long as the limit says, are not transient.
+// answer, may answer a later try, as may a lookup of its host that timed
+// out. A forge that refused the request, a certificate that does not verify,
+// a host that does not resolve, a missing file, and GitHub's rate limit,
+// which ForgeRateLimit waits out for as long as the limit says, are not
+// transient.
 func TestTransientForge(t *testing.T) {
 	answer := func(status int) error {
 		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
+	}
+	unanswered := func(err error) error {
+		return fmt.Errorf("forgejo: branch main of o/r: %w", &url.Error{Op: "Get", URL: "https://forgejo.example", Err: err})
 	}
 	for _, tc := range []struct {
 		name string
@@ -443,6 +451,17 @@ func TestTransientForge(t *testing.T) {
 		{name: "too many requests", err: answer(http.StatusTooManyRequests), want: true},
 		{name: "connection refused", err: &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection refused")}, want: true},
 		{name: "cut short", err: fmt.Errorf("github: read: %w", io.ErrUnexpectedEOF), want: true},
+		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},
+		{name: "dns timeout", err: unanswered(&net.DNSError{Err: "i/o timeout", Name: "forgejo.example", IsTimeout: true}), want: true},
+		{name: "dns server failure", err: unanswered(&net.DNSError{Err: "server misbehaving", Name: "forgejo.example", IsTemporary: true}),
+			want: true},
+		{name: "unknown host", err: unanswered(&net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "no such host", Name: "forgejo.example", IsNotFound: true}})},
+		{name: "unknown authority", err: unanswered(&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})},
+		{name: "wrong host", err: unanswered(&tls.CertificateVerificationError{Err: x509.HostnameError{Certificate: &x509.Certificate{}, Host: "forgejo.example"}})},
+		{name: "expired", err: unanswered(x509.CertificateInvalidError{Reason: x509.Expired})},
+		{name: "bare unknown authority", err: unanswered(x509.UnknownAuthorityError{})},
+		{name: "bare wrong host", err: unanswered(x509.HostnameError{Certificate: &x509.Certificate{}, Host: "forgejo.example"})},
 		{name: "not found", err: answer(http.StatusNotFound)},
 		{name: "forbidden", err: answer(http.StatusForbidden)},
 		{name: "no file", err: fmt.Errorf("github: .kritika.yaml: %w", fs.ErrNotExist)},
