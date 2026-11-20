@@ -127,8 +127,31 @@ func TestKeepSimilarCounts(t *testing.T) {
 
 // keepSimilar is what the gateway keeps of vector hits alone.
 func keepSimilar(hits []store.SimilarHit, floor, margin float64) ([]contextpack.Chunk, map[hitKey]int) {
-	kept, counts := gateCandidates(fuse(hits, nil), floor, margin)
-	return keepCandidates(kept, counts), counts
+	kept, counts, _ := gateCandidates(fuse(hits, nil), floor, margin)
+	return keepCandidates(kept, counts, similarMax), counts
+}
+
+// TestSimilarLimit: an answer holds the chunks its request asks for, up to
+// contextpack.SimilarLimit, and similarMax when it asks for none.
+func TestSimilarLimit(t *testing.T) {
+	for _, tt := range []struct{ asked, want int }{
+		{0, similarMax}, {-1, similarMax}, {3, 3}, {contextpack.SimilarLimit, contextpack.SimilarLimit},
+		{contextpack.SimilarLimit + 1, contextpack.SimilarLimit},
+	} {
+		t.Run(fmt.Sprint(tt.asked), func(t *testing.T) {
+			if got := answerLimit(tt.asked); got != tt.want {
+				t.Fatalf("answerLimit(%d) = %d, want %d", tt.asked, got, tt.want)
+			}
+		})
+	}
+	hits := make([]store.SimilarHit, 0, contextpack.SimilarLimit)
+	for i := range contextpack.SimilarLimit {
+		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("f%d.go", i), StartLine: 1}, Similarity: 0.9})
+	}
+	kept, counts, _ := gateCandidates(fuse(hits, nil), 0.5, 0.1)
+	if got := keepCandidates(kept, counts, contextpack.SimilarLimit); len(got) != contextpack.SimilarLimit {
+		t.Fatalf("kept %d, want %d", len(got), contextpack.SimilarLimit)
+	}
 }
 
 // TestHybridSimilar: the lexical search's hits join the vector search's.
@@ -192,8 +215,8 @@ func TestHybridSimilar(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			kept, counts := gateCandidates(fuse(tt.hits, tt.named), 0.5, 0.1)
-			got := keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts)
+			kept, counts, _ := gateCandidates(fuse(tt.hits, tt.named), 0.5, 0.1)
+			got := keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts, similarMax)
 			var keys []string
 			for _, c := range got {
 				keys = append(keys, c.Path+":"+c.Ref)
@@ -226,7 +249,10 @@ func TestGateRanks(t *testing.T) {
 		"low.go": 1.0/(rrfK+2) + 1.0/(rrfK+2), "high.go": 1.0 / (rrfK + 1), "other.go": 1.0 / (rrfK + 1),
 		"under.go": 1.0/(rrfK+3) + 1.0/(rrfK+1),
 	}
-	got, _ := gateCandidates(fuse(hits, named), 0.5, 0.5)
+	got, _, best := gateCandidates(fuse(hits, named), 0.5, 0.5)
+	if wantBest := map[int]float64{0: 0.9, 1: 0.8}; !maps.Equal(best, wantBest) {
+		t.Fatalf("best similarity of each query = %v, want %v", best, wantBest)
+	}
 	if len(got) != len(want) {
 		t.Fatalf("kept %d candidates, want %d", len(got), len(want))
 	}

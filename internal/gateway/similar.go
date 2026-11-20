@@ -26,8 +26,9 @@ import (
 )
 
 // Similarity retrieval bounds: neighbours per query, chunks kept of one
-// file, and chunks kept. The floor and the margin below a query's best
-// match, under which a neighbour is noise, are the embedder's.
+// file, and chunks kept when a request asks for no other number. The floor
+// and the margin below a query's best match, under which a neighbour is
+// noise, are the embedder's.
 const (
 	similarPerQuery = 4
 	similarPerFile  = 2
@@ -166,7 +167,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	chunks, tokens, searched, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
-		queries: req.Queries, texts: texts, exclude: slices.Concat(excluded, req.Exclude),
+		queries: req.Queries, texts: texts, exclude: slices.Concat(excluded, req.Exclude), limit: answerLimit(req.Limit),
 	}, c.logger)
 	outcome = searched
 	if reserved > 0 || tokens > 0 {
@@ -211,6 +212,18 @@ type similarRequest struct {
 	queries []string
 	texts   []string
 	exclude []string
+	// limit is the most chunks the answer holds.
+	limit int
+}
+
+// answerLimit is the most chunks an answer holds when its request asks for
+// asked: similarMax unless it asks for a number, which is at most
+// contextpack.SimilarLimit.
+func answerLimit(asked int) int {
+	if asked <= 0 {
+		return similarMax
+	}
+	return min(asked, contextpack.SimilarLimit)
 }
 
 // similar searches the repository's active index generation for the chunks
@@ -301,15 +314,15 @@ func (g *Server) similar(
 	if err != nil {
 		return nil, tokens, similarError, err
 	}
-	for _, s := range bestSimilarity(hits) {
+	kept, counts, best := gateCandidates(fuse(hits, named), emb.Floor(), emb.Margin())
+	for _, s := range best {
 		g.Metrics.SimilarBest(r.account.Key(), r.kind, s)
 	}
-	kept, counts := gateCandidates(fuse(hits, named), emb.Floor(), emb.Margin())
 	if reranker != nil {
 		kept = topPerQuery(kept, rr.CandidateCount(), counts)
 		g.rerank(ctx, file, r, reranker, rr, kept, logger)
 	}
-	chunks = keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts)
+	chunks = keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts, r.limit)
 	for k, n := range counts {
 		g.Metrics.SimilarHits(r.account.Key(), k.outcome, k.source, n)
 	}
@@ -376,18 +389,6 @@ func spellings(words []lexical.Word, matched []string) []string {
 		return whole
 	}
 	return parts
-}
-
-// bestSimilarity is the similarity of each query's best hit, of the queries
-// that have any.
-func bestSimilarity(hits []store.SimilarHit) map[int]float64 {
-	best := map[int]float64{}
-	for _, h := range hits {
-		if s, ok := best[h.Query]; !ok || h.Similarity > s {
-			best[h.Query] = h.Similarity
-		}
-	}
-	return best
 }
 
 // Which searches found a hit, as kritika_similar_hits_total counts it.
@@ -466,8 +467,8 @@ func fuse(hits, named []store.SimilarHit) []candidate {
 }
 
 // gateCandidates is the candidates that count as similar code, each scored
-// by reciprocal rank fusion, and the count of those that do not, by why
-// not. A candidate counts when its similarity is at or above floor and
+// by reciprocal rank fusion, the count of those that do not, by why not, and
+// the similarity of each query's best candidate. A candidate counts when its similarity is at or above floor and
 // within margin of the best similarity of its query, or when it holds at
 // least lexicalShare of the lexical weight that its query's best lexical hit
 // holds: either search can vouch for it. Each query's scores sit at a height of their own,
@@ -476,7 +477,7 @@ func fuse(hits, named []store.SimilarHit) []candidate {
 // query's best instead. The lexical weight vouches for a chunk that shares
 // the change's rarer names, which an embedder can score low for code that
 // does something else with them.
-func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[hitKey]int) {
+func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[hitKey]int, map[int]float64) {
 	counts := map[hitKey]int{}
 	cands = slices.Clone(cands)
 	addRanks(cands, func(c candidate) bool { return c.vector }, func(c candidate) float64 { return c.Similarity })
@@ -503,7 +504,7 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 			counts[hitKey{hitMargin, c.source()}]++
 		}
 	}
-	return kept, counts
+	return kept, counts, best
 }
 
 // addRanks adds to the score of each candidate that found says a search
@@ -525,12 +526,12 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 }
 
 // keepCandidates keeps each chunk once, at most similarPerFile of one file
-// and at most similarMax in all, and labels each with its similarity or the
+// and at most limit in all, and labels each with its similarity or the
 // names it shares with its query. It takes every query's best, the highest score first, before any
 // query's second, and so on. So neither one query whose neighbours all score
 // high nor one file's neighbouring declarations take every place. It adds
 // what it drops to counts.
-func keepCandidates(cands []candidate, counts map[hitKey]int) []contextpack.Chunk {
+func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []contextpack.Chunk {
 	cands = slices.Clone(cands)
 	slices.SortStableFunc(cands, func(a, b candidate) int {
 		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(b.Similarity, a.Similarity))
@@ -545,12 +546,12 @@ func keepCandidates(cands []candidate, counts map[hitKey]int) []contextpack.Chun
 	slices.SortStableFunc(ranked, func(a, b rankedHit) int { return cmp.Compare(a.rank, b.rank) })
 	seen := map[string]bool{}
 	perFile := map[string]int{}
-	chunks := make([]contextpack.Chunk, 0, min(len(cands), similarMax))
+	chunks := make([]contextpack.Chunk, 0, min(len(cands), limit))
 	for _, r := range ranked {
 		c := r.hit
 		key := fmt.Sprintf("%s:%d", c.Chunk.Path, c.Chunk.StartLine)
 		switch {
-		case len(chunks) == similarMax:
+		case len(chunks) == limit:
 			counts[hitKey{hitLimit, c.source()}]++
 			continue
 		case seen[key]:

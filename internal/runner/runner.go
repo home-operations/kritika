@@ -388,7 +388,7 @@ func similarCodeFor(
 	}
 	started := time.Now()
 	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{
-		Queries: queries, Kind: contextpack.SimilarKindDiff,
+		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: contextpack.SimilarLimit,
 	})
 	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
 		"elapsed", time.Since(started))

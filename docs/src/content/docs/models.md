@@ -659,8 +659,9 @@ keep a chunk only when it scores at least `similarFloor` and no more than
 `similarMargin` below the best match of its query. A query is either a
 hunk of the diff or a `search_code` query. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
-chunks of one file and ten in all. The review's prompt also leaves out a
-chunk more than half of whose lines another context stage already shows.
+chunks of one file and ten in all, or sixteen for a review's prompt. The
+prompt leaves out a chunk more than half of whose lines another context
+stage already shows, and shows the first ten of the rest.
 
 The index is of the default branch, which can be ahead of or behind the
 pull request. Both show a chunk as the pull request's head has it: found

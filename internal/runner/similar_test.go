@@ -117,6 +117,9 @@ func TestSimilarContextExclusions(t *testing.T) {
 				if req.Exclude != nil || req.Kind != contextpack.SimilarKindDiff {
 					t.Fatalf("a request carries exclusions %q, or is of kind %q", req.Exclude, req.Kind)
 				}
+				if len(req.Queries) > 0 && req.Limit != contextpack.SimilarLimit {
+					t.Fatalf("a search asks for %d chunks, want %d", req.Limit, contextpack.SimilarLimit)
+				}
 			}
 		})
 	}
@@ -259,7 +262,26 @@ func TestWithoutOverlap(t *testing.T) {
 	}
 }
 
-// TestSimilarContextWithoutQueries: a diff with nothing to search for still
+// TestSimilarShown: a prompt shows at most maxSimilarShown of the chunks
+// found, counted after it drops those that the head no longer has or that
+// other stages show.
+func TestSimilarShown(t *testing.T) {
+	files := map[string]string{}
+	found := make([]contextpack.Chunk, 0, contextpack.SimilarLimit)
+	for i := range contextpack.SimilarLimit {
+		path := fmt.Sprintf("f%02d.go", i)
+		files[path] = fmt.Sprintf("func f%d() {}\n", i)
+		found = append(found, contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: fmt.Sprintf("func f%d() {}", i)})
+	}
+	found[0].Text = "func gone() {}"
+	others := []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "f01.go", StartLine: 1, EndLine: 1}}
+	got := similarShown(tree(t, files), found, others, slog.New(slog.DiscardHandler))
+	if want := found[2 : 2+maxSimilarShown]; !slices.Equal(got, want) {
+		t.Fatalf("shown %+v, want %+v", got, want)
+	}
+}
+
+// TestSimilarContextWithoutQueries:a diff with nothing to search for still
 // asks whether the repository has an index, with no queries, and offers
 // search_code when it has.
 func TestSimilarContextWithoutQueries(t *testing.T) {

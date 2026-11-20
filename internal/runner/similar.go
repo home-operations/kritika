@@ -30,7 +30,7 @@ import (
 // can wait for the account's embedding slot.
 const similarTimeout = time.Minute
 
-// maxSimilarBody bounds the gateway's answer: ten chunks.
+// maxSimilarBody bounds the gateway's answer: contextpack.SimilarLimit chunks.
 const maxSimilarBody = 1 << 20
 
 // searchCalls is how many times one run can call search_code.
@@ -426,11 +426,16 @@ func findText(lines []string, text string, near int, cut bool) (int, bool) {
 	return 0, false
 }
 
+// maxSimilarShown is the most similar chunks a prompt shows.
+const maxSimilarShown = 10
+
 // similarShown is the similar chunks found that a prompt shows: as head has
-// them, and none whose lines others, the other stages' chunks, show.
+// them, none that others, the other stages' chunks, mostly show, and the
+// first maxSimilarShown of the rest.
 func similarShown(head *object.Tree, found, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
 	current := atHead(head, found)
 	shown := withoutOverlap(current, others)
-	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "shown", len(shown))
-	return shown
+	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "apart", len(shown),
+		"shown", min(len(shown), maxSimilarShown))
+	return shown[:min(len(shown), maxSimilarShown)]
 }

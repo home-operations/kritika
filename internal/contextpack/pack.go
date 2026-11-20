@@ -37,6 +37,11 @@ const (
 	SimilarQueryChars = 3000
 )
 
+// SimilarLimit is the most chunks a request can ask the answer to hold. A
+// run asks for more than its prompt shows, as it drops those that the head no
+// longer has or that its other stages show.
+const SimilarLimit = 16
+
 // SimilarRequest is what a run sends the gateway to search its
 // repository's index: the texts to embed. The answer leaves out the paths
 // the run reported (runspec.SimilarExcludeReport), and Exclude besides,
@@ -47,6 +52,9 @@ type SimilarRequest struct {
 	// Kind is what the queries are, which picks the embedder's prompt for
 	// them: SimilarKindDiff, as "" is, or SimilarKindSearch.
 	Kind string `json:"kind,omitempty"`
+	// Limit is the most chunks the answer holds, up to SimilarLimit. 0 leaves
+	// it to the gateway.
+	Limit int `json:"limit,omitempty"`
 }
 
 // Similar-code query kinds: the hunks of a review's diff, and the agent's

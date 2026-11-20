@@ -108,7 +108,7 @@ func TestRetrievalEval(t *testing.T) {
 				cands = fuse(evalTop(hits, v), evalTop(named, v))
 			}
 			counts := map[hitKey]int{}
-			kept, _ := gateCandidates(cands, f, margin)
+			kept, _, _ := gateCandidates(cands, f, margin)
 			if strings.HasSuffix(v, "+rerank") {
 				kept = topPerQuery(kept, candidates, counts)
 				started := time.Now()
@@ -119,7 +119,7 @@ func TestRetrievalEval(t *testing.T) {
 			for q, text := range queries {
 				tallies[v].addQuery(top, q, truth.defs(text, changed), truth.related([]string{paths[q]}, changed))
 			}
-			tallies[v].add(keepCandidates(top, counts), defs, related)
+			tallies[v].add(keepCandidates(top, counts, similarMax), defs, related)
 		}
 	}
 	t.Logf("floor %.2f, margin %.2f; %s", floor, margin, timing.String())
