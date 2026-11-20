@@ -93,6 +93,37 @@ func BuildEmbedder(e configfile.Embedding) model.Embedder {
 	return out
 }
 
+// Rerankers resolves the configuration's reranker, built again when its
+// configuration changes: unlike the embedder's, a change of it changes no
+// stored vector. A nil *Rerankers resolves none.
+type Rerankers struct {
+	Build func(r configfile.Rerank) model.Reranker
+
+	mu       sync.Mutex
+	spec     configfile.Rerank
+	reranker model.Reranker
+}
+
+// Reranker returns f's reranker and its configuration, or nil for both when
+// f configures none.
+func (r *Rerankers) Reranker(f *configfile.File) (model.Reranker, *configfile.Rerank) {
+	if r == nil || f.Embedding == nil || f.Embedding.Rerank == nil {
+		return nil, nil
+	}
+	spec := *f.Embedding.Rerank
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.reranker == nil || r.spec != spec {
+		r.reranker, r.spec = r.Build(spec), spec
+	}
+	return r.reranker, &spec
+}
+
+// BuildReranker is the production Rerankers.Build.
+func BuildReranker(r configfile.Rerank) model.Reranker {
+	return model.NewReranker(r.API, r.BaseURL, r.APIKeyValue().Value(), r.Model, r.Deadline())
+}
+
 // Outcome names how a call ended for the metrics: ok or error.
 func Outcome(err error) string {
 	if err != nil {

@@ -378,7 +378,9 @@ func startWorker(
 	// that the current configuration names. It also has the model and
 	// similar-code endpoints that a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
-	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
+	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders,
+		Rerankers: &adapter.Rerankers{Build: adapter.BuildReranker},
+	}
 	gw.AquaRegistry = &gateway.AquaRegistry{
 		URL: cfg.AquaRegistryURL, Refresh: cfg.AquaRegistryRefresh, Client: http.DefaultClient, Logger: gatewayLogger,
 	}

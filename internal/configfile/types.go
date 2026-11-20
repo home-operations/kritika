@@ -10,7 +10,6 @@
 package configfile
 
 import (
-	"cmp"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -331,99 +330,6 @@ type TriggerSpec struct {
 // MaxPushSettle is the most that a push's review can wait: a longer wait
 // is a manual review in all but name.
 const MaxPushSettle = time.Hour
-
-// Embedding is the instance's embedder, which builds the similar-code
-// index: a model of one of the instance's openrouter or openai providers,
-// on its endpoint and key. There is one per instance because the index has
-// one vector dimension. Unset, indexing is off and reviews run without
-// vector retrieval.
-type Embedding struct {
-	// Ref is the model as the configuration names it, "<provider>/<model>".
-	Ref ModelRef `yaml:"model"`
-	// Dims is the vector dimension, which shapes the index table: a change
-	// of it or of the model rebuilds every repository's index.
-	Dims int `yaml:"dims"`
-	// MaxBatch, MaxBatchChars and MaxItemChars bound one request: inputs,
-	// characters, and characters per input, beyond which an input is cut.
-	// OpenAI-compatible servers differ widely in what they accept. Unset,
-	// each is a default conservative enough for the common ones.
-	MaxBatch      int `yaml:"maxBatch,omitempty"`
-	MaxBatchChars int `yaml:"maxBatchChars,omitempty"`
-	MaxItemChars  int `yaml:"maxItemChars,omitempty"`
-	// SimilarFloor is the cosine similarity an index chunk needs to count
-	// as similar code, for the review's similar-code stage and the agent's
-	// search_code tool alike. Where useful matches part from noise depends
-	// on the model, its prompts and the repository. Unset is
-	// DefaultSimilarFloor, which only fits inputs without prompts.
-	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
-	// SimilarMargin is how far below the best match of its query, in cosine
-	// similarity, a chunk can score and still count as similar code. A
-	// query's scores sit at a height set by the code it is near. That height
-	// differs between repositories and between the hunks of one diff. So the
-	// margin follows each query's best where a floor cannot. Unset is
-	// DefaultSimilarMargin, and 0 keeps only each query's best.
-	SimilarMargin *float64 `yaml:"similarMargin,omitempty"`
-	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
-	// each similar-code query and each indexed chunk: the task prompts many
-	// embedding models are trained with. Unset, inputs go as they are.
-	// DocumentPrompt shapes the stored vectors, so a change of it rebuilds
-	// every repository's index, as a change of the model does.
-	QueryPrompt    string `yaml:"queryPrompt,omitempty"`
-	DocumentPrompt string `yaml:"documentPrompt,omitempty"`
-	// SearchPrompt goes in front of each search_code query in place of
-	// QueryPrompt: such a query mostly describes code, where a review's is
-	// code, and instruction-tuned embedders want a task for each. Unset, it
-	// is QueryPrompt.
-	SearchPrompt string `yaml:"searchPrompt,omitempty"`
-
-	// BaseURL, Model and the key are the provider's, resolved at load:
-	// its endpoint, the model's id on it, and its key.
-	BaseURL string `yaml:"-"`
-	Model   string `yaml:"-"`
-	apiKey  Secret
-}
-
-// APIKeyValue returns the resolved API key.
-func (e *Embedding) APIKeyValue() Secret { return e.apiKey }
-
-// PromptFor is the prompt of a search_code query when search is true, and
-// of a review's hunk query otherwise.
-func (e *Embedding) PromptFor(search bool) string {
-	if search {
-		return cmp.Or(e.SearchPrompt, e.QueryPrompt)
-	}
-	return e.QueryPrompt
-}
-
-// MaxEmbedDims is the largest dimension the index's halfvec column takes.
-const MaxEmbedDims = 4000
-
-// Bounds returns MaxBatch, MaxBatchChars and MaxItemChars, each the
-// embedder's default when unset.
-func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
-	return cmp.Or(e.MaxBatch, model.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, model.DefaultEmbedMaxBatchChars),
-		cmp.Or(e.MaxItemChars, model.DefaultEmbedMaxItemChars)
-}
-
-// DefaultSimilarFloor is the similar-code floor when the embedder sets
-// none.
-const DefaultSimilarFloor = 0.5
-
-// Floor returns SimilarFloor, DefaultSimilarFloor when unset.
-func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimilarFloor) }
-
-// DefaultSimilarMargin is the similar-code margin when the embedder sets
-// none: wide enough to keep the matches close to a query's best and drop
-// only those well below it.
-const DefaultSimilarMargin = 0.1
-
-// Margin returns SimilarMargin, DefaultSimilarMargin when unset.
-func (e *Embedding) Margin() float64 {
-	if e.SimilarMargin == nil {
-		return DefaultSimilarMargin
-	}
-	return *e.SimilarMargin
-}
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and

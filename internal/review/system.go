@@ -70,9 +70,9 @@ the finding with that change.
 
 After the diff you may get a context section: whole declarations from the PR head that the diff touches, the
 definitions of identifiers used on changed lines, callers of changed declarations, and snippets from elsewhere in
-the repository, as the PR head has them, that an embedding search found similar to the change, each with its
-similarity. Use it to judge the change. A similar snippet can be unrelated to the change: rely on it only where it
-bears on what the change does.
+the repository, as the PR head has them, that a search of the repository found similar to the change, each with its
+similarity, or with the names it shares with the change when its names alone found it. Use it to judge the change. A
+similar snippet can be unrelated to the change: rely on it only where it bears on what the change does.
 
 Answer with a summary and findings. ` + summarySpec + `
 Checked is where what you read goes, as the schema says; no comment shows it. Each finding has a severity and a

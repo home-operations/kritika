@@ -179,8 +179,8 @@ func New(reg prometheus.Registerer) *Metrics {
 		similarHits: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_similar_hits_total",
 			Help: "Index chunks that similar-code searches found, by what became of them: kept, or dropped by floor, margin, " +
-				"duplicate, file_cap or limit.",
-		}, []string{lblAccount, lblOutcome}),
+				"duplicate, file_cap or limit; and by the searches that found them: vector, lexical or both.",
+		}, []string{lblAccount, lblOutcome, "source"}),
 		leaseWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600},
@@ -464,11 +464,11 @@ func (m *Metrics) SimilarBest(account, kind string, similarity float64) {
 	}
 }
 
-// SimilarHits counts n chunks that searches found and outcome kept or
-// dropped.
-func (m *Metrics) SimilarHits(account, outcome string, n int) {
+// SimilarHits counts n chunks that source, the searches that found them,
+// found and outcome kept or dropped.
+func (m *Metrics) SimilarHits(account, outcome, source string, n int) {
 	if m != nil && n > 0 {
-		m.similarHits.WithLabelValues(account, outcome).Add(float64(n))
+		m.similarHits.WithLabelValues(account, outcome, source).Add(float64(n))
 	}
 }
 

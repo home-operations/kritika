@@ -31,7 +31,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.IndexSnoozed("t", "forge")
 	none.SimilarRequest("account", "diff", "ok")
 	none.SimilarBest("account", "diff", 0.8)
-	none.SimilarHits("account", "kept", 3)
+	none.SimilarHits("account", "kept", "vector", 3)
 
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
@@ -140,9 +140,9 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 		t.Fatalf("similar requests = %v", v)
 	}
 	m.SimilarBest("onedr0p", "diff", 0.83)
-	m.SimilarHits("onedr0p", "margin", 4)
-	m.SimilarHits("onedr0p", "floor", 0)
-	if v := testutil.ToFloat64(m.similarHits.WithLabelValues("onedr0p", "margin")); v != 4 {
+	m.SimilarHits("onedr0p", "margin", "lexical", 4)
+	m.SimilarHits("onedr0p", "floor", "vector", 0)
+	if v := testutil.ToFloat64(m.similarHits.WithLabelValues("onedr0p", "margin", "lexical")); v != 4 {
 		t.Fatalf("similar hits = %v", v)
 	}
 	if n := testutil.CollectAndCount(m.similarHits); n != 1 {

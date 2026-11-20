@@ -2700,15 +2700,15 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (namespace, job, outcome) (rate(kritika_similar_hits_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
-          "legendFormat": "{{namespace}}/{{job}} {{outcome}}",
+          "expr": "sum by (namespace, job, outcome, source) (rate(kritika_similar_hits_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} {{outcome}} {{source}}",
           "range": true,
           "instant": false,
           "format": "time_series",
           "refId": "A"
         }
       ],
-      "description": "Index chunks the searches found, kept or dropped: under the floor, past the margin below their query's best, a duplicate, past two of one file, or past the ten an answer keeps. Paths the run excluded never leave the database and are not counted."
+      "description": "Index chunks the searches found, kept or dropped, and which search found them: the vector search, the lexical search by name, or both. A chunk is dropped under the floor, past the margin below its query's best, a duplicate, past two of one file, or past the four of its query or the ten an answer keeps. Paths the run excluded never leave the database and are not counted."
     },
     {
       "id": 42,

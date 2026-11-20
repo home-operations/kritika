@@ -649,6 +649,8 @@ documentation alone.
 | `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query of a review's diff                                                               |
 | `searchPrompt`   |         | text put, exactly as written, in front of each `search_code` query. Unset, `queryPrompt`                                                           |
 | `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                                                       |
+| `lexical`        | true    | also search the index by name, and fuse the two searches. See [search by name](#search-by-name)                                                    |
+| `rerank`         |         | a reranker that orders each query's candidates. See [reranking](#reranking)                                                                        |
 
 An embedder builds each repository's similar-code index. With an embedder,
 a review's prompt carries the index's chunks (pieces of files) nearest the
@@ -774,6 +776,124 @@ A new `queryPrompt` or `searchPrompt` applies once kritika restarts with it, as 
 configuration change does, and needs no new index. `documentPrompt`
 shapes the stored vectors, so changing it rebuilds every repository's
 index, as a new model does.
+
+### Search by name
+
+A change's code is full of names: the functions it calls, the types and
+fields it uses, the settings it reads. An embedder can score low the code
+that shares those names but does something else with them, which is often
+the code a reviewer most needs to see. So, unless `lexical` is `false`,
+each similar-code query also searches the index by name, and the two
+searches' results are fused.
+
+When a chunk is indexed, its path, symbol and text are split into words
+the way code is written: each identifier whole, and its parts at case
+changes, underscores, hyphens and digits. `parseHTTPRequest` and
+`parse_http_request` both give `parsehttprequest`, `parse`, `http` and
+`request`. Language keywords, names nearly every function uses (`err`,
+`ctx`, `self`), English stop words and numbers are left out. A review's
+query is split the same way, and a `search_code` query's words match the
+parts of the identifiers they make up. The longest 32 words of a query
+are searched for. A word weighs what BM25 gives a word in that many of
+the repository's chunks, so a name few chunks hold counts for more than one
+many do, and a word in 200 chunks or more is too common to search for at
+all. Postgres's own full-text ranking is not used, as it knows nothing of
+the other chunks, and its parsers split code where it is not split.
+
+Each search keeps a chunk on its own terms. The vector search keeps one
+at or above `similarFloor` and within `similarMargin` of its query's best,
+as before. The search by name keeps one that holds at least half the
+weight of its query's best match by name. A chunk either search keeps is
+kept. Each query's chunks are ordered by reciprocal rank fusion: a chunk
+scores 1 / (60 + its rank) in each search that keeps it, so one both keep
+comes first. Of those, an answer takes four for each query, and the
+answer's other bounds hold as before. A chunk the vector search keeps
+shows its similarity, as in `(similarity 0.81)`. One kept by name alone
+shows the names it shares with the query instead, as in `(shares
+AcquireLease, Lease)`, as its similarity sits under the floor and would
+read as a poor match.
+
+The words are stored with each chunk, in a column of their own with a GIN
+index, by Postgres's built-in full-text search, so no extension beyond
+VectorChord is needed. A chunk indexed by a release without them matches
+no query by name until its repository's index is rebuilt.
+`kritika_similar_hits_total` counts each chunk by the search that found
+it: `vector`, `lexical` or `both`.
+
+### Reranking
+
+A reranker reads each query beside each of its candidates and scores how
+well the candidate answers it, which an embedding of each alone cannot.
+With `rerank` set, both searches look for `candidates` chunks for each
+query rather than four. The candidates that the floor, the margin and the
+weight by name keep, at most `candidates` of each query, the best fused
+first, are sent to the reranker, and its scores order them in place of the
+fusion's. The answer then takes each query's best four as before.
+
+| Key          | Default | What                                                                                                                        |
+| ------------ | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `model`      |         | a model of one of the instance's `openai` providers whose `baseUrl` is the reranker's API root. It uses that provider's key |
+| `api`        |         | the API's shape: `cohere`, `jina`, `voyage` or `tei`                                                                        |
+| `candidates` | 50      | the candidates of each query sent to be reranked, at most 100                                                               |
+| `timeout`    | 20s     | how long the reranking of one similar-code request, all its queries, can take, at most 45s                                  |
+
+The reranker's provider is of type `openai`, which stands for any
+endpoint that takes a bearer key, and it sets `baseUrl`: kritika posts to
+`{baseUrl}/rerank`. The four APIs differ in their requests and answers:
+
+| `api`    | Request                                                    | Answer                                     | Usage recorded                   |
+| -------- | ---------------------------------------------------------- | ------------------------------------------ | -------------------------------- |
+| `cohere` | `model`, `query`, `documents`, `top_n`                     | `results` of `index` and `relevance_score` | `meta.billed_units.input_tokens` |
+| `jina`   | as `cohere`, and `return_documents: false`                 | as `cohere`                                | `usage.total_tokens`             |
+| `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`             |
+| `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header    |
+
+```yaml
+providers:
+  # Cohere's v2 API
+  cohere:
+    type: openai
+    baseUrl: https://api.cohere.com/v2
+    apiKey: { env: COHERE_API_KEY }
+  # Jina AI
+  jina:
+    type: openai
+    baseUrl: https://api.jina.ai/v1
+    apiKey: { env: JINA_API_KEY }
+  # Voyage AI
+  voyage:
+    type: openai
+    baseUrl: https://api.voyageai.com/v1
+    apiKey: { env: VOYAGE_API_KEY }
+  # Hugging Face Text Embeddings Inference serving a reranker, such as
+  # BAAI/bge-reranker-base, in the cluster
+  tei:
+    type: openai
+    baseUrl: http://reranker.ai.svc.cluster.local
+    apiKey: { env: UNUSED_KEY }
+embedding:
+  model: openrouter/voyageai/voyage-code-3
+  dims: 1024
+  rerank:
+    model: cohere/rerank-v3.5
+    api: cohere
+    # or: { model: jina/jina-reranker-v2-base-multilingual, api: jina }
+    # or: { model: voyage/rerank-2.5, api: voyage }
+    # or: { model: tei/bge-reranker-base, api: tei }
+```
+
+A reranker fails open. A query that it does not answer, with an error or
+past `timeout`, keeps the fused order, and the failure is logged as a
+warning and counted under `kritika_model_calls_total` with role `rerank`
+and outcome `error`. A request reranks its queries one at a time, holding
+one of the reranker's slots, which the provider's `concurrency` sets, as
+the embedder's does. The tokens that the provider reports are recorded as
+usage with role `rerank`, and count against the account's `limits`. They
+are not charged to the run's own budget. TEI takes no more texts in one
+request than its `--max-client-batch-size`, 32 unless it is raised, so a
+TEI reranker sets `candidates` under it or the server raises it. The
+kritika pods call the reranker, so the chart's NetworkPolicies must let
+them reach its port, as for a [local model](#local-models).
 
 ## Local models
 

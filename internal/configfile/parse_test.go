@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -106,6 +107,16 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"a document prompt without a floor", embeddingDoc(`documentPrompt: "passage: "`), "need embedding.similarFloor set"},
 		{"a search prompt without a floor", embeddingDoc(`searchPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
+		{"a reranker without a provider", rerankDoc("{ model: rerank-v3.5, api: cohere }"), `embedding.rerank.model must be "<provider>/<model>"`},
+		{"a reranker of an undeclared provider", rerankDoc("{ model: other/rerank-v3.5, api: cohere }"), `references provider "other"`},
+		{"a reranker of an openrouter provider", rerankDoc("{ model: or/rerank-v3.5, api: cohere }"), "a reranker needs an openai one"},
+		{"a reranker without an endpoint", rerankDoc("{ model: bare/rerank-v3.5, api: cohere }"), `provider "bare", which sets no baseUrl`},
+		{"a reranker of no API", rerankDoc("{ model: rr/rerank-v3.5 }"), "embedding.rerank.api must be one of cohere, jina, voyage, tei"},
+		{"a reranker of another API", rerankDoc("{ model: rr/rerank-v3.5, api: openai }"), "embedding.rerank.api must be one of"},
+		{"too many rerank candidates", rerankDoc("{ model: rr/rerank-v3.5, api: cohere, candidates: 101 }"),
+			"embedding.rerank.candidates must be between 0 and 100"},
+		{"a rerank timeout too long", rerankDoc("{ model: rr/rerank-v3.5, api: cohere, timeout: 1m }"),
+			"embedding.rerank.timeout must be between 0 and 45s"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -124,6 +135,42 @@ func embeddingDoc(override string) string {
 	fields[key] = override
 	return "providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +
 		"embedding:\n  " + strings.Join(slices.Sorted(maps.Values(fields)), "\n  ") + "\n"
+}
+
+// rerankDoc is a file with an embedder and the reranker rerank, and three
+// providers: openrouter, an openai one with an endpoint, rr, and one
+// without, bare.
+func rerankDoc(rerank string) string {
+	return "providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +
+		"  rr: { type: openai, baseUrl: https://api.cohere.com/v2, apiKey: { env: TEST_KEY } }\n" +
+		"  bare: { type: openai, apiKey: { env: TEST_KEY } }\n" +
+		"embedding:\n  model: or/voyage-code-3\n  dims: 1024\n  rerank: " + rerank + "\n"
+}
+
+// TestParseRerank: the reranker takes its provider's endpoint and key, and
+// the defaults of what it leaves out. Lexical search is on unless turned
+// off.
+func TestParseRerank(t *testing.T) {
+	t.Setenv("TEST_KEY", "rk")
+	f, err := Parse([]byte(rerankDoc("{ model: rr/rerank-v3.5, api: cohere }")))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	r := f.Embedding.Rerank
+	if r.BaseURL != "https://api.cohere.com/v2" || r.Model != "rerank-v3.5" || r.APIKeyValue().Value() != "rk" ||
+		r.CandidateCount() != DefaultRerankCandidates || r.Deadline() != DefaultRerankTimeout {
+		t.Fatalf("rerank = %+v", r)
+	}
+	if !f.Embedding.LexicalSearch() {
+		t.Fatal("lexical search is off by default")
+	}
+	f, err = Parse([]byte(rerankDoc("{ model: rr/m, api: tei, candidates: 20, timeout: 5s }") + "  lexical: false\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if r := f.Embedding.Rerank; r.CandidateCount() != 20 || r.Deadline() != 5*time.Second || f.Embedding.LexicalSearch() {
+		t.Fatalf("embedding = %+v, rerank %+v", f.Embedding, r)
+	}
 }
 
 // TestParseEmbedding: the embedder takes its provider's endpoint, or the

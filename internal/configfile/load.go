@@ -188,6 +188,31 @@ func (f *File) resolveEmbedding() error {
 		return fmt.Errorf("configfile: embedding.model takes no floating alias, got %q", e.Ref)
 	}
 	e.Model, e.apiKey = e.Ref.Model(), p.apiKey
+	return f.resolveRerank()
+}
+
+// resolveRerank gives the reranker its provider's endpoint and key: an
+// openai provider of the instance that sets its baseUrl.
+func (f *File) resolveRerank() error {
+	r := f.Embedding.Rerank
+	if r == nil {
+		return nil
+	}
+	name := r.Ref.Provider()
+	if name == "" || r.Ref.Model() == "" {
+		return fmt.Errorf("configfile: embedding.rerank.model must be \"<provider>/<model>\", got %q", r.Ref)
+	}
+	p, ok := f.Providers[name]
+	switch {
+	case !ok:
+		return fmt.Errorf("configfile: embedding.rerank.model references provider %q, which is not declared under providers", name)
+	case p.Type != ProviderOpenAI:
+		return fmt.Errorf("configfile: embedding.rerank.model names a %s provider; a reranker needs an %s one, which stands for any "+
+			"endpoint that takes a bearer key", p.Type, ProviderOpenAI)
+	case p.BaseURL == "":
+		return fmt.Errorf("configfile: embedding.rerank.model names provider %q, which sets no baseUrl; a reranker needs its endpoint", name)
+	}
+	r.BaseURL, r.Model, r.apiKey = p.BaseURL, r.Ref.Model(), p.apiKey
 	return nil
 }
 
@@ -329,6 +354,16 @@ func (f *File) validateEmbedding() error {
 	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "" || e.SearchPrompt != "") {
 		return errors.New("configfile: embedding.queryPrompt, searchPrompt and documentPrompt need embedding.similarFloor set, " +
 			"since prompts move the scores the floor compares")
+	}
+	if r := e.Rerank; r != nil {
+		switch {
+		case !slices.Contains(model.RerankAPIs, r.API):
+			return fmt.Errorf("configfile: embedding.rerank.api must be one of %s, got %q", strings.Join(model.RerankAPIs, ", "), r.API)
+		case r.Candidates < 0 || r.Candidates > MaxRerankCandidates:
+			return fmt.Errorf("configfile: embedding.rerank.candidates must be between 0 and %d, got %d", MaxRerankCandidates, r.Candidates)
+		case r.Timeout < 0 || r.Timeout > MaxRerankTimeout:
+			return fmt.Errorf("configfile: embedding.rerank.timeout must be between 0 and %s, got %s", MaxRerankTimeout, r.Timeout)
+		}
 	}
 	return nil
 }

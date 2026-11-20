@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"maps"
+	"math"
 	"reflect"
 	"slices"
 	"testing"
@@ -112,9 +113,126 @@ func TestKeepSimilarCounts(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, got := keepSimilar(tt.hits, 0.5, 0.1)
-			if !maps.Equal(got, tt.want) {
+			if !maps.Equal(countsByOutcome(got), tt.want) {
 				t.Fatalf("counts = %v, want %v", got, tt.want)
 			}
+			for k := range got {
+				if k.source != sourceVector {
+					t.Errorf("a vector hit counted as found by %s", k.source)
+				}
+			}
 		})
+	}
+}
+
+// keepSimilar is what the gateway keeps of vector hits alone.
+func keepSimilar(hits []store.SimilarHit, floor, margin float64) ([]contextpack.Chunk, map[hitKey]int) {
+	kept, counts := gateCandidates(fuse(hits, nil), floor, margin)
+	return keepCandidates(kept, counts), counts
+}
+
+// TestHybridSimilar: the lexical search's hits join the vector search's.
+// Either search can vouch for a chunk, which is labelled by what vouched
+// for it, and each query keeps its similarPerQuery best by fused rank.
+func TestHybridSimilar(t *testing.T) {
+	vec := func(query int, path string, sim float64) store.SimilarHit {
+		return store.SimilarHit{Chunk: contextpack.Chunk{Path: path, StartLine: 1}, Similarity: sim, Query: query}
+	}
+	lex := func(query int, path string, sim, weight float64, matched ...string) store.SimilarHit {
+		h := vec(query, path, sim)
+		h.Lexical, h.Matched = weight, matched
+		return h
+	}
+	tests := []struct {
+		name        string
+		hits, named []store.SimilarHit
+		want        []string
+		wantCounts  map[hitKey]int
+	}{
+		{
+			name:  "a chunk both find comes first",
+			hits:  []store.SimilarHit{vec(0, "a.go", 0.9), vec(0, "b.go", 0.85)},
+			named: []store.SimilarHit{lex(0, "b.go", 0.85, 9, "AcquireLease", "lease")},
+			want:  []string{"b.go:similarity 0.85; shares AcquireLease, lease", "a.go:similarity 0.90"},
+			wantCounts: map[hitKey]int{
+				{hitKept, sourceBoth}: 1, {hitKept, sourceVector}: 1,
+			},
+		},
+		{
+			name:  "names vouch for a chunk under the floor",
+			hits:  []store.SimilarHit{vec(0, "a.go", 0.7)},
+			named: []store.SimilarHit{lex(0, "c.go", 0.3, 8, "parseHTTPRequest"), lex(0, "d.go", 0.2, 3, "request")},
+			want:  []string{"a.go:similarity 0.70", "c.go:shares parseHTTPRequest"},
+			wantCounts: map[hitKey]int{
+				{hitKept, sourceVector}: 1, {hitKept, sourceLexical}: 1, {hitMargin, sourceLexical}: 1,
+			},
+		},
+		{
+			name:  "a lexical hit close to the query shows its similarity",
+			hits:  []store.SimilarHit{vec(0, "a.go", 0.7)},
+			named: []store.SimilarHit{lex(0, "c.go", 0.68, 8, "Lease")},
+			want:  []string{"a.go:similarity 0.70", "c.go:similarity 0.68; shares Lease"},
+			wantCounts: map[hitKey]int{
+				{hitKept, sourceVector}: 1, {hitKept, sourceLexical}: 1,
+			},
+		},
+		{
+			name: "each query keeps its best four",
+			hits: []store.SimilarHit{vec(0, "a.go", 0.9), vec(0, "b.go", 0.89), vec(0, "c.go", 0.88), vec(0, "d.go", 0.87)},
+			named: []store.SimilarHit{
+				lex(0, "e.go", 0.4, 9, "X"), lex(0, "f.go", 0.4, 8, "Y"), lex(0, "g.go", 0.4, 7, "Z"), lex(0, "h.go", 0.4, 6, "W"),
+			},
+			want: []string{
+				"a.go:similarity 0.90", "e.go:shares X", "b.go:similarity 0.89", "f.go:shares Y",
+			},
+			wantCounts: map[hitKey]int{
+				{hitKept, sourceVector}: 2, {hitKept, sourceLexical}: 2, {hitLimit, sourceVector}: 2, {hitLimit, sourceLexical}: 2,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kept, counts := gateCandidates(fuse(tt.hits, tt.named), 0.5, 0.1)
+			got := keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts)
+			var keys []string
+			for _, c := range got {
+				keys = append(keys, c.Path+":"+c.Ref)
+			}
+			if !slices.Equal(keys, tt.want) {
+				t.Errorf("kept %q, want %q", keys, tt.want)
+			}
+			if !maps.Equal(counts, tt.wantCounts) {
+				t.Errorf("counts = %v, want %v", counts, tt.wantCounts)
+			}
+		})
+	}
+}
+
+// TestGateRanks: a candidate scores 1 / (rrfK + rank) for each search that
+// found it, ranked among those of its query that the search found, whether
+// or not that search vouches for it.
+func TestGateRanks(t *testing.T) {
+	hits := []store.SimilarHit{
+		{Chunk: contextpack.Chunk{Path: "low.go"}, Similarity: 0.6},
+		{Chunk: contextpack.Chunk{Path: "high.go"}, Similarity: 0.9},
+		{Chunk: contextpack.Chunk{Path: "other.go"}, Similarity: 0.8, Query: 1},
+		{Chunk: contextpack.Chunk{Path: "under.go"}, Similarity: 0.2},
+	}
+	named := []store.SimilarHit{
+		{Chunk: contextpack.Chunk{Path: "low.go"}, Similarity: 0.6, Lexical: 2, Matched: []string{"x"}},
+		{Chunk: contextpack.Chunk{Path: "under.go"}, Similarity: 0.2, Lexical: 3, Matched: []string{"y"}},
+	}
+	want := map[string]float64{
+		"low.go": 1.0/(rrfK+2) + 1.0/(rrfK+2), "high.go": 1.0 / (rrfK + 1), "other.go": 1.0 / (rrfK + 1),
+		"under.go": 1.0/(rrfK+3) + 1.0/(rrfK+1),
+	}
+	got, _ := gateCandidates(fuse(hits, named), 0.5, 0.5)
+	if len(got) != len(want) {
+		t.Fatalf("kept %d candidates, want %d", len(got), len(want))
+	}
+	for _, c := range got {
+		if math.Abs(c.score-want[c.Chunk.Path]) > 1e-12 {
+			t.Errorf("%s scored %g, want %g", c.Chunk.Path, c.score, want[c.Chunk.Path])
+		}
 	}
 }

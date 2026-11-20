@@ -62,6 +62,9 @@ type Server struct {
 	// Embedders resolves the instance's embedder for similar code. A nil
 	// value serves none.
 	Embedders *adapter.Embedders
+	// Rerankers resolves the instance's similar-code reranker. A nil value
+	// serves none.
+	Rerankers *adapter.Rerankers
 	// AquaRegistry is the aqua registry that runners read at
 	// runspec.AquaRegistryPath. A nil value serves none.
 	AquaRegistry *AquaRegistry
