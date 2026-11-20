@@ -2528,9 +2528,12 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 }
 
 // seedIndex makes an active index generation for repoID holding code at
-// other.go and at main.go, which the pull request changes.
+// other.go and at main.go, which the pull request changes. It puts other.go
+// on the base, as the index has it, since a review shows only the similar
+// code that its head has.
 func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoID, code string) {
 	t.Helper()
+	h.lf.setBase(h.commit(t, "other.go", code))
 	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritika_app", emb.Model, emb.Dims, emb.DocumentPrompt); err != nil {
 		t.Fatal(err)
 	}

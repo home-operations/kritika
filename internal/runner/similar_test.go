@@ -81,7 +81,7 @@ func TestSimilarContextExclusions(t *testing.T) {
 			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: true}}
 			s := reviewSpec()
 			s.GatewayURL = gw.serve(t).URL
-			_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, res, nil,
+			_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
 				slog.New(slog.DiscardHandler))
 			if want := [][]string{{"main.go", "new.go", "old.go"}}; !slices.EqualFunc(gw.excluded, want, slices.Equal) {
 				t.Fatalf("reported exclusions %q, want %q", gw.excluded, want)
@@ -223,11 +223,40 @@ func TestSimilarContextWithoutQueries(t *testing.T) {
 			gw := &fakeSimilarGateway{status: http.StatusNoContent, answer: contextpack.SimilarResponse{Indexed: indexed, Chunks: []contextpack.Chunk{}}}
 			s := reviewSpec()
 			s.GatewayURL = gw.serve(t).URL
-			chunks, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, res, nil,
+			chunks, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
 				slog.New(slog.DiscardHandler))
 			if len(gw.requests) != 1 || len(gw.requests[0].Queries) != 0 || len(chunks) != 0 || (search != nil) != indexed {
 				t.Fatalf("requests %+v, %d chunks, search_code offered %t; want one without queries, offered %t", gw.requests, len(chunks),
 					search != nil, indexed)
+			}
+		})
+	}
+}
+
+// TestAtHead: a similar chunk is shown as the head has it. One whose text
+// moved is shown at its new lines, one cut short claims only the lines it
+// shows, and one whose text or file the head no longer has is left out.
+func TestAtHead(t *testing.T) {
+	head := tree(t, map[string]string{"lib.go": "package lib\n\nfunc a() {\n\treturn\n}\n\nfunc b() {}\n"})
+	chunk := func(path string, start, end int, text string) contextpack.Chunk {
+		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end, Text: text}
+	}
+	for _, tt := range []struct {
+		name string
+		in   contextpack.Chunk
+		want []contextpack.Chunk
+	}{
+		{"where the index has it", chunk("lib.go", 3, 5, "func a() {\n\treturn\n}"), []contextpack.Chunk{chunk("lib.go", 3, 5, "func a() {\n\treturn\n}")}},
+		{"moved", chunk("lib.go", 1, 3, "func a() {\n\treturn\n}"), []contextpack.Chunk{chunk("lib.go", 3, 5, "func a() {\n\treturn\n}")}},
+		{"cut short", chunk("lib.go", 3, 5, "func a() {\n\tret"), []contextpack.Chunk{chunk("lib.go", 3, 4, "func a() {\n\tret")}},
+		{"changed", chunk("lib.go", 3, 5, "func a() {\n\tpanic(1)\n}"), nil},
+		{"past the file's end", chunk("lib.go", 7, 9, "func b() {}\n\nfunc c() {}"), nil},
+		{"gone", chunk("old.go", 1, 1, "func b() {}"), nil},
+		{"empty", chunk("lib.go", 1, 1, ""), nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := atHead(head, []contextpack.Chunk{tt.in}); !slices.Equal(got, tt.want) {
+				t.Fatalf("atHead = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

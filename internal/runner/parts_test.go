@@ -145,7 +145,7 @@ func TestPartPrompts(t *testing.T) {
 	s := reviewSpec()
 	s.GatewayURL, s.PriorHead = gw.URL, shaB
 	s.Prompt.Rules = []configfile.Rule{{ID: "a-rule", Rule: "Mind a.", Paths: []string{"a/**"}}, {ID: "b-rule", Rule: "Mind b.", Paths: []string{"b/**"}}}
-	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
+	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "func z() {}\n"})
 	diff := sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10)
 	res := &gitfetch.Result{Diff: diff, Changed: []string{"a/x.go", "b/y.go"}}
 	split := [][]string{{"a/x.go"}, {"b/y.go"}}
@@ -194,19 +194,21 @@ func TestPartPromptsContext(t *testing.T) {
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req contextpack.SimilarRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		text := "func z() {}"
+		path, text := "lib/z.go", "func z() {}"
 		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "yyyy") {
-			text = strings.Repeat("x", 60_000)
+			path, text = "lib/big.go", strings.Repeat("x", 60_000)
 		}
 		_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
-			{Stage: contextpack.StageSimilar, Path: "lib/z.go", StartLine: 1, EndLine: 1, Text: text},
+			{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text},
 		}})
 	}))
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
 	s.Agent.MaxPromptTokens = 24_000
-	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
+	head := tree(t, map[string]string{
+		"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "func z() {}\n", "lib/big.go": strings.Repeat("x", 60_000) + "\n",
+	})
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10) + strings.ReplaceAll(sizedDiff("b/y.go", 50<<10), "xxxx", "yyyy"),
 		Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
@@ -219,7 +221,7 @@ func TestPartPromptsContext(t *testing.T) {
 		t.Fatalf("context = %d chunk(s), part 1's %d, part 2's %d; want part 1's similar code alone", len(chunks),
 			len(parts[0].prompt.context), len(parts[1].prompt.context))
 	}
-	if strings.Contains(parts[1].prompt.user, "### similar: lib/z.go") {
+	if strings.Contains(parts[1].prompt.user, "### similar: lib/big.go") {
 		t.Fatalf("part 2's prompt holds the similar code its budget left out:\n%.2000s", parts[1].prompt.user)
 	}
 	if notes := splitNotes(parts, splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull)); !slices.Contains(notes, "1 context chunk(s) left out of the prompt to fit its budget") {

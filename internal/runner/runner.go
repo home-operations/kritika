@@ -311,7 +311,7 @@ func wholePrompt(
 	})
 	p.Prompt = &promptSpec
 	var similar []contextpack.Chunk
-	similar, tools.search = similarContext(ctx, p, secrets, res, chunks, logger)
+	similar, tools.search = similarContext(ctx, p, secrets, head, res, chunks, logger)
 	chunks = append(chunks, similar...)
 	prompt := newAgentPrompt(p, in, packView{
 		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
@@ -324,12 +324,13 @@ func wholePrompt(
 
 // similarContext is context stage 4, best effort: the code elsewhere in
 // the repository that resembles the diff's hunks, and the search_code tool
-// over the same index. It leaves out the code that others, the other
-// stages' chunks, already show. An instance without an embedder, a
-// repository without a completed index, or a refused or failed request
-// leaves both out and the run goes on.
+// over the same index. Each chunk is shown as head has it (atHead), and
+// none that others, the other stages' chunks, already show. An instance
+// without an embedder, a repository without a completed index, or a refused
+// or failed request leaves both out and the run goes on.
 func similarContext(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, others []contextpack.Chunk, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, res *gitfetch.Result, others []contextpack.Chunk,
+	logger *slog.Logger,
 ) ([]contextpack.Chunk, *searchTool) {
 	if !excludeFromSimilar(ctx, p, secrets, res, logger) {
 		return nil, nil
@@ -338,7 +339,7 @@ func similarContext(
 	if !ok {
 		return nil, nil
 	}
-	return withoutOverlap(out.Chunks, others), newSearchTool(p, secrets)
+	return similarShown(head, out.Chunks, others, logger), newSearchTool(p, secrets, head)
 }
 
 // excludeFromSimilar reports the paths the run's similar-code searches leave
@@ -378,8 +379,10 @@ func similarCodeFor(
 
 // newSearchTool is search_code over the repository's index. It leaves out
 // the paths that excludeFromSimilar reported, which the prompt shows.
-func newSearchTool(p runspec.Spec, secrets runspec.Secrets) *searchTool {
-	return &searchTool{gatewayURL: p.GatewayURL, token: secrets.GatewayToken, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes}
+func newSearchTool(p runspec.Spec, secrets runspec.Secrets, head *object.Tree) *searchTool {
+	return &searchTool{
+		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, head: head, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
+	}
 }
 
 // notIgnored returns the paths no ignore glob matches, never nil.

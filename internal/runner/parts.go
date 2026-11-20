@@ -95,8 +95,8 @@ func partPrompts(
 		}
 		for i, out := range similar {
 			if out.Indexed {
-				chunks[i] = append(chunks[i], withoutOverlap(out.Chunks, chunks[i])...)
-				tools.search = newSearchTool(p, secrets)
+				chunks[i] = append(chunks[i], similarShown(head, out.Chunks, chunks[i], logger.With("part", i+1))...)
+				tools.search = newSearchTool(p, secrets, head)
 			}
 		}
 	}
@@ -257,13 +257,15 @@ const minPartTime = 2 * time.Minute
 //
 // head serializes what reads the head or the base through the run's one
 // go-git repository, which is not safe for concurrent use: read_file, grep,
-// list_files, load_skill, and the checkout that the run tool writes on its
-// first command. writes serializes the run tool and fetch_repo, which share
-// the directory beside the checkout and its budget, and read_file when it
-// reads there. search and oci keep the counts those tools record. A holder of
-// more than one takes them in the order writes, head, oci: the run tool
-// holds writes while its checkout takes head, and a part's checkpoint
-// reads the run tool, fetch_repo, and fetch_oci.
+// list_files, load_skill, search_code as it reads its answer, and the
+// checkout that the run tool writes on its first command. writes serializes
+// the run tool and fetch_repo, which share the directory beside the checkout
+// and its budget, and read_file when it reads there. search and oci keep the
+// counts those tools record. A holder of more than one takes them in the
+// order writes, search, head, oci: the run tool holds writes while its
+// checkout takes head, search_code holds search while it reads its answer at
+// the head, and a part's checkpoint reads the run tool, fetch_repo, and
+// fetch_oci.
 type partLocks struct {
 	head, writes, search, oci chan struct{}
 }
@@ -342,6 +344,7 @@ func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 		case *fetchOCITool:
 			lock = locks.oci
 		case *searchTool:
+			t.headLock = locks.head
 			lock = locks.search
 		default:
 			lock = locks.head

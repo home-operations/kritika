@@ -660,6 +660,12 @@ takes each query's best match before any query's second, at most two
 chunks of one file and ten in all. The review's prompt also leaves out a
 chunk whose lines another context stage already shows.
 
+The index is of the default branch, which can be ahead of or behind the
+pull request. Both show a chunk as the pull request's head has it: found
+by its text, at its lines in the head, which differ from the index's when
+code above it moved. A chunk whose text or file the head no longer has
+is left out.
+
 How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and
 one of varied code scores lower. The hunks of one diff differ too. The
@@ -747,7 +753,7 @@ floor tuned without them stops separating the same chunks, and the
 configuration refuses a prompt without `similarFloor`. Prompts can also
 widen or narrow the gaps between matches, which `similarMargin` measures.
 A review's **Run details** conversation lists each similar chunk with its
-score, as in `for similarity 0.42`. Set the floor under the weakest chunk
+score, as in `(similarity 0.42)`. Set the floor under the weakest chunk
 worth keeping, and set the margin to the gap that still holds the chunks
 worth keeping. A prompt counts toward `maxItemChars`, and at the defaults
 it leaves every query and chunk whole.

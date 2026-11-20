@@ -8,14 +8,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing/object"
+
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/textcut"
 	"github.com/home-operations/kritika/internal/udiff"
@@ -254,8 +258,12 @@ var searchSchema = json.RawMessage(`{
 // the same gateway route as stage 4, bounded to searchCalls per run.
 type searchTool struct {
 	gatewayURL, token string
-	maxBytes          int
-	calls             int
+	// head is the tree that the answer is shown as (atHead). headLock, when
+	// set, is what a read of it takes: parts share it.
+	head     *object.Tree
+	headLock chan struct{}
+	maxBytes int
+	calls    int
 }
 
 func (s *searchTool) Def() model.ToolDef {
@@ -288,11 +296,17 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	if err != nil {
 		return "", fmt.Errorf("agent: search_code: %w", err)
 	}
-	if len(out.Chunks) == 0 {
+	release, err := acquire(ctx, s.headLock)
+	if err != nil {
+		return "", err
+	}
+	chunks := atHead(s.head, out.Chunks)
+	release()
+	if len(chunks) == 0 {
 		return "No similar code found.", nil
 	}
 	var b strings.Builder
-	for i, c := range out.Chunks {
+	for i, c := range chunks {
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
@@ -315,4 +329,80 @@ func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
 			return o.Stage != contextpack.StageSimilar && o.Path == c.Path && o.StartLine <= c.EndLine && c.StartLine <= o.EndLine
 		})
 	})
+}
+
+// atHead is the similar chunks as the pull request's head has them. The
+// index is of the default branch at some commit, which can be older or newer
+// than the head, and a chunk's lines there can hold other code at the head.
+// So a chunk is found by its text, at its own lines or, when code above it
+// moved, at the nearest place the head holds it, and shown at those lines. A
+// chunk whose text the head no longer holds is left out rather than shown
+// by its old lines: those now hold code that its similarity was not measured
+// for. The index cuts a long chunk's text short, so its last line need only
+// begin the head's, and the chunk claims the lines its text covers.
+func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
+	files := map[string][]string{}
+	var out []contextpack.Chunk
+	for _, c := range chunks {
+		lines, ok := files[c.Path]
+		if !ok {
+			lines = headLines(head, c.Path)
+			files[c.Path] = lines
+		}
+		if start, ok := findText(lines, c.Text, c.StartLine-1); ok {
+			c.EndLine = start + strings.Count(strings.TrimSuffix(c.Text, "\n"), "\n") + 1
+			c.StartLine = start + 1
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// headLines is the lines of path at head, none when the head has no such
+// file or it is larger than any file the index holds.
+func headLines(head *object.Tree, path string) []string {
+	f, err := head.File(path)
+	if err != nil || f.Size > int64(indexer.DefaultOptions.MaxFileBytes) {
+		return nil
+	}
+	src, err := f.Contents()
+	if err != nil {
+		return nil
+	}
+	return strings.Split(src, "\n")
+}
+
+// findText is the 0-based line of lines where text starts, the one nearest
+// near when it is in more than one place, false when it is in none.
+func findText(lines []string, text string, near int) (int, bool) {
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return 0, false
+	}
+	want := strings.Split(text, "\n")
+	at := func(i int) bool {
+		if i < 0 || i+len(want) > len(lines) {
+			return false
+		}
+		last := len(want) - 1
+		return slices.Equal(lines[i:i+last], want[:last]) && strings.HasPrefix(lines[i+last], want[last])
+	}
+	for d := 0; near-d >= 0 || near+d < len(lines); d++ {
+		if at(near - d) {
+			return near - d, true
+		}
+		if at(near + d) {
+			return near + d, true
+		}
+	}
+	return 0, false
+}
+
+// similarShown is the similar chunks found that a prompt shows: as head has
+// them, and none whose lines others, the other stages' chunks, show.
+func similarShown(head *object.Tree, found, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
+	current := atHead(head, found)
+	shown := withoutOverlap(current, others)
+	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "shown", len(shown))
+	return shown
 }

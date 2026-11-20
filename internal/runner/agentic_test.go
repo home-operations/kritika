@@ -574,12 +574,12 @@ func TestSearchTool(t *testing.T) {
 			`"ref":"similarity 0.81","text":"func retry() {}"}],"indexed":true}`))
 	}))
 	defer srv.Close()
-	tool := &searchTool{gatewayURL: srv.URL, token: "krk_run", maxBytes: 1 << 10}
+	tool := &searchTool{gatewayURL: srv.URL, token: "krk_run", head: tree(t, map[string]string{"retry.go": "package r\n\nfunc retry() {}\n"}), maxBytes: 1 << 10}
 	if def := tool.Def(); def.Name != "search_code" {
 		t.Fatalf("tool name = %q", def.Name)
 	}
 	out, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`))
-	if err != nil || out != "retry.go:3-9 (function retry) similarity 0.81\nfunc retry() {}" {
+	if err != nil || out != "retry.go:3-3 (function retry) similarity 0.81\nfunc retry() {}" {
 		t.Fatalf("Run = %q, %v", out, err)
 	}
 	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":" "}`)); err == nil {
