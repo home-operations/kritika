@@ -413,7 +413,8 @@ func (c *cutter) cover(i int) []chunk.Decl {
 
 // windows returns lines start to end as one piece attributed to d when they
 // are at most lines lines and MaxChunkBytes, or else cuts them into windows
-// of at most WindowLines and MaxChunkBytes.
+// of at most WindowLines and MaxChunkBytes, leaving out a window that holds
+// no word.
 func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
 	text := c.f.Text(start, end)
 	if end-start < lines && len(text) <= c.opts.MaxChunkBytes || start == end {
@@ -423,7 +424,9 @@ func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
 	var out []chunk.Decl
 	for _, w := range chunk.Windows([]byte(text), c.opts.WindowLines, c.opts.WindowOverlap, c.opts.MaxChunkBytes) {
 		d.StartLine, d.EndLine = start+w.StartLine-1, start+w.EndLine-1
-		out = append(out, d)
+		if c.words(d.StartLine, d.EndLine) > 0 {
+			out = append(out, d)
+		}
 	}
 	return out
 }

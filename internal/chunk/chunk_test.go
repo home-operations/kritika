@@ -201,6 +201,11 @@ func TestWindows(t *testing.T) {
 		{name: "by bytes", src: strings.Repeat("123456789\n", 7), size: 60, overlap: 10, maxBytes: 30, want: []span{{1, 3}, {4, 6}, {7, 7}}},
 		{name: "by bytes with overlap", src: strings.Repeat("123456789\n", 14), size: 6, overlap: 3, maxBytes: 60, want: []span{{1, 6}, {4, 9}, {7, 12}, {10, 14}}},
 		{name: "line over the cap", src: "short\n" + strings.Repeat("y", 50) + "\nshort\n", size: 60, overlap: 10, maxBytes: 20, want: []span{{1, 1}, {2, 2}, {3, 3}}},
+		// The overlap before a line over the cap would hold nothing new.
+		{
+			name: "line over the cap after the overlap", src: strings.Repeat("x\n", 70) + strings.Repeat("y", 7000) + "\n" + strings.Repeat("x\n", 5),
+			size: 60, overlap: 10, maxBytes: 6000, want: []span{{1, 60}, {51, 70}, {71, 71}, {72, 76}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

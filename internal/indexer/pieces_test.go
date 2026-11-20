@@ -84,6 +84,10 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			src: "CREATE TABLE t (a int);\nCOMMENT ON COLUMN t.a IS 'the a column';\nCREATE INDEX i ON t (a);\n",
 		},
 		{
+			name: "a long line before a closing one", path: "data.go",
+			src: "package demo\n\nconst blob = `\n" + strings.Repeat("QUJD", 2000) + "\n`\n",
+		},
+		{
 			name: "markdown of long lines", path: "notes.md",
 			src: lines(100, "Line %d "+strings.Repeat("word ", 60)),
 		},

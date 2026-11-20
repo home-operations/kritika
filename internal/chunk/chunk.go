@@ -660,7 +660,19 @@ func Windows(src []byte, size, overlap, maxBytes int) []Decl {
 		if end == lines {
 			return out
 		}
-		start = max(end+1-overlap*(end-start+1)/size, start+1)
+		next := max(end+1-overlap*(end-start+1)/size, start+1)
+		// A window from next that the line after end does not fit, as a line
+		// over maxBytes does not, holds nothing new.
+		if maxBytes > 0 {
+			used := length(end + 1)
+			for l := next; l <= end; l++ {
+				used += length(l) + 1
+			}
+			if used > maxBytes {
+				next = end + 1
+			}
+		}
+		start = next
 	}
 }
 
