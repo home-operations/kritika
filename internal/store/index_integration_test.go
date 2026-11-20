@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 const onboardAccounts = `
@@ -62,7 +63,8 @@ func checkBacklog(t *testing.T, s *Store, account string, names map[string]strin
 // TestOnboardCandidates makes sure that the onboarding feeder is offered the
 // correct repositories in the correct order: accounts take turns, and an
 // account's repositories whose pull requests moved last go first. A
-// repository whose index another embedder built is offered again.
+// repository whose index another embedder or index format built is offered
+// again.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -70,7 +72,7 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/off")
+	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/reformat", "east/off")
 	listRepos(t, s, "west", "west/one", "west/old-failure")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "m", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
@@ -92,7 +94,7 @@ func TestOnboardCandidates(t *testing.T) {
 		}
 		ids[name], names[id] = id, name
 	}
-	if rows.Err() != nil || len(ids) != 12 {
+	if rows.Err() != nil || len(ids) != 13 {
 		t.Fatalf("repositories = %v, %v", ids, rows.Err())
 	}
 	exec := func(sql string, args ...any) {
@@ -107,7 +109,8 @@ func TestOnboardCandidates(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE args->>'repository_id' = ANY($1)`, slices.Collect(maps.Values(ids)))
 	})
 	// One apply gives every repository the same created_at.
-	for name, age := range map[string]string{"east/quiet": "3 hours", "west/old-failure": "2 hours", "east/later": "1 hour", "east/rebuilt": "30 minutes"} {
+	for name, age := range map[string]string{"east/quiet": "3 hours", "west/old-failure": "2 hours", "east/later": "1 hour", "east/rebuilt": "30 minutes",
+		"east/reformat": "20 minutes"} {
 		exec(`UPDATE repositories SET created_at = now() - $2::interval WHERE id = $1`, ids[name], age)
 	}
 	for name, age := range map[string]string{"east/busy": "1 minute", "west/one": "1 day"} {
@@ -121,6 +124,12 @@ func TestOnboardCandidates(t *testing.T) {
 			FROM repositories r JOIN (VALUES ($1::uuid, ''), ($2::uuid, 'passage: ')) p (id, prompt) ON p.id = r.id
 			RETURNING id, repository_id)
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"], ids["east/stale"])
+	// east/reformat's index was built by a build of another index format.
+	exec(`WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2 FROM repositories WHERE id = $1
+			RETURNING id, repository_id)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/reformat"], runspec.IndexFormat+1)
 
 	before, err := s.OnboardingInFlight(ctx)
 	if err != nil {
@@ -165,7 +174,7 @@ func TestOnboardCandidates(t *testing.T) {
 			got = append(got, name)
 		}
 	}
-	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/stale"}
+	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/reformat", "east/stale"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("candidates = %v, want %v", got, want)
 	}
@@ -174,7 +183,7 @@ func TestOnboardCandidates(t *testing.T) {
 	}
 	// The dashboard's backlog of one account is the feeder's order, less
 	// the other accounts' turns.
-	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/stale"})
+	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/reformat", "east/stale"})
 	// A repository that its configuration leaves off is passed over, and takes
 	// none of the limit: here, every one of east's.
 	west := accountID(t, s, "west")

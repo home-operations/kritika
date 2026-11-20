@@ -20,6 +20,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // The suite needs a VectorChord-enabled Postgres with three roles, as
@@ -567,6 +568,80 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 			typmod != fmt.Sprintf("halfvec(%d)", next.dims) {
 			t.Fatalf("embedding column = %s, %v", typmod, err)
 		}
+	}
+}
+
+// TestEnsureIndexSchemaAppliesTheIndexFormat: the leader records its build's
+// index format over another build's, and drops nothing for it. The
+// generations of the other format stay active, for searches, until the
+// onboarding feeder rebuilds them.
+func TestEnsureIndexSchemaAppliesTheIndexFormat(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/one")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	format := func() int {
+		t.Helper()
+		var f int
+		if err := s.owner.QueryRow(ctx, `SELECT index_format FROM index_schema`).Scan(&f); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	if f := format(); f != runspec.IndexFormat {
+		t.Fatalf("index format = %d, want %d", f, runspec.IndexFormat)
+	}
+	// Another build was leader, and built alpha/one in its format.
+	if _, err := s.owner.Exec(ctx, `UPDATE index_schema SET index_format = $1`, runspec.IndexFormat+1); err != nil {
+		t.Fatal(err)
+	}
+	var run string
+	if err := s.owner.QueryRow(ctx, `WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'abc', 'test-embed', 8, 'full', 'completed', $1 FROM repositories WHERE name = 'alpha/one'
+			RETURNING id, account_id, repository_id
+		), c AS (
+			INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			SELECT account_id, repository_id, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
+		)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`,
+		runspec.IndexFormat+1).Scan(&run); err != nil {
+		t.Fatalf("seed a generation: %v", err)
+	}
+	rebuilt, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, "")
+	if err != nil || rebuilt {
+		t.Fatalf("EnsureIndexSchema = %v, %v; want no rebuild for another format", rebuilt, err)
+	}
+	if f := format(); f != runspec.IndexFormat {
+		t.Fatalf("index format = %d, want this build's %d", f, runspec.IndexFormat)
+	}
+	var repo string
+	var active *string
+	var chunks int
+	if err := s.owner.QueryRow(ctx, `SELECT r.id, r.active_index_run_id::text, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1)
+		FROM repositories r WHERE r.name = 'alpha/one'`, run).Scan(&repo, &active, &chunks); err != nil {
+		t.Fatal(err)
+	}
+	if active == nil || *active != run || chunks != 1 {
+		t.Fatalf("after the new format: active = %v, chunks = %d; want %s kept with its chunk", active, chunks, run)
+	}
+	if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+		found, err := ActiveGenerationFor(ctx, tx, repo, "test-embed", 8, "")
+		if err != nil || found != run {
+			t.Errorf("ActiveGenerationFor = %q, %v; want the generation of the other format, %s, until it is rebuilt", found, err, run)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

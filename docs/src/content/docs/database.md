@@ -403,9 +403,9 @@ Those are separate operational work after recovery objectives are agreed.
 Index jobs retain completed staging and checkpoint each batch in the same
 transaction as its vectors. A retry of the same River job resumes at the last
 committed chunk and reuses its index and runner records. Compatibility includes
-the target commit, incremental base, ignore rules, dimensions, input limits and
-embedding endpoint/model. Changed inputs discard incompatible progress and
-build anew. A runner that did not finish staging is restarted.
+the target commit, incremental base, ignore rules, dimensions, input limits,
+embedding endpoint/model and index format. Changed inputs discard incompatible
+progress and build anew. A runner that did not finish staging is restarted.
 
 If the process stops after the provider handles an embedding request but
 before its vectors and checkpoint commit, the request can still be repeated.

@@ -84,7 +84,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	logger := w.Logger.With("account", account.Key(), "repository", repo.Name, "trigger", args.Trigger)
-	if err := w.waitForAppliedEmbedder(ctx, args.AccountID, emb, logger); err != nil {
+	if err := w.waitForAppliedBuild(ctx, args.AccountID, emb, logger); err != nil {
 		return err
 	}
 	settings := file.Settings(account)
@@ -132,7 +132,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	mode, base := store.IndexModeFull, ""
-	if !args.Full && indexMatches(active, emb, ignoreHash) {
+	if !args.Full && indexMatches(active, emb, ignoreHash, args.Trigger) {
 		if active.Commit == commit {
 			logger.Info("index already at this commit")
 			return nil
@@ -219,46 +219,49 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	return nil
 }
 
-// appliedEmbedderWait is how long an index job waits on a pod whose embedder
-// the leader did not apply, before it is tried again. tipCheckWait is how
-// long one waits to ask the forge for the branch tip again after the forge
-// did not give it.
+// appliedBuildWait is how long an index job waits on a pod whose embedder or
+// index format the leader did not apply, before it is tried again.
+// tipCheckWait is how long one waits to ask the forge for the branch tip
+// again after the forge did not give it.
 const (
-	appliedEmbedderWait = time.Minute
-	tipCheckWait        = time.Minute
+	appliedBuildWait = time.Minute
+	tipCheckWait     = time.Minute
 )
 
-// embedderApplied reports whether emb is the embedder that the leader
-// applied, which index_schema records once the leader applies one. A pod on
-// another embedder, as during a rollout, will otherwise build an index that
-// the gateway never queries, or take an index that another embedder built for
-// current.
-func embedderApplied(ctx context.Context, tx pgx.Tx, emb *configfile.Embedding) (bool, error) {
-	appliedModel, appliedDims, appliedPrompt, ok, err := store.IndexSchemaIn(ctx, tx)
-	return ok && appliedModel == emb.Model && appliedDims == emb.Dims && appliedPrompt == emb.DocumentPrompt, err
+// buildApplied reports whether emb is the embedder that the leader applied,
+// and this build's index format the format that it applied. index_schema
+// records both once the leader applies an embedder. A pod on another
+// embedder, as during a rollout, will otherwise build an index that the
+// gateway never queries, or take an index that another embedder built for
+// current. A pod on another format will otherwise build indexes that the
+// onboarding feeder rebuilds again, and the pods of the two builds take
+// turns rebuilding each other's.
+func buildApplied(ctx context.Context, tx pgx.Tx, emb *configfile.Embedding) (bool, error) {
+	applied, ok, err := store.IndexSchemaIn(ctx, tx)
+	return ok && applied.Model == emb.Model && applied.Dims == emb.Dims && applied.DocumentPrompt == emb.DocumentPrompt &&
+		applied.Format == runspec.IndexFormat, err
 }
 
-// waitForAppliedEmbedder snoozes the job, as its error, unless emb is the
-// embedder that the leader applied. It leaves the job to a pod on that
-// embedder before this pod asks the forge anything or takes an index for
-// current.
-func (w *Index) waitForAppliedEmbedder(ctx context.Context, accountID string, emb *configfile.Embedding, logger *slog.Logger) error {
+// waitForAppliedBuild snoozes the job, as its error, unless this pod builds
+// what the leader applied. It leaves the job to a pod that does before this
+// pod asks the forge anything or takes an index for current.
+func (w *Index) waitForAppliedBuild(ctx context.Context, accountID string, emb *configfile.Embedding, logger *slog.Logger) error {
 	var applied bool
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		applied, err = embedderApplied(ctx, tx, emb)
+		applied, err = buildApplied(ctx, tx, emb)
 		return err
 	})
 	if err != nil || applied {
 		return err
 	}
-	logger.Info("index waits for a pod on the embedder the leader applied")
-	return river.JobSnooze(appliedEmbedderWait)
+	logger.Info("index waits for a pod on the embedder and index format the leader applied", "format", runspec.IndexFormat)
+	return river.JobSnooze(appliedBuildWait)
 }
 
 // lockAppliedIndexBuild locks the repository's index build, as
 // store.LockIndexBuild does, and then snoozes the job, as its error,
-// unless emb is the embedder the leader applied. The lock is on the
+// unless this pod builds what the leader applied. The lock is on the
 // repository's row, which the leader's rebuild for a new embedder updates
 // first: a run started before the rebuild is superseded by it, and a run
 // after sees the new embedder here.
@@ -266,11 +269,11 @@ func lockAppliedIndexBuild(ctx context.Context, tx pgx.Tx, job *river.Job[jobs.I
 	if err := store.LockIndexBuild(ctx, tx, job.Args.AccountID, job.Args.RepositoryID, job.ID, job.Attempt); err != nil {
 		return err
 	}
-	applied, err := embedderApplied(ctx, tx, emb)
+	applied, err := buildApplied(ctx, tx, emb)
 	if err != nil || applied {
 		return err
 	}
-	return river.JobSnooze(appliedEmbedderWait)
+	return river.JobSnooze(appliedBuildWait)
 }
 
 // activeGeneration reads the repository's active generation, nil when it
@@ -432,8 +435,16 @@ func (w *Index) embed(
 	return total, pack.Mode, err
 }
 
-func indexMatches(g *store.Generation, emb *configfile.Embedding, ignoreHash string) bool {
-	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.DocumentPrompt == emb.DocumentPrompt && g.IgnoreHash == ignoreHash
+// indexMatches reports whether a job of trigger can step g, the active
+// generation, incrementally rather than build the index in full. A push steps
+// a generation of another index format too: the changed paths are chunked in
+// this build's format, and the generation keeps its own, so the onboarding
+// feeder still rebuilds it in full. That paces the rebuilds of a new format
+// to the feeder's window, where every push after a deploy will otherwise
+// rebuild its repository at once.
+func indexMatches(g *store.Generation, emb *configfile.Embedding, ignoreHash, trigger string) bool {
+	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.DocumentPrompt == emb.DocumentPrompt && g.IgnoreHash == ignoreHash &&
+		(g.Format == runspec.IndexFormat || trigger == jobs.TriggerPush)
 }
 
 // indexIgnoreHash treats ignore rules as a set. Order and duplicates do not
@@ -489,8 +500,8 @@ func runOutcome(res executor.Result) string {
 }
 
 // indexResumeKey excludes credentials and scheduling limits, which do not
-// change vector contents. The format version invalidates incompatible code
-// changes to staging or embedText. A field that is empty unless configured
+// change vector contents. The version is the index format, which
+// invalidates incompatible code changes to staging or embedText. A field that is empty unless configured
 // is omitted when empty, so adding one leaves the keys of runs in flight
 // valid.
 func indexResumeKey(commit, mode, base string, active *store.Generation, emb *configfile.Embedding, ignoreHash string) string {
@@ -504,7 +515,7 @@ func indexResumeKey(commit, mode, base string, active *store.Generation, emb *co
 		Commit, Mode, Base, BaseRun, Ignore, Endpoint, Model string
 		Dims, ItemChars                                      int
 		DocumentPrompt                                       string `json:",omitempty"`
-	}{1, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars, emb.DocumentPrompt}
+	}{runspec.IndexFormat, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars, emb.DocumentPrompt}
 	data, _ := json.Marshal(identity) // Only strings and integers, so encoding cannot fail.
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }

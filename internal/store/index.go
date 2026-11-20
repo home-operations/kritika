@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // EnsureIndexSchema makes index_chunks match the instance's embedder. It
@@ -18,7 +19,12 @@ import (
 // every generation is dropped with the table and the table is rebuilt. So
 // the onboarding that follows indexes each repository afresh. rebuilt reports
 // that. The dashboard asks the admin to confirm such a change before it is
-// saved. Leader only.
+// saved.
+//
+// It also records this build's index format, runspec.IndexFormat. A new
+// format drops nothing: the generations of another format still answer
+// searches while the onboarding feeder rebuilds them, a few at a time.
+// Leader only.
 func (s *Store) EnsureIndexSchema(
 	ctx context.Context, appRole, model string, dims int, documentPrompt string,
 ) (rebuilt bool, err error) {
@@ -32,14 +38,14 @@ func (s *Store) EnsureIndexSchema(
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
 			return fmt.Errorf("store: lock index schema: %w", err)
 		}
-		curModel, curDims, curPrompt, ok, err := IndexSchemaIn(ctx, tx)
+		cur, ok, err := IndexSchemaIn(ctx, tx)
 		switch {
 		case err != nil:
 			return err
 		case !ok:
 			return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
-		case curModel == model && curDims == dims && curPrompt == documentPrompt:
-			return nil
+		case cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt:
+			return s.applyIndexFormat(ctx, tx, cur.Format)
 		}
 		// No generation is valid for a different embedder, so detach every
 		// repository and drop the vectors with the table.
@@ -60,19 +66,43 @@ func (s *Store) EnsureIndexSchema(
 	return rebuilt && err == nil, err
 }
 
-// IndexSchemaIn is the embedding model, dimension and document prompt that
-// index_chunks was built for, read in tx. ok is false when it was never
-// built.
-func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (model string, dims int, documentPrompt string, ok bool, err error) {
-	err = tx.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt FROM index_schema WHERE id = 1`).
-		Scan(&model, &dims, &documentPrompt)
+// applyIndexFormat records this build's index format in index_schema when
+// another is recorded.
+func (s *Store) applyIndexFormat(ctx context.Context, tx pgx.Tx, current int) error {
+	if current == runspec.IndexFormat {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE index_schema SET index_format = $1 WHERE id = 1`, runspec.IndexFormat); err != nil {
+		return fmt.Errorf("store: record index format: %w", err)
+	}
+	s.logger.Info("index format applied: onboarding rebuilds the indexes of another format a few at a time",
+		"format", runspec.IndexFormat, "previous", current)
+	return nil
+}
+
+// IndexSchema is what index_chunks was built for: the embedding model,
+// dimension and document prompt, and the index format that the leader's
+// build applied.
+type IndexSchema struct {
+	Model          string
+	Dims           int
+	DocumentPrompt string
+	Format         int
+}
+
+// IndexSchemaIn is the index schema, read in tx. ok is false when
+// index_chunks was never built.
+func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (IndexSchema, bool, error) {
+	var s IndexSchema
+	err := tx.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt, index_format FROM index_schema WHERE id = 1`).
+		Scan(&s.Model, &s.Dims, &s.DocumentPrompt, &s.Format)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", 0, "", false, nil
+		return IndexSchema{}, false, nil
 	}
 	if err != nil {
-		return "", 0, "", false, fmt.Errorf("store: read index schema: %w", err)
+		return IndexSchema{}, false, fmt.Errorf("store: read index schema: %w", err)
 	}
-	return model, dims, documentPrompt, true, nil
+	return s, true, nil
 }
 
 func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
@@ -113,8 +143,8 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 			return fmt.Errorf("store: create index_chunks: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt) VALUES (1, $1, $2, $3)`,
-		model, dims, documentPrompt); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt, index_format)
+		VALUES (1, $1, $2, $3, $4)`, model, dims, documentPrompt, runspec.IndexFormat); err != nil {
 		return fmt.Errorf("store: record index schema: %w", err)
 	}
 	return nil
@@ -256,8 +286,8 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 // account's candidates.
 var onboardCandidate = `r.enabled AND r.turned_on IS DISTINCT FROM false
 	AND (r.active_index_run_id IS NULL OR EXISTS (SELECT 1 FROM index_runs g, index_schema s
-	    WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt)
-	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt)))
+	    WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt, g.index_format)
+	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt, s.index_format)))
 	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE ` + liveIndexJob + ` AND j.args->>'repository_id' = r.id::text)
 	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
 	                AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)
@@ -298,10 +328,11 @@ func OnboardBacklog(ctx context.Context, tx pgx.Tx, retryAfter time.Duration) ([
 
 // OnboardCandidates lists up to limit enabled repositories, of those that
 // enabled also admits by account ID and traits. A listed repository's active
-// index generation is missing, or another embedder than index_schema records
-// built it. A listed repository has no index job queued or running. It also
-// has no onboarding job that finished within retryAfter without building an
-// index: one that failed or was skipped will fail or be skipped again.
+// index generation is missing, or another embedder or index format than
+// index_schema records built it. A listed repository has no index job queued
+// or running. It also has no onboarding job that finished within retryAfter
+// without building an index: one that failed or was skipped will fail or be
+// skipped again.
 //
 // A pod still on the previous configuration during a rollout can publish a
 // generation of another embedder. The gateway never queries that generation,

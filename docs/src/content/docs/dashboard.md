@@ -173,7 +173,9 @@ few at a time. It keeps [`onboardWindow`](/configuration/#how-kritika-runs) of
 them queued or running at once. Index jobs run one at a time on each replica
 unless `indexWorkers` says otherwise. So after you turn on many repositories,
 most of them wait. The **Index** column shows each one's place in line, such as
-**Waiting · #3**. The leader queues the next as each first index ends.
+**Waiting · #3**. The leader queues the next as each first index ends. It
+queues the rebuilds that a new embedder or a new release's index format
+needs the same way.
 
 A reindex goes ahead of the first indexes still waiting.
 

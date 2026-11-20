@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -64,33 +66,40 @@ func TestIndexResumeIdentity(t *testing.T) {
 
 // TestIndexMatches: an index is kept, and stepped incrementally, only when
 // the embedder that built it builds the same vectors. The query prompt
-// changes no stored vector.
+// changes no stored vector. A push steps an index of another format, which
+// the onboarding feeder rebuilds in its turn.
 func TestIndexMatches(t *testing.T) {
 	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: "}
-	built := store.Generation{Model: "model", Dims: 8, DocumentPrompt: "text: ", IgnoreHash: "ignore"}
+	built := store.Generation{Model: "model", Dims: 8, DocumentPrompt: "text: ", IgnoreHash: "ignore", Format: runspec.IndexFormat}
 	for _, tc := range []struct {
-		name string
-		edit func(*store.Generation)
-		want bool
+		name    string
+		edit    func(*store.Generation)
+		trigger string
+		want    bool
 	}{
-		{"same embedder", func(*store.Generation) {}, true},
-		{"another model", func(g *store.Generation) { g.Model = "other" }, false},
-		{"another dimension", func(g *store.Generation) { g.Dims = 16 }, false},
-		{"another document prompt", func(g *store.Generation) { g.DocumentPrompt = "" }, false},
-		{"other ignore rules", func(g *store.Generation) { g.IgnoreHash = "other" }, false},
+		{"same embedder", func(*store.Generation) {}, jobs.TriggerPush, true},
+		{"another model", func(g *store.Generation) { g.Model = "other" }, jobs.TriggerPush, false},
+		{"another dimension", func(g *store.Generation) { g.Dims = 16 }, jobs.TriggerPush, false},
+		{"another document prompt", func(g *store.Generation) { g.DocumentPrompt = "" }, jobs.TriggerPush, false},
+		{"other ignore rules", func(g *store.Generation) { g.IgnoreHash = "other" }, jobs.TriggerPush, false},
+		{"same format onboarded", func(*store.Generation) {}, jobs.TriggerOnboard, true},
+		{"older format pushed", func(g *store.Generation) { g.Format = runspec.IndexFormat - 1 }, jobs.TriggerPush, true},
+		{"newer format pushed", func(g *store.Generation) { g.Format = runspec.IndexFormat + 1 }, jobs.TriggerPush, true},
+		{"older format onboarded", func(g *store.Generation) { g.Format = runspec.IndexFormat - 1 }, jobs.TriggerOnboard, false},
+		{"older format reindexed", func(g *store.Generation) { g.Format = runspec.IndexFormat - 1 }, jobs.TriggerReindex, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := built
 			tc.edit(&g)
-			if got := indexMatches(&g, emb, "ignore"); got != tc.want {
+			if got := indexMatches(&g, emb, "ignore", tc.trigger); got != tc.want {
 				t.Fatalf("indexMatches = %v, want %v", got, tc.want)
 			}
 		})
 	}
-	if !indexMatches(&built, &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", QueryPrompt: "query: "}, "ignore") {
+	if !indexMatches(&built, &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", QueryPrompt: "query: "}, "ignore", jobs.TriggerPush) {
 		t.Fatal("a query prompt must not rebuild the index")
 	}
-	if indexMatches(nil, emb, "ignore") {
+	if indexMatches(nil, emb, "ignore", jobs.TriggerPush) {
 		t.Fatal("no generation matches")
 	}
 }

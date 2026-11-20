@@ -670,6 +670,13 @@ builds each index again, a few at a time, as `KRITIKA_ONBOARD_WINDOW`
 paces them. Removing the embedder keeps the index, and adding back the
 same model, dimension and document prompt uses it again.
 
+A kritika release can also change how it chunks code or what it embeds
+for each chunk: the index format. A new format drops no index. Each
+repository's index keeps answering similar-code lookups, and pushes keep
+it current, while the leader rebuilds it in the new format, a few at a
+time as `KRITIKA_ONBOARD_WINDOW` paces them. During a rollout, index jobs
+wait for a replica of the release that the leader runs.
+
 ### Prompts
 
 Many embedding models are trained with a task prompt in front of what

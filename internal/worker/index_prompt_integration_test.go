@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -109,7 +110,7 @@ func TestIndexDocumentPrompt(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !indexMatches(&g, file.Embedding, indexIgnoreHash(nil)) {
+		if !indexMatches(&g, file.Embedding, indexIgnoreHash(nil), jobs.TriggerOnboard) {
 			t.Errorf("index %+v does not match the embedder that built it", g)
 		}
 		if _, err := store.ActiveGenerationFor(ctx, tx, repo, "fake-embed", 8, "passage: "); err != nil {
@@ -150,6 +151,51 @@ func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
 	err := w.Work(ctx, job)
 	if _, ok := errors.AsType[*river.JobSnoozeError](err); !ok {
 		t.Fatalf("Work = %v, want the job snoozed", err)
+	}
+	if after := indexRunCount(t, st, account.ID(), repo); after != before {
+		t.Fatalf("index runs = %d, want %d: the job started one", after, before)
+	}
+}
+
+// TestIndexWaitsForTheAppliedFormat: a pod of another index format than the
+// one the leader's build applied, as during a rollout, snoozes the job
+// instead of building an index that the onboarding feeder rebuilds again.
+func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := owner.Exec(context.Background(), `UPDATE index_schema SET index_format = $1`, runspec.IndexFormat); err != nil {
+			t.Error(err)
+		}
+		_ = owner.Close(context.Background())
+	})
+	// The leader runs a build of the next format.
+	if _, err := owner.Exec(ctx, `UPDATE index_schema SET index_format = $1`, runspec.IndexFormat+1); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	repo := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
+	before := indexRunCount(t, st, account.ID(), repo)
+	w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Embedders: refusingEmbedders()}
+	job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{ID: 1, Attempt: 1},
+		Args: jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerOnboard}}
+	err = w.Work(ctx, job)
+	if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != appliedBuildWait {
+		t.Fatalf("Work = %v, want the job snoozed for %s", err, appliedBuildWait)
 	}
 	if after := indexRunCount(t, st, account.ID(), repo); after != before {
 		t.Fatalf("index runs = %d, want %d: the job started one", after, before)

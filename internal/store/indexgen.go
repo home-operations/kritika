@@ -58,19 +58,20 @@ func RecordDefaultBranch(ctx context.Context, tx pgx.Tx, repositoryID, branch st
 	return nil
 }
 
-// Generation is a repository's active index generation: what it covers
-// and the embedder it was built with.
+// Generation is a repository's active index generation: what it covers,
+// the embedder it was built with, and the index format (runspec.IndexFormat)
+// of the build that built it.
 type Generation struct {
 	ID, Commit, Model, IgnoreHash, DocumentPrompt string
-	Dims                                          int
+	Dims, Format                                  int
 }
 
 // FindGeneration reads a completed index generation, or ErrNotFound.
 func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, error) {
 	g := Generation{ID: runID}
-	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash, document_prompt FROM index_runs
+	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash, document_prompt, index_format FROM index_runs
 		WHERE id = $1 AND status = 'completed'`, runID).
-		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash, &g.DocumentPrompt)
+		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash, &g.DocumentPrompt, &g.Format)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -94,8 +95,8 @@ type NewIndexRun struct {
 	StrayAfter time.Duration
 }
 
-// StartIndexRun records a running index run and its runner run and
-// returns their ids. Checkpointed runs are left to SweepIndexProgress, which
+// StartIndexRun records a running index run, of this build's index format,
+// and its runner run and returns their ids. Checkpointed runs are left to SweepIndexProgress, which
 // locks their jobs before cleanup so a manual retry cannot race deletion.
 func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runnerRunID string, err error) {
 	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id IN (
@@ -107,10 +108,10 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO index_runs
 		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, document_prompt, mode, status, trigger,
-		 ignore_hash, resume_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10, $11) RETURNING id`,
+		 ignore_hash, resume_key, index_format)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10, $11, $12) RETURNING id`,
 		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Embedding.DocumentPrompt, r.Mode, r.Trigger,
-		r.IgnoreHash, r.ResumeKey).
+		r.IgnoreHash, r.ResumeKey, runspec.IndexFormat).
 		Scan(&runID); err != nil {
 		return "", "", fmt.Errorf("store: insert index run: %w", err)
 	}
