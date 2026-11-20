@@ -214,13 +214,22 @@ func TestSameBrief(t *testing.T) {
 	if !SameBrief(opening, stacked) || SameBrief(opening, merged) || !SameBrief(later, merged) {
 		t.Fatal("a conversation is not carried on by the stack it opened on alone")
 	}
-	// A pull request further down changes state under a base that stays.
+	// A pull request further down joins, or the stack is gone, under a
+	// base that stays.
 	deeper := merged
 	deeper.Below = []StackEntry{{Number: 2, Merged: true}, {Number: 3, Merged: true}}
 	unstacked := merged
 	unstacked.Below = nil
 	if SameBrief(later, deeper) || SameBrief(later, unstacked) {
 		t.Fatal("a conversation opened on another stack is carried on")
+	}
+	// One of the same pull requests changes state alone.
+	deeper.Below = []StackEntry{{Number: 2, Open: true}, {Number: 3, Merged: true}}
+	opening, _, _, _ = Build(deeper)
+	settled := deeper
+	settled.Below = []StackEntry{{Number: 2, Merged: true}, {Number: 3, Merged: true}}
+	if !SameBrief(opening, deeper) || SameBrief(opening, settled) {
+		t.Fatal("a conversation opened before a pull request below merged is carried on")
 	}
 	bare := then
 	bare.Body, bare.Issues = "", nil

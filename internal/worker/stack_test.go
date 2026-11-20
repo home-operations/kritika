@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"slices"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
@@ -17,10 +19,16 @@ type stackForge struct {
 	below []forge.StackEntry
 	err   error
 	asked []string
+	// stalled has the forge never answer.
+	stalled bool
 }
 
-func (f *stackForge) StackBelow(_ context.Context, owner, repo string, number int) ([]forge.StackEntry, error) {
+func (f *stackForge) StackBelow(ctx context.Context, owner, repo string, number int) ([]forge.StackEntry, error) {
 	f.asked = append(f.asked, owner, repo)
+	if f.stalled {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if number != 8 {
 		return nil, nil
 	}
@@ -48,4 +56,18 @@ func TestStackBelow(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStackBelowStalled: a forge that never answers costs the read's own
+// time, not its caller's.
+func TestStackBelowStalled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+		defer cancel()
+		started := time.Now()
+		got := stackBelow(ctx, &stackForge{stalled: true}, &pullRequest{repository: "o/r", number: 8}, slog.New(slog.DiscardHandler))
+		if got != nil || time.Since(started) != stackTimeout || ctx.Err() != nil {
+			t.Fatalf("stackBelow = %+v after %s, caller's context: %v; want none after %s", got, time.Since(started), ctx.Err(), stackTimeout)
+		}
+	})
 }

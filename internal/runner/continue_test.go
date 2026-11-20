@@ -41,11 +41,12 @@ func TestCarryOn(t *testing.T) {
 		t.Fatalf("fresh prompt lacks the full range and delta:\n%s", fresh.user)
 	}
 	pr := s.Prompt.PullRequest
-	opening := func(body string) string {
+	openingOn := func(body string, below []review.StackEntry) string {
 		msg, _, _, _ := review.Build(review.Input{Repository: s.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author,
-			Body: body, BaseRef: pr.BaseRef, Changed: []string{"main.go"}, Diff: agentDiff, BudgetTokens: review.UserBudget(fresh.system, 0)})
+			Body: body, BaseRef: pr.BaseRef, Below: below, Changed: []string{"main.go"}, Diff: agentDiff, BudgetTokens: review.UserBudget(fresh.system, 0)})
 		return msg
 	}
+	opening := func(body string) string { return openingOn(body, nil) }
 	conversation := func(edit func(*agent.Conversation)) string {
 		c := agent.Conversation{
 			System: fresh.system, Tools: agent.Run{Tools: tools, Submit: fresh.submit}.ToolDefs(), Tokens: 900,
@@ -61,6 +62,10 @@ func TestCarryOn(t *testing.T) {
 			t.Fatal(err)
 		}
 		return string(b)
+	}
+	// stackedOpening opens the conversation above pull request 3, still open.
+	stackedOpening := func(c *agent.Conversation) {
+		c.Messages[0].Text = openingOn(pr.Body, []review.StackEntry{{Number: 3, Open: true}})
 	}
 	for _, tc := range []struct {
 		name    string
@@ -81,7 +86,9 @@ func TestCarryOn(t *testing.T) {
 		{name: "an older description", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Messages[0].Text = opening("Adds a.") })},
 		{name: "a parent pull request opened on the base since", status: http.StatusOK, body: conversation(nil),
 			spec: func(s *runspec.Spec) { s.Prompt.DefaultBranch, s.Prompt.BaseOf = "trunk", 3 }},
-		{name: "the pull request below in the stack merged since", status: http.StatusOK, body: conversation(nil),
+		{name: "the same stack below", status: http.StatusOK, body: conversation(stackedOpening), carried: true,
+			spec: func(s *runspec.Spec) { s.Prompt.Below = []review.StackEntry{{Number: 3, Open: true}} }},
+		{name: "the pull request below in the stack merged since", status: http.StatusOK, body: conversation(stackedOpening),
 			spec: func(s *runspec.Spec) { s.Prompt.Below = []review.StackEntry{{Number: 3, Merged: true}} }},
 		{name: "too large for the run's budget", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Tokens = 60_000 })},
 		{name: "none served", status: http.StatusNotFound, body: `{"error":{"code":"not_found"}}`},
@@ -96,6 +103,9 @@ func TestCarryOn(t *testing.T) {
 			}))
 			defer srv.Close()
 			s := s
+			// A case's spec edits its own prompt, not the next case's.
+			prompt := *s.Prompt
+			s.Prompt = &prompt
 			s.GatewayURL, s.Model = srv.URL, &runspec.ModelEndpoint{Model: "review"}
 			if tc.spec != nil {
 				tc.spec(&s)
