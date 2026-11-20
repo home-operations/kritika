@@ -9,7 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -201,43 +204,189 @@ func readBlob(f *object.File) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-// pieces picks the declarations to store: the outermost ones that fit
-// MaxDeclLines. It descends into an oversized declaration's nested ones. A
-// file with no declarations is cut into windows.
+// pieces picks the line ranges to store, which cover every line of the file
+// that holds a word, but for comments that lead into no declaration. A
+// declaration that fits MaxDeclLines is one piece. An oversized one is
+// covered by its nested declarations, each cut the same way, and by windows
+// of the lines between them, under its own symbol. Unnamed statements at the
+// top level (a package clause, imports, assignments) are merged into runs of
+// up to WindowLines. Named declarations are never merged, so each keeps the
+// symbol that a search result reports. A file with no declarations is cut
+// into windows. No piece's text is over MaxChunkBytes unless it is one line.
 func pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
-		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, 0)
+		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, opts.MaxChunkBytes)
 	}
-	var out []chunk.Decl
-	var lastEnd int
-	for _, d := range f.Decls {
-		if d.StartLine <= lastEnd {
-			continue // nested inside a declaration already taken
+	c := cutter{f: f, opts: opts, kids: nesting(f.Decls)}
+	var out, run []chunk.Decl
+	flush := func() {
+		if len(run) > 0 {
+			out = append(out, merge(run))
+			run = run[:0]
 		}
-		if d.Lines() <= opts.MaxDeclLines {
-			out = append(out, d)
-			lastEnd = d.EndLine
+	}
+	for _, i := range c.kids[0] {
+		d := f.Decls[i]
+		if d.Symbol != "" && d.Kind != importKind || d.Lines() > opts.WindowLines {
+			flush()
+			out = append(out, c.cover(i)...)
 			continue
 		}
-		// Too big: take its nested declarations that fit. Windows for the
-		// rest mostly repeat them, so the remainder is dropped.
-		nested := false
-		for _, n := range f.Decls {
-			if n.StartLine > d.StartLine && n.EndLine <= d.EndLine && n.Lines() <= opts.MaxDeclLines && n.StartLine > lastEnd {
-				out = append(out, n)
-				lastEnd = n.EndLine
-				nested = true
+		if len(run) > 0 && (d.EndLine-run[0].StartLine >= opts.WindowLines ||
+			len(f.Text(run[0].StartLine, d.EndLine)) > opts.MaxChunkBytes) {
+			flush()
+		}
+		run = append(run, d)
+	}
+	flush()
+	var fit []chunk.Decl
+	for _, p := range out {
+		fit = append(fit, c.windows(p, p.StartLine, p.EndLine, opts.MaxDeclLines)...)
+	}
+	return fit
+}
+
+// importKind is the kind that chunk gives a package clause or an import.
+const importKind = "import"
+
+// merge is one piece for a run of top-level statements.
+func merge(run []chunk.Decl) chunk.Decl {
+	if len(run) == 1 {
+		return run[0]
+	}
+	kind := importKind
+	if slices.ContainsFunc(run, func(d chunk.Decl) bool { return d.Kind != importKind }) {
+		kind = "other"
+	}
+	return chunk.Decl{Kind: kind, StartLine: run[0].StartLine, EndLine: run[len(run)-1].EndLine}
+}
+
+// nesting lists, for each declaration of ds (sorted outermost first, as
+// chunk.File.Decls is), the indexes of the declarations directly inside it:
+// kids[i+1] for ds[i], and kids[0] for the top level.
+func nesting(ds []chunk.Decl) [][]int {
+	kids := make([][]int, len(ds)+1)
+	var stack []int
+	for i, d := range ds {
+		for len(stack) > 0 {
+			p := ds[stack[len(stack)-1]]
+			if p.StartByte <= d.StartByte && d.EndByte <= p.EndByte {
+				break
+			}
+			stack = stack[:len(stack)-1]
+		}
+		parent := 0
+		if len(stack) > 0 {
+			parent = stack[len(stack)-1] + 1
+		}
+		kids[parent] = append(kids[parent], i)
+		stack = append(stack, i)
+	}
+	return kids
+}
+
+// minGapLines is the fewest worded lines that a gap between an oversized
+// declaration's nested ones needs to be stored by itself. A smaller gap, such
+// as a field or a class's opening line, joins the nested declaration next to
+// it.
+const minGapLines = 3
+
+type cutter struct {
+	f    *chunk.File
+	opts Options
+	kids [][]int
+}
+
+// segment is a piece of an oversized declaration: a nested declaration
+// stored whole, or a part of it, or the lines between nested ones.
+type segment struct {
+	chunk.Decl
+	whole, gap bool
+}
+
+// cover returns the pieces of declaration i.
+func (c *cutter) cover(i int) []chunk.Decl {
+	d := c.f.Decls[i]
+	if d.Lines() <= c.opts.MaxDeclLines {
+		return []chunk.Decl{d}
+	}
+	var segs []segment
+	gap := func(start, end int) {
+		for start <= end && !c.worded(start) {
+			start++
+		}
+		for end >= start && !c.worded(end) {
+			end--
+		}
+		if start <= end {
+			segs = append(segs, segment{Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope, StartLine: start, EndLine: end, gap: true})
+		}
+	}
+	next := d.StartLine
+	for _, k := range c.kids[i+1] {
+		n := c.f.Decls[k]
+		gap(next, n.StartLine-1)
+		if n.Lines() <= c.opts.MaxDeclLines {
+			segs = append(segs, segment{Decl: n, whole: true})
+		} else {
+			for _, p := range c.cover(k) {
+				segs = append(segs, segment{Decl: p})
 			}
 		}
-		if !nested {
-			for _, w := range chunk.Windows([]byte(f.Text(d.StartLine, d.EndLine)), opts.WindowLines, opts.WindowOverlap, 0) {
-				out = append(out, chunk.Decl{
-					Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
-					StartLine: d.StartLine + w.StartLine - 1, EndLine: d.StartLine + w.EndLine - 1,
-				})
+		next = max(next, n.EndLine+1)
+	}
+	gap(next, d.EndLine)
+	var out []chunk.Decl
+	for j, s := range segs {
+		if s.gap && c.words(s.StartLine, s.EndLine) < minGapLines {
+			if j+1 < len(segs) && segs[j+1].whole && segs[j+1].EndLine-s.StartLine < c.opts.MaxDeclLines {
+				segs[j+1].StartLine = s.StartLine
+				continue
 			}
-			lastEnd = d.EndLine
+			if last := len(out) - 1; j > 0 && segs[j-1].whole && last >= 0 && s.EndLine-out[last].StartLine < c.opts.MaxDeclLines {
+				out[last].EndLine = s.EndLine
+				continue
+			}
+		}
+		if s.gap {
+			out = append(out, c.windows(s.Decl, s.StartLine, s.EndLine, c.opts.WindowLines)...)
+		} else {
+			out = append(out, s.Decl)
 		}
 	}
 	return out
+}
+
+// windows returns lines start to end as one piece attributed to d when they
+// are at most lines lines and MaxChunkBytes, or else cuts them into windows
+// of at most WindowLines and MaxChunkBytes.
+func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
+	text := c.f.Text(start, end)
+	if end-start < lines && len(text) <= c.opts.MaxChunkBytes || start == end {
+		d.StartLine, d.EndLine = start, end
+		return []chunk.Decl{d}
+	}
+	var out []chunk.Decl
+	for _, w := range chunk.Windows([]byte(text), c.opts.WindowLines, c.opts.WindowOverlap, c.opts.MaxChunkBytes) {
+		d.StartLine, d.EndLine = start+w.StartLine-1, start+w.EndLine-1
+		out = append(out, d)
+	}
+	return out
+}
+
+// worded reports whether line holds a letter or a digit, which a line of
+// brackets and punctuation alone does not.
+func (c *cutter) worded(line int) bool {
+	return strings.IndexFunc(c.f.Text(line, line), func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
+}
+
+// words counts the worded lines from start to end.
+func (c *cutter) words(start, end int) int {
+	n := 0
+	for l := start; l <= end; l++ {
+		if c.worded(l) {
+			n++
+		}
+	}
+	return n
 }
