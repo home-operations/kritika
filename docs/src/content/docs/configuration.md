@@ -986,7 +986,23 @@ worker for each repository's whole first build, so it can fill every
 `index` worker in the fleet without taking one that an update needs. Updates
 still share the embedder's slots with first builds. Each replica runs
 up to `indexWorkers` jobs on each queue, each with a runner pod. Updates
-queued on `index` by an earlier version finish there.
+queued on `index` by an earlier version finish there. A push to a repository
+whose index is queued for a rebuild on `index`, as after an index format
+change, joins that job and waits behind the onboarding wave with it.
+
+A release without the `index_update` queue (0.0.122 and earlier) never works
+it, and its pushes join the repository's job there rather than queue their
+own, which leaves that repository's index where it is. After rolling back to
+one, once no replica of the newer release is left, move those jobs to
+`index` as the database owner:
+
+```sql
+UPDATE river_job SET queue = 'index'
+WHERE kind = 'index' AND queue = 'index_update'
+  AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled');
+```
+
+A job moved while `running` is handed back once the leader finds it stuck.
 
 Other keys in the file are `webUrl` (required public URL), `addr`,
 `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `executor` and
