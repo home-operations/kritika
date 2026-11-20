@@ -500,14 +500,14 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 }
 
 // TestIndexAddedColumns: index_chunks has each column that a migration
-// added, and its index, however it was made: created by the leader, migrated
+// added, and its index if it has one, however it was made: created by the leader, migrated
 // from a table made before them, or made without them by the leader of a
 // build before them, as during a rollout, and then kept by a leader of this
 // build.
 func TestIndexAddedColumns(t *testing.T) {
 	for _, tt := range []struct{ column, index, migration string }{
 		{"content_hash", "index_chunks_content_hash_idx", "0064_index_content_hash"},
-		{"lexemes", "index_chunks_lexemes_idx", "0065_index_lexemes"},
+		{"lexemes", "", "0065_index_lexemes"},
 	} {
 		t.Run(tt.column, func(t *testing.T) {
 			ctx := t.Context()
@@ -520,7 +520,7 @@ func TestIndexAddedColumns(t *testing.T) {
 				var column, index bool
 				if err := s.owner.QueryRow(ctx, `SELECT
 					EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped),
-					to_regclass($2) IS NOT NULL`, tt.column, tt.index).Scan(&column, &index); err != nil {
+					$2 = '' OR to_regclass($2) IS NOT NULL`, tt.column, tt.index).Scan(&column, &index); err != nil {
 					t.Fatal(err)
 				}
 				if !column || !index {

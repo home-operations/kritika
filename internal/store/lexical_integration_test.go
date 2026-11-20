@@ -5,7 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
-	"maps"
+	"math"
 	"slices"
 	"testing"
 
@@ -16,8 +16,9 @@ import (
 
 // TestLexicalChunks: a chunk holds the words of its path, symbol and text as
 // InsertIndexChunks stores them. A lexical search ranks the generation's
-// chunks by the weight of the query's terms that each holds, leaves out the
-// excluded paths, and finds nothing of another account or generation.
+// chunks by the BM25 weight of the query's terms that each holds, leaves out
+// the excluded paths and the terms too common to search for, and finds
+// nothing of another account or generation.
 func TestLexicalChunks(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -27,9 +28,12 @@ func TestLexicalChunks(t *testing.T) {
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
+	// The repositories go too: other suites count the accounts' own.
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
-			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema;
+			DELETE FROM index_runs WHERE repository_id IN (SELECT id FROM repositories WHERE name LIKE 'lexical/%');
+			DELETE FROM repositories WHERE name LIKE 'lexical/%'`)
 	})
 	vec := []float32{1, 0, 0, 0, 0, 0, 0, 0}
 	build := func(account, name string, chunks []StagedChunk) string {
@@ -63,27 +67,11 @@ func TestLexicalChunks(t *testing.T) {
 	})
 	other := build("alpha", "lexical/other", []StagedChunk{{Path: "internal/lease/lease.go", Text: "AcquireLease"}})
 	foreign := build("beta", "lexical/foreign", []StagedChunk{{Path: "internal/lease/lease.go", Text: "AcquireLease"}})
-	alpha := accountID(t, s, "alpha")
 
-	err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		counts, chunks, err := TermCounts(ctx, tx, run, []string{"acquirelease", "slots", "absent", "internal"}, 3)
-		if err != nil {
-			return err
-		}
-		if chunks != 4 {
-			t.Errorf("chunks = %d, want 4", chunks)
-		}
-		// internal is in every chunk's path, and its count stops at the limit.
-		if want := map[string]int{"acquirelease": 2, "slots": 2, "absent": 0, "internal": 3}; !maps.Equal(counts, want) {
-			t.Errorf("counts = %v, want %v", counts, want)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	query := LexicalQuery{Terms: []string{"acquirelease", "slots", "acquire"}, Weights: []float64{2, 1, 0.5}, Vector: vec}
+	// Of the four chunks, two hold each of acquirelease, acquire and slots,
+	// one releaselease, and every one internal, in its path.
+	two, one := idf(2, 4), idf(1, 4)
+	query := LexicalQuery{Terms: []string{"acquirelease", "slots", "acquire", "internal"}, Vector: vec}
 	for _, tt := range []struct {
 		name    string
 		account string
@@ -92,34 +80,38 @@ func TestLexicalChunks(t *testing.T) {
 		exclude []string
 		want    []string
 	}{
-		{"ranked by weight", "alpha", run, []LexicalQuery{query}, nil, []string{
-			"0 internal/lease/lease.go 3.5 [acquirelease slots acquire]",
-			"0 internal/lease/release.go 2.5 [acquirelease acquire]",
-			"0 internal/other/other.go 1 [slots]",
+		{"ranked by weight, without a term every chunk holds", "alpha", run, []LexicalQuery{query}, nil, []string{
+			fmt.Sprintf("0 internal/lease/lease.go %.3f [acquire acquirelease slots]", 3*two),
+			fmt.Sprintf("0 internal/lease/release.go %.3f [acquire acquirelease]", 2*two),
+			fmt.Sprintf("0 internal/other/other.go %.3f [slots]", two),
 		}},
 		{"excluded paths", "alpha", run, []LexicalQuery{query}, []string{"internal/lease/lease.go"}, []string{
-			"0 internal/lease/release.go 2.5 [acquirelease acquire]",
-			"0 internal/other/other.go 1 [slots]",
+			fmt.Sprintf("0 internal/lease/release.go %.3f [acquire acquirelease]", 2*two),
+			fmt.Sprintf("0 internal/other/other.go %.3f [slots]", two),
 		}},
-		{"per query", "alpha", run, []LexicalQuery{{Terms: []string{"releaselease"}, Weights: []float64{1}, Vector: vec}, query}, nil, []string{
-			"0 internal/lease/release.go 1 [releaselease]",
-			"1 internal/lease/lease.go 3.5 [acquirelease slots acquire]",
-			"1 internal/lease/release.go 2.5 [acquirelease acquire]",
-			"1 internal/other/other.go 1 [slots]",
+		{"per query", "alpha", run, []LexicalQuery{{Terms: []string{"releaselease"}, Vector: vec}, query}, nil, []string{
+			fmt.Sprintf("0 internal/lease/release.go %.3f [releaselease]", one),
+			fmt.Sprintf("1 internal/lease/lease.go %.3f [acquire acquirelease slots]", 3*two),
+			fmt.Sprintf("1 internal/lease/release.go %.3f [acquire acquirelease]", 2*two),
+			fmt.Sprintf("1 internal/other/other.go %.3f [slots]", two),
 		}},
 		{"no terms", "alpha", run, []LexicalQuery{{Vector: vec}}, nil, nil},
-		{"another generation", "alpha", other, []LexicalQuery{query}, nil, []string{"0 internal/lease/lease.go 2.5 [acquirelease acquire]"}},
+		{"a term no chunk holds", "alpha", run, []LexicalQuery{{Terms: []string{"absent"}, Vector: vec}}, nil, nil},
+		{"another generation", "alpha", other, []LexicalQuery{query}, nil, []string{
+			fmt.Sprintf("0 internal/lease/lease.go %.3f [acquire acquirelease internal]", 3*idf(1, 1)),
+		}},
 		{"another account's generation", "alpha", foreign, []LexicalQuery{query}, nil, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := s.WithAccount(ctx, accountID(t, s, tt.account), func(tx pgx.Tx) error {
-				hits, err := LexicalChunks(ctx, tx, tt.run, tt.queries, tt.exclude, 3)
+				// A term in every chunk of a generation is too common.
+				hits, err := LexicalChunks(ctx, tx, tt.run, tt.queries, tt.exclude, 3, func(chunks int) int { return max(chunks, 2) })
 				if err != nil {
 					return err
 				}
 				var got []string
 				for _, h := range hits {
-					got = append(got, fmt.Sprintf("%d %s %g %v", h.Query, h.Chunk.Path, h.Lexical, h.Matched))
+					got = append(got, fmt.Sprintf("%d %s %.3f %v", h.Query, h.Chunk.Path, h.Lexical, h.Matched))
 					if h.Similarity < 0.99 {
 						t.Errorf("%s: similarity %g, want the query vector's", h.Chunk.Path, h.Similarity)
 					}
@@ -134,4 +126,9 @@ func TestLexicalChunks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// idf is BM25's inverse document frequency of a term in n of chunks.
+func idf(n, chunks int) float64 {
+	return math.Log(1 + (float64(chunks-n)+0.5)/(float64(n)+0.5))
 }

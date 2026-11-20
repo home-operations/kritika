@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -309,26 +308,34 @@ func (g *Server) similar(
 	return chunks, tokens, similarOK, nil
 }
 
-// Lexical search bounds: the terms of a query looked up, the longest
-// first, and the chunks that a term can be in, of its generation, and still
-// tell them apart. A term in more is left out of the search, and costs no
-// more than that many rows to count.
-const (
-	lexicalTerms  = 32
-	lexicalCommon = 200
-)
+// lexicalTerms is how many words of a query are searched for, the longest
+// first.
+const lexicalTerms = 32
+
+// lexicalCommon is how many of a generation's chunks a word can be in and
+// still tell them apart: one in a hundred, at least 20 and at most 200. A
+// word in more is left out of the search.
+func lexicalCommon(chunks int) int { return min(max(chunks/100, 20), 200) }
 
 // lexicalHits finds, for each query text, the perQuery chunks that hold the
-// most weight of its identifiers and words, outside the excluded paths. Each
-// hit's Matched are the query's spellings of its terms that the chunk holds.
+// most weight of its lexicalTerms longest words, outside the excluded paths.
+// Each hit's Matched are the query's spellings of the words that the chunk
+// holds.
 func lexicalHits(
 	ctx context.Context, tx pgx.Tx, runID string, texts []string, vectors [][]float32, exclude []string, perQuery int,
 ) ([]store.SimilarHit, error) {
-	queries, words, err := lexicalQueries(ctx, tx, runID, texts, vectors)
-	if err != nil || queries == nil {
-		return nil, err
+	words := make([][]lexical.Word, len(texts))
+	queries := make([]store.LexicalQuery, len(texts))
+	for i, text := range texts {
+		w := lexical.Words(text)
+		slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
+		words[i] = w[:min(len(w), lexicalTerms)]
+		queries[i].Vector = vectors[i]
+		for _, w := range words[i] {
+			queries[i].Terms = append(queries[i].Terms, w.Lexeme)
+		}
 	}
-	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery)
+	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery, lexicalCommon)
 	if err != nil {
 		return nil, err
 	}
@@ -336,52 +343,6 @@ func lexicalHits(
 		hits[i].Matched = spellings(words[hits[i].Query], hits[i].Matched)
 	}
 	return hits, nil
-}
-
-// lexicalQueries are the lexical searches of the query texts, and the words
-// of each text that they search for: its lexicalTerms longest, of those that
-// some chunks of the generation hold and fewer than lexicalCommon do. A term
-// weighs what BM25 gives a term in so many chunks of the generation, so a
-// name that few chunks hold counts for more than one that many do. They are
-// nil when the texts hold no words.
-func lexicalQueries(
-	ctx context.Context, tx pgx.Tx, runID string, texts []string, vectors [][]float32,
-) ([]store.LexicalQuery, [][]lexical.Word, error) {
-	words := make([][]lexical.Word, len(texts))
-	var terms []string
-	for i, text := range texts {
-		w := lexical.Words(text)
-		slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
-		words[i] = w[:min(len(w), lexicalTerms)]
-		for _, w := range words[i] {
-			terms = append(terms, w.Lexeme)
-		}
-	}
-	slices.Sort(terms)
-	terms = slices.Compact(terms)
-	if len(terms) == 0 {
-		return nil, nil, nil
-	}
-	counts, chunks, err := store.TermCounts(ctx, tx, runID, terms, lexicalCommon)
-	if err != nil {
-		return nil, nil, err
-	}
-	queries := make([]store.LexicalQuery, len(texts))
-	for i, ws := range words {
-		queries[i].Vector = vectors[i]
-		for _, w := range ws {
-			if n := counts[w.Lexeme]; n > 0 && n < lexicalCommon {
-				queries[i].Terms = append(queries[i].Terms, w.Lexeme)
-				queries[i].Weights = append(queries[i].Weights, idf(n, chunks))
-			}
-		}
-	}
-	return queries, words, nil
-}
-
-// idf is BM25's inverse document frequency of a term in n of chunks.
-func idf(n, chunks int) float64 {
-	return math.Log(1 + (float64(chunks-n)+0.5)/(float64(n)+0.5))
 }
 
 // spellings is the query's spellings of matched, its lexemes: the whole

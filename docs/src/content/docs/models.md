@@ -796,27 +796,30 @@ query is split the same way, and a `search_code` query's words match the
 parts of the identifiers they make up. The longest 32 words of a query
 are searched for. A word weighs what BM25 gives a word in that many of
 the repository's chunks, so a name few chunks hold counts for more than one
-many do, and a word in 200 chunks or more is too common to search for at
-all. Postgres's own full-text ranking is not used, as it knows nothing of
-the other chunks, and its parsers split code where it is not split.
+many do. A word in more than one chunk in a hundred, at least 20 and at
+most 200 chunks, is too common to search for at all. Postgres's own
+full-text ranking is not used, as it knows nothing of the other chunks,
+and its parsers split code where it is not split.
 
 Each search keeps a chunk on its own terms. The vector search keeps one
 at or above `similarFloor` and within `similarMargin` of its query's best,
 as before. The search by name keeps one that holds at least half the
 weight of its query's best match by name. A chunk either search keeps is
 kept. Each query's chunks are ordered by reciprocal rank fusion: a chunk
-scores 1 / (60 + its rank) in each search that keeps it, so one both keep
-comes first. Of those, an answer takes four for each query, and the
-answer's other bounds hold as before. A chunk the vector search keeps
-shows its similarity, as in `(similarity 0.81)`. One kept by name alone
-shows the names it shares with the query instead, as in `(shares
-AcquireLease, Lease)`, as its similarity sits under the floor and would
-read as a poor match.
+scores 1 / (60 + its rank) in the answer of each search that found it, so
+one that both find comes first. Of those, an answer takes four for each
+query, and the answer's other bounds hold as before. A chunk the vector
+search keeps shows its similarity, as in `(similarity 0.81)`. One kept by
+name alone shows the names it shares with the query instead, as in
+`(shares AcquireLease, Lease)`, as its similarity sits under the floor and
+would read as a poor match.
 
-The words are stored with each chunk, in a column of their own with a GIN
-index, by Postgres's built-in full-text search, so no extension beyond
-VectorChord is needed. A chunk indexed by a release without them matches
-no query by name until its repository's index is rebuilt.
+The words are stored with each chunk as a Postgres `tsvector`, so no
+extension beyond VectorChord is needed. A request's queries are searched
+for together, in one pass over the words of the generation's chunks in its
+[partition](/database/#the-similar-code-index), which no index can
+shorten under row-level security. A chunk indexed by a release without
+them matches no query by name until its repository's index is rebuilt.
 `kritika_similar_hits_total` counts each chunk by the search that found
 it: `vector`, `lexical` or `both`.
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -89,104 +88,101 @@ func SimilarChunks(
 	return hits, nil
 }
 
-const termCountsSQL = `SELECT q.t, (SELECT count(*) FROM (SELECT 1 FROM index_chunks
-		WHERE index_run_id = $1 AND lexemes @@ q.q LIMIT $3) s)
-	FROM unnest($2::text[], $4::text[]::tsquery[]) AS q (t, q)`
-
-// TermCounts counts, for each term, the chunks of the generation that hold
-// it, up to limit. A count at limit says that the term is too common to
-// tell chunks apart, and limit bounds what counting a common one costs. It
-// also counts the generation's chunks.
-func TermCounts(ctx context.Context, tx pgx.Tx, runID string, terms []string, limit int) (map[string]int, int, error) {
-	var chunks int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, runID).Scan(&chunks); err != nil {
-		return nil, 0, fmt.Errorf("store: count index chunks: %w", err)
-	}
-	rows, err := tx.Query(ctx, termCountsSQL, runID, terms, limit, tsLexemes(terms))
-	if err != nil {
-		return nil, 0, fmt.Errorf("store: count terms: %w", err)
-	}
-	counts := map[string]int{}
-	var term string
-	var n int
-	if _, err := pgx.ForEachRow(rows, []any{&term, &n}, func() error {
-		counts[term] = n
-		return nil
-	}); err != nil {
-		return nil, 0, fmt.Errorf("store: count terms: %w", err)
-	}
-	return counts, chunks, nil
-}
-
 // LexicalQuery is one query of a lexical search: its terms, lexemes of
-// package lexical, with their weights, and its vector, which measures each
-// hit's similarity.
+// package lexical, and its vector, which measures each hit's similarity.
 type LexicalQuery struct {
-	Terms   []string
-	Weights []float64
-	Vector  []float32
+	Terms  []string
+	Vector []float32
 }
 
-const lexicalChunksSQL = `WITH top AS (
-		SELECT c.id, m.score, m.matched
-		FROM index_chunks c,
-		LATERAL (SELECT sum(q.w) AS score, array_agg(q.t ORDER BY q.i) AS matched
-			FROM unnest($4::text[], $5::float8[], $6::text[]::tsquery[]) WITH ORDINALITY AS q (t, w, q, i) WHERE c.lexemes @@ q.q) m
-		WHERE c.index_run_id = $2 AND NOT (c.path = ANY($3)) AND c.lexemes @@ $7::tsquery
-		ORDER BY m.score DESC, c.path, c.start_line LIMIT $8
+// lexicalChunksSQL reads each chunk of the generation once, for every query
+// of a request together. Under row-level security no GIN index of the
+// lexemes could serve a search: @@ is not leakproof, so Postgres applies it
+// only to the rows that the policy has let through, never as an index
+// condition, and each query would read the whole generation anyway.
+//
+// The terms are joined rather than compared with = ANY: once a cached
+// statement runs on a generic plan, = ANY of a parameter checks each of the
+// generation's lexemes against every term in turn. The ranked chunks are
+// read again by the generation's key, one at a time, rather than by a join
+// that the planner, which cannot tell that few are ranked, makes over the
+// whole partition.
+//
+// $1 is the generation, $2 and $3 each query's index and term, $4 every
+// term once, $5 the generation's chunks and $6 the count at which a term is
+// too common to search for, $7 the excluded paths, $8 each query's vector
+// and $9 the hits each query keeps.
+const lexicalChunksSQL = `WITH held AS MATERIALIZED (
+		SELECT c.id, c.path, c.start_line, l
+		FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $1 AND l IN (SELECT unnest($4::text[]))
+	), weights AS (
+		SELECT q.qi, q.t, ln(1 + ($5::float8 - f.n + 0.5) / (f.n + 0.5)) AS w
+		FROM unnest($2::int[], $3::text[]) AS q (qi, t)
+		JOIN (SELECT l, count(*) AS n FROM held GROUP BY l) f ON f.l = q.t
+		WHERE f.n < $6
+	), ranked AS (
+		SELECT w.qi, h.id, sum(w.w) AS score, array_agg(w.t ORDER BY w.w DESC, w.t) AS matched,
+			row_number() OVER (PARTITION BY w.qi ORDER BY sum(w.w) DESC, h.path, h.start_line) AS rank
+		FROM held h JOIN weights w ON w.t = h.l
+		WHERE NOT (h.path = ANY($7::text[]))
+		GROUP BY w.qi, h.id, h.path, h.start_line
+	), top AS MATERIALIZED (
+		SELECT * FROM ranked WHERE rank <= $9
 	)
-	SELECT c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
-		1 - (c.embedding <=> $1::halfvec), top.score, top.matched
-	FROM top JOIN index_chunks c ON c.index_run_id = $2 AND c.id = top.id
-	ORDER BY top.score DESC, c.path, c.start_line`
+	SELECT r.qi, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
+		1 - (c.embedding <=> (($8::text[])[r.qi + 1])::halfvec), r.score, r.matched
+	FROM top r, LATERAL (SELECT * FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id) c
+	ORDER BY r.qi, r.rank`
 
 // LexicalChunks finds, for each query, the perQuery chunks of the generation
-// that hold the most weight of its terms, outside the excluded paths. It
-// matches whole lexemes alone: the weights, which the caller derives from
-// how many chunks hold each term, rank the chunks, as Postgres's own ranking
-// knows nothing of the other chunks. A query without terms finds nothing.
+// that hold the most weight of its terms, outside the excluded paths, with
+// the terms each holds, the heaviest first. A term weighs what BM25 gives a
+// term in so many of the generation's chunks: one that few hold counts for
+// more than one that many do. Postgres's own ranking knows nothing of the
+// other chunks. A term in common(chunks) or more of the generation's chunks
+// is left out as too common to tell them apart.
 func LexicalChunks(
-	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int,
+	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int, common func(chunks int) int,
 ) ([]SimilarHit, error) {
 	if exclude == nil {
 		exclude = []string{}
 	}
-	var hits []SimilarHit
+	var qis []int32
+	var terms, all []string
+	vectors := make([]string, 0, len(queries))
+	seen := map[string]bool{}
 	for i, q := range queries {
-		if len(q.Terms) == 0 {
-			continue
+		vectors = append(vectors, model.VectorLiteral(q.Vector))
+		for _, t := range q.Terms {
+			qis, terms = append(qis, int32(i)), append(terms, t)
+			if !seen[t] {
+				seen[t] = true
+				all = append(all, t)
+			}
 		}
-		if len(q.Weights) != len(q.Terms) {
-			return nil, fmt.Errorf("store: %d weights for %d terms", len(q.Weights), len(q.Terms))
-		}
-		lexemes := tsLexemes(q.Terms)
-		rows, err := tx.Query(ctx, lexicalChunksSQL, model.VectorLiteral(q.Vector), runID, exclude, q.Terms, q.Weights, lexemes,
-			strings.Join(lexemes, " | "), perQuery)
-		if err != nil {
-			return nil, fmt.Errorf("store: lexical chunks: %w", err)
-		}
-		hits, err = pgx.AppendRows(hits, rows, func(row pgx.CollectableRow) (SimilarHit, error) {
-			h := SimilarHit{Query: i}
-			c := &h.Chunk
-			err := row.Scan(&c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text, &h.Similarity,
-				&h.Lexical, &h.Matched)
-			c.Stage = contextpack.StageSimilar
-			return h, err
-		})
-		if err != nil {
-			return nil, fmt.Errorf("store: lexical chunks: %w", err)
-		}
+	}
+	if len(terms) == 0 {
+		return nil, nil
+	}
+	var chunks int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, runID).Scan(&chunks); err != nil {
+		return nil, fmt.Errorf("store: count index chunks: %w", err)
+	}
+	rows, err := tx.Query(ctx, lexicalChunksSQL, runID, qis, terms, all, chunks, common(chunks), exclude, vectors, perQuery)
+	if err != nil {
+		return nil, fmt.Errorf("store: lexical chunks: %w", err)
+	}
+	hits, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SimilarHit, error) {
+		var h SimilarHit
+		c := &h.Chunk
+		err := row.Scan(&h.Query, &c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text,
+			&h.Similarity, &h.Lexical, &h.Matched)
+		c.Stage = contextpack.StageSimilar
+		return h, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
 	return hits, nil
-}
-
-// tsLexemes are the tsquery texts of terms, each of the one lexeme. A
-// lexeme of package lexical is letters and digits alone, which quoting
-// needs no escaping for.
-func tsLexemes(terms []string) []string {
-	out := make([]string, len(terms))
-	for i, t := range terms {
-		out[i] = "'" + t + "'"
-	}
-	return out
 }

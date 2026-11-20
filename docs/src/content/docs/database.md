@@ -441,6 +441,12 @@ table is partitioned:
 - Each partition has its own VectorChord (`vchordrq`) index. A search reads
   the partition of its generation and that partition's index alone, about
   1/64 of the table.
+- The [search by name](/models/#search-by-name) reads the same partition: the
+  words of each of the generation's chunks (`lexemes`), once for all the
+  queries of a request. They have no index. Under row-level security no
+  index of them could serve the search, as Postgres applies the full-text
+  match operator, `@@`, which is not leakproof, only to the rows that the
+  policy has let through.
 
 The application role is granted `index_chunks` alone, and its row-level
 security policy applies to every partition read through it. The role cannot

@@ -241,16 +241,16 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 
 // evalTiming is the time the searches of the evaluation took.
 type evalTiming struct {
-	requests                       int
-	vector, counts, search, rerank time.Duration
+	requests                int
+	vector, lexical, rerank time.Duration
 }
 
 func (e evalTiming) String() string {
 	per := func(d time.Duration) time.Duration {
 		return (d / time.Duration(max(1, e.requests))).Round(100 * time.Microsecond)
 	}
-	return fmt.Sprintf("per request of %d: vector search %s, lexical term counts %s, lexical search %s, reranking %s",
-		e.requests, per(e.vector), per(e.counts), per(e.search), per(e.rerank))
+	return fmt.Sprintf("per request of %d: vector search %s, lexical search %s, reranking %s",
+		e.requests, per(e.vector), per(e.lexical), per(e.rerank))
 }
 
 // search runs both searches of a request, depth deep, as the gateway does.
@@ -265,21 +265,12 @@ func (ix evalIndexed) search(
 			return err
 		}
 		searched := time.Now()
-		lq, words, err := lexicalQueries(ctx, tx, ix.run, queries, vectors)
-		if err != nil {
-			return err
-		}
-		counted := time.Now()
-		if named, err = store.LexicalChunks(ctx, tx, ix.run, lq, exclude, depth); err != nil {
+		if named, err = lexicalHits(ctx, tx, ix.run, queries, vectors, exclude, depth); err != nil {
 			return err
 		}
 		timing.requests++
 		timing.vector += searched.Sub(started)
-		timing.counts += counted.Sub(searched)
-		timing.search += time.Since(counted)
-		for i := range named {
-			named[i].Matched = spellings(words[named[i].Query], named[i].Matched)
-		}
+		timing.lexical += time.Since(searched)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
