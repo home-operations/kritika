@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
@@ -112,6 +114,14 @@ func (g *Server) report(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost + " " + runspec.ReportSimilarExcludePath:
 		// The context pack carries the same paths, so the same bound holds.
 		if v, ok := decodeReport[runspec.SimilarExcludeReport](w, r, maxReportBody); ok {
+			if len(v.Paths) > maxSimilarExclude {
+				if account, found := g.Current.Get().AccountByID(c.grant.AccountID); found {
+					g.Metrics.SimilarRequest(account.Key(), contextpack.SimilarKindDiff, similarTooLarge)
+				}
+				refuse(w, http.StatusRequestEntityTooLarge, "invalid_request",
+					fmt.Sprintf("a run's similar-code searches leave out at most %d paths, not %d", maxSimilarExclude, len(v.Paths)))
+				return
+			}
 			g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.SetSimilarExclude(ctx, tx, id, v.Paths) })
 		}
 	default:

@@ -24,6 +24,7 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -400,6 +401,15 @@ apps:
 	if out := call("/v1/run/similar-exclude", gatewayToken, `{"paths":["main.go"]}`); out.Code != http.StatusUnauthorized {
 		t.Fatalf("exclusions reported with the run token: %d %s", out.Code, out.Body.String())
 	}
+	// A report of more paths than a search can carry is refused, which
+	// leaves the run without similar code, and holds nothing.
+	tooMany, err := json.Marshal(runspec.SimilarExcludeReport{Paths: slices.Repeat([]string{"x.go"}, maxSimilarExclude+1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := call("/v1/run/similar-exclude", reportToken, string(tooMany)); out.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("too many exclusions: %d %s", out.Code, out.Body.String())
+	}
 	for _, body := range []string{`{"paths":["main.go","old.go"]}`, `{"paths":["other.go"]}`} {
 		if out := call("/v1/run/similar-exclude", reportToken, body); out.Code != http.StatusNoContent {
 			t.Fatalf("report %s: %d %s", body, out.Code, out.Body.String())
@@ -420,7 +430,7 @@ apps:
 	if out := call("/v1/similar", gatewayToken, `{"queries":["hello"],"kind":"other"}`); out.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown kind = %d", out.Code)
 	}
-	want := map[string]float64{"diff/ok": 2, "diff/empty": 1, "diff/no_queries": 1, "unknown/invalid": 1}
+	want := map[string]float64{"diff/ok": 2, "diff/empty": 1, "diff/no_queries": 1, "diff/too_large": 1, "unknown/invalid": 1}
 	if got := similarRequests(t, reg); !maps.Equal(got, want) {
 		t.Fatalf("requests counted %v, want %v", got, want)
 	}

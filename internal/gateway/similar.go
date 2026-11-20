@@ -44,6 +44,14 @@ const similarDepth = similarPerQuery
 // holds however many files a change touches.
 const maxSimilarBody = 256 << 10
 
+// maxSimilarExclude is the most paths a run's similar-code searches leave
+// out. The run's report is read back for every search and carried by each of
+// its statements, a dozen in one request. A request's own exclusions, under
+// maxSimilarBody, stopped at a few thousand paths. A change of more is mostly
+// renamed, vendored or generated files, which similar code helps little, so
+// its review goes without, as it did then.
+const maxSimilarExclude = 5000
+
 // What became of a similar-code request, as kritika_similar_requests_total
 // counts it, and of a hit that it found, as kritika_similar_hits_total does.
 const (
@@ -130,18 +138,23 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	outcome = similarError
 	var jobID int64
 	var excluded []string
-	err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
-		var err error
-		if jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID); err != nil {
+	// A request without queries searches nothing, so it reads nothing of the
+	// run: it costs what any request that the run token admits does, and one
+	// read of the repository's generation.
+	if len(req.Queries) > 0 {
+		err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
+			var err error
+			if jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID); err != nil {
+				return err
+			}
+			excluded, err = store.SimilarExclude(ctx, tx, c.grant.RunID)
 			return err
+		})
+		if err != nil {
+			c.logger.Error("gateway: run not read", "error", err)
+			refuse(w, http.StatusInternalServerError, "server_error", "the run could not be read")
+			return
 		}
-		excluded, err = store.SimilarExclude(ctx, tx, c.grant.RunID)
-		return err
-	})
-	if err != nil {
-		c.logger.Error("gateway: run not read", "error", err)
-		refuse(w, http.StatusInternalServerError, "server_error", "the run could not be read")
-		return
 	}
 	var reserved int64
 	if chars > 0 {
