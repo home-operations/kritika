@@ -559,25 +559,6 @@ func TestSimilarCode(t *testing.T) {
 	}
 }
 
-// TestHunkQueries: each hunk is led by its path, the removed lines are
-// left out, and the count and size are bounded.
-func TestHunkQueries(t *testing.T) {
-	got := hunkQueries(agentDiff)
-	if want := []string{"main.go\npackage main\n\nfunc b() {}\n"}; !slices.Equal(got, want) {
-		t.Fatalf("hunkQueries = %q, want %q", got, want)
-	}
-	var many strings.Builder
-	for range contextpack.SimilarQueries + 3 {
-		many.WriteString(agentDiff)
-	}
-	if got := hunkQueries(many.String()); len(got) != contextpack.SimilarQueries {
-		t.Fatalf("%d queries, want %d", len(got), contextpack.SimilarQueries)
-	}
-	if got := hunkQueries(""); len(got) != 0 {
-		t.Fatalf("queries of an empty diff = %q", got)
-	}
-}
-
 // TestSearchTool: search_code asks the gateway once per call, formats what
 // it gets back, and stops at its call limit.
 func TestSearchTool(t *testing.T) {

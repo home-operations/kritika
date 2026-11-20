@@ -1,11 +1,14 @@
 package runner
 
 import (
+	"cmp"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -93,4 +96,98 @@ func TestSimilarContextExclusions(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fileDiff is one file's diff of hunks, each given as its "@@" line and
+// its lines.
+func fileDiff(oldPath, newPath string, hunks ...string) string {
+	from, to := "a/"+oldPath, "b/"+newPath
+	if oldPath == "" {
+		from = "/dev/null"
+	}
+	if newPath == "" {
+		to = "/dev/null"
+	}
+	name := cmp.Or(newPath, oldPath)
+	return "diff --git a/" + name + " b/" + name + "\n--- " + from + "\n+++ " + to + "\n" + strings.Join(hunks, "")
+}
+
+// added is a hunk of a new file of lines.
+func added(lines ...string) string {
+	return fmt.Sprintf("@@ -0,0 +1,%d @@\n+", len(lines)) + strings.Join(lines, "\n+") + "\n"
+}
+
+func TestHunkQueries(t *testing.T) {
+	license := strings.Repeat("// Licensed under the terms that are long enough to fill a query on their own.\n", 50)
+	newFile := added(append(strings.Split(strings.TrimSuffix(license, "\n"), "\n"),
+		"package lib", "", "import \"fmt\"", "", "func A() {", "\tfmt.Println(\"a\")", "}", "", "func B() {}")...)
+	filler := make([]string, 0, 200)
+	for i := range 200 {
+		filler = append(filler, fmt.Sprintf("line %d of a text with no declarations to cut it by", i))
+	}
+	tests := []struct {
+		name   string
+		diff   string
+		ignore []string
+		want   []string
+	}{
+		{name: "the changed region as the head has it", diff: agentDiff, want: []string{"package main\n\nfunc b() {}\n"}},
+		{
+			name: "a little context around the changed lines",
+			diff: fileDiff("a.go", "a.go", "@@ -1,9 +1,9 @@\n c1\n c2\n c3\n c4\n c5\n-old\n+new\n c6\n c7\n"),
+			want: []string{"c3\nc4\nc5\nnew\nc6\nc7\n"},
+		},
+		{
+			name: "ignored paths and paths the index holds no chunk of",
+			diff: fileDiff("vendor/x.go", "vendor/x.go", added("func v() {}")) + fileDiff("", "go.sum", added("example.com/m v1.0.0 h1:x")) +
+				fileDiff("", "a.go", added("func a() {}")),
+			ignore: []string{"vendor/**"}, want: []string{"func a() {}\n"},
+		},
+		{
+			name: "a hunk that adds nothing and a deleted file",
+			diff: fileDiff("a.go", "a.go", "@@ -1,3 +1,2 @@\n x\n-y\n z\n", "@@ -9,2 +8,3 @@\n p\n+\n q\n") +
+				fileDiff("gone.go", "", "@@ -1,1 +0,0 @@\n-func g() {}\n"),
+		},
+		{
+			name: "files in turn, the most changed first",
+			diff: fileDiff("a.go", "a.go", "@@ -1,1 +1,2 @@\n a\n+a1\n", "@@ -20,1 +21,2 @@\n a\n+a2\n", "@@ -40,1 +42,2 @@\n a\n+a3\n") +
+				fileDiff("b.go", "b.go", "@@ -1,1 +1,5 @@\n b\n+b1\n+b2\n+b3\n+b4\n"),
+			want: []string{"b\nb1\nb2\nb3\nb4\n", "a\na1\n", "a\na2\n", "a\na3\n"},
+		},
+		{
+			name: "a large new file by its declarations, not its license",
+			diff: fileDiff("", "lib.go", newFile),
+			want: []string{"func A() {\n\tfmt.Println(\"a\")\n}\n", "func B() {}\n"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hunkQueries(tt.diff, tt.ignore); !slices.Equal(got, tt.want) {
+				t.Fatalf("hunkQueries = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	t.Run("a large region without declarations in windows of its changed lines", func(t *testing.T) {
+		got := hunkQueries(fileDiff("", "notes.md", added(filler...)), nil)
+		if len(got) < 2 || !strings.HasPrefix(got[0], "line 0 ") || !strings.HasPrefix(got[1], "line ") {
+			t.Fatalf("windows = %q", got)
+		}
+		for _, q := range got {
+			if len(q) > contextpack.SimilarQueryChars {
+				t.Fatalf("a window of %d characters", len(q))
+			}
+		}
+	})
+	t.Run("bounded", func(t *testing.T) {
+		var many strings.Builder
+		for i := range contextpack.SimilarQueries + 3 {
+			many.WriteString(fileDiff("", fmt.Sprintf("f%d.go", i), added(fmt.Sprintf("func f%d() {}", i))))
+		}
+		if got := hunkQueries(many.String(), nil); len(got) != contextpack.SimilarQueries {
+			t.Fatalf("%d queries, want %d", len(got), contextpack.SimilarQueries)
+		}
+		if got := hunkQueries("", nil); len(got) != 0 {
+			t.Fatalf("queries of an empty diff = %q", got)
+		}
+	})
 }

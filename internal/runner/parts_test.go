@@ -195,7 +195,7 @@ func TestPartPromptsContext(t *testing.T) {
 		var req contextpack.SimilarRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		text := "func z() {}"
-		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "b/y.go") {
+		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "yyyy") {
 			text = strings.Repeat("x", 60_000)
 		}
 		_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
@@ -207,7 +207,8 @@ func TestPartPromptsContext(t *testing.T) {
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
 	s.Agent.MaxPromptTokens = 24_000
 	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
-	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
+	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10) + strings.ReplaceAll(sizedDiff("b/y.go", 50<<10), "xxxx", "yyyy"),
+		Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
 	parts, chunks, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
 		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))

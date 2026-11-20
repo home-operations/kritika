@@ -359,7 +359,7 @@ func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Sec
 func similarCodeFor(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
-	queries := hunkQueries(diff)
+	queries := hunkQueries(diff, p.Ignore)
 	if len(queries) == 0 {
 		return contextpack.SimilarResponse{}, false
 	}

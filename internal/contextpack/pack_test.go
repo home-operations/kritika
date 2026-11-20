@@ -288,15 +288,6 @@ func TestParseDiff(t *testing.T) {
 	}
 }
 
-func TestHunks(t *testing.T) {
-	diff := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -3,4 +3,5 @@\n a\n-b\n+B\n+C\n d\n@@ -20,2 +21,2 @@\n-x\n+y\n z\n" +
-		"diff --git a/gone b/gone\n--- a/gone\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n"
-	h := Hunks(diff)
-	if len(h) != 2 || h[0].Path != "x.go" || h[0].Text != "a\nB\nC\nd\n" || h[1].Text != "y\nz\n" {
-		t.Fatalf("hunks = %+v", h)
-	}
-}
-
 func TestPickPrefersDistinctFiles(t *testing.T) {
 	cs := []Chunk{{Path: "a", StartLine: 1}, {Path: "a", StartLine: 10}, {Path: "b", StartLine: 1}}
 	got := pick(cs, 2)
@@ -344,11 +335,6 @@ func TestDiffEdges(t *testing.T) {
 		"@@ -1,2 +1,2 @@\n a\n-b\n+B\n" + diff
 	if renames := Renames(moved); len(renames) != 1 || renames["old.go"] != "moved.go" {
 		t.Errorf("renames = %v", renames)
-	}
-	h := Hunks(diff)
-	if len(h) != 2 || h[0] != (Hunk{Path: "new.go", Text: "package x\nfunc F() {}\n"}) ||
-		h[1] != (Hunk{Path: "q.sql", Text: "SELECT 1;\n++ new comment\nSELECT 2;\n"}) {
-		t.Fatalf("hunks = %+v", h)
 	}
 }
 

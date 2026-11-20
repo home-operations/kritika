@@ -61,7 +61,7 @@ func TestPartSimilarCode(t *testing.T) {
 			s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(parallel)
 			diffs := make([]string, count)
 			for i := range diffs {
-				diffs[i] = sizedDiff(fmt.Sprintf("part%d.go", i), 80)
+				diffs[i] = fileDiff("", fmt.Sprintf("part%d.go", i), added(fmt.Sprintf("part%d.go", i)))
 			}
 			out, err := partSimilarCode(ctx, s, runspec.Secrets{GatewayToken: "t"}, diffs, slog.New(slog.DiscardHandler))
 			if err != nil {
@@ -100,7 +100,7 @@ func TestPartSimilarCodeOptionalFailure(t *testing.T) {
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
-	diffs := []string{sizedDiff("failed.go", 80), sizedDiff("ok.go", 80), sizedDiff("unindexed.go", 80), ""}
+	diffs := []string{fileDiff("", "failed.go", added("failed.go")), fileDiff("", "ok.go", added("ok.go")), fileDiff("", "unindexed.go", added("unindexed.go")), ""}
 	out, err := partSimilarCode(t.Context(), s, runspec.Secrets{}, diffs, slog.New(slog.DiscardHandler))
 	if err != nil || len(out) != len(diffs) || out[0].Indexed || !out[1].Indexed || out[2].Indexed || out[3].Indexed {
 		t.Fatalf("optional retrieval = %+v, %v", out, err)
