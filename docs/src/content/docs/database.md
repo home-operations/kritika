@@ -455,10 +455,14 @@ leader's hourly retention sweep converts such a table, first when the leader
 starts. It copies and rebuilds nothing:
 
 1. It takes the table's exclusive lock, and then a lock on `accounts`,
-   `repositories` and `index_runs` that blocks writes to them. Each wait is
-   bounded to five seconds. While the sweep waits, searches and index builds
-   queue behind it. When a wait times out, the sweep logs a warning, changes
-   nothing and tries again an hour later.
+   `repositories` and `index_runs` that blocks writes to them. A publication
+   takes those locks in the other order, so the two can wait on each other.
+   Each of the sweep's waits is bounded to an eighth of PostgreSQL's
+   `deadlock_timeout`, so the sweep gives way before PostgreSQL would abort
+   the publication. While the sweep waits, searches and index builds queue
+   behind it. When a wait times out, the sweep changes nothing and tries
+   again a second later. After five tries it logs a warning and tries again
+   an hour later.
 2. It renames the table, with its indexes, to `index_chunks_legacy`. It
    creates the partitioned `index_chunks` and attaches the old table as its
    partition for everything created until then. Its indexes and foreign keys

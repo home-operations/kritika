@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -297,6 +298,102 @@ func drainLegacy(t *testing.T, s *Store) int64 {
 			return moved
 		}
 		moved += n
+	}
+}
+
+// waitForLockWait waits until a transaction waits for a lock of mode on the
+// relation, or until done is closed.
+func waitForLockWait(t *testing.T, s *Store, relation uint32, mode string, done <-chan struct{}) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		var waiting bool
+		if err := s.owner.QueryRow(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_locks
+			WHERE locktype = 'relation' AND relation = $1 AND mode = $2 AND NOT granted)`, relation, mode).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("no transaction waited for %s on relation %d", mode, relation)
+}
+
+// TestPartitionIndexChunksYieldsToPublication: a publication that holds its
+// repository and then waits for index_chunks behind the partitioner, which
+// then waits for repositories, publishes. The partitioner gives way, and
+// partitions the table once the publication commits.
+func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-yield"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-yield", "index-yield/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true)
+	account := accountID(t, s, "index-yield")
+	repo := configfile.RepositoryID(account, "index-yield/one")
+	partitionRun(t, s, account, repo, true, "a.go")
+	next := partitionRun(t, s, account, repo, false, "b.go")
+	var table uint32
+	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid`).Scan(&table); err != nil {
+		t.Fatal(err)
+	}
+
+	// A writer holds index_chunks, so the partitioner queues for it.
+	writer, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = writer.Rollback(context.Background()) }()
+	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	partitioned := make(chan error, 1)
+	go func() {
+		_, err := s.PartitionIndexChunks(ctx, "kritika_app")
+		partitioned <- err
+	}()
+	waitForLockWait(t, s, table, "AccessExclusiveLock", nil)
+	// The publication updates the repository and then queues behind the
+	// partitioner for index_chunks.
+	published := make(chan error, 1)
+	publishedDone := make(chan struct{})
+	go func() {
+		defer close(publishedDone)
+		published <- s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return ActivateGeneration(ctx, tx, repo, next)
+		})
+	}()
+	waitForLockWait(t, s, table, "RowExclusiveLock", publishedDone)
+	if err := writer.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-published; err != nil {
+		t.Fatalf("the publication failed beside the partitioner: %v", err)
+	}
+	if err := <-partitioned; err != nil {
+		t.Logf("the partitioner gave way: %v", err)
+	}
+	if _, err := s.PartitionIndexChunks(ctx, "kritika_app"); err != nil {
+		t.Fatal(err)
+	}
+	var kind string
+	if err := s.owner.QueryRow(ctx, `SELECT relkind::text FROM pg_class WHERE oid = 'index_chunks'::regclass`).Scan(&kind); err != nil {
+		t.Fatal(err)
+	}
+	if kind != "p" {
+		t.Fatalf("index_chunks kind %q after the publication, want partitioned", kind)
+	}
+	if got := similarPaths(t, s, account, next); strings.Join(got, ",") != "b.go" {
+		t.Fatalf("search of the published generation found %v, want b.go", got)
 	}
 }
 

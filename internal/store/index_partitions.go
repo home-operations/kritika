@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // indexChunkPartitions is how many hash partitions of index_run_id hold the
@@ -88,10 +89,52 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 // before partitioning created, by the suffix of their names.
 var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_idx", "account_id_idx", "embedding_idx"}
 
-// partitionLockTimeout bounds each lock that PartitionIndexChunks waits for.
-// While it waits for index_chunks, every search and build queues behind it,
-// so it gives up rather than stall them, and the next sweep tries again.
-const partitionLockTimeout = "5s"
+// The partitioner waits for locks that publications and embedding batches
+// also take, in another order, so it can close a cycle with one of them. It
+// is to be the one that gives way: yieldLocks bounds each of its waits to
+// 1/lockYieldShare of deadlock_timeout. Its waits together then end before a
+// transaction that began to wait on it after its first request runs the
+// deadlock check, which aborts that transaction. lockYieldShare leaves room
+// for the four waits of PartitionIndexChunks. While it waits for
+// index_chunks, every search and build queues behind it, which the short
+// waits also bound. A schema change tries partitionTries times,
+// partitionRetryPause apart, and the next sweep tries again.
+const (
+	lockYieldShare      = 8
+	partitionTries      = 5
+	partitionRetryPause = time.Second
+)
+
+// yieldLocks sets the transaction's lock_timeout to 1/lockYieldShare of
+// deadlock_timeout.
+func yieldLocks(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, `SELECT set_config('lock_timeout',
+		greatest(1, extract(epoch FROM current_setting('deadlock_timeout')::interval) * 1000 / $1)::int || 'ms', true)`,
+		lockYieldShare)
+	return err
+}
+
+// lockNotAvailable reports whether err is a lock wait that lock_timeout ended.
+func lockNotAvailable(err error) bool {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	return ok && pgErr.Code == "55P03"
+}
+
+// retryLocks runs fn again while it gives up a lock wait, partitionTries
+// times at most.
+func retryLocks(ctx context.Context, fn func() error) error {
+	for try := 1; ; try++ {
+		err := fn()
+		if !lockNotAvailable(err) || try == partitionTries {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(partitionRetryPause):
+		}
+	}
+}
 
 // PartitionIndexChunks makes an index_chunks that a build before
 // partitioning created, a plain table, the legacy partition of a partitioned
@@ -110,6 +153,19 @@ func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool,
 	if s.owner == nil {
 		return false, errors.New("store: PartitionIndexChunks needs the owner connection")
 	}
+	var partitioned bool
+	err := retryLocks(ctx, func() error {
+		var err error
+		partitioned, err = s.partitionIndexChunks(ctx, appRole)
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("store: partition index_chunks: %w", err)
+	}
+	return partitioned, nil
+}
+
+func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool, error) {
 	var partitioned bool
 	err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
@@ -130,9 +186,13 @@ func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool,
 		started := time.Now()
 		// index_chunks first: a transaction that writes it and then one of
 		// the tables that its foreign keys reference, as an embedding batch
-		// does, finishes before this one locks those.
+		// does, finishes before this one locks those. A publication takes
+		// them the other way round, its repository and index_runs before
+		// index_chunks, and this transaction gives way to it.
+		if err := yieldLocks(ctx, tx); err != nil {
+			return err
+		}
 		for _, stmt := range []string{
-			`SET LOCAL lock_timeout = '` + partitionLockTimeout + `'`,
 			`LOCK TABLE index_chunks IN ACCESS EXCLUSIVE MODE`,
 			`LOCK TABLE accounts, repositories, index_runs IN SHARE ROW EXCLUSIVE MODE`,
 		} {
@@ -172,10 +232,7 @@ func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool,
 		partitioned = true
 		return nil
 	})
-	if err != nil {
-		return false, fmt.Errorf("store: partition index_chunks: %w", err)
-	}
-	return partitioned, nil
+	return partitioned, err
 }
 
 // DrainLegacyIndexChunks moves one repository's active generation from
