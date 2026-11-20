@@ -153,6 +153,47 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestMigrationGivesWayToALock: a migration that changes a busy table gives
+// up its wait for the table's lock rather than hold up every query that
+// queues behind it, and applies once the lock is free. A check it replaces
+// is validated without that lock.
+func TestMigrationGivesWayToALock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	validated := func() bool {
+		t.Helper()
+		var ok bool
+		if err := s.owner.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`).Scan(&ok); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if !validated() {
+		t.Fatal("usage_role_check is not validated after Migrate")
+	}
+	if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version IN ('0068_usage_rerank', '0071_usage_rerank_validate')`); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Exec(ctx, `LOCK TABLE usage IN ACCESS SHARE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	err = s.Migrate(ctx, "kritika_app")
+	_ = reader.Rollback(ctx)
+	if !lockNotAvailable(err) {
+		t.Fatalf("Migrate while usage is read = %v, want a lock timeout", err)
+	}
+	if err := s.Migrate(ctx, "kritika_app"); err != nil {
+		t.Fatalf("Migrate once usage is free: %v", err)
+	}
+	if !validated() {
+		t.Fatal("usage_role_check is not validated after Migrate again")
+	}
+}
+
 // twoAccounts serves alpha and beta. alphaAccount serves alpha alone.
 const (
 	twoAccounts = `

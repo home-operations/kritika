@@ -335,6 +335,14 @@ start its duties before the old one notices that it lost the lock. For that
 reason, `KritikaMultipleLeaders` in the chart's alerts waits longer than one
 interval.
 
+A migration that changes a table that searches, index builds or model calls
+use waits at most five seconds for that table's lock, so that the queries
+queued behind it wait no longer. When another transaction holds the lock
+longer, the migration fails and the leader logs it and releases the leader
+lock. A leader tries the migration again within one
+`KRITIKA_LEADER_RETRY_INTERVAL`. Replicas start working jobs once every
+migration is applied.
+
 CNPG's disruption budget for the primary allows no eviction, so draining the
 primary's node waits until the primary moves. Switch over first, with the
 [`cnpg` kubectl plugin](https://cloudnative-pg.io/docs/1.30/kubectl-plugin/):
