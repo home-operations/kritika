@@ -834,7 +834,9 @@ choice. A repository that is off, that its connection no longer reaches,
 or whose account no connection serves is neither reviewed, polled nor
 indexed. Its index is dropped after it is off for `KRITIKA_INDEX_GRACE`,
 counted from the leader's hourly sweep that first finds it off. A
-repository that runs again before then keeps its index.
+repository that runs again before then keeps its index. For this, a
+repository whose default branch's `.kritika.yaml` sets `enabled: false` is
+off from the index job that finds it so until one finds it on again.
 
 ## `accounts`
 

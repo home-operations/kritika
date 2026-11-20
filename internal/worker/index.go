@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -117,16 +118,9 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger = logger.With("commit", review.ShortSHA(commit))
 
-	// The repository's own .kritika.yaml, as of the commit indexed, can stop
-	// indexing and add ignore globs.
-	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
-	if err != nil {
-		return w.waitOutForge(ctx, job, account.Key(), logger, err)
-	}
-	eff, _ := effective(settings, doc)
-	if !eff.Enabled {
-		logger.Info("index skipped, disabled in .kritika.yaml")
-		return nil
+	eff, off, err := w.repoConfig(ctx, job, account.Key(), client, repo, commit, settings, logger)
+	if err != nil || off {
+		return err
 	}
 	ignoreHash := indexIgnoreHash(eff.Ignore)
 	active, err := w.activeGeneration(ctx, args.AccountID, repo.ActiveRun)
@@ -220,6 +214,37 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return river.JobSnooze(0)
 	}
 	return nil
+}
+
+// repoConfig reads the repository's own .kritika.yaml as of commit, which
+// can turn it off and add ignore globs, and returns what applies to the
+// index job. off says that the file turns the repository off, and the job
+// indexes nothing. Only an index job reads the default branch's file, so it
+// records whether it does for SweepStoppedIndexes, which drops the index of
+// a repository off for longer than the grace.
+func (w *Index) repoConfig(
+	ctx context.Context, job *river.Job[jobs.IndexArgs], account string, client forge.Client, repo store.IndexRepo, commit string,
+	settings configfile.Settings, logger *slog.Logger,
+) (eff Effective, off bool, err error) {
+	owner, name, _ := strings.Cut(repo.Name, "/")
+	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
+	if err != nil {
+		return eff, false, w.waitOutForge(ctx, job, account, logger, err)
+	}
+	eff, _ = effective(settings, doc)
+	if repo.RepoConfigOff == eff.Enabled {
+		err := w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
+			return store.RecordRepoConfigOff(ctx, tx, job.Args.RepositoryID, !eff.Enabled)
+		})
+		if err != nil {
+			return eff, false, err
+		}
+	}
+	if !eff.Enabled {
+		logger.Info("index skipped, disabled in .kritika.yaml")
+		return eff, true, nil
+	}
+	return eff, false, nil
 }
 
 // completed logs and counts an index run that published n chunks from pack.

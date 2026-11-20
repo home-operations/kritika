@@ -794,9 +794,18 @@ func TestSweepStoppedIndexes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	repoConfigOff := func(name string, off bool) {
+		t.Helper()
+		alpha := accountID(t, s, "alpha")
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			return RecordRepoConfigOff(ctx, tx, configfile.RepositoryID(alpha, name), off)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET archived = false, turned_on = NULL, turned_at = NULL,
-			enabled = true, disabled_at = NULL WHERE name IN ('alpha/one', 'alpha/two')`)
+			enabled = true, disabled_at = NULL, repo_config_off = false WHERE name IN ('alpha/one', 'alpha/two')`)
 	})
 	one, two := index("alpha/one"), index("alpha/two")
 
@@ -831,6 +840,22 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	backdate("alpha/one")
 	sweep(off, 1)
 	check("off in the configuration past the grace", "alpha/one", one, true, false)
+
+	// alpha/two is turned on, and its own .kritika.yaml turns it off.
+	repoConfigOff("alpha/two", true)
+	sweep(on, 0)
+	check("off in its .kritika.yaml, within the grace", "alpha/two", two, false, true)
+	repoConfigOff("alpha/two", false)
+	check("on again in its .kritika.yaml", "alpha/two", two, false, false)
+	sweep(on, 0)
+	check("on again in its .kritika.yaml, swept", "alpha/two", two, false, false)
+	repoConfigOff("alpha/two", true)
+	sweep(on, 0)
+	backdate("alpha/two")
+	sweep(on, 1)
+	check("off in its .kritika.yaml past the grace", "alpha/two", two, true, false)
+	repoConfigOff("alpha/two", false)
+	two = index("alpha/two")
 
 	exec(`UPDATE repositories SET enabled = false WHERE name = 'alpha/two'`)
 	sweep(on, 0)

@@ -107,3 +107,111 @@ func checkIndexIgnoreChanges(
 		})
 	}
 }
+
+// checkIndexRepoConfigOff checks that an index job that finds the
+// repository's .kritika.yaml turning it off keeps the index, and marks the
+// repository so that the retention sweep drops the index once it is off for
+// the grace. A later job that finds it on again clears the mark and the
+// sweep's clock, and builds the index again once it was dropped.
+func checkIndexRepoConfigOff(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge,
+	current *configfile.Current, account, repository, head string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	r, err := git.PlainOpen(lf.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	push := func(repoConfig, trigger string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(lf.dir, ".kritika.yaml"), []byte(repoConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(".kritika.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		commit, err := wt.Commit(repoConfig, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lf.setTip(commit.String())
+		job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: trigger}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		indexJobDone(ctx, t, st, job.Job.ID)
+	}
+	sweep := func() {
+		t.Helper()
+		f := current.Get()
+		if _, err := st.SweepStoppedIndexes(ctx, time.Hour, func(accountID string, traits configfile.RepoTraits) bool {
+			a, ok := f.AccountByID(accountID)
+			return ok && f.Runs(a, traits)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := func(sql string) {
+		t.Helper()
+		if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, sql, repository)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(what string, wantOff, wantStopped, wantIndexed bool) string {
+		t.Helper()
+		var off, stopped bool
+		var active string
+		if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT repo_config_off, stopped_at IS NOT NULL, coalesce(active_index_run_id::text, '')
+				FROM repositories WHERE id = $1`, repository).Scan(&off, &stopped, &active)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if off != wantOff || stopped != wantStopped || (active != "") != wantIndexed {
+			t.Fatalf("%s: off %v, stopped %v, generation %q; want off %v, stopped %v, indexed %v",
+				what, off, stopped, active, wantOff, wantStopped, wantIndexed)
+		}
+		return active
+	}
+
+	active := check("before", false, false, true)
+	push("enabled: false\n", jobs.TriggerPush)
+	if got := check("off in .kritika.yaml", true, false, true); got != active {
+		t.Fatalf("the generation %s became %s while indexing is off", active, got)
+	}
+	sweep()
+	check("off in .kritika.yaml, swept within the grace", true, true, true)
+
+	push("ignore: []\n", jobs.TriggerPush)
+	check("on again within the grace", false, false, true)
+	sweep()
+	check("on again within the grace, swept", false, false, true)
+
+	push("enabled: false\n", jobs.TriggerPush)
+	sweep()
+	exec(`UPDATE repositories SET stopped_at = now() - interval '2 hours' WHERE id = $1`)
+	sweep()
+	check("off in .kritika.yaml past the grace", true, false, false)
+
+	push("ignore: []\n", jobs.TriggerOnboard)
+	rebuilt := check("on again after the drop", false, false, true)
+	checkRunStatus(ctx, t, st, account, rebuilt, store.IndexCompleted)
+}

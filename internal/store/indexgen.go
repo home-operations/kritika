@@ -24,21 +24,22 @@ const (
 
 // IndexRepo is a repository as an index job reads it: its name, default
 // branch, whether it runs, its active generation ("" for none) and its
-// traits.
+// traits. RepoConfigOff is whether the last index job found its
+// .kritika.yaml turning it off (see RecordRepoConfigOff).
 type IndexRepo struct {
-	Name, DefaultBranch string
-	Enabled             bool
-	ActiveRun           string
-	Traits              configfile.RepoTraits
+	Name, DefaultBranch    string
+	Enabled, RepoConfigOff bool
+	ActiveRun              string
+	Traits                 configfile.RepoTraits
 }
 
 // FindIndexRepo reads the repository an index job is for, or ErrNotFound.
 func FindIndexRepo(ctx context.Context, tx pgx.Tx, repositoryID string) (IndexRepo, error) {
 	var r IndexRepo
 	var active *string
-	err := tx.QueryRow(ctx, `SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork, turned_on
+	err := tx.QueryRow(ctx, `SELECT name, default_branch, enabled, repo_config_off, active_index_run_id::text, archived, fork, turned_on
 		FROM repositories WHERE id = $1`, repositoryID).
-		Scan(&r.Name, &r.DefaultBranch, &r.Enabled, &active, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn)
+		Scan(&r.Name, &r.DefaultBranch, &r.Enabled, &r.RepoConfigOff, &active, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -49,6 +50,19 @@ func FindIndexRepo(ctx context.Context, tx pgx.Tx, repositoryID string) (IndexRe
 		r.ActiveRun = *active
 	}
 	return r, nil
+}
+
+// RecordRepoConfigOff records whether the repository's .kritika.yaml, as of
+// the commit that an index job indexes, turns it off. SweepStoppedIndexes
+// counts a repository so recorded as not running. Turning it on again clears
+// the time when the sweep found it stopped, as TurnOn does.
+func RecordRepoConfigOff(ctx context.Context, tx pgx.Tx, repositoryID string, off bool) error {
+	if _, err := tx.Exec(ctx, `UPDATE repositories SET repo_config_off = $2,
+			stopped_at = CASE WHEN $2 THEN stopped_at END
+		WHERE id = $1 AND repo_config_off <> $2`, repositoryID, off); err != nil {
+		return fmt.Errorf("store: record repository config off: %w", err)
+	}
+	return nil
 }
 
 // RecordDefaultBranch records the repository's default branch when none

@@ -161,10 +161,11 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 
 // SweepStoppedIndexes drops the index of every repository that did not run
 // for longer than grace and returns how many it dropped. A repository runs
-// while it is enabled and while runs, given its account ID and traits, says
-// that it does. Its clock, stopped_at, starts at the first sweep that finds
-// it holding an index and not running. The first sweep that finds it running
-// or holding none clears the clock.
+// while it is enabled, while its .kritika.yaml was last found not turning it
+// off (see RecordRepoConfigOff), and while runs, given its account ID and
+// traits, says that it does. Its clock, stopped_at, starts at the first
+// sweep that finds it holding an index and not running. The first sweep that
+// finds it running or holding none clears the clock.
 //
 // The repository is left with no active generation, which is marked
 // superseded, so running it again onboards a fresh index. It runs on the
@@ -189,7 +190,7 @@ func (s *Store) SweepStoppedIndexes(
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on,
+		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, enabled AND NOT repo_config_off, archived, fork, turned_on,
 				active_index_run_id IS NOT NULL
 			FROM repositories WHERE active_index_run_id IS NOT NULL OR stopped_at IS NOT NULL`)
 		if err != nil {
@@ -217,8 +218,8 @@ func (s *Store) SweepStoppedIndexes(
 		// The stopped ones are locked and read again under the lock, so one
 		// turned on or reported running since the first read is seen so:
 		// its clock is cleared, not started, and its index kept.
-		rows, err = tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on, active_index_run_id::text,
-				stopped_at <= now() - make_interval(secs => $2)
+		rows, err = tx.Query(ctx, `SELECT id::text, account_id::text, enabled AND NOT repo_config_off, archived, fork, turned_on,
+				active_index_run_id::text, stopped_at <= now() - make_interval(secs => $2)
 			FROM repositories WHERE id = ANY($1::uuid[]) AND active_index_run_id IS NOT NULL FOR UPDATE`, stopped, grace.Seconds())
 		if err != nil {
 			return err

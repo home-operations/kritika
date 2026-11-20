@@ -1837,6 +1837,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkIndexIgnoreChanges(ctx, t, appStore, insertOnly, lf, current, account.ID(), repoID, head)
 	})
 
+	t.Run("a .kritika.yaml that turns the repository off retires its index after the grace", func(t *testing.T) {
+		checkIndexRepoConfigOff(ctx, t, appStore, insertOnly, lf, current, account.ID(), repoID, head)
+	})
+
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})
