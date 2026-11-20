@@ -680,8 +680,9 @@ func lead(
 	// And so is retention. It covers model-call transcripts past their
 	// configured window and the indexes of repositories stopped past their
 	// grace (owner pool, which bypasses row-level security). It also covers
-	// expired dashboard sessions (app pool).
-	retention := &worker.Retention{Store: st, Current: current, Logger: logger}
+	// expired dashboard sessions (app pool), and partitions an index table
+	// that a build before partitioning created.
+	retention := &worker.Retention{Store: st, Current: current, Logger: logger, AppRole: cfg.DatabaseAppRole}
 	duties.Go(func() { retention.Run(pollCtx) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {

@@ -32,6 +32,8 @@ type retentionStore interface {
 	SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepEgressRefusals(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepModelInvocations(ctx context.Context, olderThan time.Duration) (int64, error)
+	PartitionIndexChunks(ctx context.Context, appRole string) (bool, error)
+	DrainLegacyIndexChunks(ctx context.Context) (int64, error)
 }
 
 // Retention deletes what is kept only so long. The owner pool bypasses
@@ -40,12 +42,16 @@ type retentionStore interface {
 // current configuration's transcript retention window. It also deletes review
 // diffs past their own retention window. It also deletes the indexes of
 // repositories that the configuration did not run for longer than its index
-// grace, and agent conversations older than conversationRetention. With the
-// app pool, it deletes expired dashboard sessions. A leader duty.
+// grace, and agent conversations older than conversationRetention. It also
+// partitions an index table that a build before partitioning created, and
+// moves what its legacy partition holds to the hash partitions. With the app
+// pool, it deletes expired dashboard sessions. A leader duty.
 type Retention struct {
 	Store   retentionStore
 	Current *configfile.Current
 	Logger  *slog.Logger
+	// AppRole is the application role, which a partitioned index table grants.
+	AppRole string
 	// every overrides retentionSweepInterval in tests.
 	every time.Duration
 }
@@ -86,10 +92,31 @@ func (r *Retention) Run(ctx context.Context) {
 		report("egress refusals", "rows", n, err)
 		n, err = r.Store.SweepModelInvocations(ctx, r.Current.Get().TranscriptRetention())
 		report("settled model invocations", "rows", n, err)
+		n, err = r.partitionIndex(ctx)
+		report("legacy index partition", "chunks", n, err)
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+	}
+}
+
+// partitionIndex partitions an index table that a build before partitioning
+// created. It then moves the active generations that the table's legacy
+// partition holds to the hash partitions, a repository at a time, until none
+// is left or another holds the lock of each left. It returns how many chunks
+// it moved.
+func (r *Retention) partitionIndex(ctx context.Context) (int64, error) {
+	if _, err := r.Store.PartitionIndexChunks(ctx, r.AppRole); err != nil {
+		return 0, err
+	}
+	var total int64
+	for {
+		n, err := r.Store.DrainLegacyIndexChunks(ctx)
+		total += n
+		if err != nil || n == 0 {
+			return total, err
 		}
 	}
 }

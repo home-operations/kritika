@@ -32,6 +32,7 @@ apps:
 // state for a later, unsynchronized pass to race against.
 type sweepCall struct {
 	name    string
+	role    string
 	swept   time.Duration
 	sweptAt time.Time
 	runs    func(accountID string, t configfile.RepoTraits) bool
@@ -42,6 +43,9 @@ type sweepCall struct {
 type fakeRetentionStore struct {
 	calls chan sweepCall
 	fail  bool
+	// drained is what DrainLegacyIndexChunks moves on its calls in turn, and
+	// then none.
+	drained []int64
 }
 
 func (s *fakeRetentionStore) SweepModelCalls(_ context.Context, olderThan time.Duration) (int64, error) {
@@ -117,11 +121,11 @@ func (h *warnCounter) WithGroup(string) slog.Handler      { return h }
 
 func TestRetentionSweep(t *testing.T) {
 	current := configfile.NewCurrent(retentionAccount(t))
-	st := &fakeRetentionStore{calls: make(chan sweepCall, 16)}
+	st := &fakeRetentionStore{calls: make(chan sweepCall, 16), drained: []int64{3, 2}}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
-		(&Retention{Store: st, Current: current, Logger: slog.New(slog.DiscardHandler), every: 5 * time.Millisecond}).Run(ctx)
+		(&Retention{Store: st, Current: current, Logger: slog.New(slog.DiscardHandler), AppRole: "kritika_app", every: 5 * time.Millisecond}).Run(ctx)
 		close(done)
 	}()
 
@@ -175,8 +179,17 @@ func TestRetentionSweep(t *testing.T) {
 		t.Fatalf("seventh call = %q older than %s, want modelInvocations older than the transcript retention",
 			seventh.name, seventh.swept)
 	}
+	if got := next(); got.name != "partitionIndex" || got.role != "kritika_app" {
+		t.Fatalf("call = %q for role %q, want partitionIndex for kritika_app", got.name, got.role)
+	}
+	// The legacy partition is drained until a call moves nothing.
+	for range 3 {
+		if got := next(); got.name != "legacyIndexChunks" {
+			t.Fatalf("call = %q, want legacyIndexChunks", got.name)
+		}
+	}
 	if got := next(); got.name != "modelCalls" {
-		t.Fatalf("eighth call = %q, want modelCalls", got.name)
+		t.Fatalf("second pass's first call = %q, want modelCalls", got.name)
 	}
 
 	cancel()
@@ -198,10 +211,10 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		close(done)
 	}()
 
-	// Every sweep fails on every pass. Wait for two full passes (14 calls) to
+	// Every sweep fails on every pass. Wait for two full passes (16 calls) to
 	// prove that a failure does not stop the loop. Wait for one call more,
-	// which the fourteenth call's warning is logged before.
-	for range 15 {
+	// which the sixteenth call's warning is logged before.
+	for range 17 {
 		select {
 		case <-st.calls:
 		case <-time.After(5 * time.Second):
@@ -215,7 +228,28 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Retention did not return once ctx ended")
 	}
-	if n := logs.n.Load(); n < 14 {
-		t.Fatalf("logged %d warnings for two failed passes, want >= 14", n)
+	if n := logs.n.Load(); n < 16 {
+		t.Fatalf("logged %d warnings for two failed passes, want >= 16", n)
 	}
+}
+
+func (s *fakeRetentionStore) PartitionIndexChunks(_ context.Context, appRole string) (bool, error) {
+	s.calls <- sweepCall{name: "partitionIndex", role: appRole}
+	if s.fail {
+		return false, errors.New("db down")
+	}
+	return false, nil
+}
+
+func (s *fakeRetentionStore) DrainLegacyIndexChunks(context.Context) (int64, error) {
+	s.calls <- sweepCall{name: "legacyIndexChunks"}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	if len(s.drained) == 0 {
+		return 0, nil
+	}
+	n := s.drained[0]
+	s.drained = s.drained[1:]
+	return n, nil
 }

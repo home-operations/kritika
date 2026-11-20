@@ -427,6 +427,65 @@ Before claiming recoverability:
 The inspection did not perform failover, restore, or replication-policy changes.
 Those are separate operational work after recovery objectives are agreed.
 
+## The similar-code index
+
+Every account's and repository's chunks share one table, `index_chunks`. A
+similar-code search names one index generation of one repository. So that its
+cost follows that generation's partition rather than the whole table, the
+table is partitioned:
+
+- `index_chunks` is partitioned by the range of `created_at`.
+- `index_chunks_current` holds the chunks created since the table was
+  partitioned. It is hash partitioned by generation (`index_run_id`) into 64
+  partitions, `index_chunks_00` to `index_chunks_63`.
+- Each partition has its own VectorChord (`vchordrq`) index. A search reads
+  the partition of its generation and that partition's index alone, about
+  1/64 of the table.
+
+The application role is granted `index_chunks` alone, and its row-level
+security policy applies to every partition read through it. The role cannot
+read a partition directly.
+
+### Partitioning an existing index
+
+A build before partitioning created `index_chunks` as a plain table. The
+leader's hourly retention sweep converts such a table, first when the leader
+starts. It copies and rebuilds nothing:
+
+1. It takes the table's exclusive lock, and then a lock on `accounts`,
+   `repositories` and `index_runs` that blocks writes to them. Each wait is
+   bounded to five seconds. While the sweep waits, searches and index builds
+   queue behind it. When a wait times out, the sweep logs a warning, changes
+   nothing and tries again an hour later.
+2. It renames the table, with its indexes, to `index_chunks_legacy`. It
+   creates the partitioned `index_chunks` and attaches the old table as its
+   partition for everything created until then. Its indexes and foreign keys
+   become those of the partitioned table. Attaching reads the old table once,
+   under the lock, to check `created_at`. That read takes seconds for millions
+   of chunks. Searches and index builds wait for it.
+3. Every later sweep moves the active generations out of
+   `index_chunks_legacy` into the hash partitions, one repository per
+   transaction. Each move holds that repository's lock, as a publication
+   does, and skips a repository whose lock another transaction holds. A
+   move rewrites the generation's rows. Until autovacuum reclaims the old
+   rows, the table needs room for both copies.
+
+A search reads the legacy partition's vector index until its generation has
+moved, so it costs what a search of the plain table did. Chunks of a generation
+that is not active stay in the legacy partition until kritika deletes them,
+as it always did. A rebuild for a new embedder drops the whole table, legacy
+partition included, and creates it partitioned.
+
+The legacy partition keeps the original table's vector index. If its
+definition was changed by hand, attaching builds a new one, under the lock.
+
+VectorChord 1.1.1 records no rows for a table when a `vchordrq` index is built
+on it. 1.3.0, from the [pgsty fork](https://github.com/pgsty/vchord), records them.
+On 1.1.1, after a manual `CREATE INDEX` or `REINDEX`
+on a partition, run `ANALYZE` on that partition. Otherwise the planner
+estimates the partition to be empty and can choose an exact scan until
+autovacuum analyzes it.
+
 ## Interrupted embedding builds
 
 Index jobs retain completed staging and checkpoint each batch in the same

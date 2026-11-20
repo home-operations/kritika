@@ -136,44 +136,8 @@ func addContentHash(ctx context.Context, tx pgx.Tx) error {
 }
 
 func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
-	app := pgx.Identifier{appRole}.Sanitize()
-	stmts := []string{
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks (
-			id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-			account_id     uuid        NOT NULL REFERENCES accounts (id),
-			repository_id uuid        NOT NULL REFERENCES repositories (id),
-			index_run_id  uuid        NOT NULL REFERENCES index_runs (id) ON DELETE CASCADE,
-			path          text        NOT NULL,
-			start_line    int         NOT NULL,
-			end_line      int         NOT NULL,
-			language      text        NOT NULL DEFAULT '',
-			symbol        text        NOT NULL DEFAULT '',
-			kind          text        NOT NULL DEFAULT '',
-			scope         text        NOT NULL DEFAULT '',
-			text          text        NOT NULL,
-			embedding     halfvec(%d) NOT NULL,
-			content_hash  bytea,
-			created_at    timestamptz NOT NULL DEFAULT now()
-		)`, dims),
-		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
-		contentHashIndex,
-		`CREATE INDEX IF NOT EXISTS index_chunks_account_id_idx ON index_chunks (account_id)`,
-		// VectorChord's access method: it partitions and quantises rather
-		// than building a graph, so it builds fast and answers a filtered
-		// query in full. Unpartitioned, since the table stays far below the
-		// size at which VectorChord recommends lists.
-		`CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`,
-		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
-		`DROP POLICY IF EXISTS account_isolation ON index_chunks`,
-		`CREATE POLICY account_isolation ON index_chunks TO ` + app + `
-			USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
-			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO ` + app,
-	}
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("store: create index_chunks: %w", err)
-		}
+	if err := createPartitionedIndexChunks(ctx, tx, appRole, dims, "MINVALUE"); err != nil {
+		return err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt, index_format)
 		VALUES (1, $1, $2, $3, $4)`, model, dims, documentPrompt, runspec.IndexFormat); err != nil {
