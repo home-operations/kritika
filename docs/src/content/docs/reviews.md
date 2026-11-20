@@ -96,10 +96,11 @@ is reviewed with the pull requests below it in the stack and the state of
 each: merged, open, or closed without merging. GitHub merges a stack from the
 bottom up. So the review and the confidence score do not weigh what happens
 if the change merges before a pull request below it. That holds after the
-one below merged and GitHub moved this pull request's base to the default
-branch. A merge is not a deployment: what a lower pull request must have
-deployed first is still a prerequisite that the review weighs. When kritika
-fails to read the stack from GitHub, the review runs without it.
+one below merged and GitHub moved this pull request's base to the branch
+that the stack targets. A merge is not a deployment: what a lower pull
+request must have deployed first is still a prerequisite that the review
+weighs. When kritika fails to read the stack from GitHub, the review runs
+without it.
 
 When the description says that the change
 is one part of a series or a split, the review judges it against that plan.
