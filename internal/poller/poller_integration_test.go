@@ -266,11 +266,12 @@ func checkBaseline(ctx context.Context, t *testing.T, st *store.Store, accountID
 	}
 }
 
-// tipForge answers the listing with nothing and the branch tip with tip,
-// counting the tip calls.
+// tipForge answers the listing with nothing and the branch tip with tip, or
+// with err when set, counting the tip calls.
 type tipForge struct {
 	baseForge
 	tip   string
+	err   error
 	calls int
 }
 
@@ -284,7 +285,7 @@ func (f *tipForge) CommitSubject(context.Context, string, string, string) (strin
 
 func (f *tipForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	f.calls++
-	return f.tip, "main", nil
+	return f.tip, "main", f.err
 }
 
 // recordingDispatcher records the events a poll dispatches.
@@ -298,10 +299,12 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) 
 	return d.Dispatcher.Dispatch(ctx, req)
 }
 
-// TestPollerIndexesAMovedDefaultBranch: for a connection that no webhook
-// reaches, the poll looks at the default branches of its indexed
-// repositories. It queues an index job when one moved. For a connection
-// that webhooks reach, it does not.
+// TestPollerIndexesAMovedDefaultBranch: every poll looks at the default
+// branches of the indexed repositories, whether webhooks reach the
+// connection or not, since one push webhook missed or one index job failed
+// leaves the index behind otherwise. It queues an index job when a branch
+// moved. It does not ask the forge about a repository whose index job is
+// already queued or running: that job indexes the tip it finds.
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
@@ -387,21 +390,51 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 		t.Fatalf("pushes dispatched for onedr0p/home-ops = %+v, want one marked as the poll's", pushes)
 	}
 
+	// The job is still queued: the branch is not asked for again.
+	calls := tf.calls
+	tf.tip = "moved again"
+	poll()
+	if got := indexJobs(); tf.calls != calls || len(got) != 1 || got[0] != "moved" {
+		t.Fatalf("with an index job queued: %d tip checks and index jobs %v, want none and the one queued", tf.calls-calls, got)
+	}
+
 	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
 		t.Fatal(err)
 	}
 	exec(`UPDATE connections SET last_webhook_at = now() WHERE id = $1`, in.ID())
-	calls := tf.calls
 	poll()
-	if tf.calls != calls || len(indexJobs()) != 0 {
-		t.Fatalf("with webhooks arriving: %d tip checks and index jobs %v, want none", tf.calls-calls, indexJobs())
+	if got := indexJobs(); tf.calls != calls+1 || len(got) != 1 || got[0] != "moved again" {
+		t.Fatalf("with webhooks arriving: %d tip checks and index jobs %v, want one at the moved tip", tf.calls-calls, got)
 	}
 
-	exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, in.ID())
+	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
+		t.Fatal(err)
+	}
 	tf.tip = "indexed"
 	poll()
 	if got := indexJobs(); len(got) != 0 {
 		t.Fatalf("index jobs = %v, want none for a tip the index covers", got)
+	}
+
+	// A tip the forge does not give is asked for at the next poll. It has
+	// no part in the pull requests' window, which the poll still records.
+	var before time.Time
+	exec(`UPDATE poll_state SET last_polled_at = now() - interval '1 hour' WHERE account_id = $1`, account.ID())
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&before)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tf.err = errors.New("branch not found")
+	poll()
+	var after time.Time
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&after)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !after.After(before) || len(indexJobs()) != 0 {
+		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, indexJobs())
 	}
 }
 

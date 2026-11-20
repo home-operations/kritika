@@ -188,7 +188,10 @@ For everyday use, see [reviews and commands](/reviews/).
 
 Polling catches missed pull request updates every 10 minutes by default.
 Set `config.pollInterval` to change the interval, or `0s` to disable it.
-When webhooks stop arriving, polls also catch up the code index.
+Each poll also asks for the default branch of every indexed repository that
+has no index job queued or running, and catches its code index up when the
+branch moved, so a missed push or a failed index job does not leave the index
+behind. That is one more API request per indexed repository each poll.
 The leader is the replica that runs the polls. A newly elected leader polls
 at once, so a restart catches up on the pull requests opened, pushed to or
 closed while kritika was down.

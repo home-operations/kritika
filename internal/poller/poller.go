@@ -3,7 +3,9 @@
 // the last poll to the ingest dispatcher as if a webhook delivered them. It
 // also closes the ones that kritika holds open and that the forge no longer
 // lists. Review jobs are unique on the head SHA, so a head that the webhook
-// already enqueued is skipped as a duplicate, never reviewed twice.
+// already enqueued is skipped as a duplicate, never reviewed twice. It also
+// hands over a push for each indexed repository whose default branch moved
+// past its index.
 //
 // An account's first poll records the pull requests last updated before
 // kritika knew the account as a baseline instead of reviewing them. No
@@ -186,12 +188,15 @@ func (p *Poller) pollAccounts(ctx context.Context) {
 }
 
 // Poll lists one account's repositories through the connection serving it
-// and returns how many pull requests were handed to the dispatcher. For a
-// connection that no webhook reached lately, it also looks at each indexed
-// repository's default branch. No push webhook will say that the branch
-// moved. A repository that the forge will not answer for is skipped, and the
-// rest are polled. The poll state is then left where it was, so the next poll
-// covers the skipped repository's window too. The error names each one.
+// and returns how many pull requests were handed to the dispatcher. It also
+// looks at the default branch of each indexed repository with no index job
+// queued or running, whatever webhooks arrive: one push webhook missed, or
+// one index job that failed, leaves the index behind until the next push
+// otherwise. A branch that the forge will not give is logged and asked for
+// again at the next poll. A repository whose pull requests the forge will not
+// list is skipped, and the rest are polled. The poll state is then left where
+// it was, so the next poll covers the skipped repository's window too. The
+// error names each one.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
 	// Capture the boundary before reading enablement, on the same clock as
 	// turned_at, so a concurrent enablement is caught by the next poll.
@@ -206,7 +211,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if repos, err = store.PollRepositories(ctx, tx); err != nil {
 			return err
 		}
-		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
+		state, err = store.ReadPollState(ctx, tx, account.ID())
 		return err
 	})
 	if err != nil {
@@ -216,7 +221,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	if state.Polled != nil && state.Polled.After(since) {
 		since = *state.Polled
 	}
-	checkTips := state.Delivered == nil || state.Delivered.Before(time.Now().Add(-file.PollLookback()))
 	handled := 0
 	runs := map[string]bool{}
 	var skipped []error
@@ -238,9 +242,13 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, err
 		}
 		owner, name, _ := strings.Cut(repo, "/")
-		if checkTips && r.IndexedCommit != "" {
+		// A queued or running index job reads the tip itself, and a push
+		// dedupes onto it: the forge is not asked again.
+		if r.IndexedCommit != "" && !r.Indexing {
+			// The tip has no part in the pull requests' window that the poll
+			// state records.
 			if err := p.pollTip(ctx, file, account, in, client, r, started); err != nil {
-				skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
+				p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", repo, "error", err)
 			}
 		}
 		// Every open pull request is listed, not only those updated since
