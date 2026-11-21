@@ -763,3 +763,78 @@ apps:
 		t.Fatalf("hits counted %v, best similarities %d; want %v, 16", hits, bests, want)
 	}
 }
+
+// TestSimilarSearchesTheGenerationActiveAtTheSearch: a generation published
+// while the request embeds its queries supersedes the one active when the
+// request arrived, whose chunks it drops. The request searches the one it
+// published, or answers that there is no index when that one was built by
+// another embedder, rather than search the dropped one and find nothing.
+func TestSimilarSearchesTheGenerationActiveAtTheSearch(t *testing.T) {
+	for _, tt := range []struct {
+		name, model string
+		want        []string
+		indexed     bool
+	}{
+		{"published by the same embedder", "embed", []string{"renewed.go"}, true},
+		{"published by another embedder", "other-embed", []string{}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newLexicalRepo(t, "republished-"+tt.model, runspec.IndexFormat, map[string]string{"old.go": "func old() {}"},
+				map[string][]float32{"old.go": e(0)})
+			ctx := t.Context()
+			embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+				if err := r.st.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
+					var run string
+					if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status,index_format)
+						VALUES($1,$2,'def',$3,8,'full','completed',$4) RETURNING id`, r.account.ID(), r.id, tt.model, runspec.IndexFormat).Scan(&run); err != nil {
+						return err
+					}
+					if tt.model == "embed" {
+						if err := store.InsertIndexChunks(ctx, tx, r.account.ID(), r.id, run, []store.StagedChunk{
+							{Path: "renewed.go", Language: "go", StartLine: 1, EndLine: 1, Text: "func renewed() {}"},
+						}, [][]float32{e(0)}); err != nil {
+							return err
+						}
+					}
+					return store.ActivateGeneration(ctx, tx, r.id, run)
+				}); err != nil {
+					return nil, 0, err
+				}
+				out := make([][]float32, len(inputs))
+				for i := range out {
+					out[i] = e(0)
+				}
+				return out, 1, nil
+			})
+			reg := prometheus.NewRegistry()
+			g := Server{Metrics: metrics.New(reg), Store: r.st, Current: configfile.NewCurrent(r.file), Logger: slog.New(slog.DiscardHandler),
+				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+			}
+			token, err := r.st.MintGatewayToken(ctx, store.GatewayGrant{
+				RunID: r.runner, AccountID: r.account.ID(), RepositoryID: r.id, Model: "test/reviewer", Budget: 1000,
+			}, time.Now().Add(time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = r.st.RevokeGatewayTokens(context.Background(), r.runner) })
+			req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(`{"queries":["func renewed() {}"]}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+			out := httptest.NewRecorder()
+			g.ServeHTTP(out, req)
+			if out.Code != http.StatusOK {
+				t.Fatalf("status=%d: %s", out.Code, out.Body.String())
+			}
+			var resp contextpack.SimilarResponse
+			if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			got := make([]string, 0, len(resp.Chunks))
+			for _, c := range resp.Chunks {
+				got = append(got, c.Path)
+			}
+			if !slices.Equal(got, tt.want) || resp.Indexed != tt.indexed {
+				t.Fatalf("answer %q, indexed %t; want %q, indexed %t", got, resp.Indexed, tt.want, tt.indexed)
+			}
+		})
+	}
+}

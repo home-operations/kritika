@@ -302,11 +302,10 @@ func (g *Server) similar(
 	if embedder == nil {
 		return nil, similarNoEmbedder, nil
 	}
-	var runID string
-	var lexicalReady bool
+	// Whether there is an index to embed the queries for. The searches read
+	// the generation again, in their own snapshot.
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
-		var err error
-		runID, lexicalReady, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
+		_, _, err := store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {
@@ -381,27 +380,12 @@ func (g *Server) similar(
 	// which a publication between them could give to two versions of a chunk.
 	err = g.Store.WithAccountSnapshot(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil {
-			return err
-		}
-		// The looks past full files share the request's answerBy, and the
-		// hits found before one fails or runs out of it still answer: only
-		// the request's own end, which the transaction cannot outlive, is an
-		// error.
-		var past error
-		hits, past = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, hits, emb.Floor(), emb.Margin(), r.answerBy)
-		if past != nil {
-			if ctx.Err() != nil {
-				return past
-			}
-			logger.Warn("gateway: similar code searched by vector without looking past every full window", "error", past)
-		}
-		if !emb.LexicalSearch() || !lexicalReady {
-			return nil
-		}
-		named, err = g.searchByName(ctx, tx, r, runID, vectors, depth, logger)
+		hits, named, err = g.searchActive(ctx, tx, r, emb, vectors, depth, logger)
 		return err
 	})
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, similarNoIndex, nil
+	}
 	searched := adapter.Outcome(err)
 	if err != nil && ctx.Err() != nil {
 		searched = "canceled"
@@ -427,6 +411,40 @@ func (g *Server) similar(
 		return chunks, similarEmpty, nil
 	}
 	return chunks, similarOK, nil
+}
+
+// searchActive is what the vector search and the search by name find for
+// vectors, the request's queries, in the generation of emb active in tx's
+// snapshot, depth deep: store.ErrNotFound when there is none. The generation
+// is read in the snapshot of the searches, not before the embedding, as one
+// published during the embedding dropped the chunks of the one that it
+// superseded.
+func (g *Server) searchActive(
+	ctx context.Context, tx pgx.Tx, r similarRequest, emb *configfile.Embedding, vectors [][]float32, depth int, logger *slog.Logger,
+) (hits, named []store.SimilarHit, err error) {
+	runID, lexicalReady, err := store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
+	if err != nil {
+		return nil, nil, err
+	}
+	if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil {
+		return nil, nil, err
+	}
+	// The looks past full files share the request's answerBy, and the hits
+	// found before one fails or runs out of it still answer: only the
+	// request's own end, which the transaction cannot outlive, is an error.
+	var past error
+	hits, past = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, hits, emb.Floor(), emb.Margin(), r.answerBy)
+	if past != nil {
+		if ctx.Err() != nil {
+			return nil, nil, past
+		}
+		logger.Warn("gateway: similar code searched by vector without looking past every full window", "error", past)
+	}
+	if !emb.LexicalSearch() || !lexicalReady {
+		return hits, nil, nil
+	}
+	named, err = g.searchByName(ctx, tx, r, runID, vectors, depth, logger)
+	return hits, named, err
 }
 
 // Which searches found a hit, as kritika_similar_hits_total counts it.
