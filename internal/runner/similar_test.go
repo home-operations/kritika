@@ -397,11 +397,20 @@ func TestAtHeadChecksDeclarations(t *testing.T) {
 	long := func(head string) string {
 		return "package lib\n\n// Long is long.\n" + head + " {\n" + body.String() + "}\n"
 	}
+	var methods strings.Builder
+	for i := range 60 {
+		fmt.Fprintf(&methods, "    void m%d() {\n        count++;\n    }\n", i)
+	}
 	base := map[string]string{
 		"long.go":   long("func Long()"),
 		"method.go": long("func (s *Server) handle()"),
 		"small.go":  "package lib\n\ntype Server struct{}\n\nfunc (s *Server) small() {\n\treturn\n}\n",
 		"lib.py":    "class C:\n    def m(self):\n        return 1\n\n\ndef f():\n    return 2\n",
+		// The indexer joins a short gap of a block or an oversized class,
+		// such as an opening line or a field, to the declaration next to it.
+		"blocks.cpp": "#include <cstdio>\n\nnamespace {\nint helper(int x) { return x + 1; }\n}\n\nextern \"C\" {\nint exported(int x) { return helper(x); }\n}\n",
+		"compat.py":  "if os.name == \"nt\":\n    def path_sep():\n        return \"\\\\\"\nelse:\n    def path_sep():\n        return \"/\"\n",
+		"Big.java":   "class Big {\n    int count;\n" + methods.String() + "}\n",
 	}
 	built, _, _, err := indexer.Build(t.Context(), tree(t, base), nil, nil, indexer.Options{})
 	if err != nil {
@@ -428,8 +437,23 @@ func TestAtHeadChecksDeclarations(t *testing.T) {
 	if len(bodies("long.go")) == 0 || len(bodies("method.go")) == 0 || bodies("method.go")[0].Scope != "Server" {
 		t.Fatalf("index %+v has no window of a long body under its declaration", index)
 	}
+	for _, want := range []struct {
+		path, symbol string
+		start        int
+	}{{"blocks.cpp", "helper", 3}, {"blocks.cpp", "exported", 7}, {"compat.py", "path_sep", 1}, {"Big.java", "m0", 1}} {
+		if !slices.ContainsFunc(index, func(c contextpack.Chunk) bool {
+			return c.Path == want.path && c.Symbol == want.symbol && c.StartLine == want.start
+		}) {
+			t.Fatalf("index %+v has no chunk of %s from line %d in %s", index, want.symbol, want.start, want.path)
+		}
+	}
 	if got := atHead(tree(t, base), index); !slices.Equal(got, index) {
-		t.Fatalf("atHead of an unchanged tree = %+v, want the index %+v", got, index)
+		for _, c := range index {
+			if !slices.Contains(got, c) {
+				t.Errorf("atHead of an unchanged tree left out %s:%d-%d under %q", c.Path, c.StartLine, c.EndLine, c.Symbol)
+			}
+		}
+		t.FailNow()
 	}
 	renamed := maps.Clone(base)
 	renamed["long.go"] = long("func Longer()")

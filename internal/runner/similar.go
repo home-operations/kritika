@@ -193,10 +193,12 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // for. A chunk is found where the head's lines, cut as the indexer cuts a
 // chunk, give its text, and claims the lines its text shows. A chunk of a
 // declaration is also left out unless the head, parsed as the indexer parses
-// it, declares the chunk's symbol, kind and scope around those lines: a
-// window of a long declaration's body need not hold the line that names it,
-// which a rename changes, and the symbol is what the chunk is shown under and
-// what a match by name matched.
+// it, declares the chunk's symbol, kind and scope around those lines, or cut
+// as the indexer cuts it, holds them in a piece under that symbol, kind and
+// scope, as the indexer joins a short gap of an oversized declaration to the
+// nested one next to it: a window of a long declaration's body need not hold
+// the line that names it, which a rename changes, and the symbol is what the
+// chunk is shown under and what a match by name matched.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string]*headFile{}
 	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions.MaxFileBytes}}
@@ -220,13 +222,14 @@ func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	return out
 }
 
-// headFile is a file as the head has it. Its declarations are parsed once,
-// when a chunk of a declaration is found in it.
+// headFile is a file as the head has it. Its declarations, and the pieces
+// that the indexer cuts it into, are worked out once, when a chunk of a
+// declaration is found in it.
 type headFile struct {
-	path, src string
-	lines     []string
-	decls     []chunk.Decl
-	parsed    bool
+	path, src     string
+	lines         []string
+	decls, pieces []chunk.Decl
+	parsed        bool
 }
 
 // readHeadFile is path at head, empty when the head has no such file, it is
@@ -248,17 +251,22 @@ func readHeadFile(head *object.Tree, path string) *headFile {
 }
 
 // declares reports whether the head declares c's symbol, with c's kind and
-// scope, around c's lines.
+// scope, around c's lines, or the indexer stores c's lines of the head in a
+// piece under them. The declaration alone does not hold a piece that the
+// indexer widened over a short gap beside it, and the pieces alone do not
+// hold a declaration that the indexer cut otherwise when it was indexed, as
+// it does once the declaration around it grows past MaxDeclLines.
 func (f *headFile) declares(parser *chunk.Parser, c contextpack.Chunk) bool {
 	if !f.parsed {
 		f.parsed = true
 		pf := parser.Parse(f.path, []byte(f.src))
-		f.decls = pf.Decls
+		f.decls, f.pieces = pf.Decls, indexer.Pieces(pf, indexer.DefaultOptions)
 		pf.Close()
 	}
-	return slices.ContainsFunc(f.decls, func(d chunk.Decl) bool {
+	holds := func(d chunk.Decl) bool {
 		return d.Symbol == c.Symbol && d.Kind == c.Kind && d.Scope == c.Scope && d.StartLine <= c.StartLine && c.EndLine <= d.EndLine
-	})
+	}
+	return slices.ContainsFunc(f.decls, holds) || slices.ContainsFunc(f.pieces, holds)
 }
 
 // distinct is chunks without those whose lines an earlier one mostly shows:

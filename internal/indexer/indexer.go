@@ -209,7 +209,7 @@ func (b *builder) file(f *object.File) error {
 	if len(pf.Decls) > 0 {
 		b.stats.Parsed++
 	}
-	for _, d := range pieces(pf, b.opts) {
+	for _, d := range Pieces(pf, b.opts) {
 		// A window of a file without declarations can be white space
 		// alone, a line too long to share a window with its neighbours, and
 		// a piece cut to MaxChunkBytes can keep only its white space.
@@ -243,7 +243,7 @@ func readBlob(f *object.File) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-// pieces picks the line ranges to store, which cover every line of the file
+// Pieces picks the line ranges to store, which cover every line of the file
 // that holds a word, but for comments that lead into no declaration. A
 // declaration over MaxDeclLines, and one that holds named ones and is unnamed
 // (a C++ namespace, a Python if, an HCL body) or over MaxChunkBytes, is
@@ -265,7 +265,7 @@ func readBlob(f *object.File) ([]byte, error) {
 // its symbol, as a function that starts on another's last line is, so that
 // line is stored twice. So is the line that two pieces meet on when each
 // holds lines of its own. The windows of a range overlap by WindowOverlap.
-func pieces(f *chunk.File, opts Options) []chunk.Decl {
+func Pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
 		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, opts.MaxChunkBytes)
 	}

@@ -143,7 +143,7 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			opts := DefaultOptions
 			stored := map[int]chunk.Decl{}
 			first := map[int]chunk.Decl{}
-			for _, p := range pieces(f, opts) {
+			for _, p := range Pieces(f, opts) {
 				if o, ok := first[p.StartLine]; ok {
 					t.Errorf("pieces %+v and %+v both start on line %d", o, p, p.StartLine)
 				}
@@ -272,7 +272,7 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 			f := (&chunk.Parser{}).Parse(tt.path, []byte(tt.src))
 			defer f.Close()
 			var got []span
-			for _, p := range pieces(f, DefaultOptions) {
+			for _, p := range Pieces(f, DefaultOptions) {
 				got = append(got, span{p.Symbol, p.Kind, p.StartLine, p.EndLine})
 			}
 			if len(got) != len(tt.want) {
