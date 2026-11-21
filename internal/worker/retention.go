@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -70,37 +71,35 @@ type Retention struct {
 // Run sweeps once immediately, then every retentionSweepInterval until ctx
 // ends, and once more when IndexReady closes. A sweep failure is logged,
 // never fatal: it just leaves stale rows for the next tick.
+//
+// The legacy index partition's conversion and drain run in a loop of their
+// own (migrateIndex), which Run waits for before it returns. A drain goes on
+// until the legacy partition is empty or held, which can take longer than
+// the interval: the other sweeps keep to it meanwhile.
 func (r *Retention) Run(ctx context.Context) {
-	t := time.NewTicker(cmp.Or(r.every, retentionSweepInterval))
+	every := cmp.Or(r.every, retentionSweepInterval)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() { r.migrateIndex(ctx, every) })
+	t := time.NewTicker(every)
 	defer t.Stop()
-	report := func(what, unit string, n int64, err error) {
-		if err != nil {
-			if ctx.Err() == nil {
-				r.Logger.Warn("retention sweep failed", "sweep", what, "error", err)
-			}
-			return
-		}
-		if n > 0 {
-			r.Logger.Info("retention sweep removed", "sweep", what, "removed", n, "unit", unit)
-		}
-	}
 	// A nil channel never receives: ready is nil once the index work runs.
 	ready := r.IndexReady
 	for {
 		n, err := r.Store.SweepModelCalls(ctx, r.Current.Get().TranscriptRetention())
-		report("model call transcripts", "rows", n, err)
+		r.report(ctx, "model call transcripts", "rows", n, err)
 		n, err = r.Store.SweepDiffs(ctx, r.Current.Get().DiffRetention())
-		report("review diffs", "packs", n, err)
+		r.report(ctx, "review diffs", "packs", n, err)
 		n, err = r.Store.SweepSessions(ctx, time.Now())
-		report("dashboard sessions", "rows", n, err)
+		r.report(ctx, "dashboard sessions", "rows", n, err)
 		n, err = r.Store.SweepConversations(ctx, conversationRetention)
-		report("agent conversations", "rows", n, err)
+		r.report(ctx, "agent conversations", "rows", n, err)
 		n, err = r.Store.SweepEgressRefusals(ctx, r.Current.Get().TranscriptRetention())
-		report("egress refusals", "rows", n, err)
+		r.report(ctx, "egress refusals", "rows", n, err)
 		n, err = r.Store.SweepModelInvocations(ctx, r.Current.Get().TranscriptRetention())
-		report("settled model invocations", "rows", n, err)
+		r.report(ctx, "settled model invocations", "rows", n, err)
 		n, err = r.Store.SweepSimilarExclusions(ctx)
-		report("finished runs' similar-code exclusions", "rows", n, err)
+		r.report(ctx, "finished runs' similar-code exclusions", "rows", n, err)
 		select {
 		case <-ready:
 			ready = nil
@@ -112,12 +111,7 @@ func (r *Retention) Run(ctx context.Context) {
 				a, ok := f.AccountByID(accountID)
 				return ok && f.Runs(a, traits)
 			})
-			report("stopped repositories' indexes", "repositories", n, err)
-			moved, n, err := r.partitionIndex(ctx)
-			report("legacy index partition", "chunks", n, err)
-			if moved > 0 {
-				r.Logger.Info("retention sweep moved", "sweep", "legacy index partition", "moved", moved, "unit", "chunks")
-			}
+			r.report(ctx, "stopped repositories' indexes", "repositories", n, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -125,6 +119,45 @@ func (r *Retention) Run(ctx context.Context) {
 		case <-t.C:
 		case <-ready:
 		}
+	}
+}
+
+// migrateIndex runs partitionIndex once IndexReady closes, and then every
+// interval until ctx ends.
+func (r *Retention) migrateIndex(ctx context.Context, every time.Duration) {
+	if r.IndexReady != nil {
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.IndexReady:
+		}
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		moved, n, err := r.partitionIndex(ctx)
+		r.report(ctx, "legacy index partition", "chunks", n, err)
+		if moved > 0 {
+			r.Logger.Info("retention sweep moved", "sweep", "legacy index partition", "moved", moved, "unit", "chunks")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// report logs a sweep's failure, unless ctx ended, or what it removed.
+func (r *Retention) report(ctx context.Context, what, unit string, n int64, err error) {
+	if err != nil {
+		if ctx.Err() == nil {
+			r.Logger.Warn("retention sweep failed", "sweep", what, "error", err)
+		}
+		return
+	}
+	if n > 0 {
+		r.Logger.Info("retention sweep removed", "sweep", what, "removed", n, "unit", unit)
 	}
 }
 
