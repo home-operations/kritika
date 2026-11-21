@@ -3,10 +3,8 @@ package gateway
 import (
 	"cmp"
 	"context"
-	"errors"
 	"log/slog"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -30,10 +28,6 @@ func lexicalWithin(now, answerBy time.Time) time.Duration {
 	return max(min(lexicalTimeout, answerBy.Sub(now)).Truncate(time.Millisecond), 0)
 }
 
-// errLexicalDue ends the search by name's looks past full files once its
-// time is spent.
-var errLexicalDue = errors.New("gateway: the search by name's time is spent")
-
 // searchByName is lexicalHits for the request in a savepoint of tx, within
 // lexicalWithin of the request's answerBy: a slow search by name ends while
 // the runner still waits for the vector search's hits, and none is made
@@ -56,16 +50,8 @@ func (g *Server) searchByName(
 	}
 	deadline := started.Add(within)
 	search := func(texts []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
-		within := lexicalWithin(time.Now(), deadline)
-		if within == 0 {
-			return nil, errLexicalDue
-		}
 		var named []store.SimilarHit
-		err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
-			timeout := strconv.FormatInt(within.Milliseconds(), 10)
-			if _, err := sp.Exec(ctx, `SELECT set_config('statement_timeout', $1, true)`, timeout); err != nil {
-				return err
-			}
+		err := inSavepoint(ctx, tx, deadline, func(sp pgx.Tx) error {
 			var err error
 			named, err = lexicalHits(ctx, sp, runID, texts, vectors, exclude, depth)
 			return err

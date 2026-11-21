@@ -3,7 +3,10 @@ package gateway
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -22,9 +25,15 @@ import (
 // many fill the query whenever enough chunks qualify. The cap of one file
 // across the queries and the duplicates between them can still leave a
 // query short.
+//
+// The looks are what the hits can do without: each is in a savepoint of tx
+// (inSavepoint), within what is left before deadline, and none is made once
+// it passes. One that fails or runs out of time ends the looking, and
+// pastFullFiles returns the hits found until then with the error, for the
+// caller to answer with them unless the request itself ended.
 func pastFullFiles(
 	ctx context.Context, tx pgx.Tx, runID string, vectors [][]float32, exclude store.Exclusions, depth int,
-	hits []store.SimilarHit, floor, margin float64,
+	hits []store.SimilarHit, floor, margin float64, deadline time.Time,
 ) ([]store.SimilarHit, error) {
 	qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
 		best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Similarity, b.Similarity) })
@@ -34,7 +43,37 @@ func pastFullFiles(
 		return fullFiles(found, window, depth, qualifies)
 	}, func(q int, full []string) ([]store.SimilarHit, error) {
 		past := store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)}
-		return store.SimilarChunks(ctx, tx, runID, vectors[q:q+1], past, depth)
+		var window []store.SimilarHit
+		err := inSavepoint(ctx, tx, deadline, func(sp pgx.Tx) error {
+			var err error
+			window, err = store.SimilarChunks(ctx, sp, runID, vectors[q:q+1], past, depth)
+			return err
+		})
+		return window, err
+	})
+}
+
+// errSearchDue ends a search's looks past full files once its time is spent.
+var errSearchDue = errors.New("gateway: the search's time is spent")
+
+// inSavepoint runs search in a savepoint of tx, its statements bounded by
+// what is left before deadline, in whole milliseconds, which is what a
+// statement timeout takes. Under a millisecond left is errSearchDue, with no
+// statement made, and not a timeout of 0, which would bound nothing. A
+// search that fails, its timeout too, is rolled back to the savepoint, and
+// leaves tx to the statements after it; a transaction that the rollback
+// cannot save fails those, and its commit.
+func inSavepoint(ctx context.Context, tx pgx.Tx, deadline time.Time, search func(sp pgx.Tx) error) error {
+	within := max(time.Until(deadline).Truncate(time.Millisecond), 0)
+	if within == 0 {
+		return errSearchDue
+	}
+	return pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
+		timeout := strconv.FormatInt(within.Milliseconds(), 10)
+		if _, err := sp.Exec(ctx, `SELECT set_config('statement_timeout', $1, true)`, timeout); err != nil {
+			return err
+		}
+		return search(sp)
 	})
 }
 

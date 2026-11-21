@@ -48,10 +48,10 @@ const similarDepth = 2 * similarPerQuery
 // holds however many files a change touches.
 const maxSimilarBody = 256 << 10
 
-// similarAnswerWithin is how long after a similar-code request arrives its
-// search by name and its reranking end at the latest, leaving the vector
-// search's hits, in the fused order, to the queries that they have not
-// reached. A run waits a minute for its answer from before it sends
+// similarAnswerWithin is how long after a similar-code request arrives the
+// vector search's looks past full files, its search by name and its
+// reranking end at the latest, leaving the hits found until then, in the
+// fused order, to the queries that they have not reached. A run waits a minute for its answer from before it sends
 // the request, whatever the embedding and the searches took of it. The rest
 // is for the answer, its accounting, and the request's way to the gateway. A
 // variable for the tests.
@@ -218,8 +218,9 @@ type similarRequest struct {
 	exclude store.Exclusions
 	// limit is the most chunks the answer holds.
 	limit int
-	// answerBy is when the search by name and the reranking end at the
-	// latest, so that the answer reaches the runner while it still waits.
+	// answerBy is when the vector search's looks past full files, the
+	// search by name and the reranking end at the latest, so that the answer
+	// reaches the runner while it still waits.
 	answerBy time.Time
 }
 
@@ -366,9 +367,20 @@ func (g *Server) similar(
 		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil {
 			return err
 		}
-		if hits, err = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, hits, emb.Floor(), emb.Margin()); err != nil ||
-			!emb.LexicalSearch() || !lexicalReady {
-			return err
+		// The looks past full files share the request's answerBy, and the
+		// hits found before one fails or runs out of it still answer: only
+		// the request's own end, which the transaction cannot outlive, is an
+		// error.
+		var past error
+		hits, past = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, hits, emb.Floor(), emb.Margin(), r.answerBy)
+		if past != nil {
+			if ctx.Err() != nil {
+				return past
+			}
+			logger.Warn("gateway: similar code searched by vector without looking past every full window", "error", past)
+		}
+		if !emb.LexicalSearch() || !lexicalReady {
+			return nil
 		}
 		named, err = g.searchByName(ctx, tx, r, runID, vectors, depth, logger)
 		return err

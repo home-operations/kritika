@@ -328,6 +328,65 @@ func TestSimilarFileCapLooksPastAFullWindow(t *testing.T) {
 	}
 }
 
+// TestSimilarFileCapAnswerDue: a request whose answer is due once its
+// vectors are searched makes no look past a full window, and answers with
+// the capped hits that the first window found, rather than look on past
+// the runner's wait or fail the request.
+func TestSimilarFileCapAnswerDue(t *testing.T) {
+	at := func(similarity float64) []float32 {
+		return []float32{float32(similarity), float32(math.Sqrt(1 - similarity*similarity)), 0, 0, 0, 0, 0, 0}
+	}
+	chunks, vectors := map[string]string{}, map[string][]float32{}
+	for i := range similarDepth {
+		key := fmt.Sprintf("a.go@%d", 10*i+1)
+		chunks[key], vectors[key] = fmt.Sprintf("func a%d() {}", i), at(0.99-0.01*float64(i))
+	}
+	chunks["b.go@1"], vectors["b.go@1"] = "func b() {}", at(0.91)
+	r := newLexicalRepo(t, "full-window-due", runspec.IndexFormat, chunks, vectors)
+	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
+	similarAnswerWithin = 0
+	code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "zzyzx quux")
+	want := []string{"a.go:similarity 0.99", "a.go:similarity 0.98"}
+	if code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
+	}
+}
+
+// TestInSavepoint: a look past full files runs under a statement timeout of
+// what is left of its time, none is made once that is spent, and one that
+// fails leaves the transaction to the statements after it.
+func TestInSavepoint(t *testing.T) {
+	r := newLexicalRepo(t, "savepoint", runspec.IndexFormat, map[string]string{"a.go": "func a() {}"}, map[string][]float32{"a.go": e(0)})
+	ctx := t.Context()
+	if err := r.st.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
+		var timeout int64
+		err := inSavepoint(ctx, tx, time.Now().Add(time.Hour), func(sp pgx.Tx) error {
+			return sp.QueryRow(ctx, `SELECT setting::bigint FROM pg_settings WHERE name = 'statement_timeout'`).Scan(&timeout)
+		})
+		if err != nil || timeout <= 0 || timeout > time.Hour.Milliseconds() {
+			t.Errorf("statement timeout = %dms, %v; want at most the hour left", timeout, err)
+		}
+		called := false
+		if err := inSavepoint(ctx, tx, time.Now(), func(pgx.Tx) error { called = true; return nil }); !errors.Is(err, errSearchDue) || called {
+			t.Errorf("past its deadline: %v, searched %v; want errSearchDue, no search", err, called)
+		}
+		err = inSavepoint(ctx, tx, time.Now().Add(time.Hour), func(sp pgx.Tx) error {
+			_, err := sp.Exec(ctx, `SELECT 1 / 0`)
+			return err
+		})
+		if err == nil {
+			t.Error("a failing statement: nil, want its error")
+		}
+		var one int
+		if err := tx.QueryRow(ctx, `SELECT 1`).Scan(&one); err != nil {
+			t.Errorf("the transaction after a failed look: %v", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestSimilarLexicalLooksPastAFullWindow: when one file holds every chunk
 // that the search by name finds for a query, all of them under the floor,
 // and the cap keeps only two of them, the search by name looks again past
