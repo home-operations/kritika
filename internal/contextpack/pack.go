@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -280,7 +281,10 @@ func (b *builder) overlay(ctx context.Context) error {
 			bf.Close()
 		}
 		covered := map[int]bool{}
-		for _, run := range runs(added, b.opts.WindowRadius) {
+		pending := runs(added, b.opts.WindowRadius)
+		for len(pending) > 0 {
+			run := pending[0]
+			pending = pending[1:]
 			if covered[run[0]] && covered[run[1]] {
 				continue
 			}
@@ -289,19 +293,28 @@ func (b *builder) overlay(ctx context.Context) error {
 			if decl != nil {
 				c.Symbol, c.Kind, c.Scope = decl.Symbol, decl.Kind, decl.Scope
 				start, text := b.declText(f, decl, run[0])
-				// A comment or body over MaxChunkBytes ahead of the run's first
+				// A comment or body over MaxChunkBytes ahead of the run's last
 				// line would leave the cut text without it, so a window shows
-				// it instead, still as the declaration's.
+				// the run instead, still as the declaration's.
 				ahead := len(text) - len(f.Bytes(run[0], decl.EndLine))
-				if len(text) <= b.opts.MaxChunkBytes || ahead+len(f.Bytes(run[0], run[0])) <= b.opts.MaxChunkBytes {
-					c.StartLine, c.EndLine, c.Text = start, decl.EndLine, string(text)
+				if len(text) <= b.opts.MaxChunkBytes || ahead+len(f.Bytes(run[0], run[1])) <= b.opts.MaxChunkBytes {
+					c.StartLine, c.Text = start, string(text)
 				}
 			}
 			if c.Text == "" {
-				c.StartLine, c.EndLine, c.Text = b.window(f, run)
+				c.StartLine, c.Text = b.window(f, run)
 				if c.Text == "" {
 					continue
 				}
+			}
+			// The chunk claims only the lines its cut keeps whole. The rest
+			// of a run that a window at radius zero cannot hold is shown by
+			// another, from its next added line. A window clamped to the
+			// file's end is not cut, and has no rest to show.
+			c.EndLine = b.keptEnd(c.StartLine, c.Text)
+			if c.EndLine < run[1] && len(c.Text) > b.opts.MaxChunkBytes {
+				i, _ := slices.BinarySearch(added, max(c.EndLine, run[0])+1)
+				pending = slices.Insert(pending, 0, [2]int{added[i], run[1]})
 			}
 			for l := c.StartLine; l <= c.EndLine; l++ {
 				covered[l] = true
@@ -412,13 +425,26 @@ func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int
 
 // window is the fixed-window fallback for run: WindowRadius lines on each
 // side, fewer when that would put it over MaxChunkBytes, so the cut keeps
-// the run and the lines it covers are the lines it shows.
-func (b *builder) window(f *chunk.File, run [2]int) (start, end int, text string) {
+// the whole run when the run alone fits. It returns the line the text
+// starts on.
+func (b *builder) window(f *chunk.File, run [2]int) (start int, text string) {
 	radius := b.opts.WindowRadius
 	for radius > 0 && len(f.Bytes(run[0]-radius, run[1]+radius)) > b.opts.MaxChunkBytes {
 		radius--
 	}
-	return f.Window(run[0], run[1], radius)
+	start, _, text = f.Window(run[0], run[1], radius)
+	return start, text
+}
+
+// keptEnd is the last line that text, starting on line start, keeps whole
+// once cutText cuts it, or start when the cut falls inside that line.
+func (b *builder) keptEnd(start int, text string) int {
+	if len(text) <= b.opts.MaxChunkBytes {
+		return start + strings.Count(text, "\n")
+	}
+	// A line is whole when the cut is at or past its newline.
+	kept := len(textcut.Prefix(text, b.opts.MaxChunkBytes))
+	return max(start, start+strings.Count(text[:kept+1], "\n")-1)
 }
 
 func (b *builder) cutText(text string) string {

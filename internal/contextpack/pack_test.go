@@ -736,3 +736,62 @@ func BenchmarkScanDocMentions(b *testing.B) {
 		})
 	}
 }
+
+// TestOverlayShowsEveryChangePastTheCut: a declaration whose text is over
+// MaxChunkBytes is cut, and its overlay covers only the lines the cut keeps
+// whole, so a change past the cut, in the same run as one before it or in a
+// run of its own, is still shown with lines around it.
+func TestOverlayShowsEveryChangePastTheCut(t *testing.T) {
+	src := []string{"package demo", ""}
+	for range 10 {
+		src = append(src, "// F does things.")
+	}
+	src = append(src, "func F() {")
+	for len(src) < 139 {
+		src = append(src, "\t_ = \"padding padding padding padding padding padding padding\"")
+	}
+	src = append(src, "}")
+	for _, tt := range []struct {
+		name    string
+		changed []int
+	}{
+		{"a change in the comment and one in the body past the cut", []int{3, 120}},
+		{"one run from the comment to past the cut", []int{3, 18, 33, 48, 63, 78, 93, 108, 123}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := slices.Clone(src)
+			var diff strings.Builder
+			diff.WriteString("diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n")
+			for _, l := range tt.changed {
+				lines[l-1] = fmt.Sprintf("\tchanged%d()", l)
+				if l <= 12 {
+					lines[l-1] = fmt.Sprintf("// changed%d.", l)
+				}
+				fmt.Fprintf(&diff, "@@ -%d,1 +%d,1 @@\n-%s\n+%s\n", l, l, src[l-1], lines[l-1])
+			}
+			text := strings.Join(lines, "\n") + "\n"
+			if n := len(strings.Join(lines[2:], "\n")); n <= DefaultOptions.MaxChunkBytes {
+				t.Fatalf("declaration is %d bytes, not over %d", n, DefaultOptions.MaxChunkBytes)
+			}
+			b := &builder{
+				in:   Input{Head: headTree(t, map[string]string{"f.go": text}), Diff: diff.String(), Changed: []string{"f.go"}},
+				opts: DefaultOptions, parser: &chunk.Parser{},
+			}
+			if err := b.overlay(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range b.overlayChunks {
+				if whole := strings.Join(lines[c.StartLine-1:c.EndLine], "\n"); !strings.HasPrefix(c.Text, whole) {
+					t.Errorf("overlay L%d-%d does not hold its lines whole: %q", c.StartLine, c.EndLine, textcut.Prefix(c.Text, 80))
+				}
+			}
+			for _, l := range tt.changed {
+				if !slices.ContainsFunc(b.overlayChunks, func(c Chunk) bool {
+					return c.StartLine <= l && l <= c.EndLine && c.StartLine < c.EndLine && strings.Contains(c.Text, lines[l-1]+"\n")
+				}) {
+					t.Errorf("no overlay chunk shows line %d with lines around it", l)
+				}
+			}
+		})
+	}
+}
