@@ -48,6 +48,14 @@ const similarDepth = 2 * similarPerQuery
 // holds however many files a change touches.
 const maxSimilarBody = 256 << 10
 
+// similarAnswerWithin is how long after a similar-code request arrives its
+// reranking ends at the latest, leaving the fused order to the queries that it
+// has not reranked. A run waits a minute for its answer from before it sends
+// the request, whatever the embedding and the searches took of it. The rest
+// is for the answer, its accounting, and the request's way to the gateway. A
+// variable for the tests.
+var similarAnswerWithin = 50 * time.Second
+
 // maxSimilarExclude is the most paths a run's similar-code searches leave
 // out. The run's report is read back for every search and carried by each of
 // its statements, a dozen in one request. A request's own exclusions, under
@@ -92,6 +100,7 @@ const (
 // newer than the pull request's head and base.
 func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	arrived := time.Now()
 	c, ok := g.admit(w, r)
 	if !ok {
 		return
@@ -165,6 +174,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	chunks, searched, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
 		token: c.token, queries: req.Queries, texts: texts, exclude: slices.Concat(excluded, req.Exclude), limit: answerLimit(req.Limit),
+		answerBy: arrived.Add(similarAnswerWithin),
 	}, c.logger)
 	outcome = searched
 	if errors.Is(err, errBudgetSpent) {
@@ -218,6 +228,9 @@ type similarRequest struct {
 	exclude []string
 	// limit is the most chunks the answer holds.
 	limit int
+	// answerBy is when the reranking ends at the latest, so that the answer
+	// reaches the runner while it still waits.
+	answerBy time.Time
 }
 
 // Why similar did not search: the run's budget was spent before it, or it

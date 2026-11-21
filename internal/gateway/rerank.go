@@ -61,25 +61,35 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 
 // rerank scores each query's candidates by the reranker, in place of their
 // fused score, one query at a time under one of the reranker's slots, all
-// within its deadline, the wait for the slot included. Each query's
-// rr.CandidateCount() best by the fused order are sent, and its others rank
-// after them, in that order. It fails open: a query that the reranker does
-// not answer, or that the deadline leaves out, keeps the fused order of all
-// of its candidates, and a failure is logged and counted as the reranker's
-// call. What it sends is reserved against the run's budget first, at four
-// characters a token of each query beside each of its documents, as a
-// reranker reads them in pairs, and only if it fits in what is left of the
-// budget: the reranking is optional, and must not take what the review's
-// own steps need. A run with less left keeps the fused order. The
-// reservation is settled at the tokens that the provider reports. A request
-// that reranked records a usage row of the review with them, none for
-// search units alone, which the usage and its caps do not count.
+// within its deadline, the wait for the slot included. The deadline is the
+// reranker's timeout, or the request's r.answerBy when that comes first:
+// reranking that starts late in the request does not keep the fused order
+// from the runner. Each query's rr.CandidateCount() best by the fused order
+// are sent, and its others rank after them, in that order. It fails open: a
+// query that the reranker does not answer, or that the deadline leaves out,
+// keeps the fused order of all of its candidates, and a failure is logged
+// and counted as the reranker's call. What it sends is reserved against the
+// run's budget first, at four characters a token of each query beside each
+// of its documents, as a reranker reads them in pairs, and only if it fits in
+// what is left of the budget: the reranking is optional, and must not take
+// what the review's own steps need. A run with less left keeps the fused
+// order. The reservation is settled at the tokens that the provider reports.
+// A request that reranked records a usage row of the review with them, none
+// for search units alone, which the usage and its caps do not count.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
 ) {
 	byQuery := rerankBatches(cands, rr.CandidateCount())
 	if len(byQuery) == 0 {
+		return
+	}
+	deadline := time.Now().Add(rr.Deadline())
+	if r.answerBy.Before(deadline) {
+		deadline = r.answerBy
+	}
+	if time.Until(deadline) <= 0 {
+		logger.Info("similar code not reranked: the answer is due", "answer_by", r.answerBy)
 		return
 	}
 	docs := map[int][]string{}
@@ -105,7 +115,7 @@ func (g *Server) rerank(
 	defer func() { g.chargeRun(ctx, r.token, spent.Tokens-reserved, logger) }()
 	// The wait for a slot counts against the deadline, so a reranker whose
 	// slots are all held delays the answer no longer than its timeout.
-	dctx, cancel := context.WithTimeout(ctx, rr.Deadline())
+	dctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	key := "rerank:" + rr.Model
 	waitStarted := time.Now()

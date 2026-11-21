@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -163,17 +164,7 @@ apps:
 			}
 			t.Cleanup(func() { _ = st.RevokeGatewayTokens(context.Background(), runner) })
 			before := rerankUsage()
-			req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(`{"queries":["x := ParseHTTPRequest(r)"]}`))
-			req.Header.Set("Authorization", "Bearer "+token)
-			out := httptest.NewRecorder()
-			g.ServeHTTP(out, req)
-			if out.Code != http.StatusOK {
-				t.Fatalf("status=%d: %s", out.Code, out.Body.String())
-			}
-			var resp contextpack.SimilarResponse
-			if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
-				t.Fatal(err)
-			}
+			resp := askSimilar(t, &g, token)
 			got := make([]string, 0, len(resp.Chunks))
 			for _, c := range resp.Chunks {
 				got = append(got, c.Path+":"+c.Ref)
@@ -192,6 +183,74 @@ apps:
 			}
 		})
 	}
+	// The runner stops waiting a minute after it asks. An embedding that
+	// leaves less than the reranker's timeout before the answer is due cuts
+	// the reranking there, and one that leaves no time skips it: either way
+	// the fused order is answered in time, not at the reranker's timeout.
+	for _, tt := range []struct {
+		name     string
+		embedFor time.Duration
+		reranks  int32
+	}{{"answer due during the reranking", 0, 1}, {"answer due before the reranking", 300 * time.Millisecond, 0}} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
+			similarAnswerWithin = 200 * time.Millisecond
+			slow := similarEmbedFunc(func(ctx context.Context, inputs []string) ([][]float32, int64, error) {
+				time.Sleep(tt.embedFor)
+				return embed(ctx, inputs)
+			})
+			var reranks atomic.Int32
+			hanging := rerankFunc(func(ctx context.Context, _ string, _ []string) ([]float64, model.RerankUsage, error) {
+				reranks.Add(1)
+				<-ctx.Done()
+				return nil, model.RerankUsage{}, ctx.Err()
+			})
+			g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: st, Logger: slog.New(slog.DiscardHandler),
+				Current:   configfile.NewCurrent(config(`{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, timeout: 30s } }`)),
+				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return slow }},
+				Rerankers: &adapter.Rerankers{Build: func(configfile.Rerank) model.Reranker { return hanging }},
+			}
+			token, err := st.MintGatewayToken(ctx, store.GatewayGrant{
+				RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1000,
+			}, time.Now().Add(time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.RevokeGatewayTokens(context.Background(), runner) })
+			started := time.Now()
+			resp := askSimilar(t, &g, token)
+			if took := time.Since(started); took > 5*time.Second {
+				t.Fatalf("answered after %v, want it due 200ms after the request arrived, not at the reranker's 30s", took)
+			}
+			if len(resp.Chunks) != 2 || resp.Chunks[0].Path != "named.go" {
+				t.Errorf("chunks %+v, want the fused order", resp.Chunks)
+			}
+			if n := reranks.Load(); n != tt.reranks {
+				t.Errorf("%d rerank calls, want %d", n, tt.reranks)
+			}
+			if grant, err := st.LookupGatewayToken(ctx, token); err != nil || grant.Spent != 1 {
+				t.Errorf("the run spent %d tokens (%v), want the embedding's 1 alone", grant.Spent, err)
+			}
+		})
+	}
+}
+
+// askSimilar asks g, with the run token, for the code similar to the
+// tests' query, and fails the test unless g answers it.
+func askSimilar(t *testing.T, g *Server, token string) contextpack.SimilarResponse {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(`{"queries":["x := ParseHTTPRequest(r)"]}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	out := httptest.NewRecorder()
+	g.ServeHTTP(out, req)
+	if out.Code != http.StatusOK {
+		t.Fatalf("status=%d: %s", out.Code, out.Body.String())
+	}
+	var resp contextpack.SimilarResponse
+	if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }
 
 // rerankFailures counts the reranker's failed calls.

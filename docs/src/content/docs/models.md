@@ -951,8 +951,11 @@ A reranker fails open: a query that it does not rerank keeps the fused
 order. A request reranks its queries one at a time, holding one of the
 reranker's slots, which the provider's `concurrency` sets, as the
 embedder's does, and `timeout` covers the wait for the slot and every
-call. A query goes without reranking in three ways, and only the first is
-counted as a model call:
+call. The reranking also ends 50 seconds after the request reached the
+gateway, sooner than `timeout` when the embedding and the searches were
+slow, so that the fused order reaches the run, which waits a minute for
+its answer. A query goes without reranking in three ways, and only the
+first is counted as a model call:
 
 - A call that fails, or that `timeout` cuts short, is logged as a warning,
   `gateway: similar code not reranked: the fused order stands`, and
@@ -961,9 +964,11 @@ counted as a model call:
 - A request that gets no slot within `timeout` makes no call. It is logged
   as a warning, `gateway: similar code not reranked: no slot`, and no
   metric counts it.
-- Once `timeout` has passed, a request sends none of its remaining queries.
-  Its `similar candidates reranked` log line shows how many of its
-  `queries` were `reranked`.
+- Once `timeout` or those 50 seconds have passed, a request sends none of
+  its remaining queries. Its `similar candidates reranked` log line shows
+  how many of its `queries` were `reranked`. One whose 50 seconds passed
+  before it reranked sends none, and logs `similar code not reranked: the
+  answer is due`.
 
 The tokens that the provider reports are recorded as usage with role
 `rerank`, and count against the account's `limits`. They are not charged
