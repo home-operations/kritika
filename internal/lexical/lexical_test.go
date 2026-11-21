@@ -158,3 +158,39 @@ func TestDocumentCombiningMarks(t *testing.T) {
 		}
 	}
 }
+
+// TestHyphenAfterADigit: a hyphen after a digit joins a name that starts
+// with a letter to the letters after it, so http2-server gives the
+// http2server that http2Server and http2_server give. A run that starts with
+// a digit is a number and does not join, a digit after a hyphen does not
+// either, and a minus between names of a letter and digits keeps the names.
+func TestHyphenAfterADigit(t *testing.T) {
+	for _, tt := range []struct {
+		text string
+		want []string
+	}{
+		{"http2-server", []string{"http2server", "http", "server"}},
+		{"http2Server", []string{"http2server", "http", "server"}},
+		{"top-10-results", []string{"top", "results"}},
+		{"n-1", nil},
+		{"x2-y2", []string{"x2", "y2"}},
+		{"x86-64", []string{"x86"}},
+	} {
+		t.Run(tt.text, func(t *testing.T) {
+			ws := Words(tt.text)
+			got := make([]string, 0, len(ws))
+			for _, w := range ws {
+				got = append(got, w.Lexeme)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Words(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+	if got := Document("yaml", "", "", "", "name: http2-server"); !slices.Contains(got, "http2server") {
+		t.Errorf("Document of YAML that names http2-server = %q, want http2server in it", got)
+	}
+	if got := Document("go", "", "", "", "d := h2-server"); slices.Contains(got, "h2server") {
+		t.Errorf("Document of Go = %q, want no h2server: a hyphen is a minus there", got)
+	}
+}

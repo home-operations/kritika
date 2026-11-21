@@ -46,8 +46,9 @@ type Word struct {
 // "ratelimit rateLimit" holds a compound ratelimit, as "rateLimit ratelimit"
 // does. Language keywords, the names every file uses, English stop words,
 // numbers, and words of one letter are left out. A hyphen between two
-// letters joins them, as a query's text can be any language's, or prose,
-// where rate-limit names rateLimit.
+// letters joins them, and so does one between a name's digit and a letter,
+// as a query's text can be any language's, or prose, where rate-limit names
+// rateLimit and http2-server names http2Server.
 func Words(text string) []Word { return words(text, true) }
 
 func words(text string, hyphens bool) []Word {
@@ -76,20 +77,30 @@ func words(text string, hyphens bool) []Word {
 		at[lexeme] = len(out)
 		out = append(out, w)
 	}
-	for _, id := range identifiers(text, hyphens) {
+	var identifier func(id string)
+	identifier = func(id string) {
 		parts := split(id)
-		whole := strings.ToLower(separators.Replace(id))
 		// a-b is two names, as a hyphen can be a minus, but an underscore is
-		// part of a name: x86_64 and a_b are one each, as k8s and v2 are.
-		if !strings.Contains(id, "-") || slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
-			add(whole, id, true, len(parts) > 1)
+		// part of a name: x86_64 and a_b are one each, as k8s and v2 are. So
+		// a hyphenated id whose parts are all of one letter is the names
+		// between its hyphens: x2-y2 is x2 and y2.
+		if strings.Contains(id, "-") && !slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
+			for name := range strings.SplitSeq(id, "-") {
+				identifier(name)
+			}
+			return
 		}
+		whole := strings.ToLower(separators.Replace(id))
+		add(whole, id, true, len(parts) > 1)
 		if len(parts) == 1 && strings.ToLower(parts[0]) == whole {
-			continue
+			return
 		}
 		for _, p := range parts {
 			add(strings.ToLower(p), p, false, false)
 		}
+	}
+	for _, id := range identifiers(text, hyphens) {
+		identifier(id)
 	}
 	return out
 }
@@ -134,9 +145,10 @@ var minusLanguages = func() map[string]bool {
 }()
 
 // identifiers are text's runs of letters, digits and underscores, and the
-// combining marks on them. With
-// hyphens, a hyphen between two letters is kept inside one: a kebab-case
-// name is one identifier, n-1 is two tokens. A run that starts with a digit
+// combining marks on them. With hyphens, a hyphen before a letter is kept
+// inside a run when a letter is before it, or a digit in a run that starts
+// with a letter: a kebab-case name is one identifier, as http2-server is,
+// while n-1 is two tokens and so is 10-items. A run that starts with a digit
 // is a number and is left out.
 func identifiers(text string, hyphens bool) []string {
 	var out []string
@@ -161,7 +173,9 @@ func identifiers(text string, hyphens bool) []string {
 		case r == '-' && hyphens && start >= 0 && i > 0:
 			prev, _ := utf8.DecodeLastRuneInString(text[:i])
 			next, _ := utf8.DecodeRuneInString(text[i+1:])
-			if !unicode.IsLetter(prev) && !unicode.IsMark(prev) || !unicode.IsLetter(next) {
+			after := unicode.IsLetter(prev) || unicode.IsMark(prev) ||
+				unicode.IsDigit(prev) && startsWithLetter(strings.TrimLeft(text[start:i], "_"))
+			if !after || !unicode.IsLetter(next) {
 				flush(i)
 			}
 		default:
