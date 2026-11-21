@@ -181,8 +181,8 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
 		staged[i] = store.StagedChunk{Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text,
-			StartLine: c.StartLine, EndLine: c.EndLine}
-		texts[i] = rerankDocument(contextpack.Chunk{Path: c.Path, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text})
+			StartLine: c.StartLine, EndLine: c.EndLine, Signature: c.Signature}
+		texts[i] = evalDocument(c)
 	}
 	started := time.Now()
 	vectors := embed(texts)
@@ -716,5 +716,41 @@ func TestEvalRerankScale(t *testing.T) {
 	got := keepCandidates(cands, map[hitKey]int{}, 1)
 	if len(got) != 1 || got[0].Path != "b.go" {
 		t.Fatalf("kept %+v, want b.go, which the reranker scores higher", got)
+	}
+}
+
+// evalDocument is what the index embeds of a chunk, as the worker's
+// embedText makes it without a document prompt: its path and declaration,
+// the signature of a window that does not show it, then its text.
+func evalDocument(c indexer.Chunk) string {
+	head := c.Path
+	if c.Symbol != "" {
+		head += " " + c.Kind + " " + strings.TrimPrefix(c.Scope+"."+c.Symbol, ".")
+	}
+	if c.Signature != "" {
+		head += "\n" + c.Signature
+	}
+	return head + "\n" + c.Text
+}
+
+// TestEvalDocument: the replay embeds a window of a declaration under its
+// signature, as the index does.
+func TestEvalDocument(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		chunk indexer.Chunk
+		want  string
+	}{
+		{"a declaration", indexer.Chunk{Path: "a.go", Symbol: "Run", Kind: "method", Scope: "Server", Text: "func (s *Server) Run() {}"},
+			"a.go method Server.Run\nfunc (s *Server) Run() {}"},
+		{"a window under its signature", indexer.Chunk{Path: "a.go", Symbol: "Run", Kind: "func", Signature: "func Run(ctx context.Context) error {",
+			Text: "\treturn nil\n}"}, "a.go func Run\nfunc Run(ctx context.Context) error {\n\treturn nil\n}"},
+		{"no declaration", indexer.Chunk{Path: "go.mod", Text: "module x"}, "go.mod\nmodule x"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := evalDocument(tt.chunk); got != tt.want {
+				t.Errorf("evalDocument = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
