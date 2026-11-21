@@ -837,10 +837,15 @@ name alone shows the names it shares with the query instead, as in
 `(shares AcquireLease, Lease)`: its similarity is under the floor, or more
 than the margin below its query's best, and is not shown.
 
-The search by name is one statement, which runs within five seconds,
-after the vector search, and reads the repository's count of chunks and
-its words' postings as one publication left them. If it fails, the request is answered by the vector search alone, and
-`kritika_lexical_search_seconds` counts the failure.
+The search by name is one statement, which runs after the vector search
+within five seconds, or within what is left of 50 seconds after the
+request reached the gateway when that is less, so that a slow one does not
+keep the vector search's hits from the run. It reads the repository's count
+of chunks and its words' postings as one publication left them. If it
+fails, the request is answered by the vector search alone, and
+`kritika_lexical_search_seconds` counts the failure. Once those 50 seconds
+have passed, the request is answered by the vector search alone without
+one, and logs `similar code searched by vector alone: the answer is due`.
 
 The words of a generation's chunks are stored as postings: a row of
 `index_postings` for each word, under the key generation and word, that

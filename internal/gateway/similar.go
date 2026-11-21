@@ -49,8 +49,9 @@ const similarDepth = 2 * similarPerQuery
 const maxSimilarBody = 256 << 10
 
 // similarAnswerWithin is how long after a similar-code request arrives its
-// reranking ends at the latest, leaving the fused order to the queries that it
-// has not reranked. A run waits a minute for its answer from before it sends
+// search by name and its reranking end at the latest, leaving the vector
+// search's hits, in the fused order, to the queries that they have not
+// reached. A run waits a minute for its answer from before it sends
 // the request, whatever the embedding and the searches took of it. The rest
 // is for the answer, its accounting, and the request's way to the gateway. A
 // variable for the tests.
@@ -217,8 +218,8 @@ type similarRequest struct {
 	exclude store.Exclusions
 	// limit is the most chunks the answer holds.
 	limit int
-	// answerBy is when the reranking ends at the latest, so that the answer
-	// reaches the runner while it still waits.
+	// answerBy is when the search by name and the reranking end at the
+	// latest, so that the answer reaches the runner while it still waits.
 	answerBy time.Time
 }
 
@@ -396,17 +397,34 @@ func (g *Server) similar(
 // bounds the whole of it.
 const lexicalTimeout = 5 * time.Second
 
+// lexicalWithin is how long the search by name of a request due by answerBy
+// can take, starting at now: lexicalTimeout, or what is left before
+// answerBy when that is less, in whole milliseconds, which is what a
+// statement timeout takes. Under a millisecond is none, and not a timeout of
+// 0, which would not bound the search at all.
+func lexicalWithin(now, answerBy time.Time) time.Duration {
+	return max(min(lexicalTimeout, answerBy.Sub(now)).Truncate(time.Millisecond), 0)
+}
+
 // searchByName is lexicalHits for the request in a savepoint of tx, within
-// lexicalTimeout. Its failure leaves the vector search's hits to answer the
-// request alone: it is logged and counted, and no hit is returned. Only the
-// request's own end, which the transaction cannot outlive, is an error.
+// lexicalWithin of the request's answerBy: a slow search by name ends while
+// the runner still waits for the vector search's hits, and none is made
+// once the answer is due. Its failure leaves the vector search's hits to
+// answer the request alone: it is logged and counted, and no hit is
+// returned. Only the request's own end, which the transaction cannot
+// outlive, is an error.
 func (g *Server) searchByName(
 	ctx context.Context, tx pgx.Tx, r similarRequest, runID string, vectors [][]float32, depth int, logger *slog.Logger,
 ) ([]store.SimilarHit, error) {
 	started := time.Now()
+	within := lexicalWithin(started, r.answerBy)
+	if within == 0 {
+		logger.Info("similar code searched by vector alone: the answer is due", "answer_by", r.answerBy)
+		return nil, nil
+	}
 	var named []store.SimilarHit
 	err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
-		timeout := strconv.FormatInt(lexicalTimeout.Milliseconds(), 10)
+		timeout := strconv.FormatInt(within.Milliseconds(), 10)
 		if _, err := sp.Exec(ctx, `SELECT set_config('statement_timeout', $1, true)`, timeout); err != nil {
 			return err
 		}

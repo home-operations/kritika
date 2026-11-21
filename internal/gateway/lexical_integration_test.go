@@ -601,3 +601,32 @@ func TestSearchByNameClaims(t *testing.T) {
 		}
 	})
 }
+
+// TestSimilarLexicalAnswerDue: a request whose answer is due by the time
+// its vectors are searched is answered by the vector search alone, and the
+// search by name is not made, rather than given a timeout of its own that
+// would outlast the runner's wait for the vector search's hits.
+func TestSimilarLexicalAnswerDue(t *testing.T) {
+	r := newLexicalRepo(t, "due", runspec.IndexFormat, widgets, widgetVectors())
+	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
+	similarAnswerWithin = 0
+	reg := prometheus.NewRegistry()
+	code, got := r.ask(t, r.file, nil, reg, "widgetFactory()")
+	if want := []string{"near.go:similarity 1.00"}; code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
+	}
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != "kritika_lexical_search_seconds" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			if n := metric.GetHistogram().GetSampleCount(); n != 0 {
+				t.Errorf("searches by name counted %d (%v), want none made", n, metric.Label)
+			}
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/store"
@@ -369,5 +370,31 @@ func TestRerankBackfill(t *testing.T) {
 	}
 	if want := []string{"e.go", "b.go", "a.go", "f.go", "g.go", "c.go", "d.go"}; !slices.Equal(got, want) {
 		t.Fatalf("kept %q, want %q", got, want)
+	}
+}
+
+// TestLexicalWithin: the search by name takes lexicalTimeout, or what is
+// left before the answer is due when that is less, in the whole
+// milliseconds a statement timeout takes, and none under a millisecond.
+func TestLexicalWithin(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	for _, tt := range []struct {
+		name string
+		left time.Duration
+		want time.Duration
+	}{
+		{"plenty left", time.Minute, lexicalTimeout},
+		{"exactly the timeout left", lexicalTimeout, lexicalTimeout},
+		{"less than the timeout left", 2*time.Second + 500*time.Microsecond, 2 * time.Second},
+		{"a millisecond left", time.Millisecond, time.Millisecond},
+		{"under a millisecond left", 999 * time.Microsecond, 0},
+		{"due now", 0, 0},
+		{"past due", -time.Second, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lexicalWithin(now, now.Add(tt.left)); got != tt.want {
+				t.Errorf("lexicalWithin with %v left = %v, want %v", tt.left, got, tt.want)
+			}
+		})
 	}
 }
