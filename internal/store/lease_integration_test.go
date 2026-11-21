@@ -533,10 +533,49 @@ func refuseLogin(conn net.Conn) error {
 }
 
 // TestIndexUpdateWaitsWhenItsSessionIsRefused: an index update that has to
-// wait for a slot, where Postgres at its connection limit refuses the
-// wait's session of its own, waits for one on the application pool and takes
-// the slot let go, rather than fail while the pool can serve it.
+// wait for a slot, where its wait's session of its own cannot be opened,
+// waits for one on the application pool and takes the slot let go, rather
+// than fail while the pool can serve it. Postgres at its connection limit
+// refuses the session, and a dial of a new connection can fail, as while DNS
+// does, though the pool's open connections still work.
 func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// dial is each new connection once the pool holds its own. It
+		// signals refused when it has turned one away.
+		dial func(refused chan<- struct{}) (net.Conn, error)
+	}{
+		{"at Postgres's connection limit", func(refused chan<- struct{}) (net.Conn, error) {
+			client, server := net.Pipe()
+			go func() {
+				if refuseLogin(server) == nil {
+					signal(refused)
+				}
+			}()
+			return client, nil
+		}},
+		{"a failed dial", func(refused chan<- struct{}) (net.Conn, error) {
+			signal(refused)
+			return nil, &net.DNSError{Err: "server misbehaving", Name: "postgres", IsTemporary: true}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			indexUpdateWaitsWithoutSession(t, tt.dial)
+		})
+	}
+}
+
+// signal sends on c unless a send waits there already.
+func signal(c chan<- struct{}) {
+	select {
+	case c <- struct{}{}:
+	default:
+	}
+}
+
+// indexUpdateWaitsWithoutSession runs TestIndexUpdateWaitsWhenItsSessionIsRefused
+// with dial in place of each new connection.
+func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struct{}) (net.Conn, error)) {
 	s := openStore(t)
 	// A bound on the test's waits alone, for an update that never takes the
 	// slot: the test then fails rather than hold up the suite.
@@ -554,7 +593,7 @@ func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Once the pool holds its connection, Postgres refuses every new one.
+	// Once the pool holds its connection, every new one goes to dial.
 	var full atomic.Bool
 	refused := make(chan struct{}, 1)
 	var dialer net.Dialer
@@ -562,16 +601,7 @@ func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
 		if !full.Load() {
 			return dialer.DialContext(ctx, network, addr)
 		}
-		client, server := net.Pipe()
-		go func() {
-			if refuseLogin(server) == nil {
-				select {
-				case refused <- struct{}{}:
-				default:
-				}
-			}
-		}()
-		return client, nil
+		return dial(refused)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -619,6 +649,6 @@ func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
 		t.Fatalf("the update did not take the slot let go: %v", ctx.Err())
 	}
 	if updateErr != nil || updated == nil {
-		t.Fatalf("AcquireIndexLease with its session refused = %v, %v; want the slot let go", updated, updateErr)
+		t.Fatalf("AcquireIndexLease without its session = %v, %v; want the slot let go", updated, updateErr)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/home-operations/kritika/internal/configfile"
 )
@@ -82,8 +81,9 @@ const indexBuildClaimLock = `hashtextextended('kritika-index-build-claim ' || $1
 // waits for a slot, no build takes one (TakeIndexBuildLease), so it gets the
 // next that a build lets go, between two of the build's calls. It tries
 // again at the shortest of AcquireLease's waits, since the builds leave it
-// the slot meanwhile. Where Postgres refuses the wait's session, at its
-// connection limit, the update waits on the pool without coming first.
+// the slot meanwhile. Where the wait's session cannot be opened, as when
+// Postgres at its connection limit refuses it, the update waits on the pool
+// without coming first.
 func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, update bool) (*Lease, error) {
 	if !update {
 		for try := 0; ; try++ {
@@ -105,14 +105,19 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 	}
 	// The wait is a session of its own, which takes none of the pool's
 	// connections for as long as it lasts, and whose end, closed or lost,
-	// lets the lock go. Postgres at its connection limit refuses it
-	// (53300), and the update then waits on the pool as AcquireLease does,
-	// though without coming before the builds, rather than fail while the
-	// pool can serve it.
+	// lets the lock go. Where it cannot be opened, as when Postgres at its
+	// connection limit refuses it (53300) or a new connection's dial fails
+	// while the pool's open ones still work, the update waits on the pool as
+	// AcquireLease does, though without coming before the builds, rather
+	// than fail while the pool can serve it. The login is bounded by
+	// indexWaitDial, so a dial that hangs costs the update its priority
+	// alone.
 	cfg := s.app.Config().ConnConfig
 	cfg.RuntimeParams["application_name"] = "kritika-index-wait"
-	conn, err := pgx.ConnectConfig(ctx, cfg)
-	switch pgErr, _ := errors.AsType[*pgconn.PgError](err); {
+	dctx, cancel := context.WithTimeout(ctx, indexWaitDial)
+	conn, err := pgx.ConnectConfig(dctx, cfg)
+	cancel()
+	switch {
 	case err == nil:
 		defer func() {
 			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
@@ -124,11 +129,11 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 		if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock_shared(`+indexWaitLock+`)`, accountID, modelKey); err != nil {
 			return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
 		}
-	case pgErr != nil && pgErr.Code == "53300":
-		s.logger.Warn("index update waits for a slot without coming before the builds: Postgres refused its session",
-			"model", modelKey, "error", err)
-	default:
+	case ctx.Err() != nil:
 		return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
+	default:
+		s.logger.Warn("index update waits for a slot without coming before the builds: its session could not be opened",
+			"model", modelKey, "error", err)
 	}
 	for {
 		l, err := s.TakeLease(ctx, accountID, modelKey, slots, jobID)
@@ -141,9 +146,12 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 	}
 }
 
-// indexWaitClose bounds closing the session of an index update's wait for a
-// slot.
-const indexWaitClose = 5 * time.Second
+// indexWaitDial bounds opening, and indexWaitClose closing, the session of
+// an index update's wait for a slot.
+const (
+	indexWaitDial  = 5 * time.Second
+	indexWaitClose = 5 * time.Second
+)
 
 // leaseWait waits d before another try for a slot of modelKey, or until ctx
 // ends.
