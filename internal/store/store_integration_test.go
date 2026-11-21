@@ -208,7 +208,7 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			`LOCK TABLE repositories IN ACCESS SHARE MODE`, column("repositories", "repo_config_off")},
 		{"the postings and the generation's count", []string{"0069_index_postings"}, "",
 			`LOCK TABLE index_runs IN ACCESS SHARE MODE`, column("index_runs", "generation_chunks")},
-		{"the index of the steps' formats", []string{"0071_index_runs_stepped_idx"}, `DROP INDEX index_runs_stepped_idx`,
+		{"the index of the steps' formats", []string{"0070_index_runs_stepped_idx"}, `DROP INDEX index_runs_stepped_idx`,
 			`LOCK TABLE index_runs IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_runs_stepped_idx') IS NOT NULL`)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
