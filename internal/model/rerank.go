@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,6 +48,13 @@ const (
 
 // RerankAPIs are the APIs NewReranker takes.
 var RerankAPIs = []string{RerankCohere, RerankJina, RerankVoyage, RerankTEI}
+
+// maxRerankUsage bounds a count of what one rerank call spent, as its
+// provider reports it: far past what one call of the gateway's reads, and
+// small enough that a request's calls cannot overflow their sum. The gateway
+// settles the run's budget at the count, so one that is negative, not a whole
+// number or past the bound is taken for none reported.
+const maxRerankUsage = math.MaxUint32
 
 // maxRerankAnswer bounds a rerank answer, which carries a score, and with
 // some APIs a document, for each document sent.
@@ -112,7 +120,9 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	if used.Tokens == 0 {
 		// TEI reports what a request computed in a header of its answer
 		// alone.
-		used.Tokens, _ = strconv.ParseInt(resp.Header.Get("X-Compute-Tokens"), 10, 64)
+		if n, err := strconv.ParseUint(resp.Header.Get("X-Compute-Tokens"), 10, 32); err == nil {
+			used.Tokens = int64(n)
+		}
 	}
 	scores := make([]float64, len(documents))
 	for i := range scores {
@@ -180,15 +190,15 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 			Results []ranked `json:"results"`
 			Data    []ranked `json:"data"`
 			Usage   struct {
-				TotalTokens float64 `json:"total_tokens"`
+				TotalTokens json.Number `json:"total_tokens"`
 			} `json:"usage"`
 			Meta struct {
 				BilledUnits struct {
-					InputTokens float64 `json:"input_tokens"`
-					SearchUnits float64 `json:"search_units"`
+					InputTokens json.Number `json:"input_tokens"`
+					SearchUnits json.Number `json:"search_units"`
 				} `json:"billed_units"`
 				Tokens struct {
-					InputTokens float64 `json:"input_tokens"`
+					InputTokens json.Number `json:"input_tokens"`
 				} `json:"tokens"`
 			} `json:"meta"`
 		}
@@ -200,8 +210,9 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 			ranks = out.Data
 		}
 		used = RerankUsage{
-			Tokens:      int64(max(out.Usage.TotalTokens, out.Meta.BilledUnits.InputTokens, out.Meta.Tokens.InputTokens)),
-			SearchUnits: int64(out.Meta.BilledUnits.SearchUnits),
+			Tokens: max(usageCount(out.Usage.TotalTokens), usageCount(out.Meta.BilledUnits.InputTokens),
+				usageCount(out.Meta.Tokens.InputTokens)),
+			SearchUnits: usageCount(out.Meta.BilledUnits.SearchUnits),
 		}
 	}
 	if len(ranks) == 0 {
@@ -222,4 +233,15 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 		out[i] = rerankRank{Index: *rk.Index, Score: *score}
 	}
 	return out, used, nil
+}
+
+// usageCount is n, a count of what a rerank call spent, when it is a whole
+// number from 0 to maxRerankUsage, and 0, none reported, otherwise, absent
+// included.
+func usageCount(n json.Number) int64 {
+	f, err := strconv.ParseFloat(string(n), 64)
+	if err != nil || f < 0 || f > maxRerankUsage || f != math.Trunc(f) {
+		return 0
+	}
+	return int64(f)
 }

@@ -133,6 +133,46 @@ func TestRerankerRefusals(t *testing.T) {
 	}
 }
 
+// TestRerankerInvalidUsage: a count of what a call spent that is negative,
+// fractional or past maxRerankUsage, in TEI's header or another API's JSON,
+// is taken for none reported, since the gateway settles the run's budget at
+// it. The scores still stand.
+func TestRerankerInvalidUsage(t *testing.T) {
+	for _, tt := range []struct {
+		name, api, answer, header string
+	}{
+		{name: "negative header", api: RerankTEI, header: "-5"},
+		{name: "header past int64", api: RerankTEI, header: "99999999999999999999"},
+		{name: "header past the bound", api: RerankTEI, header: "4294967296"},
+		{name: "fractional header", api: RerankTEI, header: "1.5"},
+		{name: "negative tokens", api: RerankCohere, answer: `"meta":{"billed_units":{"input_tokens":-3,"search_units":-1}}`},
+		{name: "tokens past float64", api: RerankCohere, answer: `"meta":{"tokens":{"input_tokens":1e400}}`},
+		{name: "tokens past the bound", api: RerankJina, answer: `"usage":{"total_tokens":1e19}`},
+		{name: "fractional units", api: RerankCohere, answer: `"meta":{"billed_units":{"search_units":0.5}}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tt.header != "" {
+					w.Header().Set("X-Compute-Tokens", tt.header)
+				}
+				if tt.api == RerankTEI {
+					_, _ = io.WriteString(w, `[{"index":0,"score":0.8},{"index":1,"score":0.1}]`)
+					return
+				}
+				_, _ = io.WriteString(w, `{"results":[{"index":0,"relevance_score":0.8},{"index":1,"relevance_score":0.1}],`+tt.answer+`}`)
+			}))
+			defer srv.Close()
+			scores, used, err := NewReranker(tt.api, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a", "b"})
+			if err != nil {
+				t.Fatalf("Rerank = %v, want the scores kept", err)
+			}
+			if !slices.Equal(scores, []float64{0.8, 0.1}) || used != (RerankUsage{}) {
+				t.Fatalf("scores %v, usage %+v; want [0.8 0.1] and none reported", scores, used)
+			}
+		})
+	}
+}
+
 // TestRerankerErrorBody: a refusal's error carries its status code, not what
 // the provider answered, in its body or in its status line's reason phrase,
 // either of which can echo the query, a document or a key.
