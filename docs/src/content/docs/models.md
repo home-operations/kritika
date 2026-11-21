@@ -874,6 +874,17 @@ can report no tokens: the row is recorded with none, and the search units are
 logged with the reranking (`search_units`), as usage and its caps count
 tokens alone.
 
+A reranker reads every candidate in full, and its tokens count against the
+account's `tokensPerMonth` as a review's do: the caps have no limit of their
+own for it. A review's similar-code stage sends up to twelve queries, each
+with `candidates` chunks, and this repository's chunks average about 900
+characters, some 250 tokens. So one stage reranks about
+12 × 50 × 250 = 150,000 tokens of chunks at the default 50 candidates, and
+more when the provider counts the query, up to 3,000 characters, with each
+candidate. Each `search_code` call is one query: about 12,500 tokens, and a
+review makes ten at most. Lower `candidates`, or raise `tokensPerMonth`, before
+turning a reranker on for many repositories.
+
 ```yaml
 providers:
   # Cohere's v2 API
