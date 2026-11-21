@@ -283,19 +283,24 @@ func (b *builder) overlay(ctx context.Context) error {
 			if covered[run[0]] && covered[run[1]] {
 				continue
 			}
-			var c Chunk
-			if decl := f.Enclosing([]int{run[0], run[1]}, b.opts.MaxDeclLines); decl != nil {
+			c := Chunk{Stage: StageOverlay, Path: path, Language: f.Language}
+			decl := f.Enclosing([]int{run[0], run[1]}, b.opts.MaxDeclLines)
+			if decl != nil {
+				c.Symbol, c.Kind, c.Scope = decl.Symbol, decl.Kind, decl.Scope
 				start, text := b.declText(f, decl, run[0])
-				c = Chunk{
-					Stage: StageOverlay, Path: path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-					StartLine: start, EndLine: decl.EndLine, Text: string(text),
+				// A comment or body over MaxChunkBytes ahead of the run's first
+				// line would leave the cut text without it, so a window shows
+				// it instead, still as the declaration's.
+				ahead := len(text) - len(f.Bytes(run[0], decl.EndLine))
+				if len(text) <= b.opts.MaxChunkBytes || ahead+len(f.Bytes(run[0], run[0])) <= b.opts.MaxChunkBytes {
+					c.StartLine, c.EndLine, c.Text = start, decl.EndLine, string(text)
 				}
-			} else {
-				s, e, text := f.Window(run[0], run[1], b.opts.WindowRadius)
-				if text == "" {
+			}
+			if c.Text == "" {
+				c.StartLine, c.EndLine, c.Text = b.window(f, run)
+				if c.Text == "" {
 					continue
 				}
-				c = Chunk{Stage: StageOverlay, Path: path, Language: f.Language, StartLine: s, EndLine: e, Text: text}
 			}
 			for l := c.StartLine; l <= c.EndLine; l++ {
 				covered[l] = true
@@ -402,6 +407,17 @@ func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int
 		}
 	}
 	return start, text
+}
+
+// window is the fixed-window fallback for run: WindowRadius lines on each
+// side, fewer when that would put it over MaxChunkBytes, so the cut keeps
+// the run and the lines it covers are the lines it shows.
+func (b *builder) window(f *chunk.File, run [2]int) (start, end int, text string) {
+	radius := b.opts.WindowRadius
+	for radius > 0 && len(f.Bytes(run[0]-radius, run[1]+radius)) > b.opts.MaxChunkBytes {
+		radius--
+	}
+	return f.Window(run[0], run[1], radius)
 }
 
 func (b *builder) cutText(text string) string {

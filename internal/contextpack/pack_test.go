@@ -544,6 +544,58 @@ func TestOverlayKeepsTheHeadUnderACommentThatClosesOnIt(t *testing.T) {
 	}
 }
 
+// TestOverlayWindowsAChangeTheDeclarationCutDrops: a change deep in a block
+// doc comment over MaxChunkBytes, above a function that still fits the line
+// limit with it, is past where the declaration's text is cut. The overlay is
+// a window around the change instead, and covers only the window's lines.
+func TestOverlayWindowsAChangeTheDeclarationCutDrops(t *testing.T) {
+	doc := " * F does things, and does them at some length.\n"
+	src := "package demo\n\n/*\n" + strings.Repeat(doc, 131) + " * CHANGED.\n" + strings.Repeat(doc, 8) + " */\nfunc F() {\n\t_ = 0\n}\n"
+	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -135,1 +135,1 @@\n-" + doc + "+ * CHANGED.\n"
+	f := (&chunk.Parser{}).Parse("f.go", []byte(src))
+	decl := f.Enclosing([]int{135}, DefaultOptions.MaxDeclLines)
+	if decl == nil || decl.Symbol != "F" || decl.StartLine != 3 || f.Text(135, 135) != " * CHANGED." || len(f.Bytes(3, 134)) <= DefaultOptions.MaxChunkBytes {
+		t.Fatalf("declaration = %+v, want F from line 3 with line 135 past MaxChunkBytes", decl)
+	}
+	f.Close()
+	b := &builder{
+		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
+		opts: DefaultOptions, parser: &chunk.Parser{},
+	}
+	if err := b.overlay(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.overlayChunks) != 1 {
+		t.Fatalf("overlay = %+v, want one chunk", b.overlayChunks)
+	}
+	c := b.overlayChunks[0]
+	if c.Symbol != "F" || c.StartLine != 115 || c.EndLine != 147 || !strings.Contains(c.Text, " * CHANGED.\n") || !strings.HasSuffix(c.Text, "func F() {\n\t_ = 0\n}") {
+		t.Fatalf("overlay = L%d-%d %q, want F's window around line 135, lines 115 to 147", c.StartLine, c.EndLine, textcut.Prefix(c.Text, 80))
+	}
+}
+
+// TestOverlayWindowFitsMaxChunkBytes: a window whose lines are long is
+// narrowed to MaxChunkBytes around the change, so the cut does not drop it.
+func TestOverlayWindowFitsMaxChunkBytes(t *testing.T) {
+	line := "key: " + strings.Repeat("v", 495) + "\n"
+	src := strings.Repeat(line, 30) + "key: CHANGED\n" + strings.Repeat(line, 30)
+	diff := "diff --git a/f.yaml b/f.yaml\n--- a/f.yaml\n+++ b/f.yaml\n@@ -31,1 +31,1 @@\n-key: old\n+key: CHANGED\n"
+	b := &builder{
+		in:   Input{Head: headTree(t, map[string]string{"f.yaml": src}), Diff: diff, Changed: []string{"f.yaml"}},
+		opts: DefaultOptions, parser: &chunk.Parser{},
+	}
+	if err := b.overlay(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.overlayChunks) != 1 {
+		t.Fatalf("overlay = %+v, want one chunk", b.overlayChunks)
+	}
+	c := b.overlayChunks[0]
+	if c.StartLine != 26 || c.EndLine != 36 || !strings.Contains(c.Text, "key: CHANGED") || len(c.Text) > DefaultOptions.MaxChunkBytes {
+		t.Fatalf("overlay = L%d-%d, %d bytes, want lines 26 to 36 around line 31 within %d bytes", c.StartLine, c.EndLine, len(c.Text), DefaultOptions.MaxChunkBytes)
+	}
+}
+
 // headTree commits files to an in-memory repository and returns the tree.
 func headTree(t testing.TB, files map[string]string) *object.Tree {
 	t.Helper()
