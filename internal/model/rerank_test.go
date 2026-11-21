@@ -415,3 +415,20 @@ func TestRerankerDecodeErrorValues(t *testing.T) {
 		})
 	}
 }
+
+// TestRerankerOversizedAnswer: an answer longer than maxRerankAnswer is
+// refused, even when the part of it within the bound is a whole ranking, and
+// still reports the tokens TEI's header says were computed.
+func TestRerankerOversizedAnswer(t *testing.T) {
+	ranking := `[{"index":0,"score":0.9}]`
+	answer := ranking + strings.Repeat(" ", maxRerankAnswer-len(ranking)) + "x"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Compute-Tokens", "17")
+		_, _ = io.WriteString(w, answer)
+	}))
+	defer srv.Close()
+	scores, used, err := NewReranker(RerankTEI, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+	if err == nil || scores != nil || used != (RerankUsage{Tokens: 17}) {
+		t.Fatalf("Rerank = %v, %+v, %v; want a refusal that reports 17 tokens spent", scores, used, err)
+	}
+}

@@ -117,9 +117,14 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	if n, err := strconv.ParseUint(resp.Header.Get("X-Compute-Tokens"), 10, 32); err == nil {
 		computed.Tokens = int64(n)
 	}
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer))
+	// One byte past the bound tells an answer cut at it from one that ends
+	// there: the part within the bound can be whole JSON of its own.
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer+1))
 	if err != nil {
 		return nil, computed, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
+	}
+	if len(answer) > maxRerankAnswer {
+		return nil, computed, fmt.Errorf("model: rerank: the answer is longer than %d bytes", maxRerankAnswer)
 	}
 	// An answer refused for its ranks still reports what the provider spent
 	// on it, which the gateway charges the run.
