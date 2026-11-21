@@ -91,27 +91,24 @@ func TestRetrievalEval(t *testing.T) {
 		qv := embed(queries)
 		// The gateway searches as deep with a reranker as without one, and
 		// deeper for one sent more candidates than that.
-		rerankDepth := max(evalDepth, candidates)
-		depth := evalDepth
-		if reranker != nil {
-			depth = rerankDepth
-		}
-		hits, named := ix.search(t, &timing, queries, qv, changed, depth)
+		base, deep := evalSearches(func(depth int, timed *evalSearchTime) evalHits {
+			return ix.search(t, timed, queries, qv, changed, depth)
+		}, &timing, evalDepth, max(evalDepth, candidates), reranker != nil)
 		for _, v := range variants {
-			vdepth := evalDepth
+			found := base
 			if strings.HasSuffix(v, "+rerank") {
-				vdepth = rerankDepth
+				found = deep
 			}
 			var cands []candidate
 			f := floor
 			switch strings.TrimSuffix(v, "+rerank") {
 			case "vector":
-				cands = fuse(evalTop(hits, vdepth), nil)
+				cands = fuse(found.hits, nil)
 			case "lexical":
 				// No similarity vouches for a chunk.
-				cands, f = fuse(nil, evalTop(named, vdepth)), 2
+				cands, f = fuse(nil, found.named), 2
 			case "hybrid":
-				cands = fuse(evalTop(hits, vdepth), evalTop(named, vdepth))
+				cands = fuse(found.hits, found.named)
 			}
 			counts := map[hitKey]int{}
 			kept, _, _ := gateCandidates(cands, f, margin)
@@ -119,6 +116,7 @@ func TestRetrievalEval(t *testing.T) {
 				started := time.Now()
 				evalRerank(t, reranker, queries, kept, candidates)
 				timing.rerank += time.Since(started)
+				timing.reranks++
 			}
 			top := evalBest(kept, similarPerQuery)
 			for q, text := range queries {
@@ -249,53 +247,81 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 	return evalIndexed{st: st, account: account.ID(), run: run, chunks: chunks}
 }
 
-// evalTiming is the time the searches of the evaluation took.
+// evalTiming is the time the searches and the reranking of the evaluation
+// took: base the searches at the depth without a reranker, deep those at a
+// reranker's deeper one.
 type evalTiming struct {
-	requests                int
-	vector, lexical, rerank time.Duration
+	base, deep evalSearchTime
+	reranks    int
+	rerank     time.Duration
+}
+
+// evalSearchTime is the time that requests searches took.
+type evalSearchTime struct {
+	requests        int
+	vector, lexical time.Duration
 }
 
 func (e evalTiming) String() string {
-	per := func(d time.Duration) time.Duration {
-		return (d / time.Duration(max(1, e.requests))).Round(100 * time.Microsecond)
+	per := func(d time.Duration, n int) time.Duration {
+		return (d / time.Duration(max(1, n))).Round(100 * time.Microsecond)
 	}
-	return fmt.Sprintf("per request of %d: vector search %s, lexical search %s, reranking %s",
-		e.requests, per(e.vector), per(e.lexical), per(e.rerank))
+	s := fmt.Sprintf("per request of %d: vector search %s, lexical search %s",
+		e.base.requests, per(e.base.vector, e.base.requests), per(e.base.lexical, e.base.requests))
+	if e.deep.requests > 0 {
+		s += fmt.Sprintf("; at the reranker's depth, per request of %d: vector search %s, lexical search %s",
+			e.deep.requests, per(e.deep.vector, e.deep.requests), per(e.deep.lexical, e.deep.requests))
+	}
+	if e.reranks > 0 {
+		s += fmt.Sprintf("; per reranking of %d: %s", e.reranks, per(e.rerank, e.reranks))
+	}
+	return s
+}
+
+// evalHits is what both searches of a request found.
+type evalHits struct{ hits, named []store.SimilarHit }
+
+// evalSearches is what a request's searches find at depth, base, and, with a
+// reranker, at rerankDepth, deep, each by a search of its own, as the gateway
+// searches with or without one. A deeper search cut to depth is not one at
+// depth: the search by name compares chunks of one weight by their vectors
+// only so far past the depth, and cuts the rest by their IDs, so a deeper
+// one can find a nearer chunk that one at depth never sees. One search
+// serves both when the depths are the same.
+func evalSearches(
+	search func(depth int, timed *evalSearchTime) evalHits, timing *evalTiming, depth, rerankDepth int, reranking bool,
+) (base, deep evalHits) {
+	base = search(depth, &timing.base)
+	if !reranking || rerankDepth == depth {
+		return base, base
+	}
+	return base, search(rerankDepth, &timing.deep)
 }
 
 // search runs both searches of a request, depth deep, as the gateway does.
 func (ix evalIndexed) search(
-	t *testing.T, timing *evalTiming, queries []string, vectors [][]float32, exclude []string, depth int,
-) (hits, named []store.SimilarHit) {
+	t *testing.T, timed *evalSearchTime, queries []string, vectors [][]float32, exclude []string, depth int,
+) evalHits {
 	ctx := t.Context()
+	var found evalHits
 	if err := ix.st.WithAccount(ctx, ix.account, func(tx pgx.Tx) error {
 		started := time.Now()
 		var err error
-		if hits, err = store.SimilarChunks(ctx, tx, ix.run, vectors, exclude, depth); err != nil {
+		if found.hits, err = store.SimilarChunks(ctx, tx, ix.run, vectors, exclude, depth); err != nil {
 			return err
 		}
 		searched := time.Now()
-		if named, err = lexicalHits(ctx, tx, ix.run, queries, vectors, exclude, depth); err != nil {
+		if found.named, err = lexicalHits(ctx, tx, ix.run, queries, vectors, exclude, depth); err != nil {
 			return err
 		}
-		timing.requests++
-		timing.vector += searched.Sub(started)
-		timing.lexical += time.Since(searched)
+		timed.requests++
+		timed.vector += searched.Sub(started)
+		timed.lexical += time.Since(searched)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return hits, named
-}
-
-// evalTop is each query's depth first hits, as a search of the gateway's
-// answers at that depth.
-func evalTop(hits []store.SimilarHit, depth int) []store.SimilarHit {
-	taken := map[int]int{}
-	return slices.DeleteFunc(slices.Clone(hits), func(h store.SimilarHit) bool {
-		taken[h.Query]++
-		return taken[h.Query] > depth
-	})
+	return found
 }
 
 // evalBest is each query's n best candidates, in its order.
@@ -672,5 +698,42 @@ func TestEvalRerankScale(t *testing.T) {
 	got := keepCandidates(cands, map[hitKey]int{}, 1)
 	if len(got) != 1 || got[0].Path != "b.go" {
 		t.Fatalf("kept %+v, want b.go, which the reranker scores higher", got)
+	}
+}
+
+// TestEvalSearchesAtEachDepth: the replay's variants without a reranker read
+// a search at their own depth, not a reranker's deeper one cut to it, and the
+// +rerank variants one at the reranker's depth. A depth is searched once.
+func TestEvalSearchesAtEachDepth(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		depth, rerankDepth int
+		reranking          bool
+		searched           []int
+		base, deep         string
+	}{
+		{name: "no reranker", depth: 8, rerankDepth: 32, searched: []int{8}, base: "8.go", deep: "8.go"},
+		{name: "a deeper reranker", depth: 8, rerankDepth: 32, reranking: true, searched: []int{8, 32}, base: "8.go", deep: "32.go"},
+		{name: "a reranker as deep", depth: 8, rerankDepth: 8, reranking: true, searched: []int{8}, base: "8.go", deep: "8.go"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var searched []int
+			// Each depth finds a chunk of its own, as the search by name can
+			// when chunks tie.
+			search := func(depth int, timed *evalSearchTime) evalHits {
+				searched = append(searched, depth)
+				timed.requests++
+				return evalHits{named: []store.SimilarHit{{Chunk: contextpack.Chunk{Path: strconv.Itoa(depth) + ".go"}}}}
+			}
+			var timing evalTiming
+			base, deep := evalSearches(search, &timing, tt.depth, tt.rerankDepth, tt.reranking)
+			if !slices.Equal(searched, tt.searched) || timing.base.requests+timing.deep.requests != len(searched) {
+				t.Fatalf("searched at %v, timed %d and %d; want %v, each timed once", searched, timing.base.requests,
+					timing.deep.requests, tt.searched)
+			}
+			if base.named[0].Chunk.Path != tt.base || deep.named[0].Chunk.Path != tt.deep {
+				t.Fatalf("base found %s and deep %s, want %s and %s", base.named[0].Chunk.Path, deep.named[0].Chunk.Path, tt.base, tt.deep)
+			}
+		})
 	}
 }
