@@ -555,6 +555,12 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid, 'repositories'::regclass::oid`).Scan(&table, &repositories); err != nil {
 		t.Fatal(err)
 	}
+	// Marked as a sweep before would have, so that the partitioner's one
+	// wait for index_chunks is its conversion's, which then takes the tables
+	// that the publication holds.
+	if err := s.markLegacyIndexChunks(ctx); err != nil {
+		t.Fatal(err)
+	}
 
 	// A writer holds index_chunks, so the partitioner queues for it.
 	writer, err := s.owner.Begin(ctx)

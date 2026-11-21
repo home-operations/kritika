@@ -159,26 +159,31 @@ var gaveWay func()
 // partitioning created, a plain table, the legacy partition of a partitioned
 // one, and reports whether it did. The legacy partition holds every chunk
 // created until then, kept as it is. Its indexes and foreign keys become
-// those of the partitioned table, so nothing is copied or built. It gains
-// legacy, true for every chunk, which writes no row. Attaching it reads the
-// table once, to check that every chunk's legacy is true, under the table's
-// exclusive lock. Searches and builds wait for that scan,
-// seconds for millions of chunks. A table that a build before this one's
-// columns created gains them, and the content hash's index, first, outside
-// that lock (prepareIndexChunks).
+// those of the partitioned table, so nothing is copied or built. Before
+// that, it gains legacy, true for every chunk, and legacyMark, a CHECK that
+// it is true, which proves the legacy partition's bound once validated
+// (markLegacyIndexChunks). So attaching it under the table's exclusive lock
+// reads no chunk: the CHECK's validation reads them all, before, under a
+// lock that lets searches read the table and builds write it. A table that a
+// build before this one's columns created gains them, and the content hash's
+// index, first, outside that lock too (prepareIndexChunks).
 //
 // New chunks go to the hash partitions. DrainLegacyIndexChunks moves the
 // legacy partition's chunks there, or deletes those that no build needs, a
-// slice at a time, and DropLegacyIndexChunks then drops it. Until then, a
-// search reads the legacy partition's vector index too, which costs about
-// what a vector search of the plain table did. Leader only.
+// slice at a time, and DropLegacyIndexChunks then drops it, with legacyMark.
+// Until then, a search reads the legacy partition's vector index too, which
+// costs about what a vector search of the plain table did. Leader only.
 func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: PartitionIndexChunks needs the owner connection")
 	}
-	// So that the conversion, under its exclusive lock, adds no column and
-	// attaches the content hash's index rather than build one.
+	// So that the conversion, under its exclusive lock, adds no column,
+	// attaches the content hash's index rather than build one, and reads no
+	// chunk to attach the table.
 	if err := s.prepareIndexChunks(ctx, nil); err != nil {
+		return false, fmt.Errorf("store: partition index_chunks: %w", err)
+	}
+	if err := s.markLegacyIndexChunks(ctx); err != nil {
 		return false, fmt.Errorf("store: partition index_chunks: %w", err)
 	}
 	var partitioned bool
@@ -199,17 +204,20 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
 			return err
 		}
-		var kind *string
-		if err := tx.QueryRow(ctx, `SELECT relkind::text FROM pg_class WHERE oid = to_regclass('index_chunks')`).Scan(&kind); err != nil &&
-			!errors.Is(err, pgx.ErrNoRows) {
+		if plain, err := plainIndexChunks(ctx, tx); err != nil || !plain {
 			return err
-		}
-		if kind == nil || *kind != "r" {
-			return nil
 		}
 		schema, ok, err := IndexSchemaIn(ctx, tx)
 		if err != nil || !ok {
 			return err
+		}
+		var marked bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_constraint
+			WHERE conrelid = 'index_chunks'::regclass AND conname = $1 AND convalidated)`, legacyMark).Scan(&marked); err != nil {
+			return err
+		}
+		if !marked {
+			return errLegacyUnmarked
 		}
 		started := time.Now()
 		// index_chunks first: a transaction that writes it and then one of
@@ -230,15 +238,11 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		}
 		// The lock waited for every transaction that wrote a chunk, so the
 		// table holds each one written before the partitioned table exists.
-		// The column is added once the table is renamed, so that its NOT NULL
-		// constraint is named after the legacy partition rather than taking
-		// the name that the partitioned table's will.
 		stmts := []string{`ALTER TABLE index_chunks RENAME TO index_chunks_legacy`}
 		for _, suffix := range legacyIndexChunksIndexes {
 			stmts = append(stmts, `ALTER INDEX IF EXISTS index_chunks_`+suffix+` RENAME TO index_chunks_legacy_`+suffix)
 		}
-		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM `+pgx.Identifier{appRole}.Sanitize(),
-			`ALTER TABLE index_chunks_legacy ADD COLUMN legacy boolean NOT NULL DEFAULT true`)
+		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM `+pgx.Identifier{appRole}.Sanitize())
 		for _, stmt := range stmts {
 			if _, err := tx.Exec(ctx, stmt); err != nil {
 				return err
@@ -259,6 +263,100 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		return nil
 	})
 	return partitioned, err
+}
+
+// plainIndexChunks reports whether index_chunks is a plain table, as a build
+// before partitioning created it.
+func plainIndexChunks(ctx context.Context, tx pgx.Tx) (bool, error) {
+	var plain bool
+	err := tx.QueryRow(ctx, `SELECT coalesce((SELECT relkind = 'r' FROM pg_class WHERE oid = to_regclass('index_chunks')), false)`).
+		Scan(&plain)
+	return plain, err
+}
+
+// legacyMark is the CHECK constraint that every chunk of a plain index_chunks
+// is legacy. Validated, it proves the bound of the legacy partition that the
+// table becomes, so attaching it reads no chunk. The partition keeps it until
+// it is dropped. It is named, as legacy's NOT NULL constraint is, as the
+// legacy partition's constraints are, which renameLegacyConstraints leaves
+// as they are, so that neither takes a name that the partitioned table's
+// would.
+const legacyMark = "index_chunks_legacy_legacy_check"
+
+// errLegacyUnmarked says that a plain index_chunks lacks a validated
+// legacyMark, as when a build before partitioning created it again after
+// markLegacyIndexChunks. The next sweep marks it.
+var errLegacyUnmarked = errors.New("store: index_chunks has no validated " + legacyMark)
+
+// markLegacyIndexChunks readies a plain index_chunks to be attached as the
+// legacy partition, in two transactions. The first adds legacy, true for
+// every chunk, which writes no row, and legacyMark, NOT VALID, which reads
+// none: it holds the table's exclusive lock for a moment, and gives way as
+// the conversion does, as every search queues behind its wait. The second
+// validates legacyMark, which reads every chunk under a lock that lets
+// searches read the table and builds write it, while a chunk that a build
+// writes meanwhile is checked as it is written. Each looks for what it adds
+// first, so a try after the first committed only validates.
+func (s *Store) markLegacyIndexChunks(ctx context.Context) error {
+	for _, step := range []func(context.Context, pgx.Tx) error{addLegacyMark, validateLegacyMark} {
+		if err := retryLocks(ctx, func() error {
+			return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
+					return err
+				}
+				if plain, err := plainIndexChunks(ctx, tx); err != nil || !plain {
+					return err
+				}
+				if err := yieldLocks(ctx, tx); err != nil {
+					return err
+				}
+				return step(ctx, tx)
+			})
+		}); err != nil {
+			return fmt.Errorf("store: mark legacy index chunks: %w", err)
+		}
+	}
+	return nil
+}
+
+// addLegacyMark adds legacy and legacyMark to the plain index_chunks unless
+// it holds them. It looks first, as ALTER TABLE takes the table's exclusive
+// lock even when they exist.
+func addLegacyMark(ctx context.Context, tx pgx.Tx) error {
+	var column, check bool
+	if err := tx.QueryRow(ctx, `SELECT
+			EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_chunks'::regclass AND attname = 'legacy' AND NOT attisdropped),
+			EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'index_chunks'::regclass AND conname = $1)`, legacyMark).
+		Scan(&column, &check); err != nil {
+		return err
+	}
+	var adds []string
+	if !column {
+		adds = append(adds, `ADD COLUMN legacy boolean CONSTRAINT index_chunks_legacy_legacy_not_null NOT NULL DEFAULT true`)
+	}
+	if !check {
+		adds = append(adds, `ADD CONSTRAINT `+legacyMark+` CHECK (legacy) NOT VALID`)
+	}
+	if len(adds) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `ALTER TABLE index_chunks `+strings.Join(adds, ", "))
+	return err
+}
+
+// validateLegacyMark validates legacyMark unless it is.
+func validateLegacyMark(ctx context.Context, tx pgx.Tx) error {
+	var valid bool
+	err := tx.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conrelid = 'index_chunks'::regclass AND conname = $1`,
+		legacyMark).Scan(&valid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errLegacyUnmarked
+	}
+	if err != nil || valid {
+		return err
+	}
+	_, err = tx.Exec(ctx, `ALTER TABLE index_chunks VALIDATE CONSTRAINT `+legacyMark)
+	return err
 }
 
 // renameLegacyConstraints gives the constraints of the renamed plain table,
