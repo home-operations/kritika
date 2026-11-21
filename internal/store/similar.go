@@ -123,7 +123,9 @@ type LexicalTerm struct {
 // more, and fewer than LexicalCommonMax however many that is. With Share, a
 // word in more than one in Share of them is too common too, which bars the
 // words that nearly every chunk of a small generation holds, whose weight
-// says nothing of a chunk. A Per or Share of 0 sets no such bound.
+// says nothing of a chunk. A Per or Share of 0 sets no such bound: without
+// Per, Least alone bounds a word, and without Least either, LexicalCommonMax
+// alone does.
 type LexicalBar struct{ Per, Least, Share int }
 
 // lexicalChunksSQL reads, for each term of every query of a request
@@ -153,7 +155,7 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 		FROM g, unnest($5::text[]) AS t (t)
 		JOIN index_postings p ON p.index_run_id = $1 AND p.lexeme = t.t,
 			unnest(p.chunk_ids) AS x (chunk_id)
-		WHERE p.chunks < least(greatest(trunc(g.n / nullif($6::int, 0)), $7::int), $13::int)
+		WHERE p.chunks < least(greatest(trunc(g.n / nullif($6::int, 0)), nullif($7::int, 0)), $13::int)
 			AND ($14::int = 0 OR p.chunks::float8 * $14::int <= g.n)
 	), weights AS (
 		SELECT q.qi, q.t, q.compound, f.n, ln(1 + (g.n - f.n + 0.5) / (f.n + 0.5)) AS w

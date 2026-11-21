@@ -761,3 +761,38 @@ func TestSweepIndexProgressBesideSchemaRebuild(t *testing.T) {
 		}
 	}
 }
+
+// TestLexicalChunksBarWithoutPer: a LexicalBar without Per bounds a word by
+// Least alone, and one without Least either by LexicalCommonMax alone, so a
+// rare word is found.
+func TestLexicalChunksBarWithoutPer(t *testing.T) {
+	s := openStore(t)
+	f := newPostingsFixture(t, s, "postings-bar")
+	run := f.run(IndexModeFull, "running")
+	f.insert(run, "", map[string]string{"a.go": "func rareWord() {}", "b.go": "func other() {}", "c.go": "func third() {}"})
+	f.publish(run)
+	for _, tt := range []struct {
+		name string
+		bar  LexicalBar
+		want []string
+	}{
+		{"no bar", LexicalBar{}, []string{"a.go"}},
+		{"a Least the word reaches", LexicalBar{Least: 1}, nil},
+		{"a Least above the word", LexicalBar{Least: 2}, []string{"a.go"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			f.in(func(tx pgx.Tx) error {
+				q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "rareword", Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+				hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, nil, 10, tt.bar, 10)
+				for _, h := range hits {
+					got = append(got, h.Chunk.Path)
+				}
+				return err
+			})
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("a search with %+v found %q, want %q", tt.bar, got, tt.want)
+			}
+		})
+	}
+}
