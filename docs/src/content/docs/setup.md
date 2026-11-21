@@ -196,10 +196,16 @@ connection's webhooks arrive, a poll asks once an hour: on GitHub, with 100
 indexed repositories, that is 100 requests an hour against the installation's
 limit of 5,000 or more. Once no webhook has arrived for `config.pollLookback`
 (24h unless set), every poll asks, 600 requests an hour at the default
-interval. A newly elected leader asks at its first poll. A poll stops asking
-at GitHub's rate limit. A repository whose last index job ended within the
-hour without moving its index, because it failed or the repository's
-`.kritika.yaml` sets `enabled: false`, is left until the hour is up.
+interval. A newly elected leader asks at its first poll. These asks follow
+the pull requests, with an interval of their own, so a slow branch lookup
+holds back no pull request. A poll stops asking at GitHub's rate limit, or
+at the end of that interval, and the next poll past the limit's wait
+resumes at the repository it stopped at. A repository whose last index job
+ended within the hour without leaving its index at the branch, because it
+failed or the repository's `.kritika.yaml` sets `enabled: false`, is left
+until the hour is up. A repository whose `.kritika.yaml` turned indexing off
+is asked for even at the indexed commit, so a force push back to it is not
+missed.
 The leader is the replica that runs the polls. A newly elected leader polls
 at once, so a restart catches up on the pull requests opened, pushed to or
 closed while kritika was down.

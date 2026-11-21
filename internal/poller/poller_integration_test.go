@@ -405,7 +405,7 @@ func (s *tipPoll) poll() {
 // indexJobs are the commits of the index jobs of the first repository.
 func (s *tipPoll) indexJobs() []string {
 	s.t.Helper()
-	rows, err := s.st.App().Query(s.t.Context(), `SELECT args->>'commit_sha' FROM river_job
+	rows, err := s.st.App().Query(s.t.Context(), `SELECT coalesce(args->>'commit_sha', '') FROM river_job
 		WHERE kind = 'index' AND args->>'repository_id' = $1 ORDER BY id`, s.repoIDs[0])
 	if err != nil {
 		s.t.Fatal(err)
@@ -495,7 +495,10 @@ func TestPollerLogsAMissingBranchOnce(t *testing.T) {
 // ended without bringing the index to its commit, failed or skipped because
 // the repository's .kritika.yaml turns indexing off, will end so again. So
 // the poll leaves the branch alone for jobs.OnboardRetryAfter after it, as
-// the onboarding feeder does a repository whose first index failed.
+// the onboarding feeder does a repository whose first index failed. A job
+// that published and then failed or found indexing off at a newer tip ended
+// so too, as did a forced rebuild's catch-up that failed. The last job to
+// end is the one that counts.
 func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	for _, tc := range []struct {
@@ -514,10 +517,36 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 			UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`},
 		{name: "found the index at its commit", end: `UPDATE river_job SET state = 'completed', finalized_at = now(),
 			args = jsonb_set(args, '{commit_sha}', '"indexed"') WHERE id = $1`},
+		// The job published the commit it was queued for, snoozed for the
+		// branch that moved meanwhile, and failed at the newer tip.
+		{name: "published, then failed at a newer tip", end: `WITH run AS (INSERT INTO index_runs
+			(account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT (args->>'account_id')::uuid, (args->>'repository_id')::uuid, 'published', 'fake-embed', 8, 'incremental', 'completed'
+			FROM river_job WHERE id = $1)
+			UPDATE river_job SET state = 'discarded', finalized_at = now(), args = jsonb_set(args, '{commit_sha}', '"indexed"') WHERE id = $1`,
+			backsOff: true},
+		{name: "published, then found a newer tip off", end: `WITH run AS (INSERT INTO index_runs
+			(account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT (args->>'account_id')::uuid, (args->>'repository_id')::uuid, 'published', 'fake-embed', 8, 'incremental', 'completed'
+			FROM river_job WHERE id = $1), off AS (UPDATE repositories SET repo_config_off = true
+			WHERE id = (SELECT (args->>'repository_id')::uuid FROM river_job WHERE id = $1))
+			UPDATE river_job SET state = 'completed', finalized_at = now(), args = jsonb_set(args, '{commit_sha}', '"indexed"') WHERE id = $1`,
+			backsOff: true},
+		// A forced rebuild's catch-up is queued for no commit.
+		{name: "a catch-up that failed", end: `UPDATE river_job SET state = 'discarded', finalized_at = now(), args = args - 'commit_sha'
+			WHERE id = $1`, backsOff: true},
+		// The last job to end is the one that counts.
+		{name: "published after a failure", end: `WITH later AS (INSERT INTO river_job (args, kind, max_attempts, queue, state, attempt, finalized_at)
+			SELECT args, kind, max_attempts, queue, 'completed', 1, now() FROM river_job WHERE id = $1),
+			run AS (INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT (args->>'account_id')::uuid, (args->>'repository_id')::uuid, 'published', 'fake-embed', 8, 'incremental', 'superseded'
+			FROM river_job WHERE id = $1)
+			UPDATE river_job SET state = 'discarded', finalized_at = now() - interval '10 minutes' WHERE id = $1`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() {
 				s.exec(`DELETE FROM index_runs WHERE commit_sha = 'published' AND repository_id = $1`, s.repoIDs[0])
+				s.exec(`UPDATE repositories SET repo_config_off = false WHERE id = $1`, s.repoIDs[0])
 			})
 			s.clearIndexJobs()
 			s.tf.tip = "moved"
@@ -528,9 +557,9 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 				t.Fatalf("the first poll's index job: %v", err)
 			}
 			s.exec(tc.end, id)
-			calls := s.tf.calls
+			calls, jobs := s.tf.calls, len(s.indexJobs())
 			s.poll()
-			asked, queued := s.tf.calls-calls, len(s.indexJobs())-1
+			asked, queued := s.tf.calls-calls, len(s.indexJobs())-jobs
 			if tc.backsOff && (asked != 0 || queued != 0) {
 				t.Fatalf("%d tip checks and %d index jobs queued, want the branch left alone", asked, queued)
 			}
@@ -690,6 +719,28 @@ func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
 	}
 	if !slices.Equal(polled, []int{19}) || !recorded {
 		t.Fatalf("pull requests of home-ops polled %v, poll state recorded %v; want #19 and the state recorded", polled, recorded)
+	}
+}
+
+// TestPollerRechecksAnOptOutAtTheIndexedCommit: a repository whose
+// .kritika.yaml turned indexing off, at a branch that a force push took back
+// to the indexed commit with no webhook, has its file read again. Otherwise
+// the mark stays and retention drops an index that the file turns on. A job
+// that finds it still off is not queued again every poll.
+func TestPollerRechecksAnOptOutAtTheIndexedCommit(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/home-ops")
+	s.tf.tip = "indexed"
+	s.exec(`UPDATE repositories SET repo_config_off = true WHERE id = $1`, s.repoIDs[0])
+	t.Cleanup(func() { s.exec(`UPDATE repositories SET repo_config_off = false WHERE id = $1`, s.repoIDs[0]) })
+	s.poll()
+	if got := s.indexJobs(); !slices.Equal(got, []string{"indexed"}) {
+		t.Fatalf("index jobs = %v, want one at the indexed commit", got)
+	}
+	s.exec(`UPDATE river_job SET state = 'completed', finalized_at = now() WHERE kind = 'index'`)
+	calls := s.tf.calls
+	s.poll()
+	if got := s.indexJobs(); s.tf.calls != calls || len(got) != 1 {
+		t.Fatalf("after a job that found it off: %d tip checks and index jobs %v, want none and the one", s.tf.calls-calls, got)
 	}
 }
 

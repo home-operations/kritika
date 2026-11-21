@@ -631,7 +631,10 @@ func (p *Poller) pollTip(
 	if err != nil {
 		return err
 	}
-	if tip == r.IndexedCommit {
+	// A repository marked off in its .kritika.yaml is read again at the
+	// indexed commit too: a force push back to it, with no webhook, leaves
+	// the mark, and retention drops an index that the file turns on.
+	if tip == r.IndexedCommit && !r.RepoConfigOff {
 		return nil
 	}
 	ev := webhook.Event{
