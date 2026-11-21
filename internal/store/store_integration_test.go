@@ -658,6 +658,18 @@ func TestIndexAddedColumns(t *testing.T) {
 				t.Fatalf("EnsureIndexSchema: %v", err)
 			}
 			check("kept by a leader")
+			if tt.index == "" {
+				return
+			}
+			// A leader whose index build gave up after the column committed
+			// builds the index alone the next time.
+			if _, err := s.owner.Exec(ctx, `DROP INDEX `+tt.index); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+				t.Fatalf("EnsureIndexSchema: %v", err)
+			}
+			check("its index built again by a leader")
 		})
 	}
 }

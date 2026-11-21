@@ -23,8 +23,9 @@ import (
 //
 // It also records this build's index format, runspec.IndexFormat. A new
 // format drops nothing: the generations of another format still answer
-// searches while the onboarding feeder rebuilds them, a few at a time.
-// Leader only.
+// searches while the onboarding feeder rebuilds them, a few at a time. A
+// table that it keeps, it first brings up to this build's columns
+// (prepareIndexChunks). Leader only.
 func (s *Store) EnsureIndexSchema(
 	ctx context.Context, appRole, model string, dims int, documentPrompt string,
 ) (rebuilt bool, err error) {
@@ -33,6 +34,13 @@ func (s *Store) EnsureIndexSchema(
 	}
 	if dims <= 0 || dims > configfile.MaxEmbedDims {
 		return false, fmt.Errorf("store: embedding dimension %d is outside the index limit of %d", dims, configfile.MaxEmbedDims)
+	}
+	// Before the format is applied, which lets this build's index jobs
+	// write the columns.
+	if err := s.prepareIndexChunks(ctx, func(cur IndexSchema) bool {
+		return cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt
+	}); err != nil {
+		return false, err
 	}
 	err = pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
@@ -45,9 +53,6 @@ func (s *Store) EnsureIndexSchema(
 		case !ok:
 			return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
 		case cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt:
-			if err := addColumns(ctx, tx); err != nil {
-				return err
-			}
 			return s.applyIndexFormat(ctx, tx, cur.Format)
 		}
 		// No generation is valid for a different embedder, so detach every
@@ -114,19 +119,18 @@ const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_i
 	WHERE content_hash IS NOT NULL`
 
 // addedColumns are the columns of index_chunks that migrations added, with
-// their types and indexes, "" for none. The lexemes have none: a search
-// reads index_postings, which a publication writes from the lexemes of the
-// chunks it adds and replaces.
-var addedColumns = []struct{ name, typ, index string }{
-	{"content_hash", "bytea", contentHashIndex},
-	{"lexemes", "tsvector", ""},
+// their types. Of them, the content hash alone is indexed, by
+// contentHashIndex. The lexemes are not: a search reads index_postings,
+// which a publication writes from the lexemes of the chunks it adds and
+// replaces.
+var addedColumns = []struct{ name, typ string }{
+	{"content_hash", "bytea"},
+	{"lexemes", "tsvector"},
 }
 
-// addColumns adds each of addedColumns, and its index, to an index_chunks
-// that a build before it created. During a rollout, such a build can still
-// be leader after the migration ran and rebuild the table for a new
-// embedder. It looks first, as ALTER TABLE takes the table's exclusive lock
-// even when the column exists.
+// addColumns adds each of addedColumns that index_chunks lacks. It looks
+// first, as ALTER TABLE takes the table's exclusive lock even when the
+// column exists.
 func addColumns(ctx context.Context, tx pgx.Tx) error {
 	for _, c := range addedColumns {
 		var exists bool
@@ -137,13 +141,68 @@ func addColumns(ctx context.Context, tx pgx.Tx) error {
 		if exists {
 			continue
 		}
-		for _, stmt := range []string{`ALTER TABLE index_chunks ADD COLUMN ` + c.name + ` ` + c.typ, c.index} {
-			if stmt == "" {
-				continue
+		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks ADD COLUMN `+c.name+` `+c.typ); err != nil {
+			return fmt.Errorf("store: add index_chunks.%s: %w", c.name, err)
+		}
+	}
+	return nil
+}
+
+// addContentHashIndex builds contentHashIndex unless it exists. It looks
+// first, as CREATE INDEX takes the table's lock even when the index exists.
+func addContentHashIndex(ctx context.Context, tx pgx.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`).Scan(&exists); err != nil {
+		return fmt.Errorf("store: read index_chunks indexes: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, contentHashIndex); err != nil {
+		return fmt.Errorf("store: index index_chunks.content_hash: %w", err)
+	}
+	return nil
+}
+
+// prepareIndexChunks brings an index_chunks that a build before
+// addedColumns created up to them and to contentHashIndex. During a rollout,
+// such a build can still be leader after the migrations ran and create the
+// table again for a new embedder. keep, nil for any, says whether the table
+// built for the recorded index schema stays: one that the caller drops
+// instead is left as it is.
+//
+// The columns are added, and committed, before the index is built in a
+// transaction of its own. Adding one takes the table's exclusive lock, which
+// every search queues behind, for a moment: it writes no row. Building the
+// index reads every chunk, under a lock that lets searches read the table
+// and holds up builds' writes until it is done. Each looks for what it adds
+// first, so a retry after the columns committed builds the index alone. As
+// the migrations do, each gives up its wait for a lock after a few seconds
+// rather than hold up what queues behind it, and the caller tries again
+// later.
+func (s *Store) prepareIndexChunks(ctx context.Context, keep func(IndexSchema) bool) error {
+	for _, step := range []func(context.Context, pgx.Tx) error{addColumns, addContentHashIndex} {
+		prepared := false
+		err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
+				return fmt.Errorf("store: lock index schema: %w", err)
 			}
-			if _, err := tx.Exec(ctx, stmt); err != nil {
-				return fmt.Errorf("store: add index_chunks.%s: %w", c.name, err)
+			schema, ok, err := IndexSchemaIn(ctx, tx)
+			if err != nil || !ok || keep != nil && !keep(schema) {
+				return err
 			}
+			var exists bool
+			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+				return fmt.Errorf("store: prepare index_chunks: %w", err)
+			}
+			prepared = true
+			return step(ctx, tx)
+		})
+		if err != nil || !prepared {
+			return err
 		}
 	}
 	return nil

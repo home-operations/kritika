@@ -1180,3 +1180,131 @@ func lockWaiters(t *testing.T, s *Store, n int) {
 	}
 	t.Fatalf("fewer than %d transactions wait for a lock", n)
 }
+
+// TestContentHashIndexBuiltApart: a populated plain index_chunks that a
+// leader of a build before content hashes recreated gains the column in a
+// transaction of its own, whose exclusive lock is gone by the time the
+// content hash's index is built. So searches read the table while the index
+// reads every chunk. That holds whether the leader brings the table up to
+// its schema or the sweep partitions it, which then attaches the index
+// built rather than build one under its own exclusive lock.
+func TestContentHashIndexBuiltApart(t *testing.T) {
+	for _, tt := range []struct {
+		name, index string
+		run         func(ctx context.Context, s *Store) error
+	}{
+		{"by the leader", "index_chunks_content_hash_idx", func(ctx context.Context, s *Store) error {
+			_, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, "")
+			return err
+		}},
+		{"by the partitioning sweep", "index_chunks_legacy_content_hash_idx", func(ctx context.Context, s *Store) error {
+			_, err := s.PartitionIndexChunks(ctx, "kritika_app")
+			return err
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := openStore(t)
+			ctx := t.Context()
+			if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-apart"))); err != nil {
+				t.Fatal(err)
+			}
+			listRepos(t, s, "index-apart", "index-apart/one")
+			dropIndexChunks(t, s)
+			createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, false)
+			account := accountID(t, s, "index-apart")
+			repo := configfile.RepositoryID(account, "index-apart/one")
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				var run string
+				if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+					VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, account, repo).Scan(&run); err != nil {
+					return err
+				}
+				_, err := tx.Exec(ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+					VALUES ($1, $2, $3, 'a.go', 1, 2, 'package main', '[1,0,0,0,0,0,0,0]')`, account, repo, run)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var table uint32
+			if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid`).Scan(&table); err != nil {
+				t.Fatal(err)
+			}
+			lock := func() (pgx.Tx, error) {
+				tx, err := s.owner.Begin(ctx)
+				if err != nil {
+					return nil, err
+				}
+				t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+				_, err = tx.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`)
+				return tx, err
+			}
+
+			// A writer holds the table, so the column waits for it, and a
+			// second writer queues behind the column.
+			first, err := lock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan struct{})
+			var ran error
+			go func() {
+				defer close(done)
+				ran = tt.run(ctx, s)
+			}()
+			waitForLockWait(t, s, table, "AccessExclusiveLock", done)
+			type locked struct {
+				tx  pgx.Tx
+				err error
+			}
+			second := make(chan locked, 1)
+			go func() {
+				tx, err := lock()
+				second <- locked{tx, err}
+			}()
+			waitForLockWait(t, s, table, "RowExclusiveLock", done)
+			if err := first.Rollback(ctx); err != nil {
+				t.Fatal(err)
+			}
+			// The second writer holds the table once the column commits,
+			// and the index build then waits for it.
+			held := <-second
+			if held.err != nil {
+				t.Fatal(held.err)
+			}
+			waitForLockWait(t, s, table, "ShareLock", done)
+			select {
+			case <-done:
+				t.Fatalf("the index was built in the column's transaction, under its exclusive lock (err %v)", ran)
+			default:
+			}
+			var exclusive bool
+			if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'relation' AND relation = $1
+				AND mode = 'AccessExclusiveLock' AND granted)`, table).Scan(&exclusive); err != nil {
+				t.Fatal(err)
+			}
+			if exclusive {
+				t.Fatal("the index waits to be built while the table's exclusive lock is held")
+			}
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '1s'`); err != nil {
+					return err
+				}
+				var n int
+				return tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks`).Scan(&n)
+			}); err != nil {
+				t.Fatalf("a search while the index waits to be built: %v", err)
+			}
+			if err := held.tx.Rollback(ctx); err != nil {
+				t.Fatal(err)
+			}
+			<-done
+			if ran != nil {
+				t.Fatal(ran)
+			}
+			var built bool
+			if err := s.owner.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, tt.index).Scan(&built); err != nil || !built {
+				t.Fatalf("%s built = %v, %v; want it built", tt.index, built, err)
+			}
+		})
+	}
+}

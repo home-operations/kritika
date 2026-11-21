@@ -147,7 +147,9 @@ func retryLocks(ctx context.Context, fn func() error) error {
 // those of the partitioned table, so nothing is copied or built. Attaching it
 // reads the table once, to check that every chunk is older than the bound,
 // under the table's exclusive lock. Searches and builds wait for that scan,
-// seconds for millions of chunks.
+// seconds for millions of chunks. A table that a build before this one's
+// columns created gains them, and the content hash's index, first, outside
+// that lock (prepareIndexChunks).
 //
 // New chunks go to the hash partitions. DrainLegacyIndexChunks moves the
 // legacy partition's chunks there, or deletes those that no build needs, a
@@ -157,6 +159,11 @@ func retryLocks(ctx context.Context, fn func() error) error {
 func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: PartitionIndexChunks needs the owner connection")
+	}
+	// So that the conversion, under its exclusive lock, adds no column and
+	// attaches the content hash's index rather than build one.
+	if err := s.prepareIndexChunks(ctx, nil); err != nil {
+		return false, fmt.Errorf("store: partition index_chunks: %w", err)
 	}
 	var partitioned bool
 	err := retryLocks(ctx, func() error {
@@ -204,9 +211,6 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 			if _, err := tx.Exec(ctx, stmt); err != nil {
 				return err
 			}
-		}
-		if err := addColumns(ctx, tx); err != nil {
-			return err
 		}
 		// The lock waited for every transaction that wrote a chunk, so each
 		// one is older than the bound.

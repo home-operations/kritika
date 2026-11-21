@@ -489,7 +489,18 @@ measures the effect.
 
 A build before partitioning created `index_chunks` as a plain table. The
 leader's hourly retention sweep converts such a table, first when the leader
-starts. It copies and rebuilds nothing:
+starts. The leader of such a build can also create the table again during a
+rollout, after the migrations ran, for a new embedder. That table lacks the
+columns that the migrations add, `content_hash` and `lexemes`, and the
+content hash's index. When it takes the lead with an embedder configured,
+and before it converts the table, the leader adds them in two transactions.
+The first adds the columns and holds the table's exclusive lock for a
+moment, as adding a column writes no row. The second builds the index, which
+reads every chunk under a lock that lets searches read the table but holds
+up index builds' writes. Each looks for what it adds first, so a retry after
+the first committed builds the index alone, and each gives up its wait for a
+lock after five seconds and is tried again later. The conversion then reuses
+the index, and copies and rebuilds nothing:
 
 1. It takes the table's exclusive lock, and then a lock on `accounts`,
    `repositories` and `index_runs` that blocks writes to them. A publication
