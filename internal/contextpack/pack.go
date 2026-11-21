@@ -11,7 +11,6 @@ import (
 	"context"
 	"io"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -282,7 +281,7 @@ func (b *builder) overlay(ctx context.Context) error {
 				start, text := b.declText(f, decl, run[0])
 				c = Chunk{
 					Stage: StageOverlay, Path: path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-					StartLine: start, EndLine: decl.EndLine, Text: text,
+					StartLine: start, EndLine: decl.EndLine, Text: string(text),
 				}
 			} else {
 				s, e, text := f.Window(run[0], run[1], b.opts.WindowRadius)
@@ -360,17 +359,20 @@ func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, line int, word s
 	if !keepCandidate(set.chunks, c, limit) {
 		return
 	}
-	c.Text = b.cutText(text)
+	// cutText keeps at most MaxChunkBytes bytes of the text, and needs one more
+	// to tell that it is over, so only those are copied.
+	c.Text = b.cutText(string(text[:min(len(text), b.opts.MaxChunkBytes+1)]))
 	set.chunks = append(set.chunks, c)
 }
 
-// declText is decl's text and the line it starts on. When the text is over
-// MaxChunkBytes, the comments above decl's head line go first, from the top,
-// so the cut keeps more of its body. Line line, which pulled decl in, stays.
-func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int, text string) {
-	start, text = decl.StartLine, f.Text(decl.StartLine, decl.EndLine)
+// declText is decl's text, a slice of f's source, and the line it starts on.
+// When the text is over MaxChunkBytes, the comments above decl's head line go
+// first, from the top, so the cut keeps more of its body. Line line, which
+// pulled decl in, stays.
+func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int, text []byte) {
+	start, text = decl.StartLine, f.Bytes(decl.StartLine, decl.EndLine)
 	for len(text) > b.opts.MaxChunkBytes && start < min(decl.HeadLine, line) {
-		_, text, _ = strings.Cut(text, "\n")
+		_, text, _ = bytes.Cut(text, []byte{'\n'})
 		start++
 	}
 	return start, text

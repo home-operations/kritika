@@ -636,13 +636,23 @@ func (f *File) Window(first, last, radius int) (startLine, endLine int, text str
 	if startLine > endLine {
 		return 0, 0, ""
 	}
+	return startLine, endLine, string(f.Bytes(startLine, endLine))
+}
+
+// Bytes is Text without the copy: a slice of Source, which the caller must
+// not change. Lines are clamped to the file.
+func (f *File) Bytes(startLine, endLine int) []byte {
+	startLine, endLine = max(startLine, 1), min(endLine, len(f.offsets()))
+	if startLine > endLine {
+		return nil
+	}
 	start, end := f.lineOffsets[startLine-1], len(f.Source)
 	if endLine < len(f.lineOffsets) {
 		end = f.lineOffsets[endLine] - 1
 	} else if end > 0 && f.Source[end-1] == '\n' {
 		end--
 	}
-	return startLine, endLine, string(f.Source[start:end])
+	return f.Source[start:end]
 }
 
 // offsets is the byte offset of each line of the source, computed once.

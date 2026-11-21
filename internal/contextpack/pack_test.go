@@ -511,3 +511,31 @@ func headTree(t *testing.T, files map[string]string) *object.Tree {
 	}
 	return head
 }
+
+// TestRejectedCandidatesCopyNoText: a match that the candidate cap turns
+// away costs no copy of its declaration's text.
+func TestRejectedCandidatesCopyNoText(t *testing.T) {
+	src := "package demo\n\n// Big calls Target.\nfunc Big() {\n\tTarget()\n" + strings.Repeat("\t_ = \"padding padding padding\"\n", 400) + "}\n"
+	f := (&chunk.Parser{}).Parse("big.go", []byte(src))
+	defer f.Close()
+	decl := f.Enclosing([]int{5}, DefaultOptions.MaxDeclLines+300)
+	if decl == nil {
+		t.Fatal("no declaration encloses line 5")
+	}
+	opts := DefaultOptions
+	opts.MaxChunkBytes = 200
+	b := &builder{opts: opts, callers: map[string]*candidates{}}
+	for range opts.CallersPerSymbol {
+		b.addCandidate(f, decl, 5, "Target", true)
+	}
+	kept := len(b.callers["Target"].chunks)
+	if allocs := testing.AllocsPerRun(100, func() { b.addCandidate(f, decl, 5, "Target", true) }); allocs > 0 {
+		t.Errorf("a rejected candidate allocates %.0f times", allocs)
+	}
+	if got := len(b.callers["Target"].chunks); got != kept {
+		t.Fatalf("kept %d candidates, then %d", kept, got)
+	}
+	if c := b.callers["Target"].chunks[0]; c.StartLine != 4 || !strings.HasPrefix(c.Text, "func Big() {\n\tTarget()") || !strings.HasSuffix(c.Text, "\n… (truncated)") {
+		t.Errorf("candidate = L%d %q", c.StartLine, c.Text)
+	}
+}
