@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 )
@@ -515,5 +516,109 @@ func TestIndexUpdateTakesAFreeSlotOnThePool(t *testing.T) {
 	}
 	if opened := dials.Load() - before; opened != 0 {
 		t.Fatalf("the update opened %d connections to take a free slot, want none", opened)
+	}
+}
+
+// refuseLogin answers a login on conn as Postgres at its connection limit
+// does, with 53300, and closes it.
+func refuseLogin(conn net.Conn) error {
+	defer func() { _ = conn.Close() }() // a pipe, whose close cannot fail
+	backend := pgproto3.NewBackend(conn, conn)
+	if _, err := backend.ReceiveStartupMessage(); err != nil {
+		return err
+	}
+	backend.Send(&pgproto3.ErrorResponse{Severity: "FATAL", SeverityUnlocalized: "FATAL", Code: "53300",
+		Message: "sorry, too many clients already"})
+	return backend.Flush()
+}
+
+// TestIndexUpdateWaitsWhenItsSessionIsRefused: an index update that has to
+// wait for a slot, where Postgres at its connection limit refuses the
+// wait's session of its own, waits for one on the application pool and takes
+// the slot let go, rather than fail while the pool can serve it.
+func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
+	s := openStore(t)
+	// A bound on the test's waits alone, for an update that never takes the
+	// slot: the test then fails rather than hold up the suite.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	const model = "embed:test/index-refused"
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
+	})
+	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", appStatementTimeout, appPoolMaxConns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Once the pool holds its connection, Postgres refuses every new one.
+	var full atomic.Bool
+	refused := make(chan struct{}, 1)
+	var dialer net.Dialer
+	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if !full.Load() {
+			return dialer.DialContext(ctx, network, addr)
+		}
+		client, server := net.Pipe()
+		go func() {
+			if refuseLogin(server) == nil {
+				select {
+				case refused <- struct{}{}:
+				default:
+				}
+			}
+		}()
+		return client, nil
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	full.Store(true)
+	held, err := s.TakeLease(ctx, alpha, model, 1, 1)
+	if err != nil || held == nil {
+		t.Fatalf("TakeLease = %v, %v", held, err)
+	}
+	t.Cleanup(func() { _, _ = held.Release(context.Background()) })
+
+	limited := &Store{app: pool, owner: s.owner, logger: s.logger}
+	var updated *Lease
+	var updateErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		updated, updateErr = limited.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+		if updated != nil {
+			_, _ = updated.Release(context.Background())
+		}
+	})
+	select {
+	case <-refused:
+	case <-done:
+		t.Fatalf("the update ended with %v, %v while every slot is held", updated, updateErr)
+	case <-ctx.Done():
+		t.Fatalf("the update asked for no session of its own: %v", ctx.Err())
+	}
+	if _, err := held.Release(ctx); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatalf("the update did not take the slot let go: %v", ctx.Err())
+	}
+	if updateErr != nil || updated == nil {
+		t.Fatalf("AcquireIndexLease with its session refused = %v, %v; want the slot let go", updated, updateErr)
 	}
 }

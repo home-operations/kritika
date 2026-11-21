@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/home-operations/kritika/internal/configfile"
 )
@@ -76,7 +77,8 @@ const indexWaitLock = `hashtextextended('kritika-index-wait ' || $1::text || ' '
 // waits for a slot, no build takes one (TakeIndexBuildLease), so it gets the
 // next that a build lets go, between two of the build's calls. It tries
 // again at the shortest of AcquireLease's waits, since the builds leave it
-// the slot meanwhile.
+// the slot meanwhile. Where Postgres refuses the wait's session, at its
+// connection limit, the update waits on the pool without coming first.
 func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, update bool) (*Lease, error) {
 	if !update {
 		for try := 0; ; try++ {
@@ -98,21 +100,29 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 	}
 	// The wait is a session of its own, which takes none of the pool's
 	// connections for as long as it lasts, and whose end, closed or lost,
-	// lets the lock go.
+	// lets the lock go. Postgres at its connection limit refuses it
+	// (53300), and the update then waits on the pool as AcquireLease does,
+	// though without coming before the builds, rather than fail while the
+	// pool can serve it.
 	cfg := s.app.Config().ConnConfig
 	cfg.RuntimeParams["application_name"] = "kritika-index-wait"
 	conn, err := pgx.ConnectConfig(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
-	}
-	defer func() {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
-		defer cancel()
-		if err := conn.Close(cctx); err != nil {
-			s.logger.Warn("index slot wait not closed cleanly", "model", modelKey, "error", err)
+	switch pgErr, _ := errors.AsType[*pgconn.PgError](err); {
+	case err == nil:
+		defer func() {
+			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
+			defer cancel()
+			if err := conn.Close(cctx); err != nil {
+				s.logger.Warn("index slot wait not closed cleanly", "model", modelKey, "error", err)
+			}
+		}()
+		if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock_shared(`+indexWaitLock+`)`, accountID, modelKey); err != nil {
+			return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
 		}
-	}()
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock_shared(`+indexWaitLock+`)`, accountID, modelKey); err != nil {
+	case pgErr != nil && pgErr.Code == "53300":
+		s.logger.Warn("index update waits for a slot without coming before the builds: Postgres refused its session",
+			"model", modelKey, "error", err)
+	default:
 		return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
 	}
 	for {
