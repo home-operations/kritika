@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -555,6 +556,9 @@ func TestTransientForge(t *testing.T) {
 			http.Redirect(w, r, r.URL.Path, http.StatusFound)
 		})},
 		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},
+		// An answer's body read after its headers fails with no *url.Error.
+		{name: "connection reset in the body", err: fmt.Errorf("forgejo: README.md of o/r at main: %w",
+			&net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)}), want: true},
 		{name: "dns timeout", err: unanswered(&net.DNSError{Err: "i/o timeout", Name: "forgejo.example", IsTimeout: true}), want: true},
 		{name: "dns server failure", err: unanswered(&net.DNSError{Err: "server misbehaving", Name: "forgejo.example", IsTemporary: true}),
 			want: true},

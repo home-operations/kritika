@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -309,6 +310,8 @@ func (c *ForgeCache) PullRequestAuthor(ctx context.Context, in *configfile.Conne
 // later try: the forge answered 5xx, 408 or 429, or gave no answer, as when
 // its connection was refused, reset or cut short, or when it closed an answer
 // meant to hold JSON with no body at all, which the decoder reads as io.EOF.
+// A connection reset while an answer's body is read is no *url.Error, the
+// headers having come, and is told apart by its errno.
 // GitHub's rate limit is left out: ForgeRateLimit waits it out for as long as
 // the limit says. An answer that refused the request, such as 401, 403 or
 // 404, is not transient. Nor is a forge whose certificate does not verify or
@@ -330,7 +333,7 @@ func transientForge(err error) bool {
 		return false
 	}
 	_, unanswered := errors.AsType[*url.Error](err)
-	return unanswered || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	return unanswered || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET)
 }
 
 // misconfigured reports whether err is a forge's certificate failing to
