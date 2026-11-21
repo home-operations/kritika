@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -745,6 +748,51 @@ func TestStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Status(tc.err); got != tc.want {
 				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRetryAllButRateLimit: a read past a failed connection or a server
+// error is retried, but not a 429, which the caller waits out, nor a host
+// that does not resolve or an https URL that a plain HTTP listener answers,
+// which no retry can get past.
+func TestRetryAllButRateLimit(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(plain.Close)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, strings.Replace(plain.URL, "http://", "https://", 1), http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, mismatch := http.DefaultClient.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if !errors.Is(mismatch, http.ErrSchemeMismatch) {
+		t.Fatalf("https of a plain listener = %v, want http.ErrSchemeMismatch", mismatch)
+	}
+	unanswered := func(err error) error { return &url.Error{Op: "Get", URL: "https://gitlab.example", Err: err} }
+	for _, tc := range []struct {
+		name  string
+		resp  *http.Response
+		err   error
+		retry bool
+	}{
+		{name: "connection refused", err: unanswered(&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}), retry: true},
+		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), retry: true},
+		{name: "dns timeout", err: unanswered(&net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "i/o timeout", Name: "gitlab.example", IsTimeout: true}}), retry: true},
+		{name: "bad gateway", resp: &http.Response{StatusCode: http.StatusBadGateway, Status: "502 Bad Gateway"}, retry: true},
+		{name: "unknown host", err: unanswered(&net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "no such host", Name: "gitlab.example", IsNotFound: true}})},
+		{name: "plain http behind https", err: mismatch},
+		{name: "too many requests", resp: &http.Response{StatusCode: http.StatusTooManyRequests}},
+		{name: "not found", resp: &http.Response{StatusCode: http.StatusNotFound}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			retry, _ := retryAllButRateLimit(t.Context(), tc.resp, tc.err)
+			if retry != tc.retry {
+				t.Fatalf("retryAllButRateLimit(%v) = %v, want %v", tc.err, retry, tc.retry)
 			}
 		})
 	}

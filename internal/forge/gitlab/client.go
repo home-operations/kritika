@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -310,10 +311,16 @@ func readOptions(ctx context.Context) []gl.RequestOptionFunc {
 // retryAllButRateLimit retries what go-retryablehttp's default policy does,
 // but a 429. The SDK's own policy is not exported: the two differ in that
 // this one retries a read after any failed connection but those it cannot
-// recover from, as a certificate that does not verify.
+// recover from, as a certificate that does not verify. A host that does not
+// resolve and an https URL that a plain HTTP listener answers are among
+// those, as the SDK's policy has them, though go-retryablehttp's retries
+// them.
 func retryAllButRateLimit(ctx context.Context, resp *http.Response, err error) (bool, error) {
 	if err == nil && resp != nil && resp.StatusCode == http.StatusTooManyRequests {
 		return false, nil
+	}
+	if dns, ok := errors.AsType[*net.DNSError](err); (ok && dns.IsNotFound) || errors.Is(err, http.ErrSchemeMismatch) {
+		return false, err
 	}
 	return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 }
