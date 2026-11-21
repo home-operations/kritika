@@ -214,4 +214,12 @@ func checkIndexRepoConfigOff(
 	push("ignore: []\n", jobs.TriggerOnboard)
 	rebuilt := check("on again after the drop", false, false, true)
 	checkRunStatus(ctx, t, st, account, rebuilt, store.IndexCompleted)
+
+	// An admin's default of off is not the file's word: the dashboard turned
+	// the repository on, and a file that leaves enabled unset keeps it on.
+	original := current.Get()
+	t.Cleanup(func() { current.Set(original) })
+	current.Set(configfiletest.Load(t, configYAML+"\nenabled: false\n"))
+	push("ignore: [unset.go]\n", jobs.TriggerPush)
+	check("turned on in the dashboard under a default of off", false, false, true)
 }
