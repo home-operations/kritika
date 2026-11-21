@@ -135,6 +135,18 @@ func TestSimilarExclusions(t *testing.T) {
 	if got := reported(alpha, run); !slices.Equal(got, want) {
 		t.Fatalf("reported %d paths, want %d", len(got), len(want))
 	}
+	// Beta claims no first report for alpha's run that has none yet.
+	report(beta, empty, []string{"kept.go"})
+	var claimed bool
+	if err := s.owner.QueryRow(ctx, `SELECT similar_exclude_reported_at IS NOT NULL FROM runner_runs WHERE id = $1`, empty).Scan(&claimed); err != nil {
+		t.Fatal(err)
+	}
+	if claimed {
+		t.Fatal("beta made the first report for alpha's run")
+	}
+	if got := reported(alpha, empty); len(got) != 0 {
+		t.Fatalf("beta's report for alpha's run = %q", got)
+	}
 	// The first report holds, even one of no path.
 	report(alpha, run, []string{"kept.go"})
 	report(alpha, empty, nil)
@@ -152,14 +164,10 @@ func TestSimilarExclusions(t *testing.T) {
 		t.Fatalf("a search of the run that reported none, with a request's own = %q", got)
 	}
 
-	// Beta reads none of alpha's, reports nothing for alpha's run, and writes
-	// no row that names it, under either account.
+	// Beta reads none of alpha's, and writes no row that names alpha's run,
+	// under either account.
 	if got := reported(beta, run); len(got) != 0 {
 		t.Fatalf("beta reads %d of alpha's exclusions", len(got))
-	}
-	report(beta, empty, []string{"kept.go"})
-	if got := reported(alpha, empty); len(got) != 0 {
-		t.Fatalf("beta's report for alpha's run = %q", got)
 	}
 	for _, account := range []string{beta, alpha} {
 		err := s.WithAccount(ctx, beta, func(tx pgx.Tx) error {
