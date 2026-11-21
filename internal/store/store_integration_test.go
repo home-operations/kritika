@@ -199,7 +199,9 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			`LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
 		{"the usage check", []string{"0065_usage_rerank", "0068_usage_rerank_validate"}, "",
 			`LOCK TABLE usage IN ACCESS SHARE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
-		{"the usage check's validation", []string{"0068_usage_rerank_validate"}, "",
+		{"the usage check's validation", []string{"0068_usage_rerank_validate"}, `ALTER TABLE usage DROP CONSTRAINT usage_role_check;
+			ALTER TABLE usage ADD CONSTRAINT usage_role_check
+				CHECK (role IN ('review', 'embedding', 'followup', 'confidence', 'rerank')) NOT VALID`,
 			`LOCK TABLE usage IN SHARE UPDATE EXCLUSIVE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
 		{"a column of index_staging", []string{"0066_index_staging_signature"}, "",
 			`LOCK TABLE index_staging IN ACCESS SHARE MODE`, column("index_staging", "signature")},
@@ -212,11 +214,20 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			if !tt.applied() {
 				t.Fatal("not applied after Migrate")
 			}
+			// What undo takes away is only there again once the migration
+			// applies past the lock.
+			undone := func(when string) {
+				t.Helper()
+				if tt.undo != "" && tt.applied() {
+					t.Fatalf("applied %s", when)
+				}
+			}
 			if tt.undo != "" {
 				if _, err := s.owner.Exec(ctx, tt.undo); err != nil {
 					t.Fatal(err)
 				}
 			}
+			undone("after undo")
 			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.versions); err != nil {
 				t.Fatal(err)
 			}
@@ -224,6 +235,7 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer func() { _ = holder.Rollback(context.Background()) }()
 			if _, err := holder.Exec(ctx, tt.lock); err != nil {
 				t.Fatal(err)
 			}
@@ -235,6 +247,7 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			if !lockNotAvailable(err) || !strings.Contains(fmt.Sprint(err), tt.versions[0]) {
 				t.Fatalf("Migrate while the table is locked = %v, want a lock timeout in %s", err, tt.versions[0])
 			}
+			undone("while the table was locked")
 			if err := s.Migrate(ctx, "kritika_app"); err != nil {
 				t.Fatalf("Migrate once the table is free: %v", err)
 			}
