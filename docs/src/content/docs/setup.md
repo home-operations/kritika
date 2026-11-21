@@ -196,7 +196,8 @@ connection's webhooks arrive, a poll asks once an hour: on GitHub, with 100
 indexed repositories, that is 100 requests an hour against the installation's
 limit of 5,000 or more. Once no webhook has arrived for `config.pollLookback`
 (24h unless set), it asks at every interval, up to 600 requests an hour at
-the default interval. A newly elected leader asks at once. These asks run
+the default interval. A newly elected leader asks after its initial repository
+listing, which can wait up to a minute per forge connection. These asks run
 beside the pull request polls, on the same interval but a schedule of their
 own, so a slow branch lookup neither holds back a pull request nor delays
 the next poll. A round of asks stops at GitHub's rate limit, or at the end
