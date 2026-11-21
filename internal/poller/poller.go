@@ -28,7 +28,6 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
-	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -615,8 +614,9 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 			return err
 		}
 		err = p.pollTip(ctx, file, account, in, client, r, started)
-		// Past the rate limit, every other branch would only be refused too.
-		if wait, limited := github.RetryAfter(err, p.clock()); limited {
+		// Past the rate limit, any forge's, every other branch would only be
+		// refused too.
+		if wait, limited := rateLimited(err, p.clock()); limited {
 			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
 				"repository", r.Name, "error", err)
 			p.tipsCut(account.ID(), r.Name, p.clock().Add(wait))

@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
@@ -666,6 +669,73 @@ func TestPollerStopsTipChecksAtARateLimit(t *testing.T) {
 	s.poll()
 	if s.tf.calls != 1 || !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
 		t.Fatalf("%d tip checks, logs:\n%s\nwant one, and the rest logged as left", s.tf.calls, s.logs.String())
+	}
+}
+
+// TestPollerPausesTipChecksAtAForgejoRateLimit: a Forgejo instance's 429 is
+// its rate limit too, which names no wait that its client keeps. The look
+// stops at the repository that it refused, and the next asks for no branch
+// until forgeRateLimitWait has passed, then resumes there.
+func TestPollerPausesTipChecksAtAForgejoRateLimit(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
+	var mu sync.Mutex
+	var asked []string
+	limited := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		asked = append(asked, r.URL.Path)
+		if limited {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"main","default_branch":"main","commit":{"id":"indexed"}}`)
+	}))
+	defer srv.Close()
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.p.Forges = &forges{f: c}
+	now := time.Now()
+	s.p.now = func() time.Time { return now }
+	look := func() []string {
+		t.Helper()
+		mu.Lock()
+		from := len(asked)
+		mu.Unlock()
+		if err := s.p.pollTips(t.Context(), s.file, s.account, s.in); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		var repos []string
+		for _, p := range asked[from:] {
+			for _, name := range []string{"flux", "home-ops"} {
+				if strings.Contains(p, "/repos/onedr0p/"+name+"/") || strings.HasSuffix(p, "/repos/onedr0p/"+name) {
+					repos = append(repos, name)
+				}
+			}
+		}
+		return slices.Compact(repos)
+	}
+	if got := look(); !slices.Equal(got, []string{"flux"}) {
+		t.Fatalf("a look refused with 429 asked for %q, want flux's branch alone", got)
+	}
+	if !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
+		t.Fatalf("logs:\n%s\nwant the 429 logged as the rate limit", s.logs.String())
+	}
+	mu.Lock()
+	limited = false
+	mu.Unlock()
+	now = now.Add(forgeRateLimitWait - time.Second)
+	if got := look(); len(got) != 0 {
+		t.Fatalf("a look within the limit's wait asked for %q, want none", got)
+	}
+	now = now.Add(2 * time.Second)
+	if got := look(); !slices.Equal(got, []string{"flux", "home-ops"}) {
+		t.Fatalf("a look past the limit's wait asked for %q, want flux's branch and then home-ops's", got)
 	}
 }
 

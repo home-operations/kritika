@@ -200,16 +200,18 @@ the default interval. A newly elected leader asks after its initial repository
 listing, which can wait up to a minute per forge connection. These asks run
 beside the pull request polls, on the same interval but a schedule of their
 own, so a slow branch lookup neither holds back a pull request nor delays
-the next poll. A round of asks stops at GitHub's rate limit, or at the end
+the next poll. A round of asks stops at the forge's rate limit, or at the end
 of its interval, and the next round past the limit's wait resumes at the
-repository it stopped at. Rounds go through the repositories by name, and
-the round that reaches the last one ends the sweep that the hourly ask
-counts from, however many rounds it took. A round that runs out of time
-starts the next with the accounts it did not reach, so one slow account
-does not keep the others from their turn. A repository whose last index job
-ended within the hour without leaving its index at the branch, because it
-failed or the repository's `.kritika.yaml` sets `enabled: false`, is left
-until the hour is up. A repository whose `.kritika.yaml` turned indexing off
+repository it stopped at. A 429 from any forge counts as its rate limit. The
+next round waits for the answer's `Retry-After` on GitHub and GitLab, or a
+minute when the answer names none, and a minute on Forgejo and Gitea. Rounds
+go through the repositories by name, and the round that reaches the last one
+ends the sweep that the hourly ask counts from, however many rounds it took.
+A round that runs out of time starts the next with the accounts it did not
+reach, so one slow account does not keep the others from their turn. A
+repository whose last index job ended within the hour without leaving its
+index at the branch, because it failed or the repository's `.kritika.yaml`
+sets `enabled: false`, is left until the hour is up. A repository whose `.kritika.yaml` turned indexing off
 is asked for even at the indexed commit, so a force push back to it is not
 missed.
 The leader is the replica that runs the polls. A newly elected leader polls
