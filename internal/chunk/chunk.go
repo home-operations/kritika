@@ -544,14 +544,9 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 			}
 			d.StartLine, d.StartByte = start, f.offsets()[start-1]
 		}
-		ok := true
-		for _, l := range lines {
-			if !d.Contains(l) {
-				ok = false
-				break
-			}
-		}
-		if ok && (!found || d.EndLine-head < best.EndLine-max(best.HeadLine, best.StartLine)) {
+		// Trimming only raises the start, so last, at or after first, is
+		// still in range when first is.
+		if d.Contains(first) && (!found || d.EndLine-head < best.EndLine-max(best.HeadLine, best.StartLine)) {
 			best, found = d, true
 		}
 	}
