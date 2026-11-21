@@ -202,6 +202,11 @@ func TestWindows(t *testing.T) {
 		// the overlap shrinks with the window.
 		{name: "by bytes", src: strings.Repeat("123456789\n", 7), size: 60, overlap: 10, maxBytes: 30, want: []span{{1, 3}, {4, 6}, {7, 7}}},
 		{name: "by bytes with overlap", src: strings.Repeat("123456789\n", 14), size: 6, overlap: 3, maxBytes: 60, want: []span{{1, 6}, {4, 9}, {7, 12}, {10, 14}}},
+		// Three lines of overlap and the 40-byte line come to 70 bytes, but two
+		// lines of overlap and it fit in 60.
+		{name: "overlap shrinks to fit the next line", src: strings.Repeat("12345678\n", 6) + strings.Repeat("z", 40) + "\n", size: 6, overlap: 3, maxBytes: 60, want: []span{{1, 6}, {5, 7}}},
+		{name: "negative overlap", src: "a\nb\n", size: 1, overlap: -1, want: []span{{1, 1}, {2, 2}}},
+		{name: "negative overlap with a byte cap", src: "a\nb\n", size: 1, overlap: -1, maxBytes: 60, want: []span{{1, 1}, {2, 2}}},
 		{name: "line over the cap", src: "short\n" + strings.Repeat("y", 50) + "\nshort\n", size: 60, overlap: 10, maxBytes: 20, want: []span{{1, 1}, {2, 2}, {3, 3}}},
 		// The overlap before a line over the cap would hold nothing new.
 		{
