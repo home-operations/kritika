@@ -650,3 +650,57 @@ func TestLexicalChunksTiesBeyondTheCut(t *testing.T) {
 		t.Fatalf("of six chunks that tie, the search kept %q, want the nearest, %s", got, nearest)
 	}
 }
+
+// TestAdvanceGenerationCount: an incremental step moves its generation's
+// count of chunks by those it drops and adds, whether it only deletes or
+// replaces several chunks by one, rather than counting the chunks it leaves
+// alone again. A generation that no publication counted is counted whole.
+func TestAdvanceGenerationCount(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-count")
+	full := f.run(IndexModeFull, "running")
+	chunks := map[string]string{}
+	for i := range 20 {
+		chunks[fmt.Sprintf("p%03d.go", i)] = fmt.Sprintf("func p%03d() { shared() }", i)
+	}
+	f.insert(full, "", chunks)
+	f.publish(full)
+	commit := "A"
+	for _, tt := range []struct {
+		name    string
+		added   map[string]string
+		changed []string
+		// counted is the count the step finds, "" for the publication's;
+		// off is how far it stays from the chunks the generation holds.
+		counted string
+		off     int
+	}{
+		{"a deletion alone", nil, []string{"p000.go"}, "", 0},
+		{"three chunks for one", map[string]string{"q.go": "func q() { shared() }"}, []string{"p001.go", "p002.go", "p003.go", "q.go"}, "", 0},
+		{"a count it does not read again", map[string]string{"r.go": "func r() {}"}, []string{"p004.go", "p005.go", "r.go"},
+			"generation_chunks + 1000", 1000},
+		{"no count", map[string]string{"p006.go": "func p006() { other() }"}, []string{"p006.go"}, "NULL", 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.counted != "" {
+				if _, err := s.owner.Exec(ctx, `UPDATE index_runs SET generation_chunks = `+tt.counted+` WHERE id = $1`, full); err != nil {
+					t.Fatal(err)
+				}
+			}
+			step := f.run(IndexModeIncremental, "running")
+			f.insert(step, full, tt.added)
+			f.in(func(tx pgx.Tx) error {
+				return AdvanceGeneration(ctx, tx, f.repo, Generation{ID: full, Commit: commit}, step, commit+"'", tt.changed)
+			})
+			commit += "'"
+			if held, n := f.held(full), f.chunks(full); held != n+tt.off {
+				t.Errorf("the step left a count of %d for %d chunks, want %d", held, n, n+tt.off)
+			}
+			if _, err := s.owner.Exec(ctx, `UPDATE index_runs SET generation_chunks = (SELECT count(*) FROM index_chunks
+				WHERE index_run_id = $1) WHERE id = $1`, full); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

@@ -434,9 +434,9 @@ const relistPostingsSQL = `UPDATE index_postings p SET chunk_ids = h.ids
 // AdvanceGeneration moves an incremental step's chunks into the active
 // generation in place of the changed paths' chunks, and updates the
 // generation's postings to match. It also moves the generation to the commit
-// that the step indexed, and counts its chunks again. It returns
-// ErrGenerationChanged unless active is still the active generation at the
-// same commit.
+// that the step indexed, and moves its count of chunks by those the step
+// dropped and added. It returns ErrGenerationChanged unless active is still
+// the active generation at the same commit.
 func AdvanceGeneration(
 	ctx context.Context, tx pgx.Tx, repositoryID string, active Generation, stepRunID, commit string, changedPaths []string,
 ) error {
@@ -465,10 +465,12 @@ func AdvanceGeneration(
 	if err := tx.QueryRow(ctx, stepPostingsSQL, activeRunID, stepRunID, changedPaths, LexicalCommonMax).Scan(&relist); err != nil {
 		return fmt.Errorf("store: step postings: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`, activeRunID, changedPaths); err != nil {
+	dropped, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`, activeRunID, changedPaths)
+	if err != nil {
 		return fmt.Errorf("store: drop stale chunks: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, stepRunID, activeRunID); err != nil {
+	moved, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, stepRunID, activeRunID)
+	if err != nil {
 		return fmt.Errorf("store: move chunks into the generation: %w", err)
 	}
 	if len(relist) > 0 {
@@ -476,8 +478,12 @@ func AdvanceGeneration(
 			return fmt.Errorf("store: list postings: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2,
-		generation_chunks = (SELECT count(*) FROM index_chunks WHERE index_run_id = $1) WHERE id = $1`, activeRunID, commit); err != nil {
+	// The count moves by the chunks the step dropped and added. One that no
+	// publication of this build counted is counted whole: coalesce reads its
+	// second argument only when the first is null.
+	if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2, generation_chunks = coalesce(generation_chunks + $3,
+		(SELECT count(*) FROM index_chunks WHERE index_run_id = $1)) WHERE id = $1`,
+		activeRunID, commit, moved.RowsAffected()-dropped.RowsAffected()); err != nil {
 		return fmt.Errorf("store: advance generation: %w", err)
 	}
 	return nil
