@@ -153,11 +153,15 @@ func evalHistory(t *testing.T) (history []*object.Commit, window, diffed int) {
 }
 
 // evalHistoryOf is the first-parent history of repo's head, which must
-// hold more than window commits, and how many of them, from the head, have
-// a diff against their parent. The history ends at a root commit, which
-// has, or at a shallow clone's boundary, which has not: its parent is not
-// in the clone. Its tree is, which the index can be built from.
+// hold more than window commits, a window of at least one, and how many of
+// them, from the head, have a diff against their parent. The history ends at
+// a root commit, which has, or at a shallow clone's boundary, which has not:
+// its parent is not in the clone. Its tree is, which the index can be built
+// from.
 func evalHistoryOf(repo *git.Repository, window int) (history []*object.Commit, diffed int, err error) {
+	if window <= 0 {
+		return nil, 0, fmt.Errorf("the window must be at least one commit, not %d", window)
+	}
 	shallow, err := repo.Storer.Shallow()
 	if err != nil {
 		return nil, 0, err
@@ -891,7 +895,8 @@ func evalRepo(t *testing.T, n int, parent plumbing.Hash, shallow ...int) (*git.R
 // window ends its history at the boundary, whose tree the index can be built
 // from, and which has no diff that the truth could read: the parent is not
 // in the clone. A missing parent of a commit that is no boundary is an
-// error, and so is a history no longer than the window.
+// error, and so is a history no longer than the window, and a window of no
+// commits.
 func TestEvalHistoryOfAShallowClone(t *testing.T) {
 	gone := plumbing.NewHash("1111111111111111111111111111111111111111")
 	repo, commits := evalRepo(t, 4, gone, 0)
@@ -922,5 +927,10 @@ func TestEvalHistoryOfAShallowClone(t *testing.T) {
 	repo, _ = evalRepo(t, 3, gone, 0)
 	if _, _, err := evalHistoryOf(repo, 3); err == nil {
 		t.Fatal("a history no longer than the window is no error")
+	}
+	for _, window := range []int{0, -1} {
+		if _, _, err := evalHistoryOf(repo, window); err == nil {
+			t.Fatalf("a window of %d commits is no error", window)
+		}
 	}
 }
