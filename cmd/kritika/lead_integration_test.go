@@ -219,11 +219,13 @@ embedding: { model: test/fake-embed, dims: 8 }
 	release()
 }
 
-// TestLeadSweepsWhileRepositoriesAreListed: a new leader's retention sweep
-// does not wait for the repositories of its connections to be listed,
-// which a forge that does not answer holds up for a minute per connection.
-// The listing here waits for the sweep, so it ends only once its own
-// timeout does when retention waits for it.
+// TestLeadSweepsWhileRepositoriesAreListed: a new leader's retention does
+// not wait for the repositories of its connections to be listed, which a
+// forge that does not answer holds up for a minute per connection: neither
+// its sweeps nor its index work, which starts by partitioning the index
+// table. The listing here waits for the sweep of an expired login and for
+// the partitioning to wait on the index schema's lock, held here, so it ends
+// only once its own timeout does when either waits for it.
 func TestLeadSweepsWhileRepositoriesAreListed(t *testing.T) {
 	st := storetest.Open(t)
 	t.Setenv("TEST_GT_TOKEN", "gitea-api")
@@ -240,15 +242,26 @@ gitea:
 		VALUES ('\x6c69737473', 'test', 'n', 'v', now() - interval '1 hour', '\x00')`); err != nil {
 		t.Fatal(err)
 	}
+	// Another session watches, from the listing's goroutine, so its errors
+	// are reported with t.Error rather than indexSchemaWaiters' t.Fatal.
+	watch, err := pgx.Connect(t.Context(), storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = watch.Close(context.Background()) })
+	release := holdTx(t, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`)
 	swept := func(ctx context.Context) bool {
-		var left bool
-		if err := st.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM login_states WHERE state_hash = '\x6c69737473')`).Scan(&left); err != nil {
+		var left, partitioning bool
+		if err := watch.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM login_states WHERE state_hash = '\x6c69737473'),
+			EXISTS (SELECT 1 FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+				WHERE l.locktype = 'advisory' AND NOT l.granted AND l.mode = 'ExclusiveLock' AND a.query LIKE '%kritika-index-schema%')`).
+			Scan(&left, &partitioning); err != nil {
 			if ctx.Err() == nil {
 				t.Error(err)
 			}
 			return false
 		}
-		return !left
+		return !left && partitioning
 	}
 	// The first listing's outcome: the backstop poll lists again later.
 	listed := make(chan bool, 1)
@@ -279,8 +292,9 @@ gitea:
 	select {
 	case ok := <-listed:
 		if !ok {
-			t.Fatal("retention waited for the repositories to be listed")
+			t.Fatal("retention's sweep or index work waited for the repositories to be listed")
 		}
+		release()
 	case <-exited:
 		t.Fatalf("lead returned before it listed the repositories: %v", *leadErr)
 	case <-time.After(3 * time.Minute):
