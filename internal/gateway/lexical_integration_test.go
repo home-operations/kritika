@@ -456,7 +456,9 @@ func lexicalFailures(t *testing.T, reg *prometheus.Registry) float64 {
 }
 
 // TestSimilarRerankSlotWait: a reranker whose every slot is held waits no
-// longer than its timeout for one, and the fused order answers.
+// longer than its timeout for one, and the fused order answers. The answer is
+// due an hour on and the slots are held for good, so only the reranker's 1s
+// timeout can end the wait within the test's minute.
 func TestSimilarRerankSlotWait(t *testing.T) {
 	r := newLexicalRepo(t, "rerank-wait", runspec.IndexFormat, widgets, widgetVectors())
 	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, timeout: 1s } }`)
@@ -471,12 +473,13 @@ func TestSimilarRerankSlotWait(t *testing.T) {
 		t.Error("reranked without a slot")
 		return nil, model.RerankUsage{}, nil
 	})
-	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
+	similarAnswerWithin = time.Hour
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	started := time.Now()
 	code, got := r.askWithin(ctx, t, file, reranked, prometheus.NewRegistry(), "widgetFactory()")
-	if took := time.Since(started); took > 4*time.Second {
-		t.Fatalf("the request took %s waiting for a rerank slot, want about the reranker's 1s timeout", took.Round(time.Second))
+	if ctx.Err() != nil {
+		t.Fatal("the request waited out the test's minute for a rerank slot, past the reranker's 1s timeout")
 	}
 	if want := []string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}; code != http.StatusOK || !slices.Equal(got, want) {
 		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)

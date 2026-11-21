@@ -183,37 +183,39 @@ apps:
 			}
 		})
 	}
-	// The runner stops waiting a minute after it asks. An embedding that
-	// leaves less than the reranker's timeout before the answer is due cuts
-	// the reranking there, and one that leaves no time skips it, and the
-	// search by name with it: either way the fused order of what was searched
-	// is answered in time, not at the reranker's timeout.
+	// The runner stops waiting a minute after it asks. A reranking that starts
+	// before the answer is due ends when it is due, not at the reranker's
+	// timeout, and one that would start after it is skipped, and the search
+	// by name with it: either way the fused order of what was searched is
+	// answered in time. The reranker answers at once, and checks
+	// the deadline it was given, so how long the request takes decides nothing.
 	for _, tt := range []struct {
-		name     string
-		embedFor time.Duration
-		reranks  int32
-		want     []string
+		name string
+		// within is how long after the request arrives its answer is due.
+		within  time.Duration
+		reranks int32
+		want    []string
 	}{
-		{"answer due during the reranking", 0, 1, []string{"named.go", "near.go"}},
-		{"answer due before the reranking", 300 * time.Millisecond, 0, []string{"near.go"}},
+		{"answer due during the reranking", 20 * time.Second, 1, []string{"named.go", "near.go"}},
+		{"answer due before the reranking", 0, 0, []string{"near.go"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
-			similarAnswerWithin = 200 * time.Millisecond
-			slow := similarEmbedFunc(func(ctx context.Context, inputs []string) ([][]float32, int64, error) {
-				time.Sleep(tt.embedFor)
-				return embed(ctx, inputs)
-			})
+			similarAnswerWithin = tt.within
 			var reranks atomic.Int32
-			hanging := rerankFunc(func(ctx context.Context, _ string, _ []string) ([]float64, model.RerankUsage, error) {
+			dueChecked := rerankFunc(func(ctx context.Context, _ string, _ []string) ([]float64, model.RerankUsage, error) {
 				reranks.Add(1)
-				<-ctx.Done()
-				return nil, model.RerankUsage{}, ctx.Err()
+				// The request arrived before this call, and its answer is due
+				// within of its arrival, well before the reranker's 30s timeout.
+				if due, ok := ctx.Deadline(); !ok || due.After(time.Now().Add(tt.within)) {
+					t.Errorf("reranked until %v (%t), want no later than the answer, due %s after the request arrived", due, ok, tt.within)
+				}
+				return nil, model.RerankUsage{}, errors.New("not reranked")
 			})
 			g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: st, Logger: slog.New(slog.DiscardHandler),
 				Current:   configfile.NewCurrent(config(`{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, timeout: 30s } }`)),
-				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return slow }},
-				Rerankers: &adapter.Rerankers{Build: func(configfile.Rerank) model.Reranker { return hanging }},
+				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+				Rerankers: &adapter.Rerankers{Build: func(configfile.Rerank) model.Reranker { return dueChecked }},
 			}
 			token, err := st.MintGatewayToken(ctx, store.GatewayGrant{
 				RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1000,
@@ -222,11 +224,7 @@ apps:
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = st.RevokeGatewayTokens(context.Background(), runner) })
-			started := time.Now()
 			resp := askSimilar(t, &g, token)
-			if took := time.Since(started); took > 5*time.Second {
-				t.Fatalf("answered after %v, want it due 200ms after the request arrived, not at the reranker's 30s", took)
-			}
 			paths := make([]string, 0, len(resp.Chunks))
 			for _, c := range resp.Chunks {
 				paths = append(paths, c.Path)
