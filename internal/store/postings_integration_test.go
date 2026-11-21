@@ -667,6 +667,7 @@ func TestLexicalChunksStepOfAnotherFormat(t *testing.T) {
 
 // TestLexicalChunksTiesBeyondTheCut: of more chunks that tie at a query's
 // cut than it keeps, the nearest the query is kept, however its ID sorts.
+// The statement sends the chunks kept alone, not the ties it compared.
 func TestLexicalChunksTiesBeyondTheCut(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -686,9 +687,10 @@ func TestLexicalChunksTiesBeyondTheCut(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
+	var sent int
 	f.in(func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "leaseslots", Compound: true}}, Vector: []float32{0, 1, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 1, LexicalBar{Least: 100}, 0)
+		hits, err := LexicalChunks(ctx, countingTx{Tx: tx, rows: &sent}, run, []LexicalQuery{q}, nil, 1, LexicalBar{Least: 100}, 0)
 		for _, h := range hits {
 			got = append(got, h.Chunk.Path)
 		}
@@ -696,6 +698,9 @@ func TestLexicalChunksTiesBeyondTheCut(t *testing.T) {
 	})
 	if !slices.Equal(got, []string{nearest}) {
 		t.Fatalf("of six chunks that tie, the search kept %q, want the nearest, %s", got, nearest)
+	}
+	if sent != 1 {
+		t.Fatalf("of six chunks that tie, the statement sent %d, want the one kept", sent)
 	}
 }
 
@@ -842,4 +847,28 @@ func TestLexicalChunksBarWithoutPer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// countingTx is a transaction that counts the rows its queries send.
+type countingTx struct {
+	pgx.Tx
+	rows *int
+}
+
+func (c countingTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	rows, err := c.Tx.Query(ctx, sql, args...)
+	return countedRows{Rows: rows, n: c.rows}, err
+}
+
+type countedRows struct {
+	pgx.Rows
+	n *int
+}
+
+func (r countedRows) Next() bool {
+	ok := r.Rows.Next()
+	if ok {
+		*r.n++
+	}
+	return ok
 }

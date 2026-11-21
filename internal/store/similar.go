@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -137,19 +136,20 @@ type LexicalBar struct{ Per, Least, Share int }
 // during the search is seen whole or not at all. So is whether the
 // generation is still searched by name, as ActiveGenerationFor found it: a
 // step of another index format, which leaves the postings as they were, can
-// publish in between, and the search then finds nothing. Only the excluded paths'
-// chunks and the few ranked chunks are read from index_chunks. A score is
-// rounded so that two chunks holding the same terms tie, whatever order they
-// were added in.
+// publish in between, and the search then finds nothing. Only the excluded
+// paths' chunks and the few ranked chunks are read from index_chunks: the
+// ranked ones first without their text, to compare the ties by their vectors,
+// and then whole, the hits each query keeps alone. A score is rounded so that
+// two chunks holding the same terms tie, whatever order they were added in.
 //
 // $1 is the generation, $2, $3 and $4 each query's index, term and whether
 // the term is compound, $5 every term once, $6, $7 and $14 the LexicalBar's
 // Per, Least and Share, and $13 LexicalCommonMax, $8 the excluded paths, $9
 // each query's vector, $10 the hits each query keeps, $11 the most of them
-// read when they tie and $12 the most chunks a term can be in and still find
-// a chunk alone, and $15 postingsIndexFormat. A generation that no publication of this build counted,
-// which only a test searches, is counted here: coalesce reads its second
-// argument only when the first is null.
+// read when they tie, $12 the most chunks a term can be in and still find a
+// chunk alone, and $15 postingsIndexFormat. A generation that no publication
+// of this build counted, which only a test searches, is counted here:
+// coalesce reads its second argument only when the first is null.
 const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 		SELECT coalesce(g.generation_chunks, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1))::float8 AS n
 		FROM index_runs g WHERE g.id = $1 AND g.index_format >= $15 AND NOT ` + steppedInAnotherFormat + `
@@ -179,11 +179,17 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 				row_number() OVER (PARTITION BY s.qi ORDER BY s.score DESC, s.id) AS place
 			FROM scored s
 		) r WHERE rank <= $10 AND place <= $11
+	), kept AS MATERIALIZED (
+		SELECT * FROM (
+			SELECT r.qi, r.id, r.score, r.matched, c.similarity, c.path, c.start_line,
+				row_number() OVER (PARTITION BY r.qi ORDER BY r.score DESC, c.similarity DESC, c.path, c.start_line) AS place
+			FROM top r, LATERAL (SELECT c.path, c.start_line, 1 - (c.embedding <=> (($9::text[])[r.qi + 1])::halfvec) AS similarity
+				FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id LIMIT 1) c
+		) k WHERE place <= $10
 	)
-	SELECT r.qi, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
-		1 - (c.embedding <=> (($9::text[])[r.qi + 1])::halfvec) AS similarity, r.score, r.matched
-	FROM top r, LATERAL (SELECT * FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id LIMIT 1) c
-	ORDER BY r.qi, r.score DESC, similarity DESC, c.path, c.start_line`
+	SELECT k.qi, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text, k.similarity, k.score, k.matched
+	FROM kept k, LATERAL (SELECT * FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = k.id LIMIT 1) c
+	ORDER BY k.qi, k.place`
 
 // LexicalChunks finds, for each query, the perQuery chunks of the generation
 // that hold the most weight of its terms, outside the excluded paths, with
@@ -252,9 +258,5 @@ func lexicalChunks(
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
-	taken := map[int]int{}
-	return slices.DeleteFunc(hits, func(h SimilarHit) bool {
-		taken[h.Query]++
-		return taken[h.Query] > perQuery
-	}), nil
+	return hits, nil
 }
