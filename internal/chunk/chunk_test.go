@@ -749,3 +749,28 @@ func TestEnclosingKeepsAWholeMultilineDecorator(t *testing.T) {
 		})
 	}
 }
+
+// TestEnclosingBoundsTheWalkUpALongComment: a caller asks once for each
+// line of a long block comment that a name occurs on. Each walk up to where
+// the comment opens stops at the earliest line that fits, so the lines
+// walked stay linear in the comment's length rather than quadratic.
+func TestEnclosingBoundsTheWalkUpALongComment(t *testing.T) {
+	const lines, maxLines = 4000, 10
+	src := "package demo\n\n/*\n" + strings.Repeat(" * F does things.\n", lines) + " */\nfunc F() {}\n"
+	f := (&Parser{}).Parse("demo.go", []byte(src))
+	defer f.Close()
+	var n int
+	walked = &n
+	defer func() { walked = nil }()
+	for l := 4; l < 4+lines; l++ {
+		if d := f.Enclosing([]int{l}, maxLines); d != nil {
+			t.Fatalf("Enclosing([%d], %d) = %+v, want nil inside a comment that does not fit", l, maxLines, d)
+		}
+	}
+	if n > lines*maxLines {
+		t.Errorf("Enclosing walked %d lines over %d comment lines, over %d", n, lines, lines*maxLines)
+	}
+	if d := f.Enclosing([]int{lines + 5}, maxLines); d == nil || d.Symbol != "F" || d.StartLine != lines+5 {
+		t.Errorf("Enclosing([%d], %d) = %+v, want F from its head line", lines+5, maxLines, d)
+	}
+}

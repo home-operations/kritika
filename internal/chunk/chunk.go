@@ -408,11 +408,12 @@ func lineTexts(src []byte, starts []int) [][2]int {
 var byteOrderMark = []byte("\ufeff")
 
 // walked, when a test points it at a count, adds up the white space that
-// lineTexts and skipSpace walk and the lines that takeLeads does. Walking
-// them again for each declaration or comment on a row is quadratic in the
-// file's size, and the count shows that on any machine, where a bound on
-// the parse's time holds only on a known one. A test that sets it does not
-// run in parallel, as declarations runs outside the parser's lock.
+// lineTexts and skipSpace walk and the lines that takeLeads and Enclosing
+// do. Walking them again for each declaration or comment on a row is
+// quadratic in the file's size, and the count shows that on any machine,
+// where a bound on the parse's time holds only on a known one. A test that
+// sets it does not run in parallel, as declarations runs outside the
+// parser's lock.
 var walked *int
 
 // nodeAt finds the node with exactly the given byte range. It descends from
@@ -518,13 +519,20 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 			continue
 		}
 		if d.Lines() > maxLines {
+			// The walk up to where a lead node opens stops at the earliest line
+			// that fits: a caller asks once for each line of a long block
+			// comment, and walking each to the comment's top is quadratic.
 			start := head
-			if first >= d.StartLine && first < head {
+			earliest := max(d.StartLine, d.EndLine-maxLines+1)
+			if first >= earliest && first < head {
 				open := first
-				for open > d.StartLine && f.LeadContinues(open) {
+				for open > earliest && f.LeadContinues(open) {
 					open--
+					if walked != nil {
+						*walked++
+					}
 				}
-				if d.EndLine-open+1 <= maxLines {
+				if open == d.StartLine || !f.LeadContinues(open) {
 					start = open
 				}
 			}
