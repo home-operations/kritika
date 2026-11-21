@@ -649,7 +649,9 @@ func (f *limitForge) BranchTip(_ context.Context, _, name, _ string) (string, st
 // TestPollerResumesTipChecksCutByARateLimit: a look at the default branches
 // that the rate limit cuts short waits the limit out, and then resumes at
 // the branch it stopped at, even while webhooks arrive. So looks that the
-// limit cuts short every time still come round to every repository.
+// limit cuts short every time still come round to every repository. The
+// sweep ends at the last one, not round again, and the next waits
+// tipCheckInterval while webhooks arrive.
 func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops", "onedr0p/talos")
 	s.webhooks(true)
@@ -670,8 +672,13 @@ func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 		time.Sleep(1100 * time.Millisecond)
 		look()
 	}
-	if want := []string{"flux", "home-ops", "home-ops", "talos", "talos", "flux"}; !slices.Equal(lf.asked, want) {
+	if want := []string{"flux", "home-ops", "home-ops", "talos", "talos"}; !slices.Equal(lf.asked, want) {
 		t.Fatalf("looks past the limit's waits asked for %q, want %q", lf.asked, want)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	look()
+	if len(lf.asked) != 5 {
+		t.Fatalf("a look after the sweep ended asked for %q, want none within tipCheckInterval", lf.asked[5:])
 	}
 }
 

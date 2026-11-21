@@ -201,7 +201,9 @@ beside the pull request polls, on the same interval but a schedule of their
 own, so a slow branch lookup neither holds back a pull request nor delays
 the next poll. A round of asks stops at GitHub's rate limit, or at the end
 of its interval, and the next round past the limit's wait resumes at the
-repository it stopped at. A repository whose last index job
+repository it stopped at. Rounds go through the repositories by name, and
+the round that reaches the last one ends the sweep that the hourly ask
+counts from, however many rounds it took. A repository whose last index job
 ended within the hour without leaving its index at the branch, because it
 failed or the repository's `.kritika.yaml` sets `enabled: false`, is left
 until the hour is up. A repository whose `.kritika.yaml` turned indexing off

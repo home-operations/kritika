@@ -511,11 +511,14 @@ func (p *Poller) pollTipsAll(ctx context.Context) {
 // index failed again. A branch that the forge will not give is logged and
 // asked for again at the next look.
 //
-// The repositories are looked at in name order. A look that ctx or the
-// forge's rate limit cuts short resumes at the repository it stopped at, at
-// the next look past the limit's wait. Only a look that went through every
-// repository counts toward tipCheckInterval. So a cut every time still comes
-// round to each repository.
+// A sweep looks at the repositories in name order, from the first to the
+// last. A look that ctx or the forge's rate limit cuts short leaves the
+// sweep at the repository it stopped at, and the next look past the limit's
+// wait goes on from there to the last name, not round again. A sweep that
+// ends, in one look or over several, counts toward tipCheckInterval. So looks
+// cut short every time still come round to each repository, and stop asking
+// once they have. A repository named before where a sweep was cut, added
+// meanwhile, waits for the next sweep.
 func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
 	started, err := p.Store.Now(ctx)
 	if err != nil {
@@ -541,8 +544,7 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 	// In Go's order, which the database's collation need not be.
 	slices.SortFunc(repos, func(a, b store.PollRepo) int { return strings.Compare(a.Name, b.Name) })
 	first, _ := slices.BinarySearchFunc(repos, next, func(r store.PollRepo, name string) int { return strings.Compare(r.Name, name) })
-	for i := range repos {
-		r := repos[(first+i)%len(repos)]
+	for _, r := range repos[first:] {
 		if ctx.Err() != nil {
 			p.tipsCut(account.ID(), r.Name, time.Time{})
 			return nil
