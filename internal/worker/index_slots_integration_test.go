@@ -24,7 +24,11 @@ import (
 // slot gets it before the build's next batch, not once the build is done.
 func TestIndexUpdateEmbedsBetweenOnboardingBatches(t *testing.T) {
 	onboarding, update := setupIndexResume(t, "onboarding"), setupIndexResume(t, "")
-	ctx := t.Context()
+	// A bound on the test's waits alone, for a worker that never reaches its
+	// first embedding call or never ends a wait: the test then fails rather
+	// than hold up the suite.
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
 	var mu sync.Mutex
 	var calls []string
 	embedder := func(job string, first func()) model.Embedder {
@@ -45,47 +49,87 @@ func TestIndexUpdateEmbedsBetweenOnboardingBatches(t *testing.T) {
 	}
 	inBatch, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
+	// The onboarding build's first embedding call waits for release, or for
+	// the end of the test's context.
+	holdFirst := func() {
+		once.Do(func() {
+			close(inBatch)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		})
+	}
 	worker := func(e model.Embedder) *Index {
 		return &Index{Store: onboarding.st, Current: configfile.NewCurrent(onboarding.file), Forges: &forges{f: &resumeForge{tip: "head"}},
 			Logger: slog.New(slog.DiscardHandler), Executor: &resumeExecutor{st: onboarding.st, account: onboarding.account.ID()},
 			Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return e }}, batch: 1}
 	}
-	built := make(chan error, 1)
+	// A test that fails ends both workers' waits, and waits for them to
+	// return before the stores they work in are cleaned up.
+	var workers sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		workers.Wait()
+	})
+	built, updated := make(chan error, 1), make(chan error, 1)
 	onboardJob := onboarding.claim(1)
 	if onboardJob.Queue != jobs.QueueIndex {
 		t.Fatalf("the onboarding job is on %s, want %s", onboardJob.Queue, jobs.QueueIndex)
 	}
-	go func() {
-		built <- worker(embedder("onboarding", func() { once.Do(func() { close(inBatch); <-release }) })).
-			Work(rivertest.WorkContext(ctx, onboarding.queue), onboardJob)
-	}()
-	<-inBatch
-	updated := make(chan error, 1)
+	workers.Go(func() {
+		built <- worker(embedder("onboarding", holdFirst)).Work(rivertest.WorkContext(ctx, onboarding.queue), onboardJob)
+	})
+	select {
+	case <-inBatch:
+	case err := <-built:
+		t.Fatalf("the onboarding build ended with %v before its first embedding call", err)
+	case <-ctx.Done():
+		t.Fatalf("the onboarding build's first embedding call not seen: %v", ctx.Err())
+	}
 	updateJob := update.claim(1)
 	if updateJob.Queue != jobs.QueueIndexUpdate {
 		t.Fatalf("the update job is on %s, want %s", updateJob.Queue, jobs.QueueIndexUpdate)
 	}
-	go func() {
+	workers.Go(func() {
 		updated <- worker(embedder("update", nil)).Work(rivertest.WorkContext(ctx, update.queue), updateJob)
-	}()
+	})
 	// The update waits for the slot that the onboarding build holds.
-	waitFor(t, 30*time.Second, "the update waiting for the indexing slot", func() bool {
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
 		var waiting bool
 		if err := onboarding.st.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l,
 				(SELECT hashtextextended('kritika-index-wait ' || $1::text || ' ' || $2::text, 0) AS k) w
 			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted AND l.objsubid = 1
 				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`,
 			onboarding.account.ID(), "embed:"+onboarding.file.Embedding.Model).Scan(&waiting); err != nil {
-			t.Fatal(err)
+			t.Fatalf("the update's wait for the indexing slot not seen: %v", err)
 		}
-		return waiting
-	})
-	close(release)
-	if err := <-updated; err != nil {
-		t.Fatalf("update: %v", err)
+		if waiting {
+			break
+		}
+		select {
+		case err := <-updated:
+			t.Fatalf("the update ended with %v while the onboarding build held the indexing slot", err)
+		case <-ctx.Done():
+			t.Fatalf("the update's wait for the indexing slot not seen: %v", ctx.Err())
+		case <-poll.C:
+		}
 	}
-	if err := <-built; err != nil {
-		t.Fatalf("onboarding: %v", err)
+	close(release)
+	for _, w := range []struct {
+		name string
+		done chan error
+	}{{"update", updated}, {"onboarding", built}} {
+		select {
+		case err := <-w.done:
+			if err != nil {
+				t.Fatalf("%s: %v", w.name, err)
+			}
+		case <-ctx.Done():
+			t.Fatalf("%s did not end: %v", w.name, ctx.Err())
+		}
 	}
 	mu.Lock()
 	defer mu.Unlock()
