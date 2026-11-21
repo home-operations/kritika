@@ -12,8 +12,8 @@ import (
 // ends on its last line, and holds nothing above it but lead lines unless
 // bare holds it alone, and none at all when bare governs it, as a
 // conditional does. bare is d's node when d is a statement with no name
-// of its own, such as a C++ template, and nil otherwise. top indexes the
-// top-level declarations of out by StartByte.
+// of its own, such as a C++ template, or an export, and nil otherwise. top
+// indexes the top-level declarations of out by StartByte.
 func wrapped(out []Decl, top []int, d Decl, lead []bool, bare *gotreesitter.Node, lang *gotreesitter.Language) int {
 	k, _ := slices.BinarySearchFunc(top, d.StartByte, func(i, b int) int { return cmp.Compare(out[i].StartByte, b) })
 	if k == len(top) || k+1 < len(top) && out[top[k+1]].EndByte <= d.EndByte {

@@ -272,9 +272,12 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte, start
 		d.Symbol, d.Scope = nameOf(c, lp.lang, src)
 		// An export, a decorated definition or a C++ template around one
 		// outlined declaration widens that declaration, which keeps its
-		// symbol. A parse error is no such statement.
+		// symbol and kind. An export names what it exports, so it is
+		// checked by its structure like a statement with no name of its
+		// own, as its keyword can sit on a line above the declaration. A
+		// parse error is no such statement.
 		var bare *gotreesitter.Node
-		if d.Symbol == "" && !c.IsError() {
+		if !c.IsError() && (d.Symbol == "" || c.ChildByFieldName("declaration", lp.lang) != nil) {
 			bare = c
 		}
 		if j := wrapped(out, top, d, lead, bare, lp.lang); j >= 0 {

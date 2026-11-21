@@ -114,3 +114,27 @@ int add(int a) {
 		})
 	}
 }
+
+// TestMultilineExportKeepsTheOutlinedKind: an export on the line above the
+// class it exports widens that class rather than adding a second
+// declaration of the same name under a heuristic kind.
+func TestMultilineExportKeepsTheOutlinedKind(t *testing.T) {
+	for _, path := range []string{"box.js", "box.ts"} {
+		t.Run(path, func(t *testing.T) {
+			f := (&Parser{}).Parse(path, []byte("export default\nclass Box {\n  get() { return 1; }\n}\n"))
+			defer f.Close()
+			var boxes []Decl
+			for _, d := range f.Decls {
+				if d.Symbol == "Box" {
+					boxes = append(boxes, d)
+				}
+			}
+			if len(boxes) != 1 {
+				t.Fatalf("Box declarations = %+v, want one", boxes)
+			}
+			if d := boxes[0]; d.Kind != "class" || d.StartLine != 1 || d.HeadLine != 2 {
+				t.Errorf("Box = %+v, want kind class from L1 with head L2", d)
+			}
+		})
+	}
+}
