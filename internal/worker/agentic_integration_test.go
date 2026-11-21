@@ -2594,7 +2594,7 @@ func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoI
 	return chunks
 }
 
-// checkSimilarRoute calls /v1/similar the way a runner does: refused
+// checkSimilarRoute calls the similar-code route a runner searches: refused
 // without a valid token or with an empty query, answered from the index, and
 // refused once the run's budget is spent.
 func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
@@ -2602,7 +2602,7 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	query := "main.go\n" + code
 	similar := func(token string, body string) (int, contextpack.SimilarResponse) {
 		t.Helper()
-		req, err := http.NewRequestWithContext(h.ctx, http.MethodPost, h.gatewayURL+"/v1/similar", strings.NewReader(body))
+		req, err := http.NewRequestWithContext(h.ctx, http.MethodPost, h.gatewayURL+runspec.SimilarPath, strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
