@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
@@ -196,8 +197,8 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// index again at once, as a snooze that is not an attempt. A tip that the
 	// forge did not give is asked for again the same way. The index is
 	// published, so the job must not fail over it and lose the push, nor
-	// spend an attempt on it. GitLab's 429 that names a later time to ask
-	// again is asked again then, not within its limit.
+	// spend an attempt on it. A rate limit, GitHub's or GitLab's, that names
+	// a later time to ask again is asked again then, not within its limit.
 	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
 	if err != nil {
 		wait := tipCheckDelay(err)
@@ -326,9 +327,14 @@ const (
 
 // tipCheckDelay is how long an index job waits to ask for the branch tip
 // again after the forge did not give it, with err: tipCheckWait, or until
-// the later time that GitLab's 429 names.
+// the later time that GitHub's rate limit or GitLab's 429 names. The snooze
+// replaces err, so ForgeRateLimit never sees GitHub's limit here.
 func tipCheckDelay(err error) time.Duration {
-	if d, limited := gitlab.RetryAfter(err, time.Now()); limited {
+	now := time.Now()
+	if d, limited := github.RetryAfter(err, now); limited {
+		return max(tipCheckWait, d)
+	}
+	if d, limited := gitlab.RetryAfter(err, now); limited {
 		return max(tipCheckWait, d)
 	}
 	return tipCheckWait

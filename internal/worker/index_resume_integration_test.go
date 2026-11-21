@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -120,29 +121,45 @@ func TestIndexRetriesFailedTipCheck(t *testing.T) {
 	}
 }
 
-// TestIndexWaitsOutGitLabsRateLimitOnItsTipCheckAfterPublication: GitLab's
-// 429 on the tip check after publication names when to ask again, hours
-// away here. The job snoozes until then rather than for tipCheckWait, which
-// would only ask again within the limit.
-func TestIndexWaitsOutGitLabsRateLimitOnItsTipCheckAfterPublication(t *testing.T) {
-	env := setupIndexResume(t, "")
-	ctx := rivertest.WorkContext(t.Context(), env.queue)
-	job := env.claim(1)
-	f := &tipRetryForge{resumeForge: &resumeForge{tip: "head-1"}}
-	f.afterPublish = func(context.Context) error {
-		h := http.Header{}
-		h.Set("Ratelimit-Reset", strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10))
-		return fmt.Errorf("gitlab: branch main of acme/widgets: %w", &gl.ErrorResponse{
-			StatusCode: http.StatusTooManyRequests, Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: h},
+// TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication: a forge's rate
+// limit on the tip check after publication names when to ask again, hours
+// away here: GitLab's 429 by its reset, and GitHub's secondary limit by its
+// Retry-After. The job snoozes until then rather than for tipCheckWait,
+// which would only ask again within the limit.
+func TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  func() error
+	}{
+		{"gitlab", func() error {
+			h := http.Header{}
+			h.Set("Ratelimit-Reset", strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10))
+			return fmt.Errorf("gitlab: branch main of acme/widgets: %w", &gl.ErrorResponse{
+				StatusCode: http.StatusTooManyRequests, Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: h},
+			})
+		}},
+		{"github", func() error {
+			wait := 2 * time.Hour
+			return fmt.Errorf("github: branch main of acme/widgets: %w", &gh.AbuseRateLimitError{
+				Response: &http.Response{StatusCode: http.StatusForbidden}, RetryAfter: &wait,
+			})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupIndexResume(t, "")
+			ctx := rivertest.WorkContext(t.Context(), env.queue)
+			job := env.claim(1)
+			f := &tipRetryForge{resumeForge: &resumeForge{tip: "head-1"}}
+			f.afterPublish = func(context.Context) error { return tc.err() }
+			w := &Index{
+				Store: env.st, Current: configfile.NewCurrent(env.file), Forges: &forges{f: f}, Logger: slog.New(slog.DiscardHandler),
+				Executor:  &resumeExecutor{st: env.st, account: env.account.ID()},
+				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return &fakeEmbedder{} }},
+			}
+			if snooze, ok := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job)); !ok || snooze.Duration < time.Hour {
+				t.Fatalf("Work error = %v, want a snooze until the limit two hours away", snooze)
+			}
 		})
-	}
-	w := &Index{
-		Store: env.st, Current: configfile.NewCurrent(env.file), Forges: &forges{f: f}, Logger: slog.New(slog.DiscardHandler),
-		Executor:  &resumeExecutor{st: env.st, account: env.account.ID()},
-		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return &fakeEmbedder{} }},
-	}
-	if snooze, ok := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job)); !ok || snooze.Duration < time.Hour {
-		t.Fatalf("Work error = %v, want a snooze until GitLab's reset two hours away", snooze)
 	}
 }
 
