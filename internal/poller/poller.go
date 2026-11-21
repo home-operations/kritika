@@ -28,7 +28,6 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
-	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -711,7 +710,7 @@ func (p *Poller) pollTip(
 ) error {
 	owner, name, _ := strings.Cut(r.Name, "/")
 	// The look waits out a rate limit itself, past its deadline if need be.
-	tip, branch, err := client.BranchTip(gitlab.WithoutRateLimitWait(ctx), owner, name, r.DefaultBranch)
+	tip, branch, err := client.BranchTip(ctx, owner, name, r.DefaultBranch)
 	if err != nil {
 		return err
 	}

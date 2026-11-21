@@ -288,16 +288,10 @@ func (c *Client) GitToken(context.Context, string) (string, error) {
 // itself.
 type noRateLimitWait struct{}
 
-// WithoutRateLimitWait is ctx for a caller that waits out GitLab's rate limit
-// itself: BranchTip under it answers a 429 at once, with its headers, rather
-// than sleeping until the limit's Ratelimit-Reset and asking again, a sleep
-// that can outlast the caller's deadline, which go-retryablehttp then
-// returns alone.
-func WithoutRateLimitWait(ctx context.Context) context.Context {
-	return context.WithValue(ctx, noRateLimitWait{}, true)
-}
-
-// readOptions are the options of a request that BranchTip makes under ctx.
+// readOptions are the options of a request under ctx. Under noRateLimitWait
+// a 429 is answered at once, with its headers, rather than slept on until
+// the limit's Ratelimit-Reset and asked again: a sleep that can outlast the
+// caller's deadline, which go-retryablehttp then returns alone.
 func readOptions(ctx context.Context) []gl.RequestOptionFunc {
 	opts := []gl.RequestOptionFunc{gl.WithContext(ctx)}
 	if ctx.Value(noRateLimitWait{}) != nil {
@@ -327,8 +321,10 @@ func (c *Client) defaultBranch(ctx context.Context, pid string) (string, error) 
 	return p.DefaultBranch, nil
 }
 
-// BranchTip implements forge.Client.
+// BranchTip implements forge.Client. Both its poller and its index jobs wait
+// out GitLab's rate limit themselves, so it answers a 429 at once.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
+	ctx = context.WithValue(ctx, noRateLimitWait{}, true)
 	pid := project(owner, repo)
 	if branch == "" {
 		var err error

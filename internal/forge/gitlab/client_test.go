@@ -648,17 +648,21 @@ func TestRepositories(t *testing.T) {
 	}
 }
 
-// TestBranchTipWithoutRateLimitWait: under WithoutRateLimitWait, a 429 is
-// answered at once with the limit's headers, where the SDK would sleep until
-// its Ratelimit-Reset, hours here. A server error is still retried.
-func TestBranchTipWithoutRateLimitWait(t *testing.T) {
+// TestBranchTipRateLimit: BranchTip answers a 429 at once with the limit's
+// headers, under an ordinary deadline, both for the branch it is asked and
+// for the project it reads the default branch from. The SDK would sleep
+// until the Ratelimit-Reset, hours here. A server error is still retried.
+func TestBranchTipRateLimit(t *testing.T) {
 	f := newFake(t)
 	reset := time.Now().Add(2 * time.Hour).Unix()
-	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/limited", func(w http.ResponseWriter, _ *http.Request) {
+	limited := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Ratelimit-Reset", strconv.FormatInt(reset, 10))
 		w.Header().Set("Retry-After", "60")
 		w.WriteHeader(http.StatusTooManyRequests)
-	})
+	}
+	const otherAPI = "/api/v4/projects/acme%2Fgadgets"
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/limited", limited)
+	f.mux.HandleFunc("GET "+otherAPI, limited)
 	var flaky atomic.Int32
 	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/flaky", func(w http.ResponseWriter, _ *http.Request) {
 		if flaky.Add(1) == 1 {
@@ -670,15 +674,20 @@ func TestBranchTipWithoutRateLimitWait(t *testing.T) {
 	})
 	c := f.client(t)
 	// A hang guard: the SDK's sleep until the reset lasts hours.
-	guard, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	ctx := WithoutRateLimitWait(guard)
-	_, _, err := c.BranchTip(ctx, "acme", "widgets", "limited")
-	e, ok := errors.AsType[*gl.ErrorResponse](err)
-	if Status(err) != http.StatusTooManyRequests || !ok || e.Response.Header.Get("Ratelimit-Reset") == "" ||
-		f.called("GET "+repoAPI+"/repository/branches/limited") != 1 {
-		t.Fatalf("BranchTip past the rate limit = %v after %d requests, want its 429 with Ratelimit-Reset after one",
-			err, f.called("GET "+repoAPI+"/repository/branches/limited"))
+	for _, tc := range []struct{ name, repo, branch, path string }{
+		{"branch", "widgets", "limited", "GET " + repoAPI + "/repository/branches/limited"},
+		{"default branch", "gadgets", "", "GET " + otherAPI},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := c.BranchTip(ctx, "acme", tc.repo, tc.branch)
+			e, ok := errors.AsType[*gl.ErrorResponse](err)
+			if Status(err) != http.StatusTooManyRequests || !ok || e.Response.Header.Get("Ratelimit-Reset") == "" || f.called(tc.path) != 1 {
+				t.Fatalf("BranchTip past the rate limit = %v after %d requests, want its 429 with Ratelimit-Reset after one",
+					err, f.called(tc.path))
+			}
+		})
 	}
 	if sha, _, err := c.BranchTip(ctx, "acme", "widgets", "flaky"); err != nil || sha != "abc" || flaky.Load() != 2 {
 		t.Fatalf("BranchTip of a failing GitLab = %q, %v after %d requests, want abc after two", sha, err, flaky.Load())
