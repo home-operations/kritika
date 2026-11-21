@@ -144,12 +144,7 @@ func (p *Poller) runTips(ctx context.Context) {
 	for {
 		started := time.Now()
 		if interval := p.Current.Get().PollInterval(); interval > 0 {
-			tctx, cancel := context.WithTimeout(ctx, interval)
-			p.pollTipsAll(tctx)
-			cancel()
-			if tctx.Err() != nil && ctx.Err() == nil {
-				p.Logger.Warn("default branches not all looked at within the poll interval, the next look resumes", "interval", interval)
-			}
+			p.sweepTips(ctx, interval)
 		}
 		t := time.NewTimer(cmp.Or(p.Current.Get().PollInterval(), pollOffRecheck) - time.Since(started))
 		select {
@@ -158,6 +153,17 @@ func (p *Poller) runTips(ctx context.Context) {
 			return
 		case <-t.C:
 		}
+	}
+}
+
+// sweepTips looks at the default branches once, cut at interval, and warns
+// when the cut stopped it.
+func (p *Poller) sweepTips(ctx context.Context, interval time.Duration) {
+	tctx, cancel := context.WithTimeout(ctx, interval)
+	defer cancel()
+	p.pollTipsAll(tctx)
+	if errors.Is(tctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		p.Logger.Warn("default branches not all looked at within the poll interval, the next look resumes", "interval", interval)
 	}
 }
 

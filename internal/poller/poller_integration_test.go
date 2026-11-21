@@ -1470,3 +1470,35 @@ func TestPollerReadsNoRepositoryForALookNotDue(t *testing.T) {
 		t.Fatalf("a look not due = %v with %d tip checks, want it to return at once without reading the index jobs", err, s.tf.calls)
 	}
 }
+
+// ctxTipForge answers a branch lookup only when its context ends.
+type ctxTipForge struct{ tipForge }
+
+func (*ctxTipForge) BranchTip(ctx context.Context, _, _, _ string) (string, string, error) {
+	<-ctx.Done()
+	return "", "", ctx.Err()
+}
+
+// TestPollerWarnsOfATipSweepOnlyWhenItIsCut: a look at the default branches
+// that ends within its interval, or that is not due, is not reported as cut.
+// One that its interval stops is.
+func TestPollerWarnsOfATipSweepOnlyWhenItIsCut(t *testing.T) {
+	const cut = "default branches not all looked at within the poll interval"
+	s := newTipPoll(t, "onedr0p/home-ops")
+	s.tf.tip = "indexed"
+	s.webhooks(true)
+	s.p.sweepTips(t.Context(), time.Hour)
+	s.p.sweepTips(t.Context(), time.Hour)
+	if s.tf.calls != 1 {
+		t.Fatalf("%d branch lookups over a sweep and one not due, want 1", s.tf.calls)
+	}
+	if strings.Contains(s.logs.String(), cut) {
+		t.Fatalf("log = %q, want no sweep reported cut", s.logs.String())
+	}
+	s.p.tips = nil
+	s.p.Forges = &forges{f: &ctxTipForge{}}
+	s.p.sweepTips(t.Context(), 100*time.Millisecond)
+	if !strings.Contains(s.logs.String(), cut) {
+		t.Fatalf("log = %q, want the sweep that the interval stopped reported cut", s.logs.String())
+	}
+}
