@@ -256,6 +256,40 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			}
 		})
 	}
+	t.Run("the usage check's validation beside a writer", func(t *testing.T) {
+		validated := exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)
+		if _, err := s.owner.Exec(ctx, `ALTER TABLE usage DROP CONSTRAINT usage_role_check;
+			ALTER TABLE usage ADD CONSTRAINT usage_role_check
+				CHECK (role IN ('review', 'embedding', 'followup', 'confidence', 'rerank')) NOT VALID;
+			DELETE FROM schema_migrations WHERE version = '0068_usage_rerank_validate'`); err != nil {
+			t.Fatal(err)
+		}
+		if validated() {
+			t.Fatal("validated after undo")
+		}
+		writer, err := s.owner.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = writer.Rollback(context.Background()) }()
+		if _, err := writer.Exec(ctx, `LOCK TABLE usage IN ROW EXCLUSIVE MODE`); err != nil {
+			t.Fatal(err)
+		}
+		// The writer holds its lock until the validation is checked, so a
+		// validation that waited for it would end here.
+		waiting, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err = s.Migrate(waiting, "kritika_app")
+		cancel()
+		if err != nil {
+			t.Fatalf("Migrate while a writer holds usage = %v, want the validation applied", err)
+		}
+		if !validated() {
+			t.Fatal("not validated while a writer holds usage")
+		}
+		if err := writer.Rollback(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // twoAccounts serves alpha and beta. alphaAccount serves alpha alone.
