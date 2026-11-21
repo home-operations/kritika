@@ -86,9 +86,11 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // review's own steps need, nor bring the run to its budget, which refuses
 // them. A run with less left keeps the fused order. The reservation is
 // settled at the tokens that the provider reports.
-// A request that reranked records a usage row of the review with them, one of
-// no tokens when the provider reports search units alone, which the usage and
-// its caps do not count.
+// A request that reranked, or that the provider billed tokens for, records a
+// usage row of the review at those tokens. A request that reranked with only
+// search units reported, as Cohere can, still records its row, at no tokens:
+// the row records the call, and search units count toward neither the usage
+// nor its caps.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
