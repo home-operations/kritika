@@ -344,3 +344,36 @@ func oneFileTree(t *testing.T, path, content string) *object.Tree {
 	tree, _ := c.Tree()
 	return tree
 }
+
+// TestBuildSkipsWordlessWindows: a window of white space alone, as a line
+// too long to share a window with its neighbours makes, is not stored, and
+// does not count against MaxChunks.
+func TestBuildSkipsWordlessWindows(t *testing.T) {
+	fs := memfs.New()
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
+	wt, _ := r.Worktree()
+	f, _ := fs.Create("gap.md")
+	_, _ = f.Write([]byte("intro words\n" + strings.Repeat(" ", DefaultOptions.MaxChunkBytes) + "\nclosing words\n"))
+	_ = f.Close()
+	_, _ = wt.Add("gap.md")
+	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.CommitObject(hash)
+	head, _ := c.Tree()
+	opts := DefaultOptions
+	opts.MaxChunks = 2
+	chunks, _, stats, err := Build(t.Context(), head, nil, nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		texts = append(texts, c.Text)
+	}
+	if !slices.Equal(texts, []string{"intro words", "closing words"}) || stats.Truncated {
+		t.Fatalf("chunks %q, truncated %v; want the two worded lines alone, untruncated", texts, stats.Truncated)
+	}
+}

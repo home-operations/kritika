@@ -210,13 +210,16 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Parsed++
 	}
 	for _, d := range pieces(pf, b.opts) {
+		// A window of a file without declarations can be white space
+		// alone, a line too long to share a window with its neighbours, and
+		// a piece cut to MaxChunkBytes can keep only its white space.
+		text := textcut.Prefix(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
+		if strings.IndexFunc(text, chunk.Worded) < 0 {
+			continue
+		}
 		if len(b.chunks) >= b.opts.MaxChunks {
 			b.stats.Truncated = true
 			return ErrBudgetReached
-		}
-		text := textcut.Prefix(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
-		if text == "" {
-			continue
 		}
 		var signature string
 		if d.HeadLine > 0 && !d.Contains(d.HeadLine) {
