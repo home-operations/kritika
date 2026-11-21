@@ -289,8 +289,10 @@ type RepoConfig struct {
 	// Found is false when there was no file there.
 	Found bool `json:"found"`
 	// Settings are the repository's configuration with the file applied.
-	// Their enabled says only whether the file turns the repository off. The
-	// repository's own enabled says whether it runs.
+	// Their Enabled says whether the file, as the last review read it and
+	// not as the branch has it now, allows reviews. Repository.Enabled says
+	// whether the forge and the admin's settings do, and the repository runs
+	// only when both are true: combine them to include the file's opt-out.
 	Settings RepoSettings `json:"settings"`
 	// Filters are the file's own conditions, passed beside the admin's.
 	Filters configfile.Filters `json:"filters"`
