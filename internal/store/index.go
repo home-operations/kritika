@@ -56,16 +56,19 @@ func (s *Store) EnsureIndexSchema(
 			return s.applyIndexFormat(ctx, tx, cur.Format)
 		}
 		// No generation is valid for a different embedder, so detach every
-		// repository and drop the vectors with the table. The postings go
-		// first, at once, rather than a generation at a time as each is
-		// superseded (migration 0069's trigger). By then the rebuild holds
-		// every repository, which a publication holds before it writes
-		// postings, so it waits for no publication.
+		// repository and drop the vectors with the table. The table goes
+		// before the postings, the order in which a search reads them and
+		// generationTables deletes from them, so the rebuild waits for a
+		// search between the two holding neither. The postings then go at
+		// once, rather than a generation at a time as each is superseded
+		// (migration 0069's trigger). By then the rebuild holds every
+		// repository, which a publication holds before it writes postings,
+		// so it waits for no publication.
 		stmts := []string{
 			`UPDATE repositories SET active_index_run_id = NULL`,
+			`DROP TABLE IF EXISTS index_chunks`,
 			`TRUNCATE index_postings`,
 			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE status IN ('running', 'completed')`,
-			`DROP TABLE IF EXISTS index_chunks`,
 			`DELETE FROM index_schema WHERE id = 1`,
 		}
 		for _, stmt := range stmts {

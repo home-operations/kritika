@@ -182,10 +182,10 @@ func (s *Store) SweepIndexProgress(ctx context.Context, limit int) error {
 	for _, c := range candidates {
 		if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 			// The index schema's lock, before any other, so that a rebuild for a
-			// new embedder runs before or after the discard. The rebuild marks
-			// the running runs before it drops index_chunks and empties
-			// index_postings, and the discard deletes from those before it
-			// marks its run: interleaved, each waits for the other.
+			// new embedder runs before or after the discard. Both delete from
+			// index_chunks and index_postings and mark runs, and the rebuild's
+			// drop of index_chunks then waits for the exclusive locks of the
+			// tables that the discard reads and writes.
 			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
 				return err
 			}

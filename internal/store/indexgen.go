@@ -392,8 +392,13 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 }
 
 // generationTables hold a generation's rows under its index_run_id: its
-// postings, and its chunks, whose lexemes the postings are made of.
-var generationTables = []string{"index_postings", "index_chunks"}
+// chunks, and its postings, which are made of the chunks' lexemes. A
+// transaction that holds no repository's lock deletes from them in this
+// order, which is the order in which a search reads them and a rebuild for
+// a new embedder takes them (EnsureIndexSchema). In the other order, it
+// would hold the postings while the rebuild holds index_chunks and waits for
+// them.
+var generationTables = []string{"index_chunks", "index_postings"}
 
 // deleteGenerations deletes the chunks of the runs, and their postings.
 func deleteGenerations(ctx context.Context, tx pgx.Tx, runs []string) error {

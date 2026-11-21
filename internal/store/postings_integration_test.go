@@ -974,3 +974,103 @@ func TestIndexPostingsSupersededBeforeGrants(t *testing.T) {
 		t.Fatalf("an older build superseding a generation without postings, before the grants: %v", err)
 	}
 }
+
+// awaitBoth waits for each of the two transactions to end, and fails the test
+// with the error of one that failed.
+func awaitBoth(t *testing.T, done map[string]chan error) {
+	t.Helper()
+	for name, c := range done {
+		select {
+		case err := <-c:
+			if err != nil {
+				t.Errorf("the %s failed: %v", name, err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatalf("the %s did not end", name)
+		}
+	}
+}
+
+// TestRebuildBesideHybridSearch: a rebuild for a new embedder that begins
+// while a search holds index_chunks, between its search by vector and its
+// search by name, waits for the search to end. Neither is aborted: the
+// rebuild holds no lock that the search by name takes while it waits.
+func TestRebuildBesideHybridSearch(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-hybrid")
+	run := f.run(IndexModeFull, "running")
+	f.insert(run, "", map[string]string{"a.go": "func renewLease() {}"})
+	f.publish(run)
+	searched, rebuilt := make(chan error, 1), make(chan error, 1)
+	vectored, resume := make(chan struct{}), make(chan struct{})
+	go func() {
+		searched <- s.WithAccount(ctx, f.account, func(tx pgx.Tx) error {
+			v := []float32{1, 0, 0, 0, 0, 0, 0, 0}
+			if _, err := SimilarChunks(ctx, tx, run, [][]float32{v}, Exclusions{}, 10); err != nil {
+				return err
+			}
+			close(vectored)
+			<-resume
+			q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "renewlease"}}, Vector: v}
+			_, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, Exclusions{}, 10, LexicalBar{Least: 100}, 100)
+			return err
+		})
+	}()
+	select {
+	case <-vectored:
+	case err := <-searched:
+		t.Fatalf("the search by vector ended: %v", err)
+	}
+	go func() {
+		_, err := s.EnsureIndexSchema(ctx, "kritika_app", "other-embed", 8, "")
+		rebuilt <- err
+	}()
+	lockWaiters(t, s, 1)
+	close(resume)
+	awaitBoth(t, map[string]chan error{"search": searched, "rebuild": rebuilt})
+}
+
+// TestRebuildBesideGenerationDelete: a transaction that deletes a
+// generation's rows table by table, in generationTables' order, as a run's
+// start and a discard do, and that a rebuild for a new embedder begins
+// beside after its first table, ends first. The rebuild takes the tables in
+// the same order.
+func TestRebuildBesideGenerationDelete(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-delete")
+	run := f.run(IndexModeFull, "running")
+	f.insert(run, "", map[string]string{"a.go": "func renewLease() {}"})
+	f.publish(run)
+	stray := f.run(IndexModeFull, "failed")
+	f.insert(stray, run, map[string]string{"b.go": "func strayLease() {}"})
+	deleted, rebuilt := make(chan error, 1), make(chan error, 1)
+	first, resume := make(chan struct{}), make(chan struct{})
+	go func() {
+		deleted <- s.WithAccount(ctx, f.account, func(tx pgx.Tx) error {
+			for i, table := range generationTables {
+				if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE index_run_id = $1`, stray); err != nil {
+					return err
+				}
+				if i == 0 {
+					close(first)
+					<-resume
+				}
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-first:
+	case err := <-deleted:
+		t.Fatalf("the delete ended: %v", err)
+	}
+	go func() {
+		_, err := s.EnsureIndexSchema(ctx, "kritika_app", "other-embed", 8, "")
+		rebuilt <- err
+	}()
+	lockWaiters(t, s, 1)
+	close(resume)
+	awaitBoth(t, map[string]chan error{"delete": deleted, "rebuild": rebuilt})
+}
