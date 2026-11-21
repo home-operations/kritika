@@ -516,6 +516,9 @@ func TestEnclosingMeasuresFromTheHeadLine(t *testing.T) {
 		{name: "body over the limit", lines: []int{100}, max: 139},
 		{name: "small declaration keeps its doc", lines: []int{160}, max: 150, start: 159, end: 160},
 	}
+	if allocs := testing.AllocsPerRun(100, func() { f.Enclosing([]int{100}, 150) }); allocs > 1 {
+		t.Errorf("Enclosing allocates %.0f times over %d declarations", allocs, len(f.Decls))
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := f.Enclosing(tt.lines, tt.max)

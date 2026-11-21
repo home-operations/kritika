@@ -544,7 +544,10 @@ func kindFromType(typ string) string {
 // that the comments above it put over maxLines is returned from its head
 // line, and holds only the lines from there.
 func (f *File) Enclosing(lines []int, maxLines int) *Decl {
-	var best *Decl
+	// best is the one copy that leaves the loop, so the others stay off the
+	// heap.
+	var best Decl
+	found := false
 	for _, d := range f.Decls {
 		head := max(d.HeadLine, d.StartLine)
 		if d.EndLine-head+1 > maxLines {
@@ -560,11 +563,14 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 				break
 			}
 		}
-		if ok && (best == nil || d.EndLine-head < best.EndLine-max(best.HeadLine, best.StartLine)) {
-			best = &d
+		if ok && (!found || d.EndLine-head < best.EndLine-max(best.HeadLine, best.StartLine)) {
+			best, found = d, true
 		}
 	}
-	return best
+	if !found {
+		return nil
+	}
+	return &best
 }
 
 var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
