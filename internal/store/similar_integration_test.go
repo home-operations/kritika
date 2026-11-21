@@ -256,18 +256,27 @@ func TestSimilarExclusionsWithoutMD5(t *testing.T) {
 	if !slices.Equal(similar, []string{"kept.go", "moved/b.go"}) {
 		t.Fatalf("SimilarChunks without md5() = %q, want kept.go and moved/b.go", similar)
 	}
+	var lexical []string
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "main"}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		_, err := LexicalChunks(ctx, tx, gen, []LexicalQuery{q}, Exclusions{Run: runs[0]}, 10, LexicalBar{Least: 100}, 100)
+		hits, err := LexicalChunks(ctx, tx, gen, []LexicalQuery{q}, Exclusions{Run: runs[0]}, 10, LexicalBar{Least: 100}, 100)
+		for _, h := range hits {
+			lexical = append(lexical, h.Chunk.Path)
+		}
 		return err
 	}); err != nil {
 		t.Fatalf("LexicalChunks without md5(): %v", err)
 	}
+	slices.Sort(lexical)
+	if !slices.Equal(lexical, []string{"kept.go", "moved/b.go"}) {
+		t.Fatalf("LexicalChunks without md5() = %q, want kept.go and moved/b.go", lexical)
+	}
 }
 
 // similarExclusionsFixture is a generation of alpha's that holds kept.go,
-// moved/a.go and moved/b.go, and three runner runs, two of alpha's and one
-// of beta's, which go when the test ends.
+// moved/a.go and moved/b.go, published with its postings, so both searches
+// read it, and three runner runs, two of alpha's and one of beta's, which go
+// when the test ends.
 func similarExclusionsFixture(t *testing.T, s *Store, alpha, beta string) (gen string, runs [3]string) {
 	t.Helper()
 	ctx := t.Context()
@@ -280,7 +289,10 @@ func similarExclusionsFixture(t *testing.T, s *Store, alpha, beta string) (gen s
 			DELETE FROM index_schema`); err != nil {
 			t.Error(err)
 		}
-		for _, stmt := range []string{`DELETE FROM index_runs WHERE repository_id = $1`, `DELETE FROM repositories WHERE id = $1`} {
+		for _, stmt := range []string{
+			`DELETE FROM index_postings WHERE index_run_id IN (SELECT id FROM index_runs WHERE repository_id = $1)`,
+			`DELETE FROM index_runs WHERE repository_id = $1`, `DELETE FROM repositories WHERE id = $1`,
+		} {
 			if _, err := s.owner.Exec(context.Background(), stmt, repo); err != nil {
 				t.Error(err)
 			}
@@ -289,15 +301,7 @@ func similarExclusionsFixture(t *testing.T, s *Store, alpha, beta string) (gen s
 	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, 'exclusions/repo')`, repo, alpha); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-		VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, alpha, repo).Scan(&gen); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.owner.Exec(ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
-		SELECT $1, $2, $3, p, 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM unnest($4::text[]) p`,
-		alpha, repo, gen, []string{"kept.go", "moved/a.go", "moved/b.go"}); err != nil {
-		t.Fatal(err)
-	}
+	gen = partitionRun(t, s, alpha, repo, true, "kept.go", "moved/a.go", "moved/b.go")
 	for i, account := range []string{alpha, alpha, beta} {
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var err error
