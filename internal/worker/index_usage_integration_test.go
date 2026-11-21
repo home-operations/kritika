@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,7 +114,8 @@ func TestIndexBatchUsage(t *testing.T) {
 					return [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, 0, nil
 				}
 				if tt.name == "vector insert failure" {
-					return nil, 10, nil
+					// One vector, as asked, but of a dimension the table refuses.
+					return [][]float32{{1, 0}}, 10, nil
 				}
 				if calls == 2 {
 					switch tt.name {
@@ -139,6 +141,9 @@ func TestIndexBatchUsage(t *testing.T) {
 			}
 			if tt.name == "cancellation" && !errors.Is(err, context.Canceled) {
 				t.Fatalf("lost cancellation error: %v", err)
+			}
+			if tt.name == "vector insert failure" && (err == nil || !strings.Contains(err.Error(), "store: insert chunks")) {
+				t.Fatalf("embed error = %v, want the insert of the chunks to fail", err)
 			}
 			if err := st.WithAccount(t.Context(), account.ID(), func(tx pgx.Tx) error {
 				var rows int
