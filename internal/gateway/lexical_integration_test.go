@@ -354,9 +354,9 @@ func TestSimilarRerankSlotWait(t *testing.T) {
 		}
 		t.Cleanup(func() { _, _ = lease.Release(context.Background()) })
 	}
-	reranked := rerankFunc(func(context.Context, string, []string) ([]float64, int64, error) {
+	reranked := rerankFunc(func(context.Context, string, []string) ([]float64, model.RerankUsage, error) {
 		t.Error("reranked without a slot")
-		return nil, 0, nil
+		return nil, model.RerankUsage{}, nil
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
@@ -367,5 +367,54 @@ func TestSimilarRerankSlotWait(t *testing.T) {
 	}
 	if want := []string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}; code != http.StatusOK || !slices.Equal(got, want) {
 		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
+	}
+}
+
+// TestSimilarRerankUsage: each reranked request records its usage as the
+// reranker's, whether Cohere reports tokens, or search units alone.
+func TestSimilarRerankUsage(t *testing.T) {
+	r := newLexicalRepo(t, "rerank-usage", runspec.IndexFormat, widgets, widgetVectors())
+	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: cohere } }`)
+	usage := func() (rows, tokens int64) {
+		t.Helper()
+		if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(t.Context(), `SELECT count(*), coalesce(sum(input_tokens), 0) FROM usage
+				WHERE role = 'rerank' AND repository_id = $1`, r.id).Scan(&rows, &tokens)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return rows, tokens
+	}
+	for _, tt := range []struct {
+		name, meta string
+		tokens     int64
+	}{
+		{"search units alone", `{"billed_units": {"search_units": 1}}`, 0},
+		{"tokens beside the billed units", `{"billed_units": {"search_units": 1}, "tokens": {"input_tokens": 150}}`, 150},
+		{"billed tokens", `{"billed_units": {"input_tokens": 120}}`, 120},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				var in struct{ Documents []string }
+				if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+					t.Error(err)
+				}
+				results := make([]map[string]any, len(in.Documents))
+				for i := range results {
+					results[i] = map[string]any{"index": i, "relevance_score": 0.5}
+				}
+				out, _ := json.Marshal(map[string]any{"results": results, "meta": json.RawMessage(tt.meta)})
+				_, _ = w.Write(out)
+			}))
+			defer srv.Close()
+			rows, tokens := usage()
+			code, _ := r.ask(t, file, model.NewReranker(model.RerankCohere, srv.URL, "key", "rerank-v3.5", time.Minute),
+				prometheus.NewRegistry(), "widgetFactory()")
+			afterRows, afterTokens := usage()
+			if code != http.StatusOK || afterRows-rows != 1 || afterTokens-tokens != tt.tokens {
+				t.Fatalf("answer %d recorded %d rerank usage rows of %d tokens, want 200 and one of %d",
+					code, afterRows-rows, afterTokens-tokens, tt.tokens)
+			}
+		})
 	}
 }

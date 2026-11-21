@@ -28,9 +28,9 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
-type rerankFunc func(context.Context, string, []string) ([]float64, int64, error)
+type rerankFunc func(context.Context, string, []string) ([]float64, model.RerankUsage, error)
 
-func (f rerankFunc) Rerank(ctx context.Context, query string, documents []string) ([]float64, int64, error) {
+func (f rerankFunc) Rerank(ctx context.Context, query string, documents []string) ([]float64, model.RerankUsage, error) {
 	return f(ctx, query, documents)
 }
 
@@ -96,7 +96,7 @@ apps:
 	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
 		return [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, 1, nil
 	})
-	byNear := rerankFunc(func(_ context.Context, query string, docs []string) ([]float64, int64, error) {
+	byNear := rerankFunc(func(_ context.Context, query string, docs []string) ([]float64, model.RerankUsage, error) {
 		if query != "x := ParseHTTPRequest(r)" {
 			t.Errorf("reranked for %q, want the query without a prompt", query)
 		}
@@ -106,10 +106,10 @@ apps:
 				scores[i] = 0.9
 			}
 		}
-		return scores, 11, nil
+		return scores, model.RerankUsage{Tokens: 11}, nil
 	})
-	failing := rerankFunc(func(context.Context, string, []string) ([]float64, int64, error) {
-		return nil, 0, errors.New("reranker down")
+	failing := rerankFunc(func(context.Context, string, []string) ([]float64, model.RerankUsage, error) {
+		return nil, model.RerankUsage{}, errors.New("reranker down")
 	})
 	rerankUsage := func() int64 {
 		t.Helper()

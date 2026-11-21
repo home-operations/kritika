@@ -674,8 +674,9 @@ func rerankDocument(c contextpack.Chunk) string {
 // within its deadline, the wait for the slot included. It fails open: a
 // query that the reranker does not answer, or that the deadline leaves out,
 // keeps the fused order, and a failure is logged and counted as the
-// reranker's call. The tokens that the provider reports are recorded as the
-// review's usage.
+// reranker's call. A request that reranked records a usage row of the
+// review, with the tokens that the provider reports, none for search units
+// alone, which the usage and its caps do not count.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
@@ -707,7 +708,7 @@ func (g *Server) rerank(
 		}
 	}()
 	started := time.Now()
-	var tokens int64
+	var spent model.RerankUsage
 	reranked := 0
 	for _, q := range slices.Sorted(maps.Keys(byQuery)) {
 		if dctx.Err() != nil {
@@ -719,8 +720,9 @@ func (g *Server) rerank(
 			docs[j] = rerankDocument(cands[i].Chunk)
 		}
 		scores, used, err := reranker.Rerank(dctx, r.texts[q], docs)
-		tokens += used
-		g.Metrics.ModelCall(r.account.Key(), rr.Model, store.RoleRerank, adapter.Outcome(err), used, 0, 0, 0, false)
+		spent.Tokens += used.Tokens
+		spent.SearchUnits += used.SearchUnits
+		g.Metrics.ModelCall(r.account.Key(), rr.Model, store.RoleRerank, adapter.Outcome(err), used.Tokens, 0, 0, 0, false)
 		if err != nil {
 			// The provider's error can carry its URL.
 			logger.Warn("gateway: similar code not reranked: the fused order stands", "query", q, "error", err)
@@ -732,8 +734,10 @@ func (g *Server) rerank(
 		reranked++
 	}
 	logger.Info("similar candidates reranked", "queries", len(byQuery), "reranked", reranked, "candidates", len(cands),
-		"elapsed", time.Since(started), "tokens", tokens)
-	if tokens == 0 {
+		"elapsed", time.Since(started), "tokens", spent.Tokens, "search_units", spent.SearchUnits)
+	// A provider that bills by the call, as Cohere does by search unit, can
+	// report no tokens: the row still records that the request reranked.
+	if reranked == 0 && spent.Tokens == 0 {
 		return
 	}
 	uctx, ucancel := detach(ctx)
@@ -741,7 +745,7 @@ func (g *Server) rerank(
 	if err := g.Store.WithAccount(uctx, r.account.ID(), func(tx pgx.Tx) error {
 		return store.InsertUsage(uctx, tx, store.Usage{
 			AccountID: r.account.ID(), RepositoryID: r.repositoryID, ReviewID: r.reviewID,
-			Role: store.RoleRerank, Model: rr.Model, Input: tokens,
+			Role: store.RoleRerank, Model: rr.Model, Input: spent.Tokens,
 		})
 	}); err != nil {
 		logger.Error("gateway: rerank usage not recorded", "error", err)

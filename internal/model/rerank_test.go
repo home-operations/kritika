@@ -19,31 +19,38 @@ func TestReranker(t *testing.T) {
 		// answer is the server's, header its extra header.
 		answer, header string
 		scores         []float64
-		tokens         int64
+		used           RerankUsage
 	}{
 		{
 			api: RerankCohere, path: "/v2/rerank",
 			want:   `{"model":"rerank-v3.5","query":"q","documents":["a","b","c"],"top_n":3}`,
 			answer: `{"id":"x","results":[{"index":2,"relevance_score":0.9},{"index":0,"relevance_score":0.5},{"index":1,"relevance_score":0.1}],"meta":{"billed_units":{"search_units":1,"input_tokens":12}}}`,
-			scores: []float64{0.5, 0.1, 0.9}, tokens: 12,
+			scores: []float64{0.5, 0.1, 0.9}, used: RerankUsage{Tokens: 12, SearchUnits: 1},
 		},
 		{
 			api: RerankJina, path: "/v1/rerank",
 			want:   `{"model":"jina-reranker-v3","query":"q","documents":["a","b","c"],"top_n":3,"return_documents":false}`,
 			answer: `{"model":"jina-reranker-v3","usage":{"total_tokens":20},"results":[{"index":1,"relevance_score":0.7},{"index":0,"relevance_score":0.6},{"index":2,"relevance_score":0.2}]}`,
-			scores: []float64{0.6, 0.7, 0.2}, tokens: 20,
+			scores: []float64{0.6, 0.7, 0.2}, used: RerankUsage{Tokens: 20},
 		},
 		{
 			api: RerankVoyage, path: "/v1/rerank",
 			want:   `{"model":"rerank-2.5","query":"q","documents":["a","b","c"],"top_k":3,"truncation":true}`,
 			answer: `{"object":"list","data":[{"relevance_score":0.4,"index":0},{"relevance_score":0.3,"index":2},{"relevance_score":0.2,"index":1}],"model":"rerank-2.5","usage":{"total_tokens":8}}`,
-			scores: []float64{0.4, 0.2, 0.3}, tokens: 8,
+			scores: []float64{0.4, 0.2, 0.3}, used: RerankUsage{Tokens: 8},
 		},
 		{
 			api: RerankTEI, path: "/rerank",
 			want:   `{"query":"q","texts":["a","b","c"],"truncate":true}`,
 			answer: `[{"index":1,"score":0.8},{"index":2,"score":0.05},{"index":0,"score":0.01}]`, header: "33",
-			scores: []float64{0.01, 0.8, 0.05}, tokens: 33,
+			scores: []float64{0.01, 0.8, 0.05}, used: RerankUsage{Tokens: 33},
+		},
+		{
+			// Billed by the search unit, with the tokens read beside.
+			api: RerankCohere, path: "/v2/rerank",
+			want:   `{"model":"rerank-v3.5","query":"q","documents":["a","b","c"],"top_n":3}`,
+			answer: `{"results":[{"index":0,"relevance_score":0.2}],"meta":{"billed_units":{"search_units":1},"tokens":{"input_tokens":40}}}`,
+			scores: []float64{0.2, -1, -1}, used: RerankUsage{Tokens: 40, SearchUnits: 1},
 		},
 		{
 			// A document the answer leaves out ranks last.
@@ -75,12 +82,12 @@ func TestReranker(t *testing.T) {
 			}))
 			defer srv.Close()
 			r := NewReranker(tt.api, srv.URL+strings.TrimSuffix(tt.path, "/rerank"), "key", models[tt.api], time.Minute)
-			scores, tokens, err := r.Rerank(t.Context(), "q", []string{"a", "b", "c"})
+			scores, used, err := r.Rerank(t.Context(), "q", []string{"a", "b", "c"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(scores, tt.scores) || tokens != tt.tokens {
-				t.Errorf("scores %v, tokens %d; want %v, %d", scores, tokens, tt.scores, tt.tokens)
+			if !slices.Equal(scores, tt.scores) || used != tt.used {
+				t.Errorf("scores %v, usage %+v; want %v, %+v", scores, used, tt.scores, tt.used)
 			}
 		})
 	}

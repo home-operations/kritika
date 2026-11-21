@@ -860,12 +860,19 @@ The reranker's provider is of type `openai`, which stands for any
 endpoint that takes a bearer key, and it sets `baseUrl`: kritika posts to
 `{baseUrl}/rerank`. The four APIs differ in their requests and answers:
 
-| `api`    | Request                                                    | Answer                                     | Usage recorded                   |
-| -------- | ---------------------------------------------------------- | ------------------------------------------ | -------------------------------- |
-| `cohere` | `model`, `query`, `documents`, `top_n`                     | `results` of `index` and `relevance_score` | `meta.billed_units.input_tokens` |
-| `jina`   | as `cohere`, and `return_documents: false`                 | as `cohere`                                | `usage.total_tokens`             |
-| `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`             |
-| `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header    |
+| `api`    | Request                                                    | Answer                                     | Usage recorded                                                                                                |
+| -------- | ---------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `cohere` | `model`, `query`, `documents`, `top_n`                     | `results` of `index` and `relevance_score` | `meta.billed_units.input_tokens`, else `meta.tokens.input_tokens`; `meta.billed_units.search_units` is logged |
+| `jina`   | as `cohere`, and `return_documents: false`                 | as `cohere`                                | `usage.total_tokens`                                                                                          |
+| `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`                                                                                          |
+| `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header                                                                                 |
+
+Each similar-code request that reranked records one usage row of role
+`rerank`, with the tokens that the provider reported for its queries. Cohere
+bills a rerank by the search unit, a query of up to a hundred documents, and
+can report no tokens: the row is recorded with none, and the search units are
+logged with the reranking (`search_units`), as usage and its caps count
+tokens alone.
 
 ```yaml
 providers:
