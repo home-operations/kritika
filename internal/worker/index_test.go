@@ -206,6 +206,28 @@ func TestForgeWait(t *testing.T) {
 	}
 }
 
+// TestForgeWaitsEndWithinAnHour: the waits of a job whose forge keeps failing
+// transiently add up to about an hour at most, after which the failure spends
+// an attempt. A forge down for longer than that drops the push rather than
+// holding the repository's unique key for good.
+func TestForgeWaitsEndWithinAnHour(t *testing.T) {
+	transient := &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection reset")}
+	var total time.Duration
+	for waits := 0; ; waits++ {
+		d, n := forgeWait(transient, []byte(fmt.Sprintf(`{"forge_waits": %d}`, waits)))
+		if n == 0 {
+			if waits != forgeWaits {
+				t.Fatalf("waits ended after %d, want %d", waits, forgeWaits)
+			}
+			break
+		}
+		total += d
+	}
+	if total < 30*time.Minute || total > 61*time.Minute {
+		t.Fatalf("waits add up to %s, want about an hour at most", total)
+	}
+}
+
 // TestAwaitAppliedBuild: an index job on a pod whose embedder or index format
 // the leader did not apply is snoozed, counted on the metric, and logged as a
 // warning once it has waited buildWaitWarn times.
