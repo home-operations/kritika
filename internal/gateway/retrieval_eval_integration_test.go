@@ -100,19 +100,7 @@ func TestRetrievalEval(t *testing.T) {
 	}
 	var timing evalTiming
 	for _, c := range history[:window] {
-		if c.NumParents() != 1 {
-			continue
-		}
-		diff, added := commitDiff(t, c)
-		head, err := c.Tree()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var newPaths []string
-		for _, f := range udiff.Parse(diff) {
-			newPaths = append(newPaths, f.NewPath)
-		}
-		queries, paths := indexer.HunkQueries(diff, configfile.DefaultIgnore, indexer.Indexable(head, newPaths))
+		added, queries, paths := evalReplay(t, c)
 		if len(queries) == 0 {
 			continue
 		}
@@ -169,6 +157,28 @@ func TestRetrievalEval(t *testing.T) {
 	for _, v := range variants {
 		t.Logf("%-14s %s", v, tallies[v])
 	}
+}
+
+// evalReplay is what a review of c would ask: the added lines of its diff
+// against its first parent, and the queries of its changed regions with their
+// paths. A merge is diffed against its first parent too, the mainline commit
+// before it, so a mainline of merges is replayed. A commit without a parent
+// asks nothing.
+func evalReplay(t *testing.T, c *object.Commit) (added string, queries, paths []string) {
+	if c.NumParents() == 0 {
+		return "", nil, nil
+	}
+	diff, added := commitDiff(t, c)
+	head, err := c.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newPaths []string
+	for _, f := range udiff.Parse(diff) {
+		newPaths = append(newPaths, f.NewPath)
+	}
+	queries, paths = indexer.HunkQueries(diff, configfile.DefaultIgnore, indexer.Indexable(head, newPaths))
+	return added, queries, paths
 }
 
 // evalHistory is the first-parent history of the repository's head, how
@@ -1175,5 +1185,42 @@ func TestEvalHistoryOfAShallowClone(t *testing.T) {
 		if _, _, err := evalHistoryOf(repo, window); err == nil {
 			t.Fatalf("a window of %d commits is no error", window)
 		}
+	}
+}
+
+// TestEvalReplaysAFirstParentMerge: a mainline of merge commits is replayed,
+// each merge by its diff against its first parent, the mainline commit
+// before it, which is what the merge changed there.
+func TestEvalReplaysAFirstParentMerge(t *testing.T) {
+	repo, commits := evalRepo(t, 2, plumbing.ZeroHash)
+	side, err := repo.CommitObject(commits[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	merge := &object.Commit{
+		Author: side.Author, Committer: side.Committer, Message: "merge", TreeHash: side.TreeHash,
+		ParentHashes: []plumbing.Hash{commits[0], commits[1]},
+	}
+	obj := repo.Storer.NewEncodedObject()
+	if err := merge.Encode(obj); err != nil {
+		t.Fatal(err)
+	}
+	h, err := repo.Storer.SetEncodedObject(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, h)); err != nil {
+		t.Fatal(err)
+	}
+	history, _, err := evalHistoryOf(repo, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || history[0].Hash != h || history[1].Hash != commits[0] {
+		t.Fatalf("the first-parent history = %v, want the merge %s and the mainline commit %s", history, h, commits[0])
+	}
+	added, queries, paths := evalReplay(t, history[0])
+	if added != "const v = 1\n" || len(queries) == 0 || !slices.Equal(slices.Compact(paths), []string{"v.go"}) {
+		t.Fatalf("the merge's replay = %q added, %d queries of %q; want const v = 1 added, queried in v.go", added, len(queries), paths)
 	}
 }
