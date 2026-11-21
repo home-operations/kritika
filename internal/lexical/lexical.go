@@ -40,21 +40,41 @@ type Word struct {
 }
 
 // Words are the lexemes of text, each once, in the order they first appear:
-// each identifier whole, then its parts. Language keywords, the names every
-// file uses, English stop words, numbers, and words of one letter are left
-// out. A hyphen between two letters joins them, as a query's text can be
-// any language's, or prose, where rate-limit names rateLimit.
+// each identifier whole, then its parts. A lexeme that text holds more than
+// once takes the spelling and kind of its strongest occurrence: a whole
+// identifier over a part, and a compound one over one of a single part. So
+// "ratelimit rateLimit" holds a compound ratelimit, as "rateLimit ratelimit"
+// does. Language keywords, the names every file uses, English stop words,
+// numbers, and words of one letter are left out. A hyphen between two
+// letters joins them, as a query's text can be any language's, or prose,
+// where rate-limit names rateLimit.
 func Words(text string) []Word { return words(text, true) }
 
 func words(text string, hyphens bool) []Word {
 	var out []Word
-	seen := map[string]bool{}
+	at := map[string]int{}
+	strength := func(w Word) int {
+		switch {
+		case w.Compound:
+			return 2
+		case w.Whole:
+			return 1
+		}
+		return 0
+	}
 	add := func(lexeme, spelling string, whole, compound bool) {
-		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || seen[lexeme] || stop[lexeme] || !startsWithLetter(lexeme) {
+		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || stop[lexeme] || !startsWithLetter(lexeme) {
 			return
 		}
-		seen[lexeme] = true
-		out = append(out, Word{Lexeme: lexeme, Spelling: spelling, Whole: whole, Compound: compound})
+		w := Word{Lexeme: lexeme, Spelling: spelling, Whole: whole, Compound: compound}
+		if i, ok := at[lexeme]; ok {
+			if strength(w) > strength(out[i]) {
+				out[i] = w
+			}
+			return
+		}
+		at[lexeme] = len(out)
+		out = append(out, w)
 	}
 	for _, id := range identifiers(text, hyphens) {
 		parts := split(id)

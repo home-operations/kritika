@@ -49,6 +49,29 @@ func TestWords(t *testing.T) {
 	}
 }
 
+// TestWordsKeepTheStrongestOccurrence: a lexeme that a text holds more than
+// once keeps its first place, and the spelling and kind of its strongest
+// occurrence: a whole identifier over a part, and a compound one over one of
+// a single part. So the order of a query's words does not decide whether a
+// chunk counts as holding a compound name.
+func TestWordsKeepTheStrongestOccurrence(t *testing.T) {
+	for _, tt := range []struct {
+		text string
+		want []Word
+	}{
+		{"ratelimit rateLimit", []Word{{"ratelimit", "rateLimit", true, true}, {"rate", "rate", false, false}, {"limit", "Limit", false, false}}},
+		{"rateLimit ratelimit", []Word{{"ratelimit", "rateLimit", true, true}, {"rate", "rate", false, false}, {"limit", "Limit", false, false}}},
+		{"parseRequest parse", []Word{{"parserequest", "parseRequest", true, true}, {"parse", "parse", true, false}, {"request", "Request", false, false}}},
+		{"parse parseRequest", []Word{{"parse", "parse", true, false}, {"parserequest", "parseRequest", true, true}, {"request", "Request", false, false}}},
+	} {
+		t.Run(tt.text, func(t *testing.T) {
+			if got := Words(tt.text); !slices.Equal(got, tt.want) {
+				t.Errorf("Words(%q) = %+v, want %+v", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWordsKeepTheSpelling(t *testing.T) {
 	got := Words("parseHTTPRequest")
 	want := []Word{{"parsehttprequest", "parseHTTPRequest", true, true}, {"parse", "parse", false, false}, {"http", "HTTP", false, false},
