@@ -190,31 +190,24 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 			return nil, used, decodeError(err)
 		}
 	} else {
-		// The ranks are decoded apart, so that the usage beside ranks of the
-		// wrong type is still reported.
+		// The ranks and each usage count are decoded apart, so that a value of
+		// the wrong type among them leaves the others reported.
 		var out struct {
 			Results json.RawMessage `json:"results"`
 			Data    json.RawMessage `json:"data"`
-			Usage   struct {
-				TotalTokens json.Number `json:"total_tokens"`
-			} `json:"usage"`
-			Meta struct {
-				BilledUnits struct {
-					InputTokens json.Number `json:"input_tokens"`
-					SearchUnits json.Number `json:"search_units"`
-				} `json:"billed_units"`
-				Tokens struct {
-					InputTokens json.Number `json:"input_tokens"`
-				} `json:"tokens"`
-			} `json:"meta"`
+			Usage   json.RawMessage `json:"usage"`
+			Meta    json.RawMessage `json:"meta"`
 		}
 		if err := json.Unmarshal(answer, &out); err != nil {
 			return nil, used, decodeError(err)
 		}
-		used = RerankUsage{
-			Tokens: max(usageCount(out.Usage.TotalTokens), usageCount(out.Meta.BilledUnits.InputTokens),
-				usageCount(out.Meta.Tokens.InputTokens)),
-			SearchUnits: usageCount(out.Meta.BilledUnits.SearchUnits),
+		total, totalErr := usageAt(out.Usage, "total_tokens")
+		billed, billedErr := usageAt(out.Meta, "billed_units", "input_tokens")
+		units, unitsErr := usageAt(out.Meta, "billed_units", "search_units")
+		tokens, tokensErr := usageAt(out.Meta, "tokens", "input_tokens")
+		used = RerankUsage{Tokens: max(total, billed, tokens), SearchUnits: units}
+		if errors.Join(totalErr, billedErr, unitsErr, tokensErr) != nil {
+			return nil, used, errors.New("the answer's usage has a value of the wrong type")
 		}
 		field := out.Results
 		if r.api == RerankVoyage {
@@ -245,6 +238,31 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 		out[i] = rerankRank{Index: *rk.Index, Score: *score}
 	}
 	return out, used, nil
+}
+
+// usageAt is the count at path in raw, an object of the answer: 0 when
+// it is absent or null, and an error when a value on the way to it, or the
+// count itself, is of the wrong type. Its keys match exactly, as every
+// provider names them.
+func usageAt(raw json.RawMessage, path ...string) (int64, error) {
+	for _, key := range path {
+		if len(raw) == 0 {
+			return 0, nil
+		}
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return 0, err
+		}
+		raw = obj[key]
+	}
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, err
+	}
+	return usageCount(n), nil
 }
 
 // usageCount is n, a count of what a rerank call spent, when it is a whole

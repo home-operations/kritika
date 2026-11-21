@@ -343,6 +343,12 @@ func TestRerankerRefusalKeepsUsage(t *testing.T) {
 		{name: "Jina ranks of the wrong type", api: RerankJina,
 			answer: `{"results":{"index":0},"usage":{"total_tokens":4}}`,
 			want:   RerankUsage{Tokens: 4}},
+		{name: "Cohere search units that are not a number, beside its tokens", api: RerankCohere,
+			answer: `{"results":[{"index":0,"relevance_score":0.5}],"meta":{"billed_units":{"search_units":"many","input_tokens":12}}}`,
+			want:   RerankUsage{Tokens: 12}},
+		{name: "Cohere billed units of the wrong type, beside its tokens", api: RerankCohere,
+			answer: `{"results":[{"index":0,"relevance_score":0.5}],"meta":{"billed_units":[1],"tokens":{"input_tokens":15}}}`,
+			want:   RerankUsage{Tokens: 15}},
 		{name: "a TEI answer that is not JSON", api: RerankTEI, answer: `[{"index":0,`, header: "33", want: RerankUsage{Tokens: 33}},
 		{name: "a TEI rank without its score", api: RerankTEI, answer: `[{"index":0}]`, header: "7", want: RerankUsage{Tokens: 7}},
 	} {
