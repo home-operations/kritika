@@ -188,9 +188,9 @@ For everyday use, see [reviews and commands](/reviews/).
 
 Polling catches missed pull request updates every 10 minutes by default.
 Set `config.pollInterval` to change the interval, or `0s` to disable it.
-Polls also ask for the default branch of every indexed repository that has no
-index job queued or running, and catch its code index up when the branch
-moved, so a missed push or a failed index job does not leave the index
+While an embedder is configured, polls also ask for the default branch of
+every indexed repository that has no index job queued or running, and catch
+its code index up when the branch moved, so a missed push or a failed index job does not leave the index
 behind. Each ask is one API request per indexed repository. While the
 connection's webhooks arrive, a poll asks once an hour: on GitHub, with 100
 indexed repositories, that is 100 requests an hour against the installation's

@@ -502,9 +502,14 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 // one it ran out of time in. So an account that takes a look's whole
 // interval, every time, does not keep the accounts after it from their
 // turn. Each account's own sweep resumes where it stopped, whatever the
-// order.
+// order. Without an embedder it looks at none: no index job runs, and the
+// one that a moved branch queued would only be cancelled, and queued again
+// at the next look past its backoff, while the indexes wait for an embedder.
 func (p *Poller) pollTipsAll(ctx context.Context) {
 	file := p.Current.Get()
+	if file.Embedding == nil {
+		return
+	}
 	n := len(file.Accounts)
 	p.mu.Lock()
 	first := max(slices.IndexFunc(file.Accounts, func(a configfile.Account) bool { return a.ID() == p.tipsFirst }), 0)

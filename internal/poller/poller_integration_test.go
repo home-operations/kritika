@@ -39,6 +39,16 @@ apps:
     webhookSecret: { env: TEST_SECRET }
 `
 
+// tipYAML is configYAML with an embedder, without which no default branch
+// is looked at.
+const tipYAML = configYAML + `providers:
+  test:
+    type: openai
+    baseUrl: http://unused.invalid/v1
+    apiKey: { env: TEST_SECRET }
+embedding: { model: test/fake-embed, dims: 8 }
+`
+
 // baseForge is what every fake forge here answers a pull request the
 // poller asks for by number with: the forge does not know it.
 type baseForge struct{ forge.Client }
@@ -304,8 +314,9 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) 
 	return d.Dispatcher.Dispatch(ctx, req)
 }
 
-// tipPoll polls onedr0p's repositories through tf, with each of repos
-// indexed at "indexed", no index job of any of them and no webhook delivered.
+// tipPoll polls onedr0p's repositories through tf, with an embedder and with
+// each of repos indexed at "indexed", no index job of any of them and no
+// webhook delivered.
 type tipPoll struct {
 	t          *testing.T
 	st         *store.Store
@@ -321,7 +332,7 @@ type tipPoll struct {
 
 func newTipPoll(t *testing.T, repos ...string) *tipPoll {
 	t.Helper()
-	return newTipPollOf(t, configYAML, repos...)
+	return newTipPollOf(t, tipYAML, repos...)
 }
 
 // newTipPollOf is newTipPoll on the configuration of yaml, whose account
@@ -491,6 +502,18 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	s.poll()
 	if after := polledAt(); !after.After(before) || len(s.indexJobs()) != 0 {
 		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, s.indexJobs())
+	}
+}
+
+// TestPollerSweepsNoBranchWithoutAnEmbedder: with no embedder configured, no
+// index job runs, so a look at the default branches asks the forge for none
+// and queues no job, although a repository keeps the index that an embedder
+// built before.
+func TestPollerSweepsNoBranchWithoutAnEmbedder(t *testing.T) {
+	s := newTipPollOf(t, configYAML, "onedr0p/home-ops")
+	s.p.pollTipsAll(t.Context())
+	if got := s.indexJobs(); s.tf.calls != 0 || len(got) != 0 {
+		t.Fatalf("without an embedder: %d branch lookups and index jobs %v, want neither", s.tf.calls, got)
 	}
 }
 
@@ -1439,7 +1462,7 @@ func (f *ownerStallForge) askedFor(repo string) bool {
 // accounts after it from their turn. The next look starts with them, and the
 // account that ran out resumes after.
 func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
-	s := newTipPollOf(t, strings.Replace(configYAML, "accounts: [onedr0p]", "accounts: [onedr0p, buroa]", 1),
+	s := newTipPollOf(t, strings.Replace(tipYAML, "accounts: [onedr0p]", "accounts: [onedr0p, buroa]", 1),
 		"onedr0p/home-ops", "buroa/k8s-gitops")
 	f := &ownerStallForge{slow: "onedr0p"}
 	s.p.Forges = &forges{f: f}
