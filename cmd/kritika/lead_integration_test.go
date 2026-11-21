@@ -87,11 +87,12 @@ func indexSchemaWaiters(t *testing.T, watch *pgx.Conn) int {
 	return n
 }
 
-// startLead runs lead until the test ends.
+// startLead runs lead until the test ends and returns a channel closed once
+// lead returned, with its error then in *err.
 func startLead(
 	t *testing.T, st *store.Store, file *configfile.File,
 	reach func(context.Context, *configfile.Connection) (map[string]store.Listing, error),
-) {
+) (exited <-chan struct{}, err *error) {
 	t.Helper()
 	cfg := &config.Config{DatabaseAppRole: "kritika_app", LeaderRetryInterval: time.Second}
 	queue, qerr := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
@@ -120,6 +121,7 @@ func startLead(
 			t.Error(leadErr)
 		}
 	})
+	return done, &leadErr
 }
 
 // TestLeadPartitionsOnceTheConfigurationIsApplied: a new leader's retention
@@ -267,8 +269,17 @@ gitea:
 		return nil, errors.New("not listed")
 	}
 
-	startLead(t, st, file, reach)
-	if !<-listed {
-		t.Fatal("retention waited for the repositories to be listed")
+	exited, leadErr := startLead(t, st, file, reach)
+	// A hang guard past the listing's own minute, whose end is the failure
+	// this test looks for.
+	select {
+	case ok := <-listed:
+		if !ok {
+			t.Fatal("retention waited for the repositories to be listed")
+		}
+	case <-exited:
+		t.Fatalf("lead returned before it listed the repositories: %v", *leadErr)
+	case <-time.After(3 * time.Minute):
+		t.Fatal("timed out waiting for the first listing")
 	}
 }
