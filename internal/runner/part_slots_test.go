@@ -186,8 +186,11 @@ func TestPartSlotsReportFails(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&report); err != nil || r.URL.Path != runspec.ReportPartsPath {
 			t.Errorf("report to %s: %v", r.URL.Path, err)
 		}
+		// The answer is settled before the test sees the report, since the
+		// test changes failing as soon as it does.
+		refuse := failing.Load()
 		reports <- report
-		if failing.Load() {
+		if refuse {
 			http.Error(w, "refused", http.StatusBadRequest)
 			return
 		}
