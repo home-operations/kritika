@@ -739,28 +739,14 @@ func TestSweepIndexProgressBesideSchemaRebuild(t *testing.T) {
 	if _, err := hold.Exec(ctx, `LOCK TABLE index_chunks IN SHARE ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
-	waiting := func(n int) {
-		t.Helper()
-		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-			var waits int
-			if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
-				WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waits); err != nil {
-				t.Fatal(err)
-			}
-			if waits >= n {
-				return
-			}
-		}
-		t.Fatalf("fewer than %d transactions wait for a lock", n)
-	}
 	swept, rebuilt := make(chan error, 1), make(chan error, 1)
 	go func() { swept <- s.SweepIndexProgress(ctx, 1000) }()
-	waiting(1)
+	lockWaiters(t, s, 1)
 	go func() {
 		_, err := s.EnsureIndexSchema(ctx, "kritika_app", "other-embed", 8, "")
 		rebuilt <- err
 	}()
-	waiting(2)
+	lockWaiters(t, s, 2)
 	if err := hold.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}

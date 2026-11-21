@@ -753,7 +753,8 @@ func TestDrainLegacyIndexChunksInSlices(t *testing.T) {
 
 // TestDrainLegacyIndexChunksBesidePublications: incremental steps and a full
 // build publish while the drain moves the generation a chunk at a time. No
-// chunk is lost or doubled.
+// chunk is lost or doubled. The first step and the full build each publish
+// while a slice of the drain holds the repository (besideDrainSlice).
 func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -774,27 +775,18 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 	partitionLegacy(t, s)
 	slice := legacyDrainSlice
 	legacyDrainSlice = 1
-	t.Cleanup(func() { legacyDrainSlice = slice })
-
+	drainCtx, stopDrain := context.WithCancel(ctx)
 	drained := make(chan error, 1)
-	go func() {
-		drained <- func() error {
-			for {
-				moved, removed, err := s.DrainLegacyIndexChunks(ctx)
-				if err != nil {
-					return err
-				}
-				if moved+removed > 0 {
-					continue
-				}
-				var left bool
-				if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&left); err != nil || !left {
-					return err
-				}
-				time.Sleep(time.Millisecond)
+	draining := false
+	t.Cleanup(func() {
+		stopDrain()
+		if draining {
+			if err := <-drained; err != nil && !errors.Is(err, context.Canceled) {
+				t.Error(err)
 			}
-		}()
-	}()
+		}
+		legacyDrainSlice = slice
+	})
 
 	// Each step replaces one file's chunk with its own.
 	active := Generation{ID: run, Commit: "abc"}
@@ -812,14 +804,36 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			return AdvanceGeneration(ctx, tx, repo, active, step, commit, []string{path})
-		}); err != nil {
+		advance := func(tx pgx.Tx) error { return AdvanceGeneration(ctx, tx, repo, active, step, commit, []string{path}) }
+		if i == 0 {
+			besideDrainSlice(t, s, account, advance)
+			// The rest of the steps publish beside a drain of its own pace,
+			// which leaves chunks for the full build to contend for.
+			draining = true
+			go func() {
+				drained <- func() error {
+					for drainCtx.Err() == nil {
+						var left int
+						if err := s.owner.QueryRow(drainCtx, `SELECT count(*) FROM index_chunks_legacy`).Scan(&left); err != nil || left <= 5 {
+							return err
+						}
+						if _, _, err := s.DrainLegacyIndexChunks(drainCtx); err != nil {
+							return err
+						}
+					}
+					return nil
+				}()
+			}()
+		} else if err := s.WithAccount(ctx, account, advance); err != nil {
 			t.Fatal(err)
 		}
 		active.Commit = commit
 		want[path] = text
 	}
+	if err := <-drained; err != nil {
+		t.Fatal(err)
+	}
+	draining = false
 	rows, err := s.owner.Query(ctx, `SELECT path, text FROM index_chunks WHERE index_run_id = $1`, run)
 	if err != nil {
 		t.Fatal(err)
@@ -842,15 +856,14 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 			t.Fatalf("%s holds %q after the steps, want %q", p, got[p], w)
 		}
 	}
+	if legacy := chunkPartitions(t, s, run)["index_chunks_legacy"]; legacy == 0 {
+		t.Fatal("the drain left the full build no chunk of the generation to contend for")
+	}
 
 	// A full build supersedes the generation, wherever its chunks are.
 	full := partitionRun(t, s, account, repo, false, "new.go")
-	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repo, full) }); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-drained; err != nil {
-		t.Fatal(err)
-	}
+	besideDrainSlice(t, s, account, func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repo, full) })
+	drainLegacy(t, s)
 	if parts := chunkPartitions(t, s, run); len(parts) != 0 {
 		t.Fatalf("the superseded generation is left in %v", parts)
 	}
@@ -1106,4 +1119,56 @@ func TestPartitionIndexChunksRetriesLockWaits(t *testing.T) {
 	if took := time.Since(start); took < hold {
 		t.Fatalf("PartitionIndexChunks returned after %s, before the writer let go at %s", took, hold)
 	}
+}
+
+// besideDrainSlice runs publish, in the account, while a slice of the legacy
+// drain holds the repository: a transaction that holds the hash partitions
+// keeps the slice from moving its chunk until the publication waits for the
+// slice too.
+func besideDrainSlice(t *testing.T, s *Store, account string, publish func(tx pgx.Tx) error) {
+	t.Helper()
+	ctx := t.Context()
+	hold, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback(context.Background()) }()
+	if _, err := hold.Exec(ctx, `LOCK TABLE index_chunks_current IN SHARE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	sliced, published := make(chan error, 1), make(chan error, 1)
+	go func() {
+		moved, removed, err := s.DrainLegacyIndexChunks(ctx)
+		if err == nil && moved+removed != 1 {
+			err = fmt.Errorf("the slice moved %d and deleted %d chunks, want one", moved, removed)
+		}
+		sliced <- err
+	}()
+	lockWaiters(t, s, 1)
+	go func() { published <- s.WithAccount(ctx, account, publish) }()
+	lockWaiters(t, s, 2)
+	if err := hold.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, done := range []chan error{sliced, published} {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// lockWaiters waits until n transactions wait for a lock. pg_locks shows
+// another role's wait, which pg_stat_activity hides.
+func lockWaiters(t *testing.T, s *Store, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		var waits int
+		if err := s.owner.QueryRow(t.Context(), `SELECT count(DISTINCT pid) FROM pg_locks WHERE NOT granted`).Scan(&waits); err != nil {
+			t.Fatal(err)
+		}
+		if waits >= n {
+			return
+		}
+	}
+	t.Fatalf("fewer than %d transactions wait for a lock", n)
 }
