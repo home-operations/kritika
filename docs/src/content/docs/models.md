@@ -658,10 +658,12 @@ An embedder builds each repository's similar-code index. With an embedder,
 a review's prompt carries the index's chunks (pieces of files) nearest the
 change. The agent gets a `search_code` tool over the same index. A query
 is either a hunk of the diff or a `search_code` query. Its vector search
-finds its eight nearest chunks, and keeps one when the chunk scores at least `similarFloor` and no more
-than `similarMargin` below the best match of the query. Unless `lexical`
-is `false`, a chunk that the [search by name](#search-by-name) keeps is
-kept too, whatever its similarity. Of the chunks kept, an answer
+finds its eight nearest chunks, and unless `lexical` is `false`, the
+[search by name](#search-by-name) finds more. A chunk either search found
+is kept when it scores at least `similarFloor` and no more than
+`similarMargin` below the best match of the query. A chunk that the search
+by name found is kept too when its weight by name is close enough to the
+query's best, whatever its similarity. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
 chunks of one file, four of one query, and ten in all, or sixteen for a
 review's prompt. A chunk that the file cap or a duplicate turns away gives
@@ -833,22 +835,25 @@ them hold weighs next to nothing. Postgres's own
 full-text ranking is not used, as it knows nothing of the other chunks,
 and its parsers split code where it is not split.
 
-Each search keeps a chunk on its own terms. The vector search keeps one
-at or above `similarFloor` and within `similarMargin` of its query's best,
-as before. The search by name finds a chunk only when it holds two of
-its query's words, an identifier of several parts that the query writes
-whole, or a word that at most four of the repository's chunks hold, so a
-query's one common word does not find every chunk that holds it. Of chunks
-of equal weight, the one nearest the query by vector comes first. The search
-by name keeps one that holds at least half the weight of its query's best
-match by name. A chunk either search keeps is kept. Each query's chunks are ordered by reciprocal rank fusion: a chunk
-scores 1 / (60 + its rank) in the answer of each search that found it, so
-one that both find comes first. Of those, an answer takes four for each
-query, and the answer's other bounds hold as before. A chunk the vector
-search keeps shows its similarity, as in `(similarity 0.81)`. One kept by
-name alone shows the names it shares with the query instead, as in
-`(shares AcquireLease, Lease)`: its similarity is under the floor, or more
-than the margin below its query's best, and is not shown.
+The search by name finds a chunk only when it holds two of its query's
+words, an identifier of several parts that the query writes whole, or a
+word that at most four of the repository's chunks hold, so a query's one
+common word does not find every chunk that holds it. Of chunks of equal
+lexical weight, the one nearest the query by vector comes first. The two
+searches' chunks are then gated together, whichever search found them. A
+chunk is kept when its similarity is at or above `similarFloor` and within
+`similarMargin` of the best similarity that either search found for its
+query. A chunk that the search by name found is kept too when it holds at
+least half the lexical weight of its query's best match by name, whatever
+its similarity. Each query's kept chunks are ordered by reciprocal rank
+fusion: a chunk scores 1 / (60 + its rank) in the answer of each search
+that found it, so one that both find comes first. Of those, an answer
+takes four for each query, and the answer's other bounds hold as before.
+A chunk that the similarity gate keeps shows its similarity, as in
+`(similarity 0.81)`, and a chunk that holds names of the query shows them,
+as in `(shares AcquireLease, Lease)`. One kept by its lexical weight alone
+shows only the names: its similarity is under the floor, or more than the
+margin below its query's best, and is not shown.
 
 The search by name is one statement, which runs after the vector search
 within five seconds, or within what is left of 50 seconds after the
