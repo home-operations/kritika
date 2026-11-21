@@ -508,10 +508,17 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	}
 	s.exec(t, `UPDATE poll_state SET last_polled_at = now() - interval '1 hour' WHERE account_id = $1`, s.account.ID())
 	before := polledAt()
+	calls = s.tf.calls
 	s.tf.err = errors.New("branch not found")
 	s.poll(t)
-	if after := polledAt(); !after.After(before) || len(s.indexJobs(t)) != 0 {
-		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, s.indexJobs(t))
+	if after := polledAt(); s.tf.calls != calls+1 || !after.After(before) || len(s.indexJobs(t)) != 0 {
+		t.Fatalf("after a failed tip: %d tip checks, polled at %s, before %s, index jobs %v; want one, the poll recorded and no job",
+			s.tf.calls-calls, after, before, s.indexJobs(t))
+	}
+	s.poll(t)
+	if s.tf.calls != calls+2 || len(s.indexJobs(t)) != 0 {
+		t.Fatalf("the poll after a failed tip: %d tip checks over both and index jobs %v; want the tip asked for again and no job",
+			s.tf.calls-calls, s.indexJobs(t))
 	}
 }
 
