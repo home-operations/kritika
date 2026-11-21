@@ -20,7 +20,10 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -59,10 +62,10 @@ func TestRetrievalEval(t *testing.T) {
 	if os.Getenv("KRITIKA_RETRIEVAL_EVAL") == "" {
 		t.Skip("KRITIKA_RETRIEVAL_EVAL is not set")
 	}
-	history, window := evalHistory(t)
+	history, window, diffed := evalHistory(t)
 	embed, dims := evalEmbedder(t)
 	ix := evalIndex(t, history[window], embed, dims)
-	truth := newEvalTruth(t, ix.chunks, history)
+	truth := newEvalTruth(t, ix.chunks, history[:diffed])
 	floor, margin := evalFloat(t, "KRITIKA_EVAL_FLOOR", configfile.DefaultSimilarFloor), configfile.DefaultSimilarMargin
 	variants := []string{"vector", "lexical", "hybrid"}
 	var reranker model.Reranker
@@ -133,29 +136,60 @@ func TestRetrievalEval(t *testing.T) {
 	}
 }
 
-// evalHistory is the first-parent history of the repository's head, and
-// how many of its commits the evaluation asks about.
-func evalHistory(t *testing.T) ([]*object.Commit, int) {
+// evalHistory is the first-parent history of the repository's head, how
+// many of its commits the evaluation asks about, and how many of them have
+// a diff (evalHistoryOf).
+func evalHistory(t *testing.T) (history []*object.Commit, window, diffed int) {
 	repo, err := git.PlainOpenWithOptions(cmp.Or(os.Getenv("KRITIKA_EVAL_REPO"), "../.."), &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	head, err := repo.Head()
+	window = evalInt(t, "KRITIKA_EVAL_COMMITS", 60)
+	history, diffed, err = evalHistoryOf(repo, window)
 	if err != nil {
 		t.Fatal(err)
 	}
-	window := evalInt(t, "KRITIKA_EVAL_COMMITS", 60)
-	var history []*object.Commit
-	for c, err := repo.CommitObject(head.Hash()); err == nil; c, err = c.Parent(0) {
+	return history, window, diffed
+}
+
+// evalHistoryOf is the first-parent history of repo's head, which must
+// hold more than window commits, and how many of them, from the head, have
+// a diff against their parent. The history ends at a root commit, which
+// has, or at a shallow clone's boundary, which has not: its parent is not
+// in the clone. Its tree is, which the index can be built from.
+func evalHistoryOf(repo *git.Repository, window int) (history []*object.Commit, diffed int, err error) {
+	shallow, err := repo.Storer.Shallow()
+	if err != nil {
+		return nil, 0, err
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return nil, 0, err
+	}
+	c, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, 0, err
+	}
+	for {
 		history = append(history, c)
-		if c.NumParents() == 0 {
+		if slices.Contains(shallow, c.Hash) {
+			diffed = len(history) - 1
 			break
 		}
+		if c.NumParents() == 0 {
+			diffed = len(history)
+			break
+		}
+		parent, err := c.Parent(0)
+		if err != nil {
+			return nil, 0, fmt.Errorf("the parent of %s: %w", c.Hash, err)
+		}
+		c = parent
 	}
 	if len(history) <= window {
-		t.Fatalf("the history has %d commits, fewer than the window's %d", len(history), window)
+		return nil, 0, fmt.Errorf("the history has %d commits, no more than the window's %d", len(history), window)
 	}
-	return history, window
+	return history, diffed, nil
 }
 
 // evalIndexed is an index generation of the tree that the evaluation asks
@@ -788,5 +822,105 @@ func TestEvalTruthDeclaredByItsHead(t *testing.T) {
 	defs := truth.defs("AcquireLease(ctx)", []string{"main.go"})
 	if len(defs) != 1 || !defs[defKey{"lease.go", 10}] {
 		t.Fatalf("definitions %v, want the window at line 10 alone", defs)
+	}
+}
+
+// evalRepo is a repository of a line of commits, each changing one file,
+// the first with parent, which the repository need not hold, and of which
+// shallow are a shallow clone's boundaries. It returns the commits, the
+// head last.
+func evalRepo(t *testing.T, n int, parent plumbing.Hash, shallow ...int) (*git.Repository, []plumbing.Hash) {
+	t.Helper()
+	st := memory.NewStorage()
+	put := func(o interface {
+		Encode(plumbing.EncodedObject) error
+	}) plumbing.Hash {
+		t.Helper()
+		obj := st.NewEncodedObject()
+		if err := o.Encode(obj); err != nil {
+			t.Fatal(err)
+		}
+		h, err := st.SetEncodedObject(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	commits := make([]plumbing.Hash, 0, n)
+	when := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	for i := range n {
+		blob := &plumbing.MemoryObject{}
+		blob.SetType(plumbing.BlobObject)
+		if _, err := fmt.Fprintf(blob, "package p\n\nconst v = %d\n", i); err != nil {
+			t.Fatal(err)
+		}
+		b, err := st.SetEncodedObject(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree := put(&object.Tree{Entries: []object.TreeEntry{{Name: "v.go", Mode: filemode.Regular, Hash: b}}})
+		var parents []plumbing.Hash
+		if i > 0 {
+			parents = []plumbing.Hash{commits[i-1]}
+		} else if !parent.IsZero() {
+			parents = []plumbing.Hash{parent}
+		}
+		sig := object.Signature{Name: "eval", Email: "eval@example.com", When: when.Add(time.Duration(i) * time.Minute)}
+		commits = append(commits, put(&object.Commit{
+			Author: sig, Committer: sig, Message: fmt.Sprintf("commit %d", i), TreeHash: tree, ParentHashes: parents,
+		}))
+	}
+	boundaries := make([]plumbing.Hash, 0, len(shallow))
+	for _, i := range shallow {
+		boundaries = append(boundaries, commits[i])
+	}
+	if err := st.SetShallow(boundaries); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetReference(plumbing.NewHashReference(plumbing.HEAD, commits[n-1])); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := git.Open(st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repo, commits
+}
+
+// TestEvalHistoryOfAShallowClone: a shallow clone deep enough for the
+// window ends its history at the boundary, whose tree the index can be built
+// from, and which has no diff that the truth could read: the parent is not
+// in the clone. A missing parent of a commit that is no boundary is an
+// error, and so is a history no longer than the window.
+func TestEvalHistoryOfAShallowClone(t *testing.T) {
+	gone := plumbing.NewHash("1111111111111111111111111111111111111111")
+	repo, commits := evalRepo(t, 4, gone, 0)
+	history, diffed, err := evalHistoryOf(repo, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 4 || history[3].Hash != commits[0] || diffed != 3 {
+		t.Fatalf("history of %d commits ending at %s, %d with a diff; want 4 ending at the boundary %s, 3 with a diff",
+			len(history), history[len(history)-1].Hash, diffed, commits[0])
+	}
+	if _, err := history[3].Tree(); err != nil {
+		t.Fatalf("the boundary's tree, the index's snapshot: %v", err)
+	}
+	truth := newEvalTruth(t, nil, history[:diffed])
+	if got := truth.changes[history[0]]; !slices.Equal(got, []string{"v.go"}) {
+		t.Fatalf("the head's changed paths = %q, want v.go", got)
+	}
+	// A clone of the whole history ends at its root, which has a diff.
+	repo, _ = evalRepo(t, 4, plumbing.ZeroHash)
+	if history, diffed, err := evalHistoryOf(repo, 3); err != nil || len(history) != 4 || diffed != 4 {
+		t.Fatalf("a whole history = %d commits, %d with a diff, %v; want 4, all with one", len(history), diffed, err)
+	}
+	repo, _ = evalRepo(t, 4, gone)
+	if _, _, err := evalHistoryOf(repo, 3); err == nil {
+		t.Fatal("a parent missing from a clone that is not shallow is no error")
+	}
+	repo, _ = evalRepo(t, 3, gone, 0)
+	if _, _, err := evalHistoryOf(repo, 3); err == nil {
+		t.Fatal("a history no longer than the window is no error")
 	}
 }
