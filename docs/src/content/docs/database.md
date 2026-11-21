@@ -578,10 +578,14 @@ then reuses the content hash's index, and copies and rebuilds nothing:
    is moved and no index is built, and this step takes no lock on
    `accounts`, `repositories` or `index_runs`.
 
-A search reads the legacy partition's vector index until it is dropped, so
-until then it costs what a search of the plain table did. A rebuild for a
-new embedder drops the whole table, legacy partition included, and creates
-it partitioned.
+While the legacy partition is attached, a search can still scan its vector
+index. The interim plan can be slower than the old plain-table plan: in the
+[index scale benchmark](/metrics/#reproducing-the-index-scale-benchmark) on
+VectorChord 1.1.1, a search of a repository of 10,000 chunks took 109 ms at
+the median just after the conversion, against 28.5 ms on the plain table,
+until the drain emptied the partition. Expect searches to be slower for as
+long as the drain takes. A rebuild for a new embedder drops the whole table,
+legacy partition included, and creates it partitioned.
 
 The legacy partition keeps the original table's vector index. If its
 definition was changed by hand, attaching builds a new one, under the lock.
