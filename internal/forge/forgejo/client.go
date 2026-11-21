@@ -50,6 +50,7 @@ type apiError struct {
 	method, path string
 	status       int
 	body         string
+	retryAfter   string
 }
 
 func (e *apiError) Error() string {
@@ -71,6 +72,15 @@ func Status(err error) int {
 		return e.status
 	}
 	return 0
+}
+
+// RetryAfterHeader is the Retry-After header of the instance's answer that
+// err carries, "" when err carries no answer or the answer names no wait.
+func RetryAfterHeader(err error) string {
+	if e, ok := errors.AsType[*apiError](err); ok {
+		return e.retryAfter
+	}
+	return ""
 }
 
 // Client is one authorized integration's access to a Forgejo instance,
@@ -232,7 +242,8 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return resp.Header, &apiError{method: method, path: path, status: resp.StatusCode, body: string(raw)}
+		return resp.Header, &apiError{method: method, path: path, status: resp.StatusCode, body: string(raw),
+			retryAfter: resp.Header.Get("Retry-After")}
 	}
 	if out == nil {
 		return resp.Header, nil
@@ -439,7 +450,8 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref,
-			&apiError{method: http.MethodGet, path: path, status: resp.StatusCode, body: string(raw)})
+			&apiError{method: http.MethodGet, path: path, status: resp.StatusCode, body: string(raw),
+				retryAfter: resp.Header.Get("Retry-After")})
 	}
 	content, err := io.ReadAll(io.LimitReader(resp.Body, forge.MaxFileBytes+1))
 	if err != nil {

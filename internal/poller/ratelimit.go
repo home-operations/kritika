@@ -17,15 +17,14 @@ import (
 )
 
 // forgeRateLimitWait is how long the looks at an account's default branches
-// pause for a forge's 429 that names no wait, or whose client keeps none.
+// pause for a forge's 429 that names no wait.
 const forgeRateLimitWait = time.Minute
 
 // rateLimited reports how long to wait before asking the forge again after
 // err, when err is the forge's rate limit: GitHub's, as github.RetryAfter
 // reads it, GitLab's, as gitlab.RetryAfter reads it, or any forge's 429. A
-// GitHub 429 that is no limit go-github knows waits for its Retry-After, and
-// a 429 that names no wait, or whose client keeps no headers, as Forgejo's,
-// waits forgeRateLimitWait.
+// GitHub, Forgejo or Gitea 429 waits for its Retry-After, and a 429 that
+// names no wait waits forgeRateLimitWait.
 func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	if wait, limited := github.RetryAfter(err, now); limited {
 		return wait, true
@@ -36,10 +35,12 @@ func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	if forgeStatus(err) != http.StatusTooManyRequests {
 		return 0, false
 	}
+	v := forgejo.RetryAfterHeader(err)
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil {
-		if wait, ok := retryAfter(e.Response.Header.Get("Retry-After"), now); ok {
-			return wait, true
-		}
+		v = e.Response.Header.Get("Retry-After")
+	}
+	if wait, ok := retryAfter(v, now); ok {
+		return wait, true
 	}
 	return forgeRateLimitWait, true
 }

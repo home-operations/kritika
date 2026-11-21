@@ -206,9 +206,9 @@ repository it stopped at. A 429 from any forge counts as its rate limit, as
 do GitHub's primary and secondary limits. The next round waits until a
 GitHub primary limit resets. For a GitLab 429 it waits until the later of
 the `Ratelimit-Reset` still to come and the answer's `Retry-After`. For a
-GitHub secondary limit or another GitHub 429, it waits for the answer's
-`Retry-After`. A 429 that names neither waits a minute, as on Forgejo and
-Gitea. A GitLab, Forgejo or Gitea connection's accounts share one credential,
+GitHub secondary limit, another GitHub 429, or a Forgejo or Gitea 429, it
+waits for the answer's `Retry-After`. A 429 that names neither waits a
+minute. A GitLab, Forgejo or Gitea connection's accounts share one credential,
 so its rate limit holds back the asks of every account on that connection; a
 GitHub limit holds back only the installation that hit it. Rounds
 go through the repositories by name, and the round that reaches the last one
