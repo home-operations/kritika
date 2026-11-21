@@ -290,7 +290,7 @@ func TestSimilarShown(t *testing.T) {
 	}
 	found[0].Text = "func gone() {}"
 	others := []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "f01.go", StartLine: 1, EndLine: 1}}
-	got := similarShown(tree(t, files), found, others, slog.New(slog.DiscardHandler))
+	got := similarShown(tree(t, files), nil, found, others, slog.New(slog.DiscardHandler))
 	if want := found[2 : 2+maxSimilarShown]; !slices.Equal(got, want) {
 		t.Fatalf("shown %+v, want %+v", got, want)
 	}
@@ -306,7 +306,7 @@ func TestSimilarShown(t *testing.T) {
 		head := tree(t, map[string]string{"tail.go": strings.Join(lines, "\n") + "\n"})
 		found := []contextpack.Chunk{chunk(contextpack.StageSimilar, 1, 60), chunk(contextpack.StageSimilar, 51, 61)}
 		others := []contextpack.Chunk{chunk(contextpack.StageDefinition, 1, 40)}
-		if got := similarShown(head, found, others, slog.New(slog.DiscardHandler)); !slices.Equal(got, found[1:]) {
+		if got := similarShown(head, nil, found, others, slog.New(slog.DiscardHandler)); !slices.Equal(got, found[1:]) {
 			t.Fatalf("shown %+v, want the tail", got)
 		}
 	})
@@ -379,14 +379,14 @@ func TestAtHead(t *testing.T) {
 		{"empty", chunk("lib.go", 1, 1, ""), nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := atHead(head, []contextpack.Chunk{tt.in}); !slices.Equal(got, tt.want) {
+			if got := atHead(head, nil, []contextpack.Chunk{tt.in}); !slices.Equal(got, tt.want) {
 				t.Fatalf("atHead = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
 	t.Run("found at lines an earlier one mostly shows", func(t *testing.T) {
 		a := "func a() {\n\treturn\n}"
-		got := distinct(atHead(head, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}))
+		got := distinct(atHead(head, nil, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}))
 		if want := []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}; !slices.Equal(got, want) {
 			t.Fatalf("atHead = %+v, want %+v", got, want)
 		}
@@ -456,7 +456,7 @@ func TestAtHeadChecksDeclarations(t *testing.T) {
 			t.Fatalf("index %+v has no chunk of %s from line %d in %s", index, want.symbol, want.start, want.path)
 		}
 	}
-	if got := atHead(tree(t, base), index); !slices.Equal(got, index) {
+	if got := atHead(tree(t, base), nil, index); !slices.Equal(got, index) {
 		for _, c := range index {
 			if !slices.Contains(got, c) {
 				t.Errorf("atHead of an unchanged tree left out %s:%d-%d under %q", c.Path, c.StartLine, c.EndLine, c.Symbol)
@@ -468,7 +468,7 @@ func TestAtHeadChecksDeclarations(t *testing.T) {
 	renamed["long.go"] = long("func Longer()")
 	renamed["method.go"] = long("func (c *Client) handle()")
 	for _, path := range []string{"long.go", "method.go"} {
-		if got := atHead(tree(t, renamed), bodies(path)); len(got) != 0 {
+		if got := atHead(tree(t, renamed), nil, bodies(path)); len(got) != 0 {
 			t.Errorf("atHead under another declaration = %+v, want none", got)
 		}
 	}
@@ -532,7 +532,7 @@ func TestAtHeadLooksPastAnotherDeclaration(t *testing.T) {
 	}
 	// B, as long as A, now sits above it: the window's old lines are B's.
 	moved := len(strings.Split(fn("B"), "\n"))
-	got := atHead(tree(t, map[string]string{"lib.go": "package lib\n\n" + fn("B") + "\n" + fn("A")}), []contextpack.Chunk{window})
+	got := atHead(tree(t, map[string]string{"lib.go": "package lib\n\n" + fn("B") + "\n" + fn("A")}), nil, []contextpack.Chunk{window})
 	want := window
 	want.StartLine, want.EndLine = window.StartLine+moved, window.EndLine+moved
 	if !slices.Equal(got, []contextpack.Chunk{want}) {
@@ -562,7 +562,7 @@ func TestAtHeadFindsALineIndentedPastTheBound(t *testing.T) {
 	if stored.Text != "callSomething()" {
 		t.Fatalf("index %+v stores no chunk of line 4 from its first word", built)
 	}
-	got := atHead(tree(t, map[string]string{"deep.go": "package lib\n\n// moved\n" + src}), []contextpack.Chunk{stored})
+	got := atHead(tree(t, map[string]string{"deep.go": "package lib\n\n// moved\n" + src}), nil, []contextpack.Chunk{stored})
 	want := stored
 	want.StartLine, want.EndLine = 5, 5
 	if !slices.Equal(got, []contextpack.Chunk{want}) {
@@ -595,5 +595,36 @@ func TestSimilarContextLeavesOutFilesTooLargeToIndex(t *testing.T) {
 	defer gw.mu.Unlock()
 	if len(gw.requests) != 2 || !slices.Equal(gw.requests[1].Queries, []string{"func small() {}\n"}) {
 		t.Fatalf("similar requests %+v, want a probe and a search of small.go alone", gw.requests)
+	}
+}
+
+// TestSimilarLeavesOutPathsTheRunWouldNotIndex: an index built before the
+// run's rules can hold a file that they now leave out, ignored by the run or
+// Unindexed, which the head still has unchanged. Neither automatic context
+// nor search_code shows it.
+func TestSimilarLeavesOutPathsTheRunWouldNotIndex(t *testing.T) {
+	const kept = "func kept() {}"
+	files := map[string]string{
+		"lib/kept.go": kept + "\n", "vendor/dep.go": "func dep() {}\n", "secret.sops.yaml": "password: ENC[AES256_GCM,data:x]\n",
+		"a.go": "func a() {}\n",
+	}
+	found := func(path, text string) contextpack.Chunk {
+		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text, Ref: "similarity 0.9"}
+	}
+	answer := contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		found("vendor/dep.go", "func dep() {}"), found("secret.sops.yaml", "password: ENC[AES256_GCM,data:x]"), found("lib/kept.go", kept),
+	}}
+	gw := &fakeSimilarGateway{status: http.StatusNoContent, answer: answer}
+	s := reviewSpec()
+	s.GatewayURL, s.Ignore = gw.serve(t).URL, []string{"vendor/**"}
+	res := &gitfetch.Result{Diff: fileDiff("", "a.go", added("func a() {}")), Changed: []string{"a.go"}}
+	chunks, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, tree(t, files), res, nil,
+		slog.New(slog.DiscardHandler))
+	if len(chunks) != 1 || chunks[0].Path != "lib/kept.go" || search == nil {
+		t.Fatalf("similar code %+v, search_code offered %t; want lib/kept.go alone and search_code", chunks, search != nil)
+	}
+	out, err := search.Run(t.Context(), json.RawMessage(`{"query":"kept"}`))
+	if want := "lib/kept.go:1-1 similarity 0.9\n" + kept; err != nil || out != want {
+		t.Fatalf("search_code = %q, %v; want %q", out, err, want)
 	}
 }

@@ -97,7 +97,7 @@ func partPrompts(
 		}
 		for i, out := range similar {
 			if out.Indexed {
-				chunks[i] = append(chunks[i], similarShown(head, out.Chunks, chunks[i], logger.With("part", i+1))...)
+				chunks[i] = append(chunks[i], similarShown(head, p.Ignore, out.Chunks, chunks[i], logger.With("part", i+1))...)
 				tools.search = newSearchTool(p, secrets, head, headLock)
 			}
 		}

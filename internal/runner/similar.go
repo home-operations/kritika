@@ -87,6 +87,8 @@ type searchTool struct {
 	// set, is what a read of it takes: parts share it.
 	head     *object.Tree
 	headLock chan struct{}
+	// ignore is the run's ignore globs, whose paths an answer does not show.
+	ignore   []string
 	maxBytes int
 	calls    int
 }
@@ -125,7 +127,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	if err != nil {
 		return "", err
 	}
-	chunks := distinct(atHead(s.head, out.Chunks))
+	chunks := distinct(atHead(s.head, s.ignore, out.Chunks))
 	release()
 	if len(chunks) == 0 {
 		return "No similar code found.", nil
@@ -203,11 +205,17 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // chunk is shown under and what a match by name matched. The nearest place
 // that gives the text and is declared so is the one shown, as a body that
 // moved down can leave the same lines in another function at its old place.
-func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
+// A chunk of a path that the run's ignore globs match, or that is
+// Unindexed, is left out unread: an index built under older rules can hold
+// one, and the exclusions that the run reported name only changed paths.
+func atHead(head *object.Tree, ignore []string, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string]*headFile{}
 	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions.MaxFileBytes}}
 	var out []contextpack.Chunk
 	for _, c := range chunks {
+		if chunk.Matches(ignore, c.Path) || indexer.Unindexed(c.Path) {
+			continue
+		}
 		f, ok := files[c.Path]
 		if !ok {
 			f = readHeadFile(head, c.Path)
@@ -357,10 +365,11 @@ func findText(lines []string, text string, near, n int, accept func(first, last 
 const maxSimilarShown = 10
 
 // similarShown is the similar chunks found that a prompt shows: as head has
-// them, none that others, the other stages' chunks, mostly show or that an
-// earlier one shown mostly shows, and the first maxSimilarShown of the rest.
-func similarShown(head *object.Tree, found, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
-	current := atHead(head, found)
+// them and outside ignore, none that others, the other stages' chunks,
+// mostly show or that an earlier one shown mostly shows, and the first
+// maxSimilarShown of the rest.
+func similarShown(head *object.Tree, ignore []string, found, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
+	current := atHead(head, ignore, found)
 	shown := distinct(withoutOverlap(current, others))
 	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "apart", len(shown),
 		"shown", min(len(shown), maxSimilarShown))

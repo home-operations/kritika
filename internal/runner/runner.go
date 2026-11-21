@@ -340,7 +340,7 @@ func similarContext(
 	if !ok {
 		return nil, nil
 	}
-	return similarShown(head, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
+	return similarShown(head, p.Ignore, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
 }
 
 // similarReportWindow bounds what a run spends, before it searches, on
@@ -401,11 +401,12 @@ func similarCodeFor(
 }
 
 // newSearchTool is search_code over the repository's index. It leaves out
-// the paths that excludeFromSimilar reported, which the prompt shows. It
+// the paths that excludeFromSimilar reported, which the prompt shows, and
+// those that the run's ignore globs match. It
 // reads head holding headLock, nil for a review that is not split.
 func newSearchTool(p runspec.Spec, secrets runspec.Secrets, head *object.Tree, headLock chan struct{}) *searchTool {
 	return &searchTool{
-		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, head: head, headLock: headLock,
+		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, head: head, headLock: headLock, ignore: p.Ignore,
 		maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
 	}
 }
