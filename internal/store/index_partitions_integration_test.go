@@ -939,3 +939,161 @@ func TestRebuildDropsLegacyIndexChunks(t *testing.T) {
 		t.Fatal("a rebuild for a new embedder kept the legacy partition")
 	}
 }
+
+// executedRe matches a plan node that scans a partition of index_chunks, and
+// whether it never ran.
+var executedRe = regexp.MustCompile(` on (index_chunks_\w+).*?( \(never executed\))?$`)
+
+// executedPartitions are the partitions of index_chunks that the
+// application's search of the generation reads when it runs, under the
+// plan_cache_mode mode. A prepared statement's generic plan prunes the other
+// partitions as it starts, which only EXPLAIN ANALYZE shows.
+func executedPartitions(t *testing.T, s *Store, account, run, mode string) ([]string, string) {
+	t.Helper()
+	ctx := t.Context()
+	var plan []string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		for _, stmt := range []string{
+			`SET LOCAL vchordrq.prefilter = on`,
+			`SET LOCAL plan_cache_mode = ` + mode,
+			`PREPARE partition_search AS ` + similarChunksSQL,
+		} {
+			if _, err := tx.Exec(ctx, stmt); err != nil {
+				return err
+			}
+		}
+		rows, err := tx.Query(ctx, fmt.Sprintf(`EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
+			EXECUTE partition_search('[1,0,0,0,0,0,0,0]', '%s', '{}', 4)`, run))
+		if err != nil {
+			return err
+		}
+		if plan, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `DEALLOCATE partition_search`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var read []string
+	for _, line := range plan {
+		m := executedRe.FindStringSubmatch(line)
+		if m != nil && m[2] == "" && !slices.Contains(read, m[1]) {
+			read = append(read, m[1])
+		}
+	}
+	return read, strings.Join(plan, "\n")
+}
+
+// TestSimilarSearchReadsOnePartition: a search reads its generation's hash
+// partition alone, while other generations fill other partitions, both in a
+// table created partitioned and in one converted from a plain table once its
+// legacy partition is dropped. That holds for a custom plan, which prunes as
+// it is planned, and for the generic plan that a prepared statement settles
+// on, which prunes as it starts.
+func TestSimilarSearchReadsOnePartition(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-prune"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-prune", "index-prune/one", "index-prune/two")
+	account := accountID(t, s, "index-prune")
+	one := configfile.RepositoryID(account, "index-prune/one")
+	two := configfile.RepositoryID(account, "index-prune/two")
+	dropIndexChunks(t, s)
+	for _, layout := range []string{"fresh", "converted"} {
+		t.Run(layout, func(t *testing.T) {
+			if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL;
+				DROP TABLE IF EXISTS index_chunks; DROP TABLE IF EXISTS index_chunks_legacy; DELETE FROM index_schema`); err != nil {
+				t.Fatal(err)
+			}
+			var run string
+			if layout == "fresh" {
+				if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+					t.Fatal(err)
+				}
+				run = partitionRun(t, s, account, one, true, "a.go", "b.go")
+			} else {
+				createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+				run = partitionRun(t, s, account, one, true, "a.go", "b.go")
+				partitionLegacy(t, s)
+				drainLegacy(t, s)
+				if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || !dropped {
+					t.Fatalf("DropLegacyIndexChunks after the drain = %v, %v", dropped, err)
+				}
+			}
+			// Other generations, in other partitions.
+			occupied := map[string]bool{}
+			for range 12 {
+				for p := range chunkPartitions(t, s, partitionRun(t, s, account, two, false, "x.go")) {
+					occupied[p] = true
+				}
+			}
+			own := chunkPartitions(t, s, run)
+			if len(own) != 1 {
+				t.Fatalf("the generation is in %v, want one partition", own)
+			}
+			var partition string
+			for p := range own {
+				partition = p
+			}
+			delete(occupied, partition)
+			if len(occupied) == 0 {
+				t.Fatal("no other partition holds chunks, so the search could not read one")
+			}
+			if got := similarPaths(t, s, account, run); strings.Join(got, ",") != "a.go,b.go" {
+				t.Fatalf("search found %v, want a.go,b.go", got)
+			}
+			for _, mode := range []string{"force_custom_plan", "force_generic_plan"} {
+				read, plan := executedPartitions(t, s, account, run, mode)
+				if !slices.Equal(read, []string{partition}) {
+					t.Errorf("%s: the search read %v, want %s alone:\n%s", mode, read, partition, plan)
+				}
+			}
+		})
+	}
+}
+
+// TestPartitionIndexChunksRetriesLockWaits: a lock that a writer holds for
+// longer than one short wait does not cost the sweep its turn. The
+// partitioner gives way, tries again, and partitions the table once the
+// writer lets go.
+func TestPartitionIndexChunksRetriesLockWaits(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-retry"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-retry", "index-retry/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+	account := accountID(t, s, "index-retry")
+	partitionRun(t, s, account, configfile.RepositoryID(account, "index-retry/one"), true, "a.go")
+
+	writer, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	// Past one wait and one pause, within the tries.
+	hold := partitionRetryPause + partitionRetryPause/2
+	released := make(chan struct{})
+	time.AfterFunc(hold, func() {
+		_ = writer.Rollback(context.Background())
+		close(released)
+	})
+	// A failure waits for the writer to let go, so the cleanup's DROP TABLE
+	// does not queue behind it.
+	defer func() { <-released }()
+	start := time.Now()
+	got, err := s.PartitionIndexChunks(ctx, "kritika_app")
+	if err != nil || !got {
+		t.Fatalf("PartitionIndexChunks behind a writer that lets go after %s = %v, %v; want it partitioned", hold, got, err)
+	}
+	if took := time.Since(start); took < hold {
+		t.Fatalf("PartitionIndexChunks returned after %s, before the writer let go at %s", took, hold)
+	}
+}
