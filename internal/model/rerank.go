@@ -111,19 +111,21 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	if resp.StatusCode != http.StatusOK {
 		return nil, RerankUsage{}, fmt.Errorf("model: rerank: HTTP status %d", resp.StatusCode)
 	}
+	// TEI reports what a request computed in a header of its answer alone,
+	// which stands when the body is cut short.
+	var computed RerankUsage
+	if n, err := strconv.ParseUint(resp.Header.Get("X-Compute-Tokens"), 10, 32); err == nil {
+		computed.Tokens = int64(n)
+	}
 	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer))
 	if err != nil {
-		return nil, RerankUsage{}, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
+		return nil, computed, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
 	}
 	// An answer refused for its ranks still reports what the provider spent
 	// on it, which the gateway charges the run.
 	ranks, used, err := r.decode(answer)
 	if used.Tokens == 0 {
-		// TEI reports what a request computed in a header of its answer
-		// alone.
-		if n, err := strconv.ParseUint(resp.Header.Get("X-Compute-Tokens"), 10, 32); err == nil {
-			used.Tokens = int64(n)
-		}
+		used.Tokens = computed.Tokens
 	}
 	if err != nil {
 		return nil, used, fmt.Errorf("model: rerank: decode the answer: %w", err)

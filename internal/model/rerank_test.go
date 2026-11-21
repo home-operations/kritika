@@ -368,6 +368,27 @@ func TestRerankerRefusalKeepsUsage(t *testing.T) {
 	}
 }
 
+// TestRerankerCutShortKeepsUsage: a TEI answer whose body ends before its
+// Content-Length still reports the tokens its header says were computed,
+// which the gateway charges the run.
+func TestRerankerCutShortKeepsUsage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, buf, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nX-Compute-Tokens: 21\r\nContent-Length: 100\r\n\r\n[{\"index\":0,")
+		_ = buf.Flush()
+	}))
+	defer srv.Close()
+	scores, used, err := NewReranker(RerankTEI, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+	if err == nil || scores != nil || used != (RerankUsage{Tokens: 21}) {
+		t.Fatalf("Rerank = %v, %+v, %v; want a failure that reports 21 tokens spent", scores, used, err)
+	}
+}
+
 // TestRerankerDecodeErrorValues: an answer that does not decode fails with
 // an error that quotes none of it, since a provider can echo the query, a
 // document or a key into any of its fields, and the gateway logs the error.
