@@ -4,8 +4,15 @@
 -- chunk it considers. So neither a search request nor its statements carry
 -- them, however many files the change touches. A Git path can be longer than
 -- a B-tree entry, which a default 8 KiB page holds a little under 2.7 KiB
--- of, so the index holds the path's digest, and a probe compares the path
--- too: two paths of one digest are two rows, each found by its own path.
+-- of, so the paths' index is a hash index, which holds a hash of a path of
+-- any length, and a probe compares the path itself. A probe finds the path's
+-- rows of every run that reported it, and keeps its own run's; a run's rows
+-- go once it has finished, so those are the few runs that are live at once.
+-- No digest of the path stands in: Postgres that allows only FIPS-approved
+-- algorithms refuses md5(), and the text-to-bytes conversion that sha256()
+-- needs is not leakproof, so under the application role's row-level
+-- security a probe could not use an index of it. The run's index serves the
+-- sweep of a finished run's rows.
 -- The run's similar_exclude_reported_at says that it reported them, so that
 -- its first report holds even when it holds no path. The leader deletes a
 -- run's rows once the run has finished, when no search can read them.
@@ -35,7 +42,8 @@ CREATE TABLE IF NOT EXISTS similar_exclusions (
     account_id    uuid NOT NULL REFERENCES accounts (id),
     path          text NOT NULL
 );
-CREATE INDEX IF NOT EXISTS similar_exclusions_path_idx ON similar_exclusions (runner_run_id, md5(path));
+CREATE INDEX IF NOT EXISTS similar_exclusions_run_idx ON similar_exclusions (runner_run_id);
+CREATE INDEX IF NOT EXISTS similar_exclusions_path_idx ON similar_exclusions USING hash (path);
 
 -- A row is its run's account's, which only that account's run can write.
 ALTER TABLE similar_exclusions ENABLE ROW LEVEL SECURITY;

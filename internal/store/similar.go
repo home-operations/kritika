@@ -102,7 +102,7 @@ type SimilarHit struct {
 const similarChunksSQL = `SELECT c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
 				coalesce(nullif(1 - (c.embedding <=> $1::halfvec), 'NaN'::float8), -2::float8)
 			FROM index_chunks c WHERE c.index_run_id = $2 AND NOT (c.path = ANY($3))
-				AND NOT EXISTS (SELECT 1 FROM similar_exclusions e WHERE e.runner_run_id = $5::uuid AND md5(e.path) = md5(c.path) AND e.path = c.path)
+				AND NOT EXISTS (SELECT 1 FROM similar_exclusions e WHERE e.runner_run_id = $5::uuid AND e.path = c.path)
 			ORDER BY c.embedding <=> $1::halfvec LIMIT $4`
 
 // SimilarChunks finds, for each query vector, the perQuery chunks of the
@@ -110,8 +110,8 @@ const similarChunksSQL = `SELECT c.path, c.start_line, c.end_line, c.language, c
 // index ranks them. The generation and account filters are strict and
 // cheap, which is what VectorChord's prefilter wants: it then skips the
 // distance of every chunk outside this repository's generation. A run's
-// reported paths are left out by a probe of similar_exclusions' index, by
-// the path's digest, for each chunk the scan yields.
+// reported paths are left out by a probe of similar_exclusions' index of
+// the paths, for each chunk the scan yields.
 func SimilarChunks(
 	ctx context.Context, tx pgx.Tx, runID string, vectors [][]float32, exclude Exclusions, perQuery int,
 ) ([]SimilarHit, error) {
@@ -220,7 +220,7 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 			LATERAL (SELECT c.id, c.path FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = s.id LIMIT 1) c
 		WHERE (cardinality($8::text[]) > 0 OR $16::uuid IS NOT NULL)
 			AND (c.path = ANY($8::text[]) OR EXISTS (SELECT 1 FROM similar_exclusions e
-				WHERE e.runner_run_id = $16::uuid AND md5(e.path) = md5(c.path) AND e.path = c.path))
+				WHERE e.runner_run_id = $16::uuid AND e.path = c.path))
 	), top AS MATERIALIZED (
 		SELECT * FROM (
 			SELECT s.*, rank() OVER (PARTITION BY s.qi ORDER BY s.score DESC) AS rank,

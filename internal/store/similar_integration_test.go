@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
 )
@@ -203,6 +204,64 @@ func TestSimilarExclusions(t *testing.T) {
 	}
 	if got := reported(beta, foreign); !slices.Equal(got, []string{"kept.go"}) {
 		t.Fatalf("the sweep took a live run's: %q", got)
+	}
+}
+
+// TestSimilarExclusionsWithoutMD5: Postgres that allows only FIPS-approved
+// algorithms refuses md5(), and a run still reports the paths that its
+// searches leave out, of any length, and both searches leave them out. The
+// test takes md5() away from every role but the superuser, which refuses
+// each call of it as such a server does.
+func TestSimilarExclusionsWithoutMD5(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	super, err := pgxpool.New(ctx, testEnv(t, "KRITIKA_TEST_SUPER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(super.Close)
+	const md5 = `FUNCTION md5(text), md5(bytea)`
+	if _, err := super.Exec(ctx, `REVOKE EXECUTE ON `+md5+` FROM PUBLIC`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := super.Exec(context.Background(), `GRANT EXECUTE ON `+md5+` TO PUBLIC`); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	gen, runs := similarExclusionsFixture(t, s, alpha, beta)
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		return SetSimilarExclude(ctx, tx, runs[0], []string{"moved/a.go", longGitPath()})
+	}); err != nil {
+		t.Fatalf("SetSimilarExclude without md5(): %v", err)
+	}
+	var similar []string
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		hits, err := SimilarChunks(ctx, tx, gen, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, Exclusions{Run: runs[0]}, 10)
+		for _, h := range hits {
+			similar = append(similar, h.Chunk.Path)
+		}
+		return err
+	}); err != nil {
+		t.Fatalf("SimilarChunks without md5(): %v", err)
+	}
+	slices.Sort(similar)
+	if !slices.Equal(similar, []string{"kept.go", "moved/b.go"}) {
+		t.Fatalf("SimilarChunks without md5() = %q, want kept.go and moved/b.go", similar)
+	}
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "main"}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+		_, err := LexicalChunks(ctx, tx, gen, []LexicalQuery{q}, Exclusions{Run: runs[0]}, 10, LexicalBar{Least: 100}, 100)
+		return err
+	}); err != nil {
+		t.Fatalf("LexicalChunks without md5(): %v", err)
 	}
 }
 

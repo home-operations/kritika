@@ -81,8 +81,8 @@ func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []str
 	if tag.RowsAffected() == 0 {
 		return nil
 	}
-	// The table's index is of the paths' digests, which two paths can share,
-	// so no key keeps a path from being written twice.
+	// No key keeps a path from being written twice: a B-tree entry cannot
+	// hold a long path, and the paths' hash index cannot be unique.
 	for batch := range slices.Chunk(slices.Compact(slices.Sorted(slices.Values(paths))), similarExcludeBatch) {
 		if _, err := tx.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path)
 			SELECT r.id, r.account_id, p.path FROM runner_runs r, unnest($2::text[]) AS p (path) WHERE r.id = $1`,
