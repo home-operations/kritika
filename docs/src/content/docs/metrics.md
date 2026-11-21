@@ -414,7 +414,7 @@ disk:
 
 ```sh
 KRITIKA_INDEX_SCALE_ROWS=3000000 mise run test-integration -- \
-  -run '^$' -bench BenchmarkIndexScale -benchtime 1x -timeout 6h -v ./internal/store/
+  -run '^$' -bench BenchmarkIndexScale -benchtime 1x -timeout 6h -v
 ```
 
 `KRITIKA_INDEX_SCALE_DIMS` (1,024 unless set) sets the dimension, and
@@ -542,7 +542,7 @@ chunks take minutes to load:
 
 ```sh
 KRITIKA_LEXICAL_SCALE_CHUNKS=10000,100000 mise run test-integration -- \
-  -run '^$' -bench BenchmarkLexicalScale -benchtime 1x -timeout 1h -v ./internal/store/
+  -run '^$' -bench BenchmarkLexicalScale -benchtime 1x -timeout 1h -v
 ```
 
 Its code is synthetic: thirty lines of five identifiers a chunk, each of one to
