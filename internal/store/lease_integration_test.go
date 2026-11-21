@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -359,7 +360,10 @@ func TestWakeIfSlotFree(t *testing.T) {
 // not held off. Once the update has its slot, builds take slots again.
 func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	s := openStore(t)
-	ctx := t.Context()
+	// A bound on the test's waits alone, for an update that never waits or
+	// never ends its wait: the test then fails rather than hold up the suite.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -389,29 +393,54 @@ func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	if err != nil || held == nil {
 		t.Fatalf("TakeLease = %v, %v", held, err)
 	}
-	type result struct {
-		l   *Lease
-		err error
-	}
-	updated := make(chan result, 1)
+	// Letting a lease go again changes nothing, so the test's own releases
+	// and these can both run.
+	t.Cleanup(func() { _, _ = held.Release(context.Background()) })
+	var updated *Lease
+	var updateErr error
+	done := make(chan struct{})
 	go func() {
-		l, err := s.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
-		updated <- result{l, err}
+		defer close(done)
+		updated, updateErr = s.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
 	}()
-	for waiting := false; !waiting; {
-		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l, (SELECT `+indexWaitLock+` AS k) w
-			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted AND l.objsubid = 1
-				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`, alpha, model).Scan(&waiting); err != nil {
-			t.Fatal(err)
+	// A test that fails ends the update's wait and lets go what it took.
+	t.Cleanup(func() {
+		cancel()
+		<-done
+		if updated != nil {
+			_, _ = updated.Release(context.Background())
 		}
-		select {
-		case r := <-updated:
-			t.Fatalf("the update ended its wait with %v, %v while every slot it can take is held", r.l, r.err)
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
-		default:
+	})
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	// waitLockHeld polls until the update's wait lock is held, or not, as
+	// held says. The update must not end its wait before it holds the lock.
+	waitLockHeld := func(held bool, what string) {
+		t.Helper()
+		var ended <-chan struct{}
+		if held {
+			ended = done
+		}
+		for {
+			var found bool
+			if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l, (SELECT `+indexWaitLock+` AS k) w
+				WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted AND l.objsubid = 1
+					AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`, alpha, model).Scan(&found); err != nil {
+				t.Fatalf("%s not seen: %v", what, err)
+			}
+			if found == held {
+				return
+			}
+			select {
+			case <-ended:
+				t.Fatalf("the update ended its wait with %v, %v while every slot it can take is held", updated, updateErr)
+			case <-ctx.Done():
+				t.Fatalf("%s not seen: %v", what, ctx.Err())
+			case <-poll.C:
+			}
 		}
 	}
+	waitLockHeld(true, "the update's wait for a slot")
 	if l := take(alpha, 2, 3); l != nil {
 		release(l)
 		t.Fatal("a build took a slot while an update of its account waited for one")
@@ -422,16 +451,23 @@ func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	}
 	release(other)
 	release(held)
-	r := <-updated
-	if r.err != nil || r.l == nil {
-		t.Fatalf("AcquireIndexLease = %v, %v; want the slot let go", r.l, r.err)
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatalf("the update did not take the slot let go: %v", ctx.Err())
 	}
+	if updateErr != nil || updated == nil {
+		t.Fatalf("AcquireIndexLease = %v, %v; want the slot let go", updated, updateErr)
+	}
+	// The update's session is closed by now, but Postgres lets its lock go
+	// as the session ends, which can be after the update returned.
+	waitLockHeld(false, "the end of the update's wait")
 	l := take(alpha, 2, 3)
 	if l == nil {
 		t.Fatal("a build took no slot once the update had its own")
 	}
 	release(l)
-	release(r.l)
+	release(updated)
 }
 
 // TestIndexUpdateTakesAFreeSlotOnThePool: an index update that finds a slot
