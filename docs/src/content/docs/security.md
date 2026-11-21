@@ -326,6 +326,13 @@ it, so it has no switch:
   to the run. It searches only the index of the run's own repository,
   whatever the request says. A search leaves out the files the change
   touches, which the run reports once before it first searches.
+- With a [reranker](/models/#reranking) configured, the gateway also sends
+  it each query, the diff's hunk or the `search_code` text, beside the
+  path, declaration and source text of up to `candidates` of the index's
+  chunks for that query. It does so before it keeps each query's best four
+  and before the runner checks those against the pull request's head, so
+  the reranker reads code that the review never shows. Use only a reranker
+  that may receive the repository's code, as the embedder does.
 - A run reports here what it found: its phase, its context, its similar-code
   exclusions, its agent's result and its index. This takes the run's report token, not the token
   that the model endpoint takes.
