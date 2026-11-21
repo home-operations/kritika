@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"math"
@@ -534,6 +535,29 @@ func TestSimilarRerankUsage(t *testing.T) {
 					code, afterRows-rows, afterTokens-tokens, tt.tokens)
 			}
 		})
+	}
+}
+
+// TestSimilarRerankMonthCap: a request whose embedding brings the account to
+// its tokensPerMonth is answered in the fused order, without reranking, as a
+// model call admitted after it would be refused. The embedder reports a
+// token a request.
+func TestSimilarRerankMonthCap(t *testing.T) {
+	r := newLexicalRepo(t, "rerank-cap", runspec.IndexFormat, widgets, widgetVectors())
+	used, err := r.st.AccountUsage(t.Context(), r.account.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The embedding's value ends where the instance's limits begin.
+	file := lexicalConfig(t, fmt.Sprintf("{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei } }\nlimits: { tokensPerMonth: %d }",
+		used.Tokens+1))
+	reranked := rerankFunc(func(_ context.Context, _ string, docs []string) ([]float64, model.RerankUsage, error) {
+		t.Error("reranked past the month's cap")
+		return make([]float64, len(docs)), model.RerankUsage{}, nil
+	})
+	code, got := r.ask(t, file, reranked, prometheus.NewRegistry(), "widgetFactory()")
+	if want := []string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}; code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
 	}
 }
 

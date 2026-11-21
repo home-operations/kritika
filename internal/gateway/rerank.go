@@ -85,7 +85,9 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // some of the budget: the reranking is optional, and must not take what the
 // review's own steps need, nor bring the run to its budget, which refuses
 // them. A run with less left keeps the fused order. The reservation is
-// settled at the tokens that the provider reports.
+// settled at the tokens that the provider reports. Nor does it rerank for
+// an account at its tokensPerMonth, which the request's embedding can have
+// reached since the request was admitted.
 // A request that reranked, or that the provider billed tokens for, records a
 // usage row of the review at those tokens. A request that reranked with only
 // search units reported, as Cohere can, still records its row, at no tokens:
@@ -113,6 +115,21 @@ func (g *Server) rerank(
 			chars += len(r.texts[q]) + len(d)
 		}
 	}
+	// The wait for a slot counts against the deadline, so a reranker whose
+	// slots are all held delays the answer no longer than its timeout.
+	dctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	// The month's cap was read as the request was admitted, before its
+	// embedding, whose usage can have reached it since.
+	capped, err := g.Store.CapReached(dctx, r.account.ID(), configfile.Limits{TokensPerMonth: file.Settings(r.account).Limits.TokensPerMonth})
+	if err != nil {
+		logger.Warn("gateway: similar code not reranked: the fused order stands", "error", err)
+		return
+	}
+	if capped != "" {
+		logger.Info("similar code not reranked: the account is at its cap", "reason", capped)
+		return
+	}
 	reserved := int64(chars)/4 + 1
 	fits, err := g.Store.ReserveGatewayTokensWithin(ctx, r.token, reserved)
 	if err != nil {
@@ -125,10 +142,6 @@ func (g *Server) rerank(
 	}
 	var spent model.RerankUsage
 	defer func() { g.chargeRun(ctx, r.token, spent.Tokens-reserved, logger) }()
-	// The wait for a slot counts against the deadline, so a reranker whose
-	// slots are all held delays the answer no longer than its timeout.
-	dctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
 	key := "rerank:" + rr.Model
 	waitStarted := time.Now()
 	lease, err := g.Store.AcquireLease(dctx, r.account.ID(), key, file.Slots(r.account, rr.Ref), r.jobID)

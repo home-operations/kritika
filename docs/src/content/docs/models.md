@@ -918,7 +918,9 @@ tokens alone.
 
 A reranker reads every candidate in full, and its tokens count against the
 account's `tokensPerMonth` as a review's do: the caps have no limit of their
-own for it. They count against the run's token budget too: the gateway
+own for it. An account that the request's embedding brings to its
+`tokensPerMonth` keeps the fused order, as its next model call is refused.
+They count against the run's token budget too: the gateway
 reserves what it sends, at four characters a token, before it reranks, and
 settles at what the provider reports. It reranks only when that reservation
 leaves some of the budget, as the reranking is optional and the review's
