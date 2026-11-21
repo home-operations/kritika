@@ -403,7 +403,7 @@ func lexicalPlan(t *testing.T, s *Store, account, run string) []string {
 	var plan []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []bool{false}, []string{"main"}, 0, 100,
-			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 16, 100, LexicalCommonMax, 0)
+			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 4+LexicalCommonMax, 100, LexicalCommonMax, 0)
 		if err != nil {
 			return err
 		}

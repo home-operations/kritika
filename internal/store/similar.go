@@ -180,10 +180,6 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 	FROM top r, LATERAL (SELECT * FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id LIMIT 1) c
 	ORDER BY r.qi, r.score DESC, similarity DESC, c.path, c.start_line`
 
-// lexicalTies is how many times perQuery LexicalChunks reads of a query's
-// hits when they tie at its cut.
-const lexicalTies = 4
-
 // LexicalChunks finds, for each query, the perQuery chunks of the generation
 // that hold the most weight of its terms, outside the excluded paths, with
 // the terms each holds, the heaviest first. A term weighs what BM25 gives a
@@ -195,6 +191,9 @@ const lexicalTies = 4
 // one in at most alone of the generation's chunks. So a query's one common
 // word does not find every chunk that holds it. Of chunks of equal weight,
 // the one nearest the query's vector comes first, then by path and line.
+// Ties are read up to LexicalCommonMax past perQuery, so that every chunk
+// that holds one word, which fewer than LexicalCommonMax do, is compared by
+// its similarity before the cut; past that, a tie is cut by the chunks' IDs.
 func LexicalChunks(
 	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int, bar LexicalBar, alone int,
 ) ([]SimilarHit, error) {
@@ -233,7 +232,7 @@ func lexicalChunks(
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
 	rows, err := tx.Query(ctx, query, runID, qis, terms, compound, all, bar.Per, bar.Least, exclude,
-		vectors, perQuery, lexicalTies*perQuery, alone, LexicalCommonMax, bar.Share)
+		vectors, perQuery, perQuery+LexicalCommonMax, alone, LexicalCommonMax, bar.Share)
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}

@@ -616,3 +616,37 @@ func TestLexicalChunksOneSnapshot(t *testing.T) {
 		t.Errorf("a search by name sent %d statements that read the index, want one", statements)
 	}
 }
+
+// TestLexicalChunksTiesBeyondTheCut: of more chunks that tie at a query's
+// cut than it keeps, the nearest the query is kept, however its ID sorts.
+func TestLexicalChunksTiesBeyondTheCut(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-ties")
+	run := f.run(IndexModeFull, "running")
+	chunks := map[string]string{}
+	for i := range 6 {
+		chunks[fmt.Sprintf("t%d.go", i)] = "func leaseSlots() {}"
+	}
+	f.insert(run, "", chunks)
+	f.publish(run)
+	// The chunk of the greatest ID, which a cut by ID reaches last, is the
+	// one nearest the query.
+	var nearest string
+	if err := s.owner.QueryRow(ctx, `UPDATE index_chunks SET embedding = '[0,1,0,0,0,0,0,0]'
+		WHERE id = (SELECT max(id::text)::uuid FROM index_chunks WHERE index_run_id = $1) RETURNING path`, run).Scan(&nearest); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	f.in(func(tx pgx.Tx) error {
+		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "leaseslots", Compound: true}}, Vector: []float32{0, 1, 0, 0, 0, 0, 0, 0}}
+		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 1, LexicalBar{Least: 100}, 0)
+		for _, h := range hits {
+			got = append(got, h.Chunk.Path)
+		}
+		return err
+	})
+	if !slices.Equal(got, []string{nearest}) {
+		t.Fatalf("of six chunks that tie, the search kept %q, want the nearest, %s", got, nearest)
+	}
+}
