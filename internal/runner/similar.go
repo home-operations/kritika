@@ -343,10 +343,25 @@ var _ agent.Tool = (*searchTool)(nil)
 // among others show no more than half the lines. A similar chunk is a whole
 // declaration or window: one that shares a line or two with a definition
 // that another stage shows still shows code that the prompt otherwise lacks,
-// while one mostly shown already adds little but its lines again.
+// while one mostly shown already adds little but its lines again. An other
+// chunk shows only the lines of its text. One that the pack, built with
+// contextpack.DefaultOptions, cut at MaxChunkBytes shows fewer than its
+// range, and its text ends in a line of the pack's own that says so; only a
+// cut text is longer than MaxChunkBytes.
 func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
-	others = slices.DeleteFunc(slices.Clone(others), func(o contextpack.Chunk) bool { return o.Stage == contextpack.StageSimilar })
-	return slices.DeleteFunc(slices.Clone(similar), func(c contextpack.Chunk) bool { return mostlyShown(c, others) })
+	var shown []contextpack.Chunk
+	for _, o := range others {
+		if o.Stage == contextpack.StageSimilar {
+			continue
+		}
+		n := strings.Count(o.Text, "\n") + 1
+		if len(o.Text) > contextpack.DefaultOptions.MaxChunkBytes {
+			n--
+		}
+		o.EndLine = min(o.EndLine, o.StartLine+n-1)
+		shown = append(shown, o)
+	}
+	return slices.DeleteFunc(slices.Clone(similar), func(c contextpack.Chunk) bool { return mostlyShown(c, shown) })
 }
 
 // mostlyShown reports whether the chunks of shown cover more than half of

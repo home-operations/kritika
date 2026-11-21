@@ -18,6 +18,7 @@ import (
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // fakeSimilarGateway answers a run's exclusion report with status, and its
@@ -313,11 +314,21 @@ func TestWithoutOverlap(t *testing.T) {
 	similar := func(path string, start, end int) contextpack.Chunk {
 		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end}
 	}
+	shown := func(stage, path string, start, end int) contextpack.Chunk {
+		return contextpack.Chunk{Stage: stage, Path: path, StartLine: start, EndLine: end,
+			Text: strings.TrimSuffix(strings.Repeat("code\n", end-start+1), "\n")}
+	}
+	// A definition of 200 lines cut as contextpack cuts one over
+	// MaxChunkBytes: it shows its first 60 lines, the last of them in part.
+	cut := shown(contextpack.StageDefinition, "cut.go", 1, 200)
+	cut.Text = strings.TrimSuffix(strings.Repeat(strings.Repeat("x", 99)+"\n", 200), "\n")
+	cut.Text = textcut.Prefix(cut.Text, contextpack.DefaultOptions.MaxChunkBytes) + "\n… (truncated)"
 	others := []contextpack.Chunk{
-		{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 10, EndLine: 20},
-		{Stage: contextpack.StageCaller, Path: "caller.go", StartLine: 5, EndLine: 5},
-		{Stage: contextpack.StageCaller, Path: "two.go", StartLine: 1, EndLine: 3},
-		{Stage: contextpack.StageDefinition, Path: "two.go", StartLine: 6, EndLine: 8},
+		shown(contextpack.StageDefinition, "util.go", 10, 20),
+		shown(contextpack.StageCaller, "caller.go", 5, 5),
+		shown(contextpack.StageCaller, "two.go", 1, 3),
+		shown(contextpack.StageDefinition, "two.go", 6, 8),
+		cut,
 		similar("kept.go", 1, 9),
 	}
 	for _, tt := range []struct {
@@ -334,6 +345,8 @@ func TestWithoutOverlap(t *testing.T) {
 		{"most shown by two", similar("two.go", 2, 8), false},
 		{"another file", similar("other.go", 10, 20), true},
 		{"under another similar chunk", similar("kept.go", 1, 9), true},
+		{"in the lines a cut definition shows", similar("cut.go", 10, 20), false},
+		{"past the lines a cut definition shows", similar("cut.go", 150, 170), true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := withoutOverlap([]contextpack.Chunk{tt.in}, others); (len(got) == 1) != tt.kept {
