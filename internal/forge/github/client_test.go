@@ -356,6 +356,55 @@ func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
 	}
 }
 
+// TestBranchTipBoundsTheWaitForAnAcceptedBody: go-github reads the body of a
+// 202 to build its AcceptedError, so a 202 whose body stalls is bounded as an
+// error's body is, and fails before the caller's context ends. The test fires
+// the bound itself, so nothing waits for errorBodyWait to pass.
+func TestBranchTipBoundsTheWaitForAnAcceptedBody(t *testing.T) {
+	stalled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message":`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(stalled) })
+	armed := make(chan func(), 1)
+	rt := (&App{}).limit(http.DefaultTransport)
+	rt.(*rateLimitTransport).base.(*errorBodyTransport).after = func(_ time.Duration, f func()) func() bool {
+		armed <- f
+		return func() bool { return true }
+	}
+	api, err := newClient(rt, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
+
+	// A hang guard: a read with no bound of its own waits for this.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.BranchTip(ctx, "o", "r", "main")
+		done <- err
+	}()
+	select {
+	case fire := <-armed:
+		fire()
+		err = <-done
+	case err = <-done:
+	}
+	if ctx.Err() != nil || !errors.Is(err, errErrorBodyCut) {
+		t.Fatalf("BranchTip of a stalled 202 body = %v, context %v; want it cut off on its own bound", err, ctx.Err())
+	}
+}
+
 // TestBranchTipStaysOnTheAPIOrigin: a redirect within the API's origin is
 // followed, and one to another origin is refused before any request reaches
 // it, so nothing but GitHub answers for a branch.

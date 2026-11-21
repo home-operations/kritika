@@ -97,9 +97,10 @@ func (a *App) limit(rt http.RoundTripper) http.RoundTripper {
 	return &rateLimitTransport{base: &errorBodyTransport{base: rt}, maxWait: rateLimitMaxWait, observe: a.rateLimited}
 }
 
-// errorBodyWait bounds how long the body of an answer that is no success is
-// read for once its headers arrive. go-github reads such a body to its end to
-// tell its errors apart, and a body that stalls would hold the request until
+// errorBodyWait bounds how long the body of an answer that is no success, or
+// is a 202, is read for once its headers arrive. go-github reads such a body
+// to its end to tell its errors apart, a 202's to build its AcceptedError,
+// and a body that stalls would hold the request until
 // its context ends: a worker's job hours on, the leader's poll never. An
 // error's body is a few hundred bytes. Cut off, it leaves the status and the
 // headers, by which a primary rate limit is still told apart; a secondary
@@ -110,8 +111,9 @@ const errorBodyWait = 10 * time.Second
 // errorBodyWait.
 var errErrorBodyCut = fmt.Errorf("github: error body not read within %s", errorBodyWait)
 
-// errorBodyTransport cuts off the body of an answer that is no success
-// errorBodyWait after its headers arrive, whatever the request's context.
+// errorBodyTransport cuts off the body of an answer that is no success, or is
+// a 202, errorBodyWait after its headers arrive, whatever the request's
+// context.
 type errorBodyTransport struct {
 	base http.RoundTripper
 	// after overrides time.AfterFunc in tests.
@@ -127,7 +129,7 @@ func (t *errorBodyTransport) RoundTrip(req *http.Request) (*http.Response, error
 		return nil, err
 	}
 	body := &errorBody{ReadCloser: resp.Body, cancel: cancel}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 || resp.StatusCode == http.StatusAccepted {
 		after := t.after
 		if after == nil {
 			after = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
