@@ -596,7 +596,9 @@ func TestSimilarRerankSlotWait(t *testing.T) {
 }
 
 // TestSimilarRerankUsage: each reranked request records its usage as the
-// reranker's, whether Cohere reports tokens, or search units alone.
+// reranker's, whether Cohere reports tokens, or search units alone, and so
+// does one that Cohere billed a search unit for but whose ranks are refused,
+// which keeps the fused order.
 func TestSimilarRerankUsage(t *testing.T) {
 	r := newLexicalRepo(t, "rerank-usage", runspec.IndexFormat, widgets, widgetVectors())
 	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: cohere } }`)
@@ -613,10 +615,13 @@ func TestSimilarRerankUsage(t *testing.T) {
 	for _, tt := range []struct {
 		name, meta string
 		tokens     int64
+		// invalid ranks each document at an index past those sent.
+		invalid bool
 	}{
-		{"search units alone", `{"billed_units": {"search_units": 1}}`, 0},
-		{"tokens beside the billed units", `{"billed_units": {"search_units": 1}, "tokens": {"input_tokens": 150}}`, 150},
-		{"billed tokens", `{"billed_units": {"input_tokens": 120}}`, 120},
+		{"search units alone", `{"billed_units": {"search_units": 1}}`, 0, false},
+		{"tokens beside the billed units", `{"billed_units": {"search_units": 1}, "tokens": {"input_tokens": 150}}`, 150, false},
+		{"billed tokens", `{"billed_units": {"input_tokens": 120}}`, 120, false},
+		{"search units for invalid ranks", `{"billed_units": {"search_units": 1}}`, 0, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -626,15 +631,22 @@ func TestSimilarRerankUsage(t *testing.T) {
 				}
 				results := make([]map[string]any, len(in.Documents))
 				for i := range results {
-					results[i] = map[string]any{"index": i, "relevance_score": 0.5}
+					index := i
+					if tt.invalid {
+						index += len(in.Documents)
+					}
+					results[i] = map[string]any{"index": index, "relevance_score": 0.5}
 				}
 				out, _ := json.Marshal(map[string]any{"results": results, "meta": json.RawMessage(tt.meta)})
 				_, _ = w.Write(out)
 			}))
 			defer srv.Close()
 			rows, tokens := usage()
-			code, _ := r.ask(t, file, model.NewReranker(model.RerankCohere, srv.URL, "key", "rerank-v3.5", time.Minute),
+			code, got := r.ask(t, file, model.NewReranker(model.RerankCohere, srv.URL, "key", "rerank-v3.5", time.Minute),
 				prometheus.NewRegistry(), "widgetFactory()")
+			if want := []string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}; tt.invalid && !slices.Equal(got, want) {
+				t.Errorf("answer = %q, want the fused order %q", got, want)
+			}
 			afterRows, afterTokens := usage()
 			if code != http.StatusOK || afterRows-rows != 1 || afterTokens-tokens != tt.tokens {
 				t.Fatalf("answer %d recorded %d rerank usage rows of %d tokens, want 200 and one of %d",

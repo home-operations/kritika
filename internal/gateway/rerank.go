@@ -88,11 +88,11 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // settled at the tokens that the provider reports. Nor does it rerank for
 // an account at its tokensPerMonth, which the request's embedding can have
 // reached since the request was admitted.
-// A request that reranked, or that the provider billed tokens for, records a
-// usage row of the review at those tokens. A request that reranked with only
-// search units reported, as Cohere can, still records its row, at no tokens:
-// the row records the call, and search units count toward neither the usage
-// nor its caps.
+// A request that reranked, or that the provider billed tokens or search units
+// for, records a usage row of the review at those tokens. A request with only
+// search units reported, as Cohere can, still records its row, at no tokens,
+// whether or not its ranks were refused: the row records the call, and search
+// units count toward neither the usage nor its caps.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
@@ -197,8 +197,9 @@ func (g *Server) rerank(
 	logger.Info("similar candidates reranked", "queries", len(byQuery), "reranked", reranked, "candidates", len(cands),
 		"elapsed", time.Since(started), "tokens", spent.Tokens, "search_units", spent.SearchUnits)
 	// A provider that bills by the call, as Cohere does by search unit, can
-	// report no tokens: the row still records that the request reranked.
-	if reranked == 0 && spent.Tokens == 0 {
+	// report no tokens, and can bill a call whose ranks are refused: the row
+	// still records the request.
+	if reranked == 0 && spent.Tokens == 0 && spent.SearchUnits == 0 {
 		return
 	}
 	uctx, ucancel := detach(ctx)

@@ -953,12 +953,13 @@ four APIs differ in their requests and answers:
 | `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`                                                                                                       |
 | `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header                                                                                              |
 
-Each similar-code request that reranked records one usage row of role
-`rerank`, with the tokens that the provider reported for its queries. Cohere
-bills a rerank by the search unit, a query of up to a hundred documents, and
-can report no tokens: the row is recorded with none, and the search units are
-logged with the reranking (`search_units`), as usage and its caps count
-tokens alone.
+Each similar-code request that reranked, or that the provider reported
+spending on, records one usage row of role `rerank`, with the tokens that the
+provider reported for its queries. Cohere bills a rerank by the search unit, a
+query of up to a hundred documents, and can report no tokens, even for an
+answer whose ranks kritika refuses: the row is recorded with none, and the
+search units are logged with the reranking (`search_units`), as usage and its
+caps count tokens alone.
 
 Kritika sends each candidate in full, but the provider can truncate what it
 scores: the `voyage` and `tei` requests above ask it to, rather than refuse a
