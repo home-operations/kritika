@@ -830,10 +830,13 @@ query is split the same way, and a `search_code` query's words match the
 parts of the identifiers they make up. The longest 32 words of a query
 are searched for. A word weighs what BM25 gives a word in that many of
 the repository's chunks, so a name few chunks hold counts for more than one
-many do. A word in more than one chunk in a hundred, at least 20 and at
-most 200 chunks, or in more than half of them, is too common to search
-for at all: in a repository of a few chunks, a word that nearly all of
-them hold weighs next to nothing. Postgres's own
+many do. A word is too common to search for at all when as many chunks
+hold it as a cutoff or more: a hundredth of the repository's chunks,
+rounded down, raised to 20 when it is less and lowered to 200 when it is
+more. In a repository of 2,000 chunks, a word that 20 of them hold is not
+searched for. Nor is a word that more than half of them hold: in a
+repository of a few chunks, a word that nearly all of them hold weighs
+next to nothing. Postgres's own
 full-text ranking is not used, as it knows nothing of the other chunks,
 and its parsers split code where it is not split.
 

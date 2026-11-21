@@ -460,10 +460,11 @@ func (g *Server) searchByName(
 // first.
 const lexicalTerms = 32
 
-// lexicalCommon is how many of a generation's chunks a word can be in and
-// still tell them apart: one in a hundred, at least 20 and at most
-// store.LexicalCommonMax, 200, and never more than half of them. A word in
-// more is left out of the search. The half bars, in a generation of fewer
+// lexicalCommon bars the words too common to tell a generation's chunks
+// apart: a word in a hundredth of them, rounded down, or more is left out of
+// the search, the cutoff raised to 20 when it is less and lowered to
+// store.LexicalCommonMax, 200, when it is more, and so is a word in more than
+// half of them. The half bars, in a generation of fewer
 // than 40 chunks, a word that nearly all of them hold: its weight is too
 // small to say anything of a chunk, yet it would be its query's best by
 // name, and every chunk holding it would clear lexicalShare.
