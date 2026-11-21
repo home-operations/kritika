@@ -3,6 +3,7 @@ package chunk
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -653,22 +654,26 @@ func TestHiddenNodeAtTheTopLevel(t *testing.T) {
 	}
 }
 
-// TestLineIdentifiers: each line has the identifiers that Identifiers finds
-// on it alone, whether or not the lines between them are asked for.
+// TestLineIdentifiers: each line asked for has exactly the identifiers on
+// it, whether or not the lines between them are asked for, and no line
+// that was not asked for has any.
 func TestLineIdentifiers(t *testing.T) {
 	tests := []struct {
 		name, path, src string
 		lines           []int
+		want            map[int][]string
 	}{
 		{
 			name: "go comments and code", path: "demo.go",
 			src:   "package demo\n\n// Run calls Target.\nfunc Run() {\n\tTarget(x)\n}\n\n// Other mentions Target.\nfunc Other() { Target() }\n",
 			lines: []int{3, 5, 8, 9, 9, 40},
+			want:  map[int][]string{5: {"Target", "x"}, 9: {"Other", "Target"}},
 		},
 		{
 			name: "python decorators", path: "demo.py",
 			src:   "# Plain mentions Target.\ndef plain():\n    pass\n\n\n@Target\ndef wrapped():\n    pass\n",
 			lines: []int{1, 6},
+			want:  map[int][]string{6: {"Target"}},
 		},
 		{name: "no lines", path: "demo.go", src: "package demo\n"},
 	}
@@ -677,14 +682,11 @@ func TestLineIdentifiers(t *testing.T) {
 			f := (&Parser{}).Parse(tt.path, []byte(tt.src))
 			defer f.Close()
 			got := f.LineIdentifiers(tt.lines)
-			for _, l := range tt.lines {
-				want := f.Identifiers([]int{l})
-				if ids := slices.Sorted(slices.Values(got[l])); !slices.Equal(ids, slices.Sorted(slices.Values(want))) {
-					t.Errorf("line %d: %v, want %v", l, got[l], want)
-				}
+			for _, ids := range got {
+				slices.Sort(ids)
 			}
-			if len(got) > len(tt.lines) {
-				t.Errorf("identifiers on lines not asked for: %v", got)
+			if !maps.EqualFunc(got, tt.want, slices.Equal) {
+				t.Errorf("LineIdentifiers(%v) = %v, want %v", tt.lines, got, tt.want)
 			}
 		})
 	}
