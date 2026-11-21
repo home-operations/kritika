@@ -514,7 +514,11 @@ What the measurements show:
   index. While the partition holds the chunks, that costs about 110 ms at this
   size, which is slower than the plain table's exact plan for the
   10,000-chunk repository on 1.1.1. The sweep drains and drops it right after
-  it partitions, so this lasts minutes.
+  it partitions, which took minutes in the benchmark, where nothing else held
+  a lock. A sweep that finds the repositories of every chunk left locked by
+  other transactions stops draining, and one whose drop of the emptied
+  partition runs out of lock retries leaves it attached. Searches then read
+  the legacy partition until a later hourly sweep drains and drops it.
 - VectorChord's own partitioning (`lists`) did not help the application's
   query. Postgres's generic plan never chose the index and read the B-tree
   instead, so the results equal `exact`. A custom plan did use it, at about
