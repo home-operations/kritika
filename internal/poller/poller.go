@@ -49,10 +49,11 @@ type Poller struct {
 	Reach func(ctx context.Context, in *configfile.Connection) (map[string]store.Listing, error)
 
 	// unknown are the pull requests held open that the forge did not know
-	// when asked, by "owner/name#number". They are asked once per process, so
-	// they neither cost a request every poll nor use up the poll's checks. It
-	// also holds the default branches, by "owner/name@branch", that the forge
-	// did not know, so each is logged once.
+	// when asked, by "<connection id>:owner/name#number". They are asked once
+	// per process, so they neither cost a request every poll nor use up the
+	// poll's checks. It also holds the default branches, by
+	// "<connection id>:owner/name@branch", that the forge did not know, so
+	// each is logged once for each connection that serves it.
 	mu      sync.Mutex
 	unknown map[string]bool
 	// tips is how far the polls got through each account's default
@@ -383,7 +384,7 @@ func (p *Poller) closeMissed(
 	owner, name, _ := strings.Cut(r.Name, "/")
 	checks := 0
 	for _, number := range held {
-		key := fmt.Sprintf("%s#%d", r.Name, number)
+		key := fmt.Sprintf("%s:%s#%d", in.ID(), r.Name, number)
 		if open[number] || p.isUnknown(key) {
 			continue
 		}
@@ -421,7 +422,7 @@ func (p *Poller) closeMissed(
 // branches anyway, after the repository sync has recorded a renamed one or
 // disabled a deleted one.
 func (p *Poller) branchUnknown(in *configfile.Connection, r store.PollRepo, err error) {
-	key := r.Name + "@" + r.DefaultBranch
+	key := in.ID() + ":" + r.Name + "@" + r.DefaultBranch
 	if p.isUnknown(key) {
 		return
 	}
