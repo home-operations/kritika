@@ -176,15 +176,19 @@ func checkPostings(t *testing.T, s *Store, run string) int {
 // bruteLexicalSQL is lexicalChunksSQL with the postings of each term read
 // from every chunk of the generation that holds it, by its lexemes.
 var bruteLexicalSQL = func() string {
-	_, rest, ok := strings.Cut(lexicalChunksSQL, "), weights AS (")
-	if !ok {
-		panic("lexicalChunksSQL has no weights")
+	head, rest, ok := strings.Cut(lexicalChunksSQL, "), held AS MATERIALIZED (")
+	if ok {
+		_, rest, ok = strings.Cut(rest, "), weights AS (")
 	}
-	return `WITH held AS MATERIALIZED (
-		SELECT * FROM (SELECT t.t, c.id AS chunk_id, count(*) OVER (PARTITION BY t.t) AS n
+	if !ok {
+		panic("lexicalChunksSQL has no held or weights")
+	}
+	return head + `), held AS MATERIALIZED (
+		SELECT h.t, h.chunk_id, h.n FROM g, (SELECT t.t, c.id AS chunk_id, count(*) OVER (PARTITION BY t.t) AS n
 			FROM unnest($5::text[]) AS t (t), index_chunks c
 			WHERE c.index_run_id = $1 AND t.t = ANY (tsvector_to_array(c.lexemes))) h
-		WHERE n < $7
+		WHERE h.n < least(greatest(trunc(g.n / nullif($6::int, 0)), $7::int), $13::int)
+			AND ($14::int = 0 OR h.n::float8 * $14::int <= g.n)
 	), weights AS (` + rest
 }()
 
@@ -215,7 +219,7 @@ func searchesMatch(t *testing.T, s *Store, account, run string, words ...string)
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			// Every chunk that holds a word is kept, up to the most a word
 			// can be in and still be searched for.
-			hits, err := lexicalChunks(ctx, tx, query, run, queries, nil, 1000, func(chunks int) int { return chunks + 1 }, 1000)
+			hits, err := lexicalChunks(ctx, tx, query, run, queries, nil, 1000, LexicalBar{Least: LexicalCommonMax}, 1000)
 			for _, h := range hits {
 				got = append(got, fmt.Sprintf("%s\t%s:%d\t%.6f\t%v", words[h.Query], h.Chunk.Path, h.Chunk.StartLine, h.Lexical, h.Matched))
 			}
@@ -476,7 +480,7 @@ func TestLexicalChunksCommonMax(t *testing.T) {
 	f.in(func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "commonword", Compound: true}, {Lexeme: "rareword", Compound: true}},
 			Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, nil, 1000, func(chunks int) int { return 2 * chunks }, 1000)
+		hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, nil, 1000, LexicalBar{Per: 1, Least: 2 * LexicalCommonMax}, 1000)
 		for _, h := range hits {
 			found = append(found, fmt.Sprint(h.Chunk.Path, h.Matched))
 		}
@@ -539,5 +543,76 @@ func TestActiveGenerationForLexical(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// publishingTx is a transaction that, before each query it sends for rows,
+// lets publish commit on another connection, and counts the statements it
+// sends that read the index.
+type publishingTx struct {
+	pgx.Tx
+	publish    func()
+	statements *int
+}
+
+func (p publishingTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	*p.statements++
+	p.publish()
+	return p.Tx.Query(ctx, sql, args...)
+}
+
+func (p publishingTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	*p.statements++
+	return p.Tx.QueryRow(ctx, sql, args...)
+}
+
+// TestLexicalChunksOneSnapshot: a search by name reads the generation's
+// count of chunks and its postings in one statement, so an incremental
+// publication that commits while it runs cannot weigh the new postings
+// against the old count, which gave a word held by more chunks than the
+// count a negative weight. One statement also falls under one statement
+// timeout, which bounds the whole search.
+func TestLexicalChunksOneSnapshot(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-snapshot")
+	full := f.run(IndexModeFull, "running")
+	f.insert(full, "", map[string]string{"a.go": "func fooBar() {}", "b.go": "func other() {}", "c.go": "func third() {}"})
+	f.publish(full)
+	// The step adds five chunks that hold fooBar: the generation holds eight,
+	// six of them fooBar.
+	step := f.run(IndexModeIncremental, "running")
+	added := map[string]string{}
+	for i := range 5 {
+		added[fmt.Sprintf("s%d.go", i)] = fmt.Sprintf("func fooBar() { step%d() }", i)
+	}
+	f.insert(step, full, added)
+	published := false
+	publish := func() {
+		if published {
+			return
+		}
+		published = true
+		f.in(func(tx pgx.Tx) error {
+			return AdvanceGeneration(ctx, tx, f.repo, Generation{ID: full, Commit: "A"}, step, "B", slices.Sorted(maps.Keys(added)))
+		})
+	}
+	var statements int
+	var weights []string
+	f.in(func(tx pgx.Tx) error {
+		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "foobar", Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+		hits, err := LexicalChunks(ctx, publishingTx{Tx: tx, publish: publish, statements: &statements}, full, []LexicalQuery{q}, nil,
+			100, LexicalBar{Least: 100}, 100)
+		for _, h := range hits {
+			weights = append(weights, fmt.Sprintf("%.3f", h.Lexical))
+		}
+		return err
+	})
+	want := slices.Repeat([]string{fmt.Sprintf("%.3f", idf(6, 8))}, 6)
+	if !published || !slices.Equal(weights, want) {
+		t.Errorf("a search during a publication weighed fooBar %q, want %q, of six of eight chunks", weights, want)
+	}
+	if statements != 1 {
+		t.Errorf("a search by name sent %d statements that read the index, want one", statements)
 	}
 }

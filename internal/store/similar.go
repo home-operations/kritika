@@ -118,27 +118,46 @@ type LexicalTerm struct {
 	Compound bool
 }
 
+// LexicalBar is how many of a generation's chunks a word can be in and still
+// be searched for: fewer than one in Per of them, or than Least when that is
+// more, and fewer than LexicalCommonMax however many that is. With Share, a
+// word in more than one in Share of them is too common too, which bars the
+// words that nearly every chunk of a small generation holds, whose weight
+// says nothing of a chunk. A Per or Share of 0 sets no such bound.
+type LexicalBar struct{ Per, Least, Share int }
+
 // lexicalChunksSQL reads, for each term of every query of a request
 // together, the generation's posting of it: how many chunks hold it, its
 // document frequency, and, unless that is the count at which it is too
-// common to search for, which. Only the excluded paths' chunks and the few
-// ranked chunks are read from index_chunks. A score is rounded so that two
-// chunks holding the same terms tie, whatever order they were added in.
+// common to search for, which. The generation's chunks, which the weights
+// and the bar are measured against, are read in the same statement, so that
+// both are of the snapshot that the postings are: a publication that commits
+// during the search is seen whole or not at all. Only the excluded paths'
+// chunks and the few ranked chunks are read from index_chunks. A score is
+// rounded so that two chunks holding the same terms tie, whatever order they
+// were added in.
 //
 // $1 is the generation, $2, $3 and $4 each query's index, term and whether
-// the term is compound, $5 every term once, $6 the generation's chunks and
-// $7 the count at which a term is too common to search for, $8 the
-// excluded paths, $9 each query's vector, $10 the hits each query keeps,
-// $11 the most of them read when they tie and $12 the most chunks a term
-// can be in and still find a chunk alone.
-const lexicalChunksSQL = `WITH held AS MATERIALIZED (
+// the term is compound, $5 every term once, $6, $7 and $14 the LexicalBar's
+// Per, Least and Share, and $13 LexicalCommonMax, $8 the excluded paths, $9
+// each query's vector, $10 the hits each query keeps, $11 the most of them
+// read when they tie and $12 the most chunks a term can be in and still find
+// a chunk alone. A generation that no publication of this build counted,
+// which only a test searches, is counted here: coalesce reads its second
+// argument only when the first is null.
+const lexicalChunksSQL = `WITH g AS MATERIALIZED (
+		SELECT coalesce(generation_chunks, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1))::float8 AS n
+		FROM index_runs WHERE id = $1
+	), held AS MATERIALIZED (
 		SELECT t.t, x.chunk_id, p.chunks AS n
-		FROM unnest($5::text[]) AS t (t)
-		JOIN index_postings p ON p.index_run_id = $1 AND p.lexeme = t.t AND p.chunks < $7,
+		FROM g, unnest($5::text[]) AS t (t)
+		JOIN index_postings p ON p.index_run_id = $1 AND p.lexeme = t.t,
 			unnest(p.chunk_ids) AS x (chunk_id)
+		WHERE p.chunks < least(greatest(trunc(g.n / nullif($6::int, 0)), $7::int), $13::int)
+			AND ($14::int = 0 OR p.chunks::float8 * $14::int <= g.n)
 	), weights AS (
-		SELECT q.qi, q.t, q.compound, f.n, ln(1 + ($6::float8 - f.n + 0.5) / (f.n + 0.5)) AS w
-		FROM unnest($2::int[], $3::text[], $4::bool[]) AS q (qi, t, compound)
+		SELECT q.qi, q.t, q.compound, f.n, ln(1 + (g.n - f.n + 0.5) / (f.n + 0.5)) AS w
+		FROM g, unnest($2::int[], $3::text[], $4::bool[]) AS q (qi, t, compound)
 		JOIN (SELECT DISTINCT t, n FROM held) f ON f.t = q.t
 	), excluded AS MATERIALIZED (
 		SELECT id FROM index_chunks WHERE index_run_id = $1 AND path = ANY($8::text[])
@@ -169,25 +188,23 @@ const lexicalTies = 4
 // that hold the most weight of its terms, outside the excluded paths, with
 // the terms each holds, the heaviest first. A term weighs what BM25 gives a
 // term in so many of the generation's chunks: one that few hold counts for
-// more than one that many do. A term in common(chunks) or more of the
-// generation's chunks, or in LexicalCommonMax or more, is left out as too
-// common to tell them apart.
+// more than one that many do. A term that bar puts too many of the
+// generation's chunks in is left out as too common to tell them apart.
 //
 // A chunk is found when it holds two of a query's terms, a compound one, or
 // one in at most alone of the generation's chunks. So a query's one common
 // word does not find every chunk that holds it. Of chunks of equal weight,
 // the one nearest the query's vector comes first, then by path and line.
 func LexicalChunks(
-	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int,
-	common func(chunks int) int, alone int,
+	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int, bar LexicalBar, alone int,
 ) ([]SimilarHit, error) {
-	return lexicalChunks(ctx, tx, lexicalChunksSQL, runID, queries, exclude, perQuery, common, alone)
+	return lexicalChunks(ctx, tx, lexicalChunksSQL, runID, queries, exclude, perQuery, bar, alone)
 }
 
 // lexicalChunks is LexicalChunks by query, a test's or lexicalChunksSQL.
 func lexicalChunks(
-	ctx context.Context, tx pgx.Tx, query, runID string, queries []LexicalQuery, exclude []string, perQuery int,
-	common func(chunks int) int, alone int,
+	ctx context.Context, tx pgx.Tx, query, runID string, queries []LexicalQuery, exclude []string, perQuery int, bar LexicalBar,
+	alone int,
 ) ([]SimilarHit, error) {
 	if exclude == nil {
 		exclude = []string{}
@@ -210,26 +227,13 @@ func lexicalChunks(
 	if len(terms) == 0 {
 		return nil, nil
 	}
-	// A generation that no publication of this build counted, which only a
-	// test searches, is counted here: COALESCE reads its second argument only
-	// when the first is null.
-	var chunks int
-	err := tx.QueryRow(ctx, `SELECT coalesce(generation_chunks, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1))
-		FROM index_runs WHERE id = $1`, runID).Scan(&chunks)
-	if errors.Is(err, pgx.ErrNoRows) {
-		// Row-level security hides another account's generation.
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: count index chunks: %w", err)
-	}
 	// The planner cannot tell how few postings a term has, and estimates
 	// enough rows to compile the query, which takes longer than running it.
 	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
-	rows, err := tx.Query(ctx, query, runID, qis, terms, compound, all, chunks, min(common(chunks), LexicalCommonMax), exclude,
-		vectors, perQuery, lexicalTies*perQuery, alone)
+	rows, err := tx.Query(ctx, query, runID, qis, terms, compound, all, bar.Per, bar.Least, exclude,
+		vectors, perQuery, lexicalTies*perQuery, alone, LexicalCommonMax, bar.Share)
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}

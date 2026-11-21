@@ -845,7 +845,7 @@ func BenchmarkLexicalScale(b *testing.B) {
 					requests[r] = append(requests[r], lq)
 				}
 			}
-			common := func(chunks int) int { return min(max(chunks/100, 20), LexicalCommonMax) }
+			common := LexicalBar{Per: 100, Least: 20, Share: 2}
 			var took []time.Duration
 			var hits int
 			for b.Loop() {

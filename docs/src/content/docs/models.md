@@ -811,7 +811,9 @@ parts of the identifiers they make up. The longest 32 words of a query
 are searched for. A word weighs what BM25 gives a word in that many of
 the repository's chunks, so a name few chunks hold counts for more than one
 many do. A word in more than one chunk in a hundred, at least 20 and at
-most 200 chunks, is too common to search for at all. Postgres's own
+most 200 chunks, or in more than half of them, is too common to search
+for at all: in a repository of a few chunks, a word that nearly all of
+them hold weighs next to nothing. Postgres's own
 full-text ranking is not used, as it knows nothing of the other chunks,
 and its parsers split code where it is not split.
 
@@ -832,8 +834,9 @@ name alone shows the names it shares with the query instead, as in
 `(shares AcquireLease, Lease)`, as its similarity sits under the floor and
 would read as a poor match.
 
-The search by name runs within five seconds, after the vector search. If it
-fails, the request is answered by the vector search alone, and
+The search by name is one statement, which runs within five seconds,
+after the vector search, and reads the repository's count of chunks and
+its words' postings as one publication left them. If it fails, the request is answered by the vector search alone, and
 `kritika_lexical_search_seconds` counts the failure.
 
 The words of a generation's chunks are stored as postings: a row of

@@ -216,12 +216,38 @@ func TestSimilarLexicalFloor(t *testing.T) {
 	}
 }
 
+// TestSimilarLexicalSmallGeneration: in a generation of a few chunks, a word
+// that every one of them holds weighs next to nothing, so it finds no chunk
+// by name, though it would be its query's best match by name. A name that
+// one chunk holds still finds it.
+func TestSimilarLexicalSmallGeneration(t *testing.T) {
+	r := newLexicalRepo(t, "small", runspec.IndexFormat, map[string]string{
+		"near.go": "func near() { widget() }", "w1.go": "var widget = 1", "w2.go": "var widget = 2",
+		"rare.go": "func zebraCrossing() { widget() }",
+	}, map[string][]float32{"near.go": e(0), "w1.go": e(2), "w2.go": e(2), "rare.go": e(3)})
+	for _, tt := range []struct {
+		query string
+		want  []string
+	}{
+		{"widget", []string{"near.go:similarity 1.00"}},
+		{"zebraCrossing()", []string{"rare.go:shares zebraCrossing", "near.go:similarity 1.00"}},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), tt.query)
+			if code != http.StatusOK || !slices.Equal(got, tt.want) {
+				t.Errorf("answer = %d %q, want 200 %q", code, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestSimilarLexicalTies: of chunks that hold a query's names alike, the
 // search by name keeps the one nearest the query.
 func TestSimilarLexicalTies(t *testing.T) {
 	r := newLexicalRepo(t, "ties", runspec.IndexFormat,
-		map[string]string{"a.go": "func leaseSlots() {}", "b.go": "func leaseSlots() {}", "c.go": "func other() {}"},
-		map[string][]float32{"a.go": e(2), "b.go": e(0), "c.go": e(3)})
+		map[string]string{"a.go": "func leaseSlots() {}", "b.go": "func leaseSlots() {}", "c.go": "func other() {}", "d.go": "func fourth() {}",
+			"e.go": "func fifth() {}"},
+		map[string][]float32{"a.go": e(2), "b.go": e(0), "c.go": e(3), "d.go": e(3), "e.go": e(3)})
 	var got []string
 	if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
 		hits, err := lexicalHits(t.Context(), tx, r.run, []string{"leaseSlots()"}, [][]float32{e(0)}, nil, 1)

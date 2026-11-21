@@ -141,7 +141,7 @@ func lexicalPaths(t *testing.T, s *Store, account, run string) []string {
 	var paths []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "main"}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 10, func(int) int { return 100 }, 100)
+		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 10, LexicalBar{Least: 100}, 100)
 		for _, h := range hits {
 			paths = append(paths, h.Chunk.Path)
 		}
@@ -402,8 +402,8 @@ func lexicalPlan(t *testing.T, s *Store, account, run string) []string {
 	ctx := t.Context()
 	var plan []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []bool{false}, []string{"main"}, 2, 100,
-			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 16, 100)
+		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []bool{false}, []string{"main"}, 0, 100,
+			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 16, 100, LexicalCommonMax, 0)
 		if err != nil {
 			return err
 		}

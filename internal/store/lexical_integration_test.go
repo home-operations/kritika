@@ -134,7 +134,7 @@ func TestLexicalChunks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := s.WithAccount(ctx, accountID(t, s, tt.account), func(tx pgx.Tx) error {
 				// A term in every chunk of a generation is too common.
-				hits, err := LexicalChunks(ctx, tx, tt.run, tt.queries, tt.exclude, tt.perQuery, func(chunks int) int { return max(chunks, 2) },
+				hits, err := LexicalChunks(ctx, tx, tt.run, tt.queries, tt.exclude, tt.perQuery, LexicalBar{Per: 1, Least: 2},
 					tt.alone)
 				if err != nil {
 					return err

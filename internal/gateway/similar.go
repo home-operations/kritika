@@ -340,6 +340,8 @@ func (g *Server) similar(
 }
 
 // lexicalTimeout bounds the search by name, which a request can do without.
+// The search is one statement (store.LexicalChunks), so its statement timeout
+// bounds the whole of it.
 const lexicalTimeout = 5 * time.Second
 
 // searchByName is lexicalHits for the request in a savepoint of tx, within
@@ -381,8 +383,12 @@ const lexicalTerms = 32
 
 // lexicalCommon is how many of a generation's chunks a word can be in and
 // still tell them apart: one in a hundred, at least 20 and at most
-// store.LexicalCommonMax, 200. A word in more is left out of the search.
-func lexicalCommon(chunks int) int { return min(max(chunks/100, 20), store.LexicalCommonMax) }
+// store.LexicalCommonMax, 200, and never more than half of them. A word in
+// more is left out of the search. The half bars, in a generation of fewer
+// than 40 chunks, a word that nearly all of them hold: its weight is too
+// small to say anything of a chunk, yet it would be its query's best by
+// name, and every chunk holding it would clear lexicalShare.
+var lexicalCommon = store.LexicalBar{Per: 100, Least: 20, Share: 2}
 
 // lexicalAlone is the most of a generation's chunks that a word of a query
 // can be in and still find a chunk alone, without another of the query's
