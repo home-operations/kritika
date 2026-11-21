@@ -154,14 +154,11 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 		i, _ := slices.BinarySearch(added, max(d.StartLine, from))
 		return i < len(added) && added[i] <= d.EndLine
 	}
-	// asked marks, by 1-based line, the lines that a query holds, and gave
-	// the lines of the declarations that gave way to nested ones.
-	asked, gave := make([]bool, len(region)+1), make([]bool, len(region)+1)
-	mark := func(marks []bool, d chunk.Decl) {
-		for l := d.StartLine; l <= min(d.EndLine, len(region)); l++ {
-			marks[l] = true
-		}
-	}
+	// asked marks, by 1-based line, the lines that a query holds. gave counts
+	// the declarations that gave way to nested ones on each line, from the
+	// difference at their ends: they nest, so marking each one's lines would
+	// walk a long body once for each declaration around it.
+	asked, gave := make([]bool, len(region)+1), make([]int, len(region)+2)
 	var out []string
 	// lastEnd and lastEndByte are where the last declaration asked about ends.
 	// One nested in it is asked about with it, while one that starts on its
@@ -182,23 +179,35 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 		case slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
 			return n.EndByte <= d.EndByte && (n.StartByte > d.StartByte || n.EndByte < d.EndByte) && holds(n, lastEnd+1)
 		}):
-			mark(gave, d)
+			gave[d.StartLine]++
+			gave[min(d.EndLine, len(region))+1]--
 			continue
 		default:
 			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))], limit-len(out))...)
 		}
-		mark(asked, d)
+		for l := d.StartLine; l <= min(d.EndLine, len(region)); l++ {
+			asked[l] = true
+			if marked != nil {
+				*marked++
+			}
+		}
 		lastEnd, lastEndByte = d.EndLine, d.EndByte
 	}
 	if len(out) == 0 {
 		return regionWindows(region, limit)
 	}
+	for l := 1; l <= len(region); l++ {
+		gave[l] += gave[l-1]
+		if marked != nil {
+			*marked++
+		}
+	}
 	for start := 1; start <= len(region) && len(out) < limit; start++ {
-		if !gave[start] || asked[start] {
+		if gave[start] == 0 || asked[start] {
 			continue
 		}
 		end := start
-		for end < len(region) && gave[end+1] && !asked[end+1] {
+		for end < len(region) && gave[end+1] > 0 && !asked[end+1] {
 			end++
 		}
 		out = append(out, regionWindows(region[start-1:end], limit-len(out))...)
@@ -239,3 +248,9 @@ func regionWindows(region []udiff.Line, limit int) []string {
 	flush()
 	return out
 }
+
+// marked, when a test points it at a count, adds up the lines that
+// regionQueries marks. Marking a long body once for each declaration nested
+// around it is quadratic in the region's size, and the count shows that on
+// any machine. A test that sets it does not run in parallel.
+var marked *int

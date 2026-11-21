@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/udiff"
 )
 
 // fileDiff is one file's diff of hunks, each given as its "@@" line and
@@ -267,4 +269,32 @@ func BenchmarkHunkQueriesManyDeclarations(b *testing.B) {
 // unchanged is text's lines as the context lines of a hunk.
 func unchanged(text string) string {
 	return " " + strings.ReplaceAll(strings.TrimSuffix(text, "\n"), "\n", "\n ") + "\n"
+}
+
+// TestRegionQueriesMarksNestedDeclarationsOnce: an added line in a long body
+// inside many nested declarations over the bound asks about the body. The
+// lines of the declarations that gave way to it are marked in one pass, not
+// once for each declaration around the body.
+func TestRegionQueriesMarksNestedDeclarationsOnce(t *testing.T) {
+	const depth, body = 200, 2000
+	region := make([]udiff.Line, 0, 2*depth+body)
+	for i := range depth {
+		region = append(region, udiff.Line{Kind: ' ', Text: fmt.Sprintf("function outer%d() {", i)})
+	}
+	for i := range body {
+		region = append(region, udiff.Line{Kind: '+', Text: fmt.Sprintf("  const v%d = %d;", i, i)})
+	}
+	for range depth {
+		region = append(region, udiff.Line{Kind: ' ', Text: "}"})
+	}
+	var n int
+	marked = &n
+	defer func() { marked = nil }()
+	qs := regionQueries(&chunk.Parser{}, "nested.js", region, 3)
+	if len(qs) != 3 || !strings.HasPrefix(qs[0], fmt.Sprintf("function outer%d() {\n  const v0 = 0;", depth-1)) {
+		t.Fatalf("regionQueries asked %d queries, the first %.40q, want 3 of the innermost body", len(qs), qs)
+	}
+	if n > 2*len(region) {
+		t.Errorf("regionQueries marked %d lines of a %d-line region, over %d", n, len(region), 2*len(region))
+	}
 }
