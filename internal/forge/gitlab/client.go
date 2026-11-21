@@ -314,9 +314,15 @@ func readOptions(ctx context.Context) []gl.RequestOptionFunc {
 // recover from, as a certificate that does not verify. A host that does not
 // resolve and an https URL that a plain HTTP listener answers are among
 // those, as the SDK's policy has them, though go-retryablehttp's retries
-// them.
+// them. A 429 is answered on its headers alone: its body is closed unread,
+// since the SDK reads an error's body whole and one that stalls would hold
+// the answer until the caller's deadline.
 func retryAllButRateLimit(ctx context.Context, resp *http.Response, err error) (bool, error) {
 	if err == nil && resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+		if resp.Body != nil {
+			_ = resp.Body.Close() // the body is not read, so its close has nothing to report
+		}
+		resp.Body = http.NoBody
 		return false, nil
 	}
 	if dns, ok := errors.AsType[*net.DNSError](err); (ok && dns.IsNotFound) || errors.Is(err, http.ErrSchemeMismatch) {

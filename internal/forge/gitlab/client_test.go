@@ -697,6 +697,34 @@ func TestBranchTipRateLimit(t *testing.T) {
 	}
 }
 
+// TestBranchTipRateLimitWithAStalledBody: a 429 whose headers arrive but
+// whose body never ends is answered on its headers, not once the caller's
+// deadline ends the body's read: a caller whose deadline has passed cannot
+// wait out the limit it was told of.
+func TestBranchTipRateLimitWithAStalledBody(t *testing.T) {
+	f := newFake(t)
+	release := make(chan struct{})
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/stalled", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"message":`)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	})
+	t.Cleanup(func() { close(release) })
+	c := f.client(t)
+	// A hang guard: without the fix, the body's read ends only with it.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	_, _, err := c.BranchTip(ctx, "acme", "widgets", "stalled")
+	if wait, ok := RetryAfter(err, time.Now()); !ok || wait != time.Minute || ctx.Err() != nil {
+		t.Fatalf("BranchTip past a stalled 429 = %v (wait %v, %v) with the deadline %v, want the 429's minute before it", err, wait, ok, ctx.Err())
+	}
+}
+
 func TestBranchAndCommit(t *testing.T) {
 	f := newFake(t)
 	f.json("GET", repoAPI, 200, map[string]any{"default_branch": "main"})
