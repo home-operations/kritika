@@ -42,7 +42,8 @@ func newPostingsFixture(t *testing.T, s *Store, name string) postingsFixture {
 	})
 	account := accountID(t, s, name)
 	repo := configfile.RepositoryID(account, name+"/one")
-	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, account, name+"/one"); err != nil {
+	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO NOTHING`, repo, account, name+"/one"); err != nil {
 		t.Fatal(err)
 	}
 	return postingsFixture{t: t, s: s, account: account, repo: repo}
@@ -886,7 +887,8 @@ func TestIndexPostingsRetiredByAnOlderBuild(t *testing.T) {
 	other := func(name string) postingsFixture {
 		t.Helper()
 		repo := configfile.RepositoryID(f.account, name)
-		if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, f.account, name); err != nil {
+		if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)
+			ON CONFLICT (id) DO NOTHING`, repo, f.account, name); err != nil {
 			t.Fatal(err)
 		}
 		return postingsFixture{t: t, s: s, account: f.account, repo: repo}
