@@ -647,11 +647,12 @@ func TestPollerStopsTipChecksAtARateLimit(t *testing.T) {
 }
 
 // limitForge answers allowed branch lookups, then refuses the rest past
-// GitHub's rate limit, which resets at once. It records the repositories it
+// GitHub's rate limit, which resets at now. It records the repositories it
 // was asked for.
 type limitForge struct {
 	tipForge
 	allowed int
+	now     time.Time
 	asked   []string
 }
 
@@ -659,7 +660,7 @@ func (f *limitForge) BranchTip(_ context.Context, _, name, _ string) (string, st
 	f.asked = append(f.asked, name)
 	if f.allowed == 0 {
 		return "", "", fmt.Errorf("github: branch main of onedr0p/%s: %w", name, &gh.RateLimitError{
-			Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Now()}}, Response: &http.Response{StatusCode: http.StatusForbidden},
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: f.now}}, Response: &http.Response{StatusCode: http.StatusForbidden},
 		})
 	}
 	f.allowed--
@@ -671,13 +672,15 @@ func (f *limitForge) BranchTip(_ context.Context, _, name, _ string) (string, st
 // the branch it stopped at, even while webhooks arrive. So looks that the
 // limit cuts short every time still come round to every repository. The
 // sweep ends at the last one, not round again, and the next waits
-// tipCheckInterval while webhooks arrive.
+// tipCheckInterval while webhooks arrive. The looks' clock is the test's, so
+// a look within the limit's wait is one however long the polls take.
 func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops", "onedr0p/talos")
 	s.webhooks(true)
-	lf := &limitForge{}
+	lf := &limitForge{now: time.Now()}
 	lf.tip = "indexed"
 	s.p.Forges = &forges{f: lf}
+	s.p.now = func() time.Time { return lf.now }
 	look := func() {
 		t.Helper()
 		lf.allowed = 1
@@ -688,14 +691,15 @@ func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	if want := []string{"flux", "home-ops"}; !slices.Equal(lf.asked, want) {
 		t.Fatalf("two looks within the limit's wait asked for %q, want %q", lf.asked, want)
 	}
+	// A limit that resets at once is waited out for a second.
 	for range 2 {
-		time.Sleep(1100 * time.Millisecond)
+		lf.now = lf.now.Add(1100 * time.Millisecond)
 		look()
 	}
 	if want := []string{"flux", "home-ops", "home-ops", "talos", "talos"}; !slices.Equal(lf.asked, want) {
 		t.Fatalf("looks past the limit's waits asked for %q, want %q", lf.asked, want)
 	}
-	time.Sleep(1100 * time.Millisecond)
+	lf.now = lf.now.Add(1100 * time.Millisecond)
 	look()
 	if len(lf.asked) != 5 {
 		t.Fatalf("a look after the sweep ended asked for %q, want none within tipCheckInterval", lf.asked[5:])
@@ -1401,11 +1405,13 @@ func TestPollerRunPollsOnStart(t *testing.T) {
 }
 
 // ownerStallForge looks up no branch of slow's repositories before its
-// context ends, and finds every other branch moved. It records the
-// repositories it was asked for.
+// context ends, which it ends with cut, as a look's interval would, and
+// finds every other branch moved. It records the repositories it was asked
+// for.
 type ownerStallForge struct {
 	tipForge
 	slow  string
+	cut   context.CancelFunc
 	mu    sync.Mutex
 	asked []string
 }
@@ -1415,6 +1421,7 @@ func (f *ownerStallForge) BranchTip(ctx context.Context, owner, name, _ string) 
 	f.asked = append(f.asked, owner+"/"+name)
 	f.mu.Unlock()
 	if owner == f.slow {
+		f.cut()
 		<-ctx.Done()
 		return "", "", ctx.Err()
 	}
@@ -1438,8 +1445,9 @@ func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
 	s.p.Forges = &forges{f: f}
 	look := func() {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
+		f.cut = cancel
 		s.p.pollTipsAll(ctx)
 	}
 	look()

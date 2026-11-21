@@ -62,6 +62,9 @@ type Poller struct {
 	// tipsFirst is the account, by ID, that the next look at the default
 	// branches starts at, "" for the first.
 	tipsFirst string
+	// now is the clock that schedules the looks at the default branches,
+	// time.Now when nil: a field for the tests.
+	now func() time.Time
 }
 
 // tipScan is how far the polls got through an account's default branches.
@@ -608,10 +611,10 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 		}
 		err = p.pollTip(ctx, file, account, in, client, r, started)
 		// Past the rate limit, every other branch would only be refused too.
-		if wait, limited := github.RetryAfter(err, time.Now()); limited {
+		if wait, limited := github.RetryAfter(err, p.clock()); limited {
 			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
 				"repository", r.Name, "error", err)
-			p.tipsCut(account.ID(), r.Name, time.Now().Add(wait))
+			p.tipsCut(account.ID(), r.Name, p.clock().Add(wait))
 			return nil
 		}
 		switch {
@@ -636,7 +639,7 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 // through every repository in this process: a newly elected leader looks at
 // once.
 func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.Duration) (string, bool) {
-	now := time.Now()
+	now := p.clock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	s := p.tips[accountID]
@@ -668,7 +671,16 @@ func (p *Poller) tipsCut(accountID, next string, until time.Time) {
 func (p *Poller) tipsSwept(accountID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	*p.tipScan(accountID) = tipScan{swept: time.Now()}
+	*p.tipScan(accountID) = tipScan{swept: p.clock()}
+}
+
+// clock is the time on the clock that schedules the looks at the default
+// branches.
+func (p *Poller) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 // tipScan returns the account's tipScan, which it creates. p.mu is held.
