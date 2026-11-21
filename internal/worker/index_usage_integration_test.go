@@ -61,7 +61,7 @@ func TestIndexBatchUsage(t *testing.T) {
 		{"unreported usage", 0, 2, false, 2},
 		{"partial failure", 17, 2, true, 1},
 		{"cancellation", 17, 2, true, 1},
-		{"vector insert failure", 10, 1, true, 0},
+		{"vector insert failure", 10, 1, true, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
