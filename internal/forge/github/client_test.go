@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -247,6 +248,32 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
 	if _, err := c.MergeBase(t.Context(), "o", "r", 1, "main", "none"); err == nil {
 		t.Fatal("a compare without a merge base must error")
+	}
+}
+
+// TestBranchTipDoesNotWaitForTheBodyToEnd: the tip is read as soon as the
+// branch's JSON is whole, so an answer whose body stalls after it still
+// gives the tip rather than waiting out the request.
+func TestBranchTipDoesNotWaitForTheBodyToEnd(t *testing.T) {
+	f, c := newFakeAPI(t)
+	stalled := make(chan struct{})
+	t.Cleanup(func() { close(stalled) })
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"name":"main","commit":{"sha":"tip456"}}`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	})
+	// A hang guard: a read that waits for the body's end waits for it.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	tip, _, err := c.BranchTip(ctx, "o", "r", "main")
+	if err != nil || tip != "tip456" {
+		t.Fatalf("BranchTip of an answer whose body stalls after the branch = %q, %v; want tip456", tip, err)
 	}
 }
 

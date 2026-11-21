@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -128,20 +127,22 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 }
 
 // getJSON reads the answer to a GET of path, under the API's base URL, into
-// v. go-github's Do checks its status and rate limits, but the body is
-// decoded here: Do leaves v as it is for an empty body, where this fails
-// with io.EOF, an answer cut short that a later try can get whole.
+// v. go-github's BareDo checks its status and rate limits, and the body is
+// decoded here as it arrives: Do reads it to its end first, which a body that
+// stalls after its JSON holds up, and leaves v as it is for an empty body,
+// where this fails with io.EOF, an answer cut short that a later try can get
+// whole.
 func (c *Client) getJSON(ctx context.Context, path string, v any) (*gh.Response, error) {
 	req, err := c.api.NewRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
-	var body bytes.Buffer
-	resp, err := c.api.Do(req, &body)
+	resp, err := c.api.BareDo(req)
 	if err != nil {
 		return resp, err
 	}
-	return resp, json.NewDecoder(&body).Decode(v)
+	defer func() { _ = resp.Body.Close() }()
+	return resp, json.NewDecoder(resp.Body).Decode(v)
 }
 
 // notFound wraps err, from a call that GitHub answered with resp, as
