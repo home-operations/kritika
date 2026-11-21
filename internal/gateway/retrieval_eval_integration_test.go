@@ -64,9 +64,14 @@ func TestRetrievalEval(t *testing.T) {
 	}
 	history, window, diffed := evalHistory(t)
 	embed, dims := evalEmbedder(t)
-	// The depth and the reranker's settings are read before the tree is
-	// indexed, so that one that would search or send nothing fails at once.
+	// The depth, the floor and the reranker's settings are read before the
+	// tree is indexed, so that one that would search, keep or send nothing
+	// fails at once.
 	depth, err := evalDepthSetting()
+	if err != nil {
+		t.Fatal(err)
+	}
+	floor, err := evalFloorSetting()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +86,7 @@ func TestRetrievalEval(t *testing.T) {
 	}
 	ix := evalIndex(t, history[window], embed, dims)
 	truth := newEvalTruth(t, ix.chunks, history[:diffed])
-	floor, margin := evalFloat(t, "KRITIKA_EVAL_FLOOR", configfile.DefaultSimilarFloor), configfile.DefaultSimilarMargin
+	margin := configfile.DefaultSimilarMargin
 	variants := []string{"vector", "lexical", "hybrid"}
 	if reranker != nil {
 		variants = append(variants, "vector+rerank", "hybrid+rerank")
@@ -636,15 +641,24 @@ func evalIntWithin(key string, def, hi int) (int, error) {
 	return n, nil
 }
 
-func evalFloat(t *testing.T, key string, def float64) float64 {
-	if v := os.Getenv(key); v != "" {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			t.Fatalf("%s: %v", key, err)
-		}
-		return f
+// evalFloorSetting is KRITIKA_EVAL_FLOOR, the similarity a vector hit needs,
+// configfile.DefaultSimilarFloor unless set. It is refused outside 0 through
+// 1, as embedding.similarFloor is: a NaN, which ParseFloat takes, keeps no
+// vector hit, and the replay would print an empty vector baseline.
+func evalFloorSetting() (float64, error) {
+	const key = "KRITIKA_EVAL_FLOOR"
+	v := os.Getenv(key)
+	if v == "" {
+		return configfile.DefaultSimilarFloor, nil
 	}
-	return def
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if math.IsNaN(f) || f < 0 || f > 1 {
+		return 0, fmt.Errorf("%s = %s, want 0 through 1", key, v)
+	}
+	return f, nil
 }
 
 // changedPaths are the paths that c changes against its first parent.
@@ -865,6 +879,35 @@ func TestEvalRerankCandidatesSetting(t *testing.T) {
 			n, err := evalRerankCandidatesSetting()
 			if n != tt.want || (err != nil) != tt.refused {
 				t.Fatalf("evalRerankCandidatesSetting = %d, %v; want %d, refused %v", n, err, tt.want, tt.refused)
+			}
+		})
+	}
+}
+
+// TestEvalFloorSetting: the replay refuses a similarity floor that the
+// gateway's configuration would, before it indexes the tree.
+func TestEvalFloorSetting(t *testing.T) {
+	for _, tt := range []struct {
+		name, value string
+		want        float64
+		err         string
+	}{
+		{"unset", "", configfile.DefaultSimilarFloor, ""},
+		{"a fraction", "0.35", 0.35, ""},
+		{"zero", "0", 0, ""},
+		{"one", "1", 1, ""},
+		{"not a number", "NaN", 0, "KRITIKA_EVAL_FLOOR = NaN, want 0 through 1"},
+		{"infinity", "+Inf", 0, "KRITIKA_EVAL_FLOOR = +Inf, want 0 through 1"},
+		{"negative infinity", "-Inf", 0, "KRITIKA_EVAL_FLOOR = -Inf, want 0 through 1"},
+		{"negative", "-0.1", 0, "KRITIKA_EVAL_FLOOR = -0.1, want 0 through 1"},
+		{"past one", "1.5", 0, "KRITIKA_EVAL_FLOOR = 1.5, want 0 through 1"},
+		{"unparsable", "half", 0, "KRITIKA_EVAL_FLOOR: "},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KRITIKA_EVAL_FLOOR", tt.value)
+			f, err := evalFloorSetting()
+			if f != tt.want || (err == nil) != (tt.err == "") || err != nil && !strings.HasPrefix(err.Error(), tt.err) {
+				t.Fatalf("evalFloorSetting = %g, %v; want %g, %q", f, err, tt.want, tt.err)
 			}
 		})
 	}
