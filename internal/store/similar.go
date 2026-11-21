@@ -167,10 +167,12 @@ type LexicalBar struct{ Per, Least, Share int }
 // during the search is seen whole or not at all. So is whether the
 // generation is still searched by name, as ActiveGenerationFor found it: a
 // step of another index format, which leaves the postings as they were, can
-// publish in between, and the search then finds nothing. Only the chunks
-// that the postings find are read from index_chunks, and only their paths,
-// to leave out those of the excluded paths, however many chunks those paths
-// hold, and then the few
+// publish in between, and the search then finds nothing. The statement takes
+// its snapshot from the caller's transaction, so a caller that joins its hits
+// with SimilarChunks', as the gateway does, runs both in one snapshot
+// (WithAccountSnapshot). Only the chunks that the postings find are read
+// from index_chunks, and only their paths, to leave out those of the
+// excluded paths, however many chunks those paths hold, and then the few
 // ranked chunks: first without their text, to compare the ties by their
 // vectors, and then whole, the hits each query keeps alone. A score is
 // rounded so that two chunks holding the same terms tie, whatever order they

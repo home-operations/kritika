@@ -275,7 +275,19 @@ func (s *Store) assertExtension(ctx context.Context) error {
 // account set transaction-locally. So every policy resolves to that account
 // and nothing survives on the pooled connection after commit or rollback.
 func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
-	tx, err := s.app.Begin(ctx)
+	return s.withAccount(ctx, pgx.TxOptions{}, accountID, fn)
+}
+
+// WithAccountSnapshot is WithAccount in a read-only, repeatable-read
+// transaction: every statement of fn reads the snapshot that its first took,
+// so reads that the caller joins see one version of the rows, whatever
+// commits between them.
+func (s *Store) WithAccountSnapshot(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
+	return s.withAccount(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, accountID, fn)
+}
+
+func (s *Store) withAccount(ctx context.Context, opts pgx.TxOptions, accountID string, fn func(pgx.Tx) error) error {
+	tx, err := s.app.BeginTx(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}

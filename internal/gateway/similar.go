@@ -359,7 +359,9 @@ func (g *Server) similar(
 	}
 	var hits, named []store.SimilarHit
 	started := time.Now()
-	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
+	// One snapshot for both searches: fuse joins their hits by path and line,
+	// which a publication between them could give to two versions of a chunk.
+	err = g.Store.WithAccountSnapshot(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
 		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil || !emb.LexicalSearch() || !lexicalReady {
 			return err
