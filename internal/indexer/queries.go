@@ -122,9 +122,13 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 // declarations that hold an added line, as the index cuts a file. A
 // declaration over the bound gives way to the ones nested in it that hold an
 // added line, or without any, to the windows of its lines that hold one:
-// its first bound's worth can be all unchanged code. Without such a
-// declaration, it is the windows of the region's lines that hold an added
-// line.
+// its first bound's worth can be all unchanged code. The windows of the lines
+// of a declaration that gave way that hold an added line outside the nested
+// ones, such as a field beside a method, come after the declarations, so
+// that they do not crowd them out. Without such a declaration, it is the
+// windows of the region's lines that hold an added line. Lines outside every
+// named declaration, as a license or imports are, are not asked about beside
+// one.
 func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []string {
 	var b strings.Builder
 	var added []int
@@ -148,6 +152,14 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 		i, _ := slices.BinarySearch(added, d.StartLine)
 		return i < len(added) && added[i] <= d.EndLine
 	}
+	// asked marks, by 1-based line, the lines that a query holds, and gave
+	// the lines of the declarations that gave way to nested ones.
+	asked, gave := make([]bool, len(region)+1), make([]bool, len(region)+1)
+	mark := func(marks []bool, d chunk.Decl) {
+		for l := d.StartLine; l <= min(d.EndLine, len(region)); l++ {
+			marks[l] = true
+		}
+	}
 	var out []string
 	lastEnd := 0
 	for i, d := range f.Decls {
@@ -161,16 +173,29 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 		case slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
 			return n.StartLine > d.StartLine && n.EndLine <= d.EndLine && holds(n)
 		}):
+			mark(gave, d)
 			continue
 		default:
 			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))])...)
 		}
+		mark(asked, d)
 		lastEnd = d.EndLine
 	}
-	if len(out) > 0 {
-		return out
+	if len(out) == 0 {
+		return regionWindows(region)
 	}
-	return regionWindows(region)
+	for start := 1; start <= len(region); start++ {
+		if !gave[start] || asked[start] {
+			continue
+		}
+		end := start
+		for end < len(region) && gave[end+1] && !asked[end+1] {
+			end++
+		}
+		out = append(out, regionWindows(region[start-1:end])...)
+		start = end
+	}
+	return out
 }
 
 // regionWindows cuts region into runs of whole lines within the gateway's

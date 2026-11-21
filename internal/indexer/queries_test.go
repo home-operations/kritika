@@ -122,6 +122,37 @@ func TestHunkQueries(t *testing.T) {
 			}
 		}
 	})
+	// A declaration that gives way to the nested ones holding a change still
+	// has its own changed lines asked about, after them.
+	fields := lines(60, "  private f%02d = \""+strings.Repeat("x", 40)+"\";")
+	body := lines(60, "    x%02d = \""+strings.Repeat("x", 40)+"\"")
+	for _, tt := range []struct {
+		name, diff string
+		nested     string
+		outside    string
+	}{
+		{
+			name: "a changed field beside a changed method",
+			diff: fileDiff("store.ts", "store.ts", "@@ -1,64 +1,66 @@\n export class Store {\n+  private changed = 1;\n"+unchanged(fields)+
+				"   get(): number {\n+    return 2;\n   }\n }\n"),
+			nested:  "  get(): number {\n    return 2;\n  }\n",
+			outside: "export class Store {\n  private changed = 1;\n  private f00 = ",
+		},
+		{
+			name: "a changed statement beside a changed nested function",
+			diff: fileDiff("outer.py", "outer.py", "@@ -1,64 +1,66 @@\n def outer():\n+    setup = 1\n"+unchanged(body)+
+				"     def inner():\n+        return 2\n     return inner\n"),
+			nested:  "    def inner():\n        return 2\n",
+			outside: "def outer():\n    setup = 1\n    x00 = ",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := HunkQueries(tt.diff, nil)
+			if len(got) != 2 || got[0] != tt.nested || !strings.HasPrefix(got[1], tt.outside) || len(got[1]) > contextpack.SimilarQueryChars {
+				t.Fatalf("HunkQueries = %q, want %q and then a window from %q", got, tt.nested, tt.outside)
+			}
+		})
+	}
 	t.Run("bounded", func(t *testing.T) {
 		var many strings.Builder
 		for i := range contextpack.SimilarQueries + 3 {
@@ -162,4 +193,9 @@ func TestHunkQueriesManyDeclarations(t *testing.T) {
 	if after := took(blob, funcs); after > 3*before {
 		t.Fatalf("HunkQueries took %s with the declarations after the added lines, %s with them before", after, before)
 	}
+}
+
+// unchanged is text's lines as the context lines of a hunk.
+func unchanged(text string) string {
+	return " " + strings.ReplaceAll(strings.TrimSuffix(text, "\n"), "\n", "\n ") + "\n"
 }
