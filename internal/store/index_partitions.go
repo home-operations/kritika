@@ -41,7 +41,12 @@ const indexChunkPartitions = 64
 //
 // The application role is granted the partitioned table alone. Rows reach
 // and leave the partitions through it, so its row-level security policy
-// applies to them.
+// applies to them. A query of a partition itself applies the partition's
+// policies, not index_chunks', so a partition holds no privilege of the
+// application role, nor of every role, which the owner's default privileges
+// can grant to a table as it is created. Each has row-level security too,
+// with no policy, so a role that holds a partition's privileges through a
+// role it is a member of still reads no row of it.
 func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string, dims int) error {
 	if _, err := tx.Exec(ctx, strings.Join(partitionedIndexChunksDDL(appRole, dims), ";\n")); err != nil {
 		return fmt.Errorf("store: create index_chunks: %w", err)
@@ -52,10 +57,12 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 // partitionedIndexChunksDDL is what createPartitionedIndexChunks runs. With
 // no arguments, pgx sends statements joined by semicolons in one request of
 // the simple protocol, which runs them in order in the transaction, so the
-// whole tree costs one round trip, not one for each of its 74 statements.
+// whole tree costs one round trip, not one for each of its statements.
 func partitionedIndexChunksDDL(appRole string, dims int) []string {
 	app := pgx.Identifier{appRole}.Sanitize()
-	stmts := make([]string, 0, indexChunkPartitions+10)
+	partitions := make([]string, 0, indexChunkPartitions+1)
+	partitions = append(partitions, "index_chunks_current")
+	stmts := make([]string, 0, 2*indexChunkPartitions+12)
 	stmts = append(stmts,
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks (
 			id            uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -82,9 +89,15 @@ func partitionedIndexChunksDDL(appRole string, dims int) []string {
 			FOR VALUES IN (false) PARTITION BY HASH (index_run_id)`,
 	)
 	for i := range indexChunkPartitions {
-		stmts = append(stmts, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks_%02d PARTITION OF index_chunks_current
-			FOR VALUES WITH (MODULUS %d, REMAINDER %d)`, i, indexChunkPartitions, i))
+		leaf := fmt.Sprintf("index_chunks_%02d", i)
+		partitions = append(partitions, leaf)
+		stmts = append(stmts, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s PARTITION OF index_chunks_current
+			FOR VALUES WITH (MODULUS %d, REMAINDER %d)`, leaf, indexChunkPartitions, i))
 	}
+	for _, partition := range partitions {
+		stmts = append(stmts, `ALTER TABLE `+partition+` ENABLE ROW LEVEL SECURITY`)
+	}
+	stmts = append(stmts, `REVOKE ALL ON `+strings.Join(partitions, ", ")+` FROM PUBLIC, `+app)
 	stmts = append(stmts,
 		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
 		contentHashIndex,
@@ -252,7 +265,7 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		for _, suffix := range legacyIndexChunksIndexes {
 			stmts = append(stmts, `ALTER INDEX IF EXISTS index_chunks_`+suffix+` RENAME TO index_chunks_legacy_`+suffix)
 		}
-		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM `+pgx.Identifier{appRole}.Sanitize())
+		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM PUBLIC, `+pgx.Identifier{appRole}.Sanitize())
 		stmts = append(stmts, constraints...)
 		stmts = append(stmts, partitionedIndexChunksDDL(appRole, schema.Dims)...)
 		stmts = append(stmts, `ALTER TABLE index_chunks ATTACH PARTITION index_chunks_legacy FOR VALUES IN (true)`)

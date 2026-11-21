@@ -303,6 +303,63 @@ func TestIndexChunksPartitioned(t *testing.T) {
 	}
 }
 
+// TestIndexChunksPartitionsUnderDefaultGrants: where the owner's default
+// privileges grant what it creates to the application role, or to every
+// role, index_chunks' partitions are still read through index_chunks alone,
+// whose policy keeps each account to its own chunks. The application role
+// holds no privilege of a partition, and each has row-level security, with
+// no policy, so a grant through a role that it is a member of reads no row
+// of one either.
+func TestIndexChunksPartitionsUnderDefaultGrants(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "beta", "beta/default-grants")
+	dropIndexChunks(t, s)
+	for _, grantee := range []string{"kritika_app", "PUBLIC"} {
+		if _, err := s.owner.Exec(ctx, `ALTER DEFAULT PRIVILEGES GRANT ALL ON TABLES TO `+grantee); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if _, err := s.owner.Exec(context.Background(), `ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM `+grantee); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	run := partitionRun(t, s, beta, configfile.RepositoryID(beta, "beta/default-grants"), true, "a.go")
+	for _, relation := range []string{"index_chunks_current", onlyPartition(t, s, run)} {
+		appDenied(t, s, alpha, relation)
+		err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `TRUNCATE `+relation)
+			return err
+		})
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
+			t.Fatalf("the application role truncated %s: %v", relation, err)
+		}
+	}
+	var open []string
+	if err := s.owner.QueryRow(ctx, `SELECT coalesce(array_agg(c.relname::text ORDER BY c.relname), '{}') FROM pg_class c
+		WHERE c.oid IN (SELECT relid FROM pg_partition_tree('index_chunks') WHERE relid <> 'index_chunks'::regclass)
+			AND NOT c.relrowsecurity`).Scan(&open); err != nil {
+		t.Fatal(err)
+	}
+	if len(open) != 0 {
+		t.Fatalf("partitions without row-level security: %v", open)
+	}
+	if got := similarPaths(t, s, alpha, run); len(got) != 0 {
+		t.Fatalf("alpha's search of beta's generation found %v", got)
+	}
+	if got := similarPaths(t, s, beta, run); strings.Join(got, ",") != "a.go" {
+		t.Fatalf("beta's search of its generation found %v, want a.go", got)
+	}
+}
+
 // partitionBehindWriter checks that, behind a writer that holds the plain
 // index_chunks past the lock timeout, the sweep gives up and leaves the table
 // as it was.

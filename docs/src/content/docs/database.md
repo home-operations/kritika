@@ -497,7 +497,10 @@ table is partitioned:
 
 The application role is granted `index_chunks` alone, and its row-level
 security policy applies to every partition read through it. The role cannot
-read a partition directly. The
+read a partition directly: each is created without privileges for the
+application role or `PUBLIC`, even where the owner's default privileges
+would grant them, and with row-level security but no policy, so a role
+granted a partition through a role it is a member of reads no row of it. The
 [index scale benchmark](/metrics/#reproducing-the-index-scale-benchmark)
 measures the effect.
 
