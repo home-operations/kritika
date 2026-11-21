@@ -92,6 +92,13 @@ func TestHunkQueries(t *testing.T) {
 			paths: []string{"lib.go", "lib.go"},
 		},
 		{
+			name: "a large new script by its declarations and then its top-level statements",
+			diff: fileDiff("", "run.py", added(append(strings.Split(strings.ReplaceAll(strings.TrimSuffix(license, "\n"), "//", "#"), "\n"),
+				"import sys", "", "def helper(argv):", "    return argv[1:]", "", "", "# Run it.", "if __name__ == \"__main__\":", "    print(helper(sys.argv))")...)),
+			want:  []string{"def helper(argv):\n    return argv[1:]\n", "if __name__ == \"__main__\":\n    print(helper(sys.argv))\n"},
+			paths: []string{"run.py", "run.py"},
+		},
+		{
 			name:  "a change below the first bound's worth of a declaration",
 			diff:  fileDiff("a.go", "a.go", "@@ -1,4 +1,5 @@\n func A() {\n "+long+"\n "+long+"\n+\tchanged()\n }\n"),
 			want:  []string{long + "\n\tchanged()\n}\n"},

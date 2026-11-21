@@ -138,10 +138,12 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 // of a declaration that gave way that hold an added line outside the nested
 // ones, such as a field beside a method, come after the declarations, so
 // that they do not crowd them out. Without such a declaration, it is the
-// windows of the region's lines that hold an added line. Lines outside every
-// named declaration, as a license or imports are, are not asked about beside
-// one. It is at most limit queries, the first of them, as a request carries
-// no more, and a large added file can hold thousands of declarations.
+// windows of the region's lines that hold an added line. Beside one, the
+// windows of the statements outside every named declaration that hold an
+// added line, such as a script's top-level calls, come last, without the
+// comments above them, and a license or imports are not asked about. It is
+// at most limit queries, the first of them, as a request carries no more,
+// and a large added file can hold thousands of declarations.
 func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit int) []string {
 	var b strings.Builder
 	var added []int
@@ -214,18 +216,47 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 			*marked++
 		}
 	}
+	out = append(out, runWindows(region, func(l int) bool { return gave[l] > 0 && !asked[l] }, limit-len(out))...)
+	loose := statementLines(f.Decls, len(region))
+	return append(out, runWindows(region, func(l int) bool { return loose[l] && !asked[l] && gave[l] == 0 }, limit-len(out))...)
+}
+
+// runWindows is the windows of the runs of region's 1-based lines that in
+// holds, at most limit of them.
+func runWindows(region []udiff.Line, in func(l int) bool, limit int) []string {
+	var out []string
 	for start := 1; start <= len(region) && len(out) < limit; start++ {
-		if gave[start] == 0 || asked[start] {
+		if !in(start) {
 			continue
 		}
 		end := start
-		for end < len(region) && gave[end+1] > 0 && !asked[end+1] {
+		for end < len(region) && in(end+1) {
 			end++
 		}
 		out = append(out, regionWindows(region[start-1:end], limit-len(out))...)
 		start = end
 	}
 	return out
+}
+
+// statementLines marks, by 1-based line, the lines of a file of lines lines
+// that statements outside every named declaration hold, past the comments
+// above them, leaving out imports. Such statements are top-level, so they do
+// not nest, and each line is marked once.
+func statementLines(decls []chunk.Decl, lines int) []bool {
+	loose := make([]bool, lines+1)
+	for _, d := range decls {
+		if d.Symbol != "" || d.Kind == "import" {
+			continue
+		}
+		for l := max(d.HeadLine, d.StartLine); l <= min(d.EndLine, lines); l++ {
+			loose[l] = true
+			if marked != nil {
+				*marked++
+			}
+		}
+	}
+	return loose
 }
 
 // regionWindows cuts region into runs of whole lines within the gateway's
