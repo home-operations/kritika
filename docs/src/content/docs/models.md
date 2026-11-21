@@ -971,8 +971,8 @@ first is counted as a model call:
   answer is due`.
 
 The tokens that the provider reports are recorded as usage with role
-`rerank`, and count against the account's `limits`. They are not charged
-to the run's own budget. TEI takes no more texts in one request than its
+`rerank`, and count against both the account's `limits` and the run's token
+budget, as above. TEI takes no more texts in one request than its
 `--max-client-batch-size`, 32 unless it is raised, which is why
 `candidates` is 32 for `tei` unless set. Set it higher only for a server
 that raises that limit. The kritika pods call the reranker, so the chart's
