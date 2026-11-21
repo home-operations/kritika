@@ -961,10 +961,14 @@ A reranker fails open: a query that it does not rerank keeps the fused
 order. A request reranks its queries one at a time, holding one of the
 reranker's slots, which the provider's `concurrency` sets, as the
 embedder's does, and `timeout` covers the wait for the slot and every
-call. The reranking also ends 50 seconds after the request reached the
-gateway, sooner than `timeout` when the embedding and the searches were
-slow, so that the fused order reaches the run, which waits a minute for
-its answer. A query goes without reranking in three ways, and only the
+call. Waiting for a slot and calling the reranker also stop no later than
+50 seconds after the request reached the gateway, sooner than `timeout`
+when the embedding and the searches were slow. That leaves time for the
+answer before the run stops waiting for it, a minute after it asked, but
+is not a promise that the answer arrives in time: recording the
+reranker's usage, letting its slot go and settling the run's budget still
+happen before the answer is sent, and a slow database can delay it past
+that minute. A query goes without reranking in three ways, and only the
 first is counted as a model call:
 
 - A call that fails, or that `timeout` cuts short, is logged as a warning,
