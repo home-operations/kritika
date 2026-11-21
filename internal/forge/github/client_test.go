@@ -252,6 +252,39 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	}
 }
 
+// TestBranchTipRefusedWithALongRetryAfter: a refusal that names a Retry-After
+// too long to wait out inline, with primary quota left and a body that names
+// no secondary limit, is one go-github returns as a plain refusal. Through an
+// App's transports, it is not waited out or sent again, and is still a limit
+// for as long as it names.
+func TestBranchTipRefusedWithALongRetryAfter(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "4321")
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Please wait a few minutes before you try again."}`))
+	}))
+	t.Cleanup(srv.Close)
+	rt := (&App{}).limit(http.DefaultTransport)
+	rt.(*rateLimitTransport).sleep = func(_ context.Context, d time.Duration) error {
+		t.Errorf("waited %s inline, want no wait", d)
+		return nil
+	}
+	api, err := newClient(rt, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != 2*time.Minute || requests.Load() != 1 {
+		t.Fatalf("BranchTip refused with a Retry-After of 120 = %v, retry after %v %t, in %d requests; want a rate limit of 2m0s in one",
+			err, wait, limited, requests.Load())
+	}
+}
+
 // TestBranchTipDoesNotWaitForTheBodyToEnd: the tip is read as soon as the
 // branch's JSON is whole, so an answer whose body stalls after it still
 // gives the tip rather than waiting out the request.

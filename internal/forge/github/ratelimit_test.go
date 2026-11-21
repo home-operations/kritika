@@ -221,6 +221,13 @@ func TestRetryAfter(t *testing.T) {
 		{"primary already reset", &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: now.Add(-time.Minute)}}}, time.Second, true},
 		{"secondary", fmt.Errorf("github: comment: %w", &gh.AbuseRateLimitError{RetryAfter: &twoMinutes}), 2 * time.Minute, true},
 		{"secondary with no wait", &gh.AbuseRateLimitError{}, rateLimitMaxWait, true},
+		{"refusal with a Retry-After", fmt.Errorf("github: branch: %w", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"120"}}}}), 2 * time.Minute, true},
+		{"refusal with a Retry-After of no seconds", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {"soon"}}}}, 0, false},
+		{"failure with a Retry-After", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Retry-After": {"120"}}}}, 0, false},
+		{"refusal", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusForbidden}}, 0, false},
 		{"other", errors.New("github: boom"), 0, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
