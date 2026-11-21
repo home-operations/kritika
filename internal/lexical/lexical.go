@@ -192,13 +192,16 @@ var minusLanguages = func() map[string]bool {
 var nameLanguages = map[string]bool{"css": true, "scss": true, "less": true}
 
 // identifiers are text's runs of letters, digits and underscores, and the
-// combining marks on them. With hyphens, a hyphen before a letter is kept
-// inside a run when a letter is before it, or a digit in a run that starts
-// with a letter: a kebab-case name is one identifier, as http2-server is,
-// while n-1 is two tokens and so is 10-items. A run that starts with a digit
-// is a number and is left out. Underscores around a run are trimmed, but for
-// one before a digit, which makes a name of what follows when a letter does:
-// _2faEnabled is a name, and _2fa the same one as __2fa, where _123 is not.
+// combining marks on them. Unless hyphens are a minus, a hyphen before a
+// letter is kept inside a run when a letter is before it, or a digit in a
+// run that starts with a letter: a kebab-case name is one identifier, as
+// http2-server is, while n-1 is two tokens and so is 10-items. Where a hyphen
+// is part of a name (hyphenName), one before a digit is kept too in a run
+// that starts with a letter: bg-blue-500 is one identifier there. A run that
+// starts with a digit is a number and is left out. Underscores around a run
+// are trimmed, but for one before a digit, which makes a name of what follows
+// when a letter does: _2faEnabled is a name, and _2fa the same one as __2fa,
+// where _123 is not.
 func identifiers(text string, hyphens hyphenation) []string {
 	var out []string
 	start := -1
@@ -226,9 +229,10 @@ func identifiers(text string, hyphens hyphenation) []string {
 		case r == '-' && hyphens != hyphenMinus && start >= 0 && i > 0:
 			prev, _ := utf8.DecodeLastRuneInString(text[:i])
 			next, _ := utf8.DecodeRuneInString(text[i+1:])
-			after := unicode.IsLetter(prev) || unicode.IsMark(prev) ||
-				unicode.IsDigit(prev) && startsWithLetter(strings.TrimLeft(text[start:i], "_"))
-			if !after || !unicode.IsLetter(next) {
+			named := startsWithLetter(strings.TrimLeft(text[start:i], "_"))
+			after := unicode.IsLetter(prev) || unicode.IsMark(prev) || unicode.IsDigit(prev) && named
+			before := unicode.IsLetter(next) || hyphens == hyphenName && unicode.IsDigit(next) && named
+			if !after || !before {
 				flush(i)
 			}
 		default:

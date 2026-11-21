@@ -94,6 +94,10 @@ func TestDocumentHyphens(t *testing.T) {
 			"end", "start"}},
 		{"kebab case in CSS", "css", "web/site.css", ".max-width { }", []string{"web", "site", "css", "maxwidth", "max", "width"}},
 		{"names of one-letter words in CSS", "css", "web/site.css", ".x-y { --x-y: 0 }", []string{"web", "site", "css", "xy"}},
+		{"numeric suffixes in CSS", "css", "web/site.css", ".bg-blue-500 { } .bg-blue-600 { }", []string{"web", "site", "css",
+			"bgblue500", "bg", "blue", "bgblue600"}},
+		{"numeric suffix in SCSS", "scss", "web/site.scss", "$gap-2: 4px;", []string{"web", "site", "scss", "gap2", "gap"}},
+		{"numeric suffix in YAML", "yaml", "deploy.yaml", "bg-blue-500: x-y", []string{"deploy", "yaml", "bgblue", "bg", "blue"}},
 		{"no language", "", "notes.txt", "end-start", []string{"notes", "txt", "endstart", "end", "start"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -202,7 +206,8 @@ func TestHyphenAfterADigit(t *testing.T) {
 // JavaScript, which joins no compound the code's chunks lack, and part of a
 // name in CSS or YAML, or when the language is unknown, as Words has it.
 // Only in CSS is it always part of a name, so a name of one-letter words is
-// one there, and two words left out elsewhere.
+// one there, and two words left out elsewhere, and a name's numeric suffix
+// stays in it there, where elsewhere it is a number after a minus.
 func TestCodeWordsHyphens(t *testing.T) {
 	for _, tt := range []struct {
 		name, language, text string
@@ -214,6 +219,11 @@ func TestCodeWordsHyphens(t *testing.T) {
 		{"kebab case in CSS", "css", ".max-width { }", []string{"maxwidth", "max", "width"}},
 		{"a name of one-letter words in CSS", "css", ".x-y { }", []string{"xy"}},
 		{"a custom property of one-letter words in CSS", "css", "--x-y: 0;", []string{"xy"}},
+		{"a numeric suffix in CSS", "css", ".bg-blue-500 { }", []string{"bgblue500", "bg", "blue"}},
+		{"another numeric suffix in CSS", "css", ".bg-blue-600 { }", []string{"bgblue600", "bg", "blue"}},
+		{"a numeric suffix in Less", "less", "@gap-2: 4px;", []string{"gap2", "gap"}},
+		{"a number after a CSS name", "css", "margin: 0 -1px", []string{"margin"}},
+		{"a number in a CSS name that starts with one", "css", ".nth-child(2n-1)", []string{"nthchild", "nth", "child"}},
 		{"kebab case in YAML", "yaml", "end-start: 1", []string{"endstart", "end", "start"}},
 		{"one-letter words in YAML", "yaml", "x-y: bg-blue-500", []string{"bgblue", "bg", "blue"}},
 		{"minus between one-letter names in Go", "go", "d := x-y", nil},

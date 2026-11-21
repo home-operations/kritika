@@ -847,8 +847,9 @@ changes, underscores, hyphens and digits. `parseHTTPRequest` and
 none, such as Go or JavaScript, so `end-start` there is `end` and `start`,
 while it joins `max-width` in CSS or YAML and the words of a path. Of those,
 only CSS, SCSS and Less put a minus apart from the names around it, so their
-hyphens always join: `.x-y` gives `xy` there, where elsewhere its two words of
-one letter give nothing. Language
+hyphens always join, before a digit too: `.x-y` gives `xy` there, where
+elsewhere its two words of one letter give nothing, and `bg-blue-500` gives
+`bgblue500`, where elsewhere it gives the `bgblue` of every shade. Language
 keywords, names nearly every function uses (`err`, `ctx`, `self`), English
 stop words and numbers are left out. A review's query is split the same
 way, as code of its file's language, and a `search_code` query's words,
