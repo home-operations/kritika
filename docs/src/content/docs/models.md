@@ -644,8 +644,8 @@ documentation alone.
 | `maxBatch`       | 64      | inputs in one request                                                                                                                              |
 | `maxBatchChars`  | 200,000 | characters in one request                                                                                                                          |
 | `maxItemChars`   | 16,000  | characters in one input                                                                                                                            |
-| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs to be offered as similar code. Required with a [prompt](#prompts)                                        |
-| `similarMargin`  | 0.1     | how far below the best match of its query a chunk can score and still be offered                                                                   |
+| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs for the vector search to keep it. Required with a [prompt](#prompts)                                     |
+| `similarMargin`  | 0.1     | how far below its query's best match a chunk can score for the vector search to keep it                                                            |
 | `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query of a review's diff                                                               |
 | `searchPrompt`   |         | text put, exactly as written, in front of each `search_code` query. Unset, `queryPrompt`                                                           |
 | `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                                                       |
@@ -654,10 +654,12 @@ documentation alone.
 
 An embedder builds each repository's similar-code index. With an embedder,
 a review's prompt carries the index's chunks (pieces of files) nearest the
-change. The agent gets a `search_code` tool over the same index. Both
-keep a chunk only when it scores at least `similarFloor` and no more than
-`similarMargin` below the best match of its query. A query is either a
-hunk of the diff or a `search_code` query. Of the chunks kept, an answer
+change. The agent gets a `search_code` tool over the same index. A query
+is either a hunk of the diff or a `search_code` query. Its vector search
+keeps a chunk when the chunk scores at least `similarFloor` and no more
+than `similarMargin` below the best match of the query. Unless `lexical`
+is `false`, a chunk that the [search by name](#search-by-name) keeps is
+kept too, whatever its similarity. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
 chunks of one file and ten in all, or sixteen for a review's prompt. The
 prompt leaves out a chunk more than half of whose lines another context
