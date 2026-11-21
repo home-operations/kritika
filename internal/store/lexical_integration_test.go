@@ -76,6 +76,19 @@ func TestLexicalChunks(t *testing.T) {
 	})
 	other := build("alpha", "lexical/other", []StagedChunk{{Path: "internal/lease/lease.go", Text: "AcquireLease"}})
 	foreign := build("beta", "lexical/foreign", []StagedChunk{{Path: "internal/lease/lease.go", Text: "AcquireLease"}})
+	// The app role reads index_postings itself, so its own policy, not the
+	// chunks' or the generations', keeps another account's words from it.
+	for _, reader := range []string{"beta", "alpha"} {
+		var postings int
+		if err := s.WithAccount(ctx, accountID(t, s, reader), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, foreign).Scan(&postings)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if own := reader == "beta"; own != (postings > 0) {
+			t.Errorf("%s reads %d of beta's postings; only beta should read any", reader, postings)
+		}
+	}
 	// Two chunks that hold the same words, and a third that holds them in
 	// a path the search leaves out. The query's vector is the second's.
 	ties := build("alpha", "lexical/ties", []StagedChunk{
