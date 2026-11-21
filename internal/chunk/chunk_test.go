@@ -812,3 +812,30 @@ func TestEnclosingDoesNotStartAtACommentsClosingLine(t *testing.T) {
 		})
 	}
 }
+
+// TestEnclosingSkipsUnrelatedDeclarationsBeforeTheirLeads: a file of many
+// functions whose block doc comments close on their head lines and put each
+// over the limit. A lookup of a line outside all of them rejects each by its
+// range and walks none of their comments.
+func TestEnclosingSkipsUnrelatedDeclarationsBeforeTheirLeads(t *testing.T) {
+	const funcs, maxLines = 50, 5
+	var b strings.Builder
+	b.WriteString("package demo\n\nvar x = 1\n\n")
+	for i := range funcs {
+		fmt.Fprintf(&b, "/*\n * F%d does things.\n */ func F%d() {\n\t_ = 1\n\t_ = 2\n}\n\n", i, i)
+	}
+	f := (&Parser{}).Parse("demo.go", []byte(b.String()))
+	defer f.Close()
+	if !f.LeadContinues(7) {
+		t.Fatalf("line 7 does not continue the comment: the input no longer exercises the case")
+	}
+	var n int
+	walked = &n
+	defer func() { walked = nil }()
+	if d := f.Enclosing([]int{3}, maxLines); d != nil && d.Symbol != "x" {
+		t.Fatalf("Enclosing([3], %d) = %+v, want x or nil", maxLines, d)
+	}
+	if n != 0 {
+		t.Errorf("Enclosing walked %d lines of unrelated declarations' comments, want 0", n)
+	}
+}

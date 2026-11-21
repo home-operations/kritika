@@ -506,9 +506,9 @@ func kindFromType(typ string) string {
 // spans lines or at a head line that closes a block comment. When that line
 // does not fit, the declaration is passed over.
 func (f *File) Enclosing(lines []int, maxLines int) *Decl {
-	first := math.MaxInt
+	first, last := math.MaxInt, math.MinInt
 	for _, l := range lines {
-		first = min(first, l)
+		first, last = min(first, l), max(last, l)
 	}
 	// best is the one copy that leaves the loop, so the others stay off the
 	// heap.
@@ -516,7 +516,10 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 	found := false
 	for _, d := range f.Decls {
 		head := max(d.HeadLine, d.StartLine)
-		if d.EndLine-head+1 > maxLines {
+		// A declaration whose whole range misses a line is passed over before
+		// the walk up its leads, which a lookup would otherwise pay for every
+		// unrelated declaration.
+		if d.EndLine-head+1 > maxLines || !d.Contains(first) || !d.Contains(last) {
 			continue
 		}
 		if d.Lines() > maxLines {
