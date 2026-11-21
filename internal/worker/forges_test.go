@@ -426,12 +426,31 @@ func TestForgeCachePullRequestAuthor(t *testing.T) {
 	}
 }
 
+// emptyBranchAnswer is what the Forgejo client returns for a branch whose
+// endpoint answers 200 and closes the answer with no body.
+func emptyBranchAnswer(t *testing.T) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+	}))
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("BranchTip of an empty answer = %v, want io.EOF", err)
+	}
+	return err
+}
+
 // TestTransientForge: a forge that answers 5xx, 408 or 429, or does not
 // answer, may answer a later try, as may a lookup of its host that timed
-// out. A forge that refused the request, a certificate that does not verify,
-// a host that does not resolve, a missing file, and GitHub's rate limit,
-// which ForgeRateLimit waits out for as long as the limit says, are not
-// transient.
+// out, and a forge that closed an answer with no body. A forge that refused
+// the request, a certificate that does not verify, a host that does not
+// resolve, a missing file, and GitHub's rate limit, which ForgeRateLimit
+// waits out for as long as the limit says, are not transient.
 func TestTransientForge(t *testing.T) {
 	answer := func(status int) error {
 		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
@@ -451,6 +470,7 @@ func TestTransientForge(t *testing.T) {
 		{name: "too many requests", err: answer(http.StatusTooManyRequests), want: true},
 		{name: "connection refused", err: &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection refused")}, want: true},
 		{name: "cut short", err: fmt.Errorf("github: read: %w", io.ErrUnexpectedEOF), want: true},
+		{name: "empty answer", err: emptyBranchAnswer(t), want: true},
 		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},
 		{name: "dns timeout", err: unanswered(&net.DNSError{Err: "i/o timeout", Name: "forgejo.example", IsTimeout: true}), want: true},
 		{name: "dns server failure", err: unanswered(&net.DNSError{Err: "server misbehaving", Name: "forgejo.example", IsTemporary: true}),
