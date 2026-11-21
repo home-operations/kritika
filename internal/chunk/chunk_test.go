@@ -495,3 +495,27 @@ func TestEnclosingMeasuresFromTheHeadLine(t *testing.T) {
 		})
 	}
 }
+
+// TestStatementsWithoutLetters: a top-level statement whose only identifiers
+// are made of $ and _ is a declaration, while one of punctuation alone is
+// not.
+func TestStatementsWithoutLetters(t *testing.T) {
+	tests := []struct {
+		name, path, src string
+		line            int
+		want            bool
+	}{
+		{name: "javascript identifiers", path: "a.js", src: "function f() { return 1; }\n$_++;\n", line: 2, want: true},
+		{name: "javascript empty statement", path: "a.js", src: "function f() { return 1; }\n;\n", line: 2},
+		{name: "python ellipsis", path: "a.py", src: "def f():\n    pass\n\n...\n", line: 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := (&Parser{}).Parse(tt.path, []byte(tt.src))
+			defer f.Close()
+			if got := slices.ContainsFunc(f.Decls, func(d Decl) bool { return d.Contains(tt.line) }); got != tt.want {
+				t.Errorf("line %d in a declaration = %t, want %t: %+v", tt.line, got, tt.want, f.Decls)
+			}
+		})
+	}
+}

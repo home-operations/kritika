@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -435,10 +434,10 @@ func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
 	return out
 }
 
-// worded reports whether line holds a letter or a digit, which a line of
-// brackets and punctuation alone does not.
+// worded reports whether line holds a word, which a line of brackets and
+// punctuation alone does not.
 func (c *cutter) worded(line int) bool {
-	return strings.IndexFunc(c.f.Text(line, line), func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
+	return strings.IndexFunc(c.f.Text(line, line), chunk.Worded) >= 0
 }
 
 // words counts the worded lines from start to end.

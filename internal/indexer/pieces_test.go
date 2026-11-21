@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"unicode"
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/textcut"
@@ -78,6 +77,10 @@ func TestPiecesCoverTheFile(t *testing.T) {
 		{
 			name: "one-character statements", path: "run.sh",
 			src: "f() { echo hi; }\nf\n",
+		},
+		{
+			name: "identifiers of punctuation", path: "tail.js",
+			src: "function f() { return 1; }\n$_++;\n",
 		},
 		{
 			name: "sql comment statements", path: "schema.sql",
@@ -234,4 +237,4 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 	}
 }
 
-func isWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+func isWord(r rune) bool { return chunk.Worded(r) }

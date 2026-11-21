@@ -247,7 +247,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		// Error recovery can leave a grammar's hidden nodes (a
 		// translation_unit_repeat1) at the top level in place of the
 		// statements they hold, so only an anonymous token is passed over.
-		if !c.IsNamed() && c.ChildCount() == 0 || comment(typ) || bytes.IndexFunc(src[c.StartByte():c.EndByte()], worded) < 0 {
+		if !c.IsNamed() && c.ChildCount() == 0 || comment(typ) || bytes.IndexFunc(src[c.StartByte():c.EndByte()], Worded) < 0 {
 			continue
 		}
 		d := Decl{
@@ -329,8 +329,11 @@ func endLine(start, end gotreesitter.Point) int {
 	return int(end.Row) + 1
 }
 
-// worded reports whether r is a letter or a digit.
-func worded(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+// Worded reports whether r can be part of a word: a letter, a digit, or the
+// $ and _ that identifiers in many languages are made of. Text with none of
+// these is punctuation alone, such as an empty statement or a lone bracket,
+// which the chunks leave out.
+func Worded(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '$' }
 
 // headLine is the first line of d that holds more than lead nodes and
 // white space, or d's first line when none does.
