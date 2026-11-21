@@ -854,7 +854,6 @@ func BenchmarkLexicalScale(b *testing.B) {
 			}
 		}
 	})
-	rng := rand.New(rand.NewPCG(2026, 11))
 	vector := make([]float32, lexicalScaleDims)
 	vector[0] = 1
 	for field := range strings.SplitSeq(sizes, ",") {
@@ -863,6 +862,9 @@ func BenchmarkLexicalScale(b *testing.B) {
 			b.Fatalf("KRITIKA_LEXICAL_SCALE_CHUNKS: %q is not a positive integer", field)
 		}
 		b.Run(fmt.Sprintf("chunks=%d", size), func(b *testing.B) {
+			// A generator of each size's own, so that its corpus, queries
+			// and steps are the same whichever sizes run before it.
+			rng := rand.New(rand.NewPCG(2026, 11))
 			// A table of this generation alone, so that its size is the
 			// generation's.
 			if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks;
