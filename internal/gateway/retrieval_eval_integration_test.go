@@ -74,7 +74,7 @@ func TestRetrievalEval(t *testing.T) {
 	candidates := configfile.DefaultTEIRerankCandidates
 	rerankURL := os.Getenv("KRITIKA_EVAL_RERANK_URL")
 	if rerankURL != "" {
-		if candidates, err = evalIntWithin("KRITIKA_EVAL_RERANK_CANDIDATES", candidates, math.MaxInt); err != nil {
+		if candidates, err = evalRerankCandidatesSetting(); err != nil {
 			t.Fatal(err)
 		}
 		reranker = model.NewReranker(model.RerankTEI, rerankURL, "", "", time.Minute)
@@ -593,6 +593,14 @@ func evalDepthSetting() (int, error) {
 	return evalIntWithin("KRITIKA_EVAL_DEPTH", similarDepth, math.MaxInt-store.LexicalCommonMax)
 }
 
+// evalRerankCandidatesSetting is KRITIKA_EVAL_RERANK_CANDIDATES, how many
+// candidates of each query the reranker is sent, Text Embeddings
+// Inference's default unless set. It is the depth of the searches when it
+// is more than KRITIKA_EVAL_DEPTH, so it is bound as that is.
+func evalRerankCandidatesSetting() (int, error) {
+	return evalIntWithin("KRITIKA_EVAL_RERANK_CANDIDATES", configfile.DefaultTEIRerankCandidates, math.MaxInt-store.LexicalCommonMax)
+}
+
 var identifierRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
 // defKey is a chunk that declares a name, by its path and first line.
@@ -833,6 +841,30 @@ func TestEvalDepthSetting(t *testing.T) {
 			n, err := evalDepthSetting()
 			if n != tt.want || (err != nil) != tt.refused {
 				t.Fatalf("evalDepthSetting = %d, %v; want %d, refused %v", n, err, tt.want, tt.refused)
+			}
+		})
+	}
+}
+
+// TestEvalRerankCandidatesSetting: the replay refuses a reranker's count of
+// candidates that would search nothing, or overflow the search by name's
+// cutoff as the depth of the searches, before it indexes the tree.
+func TestEvalRerankCandidatesSetting(t *testing.T) {
+	for _, tt := range []struct {
+		name, value string
+		want        int
+		refused     bool
+	}{
+		{"unset", "", configfile.DefaultTEIRerankCandidates, false},
+		{"zero", "0", 0, true},
+		{"at the bound", strconv.Itoa(math.MaxInt - store.LexicalCommonMax), math.MaxInt - store.LexicalCommonMax, false},
+		{"past the bound", strconv.Itoa(math.MaxInt - store.LexicalCommonMax + 1), 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KRITIKA_EVAL_RERANK_CANDIDATES", tt.value)
+			n, err := evalRerankCandidatesSetting()
+			if n != tt.want || (err != nil) != tt.refused {
+				t.Fatalf("evalRerankCandidatesSetting = %d, %v; want %d, refused %v", n, err, tt.want, tt.refused)
 			}
 		})
 	}
