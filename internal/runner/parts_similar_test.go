@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing"
+
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -198,4 +200,65 @@ func TestPartPromptsCheckSharedSimilarCodeAtTheHeadOnce(t *testing.T) {
 	if n := reads.reads(blobs["z.go"]); n != 1 {
 		t.Fatalf("the similar chunk's file was read %d times, want once for the reviewers that share its answer", n)
 	}
+}
+
+// TestSearchToolMatchesItsHitsWithoutTheHeadLock: search_code holds the
+// head lock only while it reads a hit's file. Another part can take it while
+// the hit's text is matched and its declarations parsed.
+func TestSearchToolMatchesItsHitsWithoutTheHeadLock(t *testing.T) {
+	head, reads, blobs := countedHead(t, map[string]string{"a.go": "package a\n\nfunc A() {}\n", "b.go": "package b\n"})
+	var armed atomic.Bool
+	reads.after = func(h plumbing.Hash) {
+		if h == blobs["a.go"] {
+			armed.Store(true)
+		}
+	}
+	matching, proceed := make(chan struct{}), make(chan struct{})
+	ctx := gatedContext{Context: t.Context(), gate: func() {
+		if armed.CompareAndSwap(true, false) {
+			matching <- struct{}{}
+			<-proceed
+		}
+	}}
+	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "a.go", Symbol: "A", Kind: "function", StartLine: 3, EndLine: 3, Text: "func A() {}"},
+		{Stage: contextpack.StageSimilar, Path: "b.go", StartLine: 1, EndLine: 1, Text: "package b"},
+	}}}
+	locks := newPartLocks()
+	tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "t", head: head, headLock: locks.head, maxBytes: 1 << 10}
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := tool.Run(ctx, json.RawMessage(`{"query":"func"}`))
+		done <- result{out, err}
+	}()
+	<-matching
+	select {
+	case locks.head <- struct{}{}:
+		if _, err := head.File("b.go"); err != nil {
+			t.Error(err)
+		}
+		<-locks.head
+	default:
+		t.Error("search_code held the head lock while it matched a hit it had already read")
+	}
+	close(proceed)
+	got := <-done
+	if got.err != nil || !strings.HasPrefix(got.out, "a.go:3-3 (function A)") || !strings.Contains(got.out, "b.go:1-1") || len(locks.head) != 0 {
+		t.Fatalf("Run = %q, %v; head lock held %d", got.out, got.err, len(locks.head))
+	}
+}
+
+// gatedContext calls gate each time its Err is asked.
+type gatedContext struct {
+	context.Context
+	gate func()
+}
+
+func (c gatedContext) Err() error {
+	c.gate()
+	return c.Context.Err()
 }

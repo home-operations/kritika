@@ -508,7 +508,8 @@ func (s *countingStorer) reads(h plumbing.Hash) int {
 }
 
 // TestRunPartLoopsShareSearch: parts that run at once share one search_code,
-// and each searches through it, which the race detector checks.
+// and each searches through it, parsing what it found outside the head lock,
+// which the race detector checks.
 func TestRunPartLoopsShareSearch(t *testing.T) {
 	answer := func(name, input string) string {
 		return `{"id":"x","object":"chat.completion","created":1,"model":"acme/large","choices":[{"index":0,"message":` +
@@ -524,7 +525,8 @@ func TestRunPartLoopsShareSearch(t *testing.T) {
 			mu.Lock()
 			searched++
 			mu.Unlock()
-			_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"a.go","start_line":1,"end_line":1,"text":"package a"}]}`))
+			_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"a.go","symbol":"A","kind":"function",` +
+				`"start_line":3,"end_line":3,"text":"func A() {}"}]}`))
 			return
 		}
 		mu.Lock()
@@ -542,7 +544,7 @@ func TestRunPartLoopsShareSearch(t *testing.T) {
 	s := reviewSpec()
 	s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(4), 60
 	secrets := runspec.Secrets{GatewayToken: "t"}
-	head := tree(t, map[string]string{"a.go": "package a\n"})
+	head := tree(t, map[string]string{"a.go": "package a\n\nfunc A() {}\n"})
 	locks := newPartLocks()
 	parts := make([]reviewPart, 4)
 	for i := range parts {

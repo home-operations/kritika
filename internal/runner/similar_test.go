@@ -664,7 +664,7 @@ func TestSimilarLeavesOutPathsTheRunWouldNotIndex(t *testing.T) {
 // atHeadOf is atHead without ignore globs, with a context that does not end.
 func atHeadOf(t *testing.T, head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	t.Helper()
-	out, err := atHead(t.Context(), head, nil, chunks)
+	out, err := atHead(t.Context(), head, nil, nil, chunks)
 	if err != nil {
 		t.Fatal(err)
 	}

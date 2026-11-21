@@ -207,7 +207,7 @@ func partsSimilarShown(
 		}
 		c, ok := byDiff[diffs[i]]
 		if !ok {
-			c.current, c.err = atHead(ctx, head, ignore, out.Chunks)
+			c.current, c.err = atHead(ctx, head, nil, ignore, out.Chunks)
 			byDiff[diffs[i]] = c
 		}
 		logger := logger.With("part", i+1)
