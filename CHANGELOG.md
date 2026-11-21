@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.123](https://github.com/home-operations/kritika/compare/0.0.122...0.0.123) (2026-11-21)
+
+
+### Miscellaneous Chores
+
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.12.0 → v2.13.0) ([#1515](https://github.com/home-operations/kritika/issues/1515)) ([ce25c2c](https://github.com/home-operations/kritika/commit/ce25c2c197d8690d2084a559b997ff2dcfbb5d74))
+* **go:** update module github.com/klauspost/compress (v1.20.4 → v1.20.5) ([#1513](https://github.com/home-operations/kritika/issues/1513)) ([7c25f40](https://github.com/home-operations/kritika/commit/7c25f4036b8906eab745bf3d044f7aee34b52fc0))
+* **go:** update module github.com/odvcencio/gotreesitter (v0.57.0 → v0.58.0) ([#1516](https://github.com/home-operations/kritika/issues/1516)) ([aec44a1](https://github.com/home-operations/kritika/commit/aec44a1fbc8189a59cda1449f255e8a137f8c2da))
+* **npm:** update dependency svelte (5.58.0 → 5.58.1) ([#1518](https://github.com/home-operations/kritika/issues/1518)) ([318a62a](https://github.com/home-operations/kritika/commit/318a62a90858738d75a7012b15a8f5e02bc65684))
+* **npm:** update tanstack-query monorepo (6.4.3 → 6.4.4) ([#1514](https://github.com/home-operations/kritika/issues/1514)) ([cc9655e](https://github.com/home-operations/kritika/commit/cc9655ed590b555db99e0d7f57f5cfc3f95e79f4))
+
 ## [0.0.122](https://github.com/home-operations/kritika/compare/0.0.121...0.0.122) (2026-11-20)
 
 
