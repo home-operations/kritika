@@ -117,6 +117,9 @@ func seedFormatBase(t *testing.T, env *resumeSetup, format int, mixed bool) {
 			[][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}); err != nil {
 			return err
 		}
+		if err := store.ActivateGeneration(ctx, tx, env.repo, run); err != nil {
+			return err
+		}
 		if mixed {
 			if _, err := tx.Exec(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status,ignore_hash,
 					index_format,created_at,finished_at)
@@ -125,7 +128,7 @@ func seedFormatBase(t *testing.T, env *resumeSetup, format int, mixed bool) {
 				return err
 			}
 		}
-		return store.ActivateGeneration(ctx, tx, env.repo, run)
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}

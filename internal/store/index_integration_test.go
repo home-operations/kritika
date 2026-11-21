@@ -6,6 +6,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,6 +83,81 @@ func checkMixed(t *testing.T, s *Store, account, repository string, want bool) {
 	}
 }
 
+// TestMixedWhateverTheClock: a generation is mixed once a step of another
+// index format completes on it, and not by one that completed on the
+// generation before it, whatever the database clock said when each run
+// started and the generation was published. A clock can step back, or a
+// failover land on a server whose clock is behind, while a rollout is part
+// done.
+func TestMixedWhateverTheClock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("mixed-clock"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "mixed-clock")
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.owner.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	for _, tt := range []struct {
+		name string
+		// before is a step of another format that completes before the
+		// generation is published, on the one before it, rather than after.
+		before bool
+		// started is when, by the clock, the step's run started, from when
+		// the generation is published.
+		started string
+		want    bool
+	}{
+		{"a step that started before the generation, by a clock that stepped back", false, "-1 hour", true},
+		{"a step that advanced the generation before, by a clock ahead", true, "1 hour", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			name := "mixed-clock/" + strings.ReplaceAll(tt.name, " ", "-")
+			listRepos(t, s, "mixed-clock", name)
+			var repo string
+			if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE name = $1`, name).Scan(&repo); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				ctx := context.Background()
+				_, _ = s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repo)
+				_, _ = s.owner.Exec(ctx, `DELETE FROM index_runs WHERE repository_id = $1`, repo)
+			})
+			publish := func() {
+				t.Helper()
+				exec(`WITH g AS (INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format,
+						finished_at) VALUES ($1, $2, 'abc', 'm', 8, 'full', 'completed', $3, now()) RETURNING id, repository_id)
+				UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, account, repo, runspec.IndexFormat)
+			}
+			step := func() {
+				t.Helper()
+				var run string
+				if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode,
+						status, index_format, created_at)
+					VALUES ($1, $2, 'def', 'm', 8, 'incremental', 'running', $3, now() + $4::interval) RETURNING id`,
+					account, repo, runspec.IndexFormat-1, tt.started).Scan(&run); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+					return FinishIndexRun(ctx, tx, run, IndexCompleted, 1, "")
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			publish()
+			step()
+			if tt.before {
+				publish()
+			}
+			checkMixed(t, s, "mixed-clock", repo, tt.want)
+		})
+	}
+}
+
 // TestOnboardCandidates makes sure that the onboarding feeder is offered the
 // correct repositories in the correct order: accounts take turns, and an
 // account's repositories whose pull requests moved last go first. A
@@ -154,23 +230,21 @@ func TestOnboardCandidates(t *testing.T) {
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/reformat"], runspec.IndexFormat+1)
 	// east/mixed's index, of this format, was since stepped by a build of
 	// another format. east/stepped's was stepped by one of this format, and a
-	// step of another format advanced the generation before it.
+	// step of another format completed before it was published.
+	step := func(name string, format int) {
+		t.Helper()
+		exec(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'def', 'm', 8, 'incremental', 'completed', $2 FROM repositories WHERE id = $1`, ids[name], format)
+	}
+	step("east/stepped", runspec.IndexFormat-1)
 	exec(`WITH g AS (
-			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format, finished_at)
-			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2, now() - interval '1 hour' FROM repositories WHERE id = ANY($1)
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2 FROM repositories WHERE id = ANY($1)
 			RETURNING id, repository_id)
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`,
 		[]string{ids["east/mixed"], ids["east/stepped"]}, runspec.IndexFormat)
-	step := func(name string, format int, age string) {
-		t.Helper()
-		exec(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format, created_at,
-				finished_at)
-			SELECT account_id, id, 'def', 'm', 8, 'incremental', 'completed', $2, now() - $3::interval, now() - $3::interval
-			FROM repositories WHERE id = $1`, ids[name], format, age)
-	}
-	step("east/mixed", runspec.IndexFormat-1, "1 minute")
-	step("east/stepped", runspec.IndexFormat, "1 minute")
-	step("east/stepped", runspec.IndexFormat-1, "2 hours")
+	step("east/mixed", runspec.IndexFormat-1)
+	step("east/stepped", runspec.IndexFormat)
 	checkMixed(t, s, "east", ids["east/mixed"], true)
 	checkMixed(t, s, "east", ids["east/stepped"], false)
 

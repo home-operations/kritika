@@ -101,14 +101,13 @@ type Generation struct {
 }
 
 // steppedInAnotherFormat holds for a generation, g, that an incremental step
-// of another index format advanced. A step reads the active generation
-// before its run starts, and a step whose generation changed before it
-// published is superseded. So a step run started after g was published,
-// which completed, advanced g. A build from before index formats records
-// its runs as format 1, and during a rollout it steps the generations that
-// the new build publishes.
+// of another index format advanced. A completed step records the generation
+// that it advanced (stepped_run_id, which migration 0062's trigger sets),
+// so a build from before index formats, which records its runs as format 1
+// and during a rollout steps the generations that the new build publishes,
+// records it too.
 const steppedInAnotherFormat = `EXISTS (SELECT 1 FROM index_runs st WHERE st.repository_id = g.repository_id
-	AND st.mode = 'incremental' AND st.status = 'completed' AND st.index_format <> g.index_format AND st.created_at > g.finished_at)`
+	AND st.stepped_run_id = g.id AND st.status = 'completed' AND st.index_format <> g.index_format)`
 
 // FindGeneration reads a completed index generation, or ErrNotFound.
 func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, error) {

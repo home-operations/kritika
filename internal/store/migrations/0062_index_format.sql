@@ -18,3 +18,28 @@ ALTER TABLE index_schema ADD COLUMN IF NOT EXISTS index_format int NOT NULL DEFA
 -- incremental step leaves the generation's flag as it is.
 ALTER TABLE index_packs ADD COLUMN IF NOT EXISTS truncated boolean NOT NULL DEFAULT false;
 ALTER TABLE index_runs ADD COLUMN IF NOT EXISTS truncated boolean NOT NULL DEFAULT false;
+
+-- An incremental step of one format can advance a generation of another, as
+-- a build from before index formats does while a rollout is part done. The
+-- generation then holds chunks of both formats, and is rebuilt. A completed
+-- step records the generation that it advanced, stepped_run_id: the
+-- repository's active generation when the step completes. A step publishes
+-- holding the repository's lock, and is superseded unless the generation
+-- that it read is still the active one, so that is the generation it
+-- advanced. A trigger records it, so that the steps of a build without the
+-- column record it too, and with no order of clock times, of when the step
+-- started and when the generation was published, which a clock that steps
+-- back reverses.
+ALTER TABLE index_runs ADD COLUMN IF NOT EXISTS stepped_run_id uuid;
+CREATE OR REPLACE FUNCTION kritika_index_stepped() RETURNS trigger AS $$
+BEGIN
+    IF NEW.status = 'completed' AND NEW.mode = 'incremental' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'completed') THEN
+        NEW.stepped_run_id := (SELECT active_index_run_id FROM repositories WHERE id = NEW.repository_id);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER kritika_index_stepped
+    BEFORE INSERT OR UPDATE OF status ON index_runs
+    FOR EACH ROW
+    EXECUTE FUNCTION kritika_index_stepped();
