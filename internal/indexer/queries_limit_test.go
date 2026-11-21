@@ -34,7 +34,7 @@ func TestRegionQueriesStopAtTheRequestBound(t *testing.T) {
 			t.Fatalf("declarations first %v: no query", first)
 		}
 		if built := len(f.pending) + 1; built > contextpack.SimilarQueries {
-			t.Logf("declarations first %v: the region was cut into %d queries, more than the %d a request carries",
+			t.Errorf("declarations first %v: the region was cut into %d queries, more than the %d a request carries",
 				first, built, contextpack.SimilarQueries)
 		}
 	}
