@@ -3,6 +3,7 @@ package indexer
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gittest"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 func TestBuildIncrementalRejectsTruncation(t *testing.T) {
@@ -328,6 +330,54 @@ func TestBuildSignatures(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildSignaturesCopyTheirCut: the windows of a declaration whose
+// naming line is long each keep only the signature cut from it, not the
+// whole line, which every window's signature would otherwise hold until the
+// index is uploaded. What the chunks hold is counted in bytes of live heap,
+// which does not depend on how fast the machine is.
+func TestBuildSignaturesCopyTheirCut(t *testing.T) {
+	head := "func Long(a int) int { // " + strings.Repeat("x", 256<<10)
+	src := "package demo\n\n" + head + "\n\tt := a\n" + lines(3000, "\tt += %d") + "\treturn t\n}\n"
+	f, err := oneFileTree(t, "long.go", src).File("long.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newBuilder := func() *builder {
+		return &builder{opts: DefaultOptions, parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: DefaultOptions.MaxFileBytes}}}
+	}
+	// A first build loads the grammar, which stays loaded.
+	if err := newBuilder().file(f); err != nil {
+		t.Fatal(err)
+	}
+	b := newBuilder()
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	if err := b.file(f); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	carried := 0
+	for _, c := range b.chunks {
+		if c.Signature != "" {
+			carried++
+			if want := textcut.Prefix(head, maxSignatureBytes); c.Signature != want {
+				t.Fatalf("chunk L%d-%d signature = %q, want %q", c.StartLine, c.EndLine, c.Signature, want)
+			}
+		}
+	}
+	if carried < 20 {
+		t.Fatalf("%d windows carry the signature, want the declaration cut into at least 20", carried)
+	}
+	if held := int64(after.HeapAlloc) - int64(before.HeapAlloc); held > int64(carried/4*len(head)) {
+		t.Errorf("the %d chunks hold %d bytes, over %d copies of the %d-byte naming line", len(b.chunks), held, carried/4, len(head))
+	}
+	runtime.KeepAlive(b.chunks)
 }
 
 // oneFileTree is the tree of a commit that holds one file.

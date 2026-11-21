@@ -258,7 +258,11 @@ func (b *builder) file(f *object.File) error {
 		}
 		var signature string
 		if d.HeadLine > 0 && !d.Contains(d.HeadLine) {
-			signature = textcut.Prefix(strings.TrimSpace(pf.Text(d.HeadLine, d.HeadLine)), maxSignatureBytes)
+			// The line is trimmed and cut in place and only the cut copied:
+			// each window of a declaration carries its own signature, and
+			// a copy of the whole line would keep it alive in every one.
+			head := bytes.TrimSpace(pf.Bytes(d.HeadLine, d.HeadLine))
+			signature = textcut.Prefix(string(head[:min(len(head), maxSignatureBytes+1)]), maxSignatureBytes)
 		}
 		b.chunks = append(b.chunks, Chunk{
 			Path: f.Name, Language: pf.Language, Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
