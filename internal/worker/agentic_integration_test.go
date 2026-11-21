@@ -25,6 +25,7 @@ import (
 	"time"
 
 	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -39,6 +40,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
@@ -2489,7 +2491,12 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	repoID := configfile.RepositoryID(h.account.ID(), "acme/widgets")
 	code := "func b() {}\n\nfunc c() {}\n"
-	seedIndex(t, h, withIndex.Embedding, repoID, code)
+	// The index holds main.go as the base has it, which the pull request
+	// changes, so stage 4 leaving it out is not for want of its chunks.
+	if chunks := seedIndex(t, h, withIndex.Embedding, repoID, map[string]string{"other.go": code}); !slices.ContainsFunc(chunks,
+		func(c indexer.Chunk) bool { return c.Path == "main.go" && strings.Contains(c.Text, "func b() {}") }) {
+		t.Fatalf("the index holds no main.go chunk like the change: %+v", chunks)
+	}
 
 	h.sm.reset(scriptSubmit)
 	h.sm.mu.Lock()
@@ -2504,7 +2511,7 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	prompt := string(h.sm.bodies[first])
 	h.sm.mu.Unlock()
-	if !strings.Contains(prompt, "### similar: other.go") || strings.Contains(prompt, "### similar: main.go") ||
+	if !strings.Contains(prompt, "### similar: other.go lines 3-3 (function c)") || strings.Contains(prompt, "### similar: main.go") ||
 		!strings.Contains(prompt, `"name":"search_code"`) || !strings.Contains(prompt, "search the repository by meaning") {
 		t.Fatalf("stage 4 or search_code missing or wrong in the agent's first request:\n%s", prompt)
 	}
@@ -2527,33 +2534,56 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 	checkSimilarRoute(t, h, repoID, code)
 }
 
-// seedIndex makes an active index generation for repoID holding code at
-// other.go and at main.go, which the pull request changes. It puts other.go
-// on the base, as the index has it, since a review shows only the similar
-// code that its head has.
-func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoID, code string) {
+// seedIndex commits files, makes that commit the pull request's base, and
+// makes an active index generation for repoID of the base's whole tree: the
+// chunks that indexer.Build cuts of it, each embedded as the index job embeds
+// it. So the index holds what an index of the base would, main.go included,
+// which a pull request changes and stage 4 must not repeat. A review shows
+// only the similar code that its head has. It returns the chunks.
+func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoID string, files map[string]string) []indexer.Chunk {
 	t.Helper()
-	h.lf.setBase(h.commit(t, "other.go", code))
+	base := h.commitTree(t, files, nil)
+	h.lf.setBase(base)
+	r, err := git.PlainOpen(h.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := r.CommitObject(plumbing.NewHash(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, _, _, err := indexer.Build(h.ctx, tree, nil, nil, indexer.DefaultOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := make([]store.StagedChunk, len(chunks))
+	inputs := make([]string, len(chunks))
+	for i, c := range chunks {
+		staged[i] = store.StagedChunk{
+			Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text,
+			StartLine: c.StartLine, EndLine: c.EndLine, Signature: c.Signature,
+		}
+		inputs[i] = embedText(emb.DocumentPrompt, staged[i])
+	}
 	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritika_app", emb.Model, emb.Dims, emb.DocumentPrompt); err != nil {
 		t.Fatal(err)
 	}
-	vectors, _, err := h.fe.Embed(h.ctx, []string{code})
+	vectors, _, err := h.fe.Embed(h.ctx, inputs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		var runID string
 		if err := tx.QueryRow(h.ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, $3, $4, $5, 'full', 'completed') RETURNING id`, h.account.ID(), repoID, h.base, emb.Model, emb.Dims).Scan(&runID); err != nil {
+			VALUES ($1, $2, $3, $4, $5, 'full', 'completed') RETURNING id`, h.account.ID(), repoID, base, emb.Model, emb.Dims).Scan(&runID); err != nil {
 			return err
 		}
-		// main.go is changed by the pull request, so the overlay has it and
-		// stage 4 must not repeat it.
-		for _, path := range []string{"other.go", "main.go"} {
-			if _, err := tx.Exec(h.ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
-				VALUES ($1, $2, $3, $4, 1, 3, $5, $6::halfvec)`, h.account.ID(), repoID, runID, path, code, model.VectorLiteral(vectors[0])); err != nil {
-				return err
-			}
+		if err := store.InsertIndexChunks(h.ctx, tx, h.account.ID(), repoID, runID, staged, vectors); err != nil {
+			return err
 		}
 		_, err := tx.Exec(h.ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repoID, runID)
 		return err
@@ -2561,6 +2591,7 @@ func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoI
 	if err != nil {
 		t.Fatalf("seed the index: %v", err)
 	}
+	return chunks
 }
 
 // checkSimilarRoute calls /v1/similar the way a runner does: refused
@@ -2621,7 +2652,8 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 		t.Fatalf("no queries = %d %+v", code, out)
 	}
 	code200, out := similar(token, encode(contextpack.SimilarRequest{Queries: []string{query}, Exclude: []string{"main.go"}}))
-	if code200 != http.StatusOK || !out.Indexed || len(out.Chunks) != 1 || out.Chunks[0].Path != "other.go" || out.Chunks[0].Stage != contextpack.StageSimilar {
+	if code200 != http.StatusOK || !out.Indexed || len(out.Chunks) == 0 || out.Chunks[0].Path != "other.go" ||
+		slices.ContainsFunc(out.Chunks, func(c contextpack.Chunk) bool { return c.Path == "main.go" || c.Stage != contextpack.StageSimilar }) {
 		t.Fatalf("similar = %d %+v", code200, out)
 	}
 	grant, err := h.st.LookupGatewayToken(h.ctx, token)
