@@ -490,12 +490,19 @@ On 1.3.0, in two runs. The second ran while the host's load average was near
 | `drained`     | 2   | 2.9 / 3.0, 1.00   | 7.4 / 12.9, 1.00   | 6.2 / 16.1, 1.00    |
 
 `PartitionIndexChunks` took 1 to 2 seconds on the 3,000,000-chunk table, most
-of it attaching the legacy partition. `DrainLegacyIndexChunks`, called until it
-moved nothing, and the `VACUUM ANALYZE` after it took 4 minutes 58 seconds on
-1.1.1, and 6 minutes 36 seconds and 8 minutes 18 seconds in the two 1.3.0
-runs. A smaller run of 1,000,000 chunks in 138
-repositories on 1.1.1 gave the plain table 4.8, 37.2 and 40.4 ms at p50 for the
-three targets, and 64 hash partitions by generation 0.6, 1.1 and 10.0 ms.
+of it attaching the legacy partition, which then read every chunk under the
+table's exclusive lock to check its bound. These runs predate the
+[legacy mark](/database/#partitioning-an-existing-index): the call now reads
+the chunks when it validates the mark, in a transaction of its own before the
+conversion, under a lock that lets searches read the table and builds write
+it, and attaching reads no chunk. The call's time, and how it divides between
+the validation and the attach, have not been measured since.
+`DrainLegacyIndexChunks`, called until it moved nothing, and the
+`VACUUM ANALYZE` after it took 4 minutes 58 seconds on 1.1.1, and 6 minutes 36
+seconds and 8 minutes 18 seconds in the two 1.3.0 runs. A smaller run of
+1,000,000 chunks in 138 repositories on 1.1.1 gave the plain table 4.8, 37.2
+and 40.4 ms at p50 for the three targets, and 64 hash partitions by generation
+0.6, 1.1 and 10.0 ms.
 These runs kept the emptied legacy partition attached. The sweep now drops
 it, which takes its empty vector index out of every search's plan.
 
