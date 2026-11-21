@@ -469,7 +469,10 @@ table is partitioned:
   fewer than 200 do, which. A word in 200 chunks or more is too common for
   any search to read, so its row keeps the count alone. A search reads each
   of its words' rows from that B-tree, and then reads from the generation's
-  partition only the chunks it ranks and those of the paths it leaves out.
+  partition only the chunks that those rows list, for their paths, to leave
+  out those of the excluded paths, and the chunks it ranks. A change that
+  excludes most of a repository adds no read for the chunks of its paths
+  that no word of the search lists.
   Under row-level security a B-tree of text equality, which is leakproof,
   serves the search, where no index of a full-text `tsvector` could:
   Postgres applies the full-text match operator, `@@`, which is not
