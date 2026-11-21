@@ -495,7 +495,7 @@ int x = 1; /* a
 int f(void) { return x; }
 `,
 			want: []want{
-				{"", "other", "", 1, 1, 1}, {"add", "function", "", 2, 3, 3},
+				{"", "import", "", 1, 1, 1}, {"add", "function", "", 2, 3, 3},
 				{"x", "", "", 4, 4, 4}, {"f", "function", "", 6, 6, 6},
 			},
 		},
@@ -524,7 +524,7 @@ T min_of(T a, T b) {
 }
 `,
 			want: []want{
-				{"", "other", "", 1, 1, 1}, {"", "other", "", 2, 2, 2},
+				{"", "import", "", 1, 1, 1}, {"", "import", "", 2, 2, 2},
 				{"max_of", "function", "", 4, 7, 5}, {"min_of", "function", "", 9, 12, 10},
 			},
 		},
@@ -859,5 +859,70 @@ func TestLeadEnds(t *testing.T) {
 		if got, ok := f.LeadEnds(tt.line); got != tt.want || ok != tt.ok {
 			t.Errorf("LeadEnds(%d) = %d, %v, want %d, %v", tt.line, got, ok, tt.want, tt.ok)
 		}
+	}
+}
+
+// TestImportKinds: the statements that import or include code at the top of
+// a file are imports in every language, including those whose node types do
+// not say so, while the statements that share their node types or callees
+// for something else are not.
+func TestImportKinds(t *testing.T) {
+	tests := []struct {
+		name, path, src string
+		line            int
+		want            string
+	}{
+		{name: "go import", path: "a.go", src: "package a\n\nimport \"fmt\"\n", line: 3, want: "import"},
+		{name: "python import", path: "a.py", src: "import os\n", line: 1, want: "import"},
+		{name: "javascript import", path: "a.js", src: "import x from 'x';\n", line: 1, want: "import"},
+		{name: "java import", path: "A.java", src: "package a;\nimport java.util.List;\nclass A {}\n", line: 2, want: "import"},
+		{name: "kotlin import", path: "a.kt", src: "package a\nimport x.Y\nfun f() {}\n", line: 2, want: "import"},
+		{name: "swift import", path: "a.swift", src: "import Foundation\nfunc f() {}\n", line: 1, want: "import"},
+		{name: "scala import", path: "a.scala", src: "import x.Y\ndef f = 1\n", line: 1, want: "import"},
+		{name: "rust use", path: "a.rs", src: "use std::io;\nfn f() {}\n", line: 1, want: "import"},
+		{name: "rust extern crate", path: "a.rs", src: "extern crate serde;\nfn f() {}\n", line: 1, want: "import"},
+		{name: "rust mod", path: "a.rs", src: "mod m;\nfn f() {}\n", line: 1, want: "other"},
+		{name: "php use", path: "a.php", src: "<?php\nuse A\\B;\nfunction f() {}\n", line: 2, want: "import"},
+		{name: "php require_once", path: "a.php", src: "<?php\nrequire_once 'x.php';\nfunction f() {}\n", line: 2, want: "import"},
+		{name: "php include", path: "a.php", src: "<?php\ninclude __DIR__ . '/x.php';\nfunction f() {}\n", line: 2, want: "import"},
+		{name: "php call", path: "a.php", src: "<?php\nrun();\nfunction f() {}\n", line: 2, want: "other"},
+		{name: "c include", path: "a.c", src: "#include <stdio.h>\nint f(void) { return 0; }\n", line: 1, want: "import"},
+		{name: "c header include", path: "a.h", src: "#include \"b.h\"\nint f(void);\n", line: 1, want: "import"},
+		{name: "c++ include", path: "a.cpp", src: "#include <vector>\nint f() { return 0; }\n", line: 1, want: "import"},
+		{name: "c++ using namespace", path: "a.cpp", src: "using namespace std;\nint f() { return 0; }\n", line: 1, want: "import"},
+		{name: "c++ using declaration", path: "a.cpp", src: "using std::vector;\nint f() { return 0; }\n", line: 1, want: "import"},
+		{name: "c++ alias", path: "a.cpp", src: "using T = int;\nint f() { return 0; }\n", line: 1, want: "other"},
+		{name: "arduino include", path: "a.ino", src: "#include <Servo.h>\nvoid setup() {}\n", line: 1, want: "import"},
+		{name: "hlsl include", path: "a.hlsl", src: "#include \"common.hlsl\"\nfloat4 f() : SV_Target { return 0; }\n", line: 1, want: "import"},
+		{name: "glsl include", path: "a.glsl", src: "#include \"common.glsl\"\nvoid main() {}\n", line: 1, want: "import"},
+		{name: "cuda include", path: "a.cu", src: "#include <cuda.h>\nint f() { return 0; }\n", line: 1, want: "import"},
+		{name: "c# using", path: "a.cs", src: "using System;\nclass A {}\n", line: 1, want: "import"},
+		{name: "c# using static", path: "a.cs", src: "using static System.Math;\nclass A {}\n", line: 1, want: "import"},
+		{name: "c# global using alias", path: "a.cs", src: "global using X = System.Text;\nclass A {}\n", line: 1, want: "import"},
+		{name: "ruby require", path: "a.rb", src: "require 'json'\ndef f; end\n", line: 1, want: "import"},
+		{name: "ruby require_relative", path: "a.rb", src: "require_relative 'x'\ndef f; end\n", line: 1, want: "import"},
+		{name: "ruby call", path: "a.rb", src: "configure 'x'\ndef f; end\n", line: 1, want: "other"},
+		{name: "ruby require on a receiver", path: "a.rb", src: "Kernel.require 'json'\ndef f; end\n", line: 1, want: "other"},
+		{name: "ruby method named require", path: "a.rb", src: "def require(x)\n  x\nend\n", line: 1, want: "method"},
+		{name: "c# using statement", path: "a.cs", src: "using (var r = Open()) { r.Run(); }\n", line: 1, want: "other"},
+		{name: "javascript using declaration", path: "a.js", src: "using r = open();\nfunction f() {}\n", line: 1, want: "other"},
+		{name: "julia using", path: "a.jl", src: "using LinearAlgebra\nf() = 1\n", line: 1, want: "import"},
+		{name: "erlang include", path: "a.erl", src: "-module(a).\n-include(\"x.hrl\").\nf() -> 1.\n", line: 2, want: "import"},
+		{name: "erlang include_lib", path: "a.erl", src: "-module(a).\n-include_lib(\"k/include/x.hrl\").\nf() -> 1.\n", line: 2, want: "import"},
+		{name: "ocaml open", path: "a.ml", src: "open Printf\nlet f = 1\n", line: 1, want: "import"},
+		{name: "dart part", path: "a.dart", src: "import 'x.dart';\npart 'y.dart';\nvoid f() {}\n", line: 2, want: "import"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := (&Parser{}).Parse(tt.path, []byte(tt.src))
+			defer f.Close()
+			i := slices.IndexFunc(f.Decls, func(d Decl) bool { return d.StartLine == tt.line })
+			if i < 0 {
+				t.Fatalf("no declaration starts on line %d: %+v", tt.line, f.Decls)
+			}
+			if got := f.Decls[i].Kind; got != tt.want {
+				t.Errorf("kind of line %d = %q, want %q: %+v", tt.line, got, tt.want, f.Decls[i])
+			}
+		})
 	}
 }

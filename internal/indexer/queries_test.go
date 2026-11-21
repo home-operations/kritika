@@ -230,6 +230,61 @@ func manyDeclarations(declarationsFirst bool) string {
 	return fileDiff("", "a.go", added(slices.Concat(parts...)...))
 }
 
+// TestHunkQueriesLeaveOutImports: a large new file is asked about by its
+// declarations, and its imports, includes and using directives take no
+// query, the spare ones included, in the languages whose node types do not
+// call them imports too.
+func TestHunkQueriesLeaveOutImports(t *testing.T) {
+	tests := []struct {
+		name, path, comment string
+		head, imports       []string
+		decl                string
+	}{
+		{name: "c includes", path: "a.c", comment: "// %s", imports: []string{"#include <stdio.h>", "#include \"a.h\""}, decl: "int f(void) { return 0; }\n"},
+		{
+			name: "c++ includes and using directives", path: "a.cpp", comment: "// %s",
+			imports: []string{"#include <vector>", "using namespace std;", "using std::vector;"}, decl: "int f() { return 0; }\n",
+		},
+		{name: "c# using directives", path: "a.cs", comment: "// %s", imports: []string{"using System;", "using static System.Math;"}, decl: "class A {}\n"},
+		{name: "rust extern crate and use", path: "a.rs", comment: "// %s", imports: []string{"extern crate serde;", "use std::io;"}, decl: "fn f() {}\n"},
+		{name: "java imports", path: "A.java", comment: "// %s", imports: []string{"package a;", "import java.util.List;"}, decl: "class A {}\n"},
+		{name: "kotlin imports", path: "a.kt", comment: "// %s", imports: []string{"package a", "import x.Y"}, decl: "fun f() {}\n"},
+		{
+			name: "php use and require", path: "a.php", comment: "// %s", head: []string{"<?php"},
+			imports: []string{"use A\\B;", "require_once 'x.php';"}, decl: "function f() {}\n",
+		},
+		{name: "ruby requires", path: "a.rb", comment: "# %s", imports: []string{"require 'json'", "require_relative 'x'"}, decl: "def f\n  1\nend\n"},
+		{name: "swift imports", path: "a.swift", comment: "// %s", imports: []string{"import Foundation"}, decl: "func f() {}\n"},
+		{name: "scala imports", path: "a.scala", comment: "// %s", imports: []string{"package a", "import x.Y"}, decl: "def f = 1\n"},
+		{name: "julia using", path: "a.jl", comment: "# %s", imports: []string{"using LinearAlgebra"}, decl: "function f()\n  1\nend\n"},
+		{
+			name: "erlang includes", path: "a.erl", comment: "%% %s",
+			imports: []string{"-include(\"x.hrl\").", "-include_lib(\"k/include/y.hrl\")."}, decl: "f() -> 1.\n",
+		},
+		{name: "ocaml open", path: "a.ml", comment: "(* %s *)", imports: []string{"open Printf"}, decl: "let f x = x + 1\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := slices.Clone(tt.head)
+			for range 50 {
+				lines = append(lines, fmt.Sprintf(tt.comment, "Licensed under the terms that are long enough to fill a query on their own."))
+			}
+			lines = slices.Concat(lines, tt.imports, []string{""}, strings.Split(strings.TrimSuffix(tt.decl, "\n"), "\n"))
+			got, _ := HunkQueries(fileDiff("", tt.path, added(lines...)), nil, nil)
+			if len(got) == 0 || got[0] != tt.decl {
+				t.Fatalf("HunkQueries = %q, want %q first", got, tt.decl)
+			}
+			for _, q := range got {
+				for _, imp := range tt.imports {
+					if strings.Contains(q, imp) {
+						t.Errorf("query %q holds the import %q", q, imp)
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestHunkQueriesManyDeclarations: a region of many short declarations and
 // a large one is asked about by the declarations in the order it has them,
 // the large one in windows of its lines. BenchmarkHunkQueriesManyDeclarations

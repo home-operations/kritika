@@ -262,7 +262,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) (decl
 			continue
 		}
 		d := Decl{
-			Kind:      kindFromType(typ),
+			Kind:      topLevelKind(lp, c, typ, src),
 			StartLine: int(c.StartPoint().Row) + 1, EndLine: endLine(c.StartPoint(), c.EndPoint()),
 			StartByte: int(c.StartByte()), EndByte: int(c.EndByte()),
 		}
@@ -282,7 +282,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) (decl
 			out[j].StartLine, out[j].StartByte = d.StartLine, d.StartByte
 			continue
 		}
-		if dn := c.ChildByFieldName("declaration", lp.lang); dn != nil && d.Kind == "other" {
+		if dn := c.ChildByFieldName("declaration", lp.lang); dn != nil && d.Kind == kindOther {
 			d.Kind = kindFromType(dn.Type(lp.lang))
 		}
 		add(d)
@@ -488,9 +488,9 @@ func kindFromType(typ string) string {
 	case strings.Contains(typ, "var"), strings.Contains(typ, "let"):
 		return "variable"
 	case strings.Contains(typ, "import"), strings.Contains(typ, "use_"), strings.Contains(typ, "package"):
-		return "import"
+		return kindImport
 	default:
-		return "other"
+		return kindOther
 	}
 }
 

@@ -220,16 +220,26 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 			name: "c++ templates", path: "max.cpp",
 			src: "#include <vector>\n#include <string>\n\ntemplate <typename T>\nT max_of(T a, T b) {\n  return a > b ? a : b;\n}\n\n" +
 				"template <typename T>\nT min_of(T a, T b) {\n  return a < b ? a : b;\n}\n",
-			want: []span{{"", "other", 1, 2}, {"max_of", "function", 4, 7}, {"min_of", "function", 9, 12}},
+			want: []span{{"", "import", 1, 2}, {"max_of", "function", 4, 7}, {"min_of", "function", 9, 12}},
 		},
 		{
 			name: "c++ blocks around declarations", path: "blocks.cpp",
 			src: "#include <cstdio>\n\nnamespace {\nint helper(int x) { return x + 1; }\n}\n\nextern \"C\" {\nint exported(int x) { return helper(x); }\n}\n\n" +
 				"#if defined(FOO)\nint foo_only(void) { return 1; }\n#endif\n\nint main() { return 0; }\n",
 			want: []span{
-				{"", "other", 1, 1}, {"helper", "function", 3, 4}, {"exported", "function", 7, 8},
+				{"", "import", 1, 1}, {"helper", "function", 3, 4}, {"exported", "function", 7, 8},
 				{"foo_only", "function", 11, 13}, {"main", "function", 15, 15},
 			},
+		},
+		{
+			name: "c# using directives", path: "demo.cs",
+			src:  "using System;\nusing System.IO;\n\nclass A {}\n",
+			want: []span{{"", "import", 1, 2}, {"A", "", 4, 4}},
+		},
+		{
+			name: "ruby requires", path: "demo.rb",
+			src:  "require 'json'\nrequire_relative 'x'\n\ndef f\n  1\nend\n",
+			want: []span{{"", "import", 1, 2}, {"f", "method", 4, 6}},
 		},
 		{
 			name: "python blocks around definitions", path: "compat.py",
