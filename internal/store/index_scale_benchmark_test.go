@@ -557,6 +557,22 @@ func scaleLayouts(rows int) []scaleLayout {
 			return nil
 		}
 	}
+	// inTx runs stmts in one transaction, so that a setup that fails part
+	// way, as a copy of the corpus that runs out of disk does, leaves the
+	// table it renamed under its own name. VACUUM cannot run in one, so the
+	// layouts that run it use exec.
+	inTx := func(stmts ...string) func(context.Context, *Store) error {
+		return func(ctx context.Context, s *Store) error {
+			return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+				for _, stmt := range stmts {
+					if _, err := tx.Exec(ctx, stmt); err != nil {
+						return fmt.Errorf("%s: %w", stmt, err)
+					}
+				}
+				return nil
+			})
+		}
+	}
 	// VectorChord 1.1.1 reports no heap tuples from an index build, which
 	// leaves the table with no row count until it is analyzed again.
 	analyze := `ANALYZE index_chunks`
@@ -605,8 +621,8 @@ $$)`, lists)
 		analyze,
 	)
 	layouts = append(layouts, scaleLayout{
-		name: "repo-hash", setup: exec(stmts...), query: scaleQueryRepo,
-		teardown: exec(`DROP TABLE index_chunks`, `ALTER TABLE index_chunks_flat RENAME TO index_chunks`),
+		name: "repo-hash", setup: inTx(stmts...), query: scaleQueryRepo,
+		teardown: inTx(`DROP TABLE index_chunks`, `ALTER TABLE index_chunks_flat RENAME TO index_chunks`),
 	})
 
 	// partition converts the table, with its vector index as flat builds it
@@ -1022,4 +1038,39 @@ func lexicalScalePaths(chunks []StagedChunk) []string {
 	}
 	slices.Sort(paths)
 	return slices.Compact(paths)
+}
+
+// TestScaleRepoHashSetupRollsBack: a repo-hash setup that fails part way,
+// as one whose copy of the corpus runs out of disk does, leaves the loaded
+// table as it was, under its own name, for the benchmark's cleanup to drop.
+func TestScaleRepoHashSetupRollsBack(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks;
+		DROP TABLE IF EXISTS index_chunks_flat; DELETE FROM index_schema`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DROP TABLE IF EXISTS index_chunks_flat;
+			DROP TABLE IF EXISTS index_chunks_p1; DELETE FROM index_schema`)
+	})
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, false, true)
+	// A table in the way of the second partition fails the setup after the
+	// rename and the first partition.
+	if _, err := s.owner.Exec(ctx, `CREATE TABLE index_chunks_p1 (id int)`); err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(scaleLayouts(1000), func(l scaleLayout) bool { return l.name == "repo-hash" })
+	if err := scaleLayouts(1000)[i].setup(ctx, s); err == nil {
+		t.Fatal("the repo-hash setup succeeded beside a table in its way")
+	}
+	var loaded, flat bool
+	if err := s.owner.QueryRow(ctx, `SELECT to_regclass('index_chunks') IS NOT NULL AND
+		(SELECT relkind = 'r' FROM pg_class WHERE oid = to_regclass('index_chunks')), to_regclass('index_chunks_flat') IS NOT NULL`).
+		Scan(&loaded, &flat); err != nil {
+		t.Fatal(err)
+	}
+	if !loaded || flat {
+		t.Fatalf("after the failed setup, the loaded table is under its own name: %v, and renamed: %v; want it as it was", loaded, flat)
+	}
 }
