@@ -933,6 +933,14 @@ candidate. Each `search_code` call is one query: about 12,500 tokens, and a
 review makes ten at most. Lower `candidates`, or raise `tokensPerMonth`, before
 turning a reranker on for many repositories.
 
+The example below declares the four APIs as alternatives. Copy the provider
+of the one you choose and its `rerank` into your configuration, beside your
+own `embedding.model` and `dims`: the example's `openrouter` model stands for
+them, and it declares no `openrouter` provider. Leave the other providers
+out. kritika reads every provider declared under `providers` at startup,
+whether or not anything uses it, and fails to start when the environment
+variable that its `apiKey` names is not set.
+
 ```yaml
 providers:
   # Cohere's v2 API
