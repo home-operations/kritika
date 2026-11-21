@@ -916,7 +916,7 @@ func BenchmarkLexicalScale(b *testing.B) {
 				b.Fatal(err)
 			}
 			var postings, postingsBytes, chunkBytes int64
-			if err := s.owner.QueryRow(ctx, `SELECT (SELECT sum(chunks) FROM index_postings WHERE index_run_id = $1),
+			if err := s.owner.QueryRow(ctx, `SELECT (SELECT coalesce(sum(chunks), 0) FROM index_postings WHERE index_run_id = $1),
 					pg_total_relation_size('index_postings'),
 					(SELECT sum(pg_total_relation_size(inhrelid)) FROM pg_inherits WHERE inhparent = 'index_chunks_current'::regclass)`,
 				run).Scan(&postings, &postingsBytes, &chunkBytes); err != nil {
