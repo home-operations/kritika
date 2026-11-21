@@ -112,15 +112,22 @@ type hit struct {
 // users is, for each hit, the declaration that uses its word, or nil: the
 // smallest one around its line that fits maxLines. A word in the comments
 // above a declaration does not use it, as one in a decorator or an
-// attribute there does.
+// attribute there does. The declaration around a line depends on the line
+// alone, so a line of many hits looks it up once.
 func users(pf *chunk.File, hits []hit, maxLines int) []*chunk.Decl {
 	decls := make([]*chunk.Decl, len(hits))
+	byLine := map[int]*chunk.Decl{}
 	var above []int
 	for i, h := range hits {
-		decls[i] = pf.Enclosing([]int{h.line}, maxLines)
-		if decls[i] != nil && h.line < decls[i].HeadLine {
-			above = append(above, h.line)
+		d, ok := byLine[h.line]
+		if !ok {
+			d = pf.Enclosing([]int{h.line}, maxLines)
+			byLine[h.line] = d
+			if d != nil && h.line < d.HeadLine {
+				above = append(above, h.line)
+			}
 		}
+		decls[i] = d
 	}
 	// named holds each identifier on those lines with its line, so a hit is
 	// looked up once rather than among all of its line's identifiers.

@@ -474,6 +474,26 @@ func TestUsersOfALongDecoratorLine(t *testing.T) {
 	}
 }
 
+// TestUsersResolveALineOnce: many hits on one line look the line's
+// declaration up once, rather than allocating a copy of it for every hit.
+func TestUsersResolveALineOnce(t *testing.T) {
+	const n = 1000
+	pf := (&chunk.Parser{}).Parse("calls.go", []byte("package p\n\nfunc f() {\n\tg("+strings.Repeat("a, ", n)+")\n}\n"))
+	defer pf.Close()
+	hits := make([]hit, n)
+	for i := range hits {
+		hits[i] = hit{"a", 4}
+	}
+	var decls []*chunk.Decl
+	allocs := testing.AllocsPerRun(10, func() { decls = users(pf, hits, DefaultOptions.MaxDeclLines) })
+	if decls[0] == nil || decls[0].Symbol != "f" || decls[n-1] == nil || *decls[n-1] != *decls[0] {
+		t.Fatalf("users = %v ... %v, want f for every hit", decls[0], decls[n-1])
+	}
+	if allocs > 10 {
+		t.Errorf("users of %d hits on one line made %.0f allocations, want a few for the line", n, allocs)
+	}
+}
+
 // TestOverlayTakesADeclarationItsCommentsPushOver: a change in a declaration
 // that fits the line limit only without the comments above it is shown with
 // the declaration from its head line, not with a window.
