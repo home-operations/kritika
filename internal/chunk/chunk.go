@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/odvcencio/gotreesitter"
@@ -466,11 +467,18 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 }
 
 // skipSpace is the offset of the first byte from i to hi that is not white
-// space, or hi.
+// space, or hi. White space is what lineTexts trims from a line's ends.
 func skipSpace(src []byte, i, hi int) int {
 	from := i
-	for i < hi && (src[i] == ' ' || src[i] == '\t' || src[i] == '\r' || src[i] == '\n' || src[i] == '\v' || src[i] == '\f') {
-		i++
+	for i < hi {
+		r, size := rune(src[i]), 1
+		if r >= utf8.RuneSelf {
+			r, size = utf8.DecodeRune(src[i:hi])
+		}
+		if !unicode.IsSpace(r) {
+			break
+		}
+		i += size
 	}
 	if walked != nil {
 		*walked += i - from
