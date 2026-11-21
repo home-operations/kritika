@@ -499,7 +499,10 @@ func kindFromType(typ string) string {
 // that the comments, decorators or attributes above it put over maxLines is
 // returned from the first of lines, when that is above its head line and
 // leaves it within maxLines, or else from its head line, and holds only the
-// lines from there.
+// lines from there. A first of lines inside a comment, decorator or
+// attribute that began above it counts from the line where that began, so
+// the declaration does not start inside one, such as at an argument of a
+// decorator that spans lines.
 func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 	first := math.MaxInt
 	for _, l := range lines {
@@ -516,8 +519,14 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 		}
 		if d.Lines() > maxLines {
 			start := head
-			if first >= d.StartLine && first < head && d.EndLine-first+1 <= maxLines {
-				start = first
+			if first >= d.StartLine && first < head {
+				open := first
+				for open > d.StartLine && f.LeadContinues(open) {
+					open--
+				}
+				if d.EndLine-open+1 <= maxLines {
+					start = open
+				}
 			}
 			d.StartLine, d.StartByte = start, f.offsets()[start-1]
 		}

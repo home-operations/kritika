@@ -714,3 +714,38 @@ func TestLineIdentifiers(t *testing.T) {
 		})
 	}
 }
+
+// TestEnclosingKeepsAWholeMultilineDecorator: a hit on an argument of a
+// decorator that spans lines, below comments that put the function over the
+// limit, starts the declaration at the decorator's first line when the whole
+// decorator fits. When it does not, the declaration from its head line does
+// not hold the hit, so there is none, rather than one that starts inside the
+// decorator.
+func TestEnclosingKeepsAWholeMultilineDecorator(t *testing.T) {
+	src := strings.Repeat("# padding\n", 146) + "@route(\n    \"/a\",\n    methods=[\"GET\"],\n)\ndef handler():\n    pass\n"
+	f := (&Parser{}).Parse("deco.py", []byte(src))
+	defer f.Close()
+	for _, tt := range []struct {
+		name       string
+		line, max  int
+		start, end int
+	}{
+		{name: "the decorator fits", line: 148, max: 6, start: 147, end: 152},
+		{name: "the decorator's last line", line: 150, max: 6, start: 147, end: 152},
+		{name: "the decorator does not fit", line: 149, max: 5},
+		{name: "the decorator's first line", line: 147, max: 6, start: 147, end: 152},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := f.Enclosing([]int{tt.line}, tt.max)
+			if tt.start == 0 {
+				if d != nil {
+					t.Fatalf("Enclosing([%d], %d) = %+v, want nil", tt.line, tt.max, d)
+				}
+				return
+			}
+			if d == nil || d.Symbol != "handler" || d.StartLine != tt.start || d.EndLine != tt.end || d.StartByte != f.offsets()[tt.start-1] {
+				t.Fatalf("Enclosing([%d], %d) = %+v, want handler L%d-%d", tt.line, tt.max, d, tt.start, tt.end)
+			}
+		})
+	}
+}
