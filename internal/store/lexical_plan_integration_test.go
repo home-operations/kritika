@@ -72,7 +72,21 @@ func TestLexicalExclusionsJoinOnce(t *testing.T) {
 		SELECT $1, $2, 'f/' || i || '.go' FROM generate_series(1, $3) AS i`, runner, account, chunks); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"index_chunks", "similar_exclusions"} {
+	// Postings of both of the query's terms, in fewer chunks than the bar
+	// leaves out as common, every one of them excluded: a search tests each
+	// of them against the excluded chunks.
+	const postings = LexicalCommonMax - 1
+	if _, err := s.owner.Exec(ctx, `INSERT INTO index_postings (index_run_id, lexeme, account_id, chunks, chunk_ids)
+		SELECT $1, t, $2, $3::int, (SELECT array_agg(id) FROM (SELECT id FROM index_chunks WHERE index_run_id = $1 LIMIT $3::int) c)
+		FROM unnest(ARRAY['lease', 'slots']) AS t`, gen, account, postings); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM index_postings WHERE index_run_id = $1`, gen); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, table := range []string{"index_chunks", "similar_exclusions", "index_postings"} {
 		if _, err := s.owner.Exec(ctx, `ANALYZE `+table); err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +99,7 @@ func TestLexicalExclusionsJoinOnce(t *testing.T) {
 		}
 		args := lexicalArgs(gen, []LexicalQuery{{Terms: []LexicalTerm{{Lexeme: "lease"}, {Lexeme: "slots"}}, Vector: make([]float32, 8)}},
 			Exclusions{Run: runner}, 4, LexicalBar{Least: LexicalCommonMax}, 4)
-		return tx.QueryRow(ctx, `EXPLAIN (FORMAT JSON) `+lexicalChunksSQL, args...).Scan(&plan)
+		return tx.QueryRow(ctx, `EXPLAIN (ANALYZE, FORMAT JSON) `+lexicalChunksSQL, args...).Scan(&plan)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -93,37 +107,35 @@ func TestLexicalExclusionsJoinOnce(t *testing.T) {
 	if err := json.Unmarshal(plan, &root); err != nil || len(root) != 1 {
 		t.Fatalf("plan %s: %v", plan, err)
 	}
-	scans, perRow := root[0].Plan.excludedScans(false)
-	if scans == 0 || perRow > 0 {
-		t.Errorf("the excluded chunks are scanned %d times, %d of them in a subplan run per posting; want once, in a join:\n%s",
-			scans, perRow, plan)
+	// A scan on the inner side of a nested loop, or in a subplan, runs again
+	// for each posting it tests.
+	if scans, loops := root[0].Plan.excludedLoops(); scans == 0 || loops != 1 {
+		t.Errorf("the excluded chunks are read by %d scans, run %v times in all; want one run, as one side of a join:\n%s",
+			scans, loops, plan)
 	}
 }
 
-// planNode is a node of a plan that EXPLAIN (FORMAT JSON) gives.
+// planNode is a node of a plan that EXPLAIN (FORMAT JSON) gives, with
+// ANALYZE the times that it ran.
 type planNode struct {
-	NodeType           string     `json:"Node Type"`
-	CTEName            string     `json:"CTE Name"`
-	IndexName          string     `json:"Index Name"`
-	ParentRelationship string     `json:"Parent Relationship"`
-	Plans              []planNode `json:"Plans"`
+	NodeType    string     `json:"Node Type"`
+	CTEName     string     `json:"CTE Name"`
+	IndexName   string     `json:"Index Name"`
+	ActualLoops float64    `json:"Actual Loops"`
+	Plans       []planNode `json:"Plans"`
 }
 
-// excludedScans counts the scans of the excluded CTE in n's tree, and those
-// of them under a subplan, inSubPlan saying whether n is.
-func (n planNode) excludedScans(inSubPlan bool) (scans, perRow int) {
-	inSubPlan = inSubPlan || n.ParentRelationship == "SubPlan"
+// excludedLoops counts the scans of the excluded CTE in n's tree, and the
+// times that they ran in all.
+func (n planNode) excludedLoops() (scans int, loops float64) {
 	if n.NodeType == "CTE Scan" && n.CTEName == "excluded" {
-		scans++
-		if inSubPlan {
-			perRow++
-		}
+		scans, loops = 1, n.ActualLoops
 	}
 	for _, c := range n.Plans {
-		s, p := c.excludedScans(inSubPlan)
-		scans, perRow = scans+s, perRow+p
+		s, l := c.excludedLoops()
+		scans, loops = scans+s, loops+l
 	}
-	return scans, perRow
+	return scans, loops
 }
 
 // indexes are the names of the indexes that n's tree reads.
