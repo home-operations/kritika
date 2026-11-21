@@ -342,6 +342,32 @@ func TestRunPartLoops(t *testing.T) {
 	}
 }
 
+// TestSearchToolHeadLock: search_code reads its answer at the head only
+// holding the head lock, which another part's read of the head can hold, and
+// gives up when its part ends first. Its own search lock does not stand in
+// for it.
+func TestSearchToolHeadLock(t *testing.T) {
+	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "a.go", StartLine: 1, EndLine: 1, Text: "package a"},
+	}}}
+	locks := newPartLocks()
+	tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "t", head: tree(t, map[string]string{"a.go": "package a\n"}),
+		headLock: locks.head, maxBytes: 1 << 10}
+	locked := lockTools([]agent.Tool{tool}, locks)[0]
+	held := errors.New("the head lock is held")
+	locks.head <- struct{}{}
+	ctx, cancel := context.WithTimeoutCause(t.Context(), 500*time.Millisecond, held)
+	defer cancel()
+	if out, err := locked.Run(ctx, json.RawMessage(`{"query":"package"}`)); !errors.Is(err, held) || out != "" {
+		t.Fatalf("Run with the head lock held = %q, %v; want it to wait until its part ends", out, err)
+	}
+	<-locks.head
+	if out, err := locked.Run(t.Context(), json.RawMessage(`{"query":"package"}`)); err != nil || !strings.HasPrefix(out, "a.go:1-1") ||
+		len(locks.head) != 0 || len(locks.search) != 0 {
+		t.Fatalf("Run = %q, %v; head lock held %d, search lock %d", out, err, len(locks.head), len(locks.search))
+	}
+}
+
 // TestRunPartLoopsShareSearch: parts that run at once share one search_code,
 // and each searches through it, which the race detector checks.
 func TestRunPartLoopsShareSearch(t *testing.T) {
