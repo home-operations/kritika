@@ -53,6 +53,14 @@ ALTER TABLE index_runs ADD COLUMN IF NOT EXISTS generation_chunks int;
 -- built again by no build whose start would drop them as stray. Nothing
 -- makes a superseded generation active again, and the paths of this build
 -- that supersede one drop its postings too, which finds none left.
+--
+-- The trigger runs as the role that supersedes the generation, and only for
+-- a generation that a publication of this build counted: one that has no
+-- generation_chunks has no postings either, as a publication writes both
+-- together. Until Migrate's grants, which follow the last migration, the
+-- application role holds no privilege on index_postings, and every
+-- generation has no count. An older build's worker that supersedes one
+-- meanwhile does not read the table, so it still publishes.
 CREATE OR REPLACE FUNCTION kritika_index_superseded() RETURNS trigger AS $$
 BEGIN
     DELETE FROM index_postings WHERE index_run_id = NEW.id;
@@ -61,5 +69,6 @@ END;
 $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER kritika_index_superseded
     AFTER UPDATE OF status ON index_runs
-    FOR EACH ROW WHEN (NEW.status = 'superseded' AND OLD.status IS DISTINCT FROM 'superseded')
+    FOR EACH ROW WHEN (NEW.status = 'superseded' AND OLD.status IS DISTINCT FROM 'superseded'
+                       AND OLD.generation_chunks IS NOT NULL)
     EXECUTE FUNCTION kritika_index_superseded();

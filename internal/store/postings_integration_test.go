@@ -948,3 +948,29 @@ func TestIndexPostingsRetiredByAnOlderBuild(t *testing.T) {
 		t.Fatalf("the live generation holds %d postings beside the older build, want its %d", n, livePostings)
 	}
 }
+
+// TestIndexPostingsSupersededBeforeGrants: between migration 0069 and the
+// grants that end Migrate, the application role holds no privilege on
+// index_postings. An older build's worker that supersedes a generation then
+// still publishes: a generation that no publication of this build counted
+// has no postings, and the trigger does not read the table for it.
+func TestIndexPostingsSupersededBeforeGrants(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-grants")
+	legacy := f.run(IndexModeFull, "completed")
+	if _, err := s.owner.Exec(ctx, `REVOKE ALL ON index_postings FROM kritika_app`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.grant(context.Background(), "kritika_app"); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := s.WithAccount(ctx, f.account, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = $1`, legacy)
+		return err
+	}); err != nil {
+		t.Fatalf("an older build superseding a generation without postings, before the grants: %v", err)
+	}
+}
