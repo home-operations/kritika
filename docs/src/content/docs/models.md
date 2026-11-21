@@ -69,7 +69,12 @@ Index runs take no more than all but one of the embedder's slots, so a
 review's similar-code lookup has a slot unless `concurrency` is 1. An
 index run holds a slot for each batch it sends the embedder, not for its
 whole build, and an update of an indexed repository that waits for one
-gets the next that a first build or a rebuild lets go. `concurrency` is
+gets the next that a first build or a rebuild lets go, once it has opened
+the database connection that it waits on
+([connections](/database/#connections)). Where it cannot open that
+connection, as when Postgres is at its connection limit, the update still
+waits for a slot through the application pool, but without priority over
+first builds and rebuilds, which can take the next slot first. `concurrency` is
 one value for the provider; an account that needs another on the same
 endpoint declares a provider of its own under [`accounts`](/configuration/#accounts).
 
