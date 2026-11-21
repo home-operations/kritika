@@ -224,8 +224,8 @@ func ReadStagedChunks(ctx context.Context, tx pgx.Tx, runnerRunID string, after 
 }
 
 // InsertIndexChunks records a batch of embedded chunks under the run, each
-// with its lexemes (package lexical) and a posting of each lexeme, for the
-// lexical search.
+// with its lexemes (package lexical), from which the run's publication
+// writes the postings of the search by name.
 func InsertIndexChunks(
 	ctx context.Context, tx pgx.Tx, accountID, repositoryID, runID string, batch []StagedChunk, vectors [][]float32,
 ) error {
@@ -245,19 +245,14 @@ func InsertIndexChunks(
 		// through unnest, which flattens an array of arrays.
 		lexemes[i] = strings.Join(lexical.Document(c.Language, c.Path, c.Scope, c.Symbol, c.Text), " ")
 	}
-	if _, err := tx.Exec(ctx, `WITH c AS (
-		INSERT INTO index_chunks
+	if _, err := tx.Exec(ctx, `INSERT INTO index_chunks
 			(account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding,
 			 content_hash, lexemes)
 		SELECT $1, $2, $3, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text, c.embedding::halfvec,
 			c.content_hash, array_to_tsvector(string_to_array(c.lexemes, ' '))
 		FROM unnest($4::text[], $5::int[], $6::int[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[],
 			$13::bytea[], $14::text[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash, lexemes)
-		RETURNING id, lexemes
-	)
-	INSERT INTO index_postings (index_run_id, chunk_id, account_id, lexeme)
-	SELECT $3, c.id, $1, l FROM c, unnest(tsvector_to_array(c.lexemes)) AS l`,
+			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash, lexemes)`,
 		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings, hashes,
 		lexemes); err != nil {
 		return fmt.Errorf("store: insert chunks: %w", err)
@@ -313,11 +308,20 @@ func lockActiveGeneration(ctx context.Context, tx pgx.Tx, repositoryID string) (
 	return *active, nil
 }
 
-// ActivateGeneration makes a full build the active generation, and counts its
-// chunks. It supersedes whichever generation is active when it publishes,
-// and it drops the chunks of that generation and their postings. A full
-// build replaces every chunk, so it does not depend on the generation it
-// started from.
+// writePostingsSQL writes the postings of generation $1 from its chunks'
+// lexemes: a row of each word, with the chunks that hold it while they are
+// fewer than $2.
+const writePostingsSQL = `INSERT INTO index_postings (index_run_id, lexeme, account_id, chunks, chunk_ids)
+	SELECT $1, l, r.account_id, count(*), CASE WHEN count(*) < $2 THEN array_agg(c.id) END
+	FROM index_runs r, index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+	WHERE r.id = $1 AND c.index_run_id = $1
+	GROUP BY l, r.account_id`
+
+// ActivateGeneration makes a full build the active generation, writes its
+// postings, and counts its chunks. It supersedes whichever generation is
+// active when it publishes, and it drops the chunks of that generation and
+// their postings. A full build replaces every chunk, so it does not depend
+// on the generation it started from.
 func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID string) error {
 	previous, err := lockActiveGeneration(ctx, tx, repositoryID)
 	if err != nil {
@@ -325,6 +329,13 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 	}
 	if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repositoryID, runID); err != nil {
 		return fmt.Errorf("store: activate generation: %w", err)
+	}
+	// A run published already has its postings, which are written again.
+	if _, err := tx.Exec(ctx, `DELETE FROM index_postings WHERE index_run_id = $1`, runID); err != nil {
+		return fmt.Errorf("store: write postings: %w", err)
+	}
+	if _, err := tx.Exec(ctx, writePostingsSQL, runID, LexicalCommonMax); err != nil {
+		return fmt.Errorf("store: write postings: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE index_runs SET generation_chunks = (SELECT count(*) FROM index_chunks WHERE index_run_id = $1)
 		WHERE id = $1`, runID); err != nil {
@@ -344,7 +355,7 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 }
 
 // generationTables hold a generation's rows under its index_run_id: its
-// postings, and its chunks, whose lexemes find the postings of each.
+// postings, and its chunks, whose lexemes the postings are made of.
 var generationTables = []string{"index_postings", "index_chunks"}
 
 // deleteGenerations deletes the chunks of the runs, and their postings.
@@ -357,11 +368,60 @@ func deleteGenerations(ctx context.Context, tx pgx.Tx, runs []string) error {
 	return nil
 }
 
-// AdvanceGeneration moves an incremental step's chunks, and their postings,
-// into the active generation in place of the changed paths' chunks. It also
-// moves the generation to the commit that the step indexed, and counts its
-// chunks again. It returns ErrGenerationChanged unless active is still the
-// active generation at the same commit.
+// stepPostingsSQL brings the postings of generation $1 to what its chunks'
+// lexemes will be once step $2's chunks replace its chunks of paths $3: for
+// each word of the chunks replaced or added, the count goes down by the
+// chunks replaced and up by those added, and so does the list while the
+// count stays under $4. It deletes a word no chunk is left holding. It
+// returns the words whose count fell back under $4 from a row that kept the
+// count alone, whose chunks relistPostingsSQL lists once the step's chunks
+// are in place. Each word's row is read by its key: words is materialized,
+// and the row read with LIMIT, as the planner otherwise reads every row of
+// the generation, to join the full join's merged lexeme or when it
+// overestimates how many words a step changes.
+const stepPostingsSQL = `WITH removed AS (
+		SELECT l AS lexeme, array_agg(c.id) AS ids FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $1 AND c.path = ANY($3) GROUP BY l
+	), added AS (
+		SELECT l AS lexeme, array_agg(c.id) AS ids FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $2 GROUP BY l
+	), words AS MATERIALIZED (
+		SELECT lexeme, r.ids AS removed, a.ids AS added FROM removed r FULL JOIN added a USING (lexeme)
+	), delta AS (
+		SELECT d.lexeme, coalesce(d.removed, '{}') AS removed, coalesce(d.added, '{}') AS added,
+			p.chunks IS NOT NULL AS held, p.chunk_ids,
+			coalesce(p.chunks, 0) - coalesce(cardinality(d.removed), 0) + coalesce(cardinality(d.added), 0) AS chunks
+		FROM words d
+		LEFT JOIN LATERAL (SELECT p.chunks, p.chunk_ids FROM index_postings p
+			WHERE p.index_run_id = $1 AND p.lexeme = d.lexeme LIMIT 1) p ON true
+	), deleted AS (
+		DELETE FROM index_postings p USING delta d
+		WHERE d.held AND d.chunks <= 0 AND p.index_run_id = $1 AND p.lexeme = d.lexeme
+	), updated AS (
+		UPDATE index_postings p SET chunks = d.chunks,
+			chunk_ids = CASE WHEN d.chunks < $4 AND d.chunk_ids IS NOT NULL
+				THEN array(SELECT x FROM unnest(d.chunk_ids) AS x WHERE x <> ALL (d.removed)) || d.added END
+		FROM delta d WHERE d.held AND d.chunks > 0 AND p.index_run_id = $1 AND p.lexeme = d.lexeme
+	), inserted AS (
+		INSERT INTO index_postings (index_run_id, lexeme, account_id, chunks, chunk_ids)
+		SELECT $1, d.lexeme, r.account_id, d.chunks, CASE WHEN d.chunks < $4 THEN d.added END
+		FROM delta d, index_runs r WHERE r.id = $1 AND NOT d.held AND d.chunks > 0
+	)
+	SELECT coalesce(array_agg(lexeme), '{}') FROM delta WHERE held AND chunk_ids IS NULL AND chunks > 0 AND chunks < $4`
+
+// relistPostingsSQL lists the chunks of generation $1 that hold each of the
+// words $2, reading each chunk of the generation whose lexemes hold one.
+const relistPostingsSQL = `UPDATE index_postings p SET chunk_ids = h.ids
+	FROM (SELECT l, array_agg(c.id) AS ids FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $1 AND tsvector_to_array(c.lexemes) && $2::text[] AND l = ANY($2::text[]) GROUP BY l) h
+	WHERE p.index_run_id = $1 AND p.lexeme = h.l`
+
+// AdvanceGeneration moves an incremental step's chunks into the active
+// generation in place of the changed paths' chunks, and updates the
+// generation's postings to match. It also moves the generation to the commit
+// that the step indexed, and counts its chunks again. It returns
+// ErrGenerationChanged unless active is still the active generation at the
+// same commit.
 func AdvanceGeneration(
 	ctx context.Context, tx pgx.Tx, repositoryID string, active Generation, stepRunID, commit string, changedPaths []string,
 ) error {
@@ -385,20 +445,20 @@ func AdvanceGeneration(
 		return ErrGenerationChanged
 	}
 	activeRunID := active.ID
-	// A chunk's postings are found through their key, by its lexemes.
-	for _, stmt := range []string{
-		`DELETE FROM index_postings p USING (SELECT c.id, l FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
-			WHERE c.index_run_id = $1 AND c.path = ANY($2)) d
-		WHERE p.index_run_id = $1 AND p.lexeme = d.l AND p.chunk_id = d.id`,
-		`DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,
-	} {
-		if _, err := tx.Exec(ctx, stmt, activeRunID, changedPaths); err != nil {
-			return fmt.Errorf("store: drop stale chunks: %w", err)
-		}
+	// The postings first, while the chunks they replace are still there.
+	var relist []string
+	if err := tx.QueryRow(ctx, stepPostingsSQL, activeRunID, stepRunID, changedPaths, LexicalCommonMax).Scan(&relist); err != nil {
+		return fmt.Errorf("store: step postings: %w", err)
 	}
-	for _, table := range generationTables {
-		if _, err := tx.Exec(ctx, `UPDATE `+table+` SET index_run_id = $2 WHERE index_run_id = $1`, stepRunID, activeRunID); err != nil {
-			return fmt.Errorf("store: move chunks into the generation: %w", err)
+	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`, activeRunID, changedPaths); err != nil {
+		return fmt.Errorf("store: drop stale chunks: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, stepRunID, activeRunID); err != nil {
+		return fmt.Errorf("store: move chunks into the generation: %w", err)
+	}
+	if len(relist) > 0 {
+		if _, err := tx.Exec(ctx, relistPostingsSQL, activeRunID, relist); err != nil {
+			return fmt.Errorf("store: list postings: %w", err)
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2,

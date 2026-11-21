@@ -3,7 +3,8 @@
 -- search matches the identifiers of a query against them, beside the vector
 -- search. A chunk indexed before has none, and matches no query by name until
 -- its index is rebuilt. A search reads index_postings (0072_index_postings),
--- and a chunk's lexemes say which of its postings to delete with it.
+-- which a publication writes from the lexemes of the chunks it adds and
+-- replaces.
 -- index_chunks is created by the leader once an embedder is configured
 -- (store.EnsureIndexSchema), which creates it with the column, so it may not
 -- exist yet.

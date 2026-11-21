@@ -13,8 +13,14 @@ import (
 )
 
 // postingsIndexFormat is the first index format (runspec.IndexFormat) whose
-// builds write each chunk's postings (index_postings).
+// builds write their generation's postings (index_postings).
 const postingsIndexFormat = 2
+
+// LexicalCommonMax is the highest count at which a word is too common to
+// search by name: a word in this many of a generation's chunks or more
+// never is, however large the generation. index_postings lists the chunks
+// of a word in fewer, and keeps the count alone of one in more.
+const LexicalCommonMax = 200
 
 // ActiveGenerationFor is the repository's active, completed index
 // generation built with the given embedder, or ErrNotFound. lexical says
@@ -113,11 +119,11 @@ type LexicalTerm struct {
 }
 
 // lexicalChunksSQL reads, for each term of every query of a request
-// together, the postings of the generation's chunks that hold it, up to the
-// count at which it is too common to search for. Their count is the term's
-// document frequency. Only the excluded paths' chunks and the few ranked
-// chunks are read from index_chunks. A score is rounded so that two chunks
-// holding the same terms tie, whatever order they were added in.
+// together, the generation's posting of it: how many chunks hold it, its
+// document frequency, and, unless that is the count at which it is too
+// common to search for, which. Only the excluded paths' chunks and the few
+// ranked chunks are read from index_chunks. A score is rounded so that two
+// chunks holding the same terms tie, whatever order they were added in.
 //
 // $1 is the generation, $2, $3 and $4 each query's index, term and whether
 // the term is compound, $5 every term once, $6 the generation's chunks and
@@ -126,13 +132,14 @@ type LexicalTerm struct {
 // $11 the most of them read when they tie and $12 the most chunks a term
 // can be in and still find a chunk alone.
 const lexicalChunksSQL = `WITH held AS MATERIALIZED (
-		SELECT t.t, p.chunk_id, count(*) OVER (PARTITION BY t.t) AS n
-		FROM unnest($5::text[]) AS t (t),
-			LATERAL (SELECT p.chunk_id FROM index_postings p WHERE p.index_run_id = $1 AND p.lexeme = t.t LIMIT $7) p
+		SELECT t.t, x.chunk_id, p.chunks AS n
+		FROM unnest($5::text[]) AS t (t)
+		JOIN index_postings p ON p.index_run_id = $1 AND p.lexeme = t.t AND p.chunks < $7,
+			unnest(p.chunk_ids) AS x (chunk_id)
 	), weights AS (
 		SELECT q.qi, q.t, q.compound, f.n, ln(1 + ($6::float8 - f.n + 0.5) / (f.n + 0.5)) AS w
 		FROM unnest($2::int[], $3::text[], $4::bool[]) AS q (qi, t, compound)
-		JOIN (SELECT DISTINCT t, n FROM held WHERE n < $7) f ON f.t = q.t
+		JOIN (SELECT DISTINCT t, n FROM held) f ON f.t = q.t
 	), excluded AS MATERIALIZED (
 		SELECT id FROM index_chunks WHERE index_run_id = $1 AND path = ANY($8::text[])
 	), scored AS (
@@ -163,7 +170,8 @@ const lexicalTies = 4
 // the terms each holds, the heaviest first. A term weighs what BM25 gives a
 // term in so many of the generation's chunks: one that few hold counts for
 // more than one that many do. A term in common(chunks) or more of the
-// generation's chunks is left out as too common to tell them apart.
+// generation's chunks, or in LexicalCommonMax or more, is left out as too
+// common to tell them apart.
 //
 // A chunk is found when it holds two of a query's terms, a compound one, or
 // one in at most alone of the generation's chunks. So a query's one common
@@ -171,6 +179,14 @@ const lexicalTies = 4
 // the one nearest the query's vector comes first, then by path and line.
 func LexicalChunks(
 	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int,
+	common func(chunks int) int, alone int,
+) ([]SimilarHit, error) {
+	return lexicalChunks(ctx, tx, lexicalChunksSQL, runID, queries, exclude, perQuery, common, alone)
+}
+
+// lexicalChunks is LexicalChunks by query, a test's or lexicalChunksSQL.
+func lexicalChunks(
+	ctx context.Context, tx pgx.Tx, query, runID string, queries []LexicalQuery, exclude []string, perQuery int,
 	common func(chunks int) int, alone int,
 ) ([]SimilarHit, error) {
 	if exclude == nil {
@@ -212,8 +228,8 @@ func LexicalChunks(
 	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
-	rows, err := tx.Query(ctx, lexicalChunksSQL, runID, qis, terms, compound, all, chunks, common(chunks), exclude, vectors,
-		perQuery, lexicalTies*perQuery, alone)
+	rows, err := tx.Query(ctx, query, runID, qis, terms, compound, all, chunks, min(common(chunks), LexicalCommonMax), exclude,
+		vectors, perQuery, lexicalTies*perQuery, alone)
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}

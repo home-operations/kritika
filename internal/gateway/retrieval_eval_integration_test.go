@@ -218,7 +218,7 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 				return err
 			}
 		}
-		return nil
+		return store.ActivateGeneration(ctx, tx, repoID, run)
 	}); err != nil {
 		t.Fatal(err)
 	}

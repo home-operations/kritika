@@ -115,8 +115,8 @@ const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_i
 
 // addedColumns are the columns of index_chunks that migrations added, with
 // their types and indexes, "" for none. The lexemes have none: a search
-// reads index_postings, and a chunk's lexemes say which of its postings to
-// delete with it.
+// reads index_postings, which a publication writes from the lexemes of the
+// chunks it adds and replaces.
 var addedColumns = []struct{ name, typ, index string }{
 	{"content_hash", "bytea", contentHashIndex},
 	{"lexemes", "tsvector", ""},

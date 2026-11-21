@@ -4,7 +4,11 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -20,6 +24,29 @@ type postingsFixture struct {
 	account, repo string
 }
 
+// newPostingsFixture serves the account, with an index schema and a
+// repository, name/one, that the test's generations are of.
+func newPostingsFixture(t *testing.T, s *Store, name string) postingsFixture {
+	t.Helper()
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount(name))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema; TRUNCATE index_postings`)
+	})
+	account := accountID(t, s, name)
+	repo := configfile.RepositoryID(account, name+"/one")
+	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, account, name+"/one"); err != nil {
+		t.Fatal(err)
+	}
+	return postingsFixture{t: t, s: s, account: account, repo: repo}
+}
+
 func (f postingsFixture) run(mode, status string) string {
 	f.t.Helper()
 	var id string
@@ -30,18 +57,34 @@ func (f postingsFixture) run(mode, status string) string {
 	return id
 }
 
-// insert stores a chunk of each path's text under the run.
-func (f postingsFixture) insert(run string, chunks map[string]string) {
+// insert stores a chunk of each path's text under the run, with the text's
+// hash. As a build does, it takes the vector of a chunk of the run or of the
+// active generation that has the hash, and returns how many it took.
+func (f postingsFixture) insert(run, active string, chunks map[string]string) (reused int) {
 	f.t.Helper()
 	batch := make([]StagedChunk, 0, len(chunks))
-	vectors := make([][]float32, 0, len(chunks))
-	for path, text := range chunks {
-		batch = append(batch, StagedChunk{Path: path, Language: "go", StartLine: 1, EndLine: 1, Text: text})
-		vectors = append(vectors, []float32{1, 0, 0, 0, 0, 0, 0, 0})
+	hashes := make([][]byte, 0, len(chunks))
+	for _, path := range slices.Sorted(maps.Keys(chunks)) {
+		hash := sha256.Sum256([]byte(chunks[path]))
+		batch = append(batch, StagedChunk{Path: path, Language: "go", StartLine: 1, EndLine: 1, Text: chunks[path], ContentHash: hash[:]})
+		hashes = append(hashes, hash[:])
 	}
 	f.in(func(tx pgx.Tx) error {
+		found, err := IndexVectors(f.t.Context(), tx, f.repo, run, active, hashes)
+		if err != nil {
+			return err
+		}
+		vectors := make([][]float32, len(batch))
+		for i, c := range batch {
+			vectors[i] = []float32{1, 0, 0, 0, 0, 0, 0, 0}
+			if v, ok := found[string(c.ContentHash)]; ok {
+				vectors[i] = v
+				reused++
+			}
+		}
 		return InsertIndexChunks(f.t.Context(), tx, f.account, f.repo, run, batch, vectors)
 	})
+	return reused
 }
 
 func (f postingsFixture) in(fn func(tx pgx.Tx) error) {
@@ -51,21 +94,37 @@ func (f postingsFixture) in(fn func(tx pgx.Tx) error) {
 	}
 }
 
-// postings counts the run's postings, and checks the account's against its
-// chunks: no posting without its chunk, and no lexeme without its posting.
+// publish publishes a full build, as the worker does.
+func (f postingsFixture) publish(run string) {
+	f.t.Helper()
+	f.in(func(tx pgx.Tx) error {
+		if err := ActivateGeneration(f.t.Context(), tx, f.repo, run); err != nil {
+			return err
+		}
+		return FinishIndexRun(f.t.Context(), tx, run, IndexCompleted, 0, "")
+	})
+}
+
+// postings checks the run's postings and returns how many rows they hold.
 func (f postingsFixture) postings(run string) int {
 	f.t.Helper()
-	var orphans, missing, n int
-	if err := f.s.owner.QueryRow(f.t.Context(), `SELECT
-		(SELECT count(*) FROM index_postings p WHERE p.account_id = $1
-		 AND NOT EXISTS (SELECT 1 FROM index_chunks c WHERE c.index_run_id = p.index_run_id AND c.id = p.chunk_id)),
-		(SELECT count(*) FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l WHERE c.account_id = $1
-		 AND NOT EXISTS (SELECT 1 FROM index_postings p WHERE p.index_run_id = c.index_run_id AND p.lexeme = l AND p.chunk_id = c.id)),
-		(SELECT count(*) FROM index_postings WHERE index_run_id = $2)`, f.account, run).Scan(&orphans, &missing, &n); err != nil {
+	return checkPostings(f.t, f.s, run)
+}
+
+// rows counts the rows of the run's postings.
+func (f postingsFixture) rows(run string) (n int) {
+	f.t.Helper()
+	if err := f.s.owner.QueryRow(f.t.Context(), `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, run).Scan(&n); err != nil {
 		f.t.Fatal(err)
 	}
-	if orphans != 0 || missing != 0 {
-		f.t.Fatalf("%d postings without their chunk and %d lexemes without their posting", orphans, missing)
+	return n
+}
+
+// chunks counts the run's chunks.
+func (f postingsFixture) chunks(run string) (n int) {
+	f.t.Helper()
+	if err := f.s.owner.QueryRow(f.t.Context(), `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, run).Scan(&n); err != nil {
+		f.t.Fatal(err)
 	}
 	return n
 }
@@ -79,82 +138,219 @@ func (f postingsFixture) held(run string) (n int) {
 	return n
 }
 
-// found is the paths of the run's chunks that hold word.
-func (f postingsFixture) found(run, word string) []string {
-	f.t.Helper()
-	var paths []string
-	f.in(func(tx pgx.Tx) error {
-		hits, err := LexicalChunks(f.t.Context(), tx, run, []LexicalQuery{{Terms: []LexicalTerm{{word, true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}},
-			nil, 10, func(int) int { return 100 }, 0)
-		for _, h := range hits {
-			paths = append(paths, h.Chunk.Path)
+// checkPostings checks the run's postings against its chunks' lexemes: a row
+// of each word they hold, no other, with how many of the chunks hold it and,
+// while fewer than LexicalCommonMax do, which. It returns how many rows the
+// run's postings hold.
+func checkPostings(t *testing.T, s *Store, run string) int {
+	t.Helper()
+	rows, err := s.owner.Query(t.Context(), `WITH truth AS (
+			SELECT l AS lexeme, count(*)::int AS chunks, array_agg(c.id ORDER BY c.id) AS ids
+			FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l WHERE c.index_run_id = $1 GROUP BY l
+		), got AS (
+			SELECT lexeme, chunks, (SELECT array_agg(x ORDER BY x) FROM unnest(chunk_ids) AS x) AS ids
+			FROM index_postings WHERE index_run_id = $1
+		)
+		SELECT lexeme || ': ' || coalesce(t.chunks::text, 'none') || ' chunks, posted ' || coalesce(g.chunks::text, 'none')
+			|| ' with ' || coalesce(cardinality(g.ids), 0) || ' listed'
+		FROM truth t FULL JOIN got g USING (lexeme)
+		WHERE t.chunks IS DISTINCT FROM g.chunks OR (CASE WHEN t.chunks < $2 THEN t.ids END) IS DISTINCT FROM g.ids
+		ORDER BY lexeme`, run, LexicalCommonMax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wrong) > 0 {
+		t.Fatalf("%d words' postings do not match the chunks, such as %q", len(wrong), wrong[:min(len(wrong), 5)])
+	}
+	var n int
+	if err := s.owner.QueryRow(t.Context(), `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, run).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// bruteLexicalSQL is lexicalChunksSQL with the postings of each term read
+// from every chunk of the generation that holds it, by its lexemes.
+var bruteLexicalSQL = func() string {
+	_, rest, ok := strings.Cut(lexicalChunksSQL, "), weights AS (")
+	if !ok {
+		panic("lexicalChunksSQL has no weights")
+	}
+	return `WITH held AS MATERIALIZED (
+		SELECT * FROM (SELECT t.t, c.id AS chunk_id, count(*) OVER (PARTITION BY t.t) AS n
+			FROM unnest($5::text[]) AS t (t), index_chunks c
+			WHERE c.index_run_id = $1 AND t.t = ANY (tsvector_to_array(c.lexemes))) h
+		WHERE n < $7
+	), weights AS (` + rest
+}()
+
+// searchesMatch searches the run by name for each word that its chunks hold,
+// and each of words, a query of each: the word, as a compound one, so that it
+// finds every chunk that holds it. It checks that the search finds what a
+// read of every chunk's lexemes does, and returns the paths found for each
+// word that finds any.
+func searchesMatch(t *testing.T, s *Store, account, run string, words ...string) map[string][]string {
+	t.Helper()
+	ctx := t.Context()
+	rows, err := s.owner.Query(ctx, `SELECT DISTINCT l FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $1 ORDER BY l`, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	words = append(held, words...)
+	queries := make([]LexicalQuery, len(words))
+	for i, w := range words {
+		queries[i] = LexicalQuery{Terms: []LexicalTerm{{Lexeme: w, Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+	}
+	search := func(query string) []string {
+		var got []string
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			// Every chunk that holds a word is kept, up to the most a word
+			// can be in and still be searched for.
+			hits, err := lexicalChunks(ctx, tx, query, run, queries, nil, 1000, func(chunks int) int { return chunks + 1 }, 1000)
+			for _, h := range hits {
+				got = append(got, fmt.Sprintf("%s\t%s:%d\t%.6f\t%v", words[h.Query], h.Chunk.Path, h.Chunk.StartLine, h.Lexical, h.Matched))
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
 		}
-		return err
-	})
-	return paths
+		return got
+	}
+	got, want := search(lexicalChunksSQL), search(bruteLexicalSQL)
+	if !slices.Equal(got, want) {
+		t.Fatalf("the search by name found %d hits, a read of every chunk %d:\n%s\nwant\n%s", len(got), len(want),
+			strings.Join(got[:min(len(got), 10)], "\n"), strings.Join(want[:min(len(want), 10)], "\n"))
+	}
+	found := map[string][]string{}
+	for _, hit := range got {
+		fields := strings.Split(hit, "\t")
+		found[fields[0]] = append(found[fields[0]], strings.TrimSuffix(fields[1], ":1"))
+	}
+	for _, paths := range found {
+		slices.Sort(paths)
+	}
+	return found
+}
+
+// paths is how many paths a search found and the first of them.
+func paths(found []string) string {
+	if len(found) == 0 {
+		return "none"
+	}
+	return fmt.Sprintf("%d from %s", len(found), found[0])
 }
 
 // TestIndexPostingsFollowChunks: every path that writes, moves or deletes a
-// generation's chunks does the same to their postings, so each chunk's
-// lexemes have their postings and no posting outlives its chunk. Each
-// publication counts the chunks that its generation holds.
+// generation's chunks keeps its postings those of its chunks' lexemes, and
+// the search by name finds what a read of every chunk's lexemes does. A
+// publication writes them, a full build's at once and an incremental step's
+// for the words it changes: a word that falls under LexicalCommonMax is
+// listed again, and one that reaches it keeps its count alone. A run that
+// does not publish holds none. Each publication counts the chunks that its
+// generation holds.
 func TestIndexPostingsFollowChunks(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
-	if err := s.ApplyConfig(ctx, parse(t, soloAccount("postings"))); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
-			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema; TRUNCATE index_postings`)
-	})
-	account := accountID(t, s, "postings")
-	repo := configfile.RepositoryID(account, "postings/one")
-	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, 'postings/one')`, repo, account); err != nil {
-		t.Fatal(err)
-	}
-	f := postingsFixture{t: t, s: s, account: account, repo: repo}
+	f := newPostingsFixture(t, s, "postings")
 
+	// A full build: chunks of their own, sharedHelper in one chunk more than
+	// LexicalCommonMax, and nearCap in one fewer.
 	full := f.run(IndexModeFull, "running")
-	f.insert(full, map[string]string{"a.go": "func acquireLease() {}", "b.go": "func releaseLease() {}"})
-	f.in(func(tx pgx.Tx) error {
-		if err := ActivateGeneration(ctx, tx, repo, full); err != nil {
-			return err
-		}
-		return FinishIndexRun(ctx, tx, full, IndexCompleted, 2, "")
-	})
-	if n := f.postings(full); n == 0 || f.held(full) != 2 {
-		t.Fatalf("published full build: %d postings, %d chunks held; want some, and 2", n, f.held(full))
+	chunks := map[string]string{"a.go": "func acquireLease() {}", "b.go": "func releaseLease() {}", "r.go": "func renamedLease() {}"}
+	for i := range LexicalCommonMax + 1 {
+		chunks[fmt.Sprintf("shared/s%03d.go", i)] = "func sharedHelper() {}"
+	}
+	for i := range LexicalCommonMax - 1 {
+		chunks[fmt.Sprintf("near/n%03d.go", i)] = "func nearCap() {}"
+	}
+	f.insert(full, "", chunks)
+	if n := f.rows(full); n != 0 {
+		t.Fatalf("a full build holds %d postings before it publishes, want none", n)
+	}
+	f.publish(full)
+	if n := f.postings(full); n == 0 || f.held(full) != len(chunks) {
+		t.Fatalf("published full build: %d postings, %d chunks held; want some, and %d", n, f.held(full), len(chunks))
+	}
+	found := searchesMatch(t, s, f.account, full)
+	if got := fmt.Sprintf("%v %s %s", found["releaselease"], paths(found["sharedhelper"]), paths(found["nearcap"])); got !=
+		fmt.Sprintf("[b.go] none %d from near/n000.go", LexicalCommonMax-1) {
+		t.Fatalf("releaseLease, sharedHelper and nearCap are found in %s", got)
 	}
 
+	// An incremental step: b.go changes, c.go is added and calls nearCap, so
+	// that it reaches LexicalCommonMax, a.go is deleted, r.go is renamed to
+	// s.go, whose vector is reused, and two of sharedHelper's chunks change,
+	// so that it falls under.
 	step := f.run(IndexModeIncremental, "running")
-	f.insert(step, map[string]string{"b.go": "func renewLease() {}", "c.go": "func dropLease() {}"})
-	f.in(func(tx pgx.Tx) error {
-		return AdvanceGeneration(ctx, tx, repo, Generation{ID: full, Commit: "A"}, step, "B", []string{"b.go", "c.go"})
-	})
-	if n := f.postings(step); n != 0 || f.held(full) != 3 {
-		t.Fatalf("advanced: %d postings left under the step, %d chunks held; want none, and 3", n, f.held(full))
+	if reused := f.insert(step, full, map[string]string{
+		"b.go": "func renewLease() {}", "c.go": "func dropLease() { nearCap() }", "s.go": "func renamedLease() {}",
+		"shared/s000.go": "func otherHelper() {}", "shared/s001.go": "func otherHelper() {}",
+	}); reused != 1 {
+		t.Fatalf("the step reused %d vectors, want s.go's", reused)
 	}
-	if got := fmt.Sprint(f.found(full, "renewlease"), f.found(full, "releaselease")); got != "[b.go] []" {
-		t.Fatalf("after the step, renewLease and releaseLease are found in %s, want [b.go] []", got)
+	if n := f.rows(step); n != 0 {
+		t.Fatalf("an incremental step holds %d postings before it publishes, want none", n)
+	}
+	f.in(func(tx pgx.Tx) error {
+		return AdvanceGeneration(ctx, tx, f.repo, Generation{ID: full, Commit: "A"}, step, "B",
+			[]string{"a.go", "b.go", "c.go", "r.go", "s.go", "shared/s000.go", "shared/s001.go"})
+	})
+	if n := f.postings(full); f.rows(step) != 0 || f.chunks(step) != 0 || n == 0 || f.held(full) != len(chunks) {
+		t.Fatalf("advanced: %d postings and %d chunks left under the step, %d chunks held; want none, none, and %d",
+			f.rows(step), f.chunks(step), f.held(full), len(chunks))
+	}
+	found = searchesMatch(t, s, f.account, full, "acquirelease")
+	if got := fmt.Sprintf("%v%v%v%v %s %s", found["renewlease"], found["releaselease"], found["acquirelease"], found["renamedlease"],
+		paths(found["sharedhelper"]), paths(found["nearcap"])); got != fmt.Sprintf("[b.go][][][s.go] %d from shared/s002.go none",
+		LexicalCommonMax-1) {
+		t.Fatalf("after the step, renewLease, releaseLease, acquireLease, renamedLease, sharedHelper and nearCap are found in %s", got)
 	}
 
-	failed := f.run(IndexModeFull, "failed")
-	f.insert(failed, map[string]string{"d.go": "func failedLease() {}"})
+	// Another step: the list of the word listed again loses a chunk, and
+	// nearCap falls under again as c.go is deleted.
+	again := f.run(IndexModeIncremental, "running")
+	f.insert(again, full, map[string]string{"shared/s002.go": "func otherHelper() {}"})
 	f.in(func(tx pgx.Tx) error {
-		return ClearIndexStaging(ctx, tx, failed, "00000000-0000-0000-0000-000000000000")
+		return AdvanceGeneration(ctx, tx, f.repo, Generation{ID: full, Commit: "B"}, again, "C", []string{"c.go", "shared/s002.go"})
 	})
-	if n := f.postings(failed); n != 0 {
-		t.Fatalf("cleared run: %d postings, want none", n)
+	f.postings(full)
+	found = searchesMatch(t, s, f.account, full)
+	if got := fmt.Sprintf("%s %s %v", paths(found["sharedhelper"]), paths(found["nearcap"]), found["droplease"]); got !=
+		fmt.Sprintf("%d from shared/s003.go %d from near/n000.go []", LexicalCommonMax-2, LexicalCommonMax-1) {
+		t.Fatalf("after another step, sharedHelper, nearCap and dropLease are found in %s", got)
 	}
 
+	postingsDropped(t, f, full)
+}
+
+// postingsDropped checks that each path that drops the chunks of a run, or of
+// the fixture's active generation, full, drops its postings.
+func postingsDropped(t *testing.T, f postingsFixture, full string) {
+	s, ctx := f.s, t.Context()
+	// A run whose progress is discarded.
+	failed := f.run(IndexModeFull, "running")
+	f.insert(failed, full, map[string]string{"d.go": "func failedLease() {}"})
+	f.in(func(tx pgx.Tx) error {
+		return DiscardIndexProgress(ctx, tx, failed, "00000000-0000-0000-0000-000000000000")
+	})
+	if n := f.postings(failed); n != 0 || f.chunks(failed) != 0 {
+		t.Fatalf("discarded run: %d postings and %d chunks, want none", n, f.chunks(failed))
+	}
+
+	// A run that a job left behind, which the next run's start drops.
 	stray := f.run(IndexModeFull, "failed")
-	f.insert(stray, map[string]string{"e.go": "func strayLease() {}"})
+	f.insert(stray, full, map[string]string{"e.go": "func strayLease() {}"})
 	f.in(func(tx pgx.Tx) error {
-		_, runner, err := StartIndexRun(ctx, tx, NewIndexRun{AccountID: account, RepositoryID: repo, Commit: "C", Mode: IndexModeFull,
+		_, runner, err := StartIndexRun(ctx, tx, NewIndexRun{AccountID: f.account, RepositoryID: f.repo, Commit: "C", Mode: IndexModeFull,
 			Embedding: configfile.Embedding{Model: "test-embed", Dims: 8}})
 		if err != nil {
 			return err
@@ -163,33 +359,132 @@ func TestIndexPostingsFollowChunks(t *testing.T) {
 		_, err = tx.Exec(ctx, `UPDATE runner_runs SET finished_at = now() WHERE id = $1`, runner)
 		return err
 	})
-	if n := f.postings(stray); n != 0 {
-		t.Fatalf("stray run: %d postings, want none", n)
+	if n := f.postings(stray); n != 0 || f.chunks(stray) != 0 {
+		t.Fatalf("stray run: %d postings and %d chunks, want none", n, f.chunks(stray))
 	}
 
+	// A full build that supersedes the generation.
 	rebuild := f.run(IndexModeFull, "running")
-	f.insert(rebuild, map[string]string{"f.go": "func rebuiltLease() {}"})
-	f.in(func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repo, rebuild) })
-	if n := f.postings(full); n != 0 || f.postings(rebuild) == 0 || f.held(rebuild) != 1 {
-		t.Fatalf("superseded: %d postings left, %d chunks held by the new generation; want none, and 1", n, f.held(rebuild))
+	f.insert(rebuild, full, map[string]string{"f.go": "func rebuiltLease() {}"})
+	f.publish(rebuild)
+	if n := f.postings(full); n != 0 || f.chunks(full) != 0 || f.postings(rebuild) == 0 || f.held(rebuild) != 1 {
+		t.Fatalf("superseded: %d postings and %d chunks left, %d chunks held by the new generation; want none, none, and 1",
+			n, f.chunks(full), f.held(rebuild))
+	}
+	if found := searchesMatch(t, s, f.account, rebuild, "renewlease"); fmt.Sprintf("%v%v", found["rebuiltlease"], found["renewlease"]) != "[f.go][]" {
+		t.Fatalf("the new generation's rebuiltLease and renewLease are found in %v and %v", found["rebuiltlease"], found["renewlease"])
 	}
 
+	// A repository that stopped running, whose index the sweep drops.
 	for range 2 {
 		if _, err := s.SweepStoppedIndexes(ctx, 0, func(string, configfile.RepoTraits) bool { return false }); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if n := f.postings(rebuild); n != 0 {
-		t.Fatalf("stopped repository's generation: %d postings, want none", n)
+	if n := f.postings(rebuild); n != 0 || f.chunks(rebuild) != 0 {
+		t.Fatalf("stopped repository's generation: %d postings and %d chunks, want none", n, f.chunks(rebuild))
 	}
 
+	// A rebuild of index_chunks for another embedder.
 	last := f.run(IndexModeFull, "running")
-	f.insert(last, map[string]string{"g.go": "func lastLease() {}"})
+	f.insert(last, "", map[string]string{"g.go": "func lastLease() {}"})
+	f.publish(last)
+	if n := f.postings(last); n == 0 {
+		t.Fatal("the last generation has no postings")
+	}
 	if rebuilt, err := s.EnsureIndexSchema(ctx, "kritika_app", "other-embed", 8, ""); err != nil || !rebuilt {
 		t.Fatalf("EnsureIndexSchema for another embedder = %v, %v; want a rebuild", rebuilt, err)
 	}
 	if n := f.postings(last); n != 0 {
 		t.Fatalf("after a rebuild for another embedder: %d postings, want none", n)
+	}
+}
+
+// commonGeneration builds a generation of the fixture's repository whose
+// chunks all hold commonWord, and one of them rareWord, published when
+// publish is set.
+func commonGeneration(f postingsFixture, publish bool) string {
+	f.t.Helper()
+	run := f.run(IndexModeFull, "running")
+	chunks := map[string]string{"rare.go": "func commonWord() { rareWord() }"}
+	for i := range LexicalCommonMax - 1 {
+		chunks[fmt.Sprintf("c%03d.go", i)] = "func commonWord() {}"
+	}
+	f.insert(run, "", chunks)
+	if publish {
+		f.publish(run)
+	}
+	return run
+}
+
+// TestIndexPostingsWrittenAtPublication: a run's postings are written as it
+// publishes, a row of each word, and not as its chunks are embedded, so that
+// a run that does not publish costs none.
+func TestIndexPostingsWrittenAtPublication(t *testing.T) {
+	s := openStore(t)
+	f := newPostingsFixture(t, s, "postings-publish")
+	run := commonGeneration(f, false)
+	var rows, words int
+	count := func() {
+		t.Helper()
+		if err := s.owner.QueryRow(t.Context(), `SELECT count(*), count(DISTINCT lexeme) FROM index_postings WHERE index_run_id = $1`, run).
+			Scan(&rows, &words); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count(); rows != 0 {
+		t.Fatalf("a run holds %d postings before it publishes, want none", rows)
+	}
+	f.publish(run)
+	if count(); rows == 0 || rows != words {
+		t.Fatalf("a published run holds %d postings of %d words, want a row of each word", rows, words)
+	}
+}
+
+// TestIndexPostingsCountCommonWords: a word in LexicalCommonMax of a
+// generation's chunks, which no search reads, has a row of its count alone.
+func TestIndexPostingsCountCommonWords(t *testing.T) {
+	s := openStore(t)
+	f := newPostingsFixture(t, s, "postings-common")
+	run := commonGeneration(f, true)
+	var rows int
+	if err := s.owner.QueryRow(t.Context(), `SELECT count(*) FROM index_postings WHERE index_run_id = $1 AND lexeme = 'commonword'`, run).
+		Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("a word in %d chunks has %d rows of postings, want one", LexicalCommonMax, rows)
+	}
+	var chunks int
+	var listed bool
+	if err := s.owner.QueryRow(t.Context(), `SELECT chunks, chunk_ids IS NOT NULL FROM index_postings
+		WHERE index_run_id = $1 AND lexeme = 'commonword'`, run).Scan(&chunks, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if chunks != LexicalCommonMax || listed {
+		t.Fatalf("the common word's row counts %d chunks and lists them %v, want %d and not", chunks, listed, LexicalCommonMax)
+	}
+}
+
+// TestLexicalChunksCommonMax: a word in LexicalCommonMax of a generation's
+// chunks is too common to search for, whatever bar the caller sets.
+func TestLexicalChunksCommonMax(t *testing.T) {
+	s := openStore(t)
+	f := newPostingsFixture(t, s, "postings-cap")
+	run := commonGeneration(f, true)
+	var found []string
+	f.in(func(tx pgx.Tx) error {
+		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "commonword", Compound: true}, {Lexeme: "rareword", Compound: true}},
+			Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+		hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, nil, 1000, func(chunks int) int { return 2 * chunks }, 1000)
+		for _, h := range hits {
+			found = append(found, fmt.Sprint(h.Chunk.Path, h.Matched))
+		}
+		return err
+	})
+	if !slices.Equal(found, []string{"rare.go[rareword]"}) {
+		t.Fatalf("a search with a bar over %d found %d chunks, such as %q; want rare.go by rareWord alone",
+			LexicalCommonMax, len(found), found[:min(len(found), 3)])
 	}
 }
 

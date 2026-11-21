@@ -450,25 +450,31 @@ table is partitioned:
   the partition of its generation and that partition's index alone, about
   1/64 of the table.
 - The [search by name](/models/#search-by-name) reads `index_postings`, which
-  holds a row for each word of each chunk, its posting, under the key
-  generation, word and chunk. A search reads each of its words' postings
-  from that B-tree, up to the count at which the word is too common to
-  search for, and then reads from the generation's partition only the chunks
-  it ranks and those of the paths it leaves out. Under row-level security a
-  B-tree of text and `uuid` equality, which are leakproof, serves the
-  search, where no index of a full-text `tsvector` could: Postgres applies
-  the full-text match operator, `@@`, which is not leakproof, only to the
-  rows that the policy has let through. The key holds `account_id`, which
-  the policy reads, so the search can answer from the index alone.
+  holds a row for each word of a generation's chunks under the key
+  generation and word: how many of the chunks hold the word and, while
+  fewer than 200 do, which. A word in 200 chunks or more is too common for
+  any search to read, so its row keeps the count alone. A search reads each
+  of its words' rows from that B-tree, and then reads from the generation's
+  partition only the chunks it ranks and those of the paths it leaves out.
+  Under row-level security a B-tree of text equality, which is leakproof,
+  serves the search, where no index of a full-text `tsvector` could:
+  Postgres applies the full-text match operator, `@@`, which is not
+  leakproof, only to the rows that the policy has let through.
   `index_postings` is not partitioned: its key starts with the generation,
   so a search and a generation's deletion already read that generation's
-  postings alone. It has no foreign keys, whose check of each posting would
-  cost a build more than writing it. Every path that deletes or moves a
-  generation's chunks does the same to their postings. This repository's
-  code gives about 48 postings a chunk: 85 MB of postings, with their key,
-  for 9,605 chunks that took 49 MB with vectors of 256 dimensions. Each
-  publication records how many chunks its generation holds
-  (`index_runs.generation_chunks`), which the search weighs words against.
+  rows alone.
+- A full build's publication writes its generation's postings in one
+  statement, from the words that each chunk records (`index_chunks.lexemes`).
+  An incremental step's publication updates the rows of the words of the
+  chunks it replaces and adds, and lists a word's chunks again, from the
+  generation's chunks that hold it, when it falls back under 200. A run that
+  does not publish writes none, and every path that deletes a generation's
+  chunks deletes its postings. This repository's code holds about 50 words a
+  chunk, but about 23,000 words in all: 7.4 MB of postings for 10,000 of its
+  chunks, where a row for each word of each chunk took 95 MB. Its 9,605
+  chunks took 49 MB with vectors of 256 dimensions. Each publication records
+  how many chunks its generation holds (`index_runs.generation_chunks`),
+  which the search weighs words against.
 
 The application role is granted `index_chunks` alone, and its row-level
 security policy applies to every partition read through it. The role cannot

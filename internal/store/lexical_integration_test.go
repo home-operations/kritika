@@ -57,7 +57,10 @@ func TestLexicalChunks(t *testing.T) {
 			vectors = append(vectors, vec)
 		}
 		if err := s.WithAccount(ctx, id, func(tx pgx.Tx) error {
-			return InsertIndexChunks(ctx, tx, id, repo, run, chunks, vectors)
+			if err := InsertIndexChunks(ctx, tx, id, repo, run, chunks, vectors); err != nil {
+				return err
+			}
+			return ActivateGeneration(ctx, tx, repo, run)
 		}); err != nil {
 			t.Fatal(err)
 		}

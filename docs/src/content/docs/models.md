@@ -827,11 +827,12 @@ The search by name runs within five seconds, after the vector search. If it
 fails, the request is answered by the vector search alone, and
 `kritika_lexical_search_seconds` counts the failure.
 
-Each word of each chunk is stored as a posting: a row of `index_postings`
-whose key starts with the generation and the word. A request's queries are
-searched for together, and each of their words reads its chunks, and how
-many there are, from that key alone, so a search costs about the same
-however large the repository. See [the similar-code
+The words of a generation's chunks are stored as postings: a row of
+`index_postings` for each word, under the key generation and word, that
+counts the chunks holding it and lists them while fewer than 200 do. A
+request's queries are searched for together, and each of their words reads
+its chunks, and how many there are, from its row alone, so a search costs
+about the same however large the repository. See [the similar-code
 index](/database/#the-similar-code-index). No extension beyond VectorChord is
 needed. A generation built by a release before postings is searched by
 vector alone until the onboarding feeder rebuilds it, as it rebuilds every

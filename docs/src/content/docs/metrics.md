@@ -546,25 +546,40 @@ KRITIKA_LEXICAL_SCALE_CHUNKS=10000,100000 mise run test-integration -- \
 ```
 
 Its code is synthetic: thirty lines of five identifiers a chunk, each of one to
-three parts drawn by a Zipf law from 4,000 words, which gives about 250
-postings a chunk, five times what this repository's code gives. Each of 30
-requests holds twelve queries of the 32 longest words of eight such lines, as a
-review's similar-code stage sends. It reports the p50 and p95 latency of a
-request, and how long the chunks took to insert, postings included.
+three parts drawn by a Zipf law from 4,000 words, which gives about 250 words
+a chunk, five times what this repository's code gives, and far more distinct
+words than real code. With `KRITIKA_LEXICAL_SCALE_TREE` set to a repository's
+path, the chunks are those of its HEAD, as an index build makes them, repeated
+under a prefix of each copy until there are enough. Each of 30 requests holds
+twelve queries of the 32 longest words of eight lines, as a review's
+similar-code stage sends. It reports the p50 and p95 latency of a request, how
+long the chunks took to insert and the generation to publish, which writes its
+postings, the size of the postings and of the chunks with their indexes (with
+vectors of 16 dimensions), and the median time to publish five incremental
+steps of ten changed paths each.
 
 On 2026-11-20, on the machine above, with the integration task's images and
 Postgres run with `shared_buffers=1GB`, `work_mem=64MB` and
-`max_wal_size=4GB`, and the race detector off:
+`max_wal_size=4GB`, and the race detector off, for synthetic code and for this
+repository's tree:
 
-| Chunks  | Before postings: p50 / p95 ms | With postings: p50 / p95 ms | Insert before / with postings |
-| ------- | ----------------------------- | --------------------------- | ----------------------------- |
-| 10,000  | 298.9 / 311.7                 | 30.6 / 35.2                 | 2.1 s / 8.3 s                 |
-| 100,000 | 2,875 / 2,959                 | 29.4 / 35.4                 | 21 s / 126 s                  |
+| Code       | Chunks  | p50 / p95 ms | Insert | Publish | Step  | Postings | Chunks |
+| ---------- | ------- | ------------ | ------ | ------- | ----- | -------- | ------ |
+| synthetic  | 10,000  | 5.1 / 8.3    | 1.9 s  | 1.7 s   | 25 ms | 116 MB   | 96 MB  |
+| synthetic  | 100,000 | 8.6 / 10.9   | 21 s   | 18 s    | 52 ms | 872 MB   | 716 MB |
+| repository | 10,000  | 3.6 / 5.3    | 0.6 s  | 0.2 s   | 31 ms | 7.4 MB   | 43 MB  |
+| repository | 100,000 | 4.1 / 5.4    | 5.5 s  | 1.0 s   | 65 ms | 15.9 MB  | 196 MB |
 
-Before postings, the search read every word of the generation's chunks for
-each request, so its time grew with the generation. With them, it reads each
-query word's postings, at most the count at which a word is too common to
-search for, so its time follows the queries rather than the generation.
+With a row of postings for each word of each chunk, written as each batch of
+chunks was inserted, the same benchmark took 25.3 / 28.9 ms, 152 s to insert
+and 5.2 GB of postings at 100,000 synthetic chunks, and 30.5 / 40.7 ms, 23 s
+and 938 MB at 100,000 of this repository's. Before postings, the search read
+every word of the generation's chunks for each request, and took 2.9 s at
+100,000 synthetic chunks. A row of each word keeps a search to its words' rows,
+so its time follows the queries rather than the generation, and costs about
+what the generation's distinct words do. Of this repository's 4.9 million
+words of 100,000 chunks, 85% are of words in 200 chunks or more, which no
+search reads and whose rows count them alone.
 
 ## Review completion timings
 

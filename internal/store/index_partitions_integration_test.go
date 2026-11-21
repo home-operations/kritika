@@ -85,7 +85,7 @@ func dropIndexChunks(t *testing.T, s *Store) {
 	})
 }
 
-// partitionRun records a completed generation of the repository, active
+// partitionRun records a completed generation of the repository, published
 // when active is set, with a chunk at each path, its vector the path's index
 // along the first axis.
 func partitionRun(t *testing.T, s *Store, account, repo string, active bool, paths ...string) string {
@@ -107,8 +107,7 @@ func partitionRun(t *testing.T, s *Store, account, repo string, active bool, pat
 			return err
 		}
 		if active {
-			_, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repo, run)
-			return err
+			return ActivateGeneration(ctx, tx, repo, run)
 		}
 		return nil
 	}); err != nil {
@@ -624,6 +623,10 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	if got := lexicalPaths(t, s, account, runOne); strings.Join(got, ",") != "a.go,b.go" {
 		t.Fatalf("search by name of the legacy generation found %v, want a.go,b.go", got)
 	}
+	for _, run := range []string{runOne, runTwo} {
+		checkPostings(t, s, run)
+		searchesMatch(t, s, account, run)
+	}
 	appDenied(t, s, account, "index_chunks_legacy")
 	added := partitionRun(t, s, account, two, false, "d.go")
 	if parts := chunkPartitions(t, s, added); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
@@ -649,6 +652,11 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 		if parts := chunkPartitions(t, s, run); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
 			t.Fatalf("generation %s is in %v after the drain, want a hash partition", run, parts)
 		}
+	}
+	// The moved chunks keep their ids, and so their postings.
+	for _, run := range []string{runOne, runTwo} {
+		checkPostings(t, s, run)
+		searchesMatch(t, s, account, run)
 	}
 	if parts := chunkPartitions(t, s, stray); len(parts) != 0 {
 		t.Fatalf("an inactive generation is in %v after the drain, want it deleted", parts)
@@ -690,6 +698,8 @@ func checkSearchAfterLegacyDrop(t *testing.T, s *Store, account, repository, run
 	if plan := lexicalPlan(t, s, account, runOne); len(partitionsRead(plan)) != 1 {
 		t.Fatalf("the search by name after the drain read %v, not one partition alone:\n%s", partitionsRead(plan), strings.Join(plan, "\n"))
 	}
+	checkPostings(t, s, runOne)
+	searchesMatch(t, s, account, runOne)
 	checkFreshLayout(t, s)
 	// A chunk created before the dropped partition's bound, as by a database
 	// clock that stepped back, still has a partition.

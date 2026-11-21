@@ -1,7 +1,8 @@
 // Package lexical turns code, and queries about it, into the words that the
 // similar-code index matches by name. Postgres's text-search parsers split
 // code where it is not split and stem what must match exactly, so the words
-// are made here and stored as they are, each in a posting (index_postings).
+// are made here and stored as they are, with the chunks that hold each
+// (index_postings).
 //
 // An identifier gives its whole self and each of its parts, split at its
 // case changes, underscores, hyphens and digits, all lowercased:

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -18,12 +19,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/lexical"
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -650,12 +653,79 @@ func lexicalScaleWords(rng *rand.Rand) []string {
 	return out
 }
 
+// lexicalScaleSteps is how many incremental steps BenchmarkLexicalScale
+// publishes, each of lexicalScaleStepPaths changed paths, after the
+// searches.
+const (
+	lexicalScaleSteps     = 5
+	lexicalScaleStepPaths = 10
+)
+
+// lexicalScaleCorpus is the chunks of a generation of size chunks and the
+// texts of its queries. With tree, a repository's path, the chunks are those
+// of its HEAD's tree, as an index build makes them, repeated under a prefix
+// of each copy until there are size, and each query is lines of one of them.
+// Without it, they are synthetic code.
+func lexicalScaleCorpus(b testing.TB, rng *rand.Rand, tree string, size int) (chunks []StagedChunk, queries []string) {
+	if tree == "" {
+		words := lexicalScaleWords(rng)
+		zipf := rand.NewZipf(rng, 1.1, 1, lexicalScaleParts-1)
+		for i := range size {
+			chunks = append(chunks, StagedChunk{Path: fmt.Sprintf("pkg%d/file%d.go", i/50, i), StartLine: 1,
+				EndLine: lexicalScaleLines, Language: "go", Text: lexicalScaleText(rng, zipf, words, lexicalScaleLines)})
+		}
+		for range lexicalScaleRequests * lexicalScaleQueries {
+			queries = append(queries, lexicalScaleText(rng, zipf, words, lexicalScaleQueryLines))
+		}
+		return chunks, queries
+	}
+	repo, err := git.PlainOpenWithOptions(tree, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		b.Fatal(err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		b.Fatal(err)
+	}
+	root, err := commit.Tree()
+	if err != nil {
+		b.Fatal(err)
+	}
+	built, _, _, err := indexer.Build(b.Context(), root, nil, configfile.DefaultIgnore, indexer.DefaultOptions)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; len(chunks) < size; i++ {
+		c := built[i%len(built)]
+		path := c.Path
+		if n := i / len(built); n > 0 {
+			path = fmt.Sprintf("copy%d/%s", n, path)
+		}
+		chunks = append(chunks, StagedChunk{Path: path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope,
+			Text: c.Text, StartLine: c.StartLine, EndLine: c.EndLine})
+	}
+	for range lexicalScaleRequests * lexicalScaleQueries {
+		lines := strings.Split(built[rng.IntN(len(built))].Text, "\n")
+		start := rng.IntN(max(1, len(lines)-lexicalScaleQueryLines))
+		queries = append(queries, strings.Join(lines[start:min(len(lines), start+lexicalScaleQueryLines)], "\n"))
+	}
+	return chunks, queries
+}
+
 // BenchmarkLexicalScale measures the search by name, LexicalChunks, over a
 // generation of each size of KRITIKA_LEXICAL_SCALE_CHUNKS (comma-separated
 // chunk counts, e.g. 10000,100000), with requests of twelve queries of up to
 // 32 terms each, as a review's similar-code stage sends. It reports the p50
-// and p95 latency of a request and how long the chunks took to insert. It is
-// opt-in: a hundred thousand chunks take minutes to load.
+// and p95 latency of a request, how long the chunks took to insert and the
+// generation to publish, which writes its postings, the size of the postings
+// and of the chunks with their indexes, and how long an incremental step of
+// ten changed paths took to publish. KRITIKA_LEXICAL_SCALE_TREE, a
+// repository's path, makes the chunks of its HEAD rather than synthetic
+// code. It is opt-in: a hundred thousand chunks take minutes to load.
 func BenchmarkLexicalScale(b *testing.B) {
 	sizes := os.Getenv("KRITIKA_LEXICAL_SCALE_CHUNKS")
 	if sizes == "" {
@@ -675,13 +745,6 @@ func BenchmarkLexicalScale(b *testing.B) {
 		b.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "lexical-scale")
-	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks;
-		DELETE FROM index_schema`); err != nil {
-		b.Fatal(err)
-	}
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "lexical-scale", lexicalScaleDims, ""); err != nil {
-		b.Fatal(err)
-	}
 	b.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
@@ -689,6 +752,7 @@ func BenchmarkLexicalScale(b *testing.B) {
 			`UPDATE repositories SET active_index_run_id = NULL WHERE account_id = $1`,
 			`DROP TABLE IF EXISTS index_chunks`,
 			`DELETE FROM index_schema`,
+			`TRUNCATE index_postings`,
 			`DELETE FROM index_runs WHERE account_id = $1`,
 			`DELETE FROM repositories WHERE account_id = $1`,
 		} {
@@ -702,8 +766,6 @@ func BenchmarkLexicalScale(b *testing.B) {
 		}
 	})
 	rng := rand.New(rand.NewPCG(2026, 11))
-	words := lexicalScaleWords(rng)
-	zipf := rand.NewZipf(rng, 1.1, 1, lexicalScaleParts-1)
 	vector := make([]float32, lexicalScaleDims)
 	vector[0] = 1
 	for field := range strings.SplitSeq(sizes, ",") {
@@ -712,58 +774,78 @@ func BenchmarkLexicalScale(b *testing.B) {
 			b.Fatalf("KRITIKA_LEXICAL_SCALE_CHUNKS: %q is not a positive integer", field)
 		}
 		b.Run(fmt.Sprintf("chunks=%d", size), func(b *testing.B) {
-			name := fmt.Sprintf("lexical-scale/repo-%d", size)
-			repo := configfile.RepositoryID(account.ID(), name)
-			var run string
-			if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, account.ID(), name); err != nil {
-					return err
-				}
-				return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-					VALUES ($1, $2, 'scale', 'lexical-scale', $3, 'full', 'completed') RETURNING id`, account.ID(), repo, lexicalScaleDims).Scan(&run)
-			}); err != nil {
+			// A table of this generation alone, so that its size is the
+			// generation's.
+			if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks;
+				DELETE FROM index_schema; TRUNCATE index_postings`); err != nil {
 				b.Fatal(err)
 			}
-			started := time.Now()
-			for start := 0; start < size; start += lexicalScaleInsertBatch {
-				n := min(lexicalScaleInsertBatch, size-start)
-				batch := make([]StagedChunk, n)
-				vectors := make([][]float32, n)
-				for i := range batch {
-					batch[i] = StagedChunk{Path: fmt.Sprintf("pkg%d/file%d.go", (start+i)/50, start+i), StartLine: 1,
-						EndLine: lexicalScaleLines, Language: "go", Text: lexicalScaleText(rng, zipf, words, lexicalScaleLines)}
-					vectors[i] = vector
-				}
+			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "lexical-scale", lexicalScaleDims, ""); err != nil {
+				b.Fatal(err)
+			}
+			chunks, texts := lexicalScaleCorpus(b, rng, os.Getenv("KRITIKA_LEXICAL_SCALE_TREE"), size)
+			name := fmt.Sprintf("lexical-scale/repo-%d", size)
+			repo := configfile.RepositoryID(account.ID(), name)
+			newRun := func(mode string) string {
+				var run string
 				if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-					return InsertIndexChunks(ctx, tx, account.ID(), repo, run, batch, vectors)
+					return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+						VALUES ($1, $2, 'scale', 'lexical-scale', $3, $4, 'completed') RETURNING id`, account.ID(), repo, lexicalScaleDims, mode).
+						Scan(&run)
 				}); err != nil {
 					b.Fatal(err)
 				}
+				return run
 			}
+			insert := func(run string, chunks []StagedChunk) {
+				for start := 0; start < len(chunks); start += lexicalScaleInsertBatch {
+					batch := chunks[start:min(len(chunks), start+lexicalScaleInsertBatch)]
+					vectors := make([][]float32, len(batch))
+					for i := range vectors {
+						vectors[i] = vector
+					}
+					if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+						return InsertIndexChunks(ctx, tx, account.ID(), repo, run, batch, vectors)
+					}); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+			if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, account.ID(), name); err != nil {
+				b.Fatal(err)
+			}
+			run := newRun(IndexModeFull)
+			started := time.Now()
+			insert(run, chunks)
+			inserted := time.Since(started)
+			started = time.Now()
 			if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repo, run) }); err != nil {
 				b.Fatal(err)
 			}
-			inserted := time.Since(started)
-			var postings int
-			if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, run).Scan(&postings); err != nil {
+			published := time.Since(started)
+			if _, err := s.owner.Exec(ctx, `VACUUM ANALYZE index_chunks, index_postings`); err != nil {
 				b.Fatal(err)
 			}
-			if _, err := s.owner.Exec(ctx, `VACUUM ANALYZE index_chunks`); err != nil {
+			var postings, postingsBytes, chunkBytes int64
+			if err := s.owner.QueryRow(ctx, `SELECT (SELECT sum(chunks) FROM index_postings WHERE index_run_id = $1),
+					pg_total_relation_size('index_postings'),
+					(SELECT sum(pg_total_relation_size(inhrelid)) FROM pg_inherits WHERE inhparent = 'index_chunks_current'::regclass)`,
+				run).Scan(&postings, &postingsBytes, &chunkBytes); err != nil {
 				b.Fatal(err)
 			}
 			requests := make([][]LexicalQuery, lexicalScaleRequests)
 			for r := range requests {
-				for range lexicalScaleQueries {
-					w := lexical.Words(lexicalScaleText(rng, zipf, words, lexicalScaleQueryLines))
+				for q := range lexicalScaleQueries {
+					w := lexical.Words(texts[r*lexicalScaleQueries+q])
 					slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
-					q := LexicalQuery{Vector: vector}
+					lq := LexicalQuery{Vector: vector}
 					for _, t := range w[:min(len(w), lexicalScaleQueryTerms)] {
-						q.Terms = append(q.Terms, LexicalTerm{Lexeme: t.Lexeme, Compound: t.Compound})
+						lq.Terms = append(lq.Terms, LexicalTerm{Lexeme: t.Lexeme, Compound: t.Compound})
 					}
-					requests[r] = append(requests[r], q)
+					requests[r] = append(requests[r], lq)
 				}
 			}
-			common := func(chunks int) int { return min(max(chunks/100, 20), 200) }
+			common := func(chunks int) int { return min(max(chunks/100, 20), LexicalCommonMax) }
 			var took []time.Duration
 			var hits int
 			for b.Loop() {
@@ -780,11 +862,44 @@ func BenchmarkLexicalScale(b *testing.B) {
 				}
 			}
 			slices.Sort(took)
+			// Incremental steps, each of a few changed paths, whose every
+			// chunk changes.
+			commit := "scale"
+			stepped := make([]time.Duration, 0, lexicalScaleSteps)
+			for i := range lexicalScaleSteps {
+				changed := map[string]bool{}
+				for len(changed) < lexicalScaleStepPaths {
+					changed[chunks[rng.IntN(len(chunks))].Path] = true
+				}
+				var batch []StagedChunk
+				for _, c := range chunks {
+					if changed[c.Path] {
+						c.Text += fmt.Sprintf("\nfunc steppedHelper%d() {}\n", i)
+						batch = append(batch, c)
+					}
+				}
+				step := newRun(IndexModeIncremental)
+				insert(step, batch)
+				next := fmt.Sprintf("step-%d", i)
+				began := time.Now()
+				if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+					return AdvanceGeneration(ctx, tx, repo, Generation{ID: run, Commit: commit}, step, next, slices.Collect(maps.Keys(changed)))
+				}); err != nil {
+					b.Fatal(err)
+				}
+				stepped = append(stepped, time.Since(began))
+				commit = next
+			}
+			slices.Sort(stepped)
 			b.ReportMetric(ms(percentile(took, 0.5)), "p50-ms")
 			b.ReportMetric(ms(percentile(took, 0.95)), "p95-ms")
 			b.ReportMetric(float64(hits)/float64(len(took)), "hits/request")
 			b.ReportMetric(inserted.Seconds(), "insert-s")
+			b.ReportMetric(published.Seconds(), "publish-s")
+			b.ReportMetric(ms(percentile(stepped, 0.5)), "step-ms")
 			b.ReportMetric(float64(postings)/float64(size), "postings/chunk")
+			b.ReportMetric(float64(postingsBytes)/1e6, "postings-MB")
+			b.ReportMetric(float64(chunkBytes)/1e6, "chunks-MB")
 		})
 	}
 }
