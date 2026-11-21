@@ -293,11 +293,14 @@ func (f *tipForge) BranchTip(context.Context, string, string, string) (string, s
 // recordingDispatcher records the events a poll dispatches.
 type recordingDispatcher struct {
 	ingest.Dispatcher
+	mu     sync.Mutex
 	events []webhook.Event
 }
 
 func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) (ingest.Outcome, error) {
+	d.mu.Lock()
 	d.events = append(d.events, req.Event)
+	d.mu.Unlock()
 	return d.Dispatcher.Dispatch(ctx, req)
 }
 
@@ -672,23 +675,31 @@ func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	}
 }
 
-// stallTipForge looks up no branch before its context ends, and lists a
-// pull request of home-ops alone.
-type stallTipForge struct{ tipForge }
+// stallTipForge looks up no branch until the test releases it, whatever its
+// context, as a forge that never answers. It lists a pull request of
+// home-ops alone, and counts the listings of home-ops.
+type stallTipForge struct {
+	tipForge
+	entered, release chan struct{}
+	enter            sync.Once
+	listed           atomic.Int32
+}
 
-func (*stallTipForge) BranchTip(ctx context.Context, _, _, _ string) (string, string, error) {
-	<-ctx.Done()
-	return "", "", ctx.Err()
+func (f *stallTipForge) BranchTip(context.Context, string, string, string) (string, string, error) {
+	f.enter.Do(func() { close(f.entered) })
+	<-f.release
+	return "", "", errors.New("stalled")
 }
 
 func (*stallTipForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
 	return nil, nil
 }
 
-func (*stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ time.Time) ([]forge.OpenPullRequest, error) {
+func (f *stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ time.Time) ([]forge.OpenPullRequest, error) {
 	if name != "home-ops" {
 		return nil, nil
 	}
+	f.listed.Add(1)
 	return []forge.OpenPullRequest{{
 		Number: 19, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "h", HeadSHA: "abc919", BaseRef: "main",
 		UpdatedAt: time.Now(), DefaultBranch: "main",
@@ -696,15 +707,38 @@ func (*stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ 
 }
 
 // TestPollerPollsPullRequestsPastAStalledBranch: a branch lookup that does
-// not answer within the poll's interval holds back no pull request, of a
-// later repository either, and the poll state still advances.
+// not answer holds back no pull request, of a later repository either, and
+// the poll state still advances. The next poll starts on its interval while
+// the lookup still hangs.
 func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
 	t.Setenv("KRITIKA_POLL_INTERVAL", "300ms")
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
 	s.exec(`DELETE FROM poll_state WHERE account_id = $1`, s.account.ID())
 	s.exec(`DELETE FROM pull_requests WHERE number = 19`)
-	s.p.Forges = &forges{f: &stallTipForge{}}
-	s.p.poll(t.Context(), s.p.pollAccounts)
+	f := &stallTipForge{entered: make(chan struct{}), release: make(chan struct{})}
+	s.p.Forges = &forges{f: f}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.p.Run(ctx)
+	}()
+	var stop sync.Once
+	end := func() {
+		stop.Do(func() {
+			close(f.release)
+			cancel()
+			<-done
+		})
+	}
+	defer end()
+	select {
+	case <-f.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no branch was looked up within 10s of the poller starting")
+	}
+	waitUntil(t, "second poll of the pull requests while the branch lookup hangs", func() bool { return f.listed.Load() >= 2 })
+	end()
 	var polled []int
 	for _, ev := range s.dispatched.events {
 		if ev.Kind == webhook.KindPullRequest && ev.Repository.FullName == "onedr0p/home-ops" {
@@ -717,8 +751,20 @@ func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(polled, []int{19}) || !recorded {
-		t.Fatalf("pull requests of home-ops polled %v, poll state recorded %v; want #19 and the state recorded", polled, recorded)
+	if len(polled) < 2 || slices.ContainsFunc(polled, func(n int) bool { return n != 19 }) || !recorded {
+		t.Fatalf("pull requests of home-ops polled %v, poll state recorded %v; want #19 at each poll and the state recorded", polled, recorded)
+	}
+}
+
+// waitUntil fails the test unless cond holds within 10s.
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("no %s within 10s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

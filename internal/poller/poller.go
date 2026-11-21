@@ -72,9 +72,9 @@ type tipScan struct {
 	until time.Time
 }
 
-// tipCheckInterval is how often a poll looks at the default branches of an
+// tipCheckInterval is how often runTips looks at the default branches of an
 // account whose connection's webhooks arrive. A look costs one request per
-// indexed repository: every poll, it would double what polling costs a
+// indexed repository: at every interval, it would double what polling costs a
 // GitHub App installation, and a missed push webhook is rare while the rest
 // arrive.
 const tipCheckInterval = time.Hour
@@ -97,11 +97,14 @@ const reachTimeout = time.Minute
 //
 // A poll is given the interval. A poll that outlasts it, on a forge that
 // answers slowly for every repository of a large account, is cut there. Its
-// accounts' poll state is left where it was for the next poll. The look at
-// the default branches follows, with an interval of its own: a slow branch
-// lookup must not hold back the pull requests' catch-up. A look cut short
-// resumes where it stopped at the next poll.
+// accounts' poll state is left where it was for the next poll. The looks at
+// the default branches run beside the polls, on a schedule of their own, so
+// that neither a slow branch lookup nor a slow listing delays the other's
+// next start. Run returns once both have stopped.
 func (p *Poller) Run(ctx context.Context) {
+	var tips sync.WaitGroup
+	defer tips.Wait()
+	tips.Go(func() { p.runTips(ctx) })
 	p.poll(ctx, p.pollAccounts)
 	for {
 		t := time.NewTimer(cmp.Or(p.Current.Get().PollInterval(), pollOffRecheck))
@@ -128,11 +131,30 @@ func (p *Poller) poll(ctx context.Context, poll func(context.Context)) {
 	if pctx.Err() != nil && ctx.Err() == nil {
 		p.Logger.Warn("poll cut at its interval", "interval", interval)
 	}
-	tctx, cancelTips := context.WithTimeout(ctx, interval)
-	defer cancelTips()
-	p.pollTipsAll(tctx)
-	if tctx.Err() != nil && ctx.Err() == nil {
-		p.Logger.Warn("default branches not all looked at within the poll interval, the next poll resumes", "interval", interval)
+}
+
+// runTips looks at the default branches until ctx ends: once as it starts,
+// then an interval after each look started, with the interval current at
+// the time. A look is cut at its interval, so one look ends before the
+// next starts. It looks at none while polling is off.
+func (p *Poller) runTips(ctx context.Context) {
+	for {
+		started := time.Now()
+		if interval := p.Current.Get().PollInterval(); interval > 0 {
+			tctx, cancel := context.WithTimeout(ctx, interval)
+			p.pollTipsAll(tctx)
+			cancel()
+			if tctx.Err() != nil && ctx.Err() == nil {
+				p.Logger.Warn("default branches not all looked at within the poll interval, the next look resumes", "interval", interval)
+			}
+		}
+		t := time.NewTimer(cmp.Or(p.Current.Get().PollInterval(), pollOffRecheck) - time.Since(started))
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
 	}
 }
 
@@ -481,8 +503,8 @@ func (p *Poller) pollTipsAll(ctx context.Context) {
 // pollTips looks at the default branch of each of the account's indexed
 // repositories with no index job queued or running, whatever webhooks
 // arrive: one push webhook missed, or one index job that failed, leaves the
-// index behind until the next push otherwise. It looks every poll while the
-// connection's webhooks have been silent for the poll lookback, and every
+// index behind until the next push otherwise. It looks at every interval while
+// the connection's webhooks have been silent for the poll lookback, and every
 // tipCheckInterval while they arrive. A repository whose last index job
 // ended without moving its index waits jobs.OnboardRetryAfter for its next
 // look, as the onboarding feeder waits to offer a repository whose first
@@ -491,7 +513,7 @@ func (p *Poller) pollTipsAll(ctx context.Context) {
 //
 // The repositories are looked at in name order. A look that ctx or the
 // forge's rate limit cuts short resumes at the repository it stopped at, at
-// the next poll past the limit's wait. Only a look that went through every
+// the next look past the limit's wait. Only a look that went through every
 // repository counts toward tipCheckInterval. So a cut every time still comes
 // round to each repository.
 func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
@@ -563,7 +585,7 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 	return nil
 }
 
-// tipsDue reports whether this poll looks at the account's default branches,
+// tipsDue reports whether this look asks for the account's default branches,
 // and the repository to start at, "" for the first. It looks when a look was
 // cut short, past any rate limit's wait. It also looks when the connection's
 // webhook, which last delivered at delivered, has been silent for lookback,
