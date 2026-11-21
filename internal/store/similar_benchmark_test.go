@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -261,6 +262,10 @@ func reportSimilarBenchmark(b *testing.B, s *Store, account string, paths []stri
 	return Exclusions{Run: runner}
 }
 
+// errNoVectorIndex is annPlan's refusal of a plan it read and found to
+// scan no VectorChord index, told apart from a plan it failed to read.
+var errNoVectorIndex = errors.New("the approximate search read no vchordrq index, so its recall would be an exact scan's")
+
 // annPlan returns an error unless the application's search of generation
 // run for q reads a VectorChord index, so that the recall measured against
 // an exact scan is the approximate search's and not another exact one's.
@@ -282,7 +287,7 @@ func annPlan(ctx context.Context, tx pgx.Tx, run string, q []float32, exclude Ex
 		return err
 	}
 	if !vector {
-		return fmt.Errorf("the approximate search read no vchordrq index, so its recall would be an exact scan's: %s", plan)
+		return fmt.Errorf("%w: %s", errNoVectorIndex, plan)
 	}
 	return nil
 }

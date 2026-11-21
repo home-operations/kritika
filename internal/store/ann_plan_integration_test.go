@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -70,8 +71,12 @@ func TestANNPlan(t *testing.T) {
 				if _, err := tx.Exec(ctx, tt.session); err != nil {
 					return err
 				}
-				if err := annPlan(ctx, tx, run, q, Exclusions{Run: runner}); (err == nil) != tt.ann {
-					t.Errorf("annPlan = %v, want an error %v", err, !tt.ann)
+				err := annPlan(ctx, tx, run, q, Exclusions{Run: runner})
+				if tt.ann && err != nil {
+					t.Errorf("annPlan = %v, want nil", err)
+				}
+				if !tt.ann && !errors.Is(err, errNoVectorIndex) {
+					t.Errorf("annPlan = %v, want %v", err, errNoVectorIndex)
 				}
 				return nil
 			}); err != nil {
