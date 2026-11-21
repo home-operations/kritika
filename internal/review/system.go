@@ -159,8 +159,8 @@ const agenticSearch = `
 
 You can also search the repository by meaning with search_code, for what grep cannot find by name. It searches an
 index of the default branch, so it can miss code newer than the index, and it returns only snippets the head still
-has, at their lines in the head. A match is similar only by an embedding's measure and can be unrelated to what you
-look for.`
+has, at their lines in the head. A match that shows a similarity is near your query by an embedding's measure, and
+one that says it shares names holds names your query uses; either can be unrelated to what you look for.`
 
 // agenticCommands follows the tools when the run tool is offered. %s is the
 // commands that it runs.

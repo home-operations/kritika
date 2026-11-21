@@ -46,7 +46,8 @@ func TestSystemPrompt(t *testing.T) {
 	}
 	withSearch := SystemPrompt(nil, nil, []string{"curl"}, false, true, false, false)
 	if !strings.HasPrefix(withSearch, bare+"\n\nYou can also search the repository by meaning with search_code") ||
-		strings.Index(withSearch, "search_code") > strings.Index(withSearch, "run tool") || !strings.Contains(withSearch, "returns only snippets the head still") {
+		strings.Index(withSearch, "search_code") > strings.Index(withSearch, "run tool") || !strings.Contains(withSearch, "returns only snippets the head still") ||
+		!strings.Contains(withSearch, "one that says it shares names holds names your query uses") {
 		t.Fatalf("system prompt with search:\n%s", withSearch)
 	}
 	if strings.Contains(bare, "Mermaid") {
