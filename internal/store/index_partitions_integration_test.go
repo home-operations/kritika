@@ -141,8 +141,8 @@ func lexicalPaths(t *testing.T, s *Store, account, run string) []string {
 	ctx := t.Context()
 	var paths []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		q := LexicalQuery{Terms: []string{"main"}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 10, func(int) int { return 100 })
+		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "main"}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 10, func(int) int { return 100 }, 100)
 		for _, h := range hits {
 			paths = append(paths, h.Chunk.Path)
 		}
@@ -403,8 +403,8 @@ func lexicalPlan(t *testing.T, s *Store, account, run string) []string {
 	ctx := t.Context()
 	var plan []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []string{"main"}, 2, 100,
-			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4)
+		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []bool{false}, []string{"main"}, 2, 100,
+			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 16, 100)
 		if err != nil {
 			return err
 		}
@@ -652,6 +652,10 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	}
 	if parts := chunkPartitions(t, s, stray); len(parts) != 0 {
 		t.Fatalf("an inactive generation is in %v after the drain, want it deleted", parts)
+	}
+	var postings int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, stray).Scan(&postings); err != nil || postings != 0 {
+		t.Fatalf("the deleted generation keeps %d postings, %v; want none", postings, err)
 	}
 	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || !dropped {
 		t.Fatalf("DropLegacyIndexChunks of the empty legacy partition = %v, %v", dropped, err)

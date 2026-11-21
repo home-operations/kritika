@@ -532,6 +532,39 @@ What the measurements show:
   read the partitions that the drain had just written from outside shared
   buffers.
 
+### The search by name
+
+`BenchmarkLexicalScale` measures the [search by name](/models/#search-by-name)
+over one generation of each size in `KRITIKA_LEXICAL_SCALE_CHUNKS`, a
+comma-separated list of chunk counts. It is opt-in, because a hundred thousand
+chunks take minutes to load:
+
+```sh
+KRITIKA_LEXICAL_SCALE_CHUNKS=10000,100000 mise run test-integration -- \
+  -run '^$' -bench BenchmarkLexicalScale -benchtime 1x -timeout 1h -v ./internal/store/
+```
+
+Its code is synthetic: thirty lines of five identifiers a chunk, each of one to
+three parts drawn by a Zipf law from 4,000 words, which gives about 250
+postings a chunk, five times what this repository's code gives. Each of 30
+requests holds twelve queries of the 32 longest words of eight such lines, as a
+review's similar-code stage sends. It reports the p50 and p95 latency of a
+request, and how long the chunks took to insert, postings included.
+
+On 2026-11-20, on the machine above, with the integration task's images and
+Postgres run with `shared_buffers=1GB`, `work_mem=64MB` and
+`max_wal_size=4GB`, and the race detector off:
+
+| Chunks  | Before postings: p50 / p95 ms | With postings: p50 / p95 ms | Insert before / with postings |
+| ------- | ----------------------------- | --------------------------- | ----------------------------- |
+| 10,000  | 298.9 / 311.7                 | 30.6 / 35.2                 | 2.1 s / 8.3 s                 |
+| 100,000 | 2,875 / 2,959                 | 29.4 / 35.4                 | 21 s / 126 s                  |
+
+Before postings, the search read every word of the generation's chunks for
+each request, so its time grew with the generation. With them, it reads each
+query word's postings, at most the count at which a word is too common to
+search for, so its time follows the queries rather than the generation.
+
 ## Review completion timings
 
 `kritika_review_stage_duration_seconds` separates the work after the runner

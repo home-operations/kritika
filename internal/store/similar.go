@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -11,20 +12,29 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 )
 
+// postingsIndexFormat is the first index format (runspec.IndexFormat) whose
+// builds write each chunk's postings (index_postings).
+const postingsIndexFormat = 2
+
 // ActiveGenerationFor is the repository's active, completed index
-// generation built with the given embedder, or ErrNotFound.
-func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedModel string, dims int, documentPrompt string) (string, error) {
-	var runID string
-	err := tx.QueryRow(ctx, `SELECT r.active_index_run_id::text FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+// generation built with the given embedder, or ErrNotFound. lexical says
+// that each of its chunks has its postings, for a search by name: a build of
+// postingsIndexFormat or later built it, and no step of another format
+// advanced it. One that does not is rebuilt by the onboarding feeder.
+func ActiveGenerationFor(
+	ctx context.Context, tx pgx.Tx, repositoryID, embedModel string, dims int, documentPrompt string,
+) (runID string, lexical bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT r.active_index_run_id::text, g.index_format >= $5 AND NOT `+steppedInAnotherFormat+`
+		FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
 		WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2 AND g.embed_dims = $3 AND g.document_prompt = $4`,
-		repositoryID, embedModel, dims, documentPrompt).Scan(&runID)
+		repositoryID, embedModel, dims, documentPrompt, postingsIndexFormat).Scan(&runID, &lexical)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrNotFound
+		return "", false, ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("store: active generation: %w", err)
+		return "", false, fmt.Errorf("store: active generation: %w", err)
 	}
-	return runID, nil
+	return runID, lexical, nil
 }
 
 // SimilarExclude is the paths that the run reported its similar-code
@@ -88,88 +98,122 @@ func SimilarChunks(
 	return hits, nil
 }
 
-// LexicalQuery is one query of a lexical search: its terms, lexemes of
-// package lexical, and its vector, which measures each hit's similarity.
+// LexicalQuery is one query of a lexical search: its terms and its vector,
+// which measures each hit's similarity.
 type LexicalQuery struct {
-	Terms  []string
+	Terms  []LexicalTerm
 	Vector []float32
 }
 
-// lexicalChunksSQL reads each chunk of the generation once, for every query
-// of a request together. Under row-level security no GIN index of the
-// lexemes could serve a search: @@ is not leakproof, so Postgres applies it
-// only to the rows that the policy has let through, never as an index
-// condition, and each query would read the whole generation anyway.
+// LexicalTerm is a term of a LexicalQuery: a lexeme of package lexical, and
+// whether the query writes it as an identifier of several parts, whole.
+type LexicalTerm struct {
+	Lexeme   string
+	Compound bool
+}
+
+// lexicalChunksSQL reads, for each term of every query of a request
+// together, the postings of the generation's chunks that hold it, up to the
+// count at which it is too common to search for. Their count is the term's
+// document frequency. Only the excluded paths' chunks and the few ranked
+// chunks are read from index_chunks. A score is rounded so that two chunks
+// holding the same terms tie, whatever order they were added in.
 //
-// The terms are joined rather than compared with = ANY: once a cached
-// statement runs on a generic plan, = ANY of a parameter checks each of the
-// generation's lexemes against every term in turn. The ranked chunks are
-// read again by the generation's key, one at a time, rather than by a join
-// that the planner, which cannot tell that few are ranked, makes over the
-// whole partition.
-//
-// $1 is the generation, $2 and $3 each query's index and term, $4 every
-// term once, $5 the generation's chunks and $6 the count at which a term is
-// too common to search for, $7 the excluded paths, $8 each query's vector
-// and $9 the hits each query keeps.
+// $1 is the generation, $2, $3 and $4 each query's index, term and whether
+// the term is compound, $5 every term once, $6 the generation's chunks and
+// $7 the count at which a term is too common to search for, $8 the
+// excluded paths, $9 each query's vector, $10 the hits each query keeps,
+// $11 the most of them read when they tie and $12 the most chunks a term
+// can be in and still find a chunk alone.
 const lexicalChunksSQL = `WITH held AS MATERIALIZED (
-		SELECT c.id, c.path, c.start_line, l
-		FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
-		WHERE c.index_run_id = $1 AND l IN (SELECT unnest($4::text[]))
+		SELECT t.t, p.chunk_id, count(*) OVER (PARTITION BY t.t) AS n
+		FROM unnest($5::text[]) AS t (t),
+			LATERAL (SELECT p.chunk_id FROM index_postings p WHERE p.index_run_id = $1 AND p.lexeme = t.t LIMIT $7) p
 	), weights AS (
-		SELECT q.qi, q.t, ln(1 + ($5::float8 - f.n + 0.5) / (f.n + 0.5)) AS w
-		FROM unnest($2::int[], $3::text[]) AS q (qi, t)
-		JOIN (SELECT l, count(*) AS n FROM held GROUP BY l) f ON f.l = q.t
-		WHERE f.n < $6
-	), ranked AS (
-		SELECT w.qi, h.id, sum(w.w) AS score, array_agg(w.t ORDER BY w.w DESC, w.t) AS matched,
-			row_number() OVER (PARTITION BY w.qi ORDER BY sum(w.w) DESC, h.path, h.start_line) AS rank
-		FROM held h JOIN weights w ON w.t = h.l
-		WHERE NOT (h.path = ANY($7::text[]))
-		GROUP BY w.qi, h.id, h.path, h.start_line
+		SELECT q.qi, q.t, q.compound, f.n, ln(1 + ($6::float8 - f.n + 0.5) / (f.n + 0.5)) AS w
+		FROM unnest($2::int[], $3::text[], $4::bool[]) AS q (qi, t, compound)
+		JOIN (SELECT DISTINCT t, n FROM held WHERE n < $7) f ON f.t = q.t
+	), excluded AS MATERIALIZED (
+		SELECT id FROM index_chunks WHERE index_run_id = $1 AND path = ANY($8::text[])
+	), scored AS (
+		SELECT w.qi, h.chunk_id AS id, round(sum(w.w)::numeric, 9)::float8 AS score,
+			array_agg(w.t ORDER BY w.w DESC, w.t) AS matched
+		FROM held h JOIN weights w ON w.t = h.t
+		WHERE h.chunk_id NOT IN (SELECT id FROM excluded)
+		GROUP BY w.qi, h.chunk_id
+		HAVING count(*) > 1 OR bool_or(w.compound) OR min(w.n) <= $12
 	), top AS MATERIALIZED (
-		SELECT * FROM ranked WHERE rank <= $9
+		SELECT * FROM (
+			SELECT s.*, rank() OVER (PARTITION BY s.qi ORDER BY s.score DESC) AS rank,
+				row_number() OVER (PARTITION BY s.qi ORDER BY s.score DESC, s.id) AS place
+			FROM scored s
+		) r WHERE rank <= $10 AND place <= $11
 	)
 	SELECT r.qi, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
-		1 - (c.embedding <=> (($8::text[])[r.qi + 1])::halfvec), r.score, r.matched
-	FROM top r, LATERAL (SELECT * FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id) c
-	ORDER BY r.qi, r.rank`
+		1 - (c.embedding <=> (($9::text[])[r.qi + 1])::halfvec) AS similarity, r.score, r.matched
+	FROM top r, LATERAL (SELECT * FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id LIMIT 1) c
+	ORDER BY r.qi, r.score DESC, similarity DESC, c.path, c.start_line`
+
+// lexicalTies is how many times perQuery LexicalChunks reads of a query's
+// hits when they tie at its cut.
+const lexicalTies = 4
 
 // LexicalChunks finds, for each query, the perQuery chunks of the generation
 // that hold the most weight of its terms, outside the excluded paths, with
 // the terms each holds, the heaviest first. A term weighs what BM25 gives a
 // term in so many of the generation's chunks: one that few hold counts for
-// more than one that many do. Postgres's own ranking knows nothing of the
-// other chunks. A term in common(chunks) or more of the generation's chunks
-// is left out as too common to tell them apart.
+// more than one that many do. A term in common(chunks) or more of the
+// generation's chunks is left out as too common to tell them apart.
+//
+// A chunk is found when it holds two of a query's terms, a compound one, or
+// one in at most alone of the generation's chunks. So a query's one common
+// word does not find every chunk that holds it. Of chunks of equal weight,
+// the one nearest the query's vector comes first, then by path and line.
 func LexicalChunks(
-	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int, common func(chunks int) int,
+	ctx context.Context, tx pgx.Tx, runID string, queries []LexicalQuery, exclude []string, perQuery int,
+	common func(chunks int) int, alone int,
 ) ([]SimilarHit, error) {
 	if exclude == nil {
 		exclude = []string{}
 	}
 	var qis []int32
 	var terms, all []string
+	var compound []bool
 	vectors := make([]string, 0, len(queries))
 	seen := map[string]bool{}
 	for i, q := range queries {
 		vectors = append(vectors, model.VectorLiteral(q.Vector))
 		for _, t := range q.Terms {
-			qis, terms = append(qis, int32(i)), append(terms, t)
-			if !seen[t] {
-				seen[t] = true
-				all = append(all, t)
+			qis, terms, compound = append(qis, int32(i)), append(terms, t.Lexeme), append(compound, t.Compound)
+			if !seen[t.Lexeme] {
+				seen[t.Lexeme] = true
+				all = append(all, t.Lexeme)
 			}
 		}
 	}
 	if len(terms) == 0 {
 		return nil, nil
 	}
+	// A generation that no publication of this build counted, which only a
+	// test searches, is counted here: COALESCE reads its second argument only
+	// when the first is null.
 	var chunks int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, runID).Scan(&chunks); err != nil {
+	err := tx.QueryRow(ctx, `SELECT coalesce(generation_chunks, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1))
+		FROM index_runs WHERE id = $1`, runID).Scan(&chunks)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Row-level security hides another account's generation.
+		return nil, nil
+	}
+	if err != nil {
 		return nil, fmt.Errorf("store: count index chunks: %w", err)
 	}
-	rows, err := tx.Query(ctx, lexicalChunksSQL, runID, qis, terms, all, chunks, common(chunks), exclude, vectors, perQuery)
+	// The planner cannot tell how few postings a term has, and estimates
+	// enough rows to compile the query, which takes longer than running it.
+	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
+		return nil, fmt.Errorf("store: lexical chunks: %w", err)
+	}
+	rows, err := tx.Query(ctx, lexicalChunksSQL, runID, qis, terms, compound, all, chunks, common(chunks), exclude, vectors,
+		perQuery, lexicalTies*perQuery, alone)
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
@@ -184,5 +228,9 @@ func LexicalChunks(
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
-	return hits, nil
+	taken := map[int]int{}
+	return slices.DeleteFunc(hits, func(h SimilarHit) bool {
+		taken[h.Query]++
+		return taken[h.Query] > perQuery
+	}), nil
 }

@@ -165,7 +165,8 @@ func (s *Store) grant(ctx context.Context, appRole string) error {
 		`GRANT SELECT, UPDATE (last_webhook_at, last_unsigned_webhook_at) ON connections TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, dismissals, poll_state TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, index_postings, followups, dismissals, poll_state
+			TO ` + app,
 		`GRANT SELECT ON index_schema TO ` + app,
 		`GRANT SELECT, INSERT ON agent_runs, agent_conversations TO ` + app,
 		`GRANT SELECT, INSERT, DELETE ON review_part_checkpoints TO ` + app,

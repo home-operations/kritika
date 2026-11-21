@@ -2,8 +2,8 @@
 -- lexical splits code: each identifier whole and in its parts. A similar-code
 -- search matches the identifiers of a query against them, beside the vector
 -- search. A chunk indexed before has none, and matches no query by name until
--- its index is rebuilt. They have no index: under row-level security, no
--- index of them can serve the search (store.lexicalChunksSQL).
+-- its index is rebuilt. A search reads index_postings (0072_index_postings),
+-- and a chunk's lexemes say which of its postings to delete with it.
 -- index_chunks is created by the leader once an embedder is configured
 -- (store.EnsureIndexSchema), which creates it with the column, so it may not
 -- exist yet.

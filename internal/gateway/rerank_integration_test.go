@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -70,8 +71,8 @@ apps:
 	var runner string
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var run string
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status)
-			VALUES($1,$2,'abc','embed',8,'full','completed') RETURNING id`, account.ID(), repo).Scan(&run); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status,index_format)
+			VALUES($1,$2,'abc','embed',8,'full','completed',$3) RETURNING id`, account.ID(), repo, runspec.IndexFormat).Scan(&run); err != nil {
 			return err
 		}
 		chunks := []store.StagedChunk{

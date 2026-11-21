@@ -47,8 +47,8 @@ func TestWords(t *testing.T) {
 
 func TestWordsKeepTheSpelling(t *testing.T) {
 	got := Words("parseHTTPRequest")
-	want := []Word{{"parsehttprequest", "parseHTTPRequest", true}, {"parse", "parse", false}, {"http", "HTTP", false},
-		{"request", "Request", false}}
+	want := []Word{{"parsehttprequest", "parseHTTPRequest", true, true}, {"parse", "parse", false, false}, {"http", "HTTP", false, false},
+		{"request", "Request", false, false}}
 	if !slices.Equal(got, want) {
 		t.Errorf("Words = %+v, want %+v", got, want)
 	}
@@ -103,6 +103,19 @@ func TestDocumentBounds(t *testing.T) {
 	for _, l := range Document("", "", "", "", long+" "+long+"Tail") {
 		if len(l) > maxLexemeBytes {
 			t.Errorf("lexeme of %d bytes, want at most %d", len(l), maxLexemeBytes)
+		}
+	}
+}
+
+// TestWordsCompound: an identifier written whole is compound when it has
+// several parts.
+func TestWordsCompound(t *testing.T) {
+	for _, tt := range []struct {
+		text string
+		want bool
+	}{{"parseHTTPRequest", true}, {"max_batch", true}, {"lease", false}, {"v2", false}} {
+		if w := Words(tt.text); len(w) == 0 || !w[0].Whole || w[0].Compound != tt.want {
+			t.Errorf("Words(%q) = %+v, want a whole word first, compound %v", tt.text, w, tt.want)
 		}
 	}
 }

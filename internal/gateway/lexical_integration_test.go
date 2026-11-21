@@ -1,0 +1,276 @@
+//go:build integration
+
+package gateway
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
+)
+
+// lexicalAccount is the account whose repositories the search by name's
+// integration tests index.
+const lexicalAccount = "similar-lexical"
+
+// lexicalConfig is an instance whose embedder searches by name, with the
+// embedding given after it.
+func lexicalConfig(t *testing.T, embedding string) *configfile.File {
+	t.Helper()
+	t.Setenv("TEST_SECRET", "test-key")
+	return configfiletest.Load(t, `providers:
+  test:
+    type: openai
+    baseUrl: http://unused.invalid/v1
+    apiKey: { env: TEST_SECRET }
+review: { model: test/reviewer }
+embedding: `+embedding+`
+apps:
+  test:
+    accounts: [`+lexicalAccount+`]
+    clientId: Iv1.test
+    privateKey: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_SECRET }
+`)
+}
+
+// lexicalRepo is an indexed repository of lexicalAccount.
+type lexicalRepo struct {
+	st              *store.Store
+	account         *configfile.Account
+	id, run, runner string
+	file            *configfile.File
+}
+
+// e is the unit vector of dimension i of the tests' eight; every query
+// embeds as e(0).
+func e(i int) []float32 {
+	v := make([]float32, 8)
+	v[i] = 1
+	return v
+}
+
+// newLexicalRepo indexes chunks, path and text, with their vectors, as the
+// active generation of a repository built by a build of format.
+func newLexicalRepo(t *testing.T, name string, format int, chunks map[string]string, vectors map[string][]float32) lexicalRepo {
+	t.Helper()
+	ctx := t.Context()
+	st := storetest.Open(t)
+	file := lexicalConfig(t, `{ model: test/embed, dims: 8 }`)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	full := lexicalAccount + "/" + name
+	storetest.Repositories(t, st, file, full)
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, lexicalAccount)
+	r := lexicalRepo{st: st, account: account, id: configfile.RepositoryID(account.ID(), full), file: file}
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status,index_format)
+			VALUES($1,$2,'abc','embed',8,'full','completed',$3) RETURNING id`, account.ID(), r.id, format).Scan(&r.run); err != nil {
+			return err
+		}
+		var batch []store.StagedChunk
+		var vecs [][]float32
+		for _, path := range slices.Sorted(maps.Keys(chunks)) {
+			batch = append(batch, store.StagedChunk{Path: path, Language: "go", StartLine: 1, EndLine: 1, Text: chunks[path]})
+			vecs = append(vecs, vectors[path])
+		}
+		if err := store.InsertIndexChunks(ctx, tx, account.ID(), r.id, r.run, batch, vecs); err != nil {
+			return err
+		}
+		if err := store.ActivateGeneration(ctx, tx, r.id, r.run); err != nil {
+			return err
+		}
+		var err error
+		r.runner, err = store.InsertRunnerRun(ctx, tx, account.ID(), store.RunnerKindIndex, r.run, 0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// ask sends queries to the gateway, configured by file and with reranker,
+// and returns the answer's status and its chunks as path:label.
+func (r lexicalRepo) ask(t *testing.T, file *configfile.File, reranker model.Reranker, reg *prometheus.Registry, queries ...string) (int, []string) {
+	t.Helper()
+	ctx := t.Context()
+	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+		out := make([][]float32, len(inputs))
+		for i := range out {
+			out[i] = e(0)
+		}
+		return out, 1, nil
+	})
+	g := Server{Metrics: metrics.New(reg), Store: r.st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler),
+		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+		Rerankers: &adapter.Rerankers{Build: func(configfile.Rerank) model.Reranker { return reranker }},
+	}
+	token, err := r.st.MintGatewayToken(ctx, store.GatewayGrant{
+		RunID: r.runner, AccountID: r.account.ID(), RepositoryID: r.id, Model: "test/reviewer", Budget: 100000,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.st.RevokeGatewayTokens(context.Background(), r.runner) })
+	body, err := json.Marshal(contextpack.SimilarRequest{Queries: queries})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/similar", strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	out := httptest.NewRecorder()
+	g.ServeHTTP(out, req)
+	if out.Code != http.StatusOK {
+		return out.Code, nil
+	}
+	var resp contextpack.SimilarResponse
+	if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(resp.Chunks))
+	for _, c := range resp.Chunks {
+		got = append(got, c.Path+":"+c.Ref)
+	}
+	return http.StatusOK, got
+}
+
+// widgets are chunks of which one holds the name widgetFactory, and seven
+// the word widget, which is too common to find a chunk alone but not to
+// search for. Only near.go is near the queries.
+var widgets = map[string]string{
+	"near.go": "func near() {}", "factory.go": "func widgetFactory() {}",
+	"w1.go": "var widget = 1", "w2.go": "var widget = 2", "w3.go": "var widget = 3",
+	"w4.go": "var widget = 4", "w5.go": "var widget = 5", "w6.go": "var widget = 6",
+}
+
+func widgetVectors() map[string][]float32 {
+	out := map[string][]float32{"near.go": e(0), "factory.go": {0.3, 0.954, 0, 0, 0, 0, 0, 0}}
+	for _, w := range []string{"w1.go", "w2.go", "w3.go", "w4.go", "w5.go", "w6.go"} {
+		out[w] = e(2)
+	}
+	return out
+}
+
+// TestSimilarLexicalFloor: a query's one common word finds no chunk by name,
+// so a close vector hit is not crowded out by chunks that merely share it,
+// while a compound name finds the chunk that holds it. A generation built
+// before postings is searched by vector alone.
+func TestSimilarLexicalFloor(t *testing.T) {
+	current := newLexicalRepo(t, "floor", runspec.IndexFormat, widgets, widgetVectors())
+	older := newLexicalRepo(t, "floor-old", 1, widgets, widgetVectors())
+	for _, tt := range []struct {
+		name  string
+		repo  lexicalRepo
+		query string
+		want  []string
+	}{
+		{"one common word", current, "widget", []string{"near.go:similarity 1.00"}},
+		{"a compound name", current, "widgetFactory()", []string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}},
+		{"a generation without postings", older, "widgetFactory()", []string{"near.go:similarity 1.00"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			code, got := tt.repo.ask(t, tt.repo.file, nil, prometheus.NewRegistry(), tt.query)
+			if code != http.StatusOK || !slices.Equal(got, tt.want) {
+				t.Errorf("answer = %d %q, want 200 %q", code, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSimilarLexicalTies: of chunks that hold a query's names alike, the
+// search by name keeps the one nearest the query.
+func TestSimilarLexicalTies(t *testing.T) {
+	r := newLexicalRepo(t, "ties", runspec.IndexFormat,
+		map[string]string{"a.go": "func leaseSlots() {}", "b.go": "func leaseSlots() {}", "c.go": "func other() {}"},
+		map[string][]float32{"a.go": e(2), "b.go": e(0), "c.go": e(3)})
+	var got []string
+	if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
+		hits, err := lexicalHits(t.Context(), tx, r.run, []string{"leaseSlots()"}, [][]float32{e(0)}, nil, 1)
+		for _, h := range hits {
+			got = append(got, h.Chunk.Path)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"b.go"}) {
+		t.Fatalf("search by name kept %q, want the nearer of the two that hold leaseSlots, b.go", got)
+	}
+}
+
+// TestSimilarLexicalReadsPostings: the search by name reads from index_chunks
+// the chunks it ranks, not every chunk of the generation.
+func TestSimilarLexicalReadsPostings(t *testing.T) {
+	chunks := map[string]string{"rare.go": "func zebraCrossing() { serveWidget() }"}
+	vectors := map[string][]float32{"rare.go": e(1)}
+	for i := range 300 {
+		path := "handler" + strings.Repeat("x", i%7) + string(rune('a'+i%26)) + string(rune('a'+i/26)) + ".go"
+		chunks[path], vectors[path] = "func handler() { serveWidget() }", e(2)
+	}
+	r := newLexicalRepo(t, "postings", runspec.IndexFormat, chunks, vectors)
+	ctx := t.Context()
+	// Analyzed, as autovacuum leaves a table, so that the plan reads a chunk by
+	// its key.
+	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = owner.Close(context.Background()) }()
+	if _, err := owner.Exec(ctx, `ANALYZE index_chunks, index_postings`); err != nil {
+		t.Fatal(err)
+	}
+	// A connection of its own, whose counts of rows read are flushed before
+	// the search, so that they hold the search's alone.
+	conn, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_APP_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+	if _, err := conn.Exec(ctx, `SELECT pg_stat_force_next_flush()`); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	var read int64
+	if err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT set_config('app.account_id', $1, true)`, r.account.ID()); err != nil {
+			return err
+		}
+		hits, err := lexicalHits(ctx, tx, r.run, []string{"zebraCrossing(serveWidget)"}, [][]float32{e(0)}, nil, 4)
+		if err != nil {
+			return err
+		}
+		for _, h := range hits {
+			got = append(got, h.Chunk.Path)
+		}
+		return tx.QueryRow(ctx, `SELECT coalesce(sum(seq_tup_read + coalesce(idx_tup_fetch, 0)), 0)::bigint
+			FROM pg_stat_xact_user_tables WHERE relname LIKE 'index\_chunks%'`).Scan(&read)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"rare.go"}) || read > 10 {
+		t.Fatalf("search by name found %q reading %d rows of index_chunks, want rare.go reading a few of its 301", got, read)
+	}
+}

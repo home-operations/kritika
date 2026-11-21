@@ -118,10 +118,10 @@ func TestIndexDocumentPrompt(t *testing.T) {
 		if !indexMatches(&g, file.Embedding, indexIgnoreHash(nil), jobs.TriggerOnboard) {
 			t.Errorf("index %+v does not match the embedder that built it", g)
 		}
-		if _, err := store.ActiveGenerationFor(ctx, tx, repo, "fake-embed", 8, "passage: "); err != nil {
+		if _, _, err := store.ActiveGenerationFor(ctx, tx, repo, "fake-embed", 8, "passage: "); err != nil {
 			t.Errorf("the configuration that built the index does not find it: %v", err)
 		}
-		if _, err := store.ActiveGenerationFor(ctx, tx, repo, "fake-embed", 8, ""); !errors.Is(err, store.ErrNotFound) {
+		if _, _, err := store.ActiveGenerationFor(ctx, tx, repo, "fake-embed", 8, ""); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("a configuration without the prompt found the index: %v", err)
 		}
 		return nil

@@ -381,8 +381,10 @@ Measure one meant for code on your own repositories before you turn it on.
 
 In the run above, the search by name took 70 ms a request, of up to twelve
 queries, against 4 ms for the vector search, both with the race detector
-on. It reads every word of the generation's chunks once, so its time grows
-with the repository.
+on, when it read every word of the generation's chunks. It now reads the
+postings of its queries' words alone, and took 17 ms a request over the same
+60 commits' corpus. See the [search by name
+benchmark](/metrics/#the-search-by-name).
 
 ## Cluster development loop
 

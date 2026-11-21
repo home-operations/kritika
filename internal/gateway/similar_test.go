@@ -262,3 +262,20 @@ func TestGateRanks(t *testing.T) {
 		}
 	}
 }
+
+// TestGateRanksTies: of chunks of equal weight by name, the one nearest the
+// query ranks first in the search by name.
+func TestGateRanksTies(t *testing.T) {
+	named := []store.SimilarHit{
+		{Chunk: contextpack.Chunk{Path: "far.go"}, Similarity: 0.2, Lexical: 5, Matched: []string{"x"}},
+		{Chunk: contextpack.Chunk{Path: "near.go"}, Similarity: 0.4, Lexical: 5, Matched: []string{"x"}},
+	}
+	got, _, _ := gateCandidates(fuse(nil, named), 0.5, 0.1)
+	scores := map[string]float64{}
+	for _, c := range got {
+		scores[c.Chunk.Path] = c.score
+	}
+	if want := 1.0 / (rrfK + 1); scores["near.go"] != want || scores["far.go"] >= want {
+		t.Fatalf("scores = %v, want near.go first at %g", scores, want)
+	}
+}

@@ -808,9 +808,13 @@ and its parsers split code where it is not split.
 
 Each search keeps a chunk on its own terms. The vector search keeps one
 at or above `similarFloor` and within `similarMargin` of its query's best,
-as before. The search by name keeps one that holds at least half the
-weight of its query's best match by name. A chunk either search keeps is
-kept. Each query's chunks are ordered by reciprocal rank fusion: a chunk
+as before. The search by name finds a chunk only when it holds two of
+its query's words, an identifier of several parts that the query writes
+whole, or a word that at most four of the repository's chunks hold, so a
+query's one common word does not find every chunk that holds it. Of chunks
+of equal weight, the one nearest the query by vector comes first. The search
+by name keeps one that holds at least half the weight of its query's best
+match by name. A chunk either search keeps is kept. Each query's chunks are ordered by reciprocal rank fusion: a chunk
 scores 1 / (60 + its rank) in the answer of each search that found it, so
 one that both find comes first. Of those, an answer takes four for each
 query, and the answer's other bounds hold as before. A chunk the vector
@@ -819,12 +823,15 @@ name alone shows the names it shares with the query instead, as in
 `(shares AcquireLease, Lease)`, as its similarity sits under the floor and
 would read as a poor match.
 
-The words are stored with each chunk as a Postgres `tsvector`, so no
-extension beyond VectorChord is needed. A request's queries are searched
-for together, in one pass over the words of the generation's chunks in its
-[partition](/database/#the-similar-code-index), which no index can
-shorten under row-level security. A chunk indexed by a release without
-them matches no query by name until its repository's index is rebuilt.
+Each word of each chunk is stored as a posting: a row of `index_postings`
+whose key starts with the generation and the word. A request's queries are
+searched for together, and each of their words reads its chunks, and how
+many there are, from that key alone, so a search costs about the same
+however large the repository. See [the similar-code
+index](/database/#the-similar-code-index). No extension beyond VectorChord is
+needed. A generation built by a release before postings is searched by
+vector alone until the onboarding feeder rebuilds it, as it rebuilds every
+generation of an older index format.
 `kritika_similar_hits_total` counts each chunk by the search that found
 it: `vector`, `lexical` or `both`.
 

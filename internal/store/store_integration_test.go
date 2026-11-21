@@ -731,7 +731,7 @@ func TestEnsureIndexSchemaAppliesTheIndexFormat(t *testing.T) {
 		t.Fatalf("after the new format: active = %v, chunks = %d; want %s kept with its chunk", active, chunks, run)
 	}
 	if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
-		found, err := ActiveGenerationFor(ctx, tx, repo, "test-embed", 8, "")
+		found, _, err := ActiveGenerationFor(ctx, tx, repo, "test-embed", 8, "")
 		if err != nil || found != run {
 			t.Errorf("ActiveGenerationFor = %q, %v; want the generation of the other format, %s, until it is rebuilt", found, err, run)
 		}

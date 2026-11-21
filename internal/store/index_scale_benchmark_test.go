@@ -24,6 +24,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/lexical"
 	"github.com/home-operations/kritika/internal/model"
 )
 
@@ -593,4 +594,197 @@ $$)`, lists)
 			},
 		},
 	)
+}
+
+// Shape of the lexical scale benchmark's synthetic code: a vocabulary of
+// word parts drawn by a Zipf law, as names are, identifiers of one to three
+// parts, and chunks and queries of so many lines of identifiers.
+const (
+	lexicalScaleParts       = 4000
+	lexicalScaleLines       = 30
+	lexicalScaleQueryLines  = 8
+	lexicalScalePerLine     = 5
+	lexicalScaleQueries     = 12
+	lexicalScaleQueryTerms  = 32
+	lexicalScalePerQuery    = 4
+	lexicalScaleRequests    = 30
+	lexicalScaleInsertBatch = 500
+	lexicalScaleDims        = 16
+)
+
+// lexicalScaleText is n lines of synthetic code drawn by rng.
+func lexicalScaleText(rng *rand.Rand, zipf *rand.Zipf, words []string, n int) string {
+	var b strings.Builder
+	for range n {
+		for range lexicalScalePerLine {
+			for p := range 1 + rng.IntN(3) {
+				w := words[zipf.Uint64()]
+				if p > 0 {
+					w = strings.ToUpper(w[:1]) + w[1:]
+				}
+				b.WriteString(w)
+			}
+			b.WriteString("(x) ")
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// lexicalScaleWords is the vocabulary: pronounceable words of two to four
+// syllables, none a stop word.
+func lexicalScaleWords(rng *rand.Rand) []string {
+	syllables := strings.Fields("ka lo mi ser ta ven dor qui ran pel sto bri cul fen gar hol ix jun mar nod pra rek sil tor ul vor wex yal zen")
+	seen := map[string]bool{}
+	var out []string
+	for len(out) < lexicalScaleParts {
+		var b strings.Builder
+		for range 2 + rng.IntN(3) {
+			b.WriteString(syllables[rng.IntN(len(syllables))])
+		}
+		if w := b.String(); !seen[w] && len(lexical.Words(w)) == 1 {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// BenchmarkLexicalScale measures the search by name, LexicalChunks, over a
+// generation of each size of KRITIKA_LEXICAL_SCALE_CHUNKS (comma-separated
+// chunk counts, e.g. 10000,100000), with requests of twelve queries of up to
+// 32 terms each, as a review's similar-code stage sends. It reports the p50
+// and p95 latency of a request and how long the chunks took to insert. It is
+// opt-in: a hundred thousand chunks take minutes to load.
+func BenchmarkLexicalScale(b *testing.B) {
+	sizes := os.Getenv("KRITIKA_LEXICAL_SCALE_CHUNKS")
+	if sizes == "" {
+		b.Skip("KRITIKA_LEXICAL_SCALE_CHUNKS not set")
+	}
+	s := openStore(b)
+	ctx := b.Context()
+	b.Setenv("LEXICAL_SCALE_KEY", "fixture")
+	file := configfiletest.Load(b, `apps:
+  scale:
+    accounts: [lexical-scale]
+    clientId: Iv1.scale
+    privateKey: { env: LEXICAL_SCALE_KEY }
+    webhookSecret: { env: LEXICAL_SCALE_KEY }
+`)
+	if err := s.ApplyConfig(ctx, file); err != nil {
+		b.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "lexical-scale")
+	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks;
+		DELETE FROM index_schema`); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "lexical-scale", lexicalScaleDims, ""); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		for _, query := range []string{
+			`UPDATE repositories SET active_index_run_id = NULL WHERE account_id = $1`,
+			`DROP TABLE IF EXISTS index_chunks`,
+			`DELETE FROM index_schema`,
+			`DELETE FROM index_runs WHERE account_id = $1`,
+			`DELETE FROM repositories WHERE account_id = $1`,
+		} {
+			var args []any
+			if strings.Contains(query, "$1") {
+				args = append(args, account.ID())
+			}
+			if _, err := s.owner.Exec(ctx, query, args...); err != nil {
+				b.Error(err)
+			}
+		}
+	})
+	rng := rand.New(rand.NewPCG(2026, 11))
+	words := lexicalScaleWords(rng)
+	zipf := rand.NewZipf(rng, 1.1, 1, lexicalScaleParts-1)
+	vector := make([]float32, lexicalScaleDims)
+	vector[0] = 1
+	for field := range strings.SplitSeq(sizes, ",") {
+		size, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || size <= 0 {
+			b.Fatalf("KRITIKA_LEXICAL_SCALE_CHUNKS: %q is not a positive integer", field)
+		}
+		b.Run(fmt.Sprintf("chunks=%d", size), func(b *testing.B) {
+			name := fmt.Sprintf("lexical-scale/repo-%d", size)
+			repo := configfile.RepositoryID(account.ID(), name)
+			var run string
+			if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, account.ID(), name); err != nil {
+					return err
+				}
+				return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+					VALUES ($1, $2, 'scale', 'lexical-scale', $3, 'full', 'completed') RETURNING id`, account.ID(), repo, lexicalScaleDims).Scan(&run)
+			}); err != nil {
+				b.Fatal(err)
+			}
+			started := time.Now()
+			for start := 0; start < size; start += lexicalScaleInsertBatch {
+				n := min(lexicalScaleInsertBatch, size-start)
+				batch := make([]StagedChunk, n)
+				vectors := make([][]float32, n)
+				for i := range batch {
+					batch[i] = StagedChunk{Path: fmt.Sprintf("pkg%d/file%d.go", (start+i)/50, start+i), StartLine: 1,
+						EndLine: lexicalScaleLines, Language: "go", Text: lexicalScaleText(rng, zipf, words, lexicalScaleLines)}
+					vectors[i] = vector
+				}
+				if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+					return InsertIndexChunks(ctx, tx, account.ID(), repo, run, batch, vectors)
+				}); err != nil {
+					b.Fatal(err)
+				}
+			}
+			if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repo, run) }); err != nil {
+				b.Fatal(err)
+			}
+			inserted := time.Since(started)
+			var postings int
+			if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, run).Scan(&postings); err != nil {
+				b.Fatal(err)
+			}
+			if _, err := s.owner.Exec(ctx, `VACUUM ANALYZE index_chunks`); err != nil {
+				b.Fatal(err)
+			}
+			requests := make([][]LexicalQuery, lexicalScaleRequests)
+			for r := range requests {
+				for range lexicalScaleQueries {
+					w := lexical.Words(lexicalScaleText(rng, zipf, words, lexicalScaleQueryLines))
+					slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
+					q := LexicalQuery{Vector: vector}
+					for _, t := range w[:min(len(w), lexicalScaleQueryTerms)] {
+						q.Terms = append(q.Terms, LexicalTerm{Lexeme: t.Lexeme, Compound: t.Compound})
+					}
+					requests[r] = append(requests[r], q)
+				}
+			}
+			common := func(chunks int) int { return min(max(chunks/100, 20), 200) }
+			var took []time.Duration
+			var hits int
+			for b.Loop() {
+				for _, req := range requests {
+					began := time.Now()
+					if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+						h, err := LexicalChunks(ctx, tx, run, req, nil, lexicalScalePerQuery, common, lexicalScalePerQuery)
+						hits += len(h)
+						return err
+					}); err != nil {
+						b.Fatal(err)
+					}
+					took = append(took, time.Since(began))
+				}
+			}
+			slices.Sort(took)
+			b.ReportMetric(ms(percentile(took, 0.5)), "p50-ms")
+			b.ReportMetric(ms(percentile(took, 0.95)), "p95-ms")
+			b.ReportMetric(float64(hits)/float64(len(took)), "hits/request")
+			b.ReportMetric(inserted.Seconds(), "insert-s")
+			b.ReportMetric(float64(postings)/float64(size), "postings/chunk")
+		})
+	}
 }

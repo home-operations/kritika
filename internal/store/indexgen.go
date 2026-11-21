@@ -128,12 +128,14 @@ type NewIndexRun struct {
 // and its runner run and returns their ids. Checkpointed runs are left to SweepIndexProgress, which
 // locks their jobs before cleanup so a manual retry cannot race deletion.
 func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runnerRunID string, err error) {
-	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id IN (
-		SELECT x.id FROM index_runs x JOIN repositories r ON r.id = x.repository_id
-		WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id AND x.created_at < now() - make_interval(secs => $2)
-		AND x.resume_key = '')`,
-		r.RepositoryID, r.StrayAfter.Seconds()); err != nil {
-		return "", "", fmt.Errorf("store: drop stray chunks: %w", err)
+	for _, table := range generationTables {
+		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE index_run_id IN (
+			SELECT x.id FROM index_runs x JOIN repositories r ON r.id = x.repository_id
+			WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id AND x.created_at < now() - make_interval(secs => $2)
+			AND x.resume_key = '')`,
+			r.RepositoryID, r.StrayAfter.Seconds()); err != nil {
+			return "", "", fmt.Errorf("store: drop stray chunks: %w", err)
+		}
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO index_runs
 		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, document_prompt, mode, status, trigger,
@@ -222,7 +224,8 @@ func ReadStagedChunks(ctx context.Context, tx pgx.Tx, runnerRunID string, after 
 }
 
 // InsertIndexChunks records a batch of embedded chunks under the run, each
-// with its lexemes (package lexical) for the lexical search.
+// with its lexemes (package lexical) and a posting of each lexeme, for the
+// lexical search.
 func InsertIndexChunks(
 	ctx context.Context, tx pgx.Tx, accountID, repositoryID, runID string, batch []StagedChunk, vectors [][]float32,
 ) error {
@@ -242,7 +245,7 @@ func InsertIndexChunks(
 		// through unnest, which flattens an array of arrays.
 		lexemes[i] = strings.Join(lexical.Document(c.Language, c.Path, c.Scope, c.Symbol, c.Text), " ")
 	}
-	if _, err := tx.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `WITH c AS (
 		INSERT INTO index_chunks
 			(account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding,
 			 content_hash, lexemes)
@@ -250,7 +253,11 @@ func InsertIndexChunks(
 			c.content_hash, array_to_tsvector(string_to_array(c.lexemes, ' '))
 		FROM unnest($4::text[], $5::int[], $6::int[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[],
 			$13::bytea[], $14::text[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash, lexemes)`,
+			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding, content_hash, lexemes)
+		RETURNING id, lexemes
+	)
+	INSERT INTO index_postings (index_run_id, chunk_id, account_id, lexeme)
+	SELECT $3, c.id, $1, l FROM c, unnest(tsvector_to_array(c.lexemes)) AS l`,
 		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings, hashes,
 		lexemes); err != nil {
 		return fmt.Errorf("store: insert chunks: %w", err)
@@ -306,10 +313,11 @@ func lockActiveGeneration(ctx context.Context, tx pgx.Tx, repositoryID string) (
 	return *active, nil
 }
 
-// ActivateGeneration makes a full build the active generation. It supersedes
-// whichever generation is active when it publishes, and it drops the chunks
-// of that generation. A full build replaces every chunk, so it does not
-// depend on the generation it started from.
+// ActivateGeneration makes a full build the active generation, and counts its
+// chunks. It supersedes whichever generation is active when it publishes,
+// and it drops the chunks of that generation and their postings. A full
+// build replaces every chunk, so it does not depend on the generation it
+// started from.
 func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID string) error {
 	previous, err := lockActiveGeneration(ctx, tx, repositoryID)
 	if err != nil {
@@ -318,6 +326,10 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 	if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repositoryID, runID); err != nil {
 		return fmt.Errorf("store: activate generation: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `UPDATE index_runs SET generation_chunks = (SELECT count(*) FROM index_chunks WHERE index_run_id = $1)
+		WHERE id = $1`, runID); err != nil {
+		return fmt.Errorf("store: count generation: %w", err)
+	}
 	if previous == "" {
 		return nil
 	}
@@ -325,17 +337,31 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 		previous); err != nil {
 		return fmt.Errorf("store: supersede generation: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, previous); err != nil {
+	if err := deleteGenerations(ctx, tx, []string{previous}); err != nil {
 		return fmt.Errorf("store: drop superseded chunks: %w", err)
 	}
 	return nil
 }
 
-// AdvanceGeneration moves an incremental step's chunks into the active
-// generation in place of the changed paths' chunks. It also moves the
-// generation to the commit that the step indexed. It returns
-// ErrGenerationChanged unless active is still the active generation at
-// the same commit.
+// generationTables hold a generation's rows under its index_run_id: its
+// postings, and its chunks, whose lexemes find the postings of each.
+var generationTables = []string{"index_postings", "index_chunks"}
+
+// deleteGenerations deletes the chunks of the runs, and their postings.
+func deleteGenerations(ctx context.Context, tx pgx.Tx, runs []string) error {
+	for _, table := range generationTables {
+		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE index_run_id = ANY($1::uuid[])`, runs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AdvanceGeneration moves an incremental step's chunks, and their postings,
+// into the active generation in place of the changed paths' chunks. It also
+// moves the generation to the commit that the step indexed, and counts its
+// chunks again. It returns ErrGenerationChanged unless active is still the
+// active generation at the same commit.
 func AdvanceGeneration(
 	ctx context.Context, tx pgx.Tx, repositoryID string, active Generation, stepRunID, commit string, changedPaths []string,
 ) error {
@@ -359,13 +385,24 @@ func AdvanceGeneration(
 		return ErrGenerationChanged
 	}
 	activeRunID := active.ID
-	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`, activeRunID, changedPaths); err != nil {
-		return fmt.Errorf("store: drop stale chunks: %w", err)
+	// A chunk's postings are found through their key, by its lexemes.
+	for _, stmt := range []string{
+		`DELETE FROM index_postings p USING (SELECT c.id, l FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+			WHERE c.index_run_id = $1 AND c.path = ANY($2)) d
+		WHERE p.index_run_id = $1 AND p.lexeme = d.l AND p.chunk_id = d.id`,
+		`DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,
+	} {
+		if _, err := tx.Exec(ctx, stmt, activeRunID, changedPaths); err != nil {
+			return fmt.Errorf("store: drop stale chunks: %w", err)
+		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, stepRunID, activeRunID); err != nil {
-		return fmt.Errorf("store: move chunks into the generation: %w", err)
+	for _, table := range generationTables {
+		if _, err := tx.Exec(ctx, `UPDATE `+table+` SET index_run_id = $2 WHERE index_run_id = $1`, stepRunID, activeRunID); err != nil {
+			return fmt.Errorf("store: move chunks into the generation: %w", err)
+		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2 WHERE id = $1`, activeRunID, commit); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2,
+		generation_chunks = (SELECT count(*) FROM index_chunks WHERE index_run_id = $1) WHERE id = $1`, activeRunID, commit); err != nil {
 		return fmt.Errorf("store: advance generation: %w", err)
 	}
 	return nil
@@ -377,9 +414,11 @@ func ClearIndexStaging(ctx context.Context, tx pgx.Tx, runID, runnerRunID string
 	if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
 		return fmt.Errorf("store: clear staging: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1
-		AND NOT EXISTS (SELECT 1 FROM repositories WHERE active_index_run_id = $1)`, runID); err != nil {
-		return fmt.Errorf("store: drop unused chunks: %w", err)
+	for _, table := range generationTables {
+		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE index_run_id = $1
+			AND NOT EXISTS (SELECT 1 FROM repositories WHERE active_index_run_id = $1)`, runID); err != nil {
+			return fmt.Errorf("store: drop unused chunks: %w", err)
+		}
 	}
 	return nil
 }

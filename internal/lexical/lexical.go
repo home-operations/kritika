@@ -1,7 +1,7 @@
 // Package lexical turns code, and queries about it, into the words that the
 // similar-code index matches by name. Postgres's text-search parsers split
 // code where it is not split and stem what must match exactly, so the words
-// are made here and stored as they are (array_to_tsvector).
+// are made here and stored as they are, each in a posting (index_postings).
 //
 // An identifier gives its whole self and each of its parts, split at its
 // case changes, underscores, hyphens and digits, all lowercased:
@@ -33,8 +33,9 @@ type Word struct {
 	Lexeme   string
 	Spelling string
 	// Whole is true for an identifier as written, and false for a part of
-	// one that has several.
-	Whole bool
+	// one that has several. Compound is true for a whole one of several
+	// parts, which few chunks hold by chance.
+	Whole, Compound bool
 }
 
 // Words are the lexemes of text, each once, in the order they first appear:
@@ -47,25 +48,25 @@ func Words(text string) []Word { return words(text, true) }
 func words(text string, hyphens bool) []Word {
 	var out []Word
 	seen := map[string]bool{}
-	add := func(lexeme, spelling string, whole bool) {
+	add := func(lexeme, spelling string, whole, compound bool) {
 		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || seen[lexeme] || stop[lexeme] || !startsWithLetter(lexeme) {
 			return
 		}
 		seen[lexeme] = true
-		out = append(out, Word{Lexeme: lexeme, Spelling: spelling, Whole: whole})
+		out = append(out, Word{Lexeme: lexeme, Spelling: spelling, Whole: whole, Compound: compound})
 	}
 	for _, id := range identifiers(text, hyphens) {
 		parts := split(id)
 		whole := strings.ToLower(separators.Replace(id))
 		// a_b is two names, not one, but k8s and v2 are one each.
 		if !strings.ContainsAny(id, "_-") || slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
-			add(whole, id, true)
+			add(whole, id, true, len(parts) > 1)
 		}
 		if len(parts) == 1 && strings.ToLower(parts[0]) == whole {
 			continue
 		}
 		for _, p := range parts {
-			add(strings.ToLower(p), p, false)
+			add(strings.ToLower(p), p, false, false)
 		}
 	}
 	return out

@@ -114,8 +114,9 @@ const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_i
 	WHERE content_hash IS NOT NULL`
 
 // addedColumns are the columns of index_chunks that migrations added, with
-// their types and indexes, "" for none. The lexemes have none: see
-// lexicalChunksSQL.
+// their types and indexes, "" for none. The lexemes have none: a search
+// reads index_postings, and a chunk's lexemes say which of its postings to
+// delete with it.
 var addedColumns = []struct{ name, typ, index string }{
 	{"content_hash", "bytea", contentHashIndex},
 	{"lexemes", "tsvector", ""},
@@ -148,9 +149,15 @@ func addColumns(ctx context.Context, tx pgx.Tx) error {
 	return nil
 }
 
+// createIndexChunks creates index_chunks for the embedder. A new table holds
+// no chunk, so no posting of one is left either: a rebuild for a new
+// embedder supersedes every generation, and drops its chunks with the table.
 func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
 	if err := createPartitionedIndexChunks(ctx, tx, appRole, dims, "MINVALUE"); err != nil {
 		return err
+	}
+	if _, err := tx.Exec(ctx, `TRUNCATE index_postings`); err != nil {
+		return fmt.Errorf("store: drop index postings: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt, index_format)
 		VALUES (1, $1, $2, $3, $4)`, model, dims, documentPrompt, runspec.IndexFormat); err != nil {
@@ -255,6 +262,7 @@ func (s *Store) SweepStoppedIndexes(
 		for _, stmt := range []string{
 			`UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,
 			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = ANY($1::uuid[])`,
+			`DELETE FROM index_postings WHERE index_run_id = ANY($1::uuid[])`,
 			`DELETE FROM index_chunks WHERE index_run_id = ANY($1::uuid[])`,
 		} {
 			if _, err := tx.Exec(ctx, stmt, dropped); err != nil {

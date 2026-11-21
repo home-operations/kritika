@@ -224,8 +224,12 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 	}
 	t.Cleanup(func() {
 		_ = st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(context.Background(), `DELETE FROM index_chunks WHERE index_run_id = $1`, run)
-			return err
+			for _, table := range []string{"index_postings", "index_chunks"} {
+				if _, err := tx.Exec(context.Background(), `DELETE FROM `+table+` WHERE index_run_id = $1`, run); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 	})
 	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
@@ -233,7 +237,7 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 		t.Fatal(err)
 	}
 	defer func() { _ = owner.Close(context.Background()) }()
-	if _, err := owner.Exec(ctx, `ANALYZE index_chunks`); err != nil {
+	if _, err := owner.Exec(ctx, `ANALYZE index_chunks, index_postings`); err != nil {
 		t.Fatal(err)
 	}
 	return evalIndexed{st: st, account: account.ID(), run: run, chunks: chunks}

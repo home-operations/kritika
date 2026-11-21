@@ -449,12 +449,26 @@ table is partitioned:
 - Each partition has its own VectorChord (`vchordrq`) index. A search reads
   the partition of its generation and that partition's index alone, about
   1/64 of the table.
-- The [search by name](/models/#search-by-name) reads the same partition: the
-  words of each of the generation's chunks (`lexemes`), once for all the
-  queries of a request. They have no index. Under row-level security no
-  index of them could serve the search, as Postgres applies the full-text
-  match operator, `@@`, which is not leakproof, only to the rows that the
-  policy has let through.
+- The [search by name](/models/#search-by-name) reads `index_postings`, which
+  holds a row for each word of each chunk, its posting, under the key
+  generation, word and chunk. A search reads each of its words' postings
+  from that B-tree, up to the count at which the word is too common to
+  search for, and then reads from the generation's partition only the chunks
+  it ranks and those of the paths it leaves out. Under row-level security a
+  B-tree of text and `uuid` equality, which are leakproof, serves the
+  search, where no index of a full-text `tsvector` could: Postgres applies
+  the full-text match operator, `@@`, which is not leakproof, only to the
+  rows that the policy has let through. The key holds `account_id`, which
+  the policy reads, so the search can answer from the index alone.
+  `index_postings` is not partitioned: its key starts with the generation,
+  so a search and a generation's deletion already read that generation's
+  postings alone. It has no foreign keys, whose check of each posting would
+  cost a build more than writing it. Every path that deletes or moves a
+  generation's chunks does the same to their postings. This repository's
+  code gives about 48 postings a chunk: 85 MB of postings, with their key,
+  for 9,605 chunks that took 49 MB with vectors of 256 dimensions. Each
+  publication records how many chunks its generation holds
+  (`index_runs.generation_chunks`), which the search weighs words against.
 
 The application role is granted `index_chunks` alone, and its row-level
 security policy applies to every partition read through it. The role cannot

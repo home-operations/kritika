@@ -240,9 +240,10 @@ func (g *Server) similar(
 		return nil, 0, similarNoEmbedder, nil
 	}
 	var runID string
+	var lexicalReady bool
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		runID, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
+		runID, lexicalReady, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {
@@ -300,7 +301,7 @@ func (g *Server) similar(
 	started := time.Now()
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil || !emb.LexicalSearch() {
+		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil || !emb.LexicalSearch() || !lexicalReady {
 			return err
 		}
 		named, err = lexicalHits(ctx, tx, runID, r.texts, vectors, r.exclude, depth)
@@ -343,6 +344,11 @@ const lexicalTerms = 32
 // word in more is left out of the search.
 func lexicalCommon(chunks int) int { return min(max(chunks/100, 20), 200) }
 
+// lexicalAlone is the most of a generation's chunks that a word of a query
+// can be in and still find a chunk alone, without another of the query's
+// words or a compound identifier of it: no more than a query keeps.
+const lexicalAlone = similarPerQuery
+
 // lexicalHits finds, for each query text, the perQuery chunks that hold the
 // most weight of its lexicalTerms longest words, outside the excluded paths.
 // Each hit's Matched are the query's spellings of the words that the chunk
@@ -358,10 +364,10 @@ func lexicalHits(
 		words[i] = w[:min(len(w), lexicalTerms)]
 		queries[i].Vector = vectors[i]
 		for _, w := range words[i] {
-			queries[i].Terms = append(queries[i].Terms, w.Lexeme)
+			queries[i].Terms = append(queries[i].Terms, store.LexicalTerm{Lexeme: w.Lexeme, Compound: w.Compound})
 		}
 	}
-	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery, lexicalCommon)
+	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery, lexicalCommon, lexicalAlone)
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +515,7 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 
 // addRanks adds to the score of each candidate that found says a search
 // found 1 / (rrfK + its rank), by by, among those of its query that it
-// found.
+// found. Of candidates that by ties, the one nearest the query ranks first.
 func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) float64) {
 	var order []int
 	for i, c := range cands {
@@ -517,7 +523,9 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 			order = append(order, i)
 		}
 	}
-	slices.SortStableFunc(order, func(a, b int) int { return cmp.Compare(by(cands[b]), by(cands[a])) })
+	slices.SortStableFunc(order, func(a, b int) int {
+		return cmp.Or(cmp.Compare(by(cands[b]), by(cands[a])), cmp.Compare(cands[b].Similarity, cands[a].Similarity))
+	})
 	rank := map[int]int{}
 	for _, i := range order {
 		rank[cands[i].Query]++

@@ -285,6 +285,11 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int6
 			return err
 		}
 		if !keep {
+			// No build will publish or resume the generation, so none of its
+			// postings is needed, wherever its chunks are.
+			if _, err := tx.Exec(ctx, `DELETE FROM index_postings WHERE index_run_id = $1`, run); err != nil {
+				return err
+			}
 			tag, err := tx.Exec(ctx, `DELETE FROM index_chunks_legacy WHERE id = ANY($1)`, ids)
 			removed = tag.RowsAffected()
 			return err
