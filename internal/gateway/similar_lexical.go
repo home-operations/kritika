@@ -48,16 +48,7 @@ func (g *Server) searchByName(
 		logger.Info("similar code searched by vector alone: the answer is due", "answer_by", r.answerBy)
 		return nil, nil
 	}
-	deadline := started.Add(within)
-	search := func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
-		var named []store.SimilarHit
-		err := inSavepoint(ctx, tx, deadline, func(sp pgx.Tx) error {
-			var err error
-			named, err = lexicalHits(ctx, sp, runID, texts, languages, vectors, exclude, depth)
-			return err
-		})
-		return named, err
-	}
+	search := namedWithin(ctx, tx, runID, depth, started.Add(within))
 	named, err := search(r.texts, r.languages, vectors, r.exclude)
 	outcome := adapter.Outcome(err)
 	var past error
@@ -79,6 +70,24 @@ func (g *Server) searchByName(
 		logger.Warn("gateway: similar code searched by name without looking past every full window", "error", past)
 	}
 	return named, nil
+}
+
+// namedWithin is the search by name of runID, depth deep, that searchByName
+// makes, its looks past full files included: lexicalHits of texts, of
+// languages, and their vectors, outside exclude, each in a savepoint of tx
+// (inSavepoint) within what is left before deadline.
+func namedWithin(
+	ctx context.Context, tx pgx.Tx, runID string, depth int, deadline time.Time,
+) func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
+	return func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
+		var named []store.SimilarHit
+		err := inSavepoint(ctx, tx, deadline, func(sp pgx.Tx) error {
+			var err error
+			named, err = lexicalHits(ctx, sp, runID, texts, languages, vectors, exclude, depth)
+			return err
+		})
+		return named, err
+	}
 }
 
 // pastFullNames adds to named, the search by name's window of each of texts,

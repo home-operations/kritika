@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -125,7 +126,11 @@ func TestRetrievalEval(t *testing.T) {
 		// The gateway searches as deep with a reranker as without one, and
 		// deeper for one sent more candidates than that.
 		base, deep := evalSearches(func(depth int, timed *evalSearchTime) evalHits {
-			return ix.search(t, timed, queries, languages, qv, changed, depth, floor, margin)
+			found, err := ix.search(t.Context(), timed, queries, languages, qv, changed, depth, floor, margin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return found
 		}, &timing, depth, max(depth, candidates), reranker != nil)
 		for _, v := range variants {
 			found := base
@@ -371,12 +376,12 @@ func evalSearches(
 // that fill a query's window while floor and margin say more can qualify
 // (pastFullFiles), within the time the gateway gives a request, and the
 // search by name past the files that fill a query's window while its names
-// vouch for more (pastFullNames). A look that fails or runs out of time
+// vouch for more (pastFullNames), within the time the gateway gives it
+// (lexicalWithin), its looks included. A look that fails or runs out of time
 // fails the replay rather than measure a search cut short.
 func (ix evalIndexed) search(
-	t *testing.T, timed *evalSearchTime, queries, languages []string, vectors [][]float32, exclude []string, depth int, floor, margin float64,
-) evalHits {
-	ctx := t.Context()
+	ctx context.Context, timed *evalSearchTime, queries, languages []string, vectors [][]float32, exclude []string, depth int, floor, margin float64,
+) (evalHits, error) {
 	var found evalHits
 	if err := ix.st.WithAccount(ctx, ix.account, func(tx pgx.Tx) error {
 		started := time.Now()
@@ -389,9 +394,7 @@ func (ix evalIndexed) search(
 			return err
 		}
 		searched := time.Now()
-		byName := func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
-			return lexicalHits(ctx, tx, ix.run, texts, languages, vectors, exclude, depth)
-		}
+		byName := namedWithin(ctx, tx, ix.run, depth, searched.Add(lexicalWithin(searched, due)))
 		if found.named, err = byName(queries, languages, vectors, store.Exclusions{Paths: exclude}); err != nil {
 			return err
 		}
@@ -403,9 +406,9 @@ func (ix evalIndexed) search(
 		timed.lexical += time.Since(searched)
 		return nil
 	}); err != nil {
-		t.Fatal(err)
+		return evalHits{}, err
 	}
-	return found
+	return found, nil
 }
 
 // evalBest is each query's n best candidates, in its order.
@@ -1006,14 +1009,36 @@ func TestEvalSearchLooksPastAFullWindowByName(t *testing.T) {
 	r := newLexicalRepo(t, "eval-lexical-full-window", runspec.IndexFormat, chunks, vectors)
 	ix := evalIndexed{st: r.st, account: r.account.ID(), run: r.run}
 	var timed evalSearchTime
-	found := ix.search(t, &timed, []string{"widgetFactory()"}, []string{""}, [][]float32{e(0)}, nil, similarDepth,
+	found, err := ix.search(t.Context(), &timed, []string{"widgetFactory()"}, []string{""}, [][]float32{e(0)}, nil, similarDepth,
 		configfile.DefaultSimilarFloor, configfile.DefaultSimilarMargin)
+	if err != nil {
+		t.Fatal(err)
+	}
 	perFile := map[string]int{}
 	for _, h := range found.named {
 		perFile[h.Chunk.Path]++
 	}
 	if want := map[string]int{"a.go": similarDepth, "b.go": 1}; !maps.Equal(perFile, want) {
 		t.Fatalf("the replay's search by name found %v, want %v", perFile, want)
+	}
+}
+
+// TestEvalSearchByNameDue: the replay's search by name has the time that the
+// gateway gives it, and fails once that is spent rather than count hits that
+// the gateway would not have found in it. The answer is due as the request
+// arrives, so the vector search, which needs no look past a full window,
+// still answers, and the search by name finds its time spent.
+func TestEvalSearchByNameDue(t *testing.T) {
+	r := newLexicalRepo(t, "eval-lexical-due", runspec.IndexFormat, widgets, widgetVectors())
+	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
+	similarAnswerWithin = 0
+	ix := evalIndexed{st: r.st, account: r.account.ID(), run: r.run}
+	var timed evalSearchTime
+	found, err := ix.search(t.Context(), &timed, []string{"widgetFactory()"}, []string{""}, [][]float32{e(0)}, nil, similarDepth,
+		configfile.DefaultSimilarFloor, configfile.DefaultSimilarMargin)
+	if !errors.Is(err, errSearchDue) {
+		t.Fatalf("the replay found %d chunks by vector and %d by name (%v), want its search by name's time spent",
+			len(found.hits), len(found.named), err)
 	}
 }
 
