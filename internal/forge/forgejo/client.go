@@ -110,7 +110,7 @@ type Client struct {
 // or a URL with its scheme, which tests point at a server of their own. The
 // Client calls the API as the integration of audience, with tokens that
 // issuer signs. Runners fetch as runnerAudience when it is set. A nil
-// httpClient is http.DefaultClient.
+// httpClient is defaultHTTP.
 func NewClient(host string, issuer *Issuer, audience, runnerAudience string, httpClient *http.Client) (*Client, error) {
 	if audience == "" {
 		return nil, errors.New("forgejo: audience is required: create the authorized integration on the instance and set its audience")
@@ -141,6 +141,21 @@ func NewGiteaClient(host, token, runnerToken string, httpClient *http.Client) (*
 	return c, nil
 }
 
+// ErrRedirectLoop is what the default HTTP client stops a request with past
+// its tenth redirect, as net/http's does. Go wraps it in a *url.Error, which
+// is no failed connection to retry: the instance answers, and sends the
+// request round again.
+var ErrRedirectLoop = errors.New("forgejo: stopped after 10 redirects")
+
+// defaultHTTP is http.DefaultClient but for the error it stops a redirect
+// loop with.
+var defaultHTTP = &http.Client{CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return ErrRedirectLoop
+	}
+	return nil
+}}
+
 func newClient(host string, httpClient *http.Client) (*Client, error) {
 	if host == "" {
 		return nil, errors.New("forgejo: host is required")
@@ -154,7 +169,7 @@ func newClient(host string, httpClient *http.Client) (*Client, error) {
 		return nil, fmt.Errorf("forgejo: invalid host %q", host)
 	}
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = defaultHTTP
 	}
 	return &Client{http: httpClient, api: web + "/api/v1", web: web, now: time.Now}, nil
 }

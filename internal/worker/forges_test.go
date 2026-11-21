@@ -495,11 +495,29 @@ func plainBehindHTTPS(t *testing.T) error {
 	return err
 }
 
+// forgejoBranchAnswer is what a Gitea client's branch lookup fails with when
+// the instance answers it with handler.
+func forgejoBranchAnswer(t *testing.T, handler http.HandlerFunc) error {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if err == nil {
+		t.Fatal("BranchTip succeeded")
+	}
+	return err
+}
+
 // TestTransientForge: a forge that answers 5xx, 408 or 429, or does not
 // answer, may answer a later try, as may a lookup of its host that timed
 // out, and a forge that closed an answer with no body. A forge that refused
 // the request, a certificate that does not verify, a host that does not
-// resolve, an https URL that a plain HTTP listener answers, a missing file,
+// resolve, an https URL that a plain HTTP listener answers, a redirect loop,
+// a missing file,
 // and GitHub's rate limit, which ForgeRateLimit waits out for as long as
 // the limit says, are not transient.
 func TestTransientForge(t *testing.T) {
@@ -531,6 +549,9 @@ func TestTransientForge(t *testing.T) {
 			http.Redirect(w, r, "https://elsewhere.example/repos/o/r/branches/main", http.StatusFound)
 		})},
 		{name: "GitHub redirect loop", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+		})},
+		{name: "Forgejo redirect loop", err: forgejoBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, r.URL.Path, http.StatusFound)
 		})},
 		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},

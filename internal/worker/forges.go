@@ -314,7 +314,8 @@ func (c *ForgeCache) PullRequestAuthor(ctx context.Context, in *configfile.Conne
 // 404, is not transient. Nor is a forge whose certificate does not verify or
 // whose host does not resolve, or whose HTTPS URL reaches a plain HTTP
 // listener: that is a misconfiguration, which an hour of waits would only
-// hide. So is a GitHub redirect that its client refused to follow.
+// hide. So is a GitHub redirect that its client refused to follow, and a
+// Forgejo or Gitea redirect loop.
 func transientForge(err error) bool {
 	if err == nil {
 		return false
@@ -334,9 +335,9 @@ func transientForge(err error) bool {
 
 // misconfigured reports whether err is a forge's certificate failing to
 // verify, its host name not resolving, its HTTPS URL answered in plain
-// HTTP, or a GitHub redirect refused.
+// HTTP, a GitHub redirect refused, or a Forgejo or Gitea redirect loop.
 func misconfigured(err error) bool {
-	if errors.Is(err, http.ErrSchemeMismatch) || errors.Is(err, github.ErrRedirectRefused) {
+	if errors.Is(err, http.ErrSchemeMismatch) || errors.Is(err, github.ErrRedirectRefused) || errors.Is(err, forgejo.ErrRedirectLoop) {
 		return true
 	}
 	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
