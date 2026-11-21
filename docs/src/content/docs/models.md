@@ -913,6 +913,8 @@ fused order are sent to the reranker, and its scores order them in place
 of the fusion's. Its others follow them in the fused order, and a query
 that the reranker does not answer keeps the fused order of all of its
 candidates, which a duplicate or the file cap leaves it to fall back on.
+A request that would send one candidate of one query is not reranked: no
+score can move it from first.
 With `candidates` above eight, those come from the deeper searches, so
 they need not be the chunks that the query would have without `rerank`.
 The answer then takes each query's best four as before.

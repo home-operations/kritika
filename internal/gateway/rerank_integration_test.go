@@ -115,6 +115,10 @@ apps:
 	failing := rerankFunc(func(context.Context, string, []string) ([]float64, model.RerankUsage, error) {
 		return nil, model.RerankUsage{}, errors.New("reranker down")
 	})
+	unasked := rerankFunc(func(_ context.Context, _ string, docs []string) ([]float64, model.RerankUsage, error) {
+		t.Errorf("reranked %d documents, of which no order can differ from the fused one", len(docs))
+		return make([]float64, len(docs)), model.RerankUsage{Tokens: 11}, nil
+	})
 	rerankUsage := func() int64 {
 		t.Helper()
 		var used int64
@@ -143,6 +147,10 @@ apps:
 		{"hybrid", config(`{ model: test/embed, dims: 8 }`), nil,
 			[]string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0, 0, 1},
 		{"reranked", hybrid, byNear, []string{"near.go:similarity 1.00", "named.go:shares ParseHTTPRequest"}, 0, 11, 0, 12},
+		// The vector search alone keeps one chunk, which leads its query's
+		// order whatever it scores, so it is not sent to the reranker.
+		{"one candidate", config(`{ model: test/embed, dims: 8, lexical: false, rerank: { model: test/rerank, api: tei, candidates: 5 } }`),
+			unasked, []string{"near.go:similarity 1.00"}, 0, 0, 0, 1},
 		{"reranker failure", hybrid, failing, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 1, 0, 0, 1},
 		// The embedding spends the run's budget, so nothing is reranked.
 		{"budget spent", hybrid, byNear, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0, 1, 1},

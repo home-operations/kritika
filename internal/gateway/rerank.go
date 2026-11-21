@@ -101,6 +101,15 @@ func (g *Server) rerank(
 	if len(byQuery) == 0 {
 		return
 	}
+	// One query's one candidate sent leads its order whatever it scores,
+	// ahead of its others, and there is no other query to rank it against.
+	if len(byQuery) == 1 {
+		for _, idx := range byQuery {
+			if len(idx) == 1 {
+				return
+			}
+		}
+	}
 	deadline := rerankDeadline(time.Now(), rr, r.answerBy)
 	if time.Until(deadline) <= 0 {
 		logger.Info("similar code not reranked: the answer is due", "answer_by", r.answerBy)
