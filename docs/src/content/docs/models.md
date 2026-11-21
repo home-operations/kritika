@@ -926,18 +926,32 @@ embedding:
     # or: { model: tei/bge-reranker-base, api: tei }
 ```
 
-A reranker fails open. A query that it does not answer, with an error or
-past `timeout`, keeps the fused order, and the failure is logged as a
-warning and counted under `kritika_model_calls_total` with role `rerank`
-and outcome `error`. A request reranks its queries one at a time, holding
-one of the reranker's slots, which the provider's `concurrency` sets, as
-the embedder's does. The tokens that the provider reports are recorded as
-usage with role `rerank`, and count against the account's `limits`. They
-are not charged to the run's own budget. TEI takes no more texts in one
-request than its `--max-client-batch-size`, 32 unless it is raised, so a
-TEI reranker sets `candidates` under it or the server raises it. The
-kritika pods call the reranker, so the chart's NetworkPolicies must let
-them reach its port, as for a [local model](#local-models).
+A reranker fails open: a query that it does not rerank keeps the fused
+order. A request reranks its queries one at a time, holding one of the
+reranker's slots, which the provider's `concurrency` sets, as the
+embedder's does, and `timeout` covers the wait for the slot and every
+call. A query goes without reranking in three ways, and only the first is
+counted as a model call:
+
+- A call that fails, or that `timeout` cuts short, is logged as a warning,
+  `gateway: similar code not reranked: the fused order stands`, and
+  counted under `kritika_model_calls_total` with role `rerank` and
+  outcome `error`.
+- A request that gets no slot within `timeout` makes no call. It is logged
+  as a warning, `gateway: similar code not reranked: no slot`, and no
+  metric counts it.
+- Once `timeout` has passed, a request sends none of its remaining queries.
+  Its `similar candidates reranked` log line shows how many of its
+  `queries` were `reranked`.
+
+The tokens that the provider reports are recorded as usage with role
+`rerank`, and count against the account's `limits`. They are not charged
+to the run's own budget. TEI takes no more texts in one request than its
+`--max-client-batch-size`, 32 unless it is raised, which is why
+`candidates` is 32 for `tei` unless set. Set it higher only for a server
+that raises that limit. The kritika pods call the reranker, so the chart's
+NetworkPolicies must let them reach its port, as for a
+[local model](#local-models).
 
 ## Local models
 
