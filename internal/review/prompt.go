@@ -775,7 +775,8 @@ func writeContext(b *strings.Builder, chunks []contextpack.Chunk, budget int) in
 		switch {
 		case c.Ref == "" || c.Stage == contextpack.StageOverlay:
 		case c.Stage == contextpack.StageSimilar:
-			// A similar chunk's Ref is its score, not what pulled it in.
+			// A similar chunk's Ref labels the match, its similarity or the
+			// names it shares, rather than a triggering identifier.
 			fmt.Fprintf(&section, " (%s)", c.Ref)
 		default:
 			fmt.Fprintf(&section, " for %s", c.Ref)
