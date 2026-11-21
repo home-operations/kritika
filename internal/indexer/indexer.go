@@ -276,9 +276,23 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 		run = append(run, d)
 	}
 	flush()
+	// Declarations that share a line give pieces that start on it, which
+	// store its text twice, and a search tells its hits apart by path and
+	// start line. Of those, the longest is kept, as it holds the others'
+	// lines, and a named one before an unnamed one of the same lines.
 	var fit []chunk.Decl
+	at := map[int]int{}
 	for _, p := range out {
-		fit = append(fit, c.windows(p, p.StartLine, p.EndLine, opts.MaxDeclLines)...)
+		for _, w := range c.windows(p, p.StartLine, p.EndLine, opts.MaxDeclLines) {
+			j, ok := at[w.StartLine]
+			switch {
+			case !ok:
+				at[w.StartLine] = len(fit)
+				fit = append(fit, w)
+			case w.EndLine > fit[j].EndLine || w.EndLine == fit[j].EndLine && fit[j].Symbol == "" && w.Symbol != "":
+				fit[j] = w
+			}
+		}
 	}
 	return fit
 }

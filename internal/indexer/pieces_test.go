@@ -91,6 +91,13 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			src: "function f() { return 1; }\n$_++;\n",
 		},
 		{
+			name: "declarations that share a line", path: "shared.js",
+			src: "function a() { return 1; } function b() { return 2; }\n\nfunction c() { return 3; } function d() {\n  return 4;\n}\n\nrun(); const x = 1;\n",
+			symbols: map[string]string{
+				"function a() { return 1; } function b() { return 2; }": "a", "function c() { return 3; } function d() {": "d", "run(); const x = 1;": "x",
+			},
+		},
+		{
 			name: "sql comment statements", path: "schema.sql",
 			src: "CREATE TABLE t (a int);\nCOMMENT ON COLUMN t.a IS 'the a column';\nCREATE INDEX i ON t (a);\n",
 		},
@@ -125,7 +132,12 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			defer f.Close()
 			opts := DefaultOptions
 			stored := map[int]chunk.Decl{}
+			first := map[int]chunk.Decl{}
 			for _, p := range pieces(f, opts) {
+				if o, ok := first[p.StartLine]; ok {
+					t.Errorf("pieces %+v and %+v both start on line %d", o, p, p.StartLine)
+				}
+				first[p.StartLine] = p
 				text := f.Text(p.StartLine, p.EndLine)
 				if strings.IndexFunc(text, isWord) < 0 && p.Kind != "window" {
 					t.Errorf("piece %+v holds no word: %q", p, text)
