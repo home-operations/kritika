@@ -81,7 +81,7 @@ const indexBuildClaimLock = `hashtextextended('kritika-index-build-claim ' || $1
 // waits for a slot, no build takes one (TakeIndexBuildLease), so it gets the
 // next that a build lets go, between two of the build's calls. It tries
 // again at the shortest of AcquireLease's waits, since the builds leave it
-// the slot meanwhile. Where the wait's session cannot be opened, as when
+// the slot meanwhile. Where the wait's session cannot be set up, as when
 // Postgres at its connection limit refuses it, the update waits on the pool
 // without coming first.
 func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, update bool) (*Lease, error) {
@@ -105,34 +105,20 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 	}
 	// The wait is a session of its own, which takes none of the pool's
 	// connections for as long as it lasts, and whose end, closed or lost,
-	// lets the lock go. Where it cannot be opened, as when Postgres at its
-	// connection limit refuses it (53300) or a new connection's dial fails
-	// while the pool's open ones still work, the update waits on the pool as
-	// AcquireLease does, though without coming before the builds, rather
-	// than fail while the pool can serve it. The login is bounded by
-	// indexWaitDial, so a dial that hangs costs the update its priority
-	// alone.
-	cfg := s.app.Config().ConnConfig
-	cfg.RuntimeParams["application_name"] = "kritika-index-wait"
-	dctx, cancel := context.WithTimeout(ctx, indexWaitDial)
-	conn, err := pgx.ConnectConfig(dctx, cfg)
-	cancel()
+	// lets the lock go. Where it cannot be set up, as when Postgres at its
+	// connection limit refuses it (53300), a new connection's dial fails
+	// while the pool's open connections still work, or a pooler logs it in
+	// but has no server connection for its first query, the update waits on
+	// the pool as AcquireLease does, though without coming before the
+	// builds, rather than fail while the pool can serve it.
+	conn, err := s.openIndexWait(ctx, accountID, modelKey)
 	switch {
 	case err == nil:
-		defer func() {
-			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
-			defer cancel()
-			if err := conn.Close(cctx); err != nil {
-				s.logger.Warn("index slot wait not closed cleanly", "model", modelKey, "error", err)
-			}
-		}()
-		if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock_shared(`+indexWaitLock+`)`, accountID, modelKey); err != nil {
-			return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
-		}
+		defer s.closeIndexWait(ctx, conn, modelKey)
 	case ctx.Err() != nil:
 		return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
 	default:
-		s.logger.Warn("index update waits for a slot without coming before the builds: its session could not be opened",
+		s.logger.Warn("index update waits for a slot without coming before the builds: its session could not be set up",
 			"model", modelKey, "error", err)
 	}
 	for {
@@ -146,12 +132,44 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 	}
 }
 
-// indexWaitDial bounds opening, and indexWaitClose closing, the session of
-// an index update's wait for a slot.
+// indexWaitSetup bounds setting up, its login and its wait lock, and
+// indexWaitClose closing, the session of an index update's wait for a slot.
 const (
-	indexWaitDial  = 5 * time.Second
+	indexWaitSetup = 5 * time.Second
 	indexWaitClose = 5 * time.Second
 )
+
+// openIndexWait opens the session of an index update's wait for a slot of
+// account and model, which holds the wait lock shared. The login and the
+// lock share indexWaitSetup, so a setup that hangs at either costs the
+// update its priority alone: a pooler can finish a login without a server
+// connection and then hold the first query until one is free. The lock
+// waits only for a build's claim, a transaction of a moment.
+func (s *Store) openIndexWait(ctx context.Context, accountID, modelKey string) (*pgx.Conn, error) {
+	cfg := s.app.Config().ConnConfig
+	cfg.RuntimeParams["application_name"] = "kritika-index-wait"
+	sctx, cancel := context.WithTimeout(ctx, indexWaitSetup)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(sctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Exec(sctx, `SELECT pg_advisory_lock_shared(`+indexWaitLock+`)`, accountID, modelKey); err != nil {
+		s.closeIndexWait(ctx, conn, modelKey)
+		return nil, err
+	}
+	return conn, nil
+}
+
+// closeIndexWait closes the session of an index update's wait, which lets
+// its lock go, however ctx ended.
+func (s *Store) closeIndexWait(ctx context.Context, conn *pgx.Conn, modelKey string) {
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
+	defer cancel()
+	if err := conn.Close(cctx); err != nil {
+		s.logger.Warn("index slot wait not closed cleanly", "model", modelKey, "error", err)
+	}
+}
 
 // leaseWait waits d before another try for a slot of modelKey, or until ctx
 // ends.

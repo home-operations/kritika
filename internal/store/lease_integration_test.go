@@ -537,12 +537,15 @@ func refuseLogin(conn net.Conn) error {
 // waits for one on the application pool and takes the slot let go, rather
 // than fail while the pool can serve it. Postgres at its connection limit
 // refuses the session, and a dial of a new connection can fail, as while DNS
-// does, though the pool's open connections still work.
+// does, though the pool's open connections still work. A session that logs
+// in but whose first query waits, as one of a pooler with no server
+// connection to give it does, is given up after the setup's bound too.
 func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		// dial is each new connection once the pool holds its own. It
-		// signals refused when it has turned one away.
+		// dial is each new connection once the pool holds its own, or nil
+		// for Postgres's own. It signals refused when it has turned one
+		// away.
 		dial func(refused chan<- struct{}) (net.Conn, error)
 	}{
 		{"at Postgres's connection limit", func(refused chan<- struct{}) (net.Conn, error) {
@@ -558,6 +561,7 @@ func TestIndexUpdateWaitsWhenItsSessionIsRefused(t *testing.T) {
 			signal(refused)
 			return nil, &net.DNSError{Err: "server misbehaving", Name: "postgres", IsTemporary: true}
 		}},
+		{"a first query that waits", nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			indexUpdateWaitsWithoutSession(t, tt.dial)
@@ -598,7 +602,7 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 	refused := make(chan struct{}, 1)
 	var dialer net.Dialer
 	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if !full.Load() {
+		if !full.Load() || dial == nil {
 			return dialer.DialContext(ctx, network, addr)
 		}
 		return dial(refused)
@@ -617,6 +621,18 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 		t.Fatalf("TakeLease = %v, %v", held, err)
 	}
 	t.Cleanup(func() { _, _ = held.Release(context.Background()) })
+	if dial == nil {
+		// The wait's session logs in, and its first query, for the wait
+		// lock, waits behind this.
+		holder, err := s.owner.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = holder.Rollback(context.Background()) })
+		if _, err := holder.Exec(ctx, `SELECT pg_advisory_xact_lock(`+indexWaitLock+`)`, alpha, model); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	limited := &Store{app: pool, owner: s.owner, logger: s.logger}
 	var updated *Lease
@@ -633,6 +649,9 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 			_, _ = updated.Release(context.Background())
 		}
 	})
+	if dial == nil {
+		go signalWaitLockQueued(ctx, s, alpha, model, refused)
+	}
 	select {
 	case <-refused:
 	case <-done:
@@ -650,5 +669,27 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 	}
 	if updateErr != nil || updated == nil {
 		t.Fatalf("AcquireIndexLease without its session = %v, %v; want the slot let go", updated, updateErr)
+	}
+}
+
+// signalWaitLockQueued signals queued once a session waits for the wait
+// lock of account and model, or returns when ctx ends.
+func signalWaitLockQueued(ctx context.Context, s *Store, account, model string, queued chan<- struct{}) {
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		var found bool
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l, (SELECT `+indexWaitLock+` AS k) w
+			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND NOT l.granted AND l.objsubid = 1
+				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`, account, model).
+			Scan(&found); err == nil && found {
+			signal(queued)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-poll.C:
+		}
 	}
 }
