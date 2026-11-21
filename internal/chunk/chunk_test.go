@@ -839,3 +839,25 @@ func TestEnclosingSkipsUnrelatedDeclarationsBeforeTheirLeads(t *testing.T) {
 		t.Errorf("Enclosing walked %d lines of unrelated declarations' comments, want 0", n)
 	}
 }
+
+// TestLeadEnds: a line that a comment which began above closes on reports
+// where the text past the close starts, and a line the comment fills, or
+// that no comment continues onto, reports none.
+func TestLeadEnds(t *testing.T) {
+	src := "package demo\n\n/*\n * F does things.\n */ func F() {}\n\n/*\n * G does things.\n */\nfunc G() {}\n"
+	f := (&Parser{}).Parse("demo.go", []byte(src))
+	f.Close()
+	for _, tt := range []struct {
+		line, want int
+		ok         bool
+	}{
+		{line: 4},
+		{line: 5, want: len(" */ "), ok: true},
+		{line: 9},
+		{line: 10},
+	} {
+		if got, ok := f.LeadEnds(tt.line); got != tt.want || ok != tt.ok {
+			t.Errorf("LeadEnds(%d) = %d, %v, want %d, %v", tt.line, got, ok, tt.want, tt.ok)
+		}
+	}
+}

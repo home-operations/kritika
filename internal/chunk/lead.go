@@ -29,8 +29,9 @@ func comment(typ string) bool { return strings.HasSuffix(typ, "comment") }
 // character on the line that is not white space belongs to one such node,
 // and a node that continues onto the line began on a lead line. continued is
 // the 1-based lines, in order, that a lead node which began above continues
-// onto, such as the lines of a block comment after its first.
-func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, text [][2]int) (lead []bool, continued []int) {
+// onto, such as the lines of a block comment after its first, each with
+// where text past the lead nodes starts on it.
+func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, text [][2]int) (lead []bool, continued []continuation) {
 	// reach is, by 0-based row, the end of the row's text that lead nodes
 	// fill from its start, with only white space between them, or, once
 	// something else stops them, where that thing starts, so that the white
@@ -64,17 +65,30 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 	walk(root)
 	lead = make([]bool, len(text)+1)
 	for row := range text {
-		if from[row] != 0 {
-			continued = append(continued, row+1)
-		}
 		// A blank line inside a block comment is the comment's, while one
 		// between two comments separates them.
 		lo, hi := text[row][0], text[row][1]
-		lead[row+1] = (lo < hi || from[row] != 0) && reach[row] > 0 && skipSpace(src, reach[row], hi) >= hi &&
+		past := hi
+		if (lo < hi || from[row] != 0) && reach[row] > 0 {
+			past = skipSpace(src, reach[row], hi)
+		}
+		lead[row+1] = (lo < hi || from[row] != 0) && reach[row] > 0 && past >= hi &&
 			(from[row] == 0 || lead[from[row]])
+		if from[row] != 0 {
+			c := continuation{line: row + 1}
+			if past < hi {
+				c.resume = past
+			}
+			continued = append(continued, c)
+		}
 	}
 	return lead, continued
 }
+
+// continuation is a line that a lead node which began on a line above
+// continues onto. resume is the source offset where text past the lead
+// nodes starts on the line, or zero when they fill it.
+type continuation struct{ line, resume int }
 
 // skipSpace is the offset of the first byte from i to hi that is not white
 // space, or hi. White space is what lineTexts trims from a line's ends.

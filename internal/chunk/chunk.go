@@ -113,8 +113,8 @@ type File struct {
 	Decls       []Decl
 	lineOffsets []int
 	// continued is the lines, in order, that a lead node which began on a
-	// line above continues onto.
-	continued []int
+	// line above continues onto, and where text past it starts on each.
+	continued []continuation
 
 	lang *gotreesitter.Language
 	tree *gotreesitter.Tree
@@ -197,7 +197,7 @@ func (p *Parser) language(path string) *languageParser {
 // type or constant block that the tags query does not cover still becomes a
 // chunk. It also returns the lines that a lead node continues onto, as
 // leadLines does.
-func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) (decls []Decl, continued []int) {
+func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) (decls []Decl, continued []continuation) {
 	root := tree.RootNode()
 	starts := lineStarts(src)
 	text := lineTexts(src, starts)
@@ -678,8 +678,29 @@ func (f *File) Text(startLine, endLine int) string {
 // on a line above line continues onto it, so that text from line would start
 // inside one. It holds after Close.
 func (f *File) LeadContinues(line int) bool {
-	_, ok := slices.BinarySearch(f.continued, line)
+	_, ok := f.continuation(line)
 	return ok
+}
+
+// LeadEnds reports where text starts on line past a comment, decorator or
+// attribute that began on a line above it and ends on it, as a byte offset
+// within the line: past the close of a block comment on the line that names
+// a function, for one. ok is false when no such node ends on line before
+// more text. It holds after Close.
+func (f *File) LeadEnds(line int) (offset int, ok bool) {
+	c, ok := f.continuation(line)
+	if !ok || c.resume == 0 {
+		return 0, false
+	}
+	return c.resume - f.offsets()[line-1], true
+}
+
+func (f *File) continuation(line int) (continuation, bool) {
+	i, ok := slices.BinarySearchFunc(f.continued, line, func(c continuation, line int) int { return cmp.Compare(c.line, line) })
+	if !ok {
+		return continuation{}, false
+	}
+	return f.continued[i], true
 }
 
 // Windows cuts a file with no declarations into pieces for the index. Each

@@ -16,6 +16,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/gittest"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 func TestBoundedCandidatesPreserveSelection(t *testing.T) {
@@ -514,6 +515,32 @@ func TestOverlayTakesADeclarationItsCommentsPushOver(t *testing.T) {
 	}
 	if c := b.overlayChunks[0]; c.Symbol != "F" || c.StartLine != 18 || c.EndLine != 157 || !strings.HasPrefix(c.Text, "func F() {") {
 		t.Fatalf("overlay = %+v, want F from its head line 18 to 157", c)
+	}
+}
+
+// TestOverlayKeepsTheHeadUnderACommentThatClosesOnIt: a block doc comment
+// over MaxChunkBytes that closes on the line naming the function cannot go
+// whole by lines. The overlay of a change in the body starts at the
+// function's own text instead, so it keeps the signature and the change
+// rather than the comment alone.
+func TestOverlayKeepsTheHeadUnderACommentThatClosesOnIt(t *testing.T) {
+	src := "package demo\n\n/*\n" + strings.Repeat(" * F does things, and does them at some length.\n", 140) + " */ func F() {\n\tchanged()\n}\n"
+	if len(src) <= DefaultOptions.MaxChunkBytes {
+		t.Fatalf("source is %d bytes, not over %d", len(src), DefaultOptions.MaxChunkBytes)
+	}
+	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -145,1 +145,1 @@\n-\tunchanged()\n+\tchanged()\n"
+	b := &builder{
+		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
+		opts: DefaultOptions, parser: &chunk.Parser{},
+	}
+	if err := b.overlay(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.overlayChunks) != 1 {
+		t.Fatalf("overlay = %+v, want one chunk", b.overlayChunks)
+	}
+	if c := b.overlayChunks[0]; c.Symbol != "F" || c.StartLine != 144 || c.EndLine != 146 || c.Text != "func F() {\n\tchanged()\n}" {
+		t.Fatalf("overlay = L%d-%d %q, want F's own text from line 144", c.StartLine, c.EndLine, textcut.Prefix(c.Text, 80))
 	}
 }
 
