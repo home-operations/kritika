@@ -204,10 +204,11 @@ the next poll. A round of asks stops at the forge's rate limit, or at the end
 of its interval, and the next round past the limit's wait resumes at the
 repository it stopped at. A 429 from any forge counts as its rate limit, as
 do GitHub's primary and secondary limits. The next round waits until a
-GitHub primary limit resets, or until the `Ratelimit-Reset` of a GitLab 429
-that has one. For a GitHub secondary limit, another GitHub 429 or a GitLab
-429 without a reset still to come, it waits for the answer's `Retry-After`, or a minute
-when the answer names none, and a minute on Forgejo and Gitea. Rounds
+GitHub primary limit resets. For a GitLab 429 it waits until the later of
+the `Ratelimit-Reset` still to come and the answer's `Retry-After`. For a
+GitHub secondary limit or another GitHub 429, it waits for the answer's
+`Retry-After`. A 429 that names neither waits a minute, as on Forgejo and
+Gitea. Rounds
 go through the repositories by name, and the round that reaches the last one
 ends the sweep that the hourly ask counts from, however many rounds it took.
 A round that runs out of time starts the next with the accounts it did not

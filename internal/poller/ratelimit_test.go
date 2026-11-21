@@ -50,6 +50,8 @@ func TestRateLimited(t *testing.T) {
 		{name: "GitLab's 429 with a Retry-After that does not parse", err: gitlab429("soon"), wait: forgeRateLimitWait, limited: true},
 		{name: "GitLab's 429 until its Ratelimit-Reset, past its Retry-After", err: gitlabReset(now.Add(2*time.Hour).Unix(), "60"),
 			wait: 2 * time.Hour, limited: true},
+		{name: "GitLab's 429 for its Retry-After, past its Ratelimit-Reset", err: gitlabReset(now.Add(30*time.Second).Unix(), "120"),
+			wait: 2 * time.Minute, limited: true},
 		{name: "GitLab's 429 with a Ratelimit-Reset that has passed", err: gitlabReset(now.Add(-time.Minute).Unix(), "60"),
 			wait: time.Minute, limited: true},
 		{name: "GitHub's 429 that is no limit it knows", err: &gh.ErrorResponse{
