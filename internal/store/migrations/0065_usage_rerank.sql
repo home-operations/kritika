@@ -3,7 +3,7 @@
 --
 -- The new check admits every row the old one did, so it is added without
 -- reading the table, under the exclusive lock that replacing it takes for a
--- moment, and 0071_usage_rerank_validate checks the rows that are there
+-- moment, and 0068_usage_rerank_validate checks the rows that are there
 -- without that lock. A wait for the lock gives up after a few seconds rather
 -- than hold up every model call's usage behind it; the leader tries the
 -- migration again a retry interval later.

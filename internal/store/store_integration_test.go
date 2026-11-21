@@ -188,24 +188,24 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 		lock    string
 		applied func() bool
 	}{
-		{"a column of runner_runs", []string{"0062_similar_exclude"}, "",
+		{"a column of runner_runs", []string{"0061_similar_exclude"}, "",
 			`LOCK TABLE runner_runs IN ACCESS SHARE MODE`, column("runner_runs", "similar_exclude")},
-		{"the index format's columns", []string{"0063_index_format"}, "",
+		{"the index format's columns", []string{"0062_index_format"}, "",
 			`LOCK TABLE index_packs IN ACCESS SHARE MODE`, column("index_packs", "truncated")},
-		{"the chunks' content hash", []string{"0064_index_content_hash", "0073_index_content_hash_idx"},
+		{"the chunks' content hash", []string{"0063_index_content_hash", "0070_index_content_hash_idx"},
 			`ALTER TABLE index_chunks DROP COLUMN content_hash`,
 			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
-		{"the content hash's index", []string{"0073_index_content_hash_idx"}, `DROP INDEX index_chunks_content_hash_idx`,
+		{"the content hash's index", []string{"0070_index_content_hash_idx"}, `DROP INDEX index_chunks_content_hash_idx`,
 			`LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
-		{"the usage check", []string{"0068_usage_rerank", "0071_usage_rerank_validate"}, "",
+		{"the usage check", []string{"0065_usage_rerank", "0068_usage_rerank_validate"}, "",
 			`LOCK TABLE usage IN ACCESS SHARE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
-		{"the usage check's validation", []string{"0071_usage_rerank_validate"}, "",
+		{"the usage check's validation", []string{"0068_usage_rerank_validate"}, "",
 			`LOCK TABLE usage IN SHARE UPDATE EXCLUSIVE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
-		{"a column of index_staging", []string{"0069_index_staging_signature"}, "",
+		{"a column of index_staging", []string{"0066_index_staging_signature"}, "",
 			`LOCK TABLE index_staging IN ACCESS SHARE MODE`, column("index_staging", "signature")},
-		{"a column of repositories", []string{"0070_repository_config_off"}, "",
+		{"a column of repositories", []string{"0067_repository_config_off"}, "",
 			`LOCK TABLE repositories IN ACCESS SHARE MODE`, column("repositories", "repo_config_off")},
-		{"the postings and the generation's count", []string{"0072_index_postings"}, "",
+		{"the postings and the generation's count", []string{"0069_index_postings"}, "",
 			`LOCK TABLE index_runs IN ACCESS SHARE MODE`, column("index_runs", "generation_chunks")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -601,8 +601,8 @@ func TestIndexAddedColumns(t *testing.T) {
 		column, index string
 		migrations    []string
 	}{
-		{"content_hash", "index_chunks_content_hash_idx", []string{"0064_index_content_hash", "0073_index_content_hash_idx"}},
-		{"lexemes", "", []string{"0065_index_lexemes"}},
+		{"content_hash", "index_chunks_content_hash_idx", []string{"0063_index_content_hash", "0070_index_content_hash_idx"}},
+		{"lexemes", "", []string{"0064_index_lexemes"}},
 	} {
 		t.Run(tt.column, func(t *testing.T) {
 			ctx := t.Context()

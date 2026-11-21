@@ -20,7 +20,7 @@ import (
 )
 
 // createUnpartitionedIndexChunks creates index_chunks as a build before
-// partitioning did, a plain table, with the lexemes that migration 0065
+// partitioning did, a plain table, with the lexemes that migration 0064
 // adds, and records its index schema. With index false it leaves out the
 // vector index, to be built once rows are loaded.
 // With hash false it leaves out the content hash, as a leader of a build
