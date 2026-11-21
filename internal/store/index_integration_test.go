@@ -183,14 +183,24 @@ func TestMixedReadsOtherFormats(t *testing.T) {
 		_, _ = s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repo)
 		_, _ = s.owner.Exec(ctx, `DELETE FROM index_runs WHERE repository_id = $1`, repo)
 	})
-	// The history: generations that were superseded, and the steps that
-	// advanced each.
+	// The history: generations that were superseded, and a step that
+	// advanced each. The trigger records a completed step as advancing the
+	// active generation, none yet, so each step's is set after, by an update
+	// that leaves status as it is, which the trigger does not see.
 	const history, steps = 2000, 1000
 	if _, err := s.owner.Exec(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
-			index_format, stepped_run_id)
+			index_format)
 		SELECT $1, $2, 'old', 'm', 8, CASE WHEN i % 2 = 0 THEN 'full' ELSE 'incremental' END,
-			CASE WHEN i % 2 = 0 THEN 'superseded' ELSE 'completed' END, $3, CASE WHEN i % 2 = 1 THEN gen_random_uuid() END
+			CASE WHEN i % 2 = 0 THEN 'superseded' ELSE 'completed' END, $3
 		FROM generate_series(1, $4) AS i`, account, repo, runspec.IndexFormat, history); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `UPDATE index_runs st SET stepped_run_id = g.id
+		FROM (SELECT id, row_number() OVER (ORDER BY id) AS n FROM index_runs
+				WHERE repository_id = $1 AND commit_sha = 'old' AND mode = 'full') g,
+			(SELECT id, row_number() OVER (ORDER BY id) AS n FROM index_runs
+				WHERE repository_id = $1 AND commit_sha = 'old' AND mode = 'incremental') h
+		WHERE st.id = h.id AND h.n = g.n`, repo); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.owner.QueryRow(ctx, `WITH g AS (INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode,
@@ -206,6 +216,18 @@ func TestMixedReadsOtherFormats(t *testing.T) {
 		SELECT $1, $2, 'new', 'm', 8, 'incremental', 'completed', $3 FROM generate_series(1, $4)`,
 		account, repo, runspec.IndexFormat, steps); err != nil {
 		t.Fatal(err)
+	}
+	// Both the history's steps and the generation's are in the index that
+	// the check reads.
+	var historical, own int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FILTER (WHERE commit_sha = 'old'), count(*) FILTER (WHERE stepped_run_id = $2)
+		FROM index_runs WHERE repository_id = $1 AND status = 'completed' AND stepped_run_id IS NOT NULL`, repo, gen).
+		Scan(&historical, &own); err != nil {
+		t.Fatal(err)
+	}
+	if historical != history/2 || own != steps {
+		t.Fatalf("%d of the history's steps and %d of the generation's advanced a generation, want %d and %d",
+			historical, own, history/2, steps)
 	}
 	if _, err := s.owner.Exec(ctx, `ANALYZE index_runs`); err != nil {
 		t.Fatal(err)
