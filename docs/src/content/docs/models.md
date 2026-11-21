@@ -658,19 +658,24 @@ An embedder builds each repository's similar-code index. With an embedder,
 a review's prompt carries the index's chunks (pieces of files) nearest the
 change. The agent gets a `search_code` tool over the same index. A query
 is either a hunk of the diff or a `search_code` query. Its vector search
-finds its eight nearest chunks, and unless `lexical` is `false`, the
+finds its eight nearest chunks, or as many as the query keeps when that is
+more, and unless `lexical` is `false`, the
 [search by name](#search-by-name) finds more. A chunk either search found
 is kept when it scores at least `similarFloor` and no more than
 `similarMargin` below the best match of the query. A chunk that the search
 by name found is kept too when its weight by name is close enough to the
 query's best, whatever its similarity. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
-chunks of one file, four of one query, and ten in all, or sixteen for a
-review's prompt. A chunk that the file cap or a duplicate turns away gives
-its query's turn to the query's next, which then comes before any query's
-later match. When the file cap would leave a query fewer than four of the
-chunks that one search found, and the last of them still qualifies, that
-search looks again past the files that it found two or more chunks of.
+chunks of one file, four of one query of a review's diff, and ten in all,
+or sixteen for a review's prompt. A `search_code` call sends its one query
+and asks for eight chunks, which that query keeps: the agent sees at most
+four of them, those that the pull request's head still has (below), so
+chunks that the head changed do not leave it short. A chunk that the file
+cap or a duplicate turns away gives its query's turn to the query's next,
+which then comes before any query's later match. When the file cap would
+leave a query fewer than it keeps of the chunks that one search found, and
+the last of them still qualifies, that search looks again past the files
+that it found two or more chunks of.
 Each of the vector search's looks past those files is a statement of its
 own, within what is left of 50 seconds after the request reached the
 gateway. One that fails, or that finds that time spent, ends the looking,
@@ -871,7 +876,8 @@ fusion: a chunk's score is the sum of 1 / (60 + its rank) in the answer of
 each search that found it. A chunk that both find gains over one that
 only one finds, but need not come before it: one ranked low by both can
 score below one ranked first by only one. Of those, an answer takes four
-for each query, and the answer's other bounds hold as before.
+for each query of a review's diff, or the eight that a `search_code` query
+asks for, and the answer's other bounds hold as before.
 A chunk that the similarity gate keeps shows its similarity, as in
 `(similarity 0.81)`, and a chunk that holds names of the query shows them,
 as in `(shares AcquireLease, Lease)`. One kept by its lexical weight alone
@@ -910,7 +916,7 @@ it: `vector`, `lexical` or `both`.
 A reranker reads each query beside each of its candidates and scores how
 well the candidate answers it, which an embedding of each alone cannot.
 With `rerank` set, both searches look for `candidates` chunks for each
-query, or eight when that is more. Of the candidates that the floor, the
+query, or eight, or as many as the query keeps, when that is more. Of the candidates that the floor, the
 margin and the weight by name keep, each query's best `candidates` by the
 fused order are sent to the reranker, and its scores order them in place
 of the fusion's. Its others follow them in the fused order, and a query
@@ -920,7 +926,8 @@ A request that would send one candidate of one query is not reranked: no
 score can move it from first.
 With `candidates` above eight, those come from the deeper searches, so
 they need not be the chunks that the query would have without `rerank`.
-The answer then takes each query's best four as before.
+The answer then takes each query's best four, or a `search_code` query's
+eight, as before.
 
 | Key          | Default          | What                                                                                                                                                    |
 | ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
