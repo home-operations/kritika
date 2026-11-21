@@ -522,6 +522,18 @@ func TestActiveGenerationForLexical(t *testing.T) {
 				"lexical-ready/"+tt.name); err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() {
+				ctx := context.Background()
+				for _, stmt := range []string{
+					`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`,
+					`DELETE FROM index_runs WHERE repository_id = $1`,
+					`DELETE FROM repositories WHERE id = $1`,
+				} {
+					if _, err := s.owner.Exec(ctx, stmt, repo); err != nil {
+						t.Error(err)
+					}
+				}
+			})
 			if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
 				index_format, finished_at) VALUES ($1, $2, 'A', 'test-embed', 8, 'full', 'completed', $3, now() - interval '1 hour') RETURNING id`,
 				account, repo, tt.format).Scan(&run); err != nil {
