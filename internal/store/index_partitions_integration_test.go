@@ -289,7 +289,7 @@ func partitionBehindWriter(t *testing.T, s *Store) {
 	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.PartitionIndexChunks(ctx, "kritika_app"); err == nil || got {
+	if got, err := s.PartitionIndexChunks(ctx, "kritika_app"); !lockNotAvailable(err) || got {
 		t.Fatalf("PartitionIndexChunks behind a writer = %v, %v; want a lock timeout", got, err)
 	}
 	if err := writer.Rollback(ctx); err != nil {
