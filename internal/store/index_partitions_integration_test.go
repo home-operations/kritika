@@ -317,6 +317,17 @@ func TestIndexChunksPartitionsUnderDefaultGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	listRepos(t, s, "beta", "beta/default-grants")
+	repo := configfile.RepositoryID(accountID(t, s, "beta"), "beta/default-grants")
+	// The suites that share the database count beta's repositories. This
+	// runs after dropIndexChunks' cleanup, which unpublishes the generation.
+	t.Cleanup(func() {
+		ctx := context.Background()
+		for _, stmt := range []string{`DELETE FROM index_runs WHERE repository_id = $1`, `DELETE FROM repositories WHERE id = $1`} {
+			if _, err := s.owner.Exec(ctx, stmt, repo); err != nil {
+				t.Error(err)
+			}
+		}
+	})
 	dropIndexChunks(t, s)
 	for _, grantee := range []string{"kritika_app", "PUBLIC"} {
 		if _, err := s.owner.Exec(ctx, `ALTER DEFAULT PRIVILEGES GRANT ALL ON TABLES TO `+grantee); err != nil {
@@ -332,7 +343,7 @@ func TestIndexChunksPartitionsUnderDefaultGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
-	run := partitionRun(t, s, beta, configfile.RepositoryID(beta, "beta/default-grants"), true, "a.go")
+	run := partitionRun(t, s, beta, repo, true, "a.go")
 	for _, relation := range []string{"index_chunks_current", onlyPartition(t, s, run)} {
 		appDenied(t, s, alpha, relation)
 		err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
