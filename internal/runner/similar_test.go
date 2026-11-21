@@ -24,11 +24,13 @@ import (
 // fakeSimilarGateway answers a run's exclusion report with status, and its
 // similar-code requests with answer. It records both. A similar-code request
 // over maxBody, when set, is refused as the gateway refuses one over its
-// bound.
+// bound. When unanswered is set, it answers no exclusion report, and closes
+// it once the run gives the report up.
 type fakeSimilarGateway struct {
-	status  int
-	answer  contextpack.SimilarResponse
-	maxBody int64
+	status     int
+	answer     contextpack.SimilarResponse
+	maxBody    int64
+	unanswered chan struct{}
 
 	mu       sync.Mutex
 	excluded [][]string
@@ -50,6 +52,13 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 				t.Error(err)
 			}
 			f.excluded = append(f.excluded, v.Paths)
+			if f.unanswered != nil {
+				f.mu.Unlock()
+				<-r.Context().Done()
+				close(f.unanswered)
+				f.mu.Lock()
+				return
+			}
 			w.WriteHeader(f.status)
 		case runspec.SimilarPath:
 			body, err := io.ReadAll(r.Body)
@@ -78,9 +87,10 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 // TestSimilarContextExclusions: a run first asks, with no queries, whether
 // its repository has an index. It reports the paths its searches leave out
 // once, both names of a rename among them, and only when there is an index.
-// Its requests carry none. A run whose report is refused, or still fails
-// once similarReportWindow is over, searches nothing: the index would answer
-// with the old copies of the files the prompt shows.
+// Its requests carry none. A run whose report is refused, still fails once
+// similarReportWindow is over, or is not answered within it, searches
+// nothing: the index would answer with the old copies of the files the
+// prompt shows. The window, not the report's own retries, ends the wait.
 func TestSimilarContextExclusions(t *testing.T) {
 	const diff = "diff --git a/old.go b/new.go\nsimilarity index 80%\nrename from old.go\nrename to new.go\n" +
 		"--- a/old.go\n+++ b/new.go\n@@ -1,1 +1,2 @@\n package main\n+func n() {}\n"
@@ -90,27 +100,44 @@ func TestSimilarContextExclusions(t *testing.T) {
 	t.Cleanup(func() { similarReportWindow = window })
 	excluded := [][]string{{"main.go", "new.go", "old.go"}}
 	for _, tt := range []struct {
-		name     string
-		status   int
-		indexed  bool
-		excluded [][]string
-		queries  []int
-		offered  bool
+		name       string
+		status     int
+		unanswered bool
+		indexed    bool
+		excluded   [][]string
+		queries    []int
+		offered    bool
 	}{
 		{name: "reported", status: http.StatusNoContent, indexed: true, excluded: excluded, queries: []int{0, 1}, offered: true},
 		{name: "refused", status: http.StatusBadRequest, indexed: true, excluded: excluded, queries: []int{0}},
-		{name: "never answered", status: http.StatusServiceUnavailable, indexed: true, queries: []int{0}},
+		{name: "failing", status: http.StatusServiceUnavailable, indexed: true, queries: []int{0}},
+		{name: "never answered", unanswered: true, indexed: true, excluded: excluded, queries: []int{0}},
 		{name: "no index", status: http.StatusNoContent, queries: []int{0}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: tt.indexed}}
+			if tt.unanswered {
+				gw.unanswered = make(chan struct{})
+			}
 			s := reviewSpec()
 			s.GatewayURL = gw.serve(t).URL
-			started := time.Now()
-			_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
-				slog.New(slog.DiscardHandler))
-			if elapsed := time.Since(started); elapsed > 5*time.Second {
-				t.Fatalf("similar context took %s", elapsed)
+			searched := make(chan *searchTool, 1)
+			go func() {
+				_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
+					slog.New(slog.DiscardHandler))
+				searched <- search
+			}()
+			// The report's own retries and timeout last minutes: only the window
+			// ends the wait within the test's minute.
+			var search *searchTool
+			select {
+			case search = <-searched:
+			case <-time.After(time.Minute):
+				t.Fatalf("similar context still waits on its report a minute on, past its %s window", similarReportWindow)
+			}
+			if gw.unanswered != nil {
+				// The run gave the report up rather than being answered.
+				<-gw.unanswered
 			}
 			gw.mu.Lock()
 			defer gw.mu.Unlock()
