@@ -337,13 +337,14 @@ interval.
 
 A migration that changes a table that searches, index builds or model calls
 use waits at most five seconds for that table's lock, so that the queries
-queued behind it wait no longer. One that builds an index of such a table
-does so in a transaction of its own, which lets the table be read while it
-builds but holds up writes to it. When another transaction holds the lock
-longer, the migration fails and the leader logs it and releases the leader
-lock. A leader tries the migration again within one
-`KRITIKA_LEADER_RETRY_INTERVAL`. Replicas start working jobs once every
-migration is applied.
+queued behind it wait no longer. The five seconds bound only the wait for
+the lock, not how long the migration then holds it. One that builds an index
+of such a table does so in a transaction of its own, which lets the table be
+read while it builds but holds up writes to it for as long as the build
+reads the table. When another transaction holds the lock longer, the
+migration fails and the leader logs it and releases the leader lock. A
+leader tries the migration again within one `KRITIKA_LEADER_RETRY_INTERVAL`.
+Replicas start working jobs once every migration is applied.
 
 CNPG's disruption budget for the primary allows no eviction, so draining the
 primary's node waits until the primary moves. Switch over first, with the
