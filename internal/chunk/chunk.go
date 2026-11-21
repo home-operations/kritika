@@ -149,8 +149,8 @@ func (p *Parser) Parse(path string, src []byte) *File {
 		tree.Release()
 		return f
 	}
-	f.lang, f.tree = lp.lang, tree
-	f.Decls, f.continued = declarations(lp, tree, src)
+	f.lang, f.tree, f.lineOffsets = lp.lang, tree, lineStarts(src)
+	f.Decls, f.continued = declarations(lp, tree, src, f.lineOffsets)
 	return f
 }
 
@@ -197,9 +197,8 @@ func (p *Parser) language(path string) *languageParser {
 // type or constant block that the tags query does not cover still becomes a
 // chunk. It also returns the lines that a lead node continues onto, as
 // leadLines does.
-func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) (decls []Decl, continued []continuation) {
+func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte, starts []int) (decls []Decl, continued []continuation) {
 	root := tree.RootNode()
-	starts := lineStarts(src)
 	text := lineTexts(src, starts)
 	lead, continued := leadLines(root, lp.lang, src, text)
 	var out []Decl
