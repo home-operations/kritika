@@ -720,6 +720,9 @@ func lexicalScaleCorpus(b testing.TB, rng *rand.Rand, tree string, size int) (ch
 	if err != nil {
 		b.Fatal(err)
 	}
+	if len(built) == 0 {
+		b.Fatalf("KRITIKA_LEXICAL_SCALE_TREE %s: its HEAD has no file that the indexer makes chunks of", tree)
+	}
 	for i := 0; len(chunks) < size; i++ {
 		c := built[i%len(built)]
 		path := c.Path
@@ -887,10 +890,13 @@ func BenchmarkLexicalScale(b *testing.B) {
 			// chunk changes.
 			commit := "scale"
 			stepped := make([]time.Duration, 0, lexicalScaleSteps)
+			paths := lexicalScalePaths(chunks)
 			for i := range lexicalScaleSteps {
+				// A generation can hold fewer paths than a step changes.
+				rng.Shuffle(len(paths), func(x, y int) { paths[x], paths[y] = paths[y], paths[x] })
 				changed := map[string]bool{}
-				for len(changed) < lexicalScaleStepPaths {
-					changed[chunks[rng.IntN(len(chunks))].Path] = true
+				for _, p := range paths[:min(len(paths), lexicalScaleStepPaths)] {
+					changed[p] = true
 				}
 				var batch []StagedChunk
 				for _, c := range chunks {
@@ -939,4 +945,14 @@ func scaleLayoutIs(ctx context.Context, s *Store, legacy bool) error {
 		return fmt.Errorf("index_chunks is of kind %q, with a legacy partition %t; want partitioned, with one %t", kind, hasLegacy, legacy)
 	}
 	return nil
+}
+
+// lexicalScalePaths is the distinct paths of chunks, sorted.
+func lexicalScalePaths(chunks []StagedChunk) []string {
+	paths := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		paths = append(paths, c.Path)
+	}
+	slices.Sort(paths)
+	return slices.Compact(paths)
 }
