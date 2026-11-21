@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -126,6 +128,47 @@ func TestRerankerRefusals(t *testing.T) {
 			_, _, err := NewReranker(tt.api, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a", "b"})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want one that says %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestRerankerErrorBody: a refusal's error carries its status, not what the
+// provider answered, which can echo the query, a document or a key.
+func TestRerankerErrorBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"message":"rejected query: func secretSnippet() with key sk-echoed"}`)
+	}))
+	defer srv.Close()
+	_, _, err := NewReranker(RerankCohere, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+	if err == nil || !strings.Contains(err.Error(), "400") || strings.Contains(err.Error(), "secretSnippet") ||
+		strings.Contains(err.Error(), "sk-echoed") {
+		t.Fatalf("err = %v, want the status alone", err)
+	}
+}
+
+// TestRerankerRedirect: a reranker that redirects is refused, and the query
+// and documents are not sent on to where it points.
+func TestRerankerRedirect(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect, http.StatusFound} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			var reached atomic.Bool
+			elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reached.Store(true)
+				_, _ = io.WriteString(w, `[{"index":0,"score":0.5}]`)
+			}))
+			defer elsewhere.Close()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, elsewhere.URL+"/rerank", status)
+			}))
+			defer srv.Close()
+			_, _, err := NewReranker(RerankTEI, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+			if err == nil || !strings.Contains(err.Error(), strconv.Itoa(status)) {
+				t.Errorf("err = %v, want the redirect refused", err)
+			}
+			if reached.Load() {
+				t.Error("the request followed the redirect")
 			}
 		})
 	}

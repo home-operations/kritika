@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Reranker scores documents by how well each answers a query.
@@ -62,11 +60,16 @@ type HTTPReranker struct {
 
 // NewReranker builds a reranker of api at baseURL, the API root that
 // "/rerank" goes under, whose every request is bounded by timeout. An empty
-// key sends none.
+// key sends none. A redirect is not followed: a 307 or 308 would send the
+// query and the repository's code on to wherever it points, and one to
+// plain HTTP on the same host the key too.
 func NewReranker(api, baseURL, key, model string, timeout time.Duration) *HTTPReranker {
 	return &HTTPReranker{
 		api: api, url: strings.TrimSuffix(baseURL, "/") + "/rerank", key: key, model: model,
-		client: &http.Client{Timeout: timeout},
+		client: &http.Client{
+			Timeout:       timeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
 }
 
@@ -91,12 +94,15 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// A refusal's body can echo the query, a document or the key, and the
+	// gateway logs the error, so it says the status alone, as the embedder's
+	// does.
+	if resp.StatusCode != http.StatusOK {
+		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %s", resp.Status)
+	}
 	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer))
 	if err != nil {
 		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %s: %s", resp.Status, textcut.Prefix(string(bytes.TrimSpace(answer)), 512))
 	}
 	ranks, used, err := r.decode(answer)
 	if err != nil {
