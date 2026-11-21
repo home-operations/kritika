@@ -357,7 +357,7 @@ func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands [
 type evalTruth struct {
 	// declared are the chunks that declare each symbol of four bytes or
 	// more.
-	declared map[string][]string
+	declared map[string][]defKey
 	// changes are each commit's changed paths, and pairs how many commits
 	// of at most 20 paths change each pair of paths.
 	changes map[*object.Commit][]string
@@ -365,10 +365,10 @@ type evalTruth struct {
 }
 
 func newEvalTruth(t *testing.T, chunks []indexer.Chunk, history []*object.Commit) evalTruth {
-	e := evalTruth{declared: map[string][]string{}, changes: map[*object.Commit][]string{}, pairs: map[[2]string]int{}}
+	e := evalTruth{declared: map[string][]defKey{}, changes: map[*object.Commit][]string{}, pairs: map[[2]string]int{}}
 	for _, c := range chunks {
 		if len(c.Symbol) >= 4 {
-			e.declared[c.Symbol] = append(e.declared[c.Symbol], chunkKey(c.Path, c.StartLine))
+			e.declared[c.Symbol] = append(e.declared[c.Symbol], defKey{c.Path, c.StartLine})
 		}
 	}
 	for _, c := range history {
@@ -390,12 +390,12 @@ func newEvalTruth(t *testing.T, chunks []indexer.Chunk, history []*object.Commit
 
 // defs are the chunks outside changed that declare a name of added that
 // at most two chunks declare.
-func (e evalTruth) defs(added string, changed []string) map[string]bool {
-	out := map[string]bool{}
+func (e evalTruth) defs(added string, changed []string) map[defKey]bool {
+	out := map[defKey]bool{}
 	for _, id := range identifierRe.FindAllString(added, -1) {
 		if where := e.declared[id]; len(where) <= 2 {
 			for _, k := range where {
-				if !slices.Contains(changed, strings.Split(k, ":")[0]) {
+				if !slices.Contains(changed, k.path) {
 					out[k] = true
 				}
 			}
@@ -426,7 +426,7 @@ type evalTally struct {
 }
 
 // addQuery adds query q's candidates of top, in their order.
-func (s *evalTally) addQuery(top []candidate, q int, defs, related map[string]bool) {
+func (s *evalTally) addQuery(top []candidate, q int, defs map[defKey]bool, related map[string]bool) {
 	first := func(hit func(candidate) bool) (bool, float64) {
 		rank := 0
 		for _, c := range top {
@@ -442,7 +442,7 @@ func (s *evalTally) addQuery(top []candidate, q int, defs, related map[string]bo
 	}
 	if len(defs) > 0 {
 		s.qDefs++
-		ok, rr := first(func(c candidate) bool { return defs[chunkKey(c.Chunk.Path, c.Chunk.StartLine)] })
+		ok, rr := first(func(c candidate) bool { return defs[defKey{c.Chunk.Path, c.Chunk.StartLine}] })
 		if ok {
 			s.qDefHits++
 		}
@@ -458,7 +458,7 @@ func (s *evalTally) addQuery(top []candidate, q int, defs, related map[string]bo
 	}
 }
 
-func (s *evalTally) add(got []contextpack.Chunk, defs, related map[string]bool) {
+func (s *evalTally) add(got []contextpack.Chunk, defs map[defKey]bool, related map[string]bool) {
 	s.commits++
 	s.kept += len(got)
 	if len(defs) > 0 {
@@ -466,7 +466,7 @@ func (s *evalTally) add(got []contextpack.Chunk, defs, related map[string]bool) 
 		s.defTotal += len(defs)
 		found := 0
 		for _, ch := range got {
-			if defs[chunkKey(ch.Path, ch.StartLine)] {
+			if defs[defKey{ch.Path, ch.StartLine}] {
 				found++
 			}
 		}
@@ -510,7 +510,11 @@ var evalDepth int
 
 var identifierRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
-func chunkKey(path string, line int) string { return fmt.Sprintf("%s:%d", path, line) }
+// defKey is a chunk that declares a name, by its path and first line.
+type defKey struct {
+	path string
+	line int
+}
 
 func evalInt(t *testing.T, key string, def int) int {
 	if v := os.Getenv(key); v != "" {
@@ -735,5 +739,19 @@ func TestEvalSearchesAtEachDepth(t *testing.T) {
 				t.Fatalf("base found %s and deep %s, want %s and %s", base.named[0].Chunk.Path, deep.named[0].Chunk.Path, tt.base, tt.deep)
 			}
 		})
+	}
+}
+
+// TestEvalTruthLeavesOutAChangedPathWithAColon: a definition in a changed
+// file is no answer the search can give, whatever its path holds, a colon
+// included.
+func TestEvalTruthLeavesOutAChangedPathWithAColon(t *testing.T) {
+	truth := newEvalTruth(t, []indexer.Chunk{
+		{Path: "docs/a:b.go", StartLine: 3, Symbol: "AcquireLease"},
+		{Path: "lease.go", StartLine: 7, Symbol: "ReleaseLease"},
+	}, nil)
+	defs := truth.defs("AcquireLease(ctx); ReleaseLease(ctx)", []string{"docs/a:b.go"})
+	if len(defs) != 1 || !defs[defKey{"lease.go", 7}] {
+		t.Fatalf("definitions %v, want lease.go's alone", defs)
 	}
 }
