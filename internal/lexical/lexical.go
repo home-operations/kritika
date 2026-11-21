@@ -71,7 +71,7 @@ func words(text string, hyphens bool) []Word {
 		return 0
 	}
 	add := func(lexeme, spelling string, whole, compound bool) {
-		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || stop[lexeme] || !startsWithLetter(lexeme) {
+		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || stop[lexeme] || !startsWithName(lexeme) {
 			return
 		}
 		w := Word{Lexeme: lexeme, Spelling: spelling, Whole: whole, Compound: compound}
@@ -98,6 +98,9 @@ func words(text string, hyphens bool) []Word {
 			return
 		}
 		whole := strings.ToLower(separators.Replace(id))
+		if strings.HasPrefix(id, "_") {
+			whole = "_" + whole
+		}
 		add(whole, id, true, len(parts) > 1)
 		if len(parts) == 1 && strings.ToLower(parts[0]) == whole {
 			return
@@ -156,13 +159,19 @@ var minusLanguages = func() map[string]bool {
 // inside a run when a letter is before it, or a digit in a run that starts
 // with a letter: a kebab-case name is one identifier, as http2-server is,
 // while n-1 is two tokens and so is 10-items. A run that starts with a digit
-// is a number and is left out.
+// is a number and is left out. Underscores around a run are trimmed, but for
+// one before a digit, which makes a name of what follows when a letter does:
+// _2faEnabled is a name, and _2fa the same one as __2fa, where _123 is not.
 func identifiers(text string, hyphens bool) []string {
 	var out []string
 	start := -1
 	flush := func(end int) {
 		if start >= 0 {
-			if id := strings.Trim(text[start:end], "_-"); id != "" && startsWithLetter(id) {
+			id := strings.Trim(text[start:end], "_-")
+			if id != "" && !startsWithLetter(id) && text[start] == '_' && strings.ContainsFunc(id, unicode.IsLetter) {
+				id = "_" + id
+			}
+			if startsWithName(id) {
 				out = append(out, id)
 			}
 			start = -1
@@ -255,6 +264,12 @@ func plural(rest []rune) bool {
 func startsWithLetter(s string) bool {
 	r, _ := utf8.DecodeRuneInString(s)
 	return unicode.IsLetter(r)
+}
+
+// startsWithName reports whether s starts as a name does: with a letter, or
+// with the underscore that identifiers keeps before a digit.
+func startsWithName(s string) bool {
+	return startsWithLetter(s) || strings.HasPrefix(s, "_")
 }
 
 func allDigits(s string) bool {
