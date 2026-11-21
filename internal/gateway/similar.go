@@ -761,9 +761,7 @@ func (g *Server) rerank(
 		reranked++
 	}
 	if reranked == len(byQuery) {
-		for i := range cands {
-			cands[i].shared = cands[i].score
-		}
+		rerankedAll(cands)
 	}
 	logger.Info("similar candidates reranked", "queries", len(byQuery), "reranked", reranked, "candidates", len(cands),
 		"elapsed", time.Since(started), "tokens", spent.Tokens, "search_units", spent.SearchUnits)
@@ -781,5 +779,14 @@ func (g *Server) rerank(
 		})
 	}); err != nil {
 		logger.Error("gateway: rerank usage not recorded", "error", err)
+	}
+}
+
+// rerankedAll compares the candidates of different queries by the
+// reranker's scores, once it scored every query of the request: they are
+// then on its one scale.
+func rerankedAll(cands []candidate) {
+	for i := range cands {
+		cands[i].shared = cands[i].score
 	}
 }

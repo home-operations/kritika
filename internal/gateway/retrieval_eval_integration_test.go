@@ -295,7 +295,9 @@ func evalTop(hits []store.SimilarHit, variant string) []store.SimilarHit {
 	})
 }
 
-// evalRerank scores each query's candidates as the gateway's rerank does.
+// evalRerank scores each query's candidates as the gateway's rerank does,
+// and, as it fails unless every query is reranked, compares queries by the
+// reranker's scores.
 func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands []candidate) {
 	byQuery := map[int][]int{}
 	for i, c := range cands {
@@ -314,6 +316,7 @@ func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands [
 			cands[i].score = scores[j]
 		}
 	}
+	rerankedAll(cands)
 }
 
 // evalTruth is what the evaluation judges an answer by.
@@ -693,4 +696,25 @@ func trigramVector(s string, dims int) []float32 {
 		}
 	}
 	return v
+}
+
+// TestEvalRerankScale: once every query is reranked, the replay compares
+// queries' candidates by the reranker's scores, as the gateway does, not by
+// the fusion's.
+func TestEvalRerankScale(t *testing.T) {
+	cand := func(query int, path string, fused float64) candidate {
+		c := candidate{vector: true, close: true, score: fused, shared: fused}
+		c.Chunk, c.Similarity, c.Query = contextpack.Chunk{Path: path, StartLine: 1}, 0.9, query
+		return c
+	}
+	// The fusion puts a.go first, the reranker b.go.
+	cands := []candidate{cand(0, "a.go", 0.02), cand(1, "b.go", 0.01)}
+	reranker := rerankFunc(func(_ context.Context, query string, docs []string) ([]float64, model.RerankUsage, error) {
+		return []float64{map[string]float64{"q0": 0.1, "q1": 0.9}[query]}, model.RerankUsage{}, nil
+	})
+	evalRerank(t, reranker, []string{"q0", "q1"}, cands)
+	got := keepCandidates(cands, map[hitKey]int{}, 1)
+	if len(got) != 1 || got[0].Path != "b.go" {
+		t.Fatalf("kept %+v, want b.go, which the reranker scores higher", got)
+	}
 }
