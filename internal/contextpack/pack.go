@@ -289,23 +289,32 @@ func (b *builder) overlay(ctx context.Context) error {
 				continue
 			}
 			c := Chunk{Stage: StageOverlay, Path: path, Language: f.Language}
+			var text []byte
 			decl := f.Enclosing([]int{run[0], run[1]}, b.opts.MaxDeclLines)
 			if decl != nil {
 				c.Symbol, c.Kind, c.Scope = decl.Symbol, decl.Kind, decl.Scope
-				start, text := b.declText(f, decl, run[0])
+				start, full := b.declText(f, decl, run[0])
 				// A comment or body over MaxChunkBytes ahead of the run's last
 				// line would leave the cut text without it, so a window shows
 				// the run instead, still as the declaration's.
-				ahead := len(text) - len(f.Bytes(run[0], decl.EndLine))
-				if len(text) <= b.opts.MaxChunkBytes || ahead+len(f.Bytes(run[0], run[1])) <= b.opts.MaxChunkBytes {
-					c.StartLine, c.Text = start, string(text)
+				ahead := len(full) - len(f.Bytes(run[0], decl.EndLine))
+				if len(full) <= b.opts.MaxChunkBytes || ahead+len(f.Bytes(run[0], run[1])) <= b.opts.MaxChunkBytes {
+					c.StartLine, text = start, full
 				}
 			}
-			if c.Text == "" {
-				c.StartLine, c.Text = b.window(f, run)
-				if c.Text == "" {
+			if len(text) == 0 {
+				c.StartLine, text = b.window(f, run)
+				if len(text) == 0 {
 					continue
 				}
+			}
+			// keptEnd and cutText keep at most MaxChunkBytes bytes of the
+			// text, and need one more to tell that it is over, so only those
+			// are copied: a long run is cut into many chunks, and each would
+			// otherwise copy all of the run that is left.
+			c.Text = string(text[:min(len(text), b.opts.MaxChunkBytes+1)])
+			if copied != nil {
+				*copied += len(c.Text)
 			}
 			// The chunk claims only the lines its cut keeps whole. The rest
 			// of a run that a window at radius zero cannot hold is shown by
@@ -346,6 +355,12 @@ func (b *builder) overlay(ctx context.Context) error {
 	b.stats.ChangedSymbols = len(b.changedSymbols)
 	return nil
 }
+
+// copied, when a test points it at a count, adds up the bytes overlay
+// copies out of the files it reads. Copying the rest of a long run again
+// for each chunk cut from it is quadratic in the run's size, and the count
+// shows that on any machine. A test that sets it does not run in parallel.
+var copied *int
 
 func subset(start, end int, shown map[int]string) bool {
 	for l := start; l <= end; l++ {
@@ -426,14 +441,14 @@ func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int
 // window is the fixed-window fallback for run: WindowRadius lines on each
 // side, fewer when that would put it over MaxChunkBytes, so the cut keeps
 // the whole run when the run alone fits. It returns the line the text
-// starts on.
-func (b *builder) window(f *chunk.File, run [2]int) (start int, text string) {
+// starts on. The text is a slice of f's source.
+func (b *builder) window(f *chunk.File, run [2]int) (start int, text []byte) {
 	radius := b.opts.WindowRadius
 	for radius > 0 && len(f.Bytes(run[0]-radius, run[1]+radius)) > b.opts.MaxChunkBytes {
 		radius--
 	}
-	start, _, text = f.Window(run[0], run[1], radius)
-	return start, text
+	start = max(run[0]-radius, 1)
+	return start, f.Bytes(start, run[1]+radius)
 }
 
 // keptEnd is the last line that text, starting on line start, keeps whole
