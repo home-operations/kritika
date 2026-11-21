@@ -205,7 +205,7 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 		SELECT w.qi, h.chunk_id AS id, round(sum(w.w)::numeric, 9)::float8 AS score,
 			array_agg(w.t ORDER BY w.w DESC, w.t) AS matched
 		FROM held h JOIN weights w ON w.t = h.t
-		WHERE h.chunk_id NOT IN (SELECT id FROM excluded)
+		WHERE NOT EXISTS (SELECT 1 FROM excluded e WHERE e.id = h.chunk_id)
 		GROUP BY w.qi, h.chunk_id
 		HAVING count(*) > 1 OR bool_or(w.compound) OR min(w.n) <= $12
 	), top AS MATERIALIZED (
@@ -251,6 +251,36 @@ func lexicalChunks(
 	ctx context.Context, tx pgx.Tx, query, runID string, queries []LexicalQuery, exclude Exclusions, perQuery int, bar LexicalBar,
 	alone int,
 ) ([]SimilarHit, error) {
+	args := lexicalArgs(runID, queries, exclude, perQuery, bar, alone)
+	if args == nil {
+		return nil, nil
+	}
+	// The planner cannot tell how few postings a term has, and estimates
+	// enough rows to compile the query, which takes longer than running it.
+	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
+		return nil, fmt.Errorf("store: lexical chunks: %w", err)
+	}
+	rows, err := tx.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: lexical chunks: %w", err)
+	}
+	hits, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SimilarHit, error) {
+		var h SimilarHit
+		c := &h.Chunk
+		err := row.Scan(&h.Query, &c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text,
+			&h.Similarity, &h.Lexical, &h.Matched)
+		c.Stage = contextpack.StageSimilar
+		return h, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: lexical chunks: %w", err)
+	}
+	return hits, nil
+}
+
+// lexicalArgs are lexicalChunksSQL's arguments, or nil when the queries hold
+// no term.
+func lexicalArgs(runID string, queries []LexicalQuery, exclude Exclusions, perQuery int, bar LexicalBar, alone int) []any {
 	excludeRun, excludePaths := exclude.args()
 	var qis []int32
 	var terms, all []string
@@ -268,28 +298,8 @@ func lexicalChunks(
 		}
 	}
 	if len(terms) == 0 {
-		return nil, nil
+		return nil
 	}
-	// The planner cannot tell how few postings a term has, and estimates
-	// enough rows to compile the query, which takes longer than running it.
-	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
-		return nil, fmt.Errorf("store: lexical chunks: %w", err)
-	}
-	rows, err := tx.Query(ctx, query, runID, qis, terms, compound, all, bar.Per, bar.Least, excludePaths,
-		vectors, perQuery, perQuery+LexicalCommonMax, alone, LexicalCommonMax, bar.Share, postingsIndexFormat, excludeRun)
-	if err != nil {
-		return nil, fmt.Errorf("store: lexical chunks: %w", err)
-	}
-	hits, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SimilarHit, error) {
-		var h SimilarHit
-		c := &h.Chunk
-		err := row.Scan(&h.Query, &c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text,
-			&h.Similarity, &h.Lexical, &h.Matched)
-		c.Stage = contextpack.StageSimilar
-		return h, err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("store: lexical chunks: %w", err)
-	}
-	return hits, nil
+	return []any{runID, qis, terms, compound, all, bar.Per, bar.Least, excludePaths,
+		vectors, perQuery, perQuery + LexicalCommonMax, alone, LexicalCommonMax, bar.Share, postingsIndexFormat, excludeRun}
 }
