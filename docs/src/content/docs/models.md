@@ -960,9 +960,12 @@ can report no tokens: the row is recorded with none, and the search units are
 logged with the reranking (`search_units`), as usage and its caps count
 tokens alone.
 
-A reranker reads every candidate in full, and its tokens count against the
-account's `tokensPerMonth` as a review's do: the caps have no limit of their
-own for it. An account that the request's embedding brings to its
+Kritika sends each candidate in full, but the provider can truncate what it
+scores: the `voyage` and `tei` requests above ask it to, rather than refuse a
+long candidate, so the end of one can count for nothing in its score. The
+tokens that the provider reports count against the account's
+`tokensPerMonth` as a review's do: the caps have no limit of their own for
+it. An account that the request's embedding brings to its
 `tokensPerMonth` keeps the fused order, as its next model call is refused.
 They count against the run's token budget too: the gateway
 reserves what it sends, at four characters a token, before it reranks, and
