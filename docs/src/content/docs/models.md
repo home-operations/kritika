@@ -723,7 +723,9 @@ twice for code that did not change. Chunks indexed by a release before
 these hashes have none and match nothing, so the first rebuild of each
 index after that upgrade, the rebuild in the new index format below, embeds
 those chunks again, once. A reindex from the dashboard is the exception to
-reuse: it sends the embedder every chunk again.
+reuse: it takes no vector from the index it replaces, so every chunk gets a
+fresh one, though chunks of the same text within the new build still share
+one, which the embedder is sent once.
 
 Neither the hash nor the index records the provider or its `baseUrl`. So
 moving the embedder to another endpoint, or another provider, that serves
