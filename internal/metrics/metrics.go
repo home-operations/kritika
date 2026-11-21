@@ -137,7 +137,8 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
 		indexChunks: f.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritika_index_chunks_total", Help: "Chunks embedded into the index.",
+			Name: "kritika_index_chunks_total",
+			Help: "Chunks written into the index by completed and superseded index runs, whether their vectors were embedded or reused.",
 		}, []string{lblAccount}),
 		indexVectors: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_vectors_total",
@@ -281,7 +282,8 @@ func (m *Metrics) ConfidenceHeld(account, what string) {
 	}
 }
 
-// IndexRun counts a finished index run and the chunks it embedded.
+// IndexRun counts a finished index run and the chunks it wrote into the
+// index, embedded or reused.
 func (m *Metrics) IndexRun(account, mode, status string, chunks int) {
 	if m != nil {
 		m.indexRuns.WithLabelValues(account, mode, status).Inc()

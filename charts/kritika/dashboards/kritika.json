@@ -1795,7 +1795,7 @@
     {
       "id": 30,
       "type": "timeseries",
-      "title": "Chunks embedded",
+      "title": "Chunks indexed",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1855,7 +1855,7 @@
           "refId": "A"
         }
       ],
-      "description": "Chunks embedded into each account's similar-code index."
+      "description": "Chunks written into each account's similar-code index by completed and superseded index runs, whether their vectors were embedded or reused. kritika_index_vectors_total{outcome=\"embedded\"} counts the vectors sent to the embedder."
     },
     {
       "id": 31,
