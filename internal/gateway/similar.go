@@ -475,6 +475,10 @@ type candidate struct {
 	// score orders the query's candidates: reciprocal rank fusion of the
 	// searches that vouch for it, or the reranker's score.
 	score float64
+	// shared orders the candidates of different queries that hold the same
+	// place in their own: the fusion's score, which every query has on one
+	// scale, or the reranker's when it scored every query of the request.
+	shared float64
 }
 
 func (c candidate) source() string {
@@ -525,6 +529,9 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 	cands = slices.Clone(cands)
 	addRanks(cands, func(c candidate) bool { return c.vector }, func(c candidate) float64 { return c.Similarity })
 	addRanks(cands, func(c candidate) bool { return c.lexical }, func(c candidate) float64 { return c.Lexical })
+	for i := range cands {
+		cands[i].shared = cands[i].score
+	}
 	best, bestLexical := map[int]float64{}, map[int]float64{}
 	for _, c := range cands {
 		if s, ok := best[c.Query]; !ok || c.Similarity > s {
@@ -572,8 +579,9 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 
 // keepCandidates keeps each chunk once, at most similarPerFile of one file
 // and at most limit in all, and labels each with its similarity or the
-// names it shares with its query. It takes every query's best, the highest score first, before any
-// query's second, and so on. So neither one query whose neighbours all score
+// names it shares with its query. It takes every query's best, by its score
+// among its query's and then by its shared score, before any query's
+// second, and so on. So neither one query whose neighbours all score
 // high nor one file's neighbouring declarations take every place. It adds
 // what it drops to counts.
 func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []contextpack.Chunk {
@@ -588,7 +596,9 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []conte
 		ranked[i] = rankedHit{hit: c, rank: next[c.Query]}
 		next[c.Query]++
 	}
-	slices.SortStableFunc(ranked, func(a, b rankedHit) int { return cmp.Compare(a.rank, b.rank) })
+	slices.SortStableFunc(ranked, func(a, b rankedHit) int {
+		return cmp.Or(cmp.Compare(a.rank, b.rank), cmp.Compare(b.hit.shared, a.hit.shared), cmp.Compare(b.hit.Similarity, a.hit.Similarity))
+	})
 	seen := map[string]bool{}
 	perFile := map[string]int{}
 	chunks := make([]contextpack.Chunk, 0, min(len(cands), limit))
@@ -732,6 +742,11 @@ func (g *Server) rerank(
 			cands[i].score = scores[j]
 		}
 		reranked++
+	}
+	if reranked == len(byQuery) {
+		for i := range cands {
+			cands[i].shared = cands[i].score
+		}
 	}
 	logger.Info("similar candidates reranked", "queries", len(byQuery), "reranked", reranked, "candidates", len(cands),
 		"elapsed", time.Since(started), "tokens", spent.Tokens, "search_units", spent.SearchUnits)

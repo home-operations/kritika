@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -124,6 +125,14 @@ func (r lexicalRepo) askWithin(
 	ctx context.Context, t *testing.T, file *configfile.File, reranker model.Reranker, reg *prometheus.Registry, queries ...string,
 ) (int, []string) {
 	t.Helper()
+	return r.askRequest(ctx, t, file, reranker, reg, contextpack.SimilarRequest{Queries: queries})
+}
+
+// askRequest is askWithin for the request req.
+func (r lexicalRepo) askRequest(
+	ctx context.Context, t *testing.T, file *configfile.File, reranker model.Reranker, reg *prometheus.Registry, req contextpack.SimilarRequest,
+) (int, []string) {
+	t.Helper()
 	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
 		out := make([][]float32, len(inputs))
 		for i := range out {
@@ -142,14 +151,14 @@ func (r lexicalRepo) askWithin(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.st.RevokeGatewayTokens(context.Background(), r.runner) })
-	body, err := json.Marshal(contextpack.SimilarRequest{Queries: queries})
+	body, err := json.Marshal(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/similar", strings.NewReader(string(body)))
-	req.Header.Set("Authorization", "Bearer "+token)
+	hreq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/similar", strings.NewReader(string(body)))
+	hreq.Header.Set("Authorization", "Bearer "+token)
 	out := httptest.NewRecorder()
-	g.ServeHTTP(out, req)
+	g.ServeHTTP(out, hreq)
 	if out.Code != http.StatusOK {
 		return out.Code, nil
 	}
@@ -416,5 +425,30 @@ func TestSimilarRerankUsage(t *testing.T) {
 					code, afterRows-rows, afterTokens-tokens, tt.tokens)
 			}
 		})
+	}
+}
+
+// TestSimilarPartialRerank: when the reranker answers some of a request's
+// queries and not others, their best chunks are compared on the fused scale
+// that every query has, not the reranker's against the fusion's.
+func TestSimilarPartialRerank(t *testing.T) {
+	r := newLexicalRepo(t, "partial-rerank", runspec.IndexFormat, widgets, widgetVectors())
+	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, candidates: 5 } }`)
+	partial := rerankFunc(func(_ context.Context, query string, docs []string) ([]float64, model.RerankUsage, error) {
+		if query != "widget" {
+			return nil, model.RerankUsage{}, errors.New("reranker down")
+		}
+		scores := make([]float64, len(docs))
+		for i := range scores {
+			scores[i] = 0.9
+		}
+		return scores, model.RerankUsage{Tokens: 1}, nil
+	})
+	// widget's best, near.go, only the vector search finds; widgetFactory's,
+	// factory.go, both searches find.
+	code, got := r.askRequest(t.Context(), t, file, partial, prometheus.NewRegistry(),
+		contextpack.SimilarRequest{Queries: []string{"widget", "widgetFactory()"}, Limit: 1})
+	if want := []string{"factory.go:shares widgetFactory"}; code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
 	}
 }
