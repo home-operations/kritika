@@ -708,6 +708,14 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	two := configfile.RepositoryID(account, "index-legacy/two")
 	runOne := partitionRun(t, s, account, one, true, "a.go", "b.go")
 	stray := partitionRun(t, s, account, one, false, "old.go")
+	// The stray gets postings, though it is not published, for the drain
+	// to be seen to delete them with its chunks.
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, writePostingsSQL, stray, LexicalCommonMax)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	deleted := partitionRun(t, s, account, one, false, "gone.go")
 	resumable := partitionRun(t, s, account, two, false, "next.go")
 	if _, err := s.owner.Exec(ctx, `UPDATE index_runs SET status = 'failed', resume_key = 'resume' WHERE id = $1`, resumable); err != nil {
@@ -748,6 +756,9 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 		t.Fatalf("DropLegacyIndexChunks of a legacy partition with chunks = %v, %v", dropped, err)
 	}
 
+	if checkPostings(t, s, stray) == 0 {
+		t.Fatal("the stray generation holds no postings before the drain")
+	}
 	if moved, removed := drainLegacy(t, s); moved != 4 || removed != 1 {
 		t.Fatalf("drain moved %d and deleted %d chunks, want the active and resumable generations' 4 moved and the stray's 1 deleted",
 			moved, removed)
@@ -765,9 +776,8 @@ func TestPartitionIndexChunksFromLegacy(t *testing.T) {
 	if parts := chunkPartitions(t, s, stray); len(parts) != 0 {
 		t.Fatalf("an inactive generation is in %v after the drain, want it deleted", parts)
 	}
-	var postings int
-	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM index_postings WHERE index_run_id = $1`, stray).Scan(&postings); err != nil || postings != 0 {
-		t.Fatalf("the deleted generation keeps %d postings, %v; want none", postings, err)
+	if postings := checkPostings(t, s, stray); postings != 0 {
+		t.Fatalf("the deleted generation keeps %d postings, want none", postings)
 	}
 	if dropped, err := s.DropLegacyIndexChunks(ctx); err != nil || !dropped {
 		t.Fatalf("DropLegacyIndexChunks of the empty legacy partition = %v, %v", dropped, err)
