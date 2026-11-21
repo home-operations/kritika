@@ -515,8 +515,18 @@ moment, as adding a column writes no row. The second builds the index, which
 reads every chunk under a lock that lets searches read the table but holds
 up index builds' writes. Each looks for what it adds first, so a retry after
 the first committed builds the index alone, and each gives up its wait for a
-lock after five seconds and is tried again later. The conversion then reuses
-the index, and copies and rebuilds nothing:
+lock after five seconds and is tried again later.
+
+Then, also in two transactions, the leader marks every chunk of the table
+as legacy, so that the conversion can attach it without reading it. The
+first adds `legacy`, with a default of `true`, and a `NOT VALID` check that
+`legacy` is true. Neither writes or reads a row, so it holds the table's
+exclusive lock for a moment, and waits for it as the conversion's first
+step does. The second validates the check, which reads every chunk under a
+lock that lets searches read the table and index builds write it. A chunk
+written meanwhile is checked as it is written. Each looks for what it adds
+first, so a retry after the first committed only validates. The conversion
+then reuses the content hash's index, and copies and rebuilds nothing:
 
 1. It takes the table's exclusive lock, and then a lock on `accounts`,
    `repositories` and `index_runs` that blocks writes to them. A publication
@@ -528,13 +538,11 @@ the index, and copies and rebuilds nothing:
    again a second later. After five tries it logs a warning and tries again
    an hour later.
 2. It renames the table, with its indexes and constraints, to
-   `index_chunks_legacy`, and adds `legacy` to it with a default of `true`,
-   which writes no row. It creates the partitioned `index_chunks` and
+   `index_chunks_legacy`. It creates the partitioned `index_chunks` and
    attaches the old table as its partition for `legacy` true, so every chunk
    it held is in the legacy partition. Its indexes and foreign keys become
-   those of the partitioned table. Attaching reads the old table once, under
-   the lock, to check that every chunk's `legacy` is true. That read takes
-   seconds for millions of chunks. Searches and index builds wait for it.
+   those of the partitioned table. The validated check proves the
+   partition's bound, so attaching reads no chunk.
 3. That sweep, and each later one, empties `index_chunks_legacy`, up to
    5,000 chunks of one generation per transaction. The active generations
    go first, moved into the hash partitions. Then the chunks of the other
