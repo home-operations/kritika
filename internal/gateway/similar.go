@@ -303,7 +303,10 @@ func (g *Server) similar(
 	}
 	reserved := int64(chars)/4 + 1
 	if err := g.reserveRun(ctx, r.token, reserved); err != nil {
-		return nil, similarRefused, err
+		if errors.Is(err, errBudgetSpent) {
+			return nil, similarRefused, err
+		}
+		return nil, similarError, err
 	}
 	waitStarted := time.Now()
 	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), "embed:"+emb.Model, file.Slots(r.account, emb.Ref), r.jobID)
