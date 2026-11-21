@@ -70,10 +70,11 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // keeps the fused order of all of its candidates, and a failure is logged
 // and counted as the reranker's call. What it sends is reserved against the
 // run's budget first, at four characters a token of each query beside each
-// of its documents, as a reranker reads them in pairs, and only if it fits in
-// what is left of the budget: the reranking is optional, and must not take
-// what the review's own steps need. A run with less left keeps the fused
-// order. The reservation is settled at the tokens that the provider reports.
+// of its documents, as a reranker reads them in pairs, and only if it leaves
+// some of the budget: the reranking is optional, and must not take what the
+// review's own steps need, nor bring the run to its budget, which refuses
+// them. A run with less left keeps the fused order. The reservation is
+// settled at the tokens that the provider reports.
 // A request that reranked records a usage row of the review with them, none
 // for search units alone, which the usage and its caps do not count.
 func (g *Server) rerank(

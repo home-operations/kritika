@@ -1331,7 +1331,7 @@ func TestGatewayTokens(t *testing.T) {
 // spent: a reservation succeeds while the run is under its budget, whatever
 // its size. It does not succeed once the run is at or over its budget. A
 // refund brings it back. A reservation within the budget succeeds only when
-// it fits in the 400 tokens left.
+// it fits in the 400 tokens left with one to spare.
 func checkReservations(t *testing.T, s *Store, token string) {
 	t.Helper()
 	ctx := t.Context()
@@ -1339,7 +1339,7 @@ func checkReservations(t *testing.T, s *Store, token string) {
 		tokens int64
 		ok     bool
 		spent  int64
-	}{{401, false, 600}, {400, true, 1000}} {
+	}{{401, false, 600}, {400, false, 600}, {399, true, 999}} {
 		ok, err := s.ReserveGatewayTokensWithin(ctx, token, tt.tokens)
 		if err != nil || ok != tt.ok {
 			t.Fatalf("reserve %d within the budget = %v, %v; want %v", tt.tokens, ok, err, tt.ok)
@@ -1348,7 +1348,7 @@ func checkReservations(t *testing.T, s *Store, token string) {
 			t.Fatalf("spent after reserving %d within the budget = %d, want %d", tt.tokens, got.Spent, tt.spent)
 		}
 	}
-	if err := s.ChargeGatewayToken(ctx, token, -400); err != nil {
+	if err := s.ChargeGatewayToken(ctx, token, -399); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
