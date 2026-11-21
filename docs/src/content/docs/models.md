@@ -671,10 +671,12 @@ its query's turn to the query's next, which then comes before any query's
 later match. When the file cap would leave a query fewer than four of the
 chunks that one search found, and the last of them still qualifies, that
 search looks again past the files that it found two or more chunks of.
-Each of the vector search's looks is a statement of its own, within what
-is left of 50 seconds after the request reached the gateway. One that
-fails, or that finds that time spent, ends the looking, and the request
-keeps the chunks found until then. The search by name's looks are bound as
+Each of the vector search's looks past those files is a statement of its
+own, within what is left of 50 seconds after the request reached the
+gateway. One that fails, or that finds that time spent, ends the looking,
+and the request keeps the chunks found until then. The vector search's
+first look has only the request's own deadline, and when it fails, the
+request fails. The search by name's looks are bound as
 [its search](#search-by-name) is. The prompt leaves out a chunk more than
 half of whose lines another context stage already shows, and shows the
 first ten of the rest.
