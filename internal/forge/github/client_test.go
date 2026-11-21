@@ -183,6 +183,12 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	if err != nil || tip != "tip456" || branch != "trunk" {
 		t.Fatalf("BranchTip = %q %q, %v", tip, branch, err)
 	}
+	// A slash in a branch's name is escaped within its one path segment:
+	// the pattern matches neither the slash left as it is nor escaped twice.
+	f.reply("GET /api/v3/repos/o/r/branches/release%2Fnext", 200, `{"name":"release/next","commit":{"sha":"tip789"}}`)
+	if tip, branch, err := c.BranchTip(t.Context(), "o", "r", "release/next"); err != nil || tip != "tip789" || branch != "release/next" {
+		t.Fatalf("BranchTip of release/next = %q %q, %v", tip, branch, err)
+	}
 	// An answer of 200 with no body, for the branch or the repository whose
 	// default branch is read, is cut short, io.EOF, as Forgejo's client
 	// reports one.
