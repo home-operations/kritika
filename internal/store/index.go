@@ -220,7 +220,7 @@ func (s *Store) prepareIndexChunks(ctx context.Context, keep func(IndexSchema) b
 // no chunk, so no posting of one is left either: a rebuild for a new
 // embedder supersedes every generation, and drops its chunks with the table.
 func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
-	if err := createPartitionedIndexChunks(ctx, tx, appRole, dims, "MINVALUE"); err != nil {
+	if err := createPartitionedIndexChunks(ctx, tx, appRole, dims); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `TRUNCATE index_postings`); err != nil {

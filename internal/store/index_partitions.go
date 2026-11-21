@@ -21,13 +21,17 @@ import (
 const indexChunkPartitions = 64
 
 // createPartitionedIndexChunks creates index_chunks at dims, and what the
-// application role may do with it. It is partitioned by the range of
-// created_at. index_chunks_current holds the chunks created from from, a
-// range bound, on, and is hash partitioned by index_run_id. A table
-// partitioned from one of a build before partitioning also has
-// index_chunks_legacy for the chunks created before from (see
-// PartitionIndexChunks), until DropLegacyIndexChunks drops it and extends
-// index_chunks_current to MINVALUE.
+// application role may do with it. It is partitioned by the list of legacy,
+// which says whether a chunk is one that the table held when a build before
+// partitioning created it. index_chunks_current holds every other chunk, and
+// is hash partitioned by index_run_id. A table partitioned from one of a
+// build before partitioning also has index_chunks_legacy for the chunks that
+// it held then (see PartitionIndexChunks), until DropLegacyIndexChunks drops
+// it. A chunk is written with legacy false, and only the drain
+// (DrainLegacyIndexChunks) changes it, to move a chunk out of the legacy
+// partition. The column routes the chunks rather than their created_at, so
+// that a database clock that is behind, as after a failover to a server
+// whose clock is, routes none to the wrong partition.
 //
 // Every partition has the vector index. Its access method is VectorChord's:
 // it partitions and quantises rather than building a graph, so it builds fast
@@ -38,7 +42,7 @@ const indexChunkPartitions = 64
 // The application role is granted the partitioned table alone. Rows reach
 // and leave the partitions through it, so its row-level security policy
 // applies to them.
-func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string, dims int, from string) error {
+func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string, dims int) error {
 	app := pgx.Identifier{appRole}.Sanitize()
 	stmts := make([]string, 0, indexChunkPartitions+10)
 	stmts = append(stmts,
@@ -58,12 +62,13 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 			embedding     halfvec(%d) NOT NULL,
 			content_hash  bytea,
 			lexemes       tsvector,
-			created_at    timestamptz NOT NULL DEFAULT now()
-		) PARTITION BY RANGE (created_at)`, dims),
+			created_at    timestamptz NOT NULL DEFAULT now(),
+			legacy        boolean     NOT NULL DEFAULT false
+		) PARTITION BY LIST (legacy)`, dims),
 		// A unique key must hold the partition keys, so the primary key is
 		// the hash partitions' alone: the legacy partition keeps its own.
 		`CREATE TABLE IF NOT EXISTS index_chunks_current PARTITION OF index_chunks (PRIMARY KEY (index_run_id, id))
-			FOR VALUES FROM (`+from+`) TO (MAXVALUE) PARTITION BY HASH (index_run_id)`,
+			FOR VALUES IN (false) PARTITION BY HASH (index_run_id)`,
 	)
 	for i := range indexChunkPartitions {
 		stmts = append(stmts, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks_%02d PARTITION OF index_chunks_current
@@ -100,8 +105,9 @@ var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_id
 // waits on it began to wait after its first lock request, so its waits, four
 // at most, end before that transaction runs the deadlock check, which would
 // abort it. While it waits for index_chunks, every search and build queues
-// behind it, which the short waits also bound. DropLegacyIndexChunks waits
-// only for its first lock, and takes the others or gives up at once. Each
+// behind it, which the short waits also bound. DropLegacyIndexChunks takes
+// index_chunks at once or gives up, and then waits for the legacy partition
+// alone, which only the owner's own reads of it can hold. Each
 // tries partitionTries times, partitionRetryPause apart, and the next sweep
 // tries again.
 const (
@@ -153,9 +159,10 @@ var gaveWay func()
 // partitioning created, a plain table, the legacy partition of a partitioned
 // one, and reports whether it did. The legacy partition holds every chunk
 // created until then, kept as it is. Its indexes and foreign keys become
-// those of the partitioned table, so nothing is copied or built. Attaching it
-// reads the table once, to check that every chunk is older than the bound,
-// under the table's exclusive lock. Searches and builds wait for that scan,
+// those of the partitioned table, so nothing is copied or built. It gains
+// legacy, true for every chunk, which writes no row. Attaching it reads the
+// table once, to check that every chunk's legacy is true, under the table's
+// exclusive lock. Searches and builds wait for that scan,
 // seconds for millions of chunks. A table that a build before this one's
 // columns created gains them, and the content hash's index, first, outside
 // that lock (prepareIndexChunks).
@@ -221,18 +228,17 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 				return err
 			}
 		}
-		// The lock waited for every transaction that wrote a chunk, so each
-		// one is older than the bound.
-		var bound time.Time
-		if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&bound); err != nil {
-			return err
-		}
-		from := "'" + bound.UTC().Format(time.RFC3339Nano) + "'"
+		// The lock waited for every transaction that wrote a chunk, so the
+		// table holds each one written before the partitioned table exists.
+		// The column is added once the table is renamed, so that its NOT NULL
+		// constraint is named after the legacy partition rather than taking
+		// the name that the partitioned table's will.
 		stmts := []string{`ALTER TABLE index_chunks RENAME TO index_chunks_legacy`}
 		for _, suffix := range legacyIndexChunksIndexes {
 			stmts = append(stmts, `ALTER INDEX IF EXISTS index_chunks_`+suffix+` RENAME TO index_chunks_legacy_`+suffix)
 		}
-		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM `+pgx.Identifier{appRole}.Sanitize())
+		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM `+pgx.Identifier{appRole}.Sanitize(),
+			`ALTER TABLE index_chunks_legacy ADD COLUMN legacy boolean NOT NULL DEFAULT true`)
 		for _, stmt := range stmts {
 			if _, err := tx.Exec(ctx, stmt); err != nil {
 				return err
@@ -241,11 +247,10 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		if err := renameLegacyConstraints(ctx, tx); err != nil {
 			return err
 		}
-		if err := createPartitionedIndexChunks(ctx, tx, appRole, schema.Dims, from); err != nil {
+		if err := createPartitionedIndexChunks(ctx, tx, appRole, schema.Dims); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks ATTACH PARTITION index_chunks_legacy
-			FOR VALUES FROM (MINVALUE) TO (`+from+`)`); err != nil {
+		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks ATTACH PARTITION index_chunks_legacy FOR VALUES IN (true)`); err != nil {
 			return err
 		}
 		s.logger.Info("index_chunks partitioned: its chunks move to the hash partitions a repository at a time",
@@ -374,18 +379,11 @@ func drainLegacySlice(ctx context.Context, tx pgx.Tx, run string, keep bool) (mo
 		tag, err := tx.Exec(ctx, `DELETE FROM index_chunks_legacy WHERE id = ANY($1)`, ids)
 		return 0, tag.RowsAffected(), err
 	}
-	// A new created_at routes the chunks out of the legacy partition.
-	tag, err := tx.Exec(ctx, `UPDATE index_chunks SET created_at = statement_timestamp()
-		WHERE index_run_id = $1 AND id = ANY($2) AND tableoid = 'index_chunks_legacy'::regclass`, run, ids)
+	// legacy false routes the chunks out of the legacy partition, and leaves
+	// the rest of each as it was.
+	tag, err := tx.Exec(ctx, `UPDATE index_chunks SET legacy = false WHERE index_run_id = $1 AND id = ANY($2) AND legacy`, run, ids)
 	if err != nil {
 		return 0, 0, err
-	}
-	var left bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy WHERE id = ANY($1))`, ids).Scan(&left); err != nil {
-		return 0, 0, err
-	}
-	if left {
-		return 0, 0, errors.New("the database clock is behind the legacy partition's bound")
 	}
 	return tag.RowsAffected(), 0, nil
 }
@@ -440,23 +438,19 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx, passed []string) (run 
 
 // DropLegacyIndexChunks drops index_chunks_legacy once DrainLegacyIndexChunks
 // has emptied it, and reports whether it did. Searches then read the hash
-// partition of their generation alone.
+// partition of their generation alone, and the table is laid out as one
+// created partitioned is: index_chunks_current holds every chunk that is not
+// legacy, and no chunk is written legacy.
 //
-// In the same transaction, index_chunks_current is attached again to cover
-// every created_at, from MINVALUE, as in a table created partitioned.
-// Otherwise a chunk created before the legacy bound, by a database clock
-// that stepped back, has no partition and its insert fails. Attaching it
-// again reads no chunk: created_at is NOT NULL, which is all the new bound
-// asks, and its indexes and foreign keys become the table's again rather
-// than being built. Detaching and attaching it does take the exclusive lock
-// of the tables that its foreign keys reference, for a moment, as their
-// triggers are moved. It takes index_chunks_legacy first, in a mode that
-// stops writes to it but not reads, giving way as PartitionIndexChunks does,
-// then index_chunks and those tables, each at once or not at all. A writer
-// that holds index_chunks can begin to wait for the legacy partition while
-// the drop reads it, for as long as that read takes. A wait of the drop's
-// then would close a cycle that the writer's deadlock check, run first, would
-// end by aborting the writer. Leader only.
+// It reads the partition before it takes any lock, so that one that still
+// holds chunks, or the dead rows of those that the drain moved, which VACUUM
+// has not cleaned, holds up no search. Nothing moves a chunk into the
+// partition, so one read empty stays so. It then takes index_chunks'
+// exclusive lock at once or not at all, rather than queue every search
+// behind its wait, and drops the partition, giving way as
+// PartitionIndexChunks does. That takes no lock of the tables that the
+// partition's foreign keys reference, which are the partitioned table's.
+// Leader only.
 func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: DropLegacyIndexChunks needs the owner connection")
@@ -472,31 +466,15 @@ func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil || !legacy {
 				return err
 			}
-			// Read before any lock, so that a partition with chunks does not
-			// hold up searches, and again under one that stops writes to it,
-			// as a write whose clock is behind the bound can still add one.
-			// The second read is not under index_chunks' exclusive lock: a
-			// partition that the drain emptied and VACUUM has not cleaned is
-			// read through all of its dead rows, which searches must not wait
-			// for.
 			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
 				return err
 			}
 			if err := yieldLocks(ctx, tx); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `LOCK TABLE index_chunks_legacy IN SHARE MODE`); err != nil {
-				return err
-			}
-			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
-				return err
-			}
 			for _, stmt := range []string{
 				`LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE NOWAIT`,
-				`LOCK TABLE accounts, repositories, index_runs IN ACCESS EXCLUSIVE MODE NOWAIT`,
 				`DROP TABLE index_chunks_legacy`,
-				`ALTER TABLE index_chunks DETACH PARTITION index_chunks_current`,
-				`ALTER TABLE index_chunks ATTACH PARTITION index_chunks_current FOR VALUES FROM (MINVALUE) TO (MAXVALUE)`,
 			} {
 				if _, err := tx.Exec(ctx, stmt); err != nil {
 					return err
