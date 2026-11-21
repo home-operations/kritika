@@ -114,7 +114,7 @@ func TestRetrievalEval(t *testing.T) {
 		// The gateway searches as deep with a reranker as without one, and
 		// deeper for one sent more candidates than that.
 		base, deep := evalSearches(func(depth int, timed *evalSearchTime) evalHits {
-			return ix.search(t, timed, queries, qv, changed, depth)
+			return ix.search(t, timed, queries, qv, changed, depth, floor, margin)
 		}, &timing, depth, max(depth, candidates), reranker != nil)
 		for _, v := range variants {
 			found := base
@@ -355,9 +355,11 @@ func evalSearches(
 	return base, search(rerankDepth, &timing.deep)
 }
 
-// search runs both searches of a request, depth deep, as the gateway does.
+// search runs both searches of a request, depth deep, as the gateway does,
+// the vector search looking again past the files that fill a query's window
+// while floor and margin say more can qualify (pastFullFiles).
 func (ix evalIndexed) search(
-	t *testing.T, timed *evalSearchTime, queries []string, vectors [][]float32, exclude []string, depth int,
+	t *testing.T, timed *evalSearchTime, queries []string, vectors [][]float32, exclude []string, depth int, floor, margin float64,
 ) evalHits {
 	ctx := t.Context()
 	var found evalHits
@@ -365,6 +367,9 @@ func (ix evalIndexed) search(
 		started := time.Now()
 		var err error
 		if found.hits, err = store.SimilarChunks(ctx, tx, ix.run, vectors, store.Exclusions{Paths: exclude}, depth); err != nil {
+			return err
+		}
+		if found.hits, err = pastFullFiles(ctx, tx, ix.run, vectors, store.Exclusions{Paths: exclude}, depth, found.hits, floor, margin); err != nil {
 			return err
 		}
 		searched := time.Now()
