@@ -187,7 +187,7 @@ effective configuration. Expand **Index runs** to investigate indexing
 failures. Expand **Index contents** to see what the similar-code index holds:
 the commit and embedder it was built at, and its files and their chunks. A
 **partial** pill there, and in the repository's preview, marks an index whose
-build stopped at the indexer's limits of 50,000 files, 500 MB or 100,000
+build stopped at the indexer's limits of 50,000 files, 500 MiB or 100,000
 chunks, and a note below it says so. The files past them are not indexed,
 and at the chunk limit neither is the rest of the file the build stopped
 in. The mark stays while pushes update the index, until a full rebuild
