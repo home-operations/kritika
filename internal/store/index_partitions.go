@@ -112,10 +112,10 @@ var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_id
 // at most, end before that transaction runs the deadlock check, which would
 // abort it. While it waits for index_chunks, every search and build queues
 // behind it, which the short waits also bound. DropLegacyIndexChunks takes
-// index_chunks at once or gives up, and then waits for the legacy partition
-// alone, which only the owner's own reads of it can hold. Each
-// tries partitionTries times, partitionRetryPause apart, and the next sweep
-// tries again.
+// index_chunks at once or gives up, but at its last try, and then waits for
+// the legacy partition alone, which only the owner's own reads of it can
+// hold. Each tries partitionTries times, partitionRetryPause apart, and the
+// next sweep tries again.
 const (
 	lockYieldShare      = 8
 	partitionTries      = 5
@@ -146,7 +146,7 @@ func retryLocks(ctx context.Context, fn func() error) error {
 			return err
 		}
 		if gaveWay != nil {
-			gaveWay()
+			gaveWay(err)
 		}
 		select {
 		case <-ctx.Done():
@@ -156,10 +156,11 @@ func retryLocks(ctx context.Context, fn func() error) error {
 	}
 }
 
-// gaveWay, when a test sets it, is called each time retryLocks gives a lock
-// wait up, before it pauses: a variable for the tests, which can then end
-// what holds the lock at that point rather than after a guessed time.
-var gaveWay func()
+// gaveWay, when a test sets it, is called with the error each time
+// retryLocks gives a lock wait up, before it pauses: a variable for the
+// tests, which can then end what holds the lock at that point rather than
+// after a guessed time.
+var gaveWay func(error)
 
 // PartitionIndexChunks makes an index_chunks that a build before
 // partitioning created, a plain table, the legacy partition of a partitioned
@@ -541,22 +542,35 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx, passed []string) (run 
 // created partitioned is: index_chunks_current holds every chunk that is not
 // legacy, and no chunk is written legacy.
 //
-// It reads the partition before it takes any lock, so that one that still
-// holds chunks, or the dead rows of those that the drain moved, which VACUUM
-// has not cleaned, holds up no search. Nothing moves a chunk into the
-// partition, so one read empty stays so. It then takes index_chunks'
-// exclusive lock at once or not at all, rather than queue every search
-// behind its wait, and drops the partition, giving way as
-// PartitionIndexChunks does. That takes no lock of the tables that the
-// partition's foreign keys reference, which are the partitioned table's.
-// Leader only.
+// It reads the partition before it asks for an exclusive lock, under the
+// index schema's lock and the partition's ACCESS SHARE lock alone, so that
+// one that still holds chunks, or the dead rows of those that the drain
+// moved, which VACUUM has not cleaned, holds up no search. Nothing moves a
+// chunk into the partition, so one read empty stays so. It then takes
+// index_chunks' exclusive lock at once or not at all, rather than queue
+// every search behind its wait, and drops the partition, giving way as
+// PartitionIndexChunks does. Searches and builds that overlap without a
+// pause would keep that lock from it however often it tries, so its last
+// try waits for the lock, as the conversion did, a wait that yieldLocks
+// bounds. That takes no lock of the tables that the partition's foreign
+// keys reference, which are the partitioned table's. Detaching the
+// partition concurrently would not wait for index_chunks, but the detached
+// table would own its foreign keys, and dropping it would then take an
+// exclusive lock of accounts, repositories and index_runs, which blocks
+// even their reads. Leader only.
 func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: DropLegacyIndexChunks needs the owner connection")
 	}
 	var dropped bool
+	try := 0
 	err := retryLocks(ctx, func() error {
 		dropped = false
+		try++
+		lock := `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE NOWAIT`
+		if try == partitionTries {
+			lock = `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`
+		}
 		return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
 				return err
@@ -571,10 +585,7 @@ func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 			if err := yieldLocks(ctx, tx); err != nil {
 				return err
 			}
-			for _, stmt := range []string{
-				`LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE NOWAIT`,
-				`DROP TABLE index_chunks_legacy`,
-			} {
+			for _, stmt := range []string{lock, `DROP TABLE index_chunks_legacy`} {
 				if _, err := tx.Exec(ctx, stmt); err != nil {
 					return err
 				}

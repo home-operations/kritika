@@ -566,13 +566,17 @@ then reuses the content hash's index, and copies and rebuilds nothing:
    PostgreSQL's ordinary read lock of the partition and the advisory lock
    that serializes changes to the index schema, and leaves the partition if
    a chunk is left. It then takes the exclusive lock on `index_chunks` at
-   once or not at all, rather than queue searches behind a waiting lock
-   request, and drops `index_chunks_legacy`, waiting for that partition
-   with the same short wait as the first step. When either lock is not to
-   be had, it changes nothing and tries again a second later, five times,
-   and the next hourly sweep tries again. The hash partitions stay attached
-   throughout: no chunk is moved and no index is built, and this step takes
-   no lock on `accounts`, `repositories` or `index_runs`.
+   once or not at all, but at its last try, rather than queue searches
+   behind a waiting lock request, and drops `index_chunks_legacy`, waiting
+   for that partition with the same short wait as the first step. When
+   either lock is not to be had, it changes nothing and tries again a
+   second later, five times, and the next hourly sweep tries again.
+   Searches and index builds that overlap without a pause would keep the
+   exclusive lock from a request that does not wait, so the last try waits
+   for it, with the first step's short wait, which bounds how long searches
+   queue behind it. The hash partitions stay attached throughout: no chunk
+   is moved and no index is built, and this step takes no lock on
+   `accounts`, `repositories` or `index_runs`.
 
 A search reads the legacy partition's vector index until it is dropped, so
 until then it costs what a search of the plain table did. A rebuild for a

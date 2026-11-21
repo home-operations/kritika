@@ -97,3 +97,103 @@ func TestPartitionIndexChunksLockedRoundTrips(t *testing.T) {
 	}
 	checkFreshLayout(t, s)
 }
+
+// TestDropLegacyIndexChunksBesideSustainedSearches: searches that overlap
+// without a pause, one always holding index_chunks, keep the drop from
+// taking its lock at once at every try. Its last try queues for the lock,
+// and so drops the empty legacy partition once the searches that hold it
+// end.
+func TestDropLegacyIndexChunksBesideSustainedSearches(t *testing.T) {
+	slowLockWaits(t)
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-drop-sustained"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-drop-sustained", "index-drop-sustained/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+	account := accountID(t, s, "index-drop-sustained")
+	run := partitionRun(t, s, account, configfile.RepositoryID(account, "index-drop-sustained/one"), true, "a.go")
+	partitionLegacy(t, s)
+	drainLegacy(t, s)
+	var table uint32
+	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid`).Scan(&table); err != nil {
+		t.Fatal(err)
+	}
+
+	// search runs on the drop's goroutine too, so it reports an error rather
+	// than end the test.
+	search := func() (pgx.Tx, error) {
+		tx, err := s.owner.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+		_, err = tx.Exec(ctx, `SELECT count(*) FROM index_chunks`)
+		return tx, err
+	}
+	// Each time the drop gives way, the search that held index_chunks ends
+	// and another, which began before it ended, holds it in its place.
+	holding, err := search()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	gaveUp := 0
+	gaveWay = func(error) {
+		mu.Lock()
+		defer mu.Unlock()
+		gaveUp++
+		next, err := search()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err := holding.Commit(ctx); err != nil {
+			t.Error(err)
+		}
+		holding = next
+	}
+	type result struct {
+		dropped bool
+		err     error
+	}
+	dropped := make(chan result, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		got, err := s.DropLegacyIndexChunks(ctx)
+		dropped <- result{got, err}
+	}()
+	t.Cleanup(func() {
+		<-done
+		gaveWay = nil
+	})
+	waitForLockWait(t, s, table, "AccessExclusiveLock", done)
+	mu.Lock()
+	defer mu.Unlock()
+	select {
+	case got := <-dropped:
+		t.Fatalf("DropLegacyIndexChunks beside sustained searches = %v, %v after giving way %d times; want its last try to wait for the lock",
+			got.dropped, got.err, gaveUp)
+	default:
+	}
+	if gaveUp != partitionTries-1 {
+		t.Fatalf("the drop waited for the lock after giving way %d times, want %d", gaveUp, partitionTries-1)
+	}
+	// The search that holds index_chunks now ends, and the drop takes it.
+	if err := holding.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-dropped; got.err != nil || !got.dropped {
+		t.Fatalf("DropLegacyIndexChunks once the search that held index_chunks ended = %v, %v; want the partition dropped", got.dropped, got.err)
+	}
+	if legacyExists(t, s) {
+		t.Fatal("the empty legacy partition was kept")
+	}
+	checkFreshLayout(t, s)
+	if got := similarPaths(t, s, account, run); strings.Join(got, ",") != "a.go" {
+		t.Fatalf("search after the drop found %v, want a.go", got)
+	}
+}

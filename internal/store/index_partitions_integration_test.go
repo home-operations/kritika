@@ -576,7 +576,7 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 		err         error
 	}
 	gaveUp := 0
-	gaveWay = func() { gaveUp++ }
+	gaveWay = func(error) { gaveUp++ }
 	partitioned := make(chan result, 1)
 	partitionerDone := make(chan struct{})
 	go func() {
@@ -630,9 +630,10 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 }
 
 // TestDropLegacyIndexChunksYieldsToSearch: the drop waits for no lock of
-// index_chunks. A transaction that holds it, as a chunk writer does, makes
-// the drop give way at once, rather than hold every search up behind its
-// wait, and nothing of the drop's is left for the writer to wait for. Nor
+// index_chunks but at its last try, a wait that yieldLocks bounds. A
+// transaction that holds it, as a chunk writer does, makes the drop give way
+// at once until then, rather than hold every search up behind its wait, and
+// nothing of the drop's is left for the writer to wait for. Nor
 // does it take the tables that its foreign keys reference, so a search that
 // holds them leaves it to drop the legacy partition.
 func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
@@ -664,12 +665,26 @@ func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 
 	t.Run("a chunk writer", func(t *testing.T) {
 		holder := hold(t, `LOCK TABLE ONLY index_chunks IN ROW EXCLUSIVE MODE`)
+		var gaveUp []error
+		gaveWay = func(err error) { gaveUp = append(gaveUp, err) }
+		t.Cleanup(func() { gaveWay = nil })
 		// A wait that lock_timeout ends is "canceling statement due to lock
-		// timeout"; this is the lock not taken at all.
+		// timeout"; the others are the lock not taken at all. Only the last
+		// try waits.
 		dropped, err := s.DropLegacyIndexChunks(ctx)
-		pgErr, ok := errors.AsType[*pgconn.PgError](err)
-		if want := `could not obtain lock on relation "index_chunks"`; dropped || !ok || pgErr.Code != "55P03" || pgErr.Message != want {
-			t.Fatalf("DropLegacyIndexChunks beside a chunk writer = %v, %v; want it to give way at once: %s", dropped, err, want)
+		messages := make([]string, 0, len(gaveUp)+1)
+		for _, err := range append(gaveUp, err) {
+			pgErr, ok := errors.AsType[*pgconn.PgError](err)
+			if !ok || pgErr.Code != "55P03" {
+				t.Fatalf("DropLegacyIndexChunks beside a chunk writer gave way with %v, want a lock not available", err)
+			}
+			messages = append(messages, pgErr.Message)
+		}
+		want := slices.Repeat([]string{`could not obtain lock on relation "index_chunks"`}, partitionTries-1)
+		want = append(want, "canceling statement due to lock timeout")
+		if dropped || !slices.Equal(messages, want) {
+			t.Fatalf("DropLegacyIndexChunks beside a chunk writer = %v, after %q; want it to give way at once but at its last try: %q",
+				dropped, messages, want)
 		}
 		if !legacyExists(t, s) {
 			t.Fatal("the legacy partition was dropped beside a chunk writer")
@@ -1386,7 +1401,7 @@ func TestPartitionIndexChunksRetriesLockWaits(t *testing.T) {
 		t.Fatal(err)
 	}
 	gaveUp := 0
-	gaveWay = func() {
+	gaveWay = func(error) {
 		if gaveUp++; gaveUp == 1 {
 			if err := writer.Rollback(context.Background()); err != nil {
 				t.Error(err)
