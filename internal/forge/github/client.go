@@ -110,14 +110,16 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 		}
 		branch = r.GetDefaultBranch()
 	}
-	b, resp, err := c.api.Repositories.GetBranch(ctx, owner, repo, branch, 1)
+	// Not Repositories.GetBranch: it closes the body of a refusal before
+	// go-github's response checks read it, and a secondary rate limit is
+	// told apart by its body alone.
+	req, err := c.api.NewRequest(ctx, http.MethodGet, fmt.Sprintf("repos/%v/%v/branches/%v", owner, repo, url.PathEscape(branch)), nil)
 	if err != nil {
-		// GetBranch answers a refusal with a bare "unexpected status code"
-		// error, past go-github's response checks: they make it the
-		// ErrorResponse or rate limit that every other call returns.
-		if resp != nil && resp.StatusCode != http.StatusOK {
-			err = gh.CheckResponse(resp.Response)
-		}
+		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, err)
+	}
+	var b gh.Branch
+	resp, err := c.api.Do(req, &b)
+	if err != nil {
 		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, notFound(resp, err))
 	}
 	if b.GetCommit().GetSHA() == "" {
