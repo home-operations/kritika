@@ -240,7 +240,13 @@ func regionWindows(region []udiff.Line) []string {
 	adds := false
 	flush := func() {
 		if adds {
-			out = append(out, textcut.Prefix(b.String(), contextpack.SimilarQueryChars))
+			q := textcut.Prefix(b.String(), contextpack.SimilarQueryChars)
+			// A line indented past the bound would cut to a blank query,
+			// which the gateway refuses with the rest of the request.
+			if strings.TrimSpace(q) == "" {
+				q = textcut.Prefix(strings.TrimSpace(b.String()), contextpack.SimilarQueryChars)
+			}
+			out = append(out, q)
 		}
 		b.Reset()
 		adds = false

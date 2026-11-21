@@ -190,6 +190,7 @@ func TestHunkQueries(t *testing.T) {
 	newFile := added(append(strings.Split(strings.TrimSuffix(license, "\n"), "\n"),
 		"package lib", "", "import \"fmt\"", "", "func A() {", "\tfmt.Println(\"a\")", "}", "", "func B() {}")...)
 	long := "\t// " + strings.Repeat("x", 1500)
+	indented := strings.Repeat(" ", contextpack.SimilarQueryChars) + "deep()"
 	filler := make([]string, 0, 200)
 	for i := range 200 {
 		filler = append(filler, fmt.Sprintf("line %d of a text with no declarations to cut it by", i))
@@ -239,6 +240,11 @@ func TestHunkQueries(t *testing.T) {
 			name: "a change below the first bound's worth of a declaration",
 			diff: fileDiff("a.go", "a.go", "@@ -1,4 +1,5 @@\n func A() {\n "+long+"\n "+long+"\n+\tchanged()\n }\n"),
 			want: []string{long + "\n\tchanged()\n}\n"},
+		},
+		{
+			name: "a line indented past the bound, by its code",
+			diff: fileDiff("", "deep.md", added(indented)) + fileDiff("", "a.go", added("func a() {}")),
+			want: []string{"deep()", "func a() {}\n"},
 		},
 	}
 	for _, tt := range tests {
