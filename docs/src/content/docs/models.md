@@ -734,11 +734,14 @@ rebuilds that index too, as it does one of another format.
 A runner of the new release can also report to a replica of the release
 before it. That replica refuses a report with a field that only the new
 release sends, such as the signature of a declaration's window. The runner
-sends the report again for up to three minutes, as it does one that a
-replica without the route refuses, by which time a rollout has usually
-replaced the old replicas. A runner that still fails costs its index job one
-of three attempts. When a job spends them all, the next poll queues the
-push again, and the onboarding feeder offers an index not yet built again.
+sends the report again, as it does one that a replica without the route
+refuses, within a three-minute retry window, by which time a rollout has
+usually replaced the old replicas. The window bounds the retries, not an
+upload: each attempt has its own timeout, and a refused attempt that itself
+lasted longer than the window starts a fresh one. A runner that still fails
+costs its index job one of three attempts. When a job spends them all, the
+next poll queues the push again, and the onboarding feeder offers an index
+not yet built again.
 
 ### Prompts
 
