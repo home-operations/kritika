@@ -678,7 +678,8 @@ shows. Both leave out the files the change touches, by both names of a
 rename, whose copies in the index are older or newer than the head's. The
 run reports them to the gateway once, which keeps them for the run, so
 however many files a change touches, a directory move of thousands among
-them, neither a search nor its request grows with them.
+them, a search request does not grow with them. Each search still applies
+those exclusions in the database, so its work there does grow with them.
 
 How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and
