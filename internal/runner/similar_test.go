@@ -136,8 +136,14 @@ func TestSimilarContextExclusions(t *testing.T) {
 				t.Fatalf("similar context still waits on its report a minute on, past its %s window", similarReportWindow)
 			}
 			if gw.unanswered != nil {
-				// The run gave the report up rather than being answered.
-				<-gw.unanswered
+				// The run gave the report up rather than being answered. A run
+				// that never sent it would leave this wait to the package's
+				// timeout.
+				select {
+				case <-gw.unanswered:
+				case <-time.After(time.Minute):
+					t.Fatal("the exclusion report was never sent, or never given up, a minute after the run returned")
+				}
 			}
 			gw.mu.Lock()
 			defer gw.mu.Unlock()
