@@ -369,11 +369,30 @@ func (m *Metrics) InitIndexSnoozes(account string) {
 	}
 }
 
+// InitSimilarRequests exposes zero counts of the account's similar-code
+// requests, of each kind and outcome that the gateway counts, before any
+// request, so a first error following a scrape is visible to rate/increase.
+// A request too malformed to name its kind is unknown, and only too_large or
+// invalid.
+func (m *Metrics) InitSimilarRequests(account string) {
+	if m != nil {
+		for _, kind := range []string{"diff", "search"} {
+			for _, outcome := range []string{"ok", "empty", "no_queries", "no_embedder", "no_index", "invalid", "refused", outcomeError} {
+				m.similarRequests.WithLabelValues(account, kind, outcome)
+			}
+		}
+		for _, outcome := range []string{"too_large", "invalid"} {
+			m.similarRequests.WithLabelValues(account, "unknown", outcome)
+		}
+	}
+}
+
 // InitAccount exposes the account's zero series at startup: those of
-// InitVectorSearch and InitIndexSnoozes.
+// InitVectorSearch, InitIndexSnoozes and InitSimilarRequests.
 func (m *Metrics) InitAccount(account string) {
 	m.InitVectorSearch(account)
 	m.InitIndexSnoozes(account)
+	m.InitSimilarRequests(account)
 }
 
 // JobRescued counts a job of a dead replica that the leader handed back to

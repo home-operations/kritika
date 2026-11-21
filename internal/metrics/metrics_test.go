@@ -27,6 +27,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.QueueWait("review", time.Second)
 	none.InitVectorSearch("account")
 	none.InitAccount("account")
+	none.InitSimilarRequests("account")
 	none.VectorSearch("account", "ok", time.Second)
 	none.LexicalSearch("account", "ok", time.Second)
 	none.CacheUploadSkipped("queue_full")
@@ -281,6 +282,36 @@ func TestInitAccountIndexSnoozes(t *testing.T) {
 			m.InitAccount("account")
 			if got := testutil.ToFloat64(counter); got != 1 {
 				t.Fatalf("snoozes after one and initializing again = %v, want 1", got)
+			}
+		})
+	}
+}
+
+// TestInitAccountSimilarRequests: startup exposes an account's similar-code
+// requests of every kind and outcome that the gateway counts at zero, so the
+// first error after a scrape shows in rate/increase. Initializing again
+// keeps a request recorded since.
+func TestInitAccountSimilarRequests(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := New(reg)
+	m.InitAccount("account")
+	// diff and search of each of eight outcomes, and unknown of too_large
+	// and invalid.
+	if n, err := testutil.GatherAndCount(reg, "kritika_similar_requests_total"); err != nil || n != 18 {
+		t.Fatalf("similar request series = %d, %v; want 18", n, err)
+	}
+	for _, tt := range []struct{ kind, outcome string }{
+		{"diff", "error"}, {"search", "refused"}, {"unknown", "too_large"}, {"unknown", "invalid"},
+	} {
+		t.Run(tt.kind+"/"+tt.outcome, func(t *testing.T) {
+			counter := m.similarRequests.WithLabelValues("account", tt.kind, tt.outcome)
+			if got := testutil.ToFloat64(counter); got != 0 {
+				t.Fatalf("initialized requests = %v, want 0", got)
+			}
+			m.SimilarRequest("account", tt.kind, tt.outcome)
+			m.InitAccount("account")
+			if got := testutil.ToFloat64(counter); got != 1 {
+				t.Fatalf("requests after one and initializing again = %v, want 1", got)
 			}
 		})
 	}
