@@ -240,3 +240,38 @@ func TestAwaitAppliedBuild(t *testing.T) {
 		})
 	}
 }
+
+// TestIndexCompletedTruncation: a run that publishes a truncated pack is
+// logged at Warn and counted in kritika_index_truncated_total, and one that
+// publishes a whole pack is neither.
+func TestIndexCompletedTruncation(t *testing.T) {
+	account := &configfile.Account{Forge: configfile.ForgeGitHub, Name: "onedr0p"}
+	for _, tc := range []struct {
+		name string
+		pack store.IndexPack
+		want int
+	}{
+		{"truncated full build", store.IndexPack{Mode: store.IndexModeFull, Truncated: true}, 1},
+		{"whole full build", store.IndexPack{Mode: store.IndexModeFull}, 0},
+		{"incremental step", store.IndexPack{Mode: store.IndexModeIncremental}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			reg := prometheus.NewRegistry()
+			w := &Index{Metrics: metrics.New(reg)}
+			w.completed(account, tc.pack, 3, slog.New(slog.NewTextHandler(&logs, nil)))
+			want := ""
+			if tc.want > 0 {
+				want = "# HELP kritika_index_truncated_total Full index builds published truncated: stopped at the indexer's budget, leaving out the files past it.\n" +
+					"# TYPE kritika_index_truncated_total counter\n" +
+					fmt.Sprintf("kritika_index_truncated_total{account=%q} %d\n", account.Key(), tc.want)
+			}
+			if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_index_truncated_total"); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(logs.String(), `level=WARN msg="index published truncated`); got != (tc.want > 0) {
+				t.Fatalf("warned = %v, want %v:\n%s", got, tc.want > 0, logs.String())
+			}
+		})
+	}
+}
