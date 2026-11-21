@@ -275,9 +275,9 @@ func regionWindows(region []udiff.Line, limit int) []string {
 	adds := false
 	flush := func() {
 		if adds {
-			q := textcut.Prefix(b.String(), contextpack.SimilarQueryChars)
-			// A line indented past the bound would cut to a blank query,
-			// which the gateway refuses with the rest of the request.
+			q := ChunkText(b.String(), contextpack.SimilarQueryChars)
+			// A wordless line indented past the bound would cut to a blank
+			// query, which the gateway refuses with the rest of the request.
 			if strings.TrimSpace(q) == "" {
 				q = textcut.Prefix(strings.TrimSpace(b.String()), contextpack.SimilarQueryChars)
 			}

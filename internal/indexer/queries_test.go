@@ -37,6 +37,8 @@ func TestHunkQueries(t *testing.T) {
 		"package lib", "", "import \"fmt\"", "", "func A() {", "\tfmt.Println(\"a\")", "}", "", "func B() {}")...)
 	long := "\t// " + strings.Repeat("x", 1500)
 	indented := strings.Repeat(" ", contextpack.SimilarQueryChars) + "deep()"
+	punctuated := "-" + strings.Repeat(" ", contextpack.SimilarQueryChars) + "distinctiveName()"
+	wordless := strings.Repeat(" ", contextpack.SimilarQueryChars) + "---"
 	filler := make([]string, 0, 200)
 	for i := range 200 {
 		filler = append(filler, fmt.Sprintf("line %d of a text with no declarations to cut it by", i))
@@ -107,8 +109,20 @@ func TestHunkQueries(t *testing.T) {
 		{
 			name:  "a line indented past the bound, by its code",
 			diff:  fileDiff("", "deep.md", added(indented)) + fileDiff("", "a.go", added("func a() {}")),
-			want:  []string{"deep()", "func a() {}\n"},
+			want:  []string{"deep()\n", "func a() {}\n"},
 			paths: []string{"deep.md", "a.go"},
+		},
+		{
+			name:  "a line padded past the bound after punctuation, by its first word",
+			diff:  fileDiff("", "list.md", added(punctuated)),
+			want:  []string{"distinctiveName()\n"},
+			paths: []string{"list.md"},
+		},
+		{
+			name:  "a wordless line indented past the bound, by its punctuation",
+			diff:  fileDiff("", "rule.md", added(wordless)),
+			want:  []string{"---"},
+			paths: []string{"rule.md"},
 		},
 	}
 	for _, tt := range tests {
