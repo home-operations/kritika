@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -211,9 +212,20 @@ func (f *File) resolveRerank() error {
 			"endpoint that takes a bearer key", p.Type, ProviderOpenAI)
 	case p.BaseURL == "":
 		return fmt.Errorf("configfile: embedding.rerank.model names provider %q, which sets no baseUrl; a reranker needs its endpoint", name)
+	case !apiRoot(p.BaseURL):
+		return fmt.Errorf("configfile: embedding.rerank.model names provider %q, whose baseUrl is no http or https API root "+
+			"that /rerank can be appended to: it must name a host and hold no query or fragment", name)
 	}
 	r.BaseURL, r.Model, r.apiKey = p.BaseURL, r.Ref.Model(), p.apiKey
 	return nil
+}
+
+// apiRoot reports whether raw is an http or https URL with a host that a
+// path can be appended to: one with no "?" or "#", after which the path
+// would land in the query or the fragment.
+func apiRoot(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(raw, "?#")
 }
 
 // accountsOf gathers the accounts entries, in the order of their names. An

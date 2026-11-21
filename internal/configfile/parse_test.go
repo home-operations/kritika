@@ -273,3 +273,36 @@ func TestRerankCandidates(t *testing.T) {
 		})
 	}
 }
+
+// TestParseRerankBaseURL: a reranker's provider has an HTTP API root that
+// "/rerank" goes under, or the file is refused, without the URL in the error.
+// A query or a fragment would take the suffix out of the path.
+func TestParseRerankBaseURL(t *testing.T) {
+	t.Setenv("TEST_KEY", "rk")
+	for _, tt := range []struct {
+		name, url string
+		ok        bool
+	}{
+		{"a root", "https://api.cohere.com/v2", true},
+		{"a root with a slash", "http://tei.ai.svc:8080/", true},
+		{"a query", "https://api.cohere.com/v2?secret=s3cr3t", false},
+		{"an empty query", "https://api.cohere.com/v2?", false},
+		{"a fragment", "https://api.cohere.com/v2#s3cr3t", false},
+		{"an empty fragment", "https://api.cohere.com/v2#", false},
+		{"another scheme", "ftp://api.cohere.com/v2", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte("providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +
+				"  rr: { type: openai, baseUrl: \"" + tt.url + "\", apiKey: { env: TEST_KEY } }\n" +
+				"embedding:\n  model: or/voyage-code-3\n  dims: 1024\n  rerank: { model: rr/m, api: cohere }\n"))
+			switch {
+			case tt.ok && err != nil:
+				t.Fatalf("Parse = %v", err)
+			case !tt.ok && (err == nil || !strings.Contains(err.Error(), `embedding.rerank.model names provider "rr"`)):
+				t.Fatalf("Parse = %v, want the reranker's provider refused", err)
+			case !tt.ok && strings.Contains(err.Error(), "s3cr3t"):
+				t.Fatalf("Parse = %v, want the URL left out", err)
+			}
+		})
+	}
+}

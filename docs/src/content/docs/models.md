@@ -871,7 +871,8 @@ fusion's. The answer then takes each query's best four as before.
 | `timeout`    | 15s              | how long the reranking of one similar-code request, the wait for a slot and all its queries, can take, at most 30s                                      |
 
 The reranker's provider is of type `openai`, which stands for any
-endpoint that takes a bearer key, and it sets `baseUrl`: kritika posts to
+endpoint that takes a bearer key, and it sets `baseUrl`, an `http` or
+`https` URL without a query or a fragment: kritika posts to
 `{baseUrl}/rerank`. Like the embedder, the reranker does not send the
 provider's `headers`: a proxy in front of it that needs one of its own,
 for a route or a key, fails every rerank, and the fused order stands. The
