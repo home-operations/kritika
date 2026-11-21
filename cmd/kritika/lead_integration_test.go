@@ -76,12 +76,16 @@ func expiredLogin(t *testing.T, st *store.Store, hash string) (swept func() bool
 }
 
 // indexSchemaWaiters counts the sessions that wait for the index schema's
-// lock, which retention's index work takes first.
-func indexSchemaWaiters(t *testing.T, watch *pgx.Conn) int {
+// lock in mode, a pg_locks mode, or in either mode when mode is "".
+// Partitioning the index table, which retention's index work starts with,
+// asks for it as ExclusiveLock; the sweep of stopped repositories' indexes
+// asks for it as ShareLock.
+func indexSchemaWaiters(t *testing.T, watch *pgx.Conn, mode string) int {
 	t.Helper()
 	var n int
-	if err := watch.QueryRow(t.Context(), `SELECT count(*) FROM pg_stat_activity
-		WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND query LIKE '%kritika-index-schema%'`).Scan(&n); err != nil {
+	if err := watch.QueryRow(t.Context(), `SELECT count(DISTINCT a.pid) FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+		WHERE l.locktype = 'advisory' AND NOT l.granted AND a.query LIKE '%kritika-index-schema%'
+			AND ($1 = '' OR l.mode = $1)`, mode).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -154,12 +158,12 @@ func TestLeadPartitionsOnceTheConfigurationIsApplied(t *testing.T) {
 		}
 		return waiting && swept()
 	})
-	if n := indexSchemaWaiters(t, watch); n != 0 {
+	if n := indexSchemaWaiters(t, watch, ""); n != 0 {
 		t.Fatalf("%d sessions wait for the index schema's lock before the configuration is applied, want none", n)
 	}
 	releaseConfig()
 	waitLead(t, "retention's index work to start once the configuration is applied", func() bool {
-		return indexSchemaWaiters(t, watch) > 0
+		return indexSchemaWaiters(t, watch, "ExclusiveLock") > 0
 	})
 }
 
@@ -206,10 +210,10 @@ embedding: { model: test/fake-embed, dims: 8 }
 			Scan(&applied); err != nil {
 			t.Fatal(err)
 		}
-		return applied && indexSchemaWaiters(t, watch) > 0 && swept()
+		return applied && indexSchemaWaiters(t, watch, "") > 0 && swept()
 	})
 	// Ensuring the schema is the one waiting: retention's index work is not.
-	if n := indexSchemaWaiters(t, watch); n != 1 {
+	if n := indexSchemaWaiters(t, watch, ""); n != 1 {
 		t.Fatalf("%d sessions wait for the index schema's lock, want only the one ensuring it", n)
 	}
 	release()
