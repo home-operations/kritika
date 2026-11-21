@@ -117,17 +117,23 @@ func TestLexicalExclusionsReadOnlyCandidates(t *testing.T) {
 	// Each candidate is examined to test its path, and the one kept to rank
 	// it and to return it: a few rows a candidate, not one for each chunk of
 	// the excluded paths, whether a scan returns them or filters them out.
-	if read := root[0].Plan.chunksRead(); read > 3*candidates {
+	if read := root[0].Plan.rowsRead("index_chunks"); read > 3*candidates {
 		t.Errorf("the search examined %v rows of index_chunks for %d posting candidates, want at most %d:\n%s",
 			read, candidates, 3*candidates, plan)
 	}
+	// Each candidate's path is looked up among the run's reported paths by
+	// the index: a row at most for each, not a scan of the 20,000.
+	if read := root[0].Plan.rowsRead("similar_exclusions"); read > candidates {
+		t.Errorf("the search examined %v rows of similar_exclusions for %d posting candidates, want at most %d:\n%s",
+			read, candidates, candidates, plan)
+	}
 }
 
-// TestChunksRead: chunksRead counts the rows that a scan of index_chunks
-// examined, those it filtered out as well as those it returned, so a scan
-// of a whole partition that returns the few candidates alone is counted
-// whole.
-func TestChunksRead(t *testing.T) {
+// TestRowsRead: rowsRead counts the rows that a scan of a relation, or of
+// a partition of it, examined, those it filtered out as well as those it
+// returned, so a scan of a whole partition that returns the few candidates
+// alone is counted whole.
+func TestRowsRead(t *testing.T) {
 	for _, tt := range []struct {
 		name, plan string
 		want       float64
@@ -145,8 +151,8 @@ func TestChunksRead(t *testing.T) {
 			if err := json.Unmarshal([]byte(tt.plan), &n); err != nil {
 				t.Fatal(err)
 			}
-			if got := n.chunksRead(); got != tt.want {
-				t.Errorf("chunksRead = %v, want %v", got, tt.want)
+			if got := n.rowsRead("index_chunks"); got != tt.want {
+				t.Errorf("rowsRead = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -165,15 +171,16 @@ type relationRows struct {
 	Plans            []relationRows `json:"Plans"`
 }
 
-// chunksRead is how many rows n's tree examined in index_chunks' partitions
-// in all: those that each scan returned and those that it removed.
-func (n relationRows) chunksRead() float64 {
+// rowsRead is how many rows n's tree examined in the relations whose names
+// begin with relation, its partitions too, in all: those that each scan
+// returned and those that it removed.
+func (n relationRows) rowsRead(relation string) float64 {
 	var read float64
-	if strings.HasPrefix(n.RelationName, "index_chunks") {
+	if strings.HasPrefix(n.RelationName, relation) {
 		read = (n.ActualRows + n.RemovedByFilter + n.RemovedByRecheck) * n.ActualLoops
 	}
 	for _, c := range n.Plans {
-		read += c.chunksRead()
+		read += c.rowsRead(relation)
 	}
 	return read
 }
