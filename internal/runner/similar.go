@@ -396,8 +396,15 @@ func similarShown(
 		logger.Warn("similar chunks not checked at the head", "error", err)
 		return nil
 	}
+	return shownApart(len(found), current, others, logger)
+}
+
+// shownApart is what a prompt shows of current, the found similar chunks as
+// the head has them: none that others mostly show or that an earlier one
+// shown mostly shows, and the first maxSimilarShown of the rest.
+func shownApart(found int, current, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
 	shown := distinct(withoutOverlap(current, others))
-	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "apart", len(shown),
+	logger.Info("similar chunks shown", "found", found, "at_head", len(current), "apart", len(shown),
 		"shown", min(len(shown), maxSimilarShown))
 	return shown[:min(len(shown), maxSimilarShown)]
 }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,9 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 )
 
@@ -153,5 +157,45 @@ func TestPartSimilarCodeCancellation(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("retrieval did not stop on cancellation")
+	}
+}
+
+// TestPartPromptsCheckSharedSimilarCodeAtTheHeadOnce: reviewers that review
+// the same files share one similar-code answer, which is checked at the head
+// once: the file of a hit under a declaration is read, and parsed, for both.
+func TestPartPromptsCheckSharedSimilarCodeAtTheHeadOnce(t *testing.T) {
+	const lib = "package lib\n\nfunc Z() {}\n"
+	head, reads, blobs := countedHead(t, map[string]string{"x.go": "package x\n", "z.go": lib})
+	gw := &fakeSimilarGateway{status: http.StatusNoContent, answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "z.go", Symbol: "Z", Kind: "function", StartLine: 3, EndLine: 3, Text: "func Z() {}"},
+	}}}
+	// The context stages read the head before the exclusions are reported,
+	// and the similar code is checked at it after.
+	gw.reported = func(int) {
+		reads.mu.Lock()
+		defer reads.mu.Unlock()
+		clear(reads.read)
+	}
+	s := reviewSpec()
+	s.GatewayURL, s.Agent.Slots = gw.serve(t).URL, defaultSlots(2)
+	paths := []string{"x.go"}
+	shares := []partShare{
+		{reviewer: &runspec.Reviewer{Name: review.DefaultReviewer}, scoped: paths, paths: paths, index: 1, count: 1, scope: review.ScopeFull},
+		{reviewer: &runspec.Reviewer{Name: "security"}, scoped: paths, paths: paths, index: 1, count: 1, scope: review.ScopeFull},
+	}
+	res := &gitfetch.Result{Diff: fileDiff("", "x.go", added("package x")), Changed: paths}
+	var tools agentTools
+	parts, _, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t", ReportToken: "report"}, head, head, res,
+		repoconfig.Files{}, nil, shares, &tools, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, part := range parts {
+		if !slices.ContainsFunc(part.prompt.context, func(c contextpack.Chunk) bool { return c.Path == "z.go" && c.Symbol == "Z" }) {
+			t.Fatalf("part %d's context %+v lacks the similar chunk", i+1, part.prompt.context)
+		}
+	}
+	if n := reads.reads(blobs["z.go"]); n != 1 {
+		t.Fatalf("the similar chunk's file was read %d times, want once for the reviewers that share its answer", n)
 	}
 }

@@ -95,11 +95,9 @@ func partPrompts(
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
 		}
-		for i, out := range similar {
-			if out.Indexed {
-				chunks[i] = append(chunks[i], similarShown(ctx, head, p.Ignore, out.Chunks, chunks[i], logger.With("part", i+1))...)
-				tools.search = newSearchTool(p, secrets, head, headLock)
-			}
+		partsSimilarShown(ctx, head, p.Ignore, diffs, similar, chunks, logger)
+		if slices.ContainsFunc(similar, func(out contextpack.SimilarResponse) bool { return out.Indexed }) {
+			tools.search = newSearchTool(p, secrets, head, headLock)
 		}
 	}
 	ins := make([]promptInputs, len(shares))
@@ -188,6 +186,37 @@ func partSimilarCode(
 		out[i] = found[j]
 	}
 	return out, nil
+}
+
+// partsSimilarShown adds to each part's chunks the similar code its prompt
+// shows of similar, the part's answer to its diff. Parts with the same diff
+// share an answer, which is checked at head once: only what the part's own
+// chunks already show, and so what is left of it, differs.
+func partsSimilarShown(
+	ctx context.Context, head *object.Tree, ignore, diffs []string, similar []contextpack.SimilarResponse, chunks [][]contextpack.Chunk,
+	logger *slog.Logger,
+) {
+	type checked struct {
+		current []contextpack.Chunk
+		err     error
+	}
+	byDiff := map[string]checked{}
+	for i, out := range similar {
+		if !out.Indexed {
+			continue
+		}
+		c, ok := byDiff[diffs[i]]
+		if !ok {
+			c.current, c.err = atHead(ctx, head, ignore, out.Chunks)
+			byDiff[diffs[i]] = c
+		}
+		logger := logger.With("part", i+1)
+		if c.err != nil {
+			logger.Warn("similar chunks not checked at the head", "error", c.err)
+			continue
+		}
+		chunks[i] = append(chunks[i], shownApart(len(out.Chunks), c.current, chunks[i], logger)...)
+	}
 }
 
 // unsplitPaths are the files that no part of split reviews. They are the

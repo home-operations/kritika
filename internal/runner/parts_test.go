@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -415,44 +416,15 @@ func TestSearchToolHeadLock(t *testing.T) {
 // search_code reads its answer at the head reads no further file, returns
 // why it ended, and lets the head lock go, which the other parts wait on.
 func TestSearchToolStopsReadingTheHeadWhenItsPartEnds(t *testing.T) {
-	st := memory.NewStorage()
-	blob := func(content string) plumbing.Hash {
-		o := st.NewEncodedObject()
-		o.SetType(plumbing.BlobObject)
-		w, err := o.Writer()
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(content))
-		_ = w.Close()
-		h, err := st.SetEncodedObject(o)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return h
-	}
-	a, b := blob("package a\n"), blob("package b\n")
-	o := st.NewEncodedObject()
-	if err := (&object.Tree{Entries: []object.TreeEntry{
-		{Name: "a.go", Mode: filemode.Regular, Hash: a}, {Name: "b.go", Mode: filemode.Regular, Hash: b},
-	}}).Encode(o); err != nil {
-		t.Fatal(err)
-	}
-	root, err := st.SetEncodedObject(o)
-	if err != nil {
-		t.Fatal(err)
-	}
+	head, reads, blobs := countedHead(t, map[string]string{"a.go": "package a\n", "b.go": "package b\n"})
+	a, b := blobs["a.go"], blobs["b.go"]
 	ended := errors.New("the part ended")
 	ctx, cancel := context.WithCancelCause(t.Context())
 	defer cancel(nil)
-	reads := &countingStorer{EncodedObjectStorer: st, read: map[plumbing.Hash]int{}, after: func(h plumbing.Hash) {
+	reads.after = func(h plumbing.Hash) {
 		if h == a {
 			cancel(ended)
 		}
-	}}
-	head, err := object.GetTree(reads, root)
-	if err != nil {
-		t.Fatal(err)
 	}
 	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
 		{Stage: contextpack.StageSimilar, Path: "a.go", StartLine: 1, EndLine: 1, Text: "package a"},
@@ -464,27 +436,75 @@ func TestSearchToolStopsReadingTheHeadWhenItsPartEnds(t *testing.T) {
 	if !errors.Is(err, ended) || out != "" {
 		t.Errorf("Run = %q, %v; want it to stop with %v", out, err, ended)
 	}
-	if reads.read[a] != 1 || reads.read[b] != 0 {
-		t.Errorf("a.go read %d times and b.go %d, want a.go once and b.go not after the part ended", reads.read[a], reads.read[b])
+	if reads.reads(a) != 1 || reads.reads(b) != 0 {
+		t.Errorf("a.go read %d times and b.go %d, want a.go once and b.go not after the part ended", reads.reads(a), reads.reads(b))
 	}
 	if len(locks.head) != 0 {
 		t.Error("the head lock is still held")
 	}
 }
 
+// countedHead is a tree of files, flat, read through a countingStorer, and
+// the hash of each file's blob.
+func countedHead(t *testing.T, files map[string]string) (*object.Tree, *countingStorer, map[string]plumbing.Hash) {
+	t.Helper()
+	st := memory.NewStorage()
+	blobs := map[string]plumbing.Hash{}
+	entries := make([]object.TreeEntry, 0, len(files))
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		o := st.NewEncodedObject()
+		o.SetType(plumbing.BlobObject)
+		w, err := o.Writer()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(files[name]))
+		_ = w.Close()
+		if blobs[name], err = st.SetEncodedObject(o); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, object.TreeEntry{Name: name, Mode: filemode.Regular, Hash: blobs[name]})
+	}
+	o := st.NewEncodedObject()
+	if err := (&object.Tree{Entries: entries}).Encode(o); err != nil {
+		t.Fatal(err)
+	}
+	root, err := st.SetEncodedObject(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := &countingStorer{EncodedObjectStorer: st, read: map[plumbing.Hash]int{}, after: func(plumbing.Hash) {}}
+	head, err := object.GetTree(reads, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head, reads, blobs
+}
+
 // countingStorer counts the reads of each object, and calls after with each
-// one read.
+// one read. Reads that parts make at once are counted under mu.
 type countingStorer struct {
 	storer.EncodedObjectStorer
+	mu    sync.Mutex
 	read  map[plumbing.Hash]int
 	after func(plumbing.Hash)
 }
 
 func (s *countingStorer) EncodedObject(typ plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	o, err := s.EncodedObjectStorer.EncodedObject(typ, h)
+	s.mu.Lock()
 	s.read[h]++
-	s.after(h)
+	after := s.after
+	s.mu.Unlock()
+	after(h)
 	return o, err
+}
+
+// reads is how many times h was read.
+func (s *countingStorer) reads(h plumbing.Hash) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.read[h]
 }
 
 // TestRunPartLoopsShareSearch: parts that run at once share one search_code,
