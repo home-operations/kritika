@@ -94,7 +94,15 @@ func TestRetrievalEval(t *testing.T) {
 			continue
 		}
 		diff, added := commitDiff(t, c)
-		queries, paths := indexer.HunkQueries(diff, configfile.DefaultIgnore)
+		head, err := c.Tree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var newPaths []string
+		for _, f := range udiff.Parse(diff) {
+			newPaths = append(newPaths, f.NewPath)
+		}
+		queries, paths := indexer.HunkQueries(diff, configfile.DefaultIgnore, indexer.Indexable(head, newPaths))
 		if len(queries) == 0 {
 			continue
 		}

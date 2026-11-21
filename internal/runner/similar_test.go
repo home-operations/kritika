@@ -569,3 +569,31 @@ func TestAtHeadFindsALineIndentedPastTheBound(t *testing.T) {
 		t.Fatalf("atHead = %+v, want %+v", got, want)
 	}
 }
+
+// TestSimilarContextLeavesOutFilesTooLargeToIndex: a change that adds files
+// over the indexer's MaxFileBytes spends none of its queries on them, so a
+// smaller file that adds fewer lines is still asked about.
+func TestSimilarContextLeavesOutFilesTooLargeToIndex(t *testing.T) {
+	var diff strings.Builder
+	files := map[string]string{"small.go": "func small() {}\n"}
+	// The large files share one blob, which the tree stores once.
+	large := strings.Repeat("x", indexer.DefaultOptions.MaxFileBytes+1)
+	changed := make([]string, 0, contextpack.SimilarQueries+1)
+	for i := range contextpack.SimilarQueries {
+		path := fmt.Sprintf("big%d.go", i)
+		files[path], changed = large, append(changed, path)
+		diff.WriteString(fileDiff("", path, added(fmt.Sprintf("func big%d() {", i), "\treturn", "}")))
+	}
+	diff.WriteString(fileDiff("", "small.go", added("func small() {}")))
+	res := &gitfetch.Result{Diff: diff.String(), Changed: append(changed, "small.go")}
+	gw := &fakeSimilarGateway{status: http.StatusNoContent, answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{}}}
+	s := reviewSpec()
+	s.GatewayURL = gw.serve(t).URL
+	similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, tree(t, files), res, nil,
+		slog.New(slog.DiscardHandler))
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	if len(gw.requests) != 2 || !slices.Equal(gw.requests[1].Queries, []string{"func small() {}\n"}) {
+		t.Fatalf("similar requests %+v, want a probe and a search of small.go alone", gw.requests)
+	}
+}

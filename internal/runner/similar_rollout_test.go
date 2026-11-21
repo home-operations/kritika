@@ -77,7 +77,7 @@ func TestSimilarSearchOnAnOlderReplica(t *testing.T) {
 	if !excludeFromSimilar(t.Context(), s, secrets, &gitfetch.Result{Diff: diff, Changed: []string{"main.go"}}, logger) {
 		t.Fatal("the probe and the report on the newer replica did not ready the searches")
 	}
-	if out, ok := similarCodeFor(t.Context(), s, secrets, diff, logger); ok || len(out.Chunks) > 0 {
+	if out, ok := similarCodeFor(t.Context(), s, secrets, diff, nil, logger); ok || len(out.Chunks) > 0 {
 		t.Fatalf("the older replica's search was used: %+v, %t", out, ok)
 	}
 	if out, err := similarCode(t.Context(), srv.URL, "run", contextpack.SimilarRequest{

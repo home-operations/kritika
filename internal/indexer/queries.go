@@ -18,22 +18,24 @@ const queryContext = 3
 // HunkQueries is what a run's similar-code stage asks the index: the changed
 // regions of the diff's hunks as the head has them, each its changed lines
 // and a little context, and the path of each. It leaves out the files that
-// the index holds no chunk of, ignored, Unindexed or of no language, and the
-// hunks that add nothing, whose text is only context. The files take turns,
-// the most changed first, so a query of each of the most changed files comes
-// before a second of any. A region over the gateway's bound is asked about by
-// the declarations its changes are in, as the index cuts a file, or else in
-// windows of its lines, rather than by its start, which in a new file is its
-// license and imports.
+// the index holds no chunk of, ignored, Unindexed, of no language or, when
+// indexable is set, refused by it, as Indexable refuses one too large to
+// index, and the hunks that add nothing, whose text is only context. Those
+// files go before the ranking, so that they take no turn. The files take
+// turns, the most changed first, so a query of each of the most changed
+// files comes before a second of any. A region over the gateway's bound is
+// asked about by the declarations its changes are in, as the index cuts a
+// file, or else in windows of its lines, rather than by its start, which in
+// a new file is its license and imports.
 //
 // A query is the code alone. The index leads each chunk with its path, so a
 // query led by its own path scores the files beside it higher for their
 // path alone, and the definition and caller stages already show those that
 // the change uses.
-func HunkQueries(diff string, ignore []string) (queries, paths []string) {
+func HunkQueries(diff string, ignore []string, indexable func(path string) bool) (queries, paths []string) {
 	var files []*queryFile
 	for _, f := range udiff.Parse(diff) {
-		if f.NewPath == "" || chunk.Matches(ignore, f.NewPath) || Unindexed(f.NewPath) {
+		if f.NewPath == "" || chunk.Matches(ignore, f.NewPath) || Unindexed(f.NewPath) || indexable != nil && !indexable(f.NewPath) {
 			continue
 		}
 		if lang, _ := chunk.Language(f.NewPath); lang == "" {

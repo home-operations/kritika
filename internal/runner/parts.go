@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
@@ -90,7 +91,7 @@ func partPrompts(
 	logger.Info("parts context built", "parts", len(shares), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
 		"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
 	if excludeFromSimilar(ctx, p, secrets, res, logger) {
-		similar, err := partSimilarCode(ctx, p, secrets, diffs, logger)
+		similar, err := partSimilarCode(ctx, p, secrets, diffs, indexer.Indexable(head, res.Changed), logger)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
 		}
@@ -159,9 +160,9 @@ func partPrompts(
 
 // partSimilarCode overlaps remote retrieval within the review's granted
 // parallelism. It reads no git objects. Those belong to the serial context
-// pass.
+// pass, which also gives indexable.
 func partSimilarCode(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs []string, indexable func(string) bool, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
 	// Reviewers that review the same files have the same diffs, each of
 	// which is asked about once.
@@ -174,7 +175,7 @@ func partSimilarCode(
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			found[i], _ = similarCodeFor(gctx, p, secrets, diff, logger.With("part", slices.Index(diffs, diff)+1))
+			found[i], _ = similarCodeFor(gctx, p, secrets, diff, indexable, logger.With("part", slices.Index(diffs, diff)+1))
 			return gctx.Err()
 		})
 	}

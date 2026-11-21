@@ -128,6 +128,24 @@ var unindexed = []string{
 // rules say: a file that SOPS encrypted, or generated code.
 func Unindexed(path string) bool { return chunk.Matches(unindexed, path) }
 
+// Indexable is HunkQueries' indexable for a diff whose files head has: it
+// refuses each of paths whose blob at head is over
+// DefaultOptions.MaxFileBytes, which Build skips. It reads only the blobs'
+// sizes, and only here, so the predicate reads no git objects. A nil head
+// refuses none.
+func Indexable(head *object.Tree, paths []string) func(path string) bool {
+	over := map[string]bool{}
+	for _, p := range paths {
+		if head == nil {
+			break
+		}
+		if f, err := head.File(p); err == nil && f.Size > int64(DefaultOptions.MaxFileBytes) {
+			over[p] = true
+		}
+	}
+	return func(path string) bool { return !over[path] }
+}
+
 func (b *builder) ignored(path string) bool {
 	return chunk.Matches(b.ignore, path) || Unindexed(path)
 }

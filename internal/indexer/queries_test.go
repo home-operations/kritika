@@ -106,14 +106,14 @@ func TestHunkQueries(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, paths := HunkQueries(tt.diff, tt.ignore)
+			got, paths := HunkQueries(tt.diff, tt.ignore, nil)
 			if !slices.Equal(got, tt.want) || !slices.Equal(paths, tt.paths) {
 				t.Fatalf("HunkQueries = %q of %q, want %q of %q", got, paths, tt.want, tt.paths)
 			}
 		})
 	}
 	t.Run("a large region without declarations in windows of its changed lines", func(t *testing.T) {
-		got, _ := HunkQueries(fileDiff("", "notes.md", added(filler...)), nil)
+		got, _ := HunkQueries(fileDiff("", "notes.md", added(filler...)), nil, nil)
 		if len(got) < 2 || !strings.HasPrefix(got[0], "line 0 ") || !strings.HasPrefix(got[1], "line ") {
 			t.Fatalf("windows = %q", got)
 		}
@@ -148,7 +148,7 @@ func TestHunkQueries(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := HunkQueries(tt.diff, nil)
+			got, _ := HunkQueries(tt.diff, nil, nil)
 			if len(got) != 2 || got[0] != tt.nested || !strings.HasPrefix(got[1], tt.outside) || len(got[1]) > contextpack.SimilarQueryChars {
 				t.Fatalf("HunkQueries = %q, want %q and then a window from %q", got, tt.nested, tt.outside)
 			}
@@ -183,7 +183,7 @@ func TestHunkQueries(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := HunkQueries(tt.diff, nil)
+			got, _ := HunkQueries(tt.diff, nil, nil)
 			if !tt.want(got) {
 				t.Fatalf("HunkQueries = %d queries %q", len(got), got)
 			}
@@ -194,10 +194,10 @@ func TestHunkQueries(t *testing.T) {
 		for i := range contextpack.SimilarQueries + 3 {
 			many.WriteString(fileDiff("", fmt.Sprintf("f%d.go", i), added(fmt.Sprintf("func f%d() {}", i))))
 		}
-		if got, paths := HunkQueries(many.String(), nil); len(got) != contextpack.SimilarQueries || len(paths) != contextpack.SimilarQueries {
+		if got, paths := HunkQueries(many.String(), nil, nil); len(got) != contextpack.SimilarQueries || len(paths) != contextpack.SimilarQueries {
 			t.Fatalf("%d queries of %d paths, want %d", len(got), len(paths), contextpack.SimilarQueries)
 		}
-		if got, _ := HunkQueries("", nil); len(got) != 0 {
+		if got, _ := HunkQueries("", nil, nil); len(got) != 0 {
 			t.Fatalf("queries of an empty diff = %q", got)
 		}
 	})
@@ -228,7 +228,7 @@ func manyDeclarations(declarationsFirst bool) string {
 // the large one in windows of its lines. BenchmarkHunkQueriesManyDeclarations
 // compares what each order costs.
 func TestHunkQueriesManyDeclarations(t *testing.T) {
-	first, _ := HunkQueries(manyDeclarations(true), nil)
+	first, _ := HunkQueries(manyDeclarations(true), nil, nil)
 	want := make([]string, contextpack.SimilarQueries)
 	for i := range want {
 		want[i] = fmt.Sprintf("func f%d() {}\n", i)
@@ -236,7 +236,7 @@ func TestHunkQueriesManyDeclarations(t *testing.T) {
 	if !slices.Equal(first, want) {
 		t.Fatalf("HunkQueries with the declarations first = %q, want %q", first, want)
 	}
-	last, _ := HunkQueries(manyDeclarations(false), nil)
+	last, _ := HunkQueries(manyDeclarations(false), nil, nil)
 	if len(last) != contextpack.SimilarQueries || !strings.HasPrefix(last[0], "var s = `\nx\n") {
 		t.Fatalf("HunkQueries with the declarations last = %d queries, the first %.20q, want %d from the string's start",
 			len(last), last[0], contextpack.SimilarQueries)
@@ -260,7 +260,7 @@ func BenchmarkHunkQueriesManyDeclarations(b *testing.B) {
 			diff := manyDeclarations(bc.first)
 			b.ReportAllocs()
 			for b.Loop() {
-				HunkQueries(diff, nil)
+				HunkQueries(diff, nil, nil)
 			}
 		})
 	}
@@ -296,5 +296,31 @@ func TestRegionQueriesMarksNestedDeclarationsOnce(t *testing.T) {
 	}
 	if n > 2*len(region) {
 		t.Errorf("regionQueries marked %d lines of a %d-line region, over %d", n, len(region), 2*len(region))
+	}
+}
+
+// TestHunkQueriesLeavesOutWhatIsNotIndexable: files that Build skips for
+// their size take no turn, however many lines they add, so a smaller file
+// that adds fewer still gets a query. Indexable refuses a file at head over
+// MaxFileBytes and no other.
+func TestHunkQueriesLeavesOutWhatIsNotIndexable(t *testing.T) {
+	var diff strings.Builder
+	big := make([]string, 0, contextpack.SimilarQueries)
+	for i := range contextpack.SimilarQueries {
+		big = append(big, fmt.Sprintf("big%d.go", i))
+		diff.WriteString(fileDiff("", big[i], added(fmt.Sprintf("func big%d() {", i), "\treturn", "}")))
+	}
+	diff.WriteString(fileDiff("", "small.go", added("func small() {}")))
+	got, paths := HunkQueries(diff.String(), nil, func(path string) bool { return !slices.Contains(big, path) })
+	if !slices.Equal(got, []string{"func small() {}\n"}) || !slices.Equal(paths, []string{"small.go"}) {
+		t.Fatalf("HunkQueries = %q of %q, want small.go's alone", got, paths)
+	}
+	head := oneFileTree(t, "big.go", strings.Repeat("x", DefaultOptions.MaxFileBytes+1))
+	if indexable := Indexable(head, []string{"big.go", "gone.go"}); indexable("big.go") || !indexable("gone.go") {
+		t.Fatalf("Indexable(big.go) = %t, Indexable(gone.go) = %t; want false, true", indexable("big.go"), indexable("gone.go"))
+	}
+	head = oneFileTree(t, "fits.go", strings.Repeat("x", DefaultOptions.MaxFileBytes))
+	if !Indexable(head, []string{"fits.go"})("fits.go") || !Indexable(nil, []string{"fits.go"})("fits.go") {
+		t.Fatal("Indexable refused a file within MaxFileBytes, or a path with no head")
 	}
 }
