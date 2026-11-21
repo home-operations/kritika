@@ -128,7 +128,7 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	// An answer refused for its ranks still reports what the provider spent
 	// on it, which the gateway charges the run.
-	ranks, used, err := r.decode(answer)
+	ranks, used, err := r.decode(answer, len(documents))
 	if used.Tokens == 0 {
 		used.Tokens = computed.Tokens
 	}
@@ -182,21 +182,75 @@ type rerankRank struct {
 	Score float64
 }
 
-// decode reads the ranks of the API's answer, each with the index and the
-// score that the API names. An answer that ranks no document, or a rank
-// without its index or score, is an error rather than a document that the
-// answer leaves out or one that scores 0, so that the fused order stands.
-func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) {
-	type ranked struct {
-		Index          *int     `json:"index"`
-		RelevanceScore *float64 `json:"relevance_score"`
-		Score          *float64 `json:"score"`
+// answerRank is a rank as the APIs answer it: TEI names its score score, the
+// others relevance_score.
+type answerRank struct {
+	Index          *int     `json:"index"`
+	RelevanceScore *float64 `json:"relevance_score"`
+	Score          *float64 `json:"score"`
+}
+
+// Why decodeRanks refused the ranks of an answer.
+var (
+	errExtraRanks = errors.New("the answer ranks more documents than it was sent")
+	errRanksType  = errors.New("the answer's ranks have a value of the wrong type")
+)
+
+// decodeRanks decodes raw, a JSON array of ranks or null, one rank at a time.
+// An array of more than documents ranks is refused with errExtraRanks as the
+// rank past them is reached: no valid answer holds it, and decoding the rest
+// would take memory in proportion to the answer, up to maxRerankAnswer,
+// rather than to the documents sent. Its errors quote none of raw.
+func decodeRanks(raw []byte, documents int) ([]answerRank, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	open, err := dec.Token()
+	if err != nil {
+		return nil, decodeError(err)
 	}
-	var ranks []ranked
+	var ranks []answerRank
+	switch open {
+	case nil:
+	case json.Delim('['):
+		ranks = make([]answerRank, 0, documents)
+		for dec.More() {
+			if len(ranks) == documents {
+				return nil, errExtraRanks
+			}
+			var rk answerRank
+			if err := dec.Decode(&rk); err != nil {
+				// A Decoder's type error is at an offset into the rank, not
+				// the answer: none is given.
+				if _, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+					return nil, errRanksType
+				}
+				return nil, decodeError(err)
+			}
+			ranks = append(ranks, rk)
+		}
+		if _, err := dec.Token(); err != nil {
+			return nil, decodeError(err)
+		}
+	default:
+		return nil, errRanksType
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("the answer is not JSON at byte %d", dec.InputOffset())
+	}
+	return ranks, nil
+}
+
+// decode reads the ranks of the API's answer, each with the index and the
+// score that the API names, and refuses one of more ranks than documents. An
+// answer that ranks no document, or a rank without its index or score, is an
+// error rather than a document that the answer leaves out or one that scores
+// 0, so that the fused order stands.
+func (r *HTTPReranker) decode(answer []byte, documents int) ([]rerankRank, RerankUsage, error) {
+	var ranks []answerRank
 	var used RerankUsage
 	if r.api == RerankTEI {
-		if err := json.Unmarshal(answer, &ranks); err != nil {
-			return nil, used, decodeError(err)
+		var err error
+		if ranks, err = decodeRanks(answer, documents); err != nil {
+			return nil, used, err
 		}
 	} else {
 		// The ranks and each usage count are decoded apart, so that a value of
@@ -223,10 +277,16 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 			field = out.Data
 		}
 		// Absent, field is empty, and so are the ranks. The answer parsed, so
-		// a failure is a value of the wrong type, at an offset into field
-		// rather than the answer: none is given.
-		if len(field) > 0 && json.Unmarshal(field, &ranks) != nil {
-			return nil, used, errors.New("the answer's ranks have a value of the wrong type")
+		// a failure other than too many ranks is a value of the wrong type,
+		// at an offset into field rather than the answer: none is given.
+		if len(field) > 0 {
+			var err error
+			if ranks, err = decodeRanks(field, documents); err != nil {
+				if !errors.Is(err, errExtraRanks) {
+					err = errRanksType
+				}
+				return nil, used, err
+			}
 		}
 	}
 	if len(ranks) == 0 {
@@ -317,6 +377,9 @@ func decodeError(err error) error {
 	}
 	if te, ok := errors.AsType[*json.UnmarshalTypeError](err); ok && te.Offset > 0 {
 		return fmt.Errorf("the answer has a value of the wrong type at byte %d", te.Offset)
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return errors.New("the answer ends before its JSON does")
 	}
 	return errors.New("the answer has a value of the wrong type")
 }

@@ -107,6 +107,12 @@ func TestRerankerRefusals(t *testing.T) {
 		{"index out of range", RerankCohere, `{"results":[{"index":3,"relevance_score":0.3}]}`, http.StatusOK, "rank 0 has an invalid or repeated index"},
 		{"duplicate index", RerankCohere, `{"results":[{"index":0,"relevance_score":0.3},{"index":0,"relevance_score":0.2}]}`, http.StatusOK,
 			"rank 1 has an invalid or repeated index"},
+		{"more ranks than documents", RerankCohere,
+			`{"results":[{"index":0,"relevance_score":0.3},{"index":1,"relevance_score":0.2},{"index":0,"relevance_score":0.1}]}`, http.StatusOK,
+			"ranks more documents than it was sent"},
+		{"more TEI ranks than documents", RerankTEI, `[{"index":0,"score":0.3},{"index":1,"score":0.2},{"index":0,"score":0.1}]`, http.StatusOK,
+			"ranks more documents than it was sent"},
+		{"TEI ranks and more", RerankTEI, `[{"index":0,"score":0.3}] []`, http.StatusOK, "decode"},
 		{"not JSON", RerankCohere, `<html>`, http.StatusOK, "decode"},
 		{"an empty object", RerankCohere, `{}`, http.StatusOK, "ranks no document"},
 		{"null", RerankCohere, `null`, http.StatusOK, "ranks no document"},
@@ -350,6 +356,9 @@ func TestRerankerRefusalKeepsUsage(t *testing.T) {
 		{name: "Cohere billed units of the wrong type, beside its tokens", api: RerankCohere,
 			answer: `{"results":[{"index":0,"relevance_score":0.5}],"meta":{"billed_units":[1],"tokens":{"input_tokens":15}}}`,
 			want:   RerankUsage{Tokens: 15}},
+		{name: "more Voyage ranks than documents, before the usage", api: RerankVoyage,
+			answer: `{"data":[{"index":0,"relevance_score":0.5},{"index":1,"relevance_score":0.4}],"usage":{"total_tokens":9}}`,
+			want:   RerankUsage{Tokens: 9}},
 		{name: "a TEI answer that is not JSON", api: RerankTEI, answer: `[{"index":0,`, header: "33", want: RerankUsage{Tokens: 33}},
 		{name: "a TEI rank without its score", api: RerankTEI, answer: `[{"index":0}]`, header: "7", want: RerankUsage{Tokens: 7}},
 	} {
@@ -431,7 +440,33 @@ func TestRerankerInvalidIndexValue(t *testing.T) {
 	}
 }
 
-// TestRerankerOversizedAnswer:an answer longer than maxRerankAnswer is
+// TestRerankerDecodeStopsPastTheDocuments: an answer that ranks far more
+// documents than were sent is refused once it ranks one more, without
+// decoding the rest, whose ranks would otherwise take memory in proportion to
+// the answer rather than to the documents.
+func TestRerankerDecodeStopsPastTheDocuments(t *testing.T) {
+	ranks := strings.Repeat(`{"index":0,"score":0.5,"relevance_score":0.5},`, 100_000)
+	ranks = "[" + strings.TrimSuffix(ranks, ",") + "]"
+	for _, tt := range []struct{ api, answer string }{
+		{RerankTEI, ranks},
+		{RerankCohere, `{"results":` + ranks + `}`},
+	} {
+		t.Run(tt.api, func(t *testing.T) {
+			r := NewReranker(tt.api, "http://unused.invalid", "", "m", time.Minute)
+			answer := []byte(tt.answer)
+			var err error
+			allocs := testing.AllocsPerRun(1, func() { _, _, err = r.decode(answer, 2) })
+			if err == nil || !strings.Contains(err.Error(), "ranks more documents than it was sent") {
+				t.Errorf("err = %v, want a refusal of the ranks past the documents", err)
+			}
+			if allocs > 100 {
+				t.Errorf("decoding took %v allocations, want those of the first ranks alone", allocs)
+			}
+		})
+	}
+}
+
+// TestRerankerOversizedAnswer: an answer longer than maxRerankAnswer is
 // refused, even when the part of it within the bound is a whole ranking, and
 // still reports the tokens TEI's header says were computed.
 func TestRerankerOversizedAnswer(t *testing.T) {
