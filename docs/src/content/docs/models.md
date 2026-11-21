@@ -833,11 +833,15 @@ When a chunk is indexed, its path, symbol and text are split into words
 the way code is written: each identifier whole, and its parts at case
 changes, underscores, hyphens and digits. `parseHTTPRequest` and
 `parse_http_request` both give `parsehttprequest`, `parse`, `http` and
-`request`. Language keywords, names nearly every function uses (`err`,
-`ctx`, `self`), English stop words and numbers are left out. A review's
-query is split the same way, and a `search_code` query's words match the
-parts of the identifiers they make up. The longest 32 words of a query
-are searched for. A word weighs what BM25 gives a word in that many of
+`request`. A hyphen is a minus in the code of a language whose names hold
+none, such as Go or JavaScript, so `end-start` there is `end` and `start`,
+while it joins `max-width` in CSS or YAML and the words of a path. Language
+keywords, names nearly every function uses (`err`, `ctx`, `self`), English
+stop words and numbers are left out. A review's query is split the same
+way, as code of its file's language, and a `search_code` query's words,
+whose hyphens join, match the parts of the identifiers they make up. The
+longest 32 words of a query are searched for. A word weighs what BM25
+gives a word in that many of
 the repository's chunks, so a name few chunks hold counts for more than one
 many do. A word is too common to search for at all when as many chunks
 hold it as a cutoff or more: a hundredth of the repository's chunks,

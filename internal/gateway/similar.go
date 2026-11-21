@@ -130,6 +130,19 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("the request must carry at most %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
 		return
 	}
+	switch {
+	case len(req.Languages) > 0 && kind == contextpack.SimilarKindSearch:
+		refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("a request of kind %q carries no languages", kind))
+		return
+	case len(req.Languages) > 0 && len(req.Languages) != len(req.Queries):
+		refuse(w, http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("the request must carry a language for each of its %d queries, not %d", len(req.Queries), len(req.Languages)))
+		return
+	}
+	languages := req.Languages
+	if len(languages) == 0 {
+		languages = make([]string, len(req.Queries))
+	}
 	var prompt string
 	if e := c.file.Embedding; e != nil {
 		prompt = e.PromptFor(kind == contextpack.SimilarKindSearch)
@@ -162,7 +175,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	chunks, searched, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
-		token: c.token, queries: req.Queries, texts: texts, limit: answerLimit(req.Limit),
+		token: c.token, queries: req.Queries, texts: texts, languages: languages, limit: answerLimit(req.Limit),
 		exclude:  store.Exclusions{Run: c.grant.RunID, Paths: req.Exclude},
 		answerBy: arrived.Add(similarAnswerWithin),
 	}, c.logger)
@@ -216,6 +229,10 @@ type similarRequest struct {
 	queries []string
 	texts   []string
 	exclude store.Exclusions
+	// languages are the language of each query's file, as package chunk
+	// names it, which the search by name splits it by: "" for a query of none
+	// or of SimilarKindSearch.
+	languages []string
 	// limit is the most chunks the answer holds.
 	limit int
 	// answerBy is when the vector search's looks past full files, the

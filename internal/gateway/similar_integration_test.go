@@ -376,6 +376,10 @@ apps:
 	search(`{"queries":["hello"],"kind":"diff"}`, http.StatusOK)
 	search(`{"queries":["where is the retry"],"kind":"search"}`, http.StatusOK)
 	search(`{"queries":["hello"],"kind":"other"}`, http.StatusBadRequest)
+	// A diff request carries a language for each query or none, and a search
+	// request none.
+	search(`{"queries":["hello"],"languages":["go","go"]}`, http.StatusBadRequest)
+	search(`{"queries":["where is the retry"],"kind":"search","languages":["go"]}`, http.StatusBadRequest)
 	if want := []string{"query: hello", "query: hello", "search: where is the retry"}; !slices.Equal(embedded, want) {
 		t.Fatalf("embedded %q, want %q: each query led by its kind's prompt", embedded, want)
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -114,13 +115,17 @@ func TestRetrievalEval(t *testing.T) {
 		if len(queries) == 0 {
 			continue
 		}
+		languages := make([]string, len(paths))
+		for i, path := range paths {
+			languages[i], _ = chunk.Language(path)
+		}
 		changed := truth.changes[c]
 		defs, related := truth.defs(added, changed), truth.related(changed, changed)
 		qv := embed(queries)
 		// The gateway searches as deep with a reranker as without one, and
 		// deeper for one sent more candidates than that.
 		base, deep := evalSearches(func(depth int, timed *evalSearchTime) evalHits {
-			return ix.search(t, timed, queries, qv, changed, depth, floor, margin)
+			return ix.search(t, timed, queries, languages, qv, changed, depth, floor, margin)
 		}, &timing, depth, max(depth, candidates), reranker != nil)
 		for _, v := range variants {
 			found := base
@@ -361,15 +366,15 @@ func evalSearches(
 	return base, search(rerankDepth, &timing.deep)
 }
 
-// search runs both searches of a request, depth deep, as the gateway does,
-// the vector search looking again past the files that fill a query's window
-// while floor and margin say more can qualify (pastFullFiles), within the
-// time the gateway gives a request, and the search by name past the files
-// that fill a query's window while its names vouch for more (pastFullNames).
-// A look that fails or runs out of time fails the replay rather than measure
-// a search cut short.
+// search runs both searches of a request, its queries of languages, depth
+// deep, as the gateway does, the vector search looking again past the files
+// that fill a query's window while floor and margin say more can qualify
+// (pastFullFiles), within the time the gateway gives a request, and the
+// search by name past the files that fill a query's window while its names
+// vouch for more (pastFullNames). A look that fails or runs out of time
+// fails the replay rather than measure a search cut short.
 func (ix evalIndexed) search(
-	t *testing.T, timed *evalSearchTime, queries []string, vectors [][]float32, exclude []string, depth int, floor, margin float64,
+	t *testing.T, timed *evalSearchTime, queries, languages []string, vectors [][]float32, exclude []string, depth int, floor, margin float64,
 ) evalHits {
 	ctx := t.Context()
 	var found evalHits
@@ -384,13 +389,13 @@ func (ix evalIndexed) search(
 			return err
 		}
 		searched := time.Now()
-		byName := func(texts []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
-			return lexicalHits(ctx, tx, ix.run, texts, vectors, exclude, depth)
+		byName := func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
+			return lexicalHits(ctx, tx, ix.run, texts, languages, vectors, exclude, depth)
 		}
-		if found.named, err = byName(queries, vectors, store.Exclusions{Paths: exclude}); err != nil {
+		if found.named, err = byName(queries, languages, vectors, store.Exclusions{Paths: exclude}); err != nil {
 			return err
 		}
-		if found.named, err = pastFullNames(found.named, queries, vectors, store.Exclusions{Paths: exclude}, depth, byName); err != nil {
+		if found.named, err = pastFullNames(found.named, queries, languages, vectors, store.Exclusions{Paths: exclude}, depth, byName); err != nil {
 			return err
 		}
 		timed.requests++
@@ -1001,7 +1006,7 @@ func TestEvalSearchLooksPastAFullWindowByName(t *testing.T) {
 	r := newLexicalRepo(t, "eval-lexical-full-window", runspec.IndexFormat, chunks, vectors)
 	ix := evalIndexed{st: r.st, account: r.account.ID(), run: r.run}
 	var timed evalSearchTime
-	found := ix.search(t, &timed, []string{"widgetFactory()"}, [][]float32{e(0)}, nil, similarDepth,
+	found := ix.search(t, &timed, []string{"widgetFactory()"}, []string{""}, [][]float32{e(0)}, nil, similarDepth,
 		configfile.DefaultSimilarFloor, configfile.DefaultSimilarMargin)
 	perFile := map[string]int{}
 	for _, h := range found.named {

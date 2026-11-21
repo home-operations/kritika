@@ -54,6 +54,13 @@ type SimilarRequest struct {
 	// Limit is the most chunks the answer holds, up to SimilarLimit. 0 leaves
 	// it to the gateway.
 	Limit int `json:"limit,omitempty"`
+	// Languages are, for a request of SimilarKindDiff, the language of each
+	// query's file, as package chunk names it, or "" when it is unknown: the
+	// search by name splits a query as the index splits that language's
+	// code, where a hyphen can be a minus. A request without them, as a
+	// runner of an earlier version sends, has each query split as a
+	// SimilarKindSearch query is.
+	Languages []string `json:"languages,omitempty"`
 }
 
 // Similar-code query kinds: the hunks of a review's diff, and the agent's

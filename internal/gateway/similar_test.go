@@ -486,3 +486,29 @@ func TestPastFull(t *testing.T) {
 		})
 	}
 }
+
+// TestPastFullNamesLanguage: the search by name's look past a query's full
+// files splits the query by its own file's language, as its first search
+// did, so a minus in Go joins no name there either.
+func TestPastFullNamesLanguage(t *testing.T) {
+	named := make([]store.SimilarHit, 0, similarDepth)
+	for i := range similarDepth {
+		named = append(named, store.SimilarHit{Query: 1, Lexical: 1, Chunk: contextpack.Chunk{Path: "a.go", StartLine: i + 1}})
+	}
+	type searched struct{ texts, languages []string }
+	var got []searched
+	_, err := pastFullNames(named, []string{"key-name: 1", "d := end-start"}, []string{"yaml", "go"}, [][]float32{{1}, {1}},
+		store.Exclusions{}, similarDepth, func(texts, languages []string, _ [][]float32, _ store.Exclusions) ([]store.SimilarHit, error) {
+			got = append(got, searched{texts, languages})
+			return nil, nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []searched{{[]string{"d := end-start"}, []string{"go"}}}
+	if !slices.EqualFunc(got, want, func(a, b searched) bool {
+		return slices.Equal(a.texts, b.texts) && slices.Equal(a.languages, b.languages)
+	}) {
+		t.Fatalf("looked past the full files with %q, want %q", got, want)
+	}
+}

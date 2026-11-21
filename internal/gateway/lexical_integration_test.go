@@ -420,7 +420,7 @@ func TestSimilarLexicalTies(t *testing.T) {
 		map[string][]float32{"a.go": e(2), "b.go": e(0), "c.go": e(3), "d.go": e(3), "e.go": e(3)})
 	var got []string
 	if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
-		hits, err := lexicalHits(t.Context(), tx, r.run, []string{"leaseSlots()"}, [][]float32{e(0)}, store.Exclusions{}, 1)
+		hits, err := lexicalHits(t.Context(), tx, r.run, []string{"leaseSlots()"}, nil, [][]float32{e(0)}, store.Exclusions{}, 1)
 		for _, h := range hits {
 			got = append(got, h.Chunk.Path)
 		}
@@ -470,7 +470,7 @@ func TestSimilarLexicalReadsPostings(t *testing.T) {
 		if _, err := tx.Exec(ctx, `SELECT set_config('app.account_id', $1, true)`, r.account.ID()); err != nil {
 			return err
 		}
-		hits, err := lexicalHits(ctx, tx, r.run, []string{"zebraCrossing(serveWidget)"}, [][]float32{e(0)}, store.Exclusions{}, 4)
+		hits, err := lexicalHits(ctx, tx, r.run, []string{"zebraCrossing(serveWidget)"}, nil, [][]float32{e(0)}, store.Exclusions{}, 4)
 		if err != nil {
 			return err
 		}
@@ -808,7 +808,7 @@ func TestSearchByNameClaims(t *testing.T) {
 	t.Run("rarity", func(t *testing.T) {
 		var got []string
 		if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
-			hits, err := lexicalHits(t.Context(), tx, r.run, []string{"commonName(rareName)"}, [][]float32{e(0)}, store.Exclusions{}, 4)
+			hits, err := lexicalHits(t.Context(), tx, r.run, []string{"commonName(rareName)"}, nil, [][]float32{e(0)}, store.Exclusions{}, 4)
 			for _, h := range hits {
 				got = append(got, h.Chunk.Path)
 			}
@@ -848,5 +848,43 @@ func TestSimilarLexicalAnswerDue(t *testing.T) {
 				t.Errorf("searches by name counted %d (%v), want none made", n, metric.Label)
 			}
 		}
+	}
+}
+
+// TestSimilarLexicalQueryLanguage: a diff query's hyphen is what it is in its
+// file's language, as the index has it of the chunks of that language. In
+// Go, end-start is a minus between end and start, which most chunks hold, so
+// it finds no chunk by name, and not the one of endStart, which a hyphen
+// joining end-start would name. A query that names endStart still finds it.
+// A query of no language, as an older runner sends, or of one whose names
+// hold hyphens, joins end-start as it always has.
+func TestSimilarLexicalQueryLanguage(t *testing.T) {
+	chunks := map[string]string{"near.go": "func near() {}", "span.go": "var endStart = spanEnd()"}
+	vectors := map[string][]float32{"near.go": e(0), "span.go": e(3)}
+	for i := range 5 {
+		key := fmt.Sprintf("range%d.go", i)
+		chunks[key], vectors[key] = fmt.Sprintf("var end, start = %d, %d", i, i+1), e(2)
+	}
+	r := newLexicalRepo(t, "query-language", runspec.IndexFormat, chunks, vectors)
+	for _, tt := range []struct {
+		name      string
+		query     string
+		languages []string
+		want      []string
+	}{
+		{"a minus in Go", "d := end-start", []string{"go"}, []string{"near.go:similarity 1.00"}},
+		{"a minus in JavaScript", "const d = end-start;", []string{"javascript"}, []string{"near.go:similarity 1.00"}},
+		{"the identifier in Go", "d := endStart", []string{"go"}, []string{"span.go:shares endStart", "near.go:similarity 1.00"}},
+		{"a key in YAML", "end-start: 1", []string{"yaml"}, []string{"span.go:shares end-start", "near.go:similarity 1.00"}},
+		{"no language", "d := end-start", nil, []string{"span.go:shares end-start", "near.go:similarity 1.00"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			code, got := r.askRequest(t.Context(), t, r.file, nil, prometheus.NewRegistry(), contextpack.SimilarRequest{
+				Queries: []string{tt.query}, Languages: tt.languages,
+			})
+			if code != http.StatusOK || !slices.Equal(got, tt.want) {
+				t.Errorf("answer = %d %q, want 200 %q", code, got, tt.want)
+			}
+		})
 	}
 }

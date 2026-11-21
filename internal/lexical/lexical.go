@@ -51,6 +51,13 @@ type Word struct {
 // rateLimit and http2-server names http2Server.
 func Words(text string) []Word { return words(text, true) }
 
+// CodeWords are the Words of text that is code of the language, as package
+// chunk names it, such as a diff's lines: a hyphen is a minus in the code of
+// minusLanguages, as Document has it, so end-start there gives end and
+// start, and no endstart that the language's chunks never hold. Of another
+// language, or none (""), they are Words.
+func CodeWords(language, text string) []Word { return words(text, !minusLanguages[language]) }
+
 func words(text string, hyphens bool) []Word {
 	var out []Word
 	at := map[string]int{}

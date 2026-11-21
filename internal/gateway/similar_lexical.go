@@ -49,20 +49,20 @@ func (g *Server) searchByName(
 		return nil, nil
 	}
 	deadline := started.Add(within)
-	search := func(texts []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
+	search := func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
 		var named []store.SimilarHit
 		err := inSavepoint(ctx, tx, deadline, func(sp pgx.Tx) error {
 			var err error
-			named, err = lexicalHits(ctx, sp, runID, texts, vectors, exclude, depth)
+			named, err = lexicalHits(ctx, sp, runID, texts, languages, vectors, exclude, depth)
 			return err
 		})
 		return named, err
 	}
-	named, err := search(r.texts, vectors, r.exclude)
+	named, err := search(r.texts, r.languages, vectors, r.exclude)
 	outcome := adapter.Outcome(err)
 	var past error
 	if err == nil {
-		named, past = pastFullNames(named, r.texts, vectors, r.exclude, depth, search)
+		named, past = pastFullNames(named, r.texts, r.languages, vectors, r.exclude, depth, search)
 	}
 	if err != nil && ctx.Err() != nil {
 		outcome = "canceled"
@@ -86,12 +86,12 @@ func (g *Server) searchByName(
 // similarPerFile or more, while the file cap leaves the query short, its
 // window is full, and its query's names still vouch for the window's last
 // hit (namedBy): pastFullFiles' looking, for the search by name. search is
-// the search by name of texts and their vectors, depth deep, outside exclude.
-// A search's failure ends the looking, and pastFullNames returns what it
-// found until then, with the error.
+// the search by name of texts, of languages, and their vectors, depth deep,
+// outside exclude. A search's failure ends the looking, and pastFullNames
+// returns what it found until then, with the error.
 func pastFullNames(
-	named []store.SimilarHit, texts []string, vectors [][]float32, exclude store.Exclusions, depth int,
-	search func(texts []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error),
+	named []store.SimilarHit, texts, languages []string, vectors [][]float32, exclude store.Exclusions, depth int,
+	search func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error),
 ) ([]store.SimilarHit, error) {
 	qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
 		best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Lexical, b.Lexical) })
@@ -100,7 +100,8 @@ func pastFullNames(
 	return pastFull(named, len(vectors), func(found, window []store.SimilarHit) []string {
 		return fullFiles(found, window, depth, qualifies)
 	}, func(q int, full []string) ([]store.SimilarHit, error) {
-		return search(texts[q:q+1], vectors[q:q+1], store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)})
+		past := store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)}
+		return search(texts[q:q+1], languages[q:q+1], vectors[q:q+1], past)
 	})
 }
 
@@ -124,16 +125,21 @@ var lexicalCommon = store.LexicalBar{Per: 100, Least: 20, Share: 2}
 const lexicalAlone = similarPerQuery
 
 // lexicalHits finds, for each query text, the perQuery chunks that hold the
-// most weight of its lexicalTerms longest words, outside the excluded paths.
-// Each hit's Matched are the query's spellings of the words that the chunk
-// holds.
+// most weight of its lexicalTerms longest words, outside the excluded paths:
+// its words as lexical.CodeWords has them of its language in languages, or
+// of none when languages is nil. Each hit's Matched are the query's
+// spellings of the words that the chunk holds.
 func lexicalHits(
-	ctx context.Context, tx pgx.Tx, runID string, texts []string, vectors [][]float32, exclude store.Exclusions, perQuery int,
+	ctx context.Context, tx pgx.Tx, runID string, texts, languages []string, vectors [][]float32, exclude store.Exclusions, perQuery int,
 ) ([]store.SimilarHit, error) {
 	words := make([][]lexical.Word, len(texts))
 	queries := make([]store.LexicalQuery, len(texts))
 	for i, text := range texts {
-		w := lexical.Words(text)
+		var language string
+		if languages != nil {
+			language = languages[i]
+		}
+		w := lexical.CodeWords(language, text)
 		slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
 		words[i] = w[:min(len(w), lexicalTerms)]
 		queries[i].Vector = vectors[i]

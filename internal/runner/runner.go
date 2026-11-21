@@ -380,17 +380,22 @@ func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Sec
 // diff's hunks, best effort: false when the request failed. It is asked once
 // excludeFromSimilar has found an index, so a diff with nothing to search for
 // asks nothing. indexable is HunkQueries', such as indexer.Indexable, which
-// reads the sizes of the blobs that take a turn.
+// reads the sizes of the blobs that take a turn. Each query carries its
+// file's language, which the gateway splits its names by.
 func similarCodeFor(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, indexable func(string) bool, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
-	queries, _ := indexer.HunkQueries(diff, p.Ignore, indexable)
+	queries, paths := indexer.HunkQueries(diff, p.Ignore, indexable)
 	if len(queries) == 0 {
 		return contextpack.SimilarResponse{Indexed: true}, true
 	}
+	languages := make([]string, len(paths))
+	for i, path := range paths {
+		languages[i], _ = chunk.Language(path)
+	}
 	started := time.Now()
 	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{
-		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: contextpack.SimilarLimit,
+		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: contextpack.SimilarLimit, Languages: languages,
 	})
 	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
 		"elapsed", time.Since(started))

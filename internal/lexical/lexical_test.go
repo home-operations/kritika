@@ -195,3 +195,32 @@ func TestHyphenAfterADigit(t *testing.T) {
 		t.Errorf("Document of Go = %q, want no h2server: a hyphen is a minus there", got)
 	}
 }
+
+// TestCodeWordsHyphens: a diff query's hyphen is what it is in its file's
+// language, as Document has it: a minus between two names in Go or
+// JavaScript, which joins no compound the code's chunks lack, and part of a
+// name in CSS or YAML, or when the language is unknown, as Words has it.
+func TestCodeWordsHyphens(t *testing.T) {
+	for _, tt := range []struct {
+		name, language, text string
+		want                 []string
+	}{
+		{"minus in Go", "go", "d := end-start", []string{"end", "start"}},
+		{"minus between digit names in Go", "go", "old2-new2", []string{"old2", "old", "new2"}},
+		{"minus in JavaScript", "javascript", "const d = end-start;", []string{"end", "start"}},
+		{"kebab case in CSS", "css", ".max-width { }", []string{"maxwidth", "max", "width"}},
+		{"kebab case in YAML", "yaml", "end-start: 1", []string{"endstart", "end", "start"}},
+		{"no language", "", "end-start", []string{"endstart", "end", "start"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			words := CodeWords(tt.language, tt.text)
+			got := make([]string, 0, len(words))
+			for _, w := range words {
+				got = append(got, w.Lexeme)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("CodeWords(%q, %q) = %q, want %q", tt.language, tt.text, got, tt.want)
+			}
+		})
+	}
+}

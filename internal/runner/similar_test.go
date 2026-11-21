@@ -169,6 +169,10 @@ func TestSimilarContextExclusions(t *testing.T) {
 				if len(req.Queries) > 0 && req.Limit != contextpack.SimilarLimit {
 					t.Fatalf("a search asks for %d chunks, want %d", req.Limit, contextpack.SimilarLimit)
 				}
+				want := slices.Repeat([]string{"go"}, len(req.Queries))
+				if !slices.Equal(req.Languages, want) {
+					t.Fatalf("a request of %d queries of Go files carries the languages %q, want %q", len(req.Queries), req.Languages, want)
+				}
 			}
 		})
 	}
