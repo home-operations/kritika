@@ -278,6 +278,84 @@ func TestBranchTipDoesNotWaitForTheBodyToEnd(t *testing.T) {
 	}
 }
 
+// TestBranchTipBoundsTheWaitForAnErrorBody: an error's body is read for
+// errorBodyWait at most after its headers, through an App's transports,
+// whatever the caller's context. A primary rate limit whose reset is too far
+// to wait out inline, with a body that stalls, is still told apart by its
+// headers, and returned before the caller's context ends. A secondary limit
+// whose body comes whole is still told apart by its body. The test fires the
+// bound itself, so nothing waits for errorBodyWait to pass.
+func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
+	reset := time.Now().Add(time.Hour).Unix()
+	stalled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/secondary") {
+			w.Header().Set("X-RateLimit-Remaining", "4321")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit",` +
+				`"documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
+			return
+		}
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(stalled) })
+	armed := make(chan func(), 2)
+	rt := (&App{}).limit(http.DefaultTransport)
+	rt.(*rateLimitTransport).base.(*errorBodyTransport).after = func(d time.Duration, f func()) func() bool {
+		if d != errorBodyWait {
+			t.Errorf("error body bounded at %s, want %s", d, errorBodyWait)
+		}
+		armed <- f
+		return func() bool { return true }
+	}
+	api, err := newClient(rt, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
+
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != rateLimitMaxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, rateLimitMaxWait)
+	}
+	select {
+	case <-armed:
+	default:
+		t.Fatal("the secondary limit's body was read with no bound")
+	}
+
+	// A hang guard: a read with no bound of its own waits for this.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.BranchTip(ctx, "o", "r", "stalled")
+		done <- err
+	}()
+	select {
+	case fire := <-armed:
+		fire()
+		err = <-done
+	case err = <-done:
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("BranchTip of a stalled error body = %v, after the caller's context ended; want it bounded on its own", err)
+	}
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait <= rateLimitMaxWait {
+		t.Fatalf("BranchTip of a stalled error body = %v, retry after %v %t; want the primary limit until its reset", err, wait, limited)
+	}
+}
+
 // TestBranchTipStaysOnTheAPIOrigin: a redirect within the API's origin is
 // followed, and one to another origin is refused before any request reaches
 // it, so nothing but GitHub answers for a branch.
