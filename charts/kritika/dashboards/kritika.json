@@ -2669,7 +2669,7 @@
           "refId": "B"
         }
       ],
-      "description": "Cosine similarity of each query's best match in the index. Compare it with the embedder's similarFloor: a p10 under the floor means many queries find nothing worth keeping."
+      "description": "Best cosine similarity among the chunks that either search found for each query, for the queries that found any. Compare it with the embedder's similarFloor: a p10 under the floor means many queries' nearest code by vector scores below it, so only what the search by name keeps, when lexical is on, is offered for them."
     },
     {
       "id": 57,
