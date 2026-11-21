@@ -834,26 +834,13 @@ func BenchmarkLexicalScale(b *testing.B) {
 		b.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "lexical-scale")
-	b.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-		for _, query := range []string{
-			`UPDATE repositories SET active_index_run_id = NULL WHERE account_id = $1`,
-			`DROP TABLE IF EXISTS index_chunks`,
-			`DELETE FROM index_schema`,
-			`TRUNCATE index_postings`,
-			`DELETE FROM index_runs WHERE account_id = $1`,
-			`DELETE FROM repositories WHERE account_id = $1`,
-		} {
-			var args []any
-			if strings.Contains(query, "$1") {
-				args = append(args, account.ID())
-			}
-			if _, err := s.owner.Exec(ctx, query, args...); err != nil {
-				b.Error(err)
-			}
-		}
-	})
+	cleanUpLexicalScale(b, s, account.ID(),
+		`UPDATE repositories SET active_index_run_id = NULL WHERE account_id = $1`,
+		`DROP TABLE IF EXISTS index_chunks`,
+		`DELETE FROM index_schema`,
+		`TRUNCATE index_postings`,
+		`DELETE FROM index_runs WHERE account_id = $1`,
+		`DELETE FROM repositories WHERE account_id = $1`)
 	vector := make([]float32, lexicalScaleDims)
 	vector[0] = 1
 	for field := range strings.SplitSeq(sizes, ",") {
@@ -905,6 +892,15 @@ func BenchmarkLexicalScale(b *testing.B) {
 			if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, account.ID(), name); err != nil {
 				b.Fatal(err)
 			}
+			// -count and -cpu run this size again before the parent's cleanup,
+			// which would find its repository still there.
+			cleanUpLexicalScale(b, s, repo,
+				`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`,
+				`DROP TABLE IF EXISTS index_chunks`,
+				`DELETE FROM index_schema`,
+				`DELETE FROM index_postings WHERE index_run_id IN (SELECT id FROM index_runs WHERE repository_id = $1)`,
+				`DELETE FROM index_runs WHERE repository_id = $1`,
+				`DELETE FROM repositories WHERE id = $1`)
 			run := newRun(IndexModeFull)
 			started := time.Now()
 			insert(run, chunks)
@@ -997,6 +993,24 @@ func BenchmarkLexicalScale(b *testing.B) {
 			b.ReportMetric(float64(chunkBytes)/1e6, "chunks-MB")
 		})
 	}
+}
+
+// cleanUpLexicalScale runs queries, in order, once b and its subbenchmarks
+// end, each with arg as $1 when it has one.
+func cleanUpLexicalScale(b *testing.B, s *Store, arg any, queries ...string) {
+	b.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		for _, query := range queries {
+			var args []any
+			if strings.Contains(query, "$1") {
+				args = append(args, arg)
+			}
+			if _, err := s.owner.Exec(ctx, query, args...); err != nil {
+				b.Error(err)
+			}
+		}
+	})
 }
 
 // scaleLayoutIs checks that index_chunks is partitioned, with the legacy
