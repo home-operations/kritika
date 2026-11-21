@@ -341,26 +341,6 @@ func (g *Server) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
 	return runCall{token: token, grant: grant, file: file, account: account, logger: logger}, true
 }
 
-// reserve reserves tokens against c's run budget before the call spends
-// them, or refuses the request and reports false. Each reservation is
-// visible to the next at once, so concurrent calls cannot all pass a
-// budget one of them spends.
-func (g *Server) reserve(ctx context.Context, w http.ResponseWriter, c runCall, tokens int64) bool {
-	ok, err := g.Store.ReserveGatewayTokens(ctx, c.token, tokens)
-	if err != nil {
-		c.logger.Error("gateway: call not reserved", "error", err)
-		refuse(w, http.StatusInternalServerError, "server_error", "the run's budget could not be checked")
-		return false
-	}
-	if !ok {
-		reason := fmt.Sprintf("the run's budget of %d tokens is spent", c.grant.Budget)
-		c.logger.Info("gateway: call refused", "reason", reason)
-		refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
-		return false
-	}
-	return true
-}
-
 func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)

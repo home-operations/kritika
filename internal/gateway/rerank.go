@@ -66,9 +66,13 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // after them, in that order. It fails open: a query that the reranker does
 // not answer, or that the deadline leaves out, keeps the fused order of all
 // of its candidates, and a failure is logged and counted as the reranker's
-// call. A request that reranked records a usage row of the review, with the
-// tokens that the provider reports, none for search units alone, which the
-// usage and its caps do not count.
+// call. What it sends is reserved against the run's budget first, at four
+// characters a token of each query beside each of its documents, as a
+// reranker reads them in pairs. A run whose budget the embedding spent
+// keeps the fused order. The reservation is settled at the tokens that the
+// provider reports. A request that reranked records a usage row of the
+// review with them, none for search units alone, which the usage and its
+// caps do not count.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
@@ -77,6 +81,22 @@ func (g *Server) rerank(
 	if len(byQuery) == 0 {
 		return
 	}
+	docs := map[int][]string{}
+	var chars int
+	for q, idx := range byQuery {
+		for _, i := range idx {
+			d := rerankDocument(cands[i].Chunk)
+			docs[q] = append(docs[q], d)
+			chars += len(r.texts[q]) + len(d)
+		}
+	}
+	reserved := int64(chars)/4 + 1
+	if err := g.reserveRun(ctx, r.token, reserved); err != nil {
+		logger.Warn("gateway: similar code not reranked: the fused order stands", "error", err)
+		return
+	}
+	var spent model.RerankUsage
+	defer func() { g.chargeRun(ctx, r.token, spent.Tokens-reserved, logger) }()
 	// The wait for a slot counts against the deadline, so a reranker whose
 	// slots are all held delays the answer no longer than its timeout.
 	dctx, cancel := context.WithTimeout(ctx, rr.Deadline())
@@ -97,18 +117,13 @@ func (g *Server) rerank(
 		}
 	}()
 	started := time.Now()
-	var spent model.RerankUsage
 	reranked := 0
 	for _, q := range slices.Sorted(maps.Keys(byQuery)) {
 		if dctx.Err() != nil {
 			break
 		}
 		idx := byQuery[q]
-		docs := make([]string, len(idx))
-		for j, i := range idx {
-			docs[j] = rerankDocument(cands[i].Chunk)
-		}
-		scores, used, err := reranker.Rerank(dctx, r.texts[q], docs)
+		scores, used, err := reranker.Rerank(dctx, r.texts[q], docs[q])
 		spent.Tokens += used.Tokens
 		spent.SearchUnits += used.SearchUnits
 		g.Metrics.ModelCall(r.account.Key(), rr.Model, store.RoleRerank, adapter.Outcome(err), used.Tokens, 0, 0, 0, false)

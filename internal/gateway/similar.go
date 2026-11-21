@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/lexical"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
 )
@@ -81,10 +82,11 @@ const (
 
 // similarCode searches the run's repository index for the request's queries.
 // It serves stage 4 of the review, asked once over the diff's hunks before
-// the agent starts, and the agent's own search_code tool. The embedding is
-// reserved against the run's budget at four characters a token before it
-// runs. A request without queries embeds nothing and only learns whether
-// the repository has an index, which the runner asks when the diff gives it
+// the agent starts, and the agent's own search_code tool. The search
+// reserves what it spends against the run's budget before it spends it, and
+// the request is refused when the budget is spent before it embeds. A
+// request without queries embeds nothing and only learns whether the
+// repository has an index, which the runner asks when the diff gives it
 // nothing to search for, to know whether to offer search_code. The answer
 // is the default branch's code as the index has it, which can be older or
 // newer than the pull request's head and base.
@@ -130,7 +132,6 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	if e := c.file.Embedding; e != nil {
 		prompt = e.PromptFor(kind == contextpack.SimilarKindSearch)
 	}
-	var chars int
 	texts := make([]string, len(req.Queries))
 	for i, q := range req.Queries {
 		if strings.TrimSpace(q) == "" {
@@ -139,7 +140,6 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		}
 		texts[i] = textcut.Prefix(q, contextpack.SimilarQueryChars)
 		req.Queries[i] = prompt + texts[i]
-		chars += len(req.Queries[i])
 	}
 	outcome = similarError
 	var jobID int64
@@ -162,25 +162,21 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var reserved int64
-	if chars > 0 {
-		reserved = int64(chars)/4 + 1
-		if !g.reserve(ctx, w, c, reserved) {
-			outcome = similarRefused
-			return
-		}
-	}
-	chunks, tokens, searched, err := g.similar(ctx, c.file, similarRequest{
+	chunks, searched, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
-		queries: req.Queries, texts: texts, exclude: slices.Concat(excluded, req.Exclude), limit: answerLimit(req.Limit),
+		token: c.token, queries: req.Queries, texts: texts, exclude: slices.Concat(excluded, req.Exclude), limit: answerLimit(req.Limit),
 	}, c.logger)
 	outcome = searched
-	if reserved > 0 || tokens > 0 {
-		cctx, cancel := detach(ctx)
-		defer cancel()
-		if cerr := g.Store.ChargeGatewayToken(cctx, c.token, tokens-reserved); cerr != nil {
-			c.logger.Error("gateway: similar code not charged", "error", cerr)
-		}
+	if errors.Is(err, errBudgetSpent) {
+		reason := fmt.Sprintf("the run's budget of %d tokens is spent", c.grant.Budget)
+		c.logger.Info("gateway: call refused", "reason", reason)
+		refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
+		return
+	}
+	if errors.Is(err, errBudgetUnchecked) {
+		c.logger.Error("gateway: call not reserved", "error", err)
+		refuse(w, http.StatusInternalServerError, "server_error", "the run's budget could not be checked")
+		return
 	}
 	if err != nil {
 		// The embedder's error can carry its key or URL. The runner only
@@ -211,6 +207,9 @@ type similarRequest struct {
 	jobID int64
 	// kind is the queries' contextpack kind, never "".
 	kind string
+	// token is the run's gateway token, whose budget the embedding and the
+	// reranking are reserved against and charged to.
+	token string
 	// queries are the texts to embed: the embedder's prompt for their kind,
 	// then a query cut to contextpack.SimilarQueryChars, which texts holds
 	// without the prompt. exclude are the paths left out of the answer.
@@ -220,6 +219,13 @@ type similarRequest struct {
 	// limit is the most chunks the answer holds.
 	limit int
 }
+
+// Why similar did not search: the run's budget was spent before it, or it
+// could not be read.
+var (
+	errBudgetSpent     = errors.New("gateway: the run's budget is spent")
+	errBudgetUnchecked = errors.New("gateway: the run's budget could not be checked")
+)
 
 // answerLimit is the most chunks an answer holds when its request asks for
 // asked: similarMax unless it asks for a number, which is at most
@@ -231,18 +237,49 @@ func answerLimit(asked int) int {
 	return min(asked, contextpack.SimilarLimit)
 }
 
+// reserveRun reserves tokens against the budget of the run whose gateway
+// token is token, before a call spends them. It returns errBudgetSpent when
+// the run spent its budget, and an error wrapping errBudgetUnchecked when the
+// budget could not be read.
+func (g *Server) reserveRun(ctx context.Context, token string, tokens int64) error {
+	ok, err := g.Store.ReserveGatewayTokens(ctx, token, tokens)
+	switch {
+	case err != nil:
+		return fmt.Errorf("%w: %w", errBudgetUnchecked, err)
+	case !ok:
+		return errBudgetSpent
+	}
+	return nil
+}
+
+// chargeRun adds tokens, which can be negative, to what the run whose
+// gateway token is token spent: a call's actual spend less its reservation.
+// It outlives ctx, as the spend does.
+func (g *Server) chargeRun(ctx context.Context, token string, tokens int64, logger *slog.Logger) {
+	if tokens == 0 {
+		return
+	}
+	cctx, cancel := detach(ctx)
+	defer cancel()
+	if err := g.Store.ChargeGatewayToken(cctx, token, tokens); err != nil {
+		logger.Error("gateway: similar code not charged", "error", err)
+	}
+}
+
 // similar searches the repository's active index generation for the chunks
 // nearest each query and leaves out the given paths. Its outcome says what
 // became of the search: no chunks, when the instance has no embedder, the
 // repository has no completed generation built with it, or there are no
-// queries. It returns the tokens that the embedding spent, recorded as the
-// review's usage.
+// queries. The embedding is reserved against the run's budget at four
+// characters a token before it runs, and settled at the tokens that the
+// provider reports, recorded as the review's usage, before anything is
+// reranked.
 func (g *Server) similar(
 	ctx context.Context, file *configfile.File, r similarRequest, logger *slog.Logger,
-) (chunks []contextpack.Chunk, tokens int64, outcome string, err error) {
+) (chunks []contextpack.Chunk, outcome string, err error) {
 	embedder, emb := g.Embedders.Embedder(file)
 	if embedder == nil {
-		return nil, 0, similarNoEmbedder, nil
+		return nil, similarNoEmbedder, nil
 	}
 	var runID string
 	var lexicalReady bool
@@ -252,26 +289,35 @@ func (g *Server) similar(
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, 0, similarNoIndex, nil
+		return nil, similarNoIndex, nil
 	}
 	if err != nil {
-		return nil, 0, similarError, err
+		return nil, similarError, err
 	}
 	if len(r.queries) == 0 {
-		return nil, 0, similarNoQueries, nil
+		return nil, similarNoQueries, nil
+	}
+	var chars int
+	for _, q := range r.queries {
+		chars += len(q)
+	}
+	reserved := int64(chars)/4 + 1
+	if err := g.reserveRun(ctx, r.token, reserved); err != nil {
+		return nil, similarRefused, err
 	}
 	waitStarted := time.Now()
 	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), "embed:"+emb.Model, file.Slots(r.account, emb.Ref), r.jobID)
 	logger.Info("similar embedding slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
 	if err != nil {
-		return nil, 0, similarError, err
+		g.chargeRun(ctx, r.token, -reserved, logger)
+		return nil, similarError, err
 	}
-	var vectors [][]float32
 	embedStarted := time.Now()
-	vectors, tokens, err = embedder.Embed(ctx, r.queries)
+	vectors, tokens, err := embedder.Embed(ctx, r.queries)
 	logger.Info("similar queries embedded", "queries", len(r.queries), "elapsed", time.Since(embedStarted),
 		"outcome", adapter.Outcome(err))
 	g.Metrics.ModelCall(r.account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), tokens, 0, 0, 0, false)
+	g.chargeRun(ctx, r.token, tokens-reserved, logger)
 	rctx, cancel := detach(ctx)
 	if _, rerr := lease.Release(rctx); rerr != nil {
 		logger.Warn("lease not released", "key", "embed:"+emb.Model, "error", rerr)
@@ -290,10 +336,10 @@ func (g *Server) similar(
 		err = errors.Join(err, uerr)
 	}
 	if err != nil {
-		return nil, tokens, similarError, err
+		return nil, similarError, err
 	}
 	if len(vectors) != len(r.queries) {
-		return nil, tokens, similarError, fmt.Errorf("gateway: %d vectors for %d queries", len(vectors), len(r.queries))
+		return nil, similarError, fmt.Errorf("gateway: %d vectors for %d queries", len(vectors), len(r.queries))
 	}
 	// A reranker sorts a pool of candidates for each query, which both
 	// searches look deeper to fill, and never shallower than without one:
@@ -319,7 +365,7 @@ func (g *Server) similar(
 	}
 	g.Metrics.VectorSearch(r.account.Key(), searched, time.Since(started))
 	if err != nil {
-		return nil, tokens, similarError, err
+		return nil, similarError, err
 	}
 	kept, counts, best := gateCandidates(fuse(hits, named), emb.Floor(), emb.Margin())
 	for _, s := range best {
@@ -335,9 +381,9 @@ func (g *Server) similar(
 	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "margin", emb.Margin(),
 		"lexical", emb.LexicalSearch(), "kept", len(chunks), "tokens", tokens, "hits", countsByOutcome(counts))
 	if len(chunks) == 0 {
-		return chunks, tokens, similarEmpty, nil
+		return chunks, similarEmpty, nil
 	}
-	return chunks, tokens, similarOK, nil
+	return chunks, similarOK, nil
 }
 
 // lexicalTimeout bounds the search by name, which a request can do without.

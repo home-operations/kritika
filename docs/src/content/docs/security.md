@@ -322,8 +322,8 @@ it, so it has no switch:
 - The runner also asks it, with no query, whether the repository has an
   index, and then for the review's similar code, once for each part of a
   split review. The agent's `search_code` asks it at most 10 more times. The gateway embeds the diff or the query with the instance's
-  embedder, answers from the repository's index, and charges the embedding
-  to the run. It searches only the index of the run's own repository,
+  embedder, answers from the repository's index, and charges the embedding,
+  and any reranking, to the run. It searches only the index of the run's own repository,
   whatever the request says. A search leaves out the files the change
   touches, which the run reports once before it first searches.
 - With a [reranker](/models/#reranking) configured, the gateway also sends

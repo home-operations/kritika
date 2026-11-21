@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -37,7 +38,9 @@ func (f rerankFunc) Rerank(ctx context.Context, query string, documents []string
 // TestSimilarHybridAndRerank: the lexical search adds the chunk that shares
 // the query's rare name to the one the vector search finds, unless it is
 // turned off. A reranker orders them, and its failure leaves the fused
-// order. What the reranker reports spending is recorded as its usage.
+// order. What the reranker reports spending is recorded as its usage and
+// charged to the run's budget, and a run whose budget the embedding spent
+// keeps the fused order.
 func TestSimilarHybridAndRerank(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -128,15 +131,20 @@ apps:
 		want      []string
 		failures  float64
 		rerankUse int64
+		// budget is the run's, 1000 when 0, and spent what the request
+		// charged to it.
+		budget, spent int64
 	}{
-		{"vector alone", config(`{ model: test/embed, dims: 8, lexical: false }`), nil, []string{"near.go:similarity 1.00"}, 0, 0},
+		{"vector alone", config(`{ model: test/embed, dims: 8, lexical: false }`), nil, []string{"near.go:similarity 1.00"}, 0, 0, 0, 1},
 		// Both searches find named.go: the vector search second of three, as
 		// it finds every chunk, and the search by name first. So the fusion
 		// puts it ahead of near.go, which only the vector search finds.
 		{"hybrid", config(`{ model: test/embed, dims: 8 }`), nil,
-			[]string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0},
-		{"reranked", hybrid, byNear, []string{"near.go:similarity 1.00", "named.go:shares ParseHTTPRequest"}, 0, 11},
-		{"reranker failure", hybrid, failing, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 1, 0},
+			[]string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0, 0, 1},
+		{"reranked", hybrid, byNear, []string{"near.go:similarity 1.00", "named.go:shares ParseHTTPRequest"}, 0, 11, 0, 12},
+		{"reranker failure", hybrid, failing, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 1, 0, 0, 1},
+		// The embedding spends the run's budget, so nothing is reranked.
+		{"budget spent", hybrid, byNear, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0, 1, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
@@ -145,7 +153,7 @@ apps:
 				Rerankers: &adapter.Rerankers{Build: func(configfile.Rerank) model.Reranker { return tt.reranker }},
 			}
 			token, err := st.MintGatewayToken(ctx, store.GatewayGrant{
-				RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1000,
+				RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: cmp.Or(tt.budget, 1000),
 			}, time.Now().Add(time.Minute))
 			if err != nil {
 				t.Fatal(err)
@@ -172,6 +180,9 @@ apps:
 			}
 			if n := rerankFailures(t, reg); n != tt.failures {
 				t.Errorf("rerank failures counted %g, want %g", n, tt.failures)
+			}
+			if grant, err := st.LookupGatewayToken(ctx, token); err != nil || grant.Spent != tt.spent {
+				t.Errorf("the run spent %d tokens (%v), want %d", grant.Spent, err, tt.spent)
 			}
 			if used := rerankUsage(); used-before != tt.rerankUse {
 				t.Errorf("rerank usage %d tokens, want %d", used-before, tt.rerankUse)

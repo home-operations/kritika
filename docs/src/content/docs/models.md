@@ -899,8 +899,12 @@ tokens alone.
 
 A reranker reads every candidate in full, and its tokens count against the
 account's `tokensPerMonth` as a review's do: the caps have no limit of their
-own for it. A review's similar-code stage sends up to twelve queries, each
-with `candidates` chunks, and this repository's chunks average about 900
+own for it. They count against the run's token budget too: the gateway
+reserves what it sends, at four characters a token, before it reranks, and
+settles at what the provider reports. A run whose budget the embedding
+spent keeps the fused order. A review's similar-code stage sends up to
+twelve queries, each with `candidates` chunks, and this repository's chunks
+average about 900
 characters, some 250 tokens. So one stage reranks about
 12 × 50 × 250 = 150,000 tokens of chunks at the default 50 candidates, and
 more when the provider counts the query, up to 3,000 characters, with each
