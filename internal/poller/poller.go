@@ -63,6 +63,10 @@ type Poller struct {
 	// tipsFirst is the account, by ID, that the next look at the default
 	// branches starts at, "" for the first.
 	tipsFirst string
+	// tipsLimited is when the forge's rate limit lets a look at the default
+	// branches ask again, by the credential that it limits, as limitScope
+	// names it.
+	tipsLimited map[string]time.Time
 	// now is the clock that schedules the looks at the default branches,
 	// time.Now when nil: a field for the tests.
 	now func() time.Time
@@ -75,8 +79,6 @@ type tipScan struct {
 	// next is the repository that a look cut short resumes at, "" for the
 	// first.
 	next string
-	// until is when the forge's rate limit lets a look ask again.
-	until time.Time
 }
 
 // tipCheckInterval is how often runTips looks at the default branches of an
@@ -557,11 +559,13 @@ func (p *Poller) setTipsFirst(accountID string) {
 // A sweep looks at the repositories in name order, from the first to the
 // last. A look that ctx or the forge's rate limit cuts short leaves the
 // sweep at the repository it stopped at, and the next look past the limit's
-// wait goes on from there to the last name, not round again. A sweep that
-// ends, in one look or over several, counts toward tipCheckInterval. So looks
-// cut short every time still come round to each repository, and stop asking
-// once they have. A repository named before where a sweep was cut, added
-// meanwhile, waits for the next sweep.
+// wait goes on from there to the last name, not round again. The wait holds
+// back the looks of every account whose lookups the limit counts, as
+// limitScope names them. A sweep that ends, in one look or over several,
+// counts toward tipCheckInterval. So looks cut short every time still come
+// round to each repository, and stop asking once they have. A repository
+// named before where a sweep was cut, added meanwhile, waits for the next
+// sweep.
 func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
 	// Whether the look is due needs only when the webhook last arrived, so a
 	// look that is not due lists no repository and reads no job.
@@ -574,7 +578,8 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 	if err != nil {
 		return err
 	}
-	next, due := p.tipsDue(account.ID(), state.Delivered, file.PollLookback())
+	scope := limitScope(in, account)
+	next, due := p.tipsDue(account.ID(), scope, state.Delivered, file.PollLookback())
 	if !due {
 		return nil
 	}
@@ -596,7 +601,7 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 	first, _ := slices.BinarySearchFunc(repos, next, func(r store.PollRepo, name string) int { return strings.Compare(r.Name, name) })
 	for _, r := range repos[first:] {
 		if ctx.Err() != nil {
-			p.tipsCut(account.ID(), r.Name, time.Time{})
+			p.tipsCut(account.ID(), r.Name)
 			return nil
 		}
 		// A queued or running index job reads the tip itself, and a push
@@ -620,7 +625,7 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 			continue
 		}
 		if err != nil {
-			p.tipsCut(account.ID(), r.Name, time.Time{})
+			p.tipsCut(account.ID(), r.Name)
 			return err
 		}
 		err = p.pollTip(ctx, file, account, in, client, r, started)
@@ -629,12 +634,13 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 		if wait, limited := rateLimited(err, p.clock()); limited {
 			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
 				"repository", r.Name, "error", err)
-			p.tipsCut(account.ID(), r.Name, p.clock().Add(wait))
+			p.tipsCut(account.ID(), r.Name)
+			p.tipsLimit(scope, p.clock().Add(wait))
 			return nil
 		}
 		switch {
 		case ctx.Err() != nil:
-			p.tipsCut(account.ID(), r.Name, time.Time{})
+			p.tipsCut(account.ID(), r.Name)
 			return nil
 		case errors.Is(err, forge.ErrNotFound):
 			p.branchUnknown(in, r, err)
@@ -647,22 +653,24 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 }
 
 // tipsDue reports whether this look asks for the account's default branches,
-// and the repository to start at, "" for the first. It looks when a look was
-// cut short, past any rate limit's wait. It also looks when the connection's
+// and the repository to start at, "" for the first. It does not look while
+// the rate limit of the credential that scope names, as limitScope does, has
+// not passed, whichever of its accounts' looks the limit refused. It looks
+// when a look was cut short. It also looks when the connection's
 // webhook, which last delivered at delivered, has been silent for lookback,
 // and otherwise when tipCheckInterval has passed since a look last went
 // through every repository in this process: a newly elected leader looks at
 // once.
-func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.Duration) (string, bool) {
+func (p *Poller) tipsDue(accountID, scope string, delivered *time.Time, lookback time.Duration) (string, bool) {
 	now := p.clock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if now.Before(p.tipsLimited[scope]) {
+		return "", false
+	}
 	s := p.tips[accountID]
 	if s == nil {
 		return "", true
-	}
-	if now.Before(s.until) {
-		return "", false
 	}
 	arriving := delivered != nil && delivered.After(now.Add(-lookback))
 	if s.next == "" && arriving && now.Sub(s.swept) < tipCheckInterval {
@@ -672,13 +680,34 @@ func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.D
 }
 
 // tipsCut records that a look at the account's default branches stopped
-// before the repository next, which the next look starts at once until has
-// passed.
-func (p *Poller) tipsCut(accountID, next string, until time.Time) {
+// before the repository next, which the next look starts at.
+func (p *Poller) tipsCut(accountID, next string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	s := p.tipScan(accountID)
-	s.next, s.until = next, until
+	p.tipScan(accountID).next = next
+}
+
+// tipsLimit records that the rate limit of the credential that scope names
+// refuses every look that uses it until then.
+func (p *Poller) tipsLimit(scope string, until time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.tipsLimited == nil {
+		p.tipsLimited = map[string]time.Time{}
+	}
+	p.tipsLimited[scope] = until
+}
+
+// limitScope names the credential that the account's branch lookups use,
+// which a forge's rate limit counts against. A GitHub App has a token, and a
+// limit, for each installation, which is one account's. A Forgejo, Gitea or
+// GitLab connection has one client, with its integration's, bot's or
+// service account's credential, for every account that it serves.
+func limitScope(in *configfile.Connection, account *configfile.Account) string {
+	if in.Forge == configfile.ForgeGitHub {
+		return in.ID() + ":" + account.ID()
+	}
+	return in.ID()
 }
 
 // tipsSwept records that a look went through every one of the account's

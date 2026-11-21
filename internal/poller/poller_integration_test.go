@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
@@ -362,7 +363,12 @@ func newTipPollOf(t *testing.T, yaml string, repos ...string) *tipPoll {
 	storetest.Repositories(t, st, file, repos...)
 	for _, name := range repos {
 		owner, _, _ := strings.Cut(name, "/")
-		account, _ := file.Account(configfile.ForgeGitHub, owner)
+		var account *configfile.Account
+		for i := range file.Accounts {
+			if strings.EqualFold(file.Accounts[i].Name, owner) {
+				account = &file.Accounts[i]
+			}
+		}
 		repoID := configfile.RepositoryID(account.ID(), name)
 		var runID string
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -851,6 +857,74 @@ func TestPollerPausesTipChecksAtAGitLabRateLimit(t *testing.T) {
 	now = reset.Add(time.Second)
 	if got := look(); !slices.Equal(slices.Compact(got), []string{"flux", "home-ops"}) {
 		t.Fatalf("a look past the reset asked for %q, want flux's branch and then home-ops's", got)
+	}
+}
+
+// labTipYAML is tipYAML with two GitLab connections, each with a service
+// account of its own: lab-a serving acme and globex, lab-b initech.
+const labTipYAML = tipYAML + `gitlab:
+  lab-a:
+    host: gitlab.example.com
+    accounts: [acme, globex]
+    token: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_GL_HOOK }
+  lab-b:
+    host: gitlab.other.example
+    accounts: [initech]
+    token: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_GL_HOOK }
+`
+
+// askForge answers every branch lookup with tip, or err when set, and
+// records the repositories it was asked for.
+type askForge struct {
+	tipForge
+	asked []string
+}
+
+func (f *askForge) BranchTip(_ context.Context, owner, name, _ string) (string, string, error) {
+	f.asked = append(f.asked, owner+"/"+name)
+	return f.tip, "main", f.err
+}
+
+// connForges is each connection's client, by its name.
+type connForges map[string]forge.Client
+
+func (c connForges) For(_ context.Context, in *configfile.Connection, _ string) (forge.Client, error) {
+	return c[in.Name], nil
+}
+
+// TestPollerPausesTipChecksOfAConnectionsAccountsAtItsRateLimit: a GitLab
+// connection serves its accounts with one client and one credential, whose
+// rate limit refuses the lookups of all of them. So the 429 that one
+// account's look meets holds back the looks of the connection's other
+// accounts too until its wait has passed, but not those of another
+// connection.
+func TestPollerPausesTipChecksOfAConnectionsAccountsAtItsRateLimit(t *testing.T) {
+	t.Setenv("TEST_GL_HOOK", "whsec_c2lnbmluZy1rZXk=")
+	s := newTipPollOf(t, labTipYAML, "onedr0p/home-ops", "acme/widgets", "globex/gadgets", "initech/tps")
+	labA, labB := &askForge{}, &askForge{}
+	labA.tip, labB.tip = "indexed", "indexed"
+	labA.err = fmt.Errorf("gitlab: branch main: %w", &gl.ErrorResponse{StatusCode: http.StatusTooManyRequests})
+	s.tf.tip = "indexed"
+	s.p.Forges = connForges{"bot-ross": s.tf, "lab-a": labA, "lab-b": labB}
+	now := time.Now()
+	s.p.now = func() time.Time { return now }
+	s.p.pollTipsAll(t.Context())
+	if len(labA.asked) != 1 || !slices.Equal(labB.asked, []string{"initech/tps"}) {
+		t.Fatalf("a look whose first lookup on lab-a met its rate limit asked lab-a for %q and lab-b for %q, want one of lab-a's and initech's",
+			labA.asked, labB.asked)
+	}
+	labA.err = nil
+	now = now.Add(forgeRateLimitWait - time.Second)
+	s.p.pollTipsAll(t.Context())
+	if len(labA.asked) != 1 {
+		t.Fatalf("a look within the limit's wait asked lab-a for %q, want nothing past its first", labA.asked)
+	}
+	now = now.Add(2 * time.Second)
+	s.p.pollTipsAll(t.Context())
+	if !slices.Contains(labA.asked, "acme/widgets") || !slices.Contains(labA.asked, "globex/gadgets") {
+		t.Fatalf("a look past the limit's wait asked lab-a for %q, want both of its accounts' branches", labA.asked)
 	}
 }
 
