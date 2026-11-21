@@ -92,15 +92,17 @@ postgres_tag=18.6-standard-bookworm
 # renovate: datasource=docker depName=ghcr.io/home-operations/vchord
 vchord_tag=1.3.0
 docker pull -q "ghcr.io/home-operations/vchord:${vchord_tag}" >/dev/null
-cid=$(docker run -d -p 127.0.0.1::5432 \
+cid=$(docker create -p 127.0.0.1::5432 \
   --mount "type=image,source=ghcr.io/home-operations/vchord:${vchord_tag},target=/ext" \
   "ghcr.io/cloudnative-pg/postgresql:${postgres_tag}" \
   bash -c 'echo super >/tmp/pwfile && initdb -D /tmp/pgdata -U postgres --encoding=UTF8 --locale=C --pwfile=/tmp/pwfile --auth-local=trust --auth-host=scram-sha-256 >/dev/null && echo "host all all all scram-sha-256" >>/tmp/pgdata/pg_hba.conf && exec postgres -D /tmp/pgdata "$@"' postgres \
   -c listen_addresses='*' -c shared_preload_libraries=vchord \
   -c dynamic_library_path=/usr/lib/postgresql/18/lib:/ext/usr/lib/postgresql/18/lib \
   -c extension_control_path=/usr/share/postgresql/18:/ext/usr/share/postgresql/18)
-# The container is kept until the task ends, so that when Postgres does not
-# come up, from initdb to loading VectorChord, its log says why.
+# The container is created, its cleanup set, and only then started, so one
+# that Docker cannot start is removed too. It is kept until the task ends, so
+# that when Postgres does not come up, from initdb to loading VectorChord, its
+# log says why.
 ready=
 cleanup() {
   status=$?
@@ -109,6 +111,7 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
+docker start "$cid" >/dev/null
 port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
 for i in $(seq 1 30); do
   if docker exec "$cid" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then ready=1; break; fi
