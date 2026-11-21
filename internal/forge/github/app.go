@@ -246,6 +246,11 @@ func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
 	return newClient(a.limit(&installTransport{base: a.base, origin: a.origin, tokens: tokens}), a.apiBase)
 }
 
+// ErrRedirectRefused is what a GitHub client refuses to follow a redirect
+// with: one off the API's origin, or past the tenth. Go wraps it in a
+// *url.Error, which is no failed connection to retry.
+var ErrRedirectRefused = errors.New("github: redirect refused")
+
 // newClient answers a redirect off the API's origin with an error rather than
 // following it: the transports withhold credentials from such a hop, but its
 // answer would still be read as GitHub's.
@@ -256,10 +261,10 @@ func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
 	}
 	redirects := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if !sameOrigin(req.URL, origin) {
-			return fmt.Errorf("github: refusing a redirect off %s to %s", origin.Host, req.URL.Host)
+			return fmt.Errorf("%w: off %s to %s", ErrRedirectRefused, origin.Host, req.URL.Host)
 		}
 		if len(via) >= 10 {
-			return errors.New("github: stopped after 10 redirects")
+			return fmt.Errorf("%w: stopped after 10 redirects", ErrRedirectRefused)
 		}
 		return nil
 	}}

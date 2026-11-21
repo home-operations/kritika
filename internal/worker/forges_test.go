@@ -446,10 +446,9 @@ func emptyBranchAnswer(t *testing.T) error {
 	return err
 }
 
-// emptyGitHubBranchAnswer is what the GitHub client returns for a branch
-// whose endpoint answers 200 with no body: go-github's Do decodes nothing
-// from it and returns no error.
-func emptyGitHubBranchAnswer(t *testing.T) error {
+// gitHubBranchAnswer is what the GitHub client returns for a branch whose
+// endpoint answers as branch does.
+func gitHubBranchAnswer(t *testing.T, branch http.HandlerFunc) error {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -460,9 +459,7 @@ func emptyGitHubBranchAnswer(t *testing.T) error {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"token":"ghs_test","expires_at":"`+time.Now().Add(time.Hour).UTC().Format(time.RFC3339)+`"}`)
 	})
-	mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-	})
+	mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", branch)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	app, err := github.NewApp("Iv1.abc", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
@@ -476,7 +473,7 @@ func emptyGitHubBranchAnswer(t *testing.T) error {
 	}
 	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
 	if err == nil {
-		t.Fatal("BranchTip of an empty answer succeeded")
+		t.Fatal("BranchTip succeeded")
 	}
 	return err
 }
@@ -525,7 +522,17 @@ func TestTransientForge(t *testing.T) {
 		{name: "connection refused", err: &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection refused")}, want: true},
 		{name: "cut short", err: fmt.Errorf("github: read: %w", io.ErrUnexpectedEOF), want: true},
 		{name: "empty answer", err: emptyBranchAnswer(t), want: true},
-		{name: "empty GitHub answer", err: emptyGitHubBranchAnswer(t), want: true},
+		// go-github's Do decodes nothing from a 200 with no body and
+		// returns no error.
+		{name: "empty GitHub answer", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+		}), want: true},
+		{name: "GitHub redirect off its origin", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://elsewhere.example/repos/o/r/branches/main", http.StatusFound)
+		})},
+		{name: "GitHub redirect loop", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+		})},
 		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},
 		{name: "dns timeout", err: unanswered(&net.DNSError{Err: "i/o timeout", Name: "forgejo.example", IsTimeout: true}), want: true},
 		{name: "dns server failure", err: unanswered(&net.DNSError{Err: "server misbehaving", Name: "forgejo.example", IsTemporary: true}),
