@@ -112,7 +112,8 @@ var minusLanguages = func() map[string]bool {
 	return m
 }()
 
-// identifiers are text's runs of letters, digits and underscores. With
+// identifiers are text's runs of letters, digits and underscores, and the
+// combining marks on them. With
 // hyphens, a hyphen between two letters is kept inside one: a kebab-case
 // name is one identifier, n-1 is two tokens. A run that starts with a digit
 // is a number and is left out.
@@ -133,10 +134,13 @@ func identifiers(text string, hyphens bool) []string {
 			if start < 0 {
 				start = i
 			}
+		case unicode.IsMark(r) && start >= 0:
+			// A combining mark continues an identifier, as most languages'
+			// rules for one let it.
 		case r == '-' && hyphens && start >= 0 && i > 0:
 			prev, _ := utf8.DecodeLastRuneInString(text[:i])
 			next, _ := utf8.DecodeRuneInString(text[i+1:])
-			if !unicode.IsLetter(prev) || !unicode.IsLetter(next) {
+			if !unicode.IsLetter(prev) && !unicode.IsMark(prev) || !unicode.IsLetter(next) {
 				flush(i)
 			}
 		default:
@@ -171,10 +175,16 @@ func split(id string) []string {
 			start = i + 1
 			continue
 		}
-		if i == start {
+		// A combining mark stays with its letter, and the letter it marks
+		// is what the next rune's case is compared with.
+		if i == start || unicode.IsMark(r) {
 			continue
 		}
-		prev := runes[i-1]
+		j := i - 1
+		for j > start && unicode.IsMark(runes[j]) {
+			j--
+		}
+		prev := runes[j]
 		switch {
 		case unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)):
 			cut(i)

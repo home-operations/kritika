@@ -31,6 +31,9 @@ func TestWords(t *testing.T) {
 		{"acronym before a word", "HTTPSConnection", []string{"httpsconnection", "https", "connection"}},
 		{"letters around digits", "k8s i18n v2 x", []string{"k8s", "i18n", "v2"}},
 		{"a hyphen in a query joins", "rate-limit", []string{"ratelimit", "rate", "limit"}},
+		{"a combining mark", "cafe\u0301Cache", []string{"cafe\u0301cache", "cafe\u0301", "cache"}},
+		{"a combining mark before a case change", "getE\u0301tat", []string{"gete\u0301tat", "get", "e\u0301tat"}},
+		{"a combining mark before a hyphen", "cafe\u0301-bar", []string{"cafe\u0301bar", "cafe\u0301", "bar"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -116,6 +119,18 @@ func TestWordsCompound(t *testing.T) {
 	}{{"parseHTTPRequest", true}, {"max_batch", true}, {"lease", false}, {"v2", false}} {
 		if w := Words(tt.text); len(w) == 0 || !w[0].Whole || w[0].Compound != tt.want {
 			t.Errorf("Words(%q) = %+v, want a whole word first, compound %v", tt.text, w, tt.want)
+		}
+	}
+}
+
+// TestDocumentCombiningMarks: a combining mark, which JavaScript, Python and
+// Java let an identifier hold, stays inside it, so a chunk that declares
+// one holds what a query that names it gives.
+func TestDocumentCombiningMarks(t *testing.T) {
+	got := Document("javascript", "src/cache.js", "", "caféCache", "const caféCache = new Map();")
+	for _, want := range []string{"cafécache", "café", "cache"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("Document lacks %q: %q", want, got)
 		}
 	}
 }
