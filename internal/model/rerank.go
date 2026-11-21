@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -151,11 +152,15 @@ type rerankRank struct {
 	Score float64
 }
 
+// decode reads the ranks of the API's answer, each with the index and the
+// score that the API names. An answer that ranks no document, or a rank
+// without its index or score, is an error rather than a document that the
+// answer leaves out or one that scores 0, so that the fused order stands.
 func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) {
 	type ranked struct {
-		Index          int     `json:"index"`
-		RelevanceScore float64 `json:"relevance_score"`
-		Score          float64 `json:"score"`
+		Index          *int     `json:"index"`
+		RelevanceScore *float64 `json:"relevance_score"`
+		Score          *float64 `json:"score"`
 	}
 	var ranks []ranked
 	var used RerankUsage
@@ -183,18 +188,31 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 		if err := json.Unmarshal(answer, &out); err != nil {
 			return nil, used, err
 		}
-		ranks = append(out.Results, out.Data...)
+		ranks = out.Results
+		if r.api == RerankVoyage {
+			ranks = out.Data
+		}
 		used = RerankUsage{
 			Tokens:      int64(max(out.Usage.TotalTokens, out.Meta.BilledUnits.InputTokens, out.Meta.Tokens.InputTokens)),
 			SearchUnits: int64(out.Meta.BilledUnits.SearchUnits),
 		}
 	}
+	if len(ranks) == 0 {
+		return nil, used, errors.New("the answer ranks no document")
+	}
 	out := make([]rerankRank, len(ranks))
 	for i, rk := range ranks {
-		out[i] = rerankRank{Index: rk.Index, Score: rk.RelevanceScore}
+		score := rk.RelevanceScore
 		if r.api == RerankTEI {
-			out[i].Score = rk.Score
+			score = rk.Score
 		}
+		switch {
+		case rk.Index == nil:
+			return nil, used, fmt.Errorf("rank %d is without an index", i)
+		case score == nil:
+			return nil, used, fmt.Errorf("rank %d is without a score", i)
+		}
+		out[i] = rerankRank{Index: *rk.Index, Score: *score}
 	}
 	return out, used, nil
 }

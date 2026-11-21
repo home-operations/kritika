@@ -95,14 +95,27 @@ func TestReranker(t *testing.T) {
 
 func TestRerankerRefusals(t *testing.T) {
 	for _, tt := range []struct {
-		name, answer string
-		status       int
-		want         string
+		name, api, answer string
+		status            int
+		want              string
 	}{
-		{"status", `{"message":"invalid api token"}`, http.StatusUnauthorized, "401"},
-		{"index out of range", `{"results":[{"index":3,"relevance_score":0.3}]}`, http.StatusOK, "index 3"},
-		{"duplicate index", `{"results":[{"index":0,"relevance_score":0.3},{"index":0,"relevance_score":0.2}]}`, http.StatusOK, "index 0"},
-		{"not JSON", `<html>`, http.StatusOK, "decode"},
+		{"status", RerankCohere, `{"message":"invalid api token"}`, http.StatusUnauthorized, "401"},
+		{"index out of range", RerankCohere, `{"results":[{"index":3,"relevance_score":0.3}]}`, http.StatusOK, "index 3"},
+		{"duplicate index", RerankCohere, `{"results":[{"index":0,"relevance_score":0.3},{"index":0,"relevance_score":0.2}]}`, http.StatusOK, "index 0"},
+		{"not JSON", RerankCohere, `<html>`, http.StatusOK, "decode"},
+		{"an empty object", RerankCohere, `{}`, http.StatusOK, "ranks no document"},
+		{"null", RerankCohere, `null`, http.StatusOK, "ranks no document"},
+		{"null results", RerankJina, `{"results":null}`, http.StatusOK, "ranks no document"},
+		{"empty results", RerankCohere, `{"results":[]}`, http.StatusOK, "ranks no document"},
+		{"another API's envelope", RerankCohere, `{"data":[{"index":0,"relevance_score":0.3}]}`, http.StatusOK, "ranks no document"},
+		{"Cohere's envelope to Voyage", RerankVoyage, `{"results":[{"index":0,"relevance_score":0.3}]}`, http.StatusOK, "ranks no document"},
+		{"no index", RerankCohere, `{"results":[{"relevance_score":0.3}]}`, http.StatusOK, "without an index"},
+		{"null index", RerankVoyage, `{"data":[{"index":null,"relevance_score":0.3}]}`, http.StatusOK, "without an index"},
+		{"no score", RerankCohere, `{"results":[{"index":0}]}`, http.StatusOK, "without a score"},
+		{"TEI's score to Cohere", RerankCohere, `{"results":[{"index":0,"score":0.3}]}`, http.StatusOK, "without a score"},
+		{"an empty TEI list", RerankTEI, `[]`, http.StatusOK, "ranks no document"},
+		{"a null TEI list", RerankTEI, `null`, http.StatusOK, "ranks no document"},
+		{"Cohere's score to TEI", RerankTEI, `[{"index":0,"relevance_score":0.3}]`, http.StatusOK, "without a score"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +123,7 @@ func TestRerankerRefusals(t *testing.T) {
 				_, _ = io.WriteString(w, tt.answer)
 			}))
 			defer srv.Close()
-			_, _, err := NewReranker(RerankCohere, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a", "b"})
+			_, _, err := NewReranker(tt.api, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a", "b"})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want one that says %q", err, tt.want)
 			}
