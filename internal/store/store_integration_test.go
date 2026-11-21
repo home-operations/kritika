@@ -222,15 +222,30 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 					t.Fatalf("applied %s", when)
 				}
 			}
-			if tt.undo != "" {
-				if _, err := s.owner.Exec(ctx, tt.undo); err != nil {
-					t.Fatal(err)
+			// The undo and the migrations' records go together, so that a
+			// Migrate in the cleanup restores whatever the case took away
+			// for the cases after it, if the case ends before it does.
+			if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+				if tt.undo != "" {
+					if _, err := tx.Exec(ctx, tt.undo); err != nil {
+						return err
+					}
 				}
-			}
-			undone("after undo")
-			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.versions); err != nil {
+				_, err := tx.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.versions)
+				return err
+			}); err != nil {
 				t.Fatal(err)
 			}
+			restored := false
+			t.Cleanup(func() {
+				if restored {
+					return
+				}
+				if err := s.Migrate(context.Background(), "kritika_app"); err != nil {
+					t.Errorf("Migrate in the cleanup: %v", err)
+				}
+			})
+			undone("after undo")
 			holder, err := s.owner.Begin(ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -251,6 +266,7 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			if err := s.Migrate(ctx, "kritika_app"); err != nil {
 				t.Fatalf("Migrate once the table is free: %v", err)
 			}
+			restored = true
 			if !tt.applied() {
 				t.Fatal("not applied after Migrate again")
 			}
