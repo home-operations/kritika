@@ -601,8 +601,8 @@ func (w *Index) vectorsFor(
 			missing = append(missing, texts[i])
 		}
 	}
-	w.Metrics.IndexVectors(account.Key(), len(batch)-len(missing), len(missing))
 	if len(missing) == 0 {
+		w.Metrics.IndexVectors(account.Key(), len(batch), 0)
 		return vectors, nil
 	}
 	embedded, used, err := embedder.Embed(ctx, missing)
@@ -625,6 +625,9 @@ func (w *Index) vectorsFor(
 	if len(embedded) != len(missing) {
 		return nil, fmt.Errorf("worker: %d vectors for %d texts", len(embedded), len(missing))
 	}
+	// Counted once the embedder has answered for every text: a batch whose
+	// embedding fails, and is tried again, counts none of its vectors.
+	w.Metrics.IndexVectors(account.Key(), len(batch)-len(missing), len(missing))
 	for i, h := range hashes {
 		if vectors[i] == nil {
 			vectors[i] = embedded[sent[string(h)]]

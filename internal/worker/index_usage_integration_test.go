@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
@@ -50,12 +52,15 @@ func TestIndexBatchUsage(t *testing.T) {
 		tokens    int64
 		rows      int
 		wantError bool
+		// embedded is the vectors counted as embedded: those of the calls
+		// that answered with a vector for each text, and no others.
+		embedded int
 	}{
-		{"success", 20, 2, false},
-		{"unreported usage", 0, 2, false},
-		{"partial failure", 17, 2, true},
-		{"cancellation", 17, 2, true},
-		{"vector insert failure", 10, 1, true},
+		{"success", 20, 2, false, 2},
+		{"unreported usage", 0, 2, false, 2},
+		{"partial failure", 17, 2, true, 1},
+		{"cancellation", 17, 2, true, 1},
+		{"vector insert failure", 10, 1, true, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -121,12 +126,16 @@ func TestIndexBatchUsage(t *testing.T) {
 				}
 				return [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, 10, nil
 			})
-			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler)}
+			reg := prometheus.NewRegistry()
+			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler), Metrics: metrics.New(reg)}
 			w := Index{Base: base, batch: 1}
 			_, _, err = w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
 				file.Embedding, "abc", run, runner, nil, 1)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("embed error = %v, want error %v", err, tt.wantError)
+			}
+			if got := embeddedVectors(t, reg); got != tt.embedded {
+				t.Errorf("vectors counted as embedded = %d, want %d", got, tt.embedded)
 			}
 			if tt.name == "cancellation" && !errors.Is(err, context.Canceled) {
 				t.Fatalf("lost cancellation error: %v", err)
@@ -146,6 +155,29 @@ func TestIndexBatchUsage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// embeddedVectors sums kritika_index_vectors_total{outcome="embedded"}.
+func embeddedVectors(t *testing.T, reg *prometheus.Registry) int {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range families {
+		if f.GetName() != "kritika_index_vectors_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "outcome" && l.GetValue() == "embedded" {
+					n += int(m.GetCounter().GetValue())
+				}
+			}
+		}
+	}
+	return n
 }
 
 // TestIndexReusesVectors: a chunk whose text the repository's active
