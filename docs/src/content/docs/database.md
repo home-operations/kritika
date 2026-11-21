@@ -561,16 +561,18 @@ then reuses the content hash's index, and copies and rebuilds nothing:
    drops it. Before upgrading, leave room for the whole legacy partition
    and its indexes, a copy of the chunks that move and their indexes, and
    the WAL that the moves write.
-4. Once the legacy partition is empty, the sweep drops it. It first reads
-   the partition, under no lock, and leaves it if a chunk is left. It then
-   takes the exclusive lock on `index_chunks` at once or not at all, rather
-   than queue searches behind a waiting lock request, and drops
-   `index_chunks_legacy`, waiting for that partition with the same short
-   wait as the first step. When either lock is not to be had, it changes
-   nothing and tries again a second later, five times, and the next hourly
-   sweep tries again. The hash partitions stay attached throughout: no chunk
-   is moved and no index is built, and this step takes no lock on
-   `accounts`, `repositories` or `index_runs`.
+4. Once the legacy partition is empty, the sweep drops it. It first checks
+   the partition before it asks for an exclusive lock, holding only
+   PostgreSQL's ordinary read lock of the partition and the advisory lock
+   that serializes changes to the index schema, and leaves the partition if
+   a chunk is left. It then takes the exclusive lock on `index_chunks` at
+   once or not at all, rather than queue searches behind a waiting lock
+   request, and drops `index_chunks_legacy`, waiting for that partition
+   with the same short wait as the first step. When either lock is not to
+   be had, it changes nothing and tries again a second later, five times,
+   and the next hourly sweep tries again. The hash partitions stay attached
+   throughout: no chunk is moved and no index is built, and this step takes
+   no lock on `accounts`, `repositories` or `index_runs`.
 
 A search reads the legacy partition's vector index until it is dropped, so
 until then it costs what a search of the plain table did. A rebuild for a
