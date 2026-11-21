@@ -285,7 +285,7 @@ func Pieces(f *chunk.File, opts Options) []chunk.Decl {
 			continue
 		}
 		if len(run) > 0 && (d.EndLine-run[0].StartLine >= opts.WindowLines ||
-			len(f.Text(run[0].StartLine, d.EndLine)) > opts.MaxChunkBytes) {
+			len(f.Bytes(run[0].StartLine, d.EndLine)) > opts.MaxChunkBytes) {
 			flush()
 		}
 		run = append(run, d)
@@ -462,13 +462,13 @@ func (c *cutter) cover(i int) []chunk.Decl {
 // of at most WindowLines and MaxChunkBytes, leaving out a window that holds
 // no word.
 func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
-	text := c.f.Text(start, end)
+	text := c.f.Bytes(start, end)
 	if end-start < lines && len(text) <= c.opts.MaxChunkBytes || start == end {
 		d.StartLine, d.EndLine = start, end
 		return []chunk.Decl{d}
 	}
 	var out []chunk.Decl
-	for _, w := range chunk.Windows([]byte(text), c.opts.WindowLines, c.opts.WindowOverlap, c.opts.MaxChunkBytes) {
+	for _, w := range chunk.Windows(text, c.opts.WindowLines, c.opts.WindowOverlap, c.opts.MaxChunkBytes) {
 		d.StartLine, d.EndLine = start+w.StartLine-1, start+w.EndLine-1
 		if c.words(d.StartLine, d.EndLine) > 0 {
 			out = append(out, d)
@@ -480,7 +480,7 @@ func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
 // worded reports whether line holds a word, which a line of brackets and
 // punctuation alone does not.
 func (c *cutter) worded(line int) bool {
-	return strings.IndexFunc(c.f.Text(line, line), chunk.Worded) >= 0
+	return bytes.IndexFunc(c.f.Bytes(line, line), chunk.Worded) >= 0
 }
 
 // words counts the worded lines from start to end.

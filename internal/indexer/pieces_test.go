@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"fmt"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -288,3 +290,28 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 }
 
 func isWord(r rune) bool { return chunk.Worded(r) }
+
+// TestPiecesDoNotCopyTheSource: a declaration cut into windows is measured
+// and scanned in place, so cutting it allocates the line offsets and the
+// pieces, and not copies of its text. Allocation is counted in bytes, which
+// does not depend on how fast the machine is.
+func TestPiecesDoNotCopyTheSource(t *testing.T) {
+	src := "package demo\n\nfunc Long() {\n" + lines(3000, "\t_ = %d // "+strings.Repeat("x", 100)) + "}\n"
+	f := (&chunk.Parser{}).Parse("long.go", []byte(src))
+	defer f.Close()
+	want := Pieces(f, DefaultOptions)
+	if len(want) < 2 {
+		t.Fatalf("%d pieces, want the declaration cut into windows", len(want))
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := Pieces(f, DefaultOptions)
+	runtime.ReadMemStats(&after)
+	if !slices.Equal(got, want) {
+		t.Fatalf("pieces differ between two cuts of one file")
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > uint64(len(src))/4 {
+		t.Errorf("Pieces allocated %d bytes for a %d-byte file, over a quarter of it", allocated, len(src))
+	}
+}
