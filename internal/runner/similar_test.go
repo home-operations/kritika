@@ -373,6 +373,22 @@ func TestSimilarShown(t *testing.T) {
 	if want := found[2 : 2+maxSimilarShown]; !slices.Equal(got, want) {
 		t.Fatalf("shown %+v, want %+v", got, want)
 	}
+	t.Run("a tail that a similar chunk the other stages show overlaps", func(t *testing.T) {
+		lines := make([]string, 70)
+		for i := range lines {
+			lines[i] = fmt.Sprintf("line %d", i+1)
+		}
+		text := func(start, end int) string { return strings.Join(lines[start-1:end], "\n") }
+		chunk := func(stage string, start, end int) contextpack.Chunk {
+			return contextpack.Chunk{Stage: stage, Path: "tail.go", StartLine: start, EndLine: end, Text: text(start, end)}
+		}
+		head := tree(t, map[string]string{"tail.go": strings.Join(lines, "\n") + "\n"})
+		found := []contextpack.Chunk{chunk(contextpack.StageSimilar, 1, 60), chunk(contextpack.StageSimilar, 51, 61)}
+		others := []contextpack.Chunk{chunk(contextpack.StageDefinition, 1, 40)}
+		if got := similarShown(head, found, others, slog.New(slog.DiscardHandler)); !slices.Equal(got, found[1:]) {
+			t.Fatalf("shown %+v, want the tail", got)
+		}
+	})
 }
 
 // TestSimilarContextWithoutQueries:a diff with nothing to search for still
@@ -447,7 +463,7 @@ func TestAtHead(t *testing.T) {
 	}
 	t.Run("found at lines an earlier one mostly shows", func(t *testing.T) {
 		a := "func a() {\n\treturn\n}"
-		got := atHead(head, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")})
+		got := distinct(atHead(head, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}))
 		if want := []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}; !slices.Equal(got, want) {
 			t.Fatalf("atHead = %+v, want %+v", got, want)
 		}

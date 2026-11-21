@@ -317,7 +317,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	if err != nil {
 		return "", err
 	}
-	chunks := atHead(s.head, out.Chunks)
+	chunks := distinct(atHead(s.head, out.Chunks))
 	release()
 	if len(chunks) == 0 {
 		return "No similar code found.", nil
@@ -383,9 +383,7 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // chunk whose text the head no longer holds is left out rather than shown
 // by its old lines: those now hold code that its similarity was not measured
 // for. A chunk is found where the head's lines, cut as the indexer cuts a
-// chunk, give its text, and claims the lines its text shows. Two chunks of
-// the index can be found at the same head lines, so one whose lines an
-// earlier one mostly shows is left out.
+// chunk, give its text, and claims the lines its text shows.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string][]string{}
 	var out []contextpack.Chunk
@@ -400,6 +398,18 @@ func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 			continue
 		}
 		c.StartLine, c.EndLine = start+1, end+1
+		out = append(out, c)
+	}
+	return out
+}
+
+// distinct is chunks without those whose lines an earlier one mostly shows:
+// two chunks of the index can be found at the same head lines. It runs on
+// the chunks that are shown, so that one left out for what the other stages
+// show does not take a chunk with it that they do not.
+func distinct(chunks []contextpack.Chunk) []contextpack.Chunk {
+	var out []contextpack.Chunk
+	for _, c := range chunks {
 		if !mostlyShown(c, out) {
 			out = append(out, c)
 		}
@@ -484,11 +494,11 @@ func findText(lines []string, text string, near, n int) (int, int, bool) {
 const maxSimilarShown = 10
 
 // similarShown is the similar chunks found that a prompt shows: as head has
-// them, none that others, the other stages' chunks, mostly show, and the
-// first maxSimilarShown of the rest.
+// them, none that others, the other stages' chunks, mostly show or that an
+// earlier one shown mostly shows, and the first maxSimilarShown of the rest.
 func similarShown(head *object.Tree, found, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
 	current := atHead(head, found)
-	shown := withoutOverlap(current, others)
+	shown := distinct(withoutOverlap(current, others))
 	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "apart", len(shown),
 		"shown", min(len(shown), maxSimilarShown))
 	return shown[:min(len(shown), maxSimilarShown)]
