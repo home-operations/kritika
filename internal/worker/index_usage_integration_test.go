@@ -165,6 +165,12 @@ func TestIndexBatchUsage(t *testing.T) {
 // embeddedVectors sums kritika_index_vectors_total{outcome="embedded"}.
 func embeddedVectors(t *testing.T, reg *prometheus.Registry) int {
 	t.Helper()
+	return indexVectorCount(t, reg, "embedded")
+}
+
+// indexVectorCount sums kritika_index_vectors_total of outcome.
+func indexVectorCount(t *testing.T, reg *prometheus.Registry, outcome string) int {
+	t.Helper()
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +182,7 @@ func embeddedVectors(t *testing.T, reg *prometheus.Registry) int {
 		}
 		for _, m := range f.GetMetric() {
 			for _, l := range m.GetLabel() {
-				if l.GetName() == "outcome" && l.GetValue() == "embedded" {
+				if l.GetName() == "outcome" && l.GetValue() == outcome {
 					n += int(m.GetCounter().GetValue())
 				}
 			}
@@ -244,7 +250,8 @@ func TestIndexReusesVectors(t *testing.T) {
 		}
 		return out, int64(10 * len(inputs)), nil
 	})
-	w := Index{Store: st, Logger: slog.New(slog.DiscardHandler), batch: 2}
+	reg := prometheus.NewRegistry()
+	w := Index{Store: st, Logger: slog.New(slog.DiscardHandler), Metrics: metrics.New(reg), batch: 2}
 	// build stages texts as one file's chunks, in order, and embeds them as
 	// a full build at commit. It returns the run's usage rows and tokens.
 	build := func(commit string, texts ...string) (rows int, tokens int64) {
@@ -298,6 +305,12 @@ func TestIndexReusesVectors(t *testing.T) {
 	}
 	if want := [][]string{{"main.go\nfunc reuseA() {}"}, {"main.go\nfunc reuseB() {}"}, {"main.go\nfunc reuseC() {}"}}; !slices.EqualFunc(sent, want, slices.Equal) {
 		t.Fatalf("first build sent %q, want %q: each text once", sent, want)
+	}
+	// The second A of the first batch shares the vector embedded for the
+	// first, and the A of the second batch takes the one the run holds: both
+	// count as reused, and only what was embedded counts as embedded.
+	if reused, embedded := indexVectorCount(t, reg, "reused"), embeddedVectors(t, reg); reused != 2 || embedded != 3 {
+		t.Fatalf("first build counted %d vectors reused and %d embedded, want 2 and 3", reused, embedded)
 	}
 	// A rebuild that changed one function embeds that one alone.
 	if rows, tokens := build("two", "func reuseA() {}", "func reuseB() {}", "func reuseC2() {}", "func reuseC() {}"); rows != 1 || tokens != 10 {
