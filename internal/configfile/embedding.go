@@ -140,13 +140,14 @@ type Rerank struct {
 func (r *Rerank) APIKeyValue() Secret { return r.apiKey }
 
 // Reranker bounds and defaults. A request reranks each of its queries in
-// turn, so the timeout covers them all and stays under the minute that a
-// run waits for its answer.
+// turn, after the wait for a slot, so the timeout covers them all. A run
+// waits a minute for its answer, of which the timeout leaves at least half
+// to the embedding, its slot and the searches.
 const (
 	DefaultRerankCandidates = 50
 	MaxRerankCandidates     = 100
-	DefaultRerankTimeout    = 20 * time.Second
-	MaxRerankTimeout        = 45 * time.Second
+	DefaultRerankTimeout    = 15 * time.Second
+	MaxRerankTimeout        = 30 * time.Second
 )
 
 // CandidateCount returns Candidates, DefaultRerankCandidates when unset.

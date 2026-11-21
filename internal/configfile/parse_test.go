@@ -116,7 +116,7 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"too many rerank candidates", rerankDoc("{ model: rr/rerank-v3.5, api: cohere, candidates: 101 }"),
 			"embedding.rerank.candidates must be between 0 and 100"},
 		{"a rerank timeout too long", rerankDoc("{ model: rr/rerank-v3.5, api: cohere, timeout: 1m }"),
-			"embedding.rerank.timeout must be between 0 and 45s"},
+			"embedding.rerank.timeout must be between 0 and 30s"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {

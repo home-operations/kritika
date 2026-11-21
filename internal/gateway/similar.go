@@ -670,11 +670,12 @@ func rerankDocument(c contextpack.Chunk) string {
 }
 
 // rerank scores each query's candidates by the reranker, in place of their
-// fused score, one query at a time under one of the reranker's slots and
-// within its deadline. It fails open: a query that the reranker does not
-// answer, or that the deadline leaves out, keeps the fused order, and a
-// failure is logged and counted as the reranker's call. The tokens that the
-// provider reports are recorded as the review's usage.
+// fused score, one query at a time under one of the reranker's slots, all
+// within its deadline, the wait for the slot included. It fails open: a
+// query that the reranker does not answer, or that the deadline leaves out,
+// keeps the fused order, and a failure is logged and counted as the
+// reranker's call. The tokens that the provider reports are recorded as the
+// review's usage.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
@@ -686,9 +687,13 @@ func (g *Server) rerank(
 	if len(byQuery) == 0 {
 		return
 	}
+	// The wait for a slot counts against the deadline, so a reranker whose
+	// slots are all held delays the answer no longer than its timeout.
+	dctx, cancel := context.WithTimeout(ctx, rr.Deadline())
+	defer cancel()
 	key := "rerank:" + rr.Model
 	waitStarted := time.Now()
-	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), key, file.Slots(r.account, rr.Ref), r.jobID)
+	lease, err := g.Store.AcquireLease(dctx, r.account.ID(), key, file.Slots(r.account, rr.Ref), r.jobID)
 	logger.Info("similar rerank slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
 	if err != nil {
 		logger.Warn("gateway: similar code not reranked: no slot", "error", err)
@@ -701,8 +706,6 @@ func (g *Server) rerank(
 			logger.Warn("lease not released", "key", key, "error", err)
 		}
 	}()
-	dctx, cancel := context.WithTimeout(ctx, rr.Deadline())
-	defer cancel()
 	started := time.Now()
 	var tokens int64
 	reranked := 0

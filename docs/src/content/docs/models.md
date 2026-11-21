@@ -854,7 +854,7 @@ fusion's. The answer then takes each query's best four as before.
 | `model`      |         | a model of one of the instance's `openai` providers whose `baseUrl` is the reranker's API root. It uses that provider's key |
 | `api`        |         | the API's shape: `cohere`, `jina`, `voyage` or `tei`                                                                        |
 | `candidates` | 50      | the candidates of each query sent to be reranked, at most 100                                                               |
-| `timeout`    | 20s     | how long the reranking of one similar-code request, all its queries, can take, at most 45s                                  |
+| `timeout`    | 15s     | how long the reranking of one similar-code request, the wait for a slot and all its queries, can take, at most 30s          |
 
 The reranker's provider is of type `openai`, which stands for any
 endpoint that takes a bearer key, and it sets `baseUrl`: kritika posts to

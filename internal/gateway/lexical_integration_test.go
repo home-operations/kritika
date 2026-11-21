@@ -116,7 +116,14 @@ func newLexicalRepo(t *testing.T, name string, format int, chunks map[string]str
 // and returns the answer's status and its chunks as path:label.
 func (r lexicalRepo) ask(t *testing.T, file *configfile.File, reranker model.Reranker, reg *prometheus.Registry, queries ...string) (int, []string) {
 	t.Helper()
-	ctx := t.Context()
+	return r.askWithin(t.Context(), t, file, reranker, reg, queries...)
+}
+
+// askWithin is ask within ctx.
+func (r lexicalRepo) askWithin(
+	ctx context.Context, t *testing.T, file *configfile.File, reranker model.Reranker, reg *prometheus.Registry, queries ...string,
+) (int, []string) {
+	t.Helper()
 	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
 		out := make([][]float32, len(inputs))
 		for i := range out {
@@ -333,4 +340,32 @@ func lexicalFailures(t *testing.T, reg *prometheus.Registry) float64 {
 		}
 	}
 	return n
+}
+
+// TestSimilarRerankSlotWait: a reranker whose every slot is held waits no
+// longer than its timeout for one, and the fused order answers.
+func TestSimilarRerankSlotWait(t *testing.T) {
+	r := newLexicalRepo(t, "rerank-wait", runspec.IndexFormat, widgets, widgetVectors())
+	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, timeout: 1s } }`)
+	for job := range int64(configfile.DefaultConcurrency) {
+		lease, err := r.st.AcquireLease(t.Context(), r.account.ID(), "rerank:rerank", configfile.DefaultConcurrency, 424242+job)
+		if err != nil || lease == nil {
+			t.Fatalf("hold a rerank slot: %v, %v", lease, err)
+		}
+		t.Cleanup(func() { _, _ = lease.Release(context.Background()) })
+	}
+	reranked := rerankFunc(func(context.Context, string, []string) ([]float64, int64, error) {
+		t.Error("reranked without a slot")
+		return nil, 0, nil
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	started := time.Now()
+	code, got := r.askWithin(ctx, t, file, reranked, prometheus.NewRegistry(), "widgetFactory()")
+	if took := time.Since(started); took > 4*time.Second {
+		t.Fatalf("the request took %s waiting for a rerank slot, want about the reranker's 1s timeout", took.Round(time.Second))
+	}
+	if want := []string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}; code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
+	}
 }
