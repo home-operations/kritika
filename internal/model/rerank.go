@@ -140,9 +140,11 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 		scores[i] = -1
 	}
 	seen := make([]bool, len(documents))
-	for _, rk := range ranks {
+	for i, rk := range ranks {
+		// The index is the provider's, which can echo the query or a
+		// document: the rank's place in the answer says which one it is.
 		if rk.Index < 0 || rk.Index >= len(documents) || seen[rk.Index] {
-			return nil, used, fmt.Errorf("model: rerank: the answer has an invalid or repeated index %d", rk.Index)
+			return nil, used, fmt.Errorf("model: rerank: rank %d has an invalid or repeated index", i)
 		}
 		seen[rk.Index] = true
 		scores[rk.Index] = rk.Score

@@ -104,8 +104,9 @@ func TestRerankerRefusals(t *testing.T) {
 		want              string
 	}{
 		{"status", RerankCohere, `{"message":"invalid api token"}`, http.StatusUnauthorized, "401"},
-		{"index out of range", RerankCohere, `{"results":[{"index":3,"relevance_score":0.3}]}`, http.StatusOK, "index 3"},
-		{"duplicate index", RerankCohere, `{"results":[{"index":0,"relevance_score":0.3},{"index":0,"relevance_score":0.2}]}`, http.StatusOK, "index 0"},
+		{"index out of range", RerankCohere, `{"results":[{"index":3,"relevance_score":0.3}]}`, http.StatusOK, "rank 0 has an invalid or repeated index"},
+		{"duplicate index", RerankCohere, `{"results":[{"index":0,"relevance_score":0.3},{"index":0,"relevance_score":0.2}]}`, http.StatusOK,
+			"rank 1 has an invalid or repeated index"},
 		{"not JSON", RerankCohere, `<html>`, http.StatusOK, "decode"},
 		{"an empty object", RerankCohere, `{}`, http.StatusOK, "ranks no document"},
 		{"null", RerankCohere, `null`, http.StatusOK, "ranks no document"},
@@ -416,7 +417,21 @@ func TestRerankerDecodeErrorValues(t *testing.T) {
 	}
 }
 
-// TestRerankerOversizedAnswer: an answer longer than maxRerankAnswer is
+// TestRerankerInvalidIndexValue: a rank whose index is out of range fails
+// with an error that names the rank's place in the answer, not the index the
+// provider sent, which it can have echoed from the query or a document.
+func TestRerankerInvalidIndexValue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `[{"index":0,"score":0.5},{"index":987654321,"score":0.4}]`)
+	}))
+	defer srv.Close()
+	_, _, err := NewReranker(RerankTEI, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a", "b"})
+	if err == nil || !strings.Contains(err.Error(), "rank 1") || strings.Contains(err.Error(), "987654321") {
+		t.Fatalf("err = %v, want one that names rank 1 and not the index it sent", err)
+	}
+}
+
+// TestRerankerOversizedAnswer:an answer longer than maxRerankAnswer is
 // refused, even when the part of it within the bound is a whole ranking, and
 // still reports the tokens TEI's header says were computed.
 func TestRerankerOversizedAnswer(t *testing.T) {
