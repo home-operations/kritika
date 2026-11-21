@@ -397,6 +397,9 @@ func (s *tipPoll) poll() {
 	if _, err := s.p.Poll(s.t.Context(), s.file, s.account, s.in); err != nil {
 		s.t.Fatal(err)
 	}
+	if err := s.p.pollTips(s.t.Context(), s.file, s.account, s.in); err != nil {
+		s.t.Fatal(err)
+	}
 }
 
 // indexJobs are the commits of the index jobs of the first repository.
@@ -564,9 +567,9 @@ func TestPollerChecksTipsHourlyWhileWebhooksArrive(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s.exec(`UPDATE connections SET last_webhook_at = `+tc.delivered+` WHERE id = $1`, s.in.ID())
-			s.p.tipsChecked = nil
+			s.p.tips = nil
 			if tc.checked > 0 {
-				s.p.tipsChecked = map[string]time.Time{s.account.ID(): time.Now().Add(-tc.checked)}
+				s.p.tips = map[string]*tipScan{s.account.ID(): {swept: time.Now().Add(-tc.checked)}}
 			}
 			calls := s.tf.calls
 			s.poll()
@@ -588,6 +591,105 @@ func TestPollerStopsTipChecksAtARateLimit(t *testing.T) {
 	s.poll()
 	if s.tf.calls != 1 || !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
 		t.Fatalf("%d tip checks, logs:\n%s\nwant one, and the rest logged as left", s.tf.calls, s.logs.String())
+	}
+}
+
+// limitForge answers allowed branch lookups, then refuses the rest past
+// GitHub's rate limit, which resets at once. It records the repositories it
+// was asked for.
+type limitForge struct {
+	tipForge
+	allowed int
+	asked   []string
+}
+
+func (f *limitForge) BranchTip(_ context.Context, _, name, _ string) (string, string, error) {
+	f.asked = append(f.asked, name)
+	if f.allowed == 0 {
+		return "", "", fmt.Errorf("github: branch main of onedr0p/%s: %w", name, &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Now()}}, Response: &http.Response{StatusCode: http.StatusForbidden},
+		})
+	}
+	f.allowed--
+	return f.tip, "main", nil
+}
+
+// TestPollerResumesTipChecksCutByARateLimit: a look at the default branches
+// that the rate limit cuts short waits the limit out, and then resumes at
+// the branch it stopped at, even while webhooks arrive. So looks that the
+// limit cuts short every time still come round to every repository.
+func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops", "onedr0p/talos")
+	s.webhooks(true)
+	lf := &limitForge{}
+	lf.tip = "indexed"
+	s.p.Forges = &forges{f: lf}
+	look := func() {
+		t.Helper()
+		lf.allowed = 1
+		s.poll()
+	}
+	look()
+	look()
+	if want := []string{"flux", "home-ops"}; !slices.Equal(lf.asked, want) {
+		t.Fatalf("two looks within the limit's wait asked for %q, want %q", lf.asked, want)
+	}
+	for range 2 {
+		time.Sleep(1100 * time.Millisecond)
+		look()
+	}
+	if want := []string{"flux", "home-ops", "home-ops", "talos", "talos", "flux"}; !slices.Equal(lf.asked, want) {
+		t.Fatalf("looks past the limit's waits asked for %q, want %q", lf.asked, want)
+	}
+}
+
+// stallTipForge looks up no branch before its context ends, and lists a
+// pull request of home-ops alone.
+type stallTipForge struct{ tipForge }
+
+func (*stallTipForge) BranchTip(ctx context.Context, _, _, _ string) (string, string, error) {
+	<-ctx.Done()
+	return "", "", ctx.Err()
+}
+
+func (*stallTipForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
+	return nil, nil
+}
+
+func (*stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ time.Time) ([]forge.OpenPullRequest, error) {
+	if name != "home-ops" {
+		return nil, nil
+	}
+	return []forge.OpenPullRequest{{
+		Number: 19, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "h", HeadSHA: "abc919", BaseRef: "main",
+		UpdatedAt: time.Now(), DefaultBranch: "main",
+	}}, nil
+}
+
+// TestPollerPollsPullRequestsPastAStalledBranch: a branch lookup that does
+// not answer within the poll's interval holds back no pull request, of a
+// later repository either, and the poll state still advances.
+func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
+	t.Setenv("KRITIKA_POLL_INTERVAL", "300ms")
+	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
+	s.exec(`DELETE FROM poll_state WHERE account_id = $1`, s.account.ID())
+	s.exec(`DELETE FROM pull_requests WHERE number = 19`)
+	s.p.Forges = &forges{f: &stallTipForge{}}
+	s.p.poll(t.Context(), s.p.pollAccounts)
+	var polled []int
+	for _, ev := range s.dispatched.events {
+		if ev.Kind == webhook.KindPullRequest && ev.Repository.FullName == "onedr0p/home-ops" {
+			polled = append(polled, ev.PullRequest.Number)
+		}
+	}
+	var recorded bool
+	if err := s.st.WithAccount(t.Context(), s.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT EXISTS (SELECT 1 FROM poll_state WHERE account_id = $1)`, s.account.ID()).Scan(&recorded)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(polled, []int{19}) || !recorded {
+		t.Fatalf("pull requests of home-ops polled %v, poll state recorded %v; want #19 and the state recorded", polled, recorded)
 	}
 }
 

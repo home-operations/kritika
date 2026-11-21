@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -55,9 +56,20 @@ type Poller struct {
 	// did not know, so each is logged once.
 	mu      sync.Mutex
 	unknown map[string]bool
-	// tipsChecked is when a poll last looked at an account's default
+	// tips is how far the polls got through each account's default
 	// branches, by account ID.
-	tipsChecked map[string]time.Time
+	tips map[string]*tipScan
+}
+
+// tipScan is how far the polls got through an account's default branches.
+type tipScan struct {
+	// swept is when a look last went through every repository.
+	swept time.Time
+	// next is the repository that a look cut short resumes at, "" for the
+	// first.
+	next string
+	// until is when the forge's rate limit lets a look ask again.
+	until time.Time
 }
 
 // tipCheckInterval is how often a poll looks at the default branches of an
@@ -85,7 +97,10 @@ const reachTimeout = time.Minute
 //
 // A poll is given the interval. A poll that outlasts it, on a forge that
 // answers slowly for every repository of a large account, is cut there. Its
-// accounts' poll state is left where it was for the next poll.
+// accounts' poll state is left where it was for the next poll. The look at
+// the default branches follows, with an interval of its own: a slow branch
+// lookup must not hold back the pull requests' catch-up. A look cut short
+// resumes where it stopped at the next poll.
 func (p *Poller) Run(ctx context.Context) {
 	p.poll(ctx, p.pollAccounts)
 	for {
@@ -112,6 +127,12 @@ func (p *Poller) poll(ctx context.Context, poll func(context.Context)) {
 	poll(pctx)
 	if pctx.Err() != nil && ctx.Err() == nil {
 		p.Logger.Warn("poll cut at its interval", "interval", interval)
+	}
+	tctx, cancelTips := context.WithTimeout(ctx, interval)
+	defer cancelTips()
+	p.pollTipsAll(tctx)
+	if tctx.Err() != nil && ctx.Err() == nil {
+		p.Logger.Warn("default branches not all looked at within the poll interval, the next poll resumes", "interval", interval)
 	}
 }
 
@@ -202,16 +223,7 @@ func (p *Poller) pollAccounts(ctx context.Context) {
 }
 
 // Poll lists one account's repositories through the connection serving it
-// and returns how many pull requests were handed to the dispatcher. It also
-// looks at the default branch of each indexed repository with no index job
-// queued or running, whatever webhooks arrive: one push webhook missed, or
-// one index job that failed, leaves the index behind until the next push
-// otherwise. It looks every poll while the connection's webhooks have been
-// silent for the poll lookback, and every tipCheckInterval while they
-// arrive. A repository whose last index job ended without moving its index
-// waits jobs.OnboardRetryAfter for its next look, as the onboarding feeder
-// waits to offer a repository whose first index failed again. A branch that
-// the forge will not give is logged and asked for again at the next look. A
+// and returns how many pull requests were handed to the dispatcher. A
 // repository whose pull requests the forge will not list is skipped, and the
 // rest are polled. The poll state is then left where it was, so the next poll
 // covers the skipped repository's window too. The error names each one.
@@ -239,7 +251,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	if state.Polled != nil && state.Polled.After(since) {
 		since = *state.Polled
 	}
-	checkTips := p.tipsDue(account.ID(), state.Delivered, file.PollLookback())
 	handled := 0
 	runs := map[string]bool{}
 	var skipped []error
@@ -261,15 +272,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, err
 		}
 		owner, name, _ := strings.Cut(repo, "/")
-		// A queued or running index job reads the tip itself, and a push
-		// dedupes onto it: the forge is not asked again. An index job that
-		// ended lately without moving the index will end so again, as when
-		// it fails on the repository or its .kritika.yaml turns indexing
-		// off: one every poll would cost a job and its forge calls each
-		// time, and a runner pod for one that fails in its run.
-		if checkTips && r.IndexedCommit != "" && !r.Indexing && !r.IndexUnmoved {
-			checkTips = p.checkTip(ctx, file, account, in, client, r, started)
-		}
 		// Every open pull request is listed, not only those updated since
 		// the last poll. The ones that kritika holds open and that the forge
 		// no longer lists are the ones that closed.
@@ -460,48 +462,161 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 	return nil
 }
 
-// tipsDue reports whether this poll of the account looks at its default
-// branches, and records that it does. It looks when the connection's
+// pollTipsAll looks at the default branches of every account of the current
+// file through the connection serving it, with pollTips.
+func (p *Poller) pollTipsAll(ctx context.Context) {
+	file := p.Current.Get()
+	for i := range file.Accounts {
+		account := &file.Accounts[i]
+		in := file.ConnectionFor(account)
+		if in == nil || ctx.Err() != nil {
+			continue
+		}
+		if err := p.pollTips(ctx, file, account, in); err != nil {
+			p.Logger.Warn("default branches not polled", "connection", in.Name, "account", account.Key(), "error", err)
+		}
+	}
+}
+
+// pollTips looks at the default branch of each of the account's indexed
+// repositories with no index job queued or running, whatever webhooks
+// arrive: one push webhook missed, or one index job that failed, leaves the
+// index behind until the next push otherwise. It looks every poll while the
+// connection's webhooks have been silent for the poll lookback, and every
+// tipCheckInterval while they arrive. A repository whose last index job
+// ended without moving its index waits jobs.OnboardRetryAfter for its next
+// look, as the onboarding feeder waits to offer a repository whose first
+// index failed again. A branch that the forge will not give is logged and
+// asked for again at the next look.
+//
+// The repositories are looked at in name order. A look that ctx or the
+// forge's rate limit cuts short resumes at the repository it stopped at, at
+// the next poll past the limit's wait. Only a look that went through every
+// repository counts toward tipCheckInterval. So a cut every time still comes
+// round to each repository.
+func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
+	started, err := p.Store.Now(ctx)
+	if err != nil {
+		return err
+	}
+	var repos []store.PollRepo
+	var state store.PollState
+	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		if repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter); err != nil {
+			return err
+		}
+		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	next, due := p.tipsDue(account.ID(), state.Delivered, file.PollLookback())
+	if !due {
+		return nil
+	}
+	// In Go's order, which the database's collation need not be.
+	slices.SortFunc(repos, func(a, b store.PollRepo) int { return strings.Compare(a.Name, b.Name) })
+	first, _ := slices.BinarySearchFunc(repos, next, func(r store.PollRepo, name string) int { return strings.Compare(r.Name, name) })
+	for i := range repos {
+		r := repos[(first+i)%len(repos)]
+		if ctx.Err() != nil {
+			p.tipsCut(account.ID(), r.Name, time.Time{})
+			return nil
+		}
+		// A queued or running index job reads the tip itself, and a push
+		// dedupes onto it: the forge is not asked again. An index job that
+		// ended lately without moving the index will end so again, as when
+		// it fails on the repository or its .kritika.yaml turns indexing
+		// off: one every poll would cost a job and its forge calls each
+		// time, and a runner pod for one that fails in its run.
+		if !file.Runs(account, r.Traits) || r.IndexedCommit == "" || r.Indexing || r.IndexUnmoved {
+			continue
+		}
+		// The client is the account's, not the repository's: without it
+		// no other branch can be looked at either.
+		client, err := p.Forges.For(ctx, in, r.Name)
+		if err != nil {
+			p.tipsCut(account.ID(), r.Name, time.Time{})
+			return err
+		}
+		err = p.pollTip(ctx, file, account, in, client, r, started)
+		// Past the rate limit, every other branch would only be refused too.
+		if wait, limited := github.RetryAfter(err, time.Now()); limited {
+			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
+				"repository", r.Name, "error", err)
+			p.tipsCut(account.ID(), r.Name, time.Now().Add(wait))
+			return nil
+		}
+		switch {
+		case ctx.Err() != nil:
+			p.tipsCut(account.ID(), r.Name, time.Time{})
+			return nil
+		case errors.Is(err, forge.ErrNotFound):
+			p.branchUnknown(in, r, err)
+		case err != nil:
+			p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", r.Name, "error", err)
+		}
+	}
+	p.tipsSwept(account.ID())
+	return nil
+}
+
+// tipsDue reports whether this poll looks at the account's default branches,
+// and the repository to start at, "" for the first. It looks when a look was
+// cut short, past any rate limit's wait. It also looks when the connection's
 // webhook, which last delivered at delivered, has been silent for lookback,
-// and otherwise when tipCheckInterval has passed since this process last
-// looked: a newly elected leader looks at once.
-func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.Duration) bool {
+// and otherwise when tipCheckInterval has passed since a look last went
+// through every repository in this process: a newly elected leader looks at
+// once.
+func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.Duration) (string, bool) {
 	now := time.Now()
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	s := p.tips[accountID]
+	if s == nil {
+		return "", true
+	}
+	if now.Before(s.until) {
+		return "", false
+	}
 	arriving := delivered != nil && delivered.After(now.Add(-lookback))
-	if last, ok := p.tipsChecked[accountID]; arriving && ok && now.Sub(last) < tipCheckInterval {
-		return false
+	if s.next == "" && arriving && now.Sub(s.swept) < tipCheckInterval {
+		return "", false
 	}
-	if p.tipsChecked == nil {
-		p.tipsChecked = map[string]time.Time{}
-	}
-	p.tipsChecked[accountID] = now
-	return true
+	return s.next, true
 }
 
-// checkTip looks at r's default branch with pollTip, and reports whether the
-// poll looks at the next repository's: past GitHub's rate limit, each would
-// only be refused too.
-func (p *Poller) checkTip(
-	ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection, client forge.Client, r store.PollRepo,
-	started time.Time,
-) bool {
-	// The tip has no part in the pull requests' window that the poll state
-	// records.
-	err := p.pollTip(ctx, file, account, in, client, r, started)
-	if _, limited := github.RetryAfter(err, time.Now()); limited {
-		p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
-			"repository", r.Name, "error", err)
-		return false
+// tipsCut records that a look at the account's default branches stopped
+// before the repository next, which the next look starts at once until has
+// passed.
+func (p *Poller) tipsCut(accountID, next string, until time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	s := p.tipScan(accountID)
+	s.next, s.until = next, until
+}
+
+// tipsSwept records that a look went through every one of the account's
+// default branches.
+func (p *Poller) tipsSwept(accountID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	*p.tipScan(accountID) = tipScan{swept: time.Now()}
+}
+
+// tipScan returns the account's tipScan, which it creates. p.mu is held.
+func (p *Poller) tipScan(accountID string) *tipScan {
+	if p.tips == nil {
+		p.tips = map[string]*tipScan{}
 	}
-	switch {
-	case errors.Is(err, forge.ErrNotFound):
-		p.branchUnknown(in, r, err)
-	case err != nil:
-		p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", r.Name, "error", err)
+	s := p.tips[accountID]
+	if s == nil {
+		s = &tipScan{}
+		p.tips[accountID] = s
 	}
-	return true
+	return s
 }
 
 // pollTip hands the dispatcher a push to r's default branch when its tip is
