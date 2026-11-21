@@ -470,7 +470,7 @@ func TestOverlayTakesADeclarationItsCommentsPushOver(t *testing.T) {
 }
 
 // headTree commits files to an in-memory repository and returns the tree.
-func headTree(t *testing.T, files map[string]string) *object.Tree {
+func headTree(t testing.TB, files map[string]string) *object.Tree {
 	t.Helper()
 	fs := memfs.New()
 	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
@@ -537,5 +537,30 @@ func TestRejectedCandidatesCopyNoText(t *testing.T) {
 	}
 	if c := b.callers["Target"].chunks[0]; c.StartLine != 4 || !strings.HasPrefix(c.Text, "func Big() {\n\tTarget()") || !strings.HasSuffix(c.Text, "\n… (truncated)") {
 		t.Errorf("candidate = L%d %q", c.StartLine, c.Text)
+	}
+}
+
+// BenchmarkScanDocMentions scans a file whose declarations' doc comments
+// name the wanted symbol, again and again, and never use it.
+func BenchmarkScanDocMentions(b *testing.B) {
+	for _, n := range []int{100, 1000} {
+		var src strings.Builder
+		src.WriteString("package demo\n")
+		for i := range n {
+			fmt.Fprintf(&src, "// F%d is like Target, Target and Target.\n// Target again.\nfunc F%d() {}\n", i, i)
+		}
+		head := headTree(b, map[string]string{"f.go": src.String()})
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				bd := &builder{in: Input{Head: head}, opts: DefaultOptions, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
+				if err := scanParts(b.Context(), []*builder{bd}, &bd.stats); err != nil {
+					b.Fatal(err)
+				}
+				if c := bd.callers["Target"]; c != nil {
+					b.Fatalf("callers = %+v", c.chunks)
+				}
+			}
+		})
 	}
 }

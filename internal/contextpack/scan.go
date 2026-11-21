@@ -55,10 +55,6 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 		}
 		stats.FilesScanned++
 		stats.BytesScanned += len(src)
-		type hit struct {
-			word string
-			line int
-		}
 		var hits []hit
 		line := 1
 		last := 0
@@ -88,11 +84,9 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 			return nil
 		}
 		seenDecl := map[string]bool{}
-		for _, h := range hits {
-			decl := pf.Enclosing([]int{h.line}, b.opts.MaxDeclLines)
-			// A word in the comments above a declaration does not use it, as
-			// one in a decorator or an attribute there does.
-			if decl == nil || h.line < decl.HeadLine && !slices.Contains(pf.Identifiers([]int{h.line}), h.word) {
+		for i, decl := range users(pf, hits, b.opts.MaxDeclLines) {
+			h := hits[i]
+			if decl == nil {
 				continue
 			}
 			key := h.word + "\x00" + f.Name + "\x00" + decl.Symbol
@@ -108,4 +102,32 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 		}
 		return nil
 	})
+}
+
+// hit is a wanted word that a file's text holds, and its line.
+type hit struct {
+	word string
+	line int
+}
+
+// users is, for each hit, the declaration that uses its word, or nil: the
+// smallest one around its line that fits maxLines. A word in the comments
+// above a declaration does not use it, as one in a decorator or an
+// attribute there does.
+func users(pf *chunk.File, hits []hit, maxLines int) []*chunk.Decl {
+	decls := make([]*chunk.Decl, len(hits))
+	var above []int
+	for i, h := range hits {
+		decls[i] = pf.Enclosing([]int{h.line}, maxLines)
+		if decls[i] != nil && h.line < decls[i].HeadLine {
+			above = append(above, h.line)
+		}
+	}
+	named := pf.LineIdentifiers(above)
+	for i, h := range hits {
+		if d := decls[i]; d != nil && h.line < d.HeadLine && !slices.Contains(named[h.line], h.word) {
+			decls[i] = nil
+		}
+	}
+	return decls
 }

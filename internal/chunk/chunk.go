@@ -574,25 +574,39 @@ var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // count, which excludes keywords (anonymous), strings, numbers and
 // comments in every grammar that follows tree-sitter conventions.
 func (f *File) Identifiers(lines []int) []string {
-	if f.tree == nil || len(lines) == 0 {
-		return nil
-	}
-	want := map[int]bool{}
-	for _, l := range lines {
-		want[l] = true
-	}
 	counts := map[string]int{}
-	lo, hi := slices.Min(lines), slices.Max(lines)
+	f.identifiers(lines, func(_ int, id string) { counts[id]++ })
+	out := slices.Collect(maps.Keys(counts))
+	slices.SortFunc(out, func(a, b string) int { return cmp.Or(cmp.Compare(counts[b], counts[a]), cmp.Compare(a, b)) })
+	return out
+}
+
+// LineIdentifiers returns, by line, the identifiers that appear on each of
+// the given lines, as Identifiers counts them, from one walk of the tree.
+func (f *File) LineIdentifiers(lines []int) map[int][]string {
+	by := map[int][]string{}
+	f.identifiers(lines, func(line int, id string) { by[line] = append(by[line], id) })
+	return by
+}
+
+// identifiers calls yield with each identifier on the given lines and its
+// line. It descends only into the nodes that span one of the lines.
+func (f *File) identifiers(lines []int, yield func(line int, id string)) {
+	if f.tree == nil || len(lines) == 0 {
+		return
+	}
+	want := slices.Compact(slices.Sorted(slices.Values(lines)))
 	var walk func(n *gotreesitter.Node)
 	walk = func(n *gotreesitter.Node) {
 		row := int(n.StartPoint().Row) + 1
-		if int(n.EndPoint().Row)+1 < lo || row > hi {
+		k, _ := slices.BinarySearch(want, row)
+		if k == len(want) || want[k] > int(n.EndPoint().Row)+1 {
 			return
 		}
 		if n.ChildCount() == 0 {
-			if n.IsNamed() && want[row] && strings.Contains(n.Type(f.lang), "identifier") {
+			if n.IsNamed() && want[k] == row && strings.Contains(n.Type(f.lang), "identifier") {
 				if t := n.Text(f.Source); identifier.MatchString(t) {
-					counts[t]++
+					yield(row, t)
 				}
 			}
 			return
@@ -602,9 +616,6 @@ func (f *File) Identifiers(lines []int) []string {
 		}
 	}
 	walk(f.tree.RootNode())
-	out := slices.Collect(maps.Keys(counts))
-	slices.SortFunc(out, func(a, b string) int { return cmp.Or(cmp.Compare(counts[b], counts[a]), cmp.Compare(a, b)) })
-	return out
 }
 
 // lineCount is the number of lines in src, a final newline ending the last
