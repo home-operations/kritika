@@ -161,10 +161,12 @@ func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
 		if o.Stage == contextpack.StageSimilar {
 			continue
 		}
-		n := strings.Count(o.Text, "\n") + 1
-		if len(o.Text) > contextpack.DefaultOptions.MaxChunkBytes {
-			n--
+		text := o.Text
+		if len(text) > contextpack.DefaultOptions.MaxChunkBytes {
+			// A cut that ends at a newline shows none of the line after it.
+			text = strings.TrimSuffix(strings.TrimSuffix(text, "\n… (truncated)"), "\n")
 		}
+		n := strings.Count(text, "\n") + 1
 		o.EndLine = min(o.EndLine, o.StartLine+n-1)
 		shown = append(shown, o)
 	}

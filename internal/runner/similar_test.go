@@ -230,17 +230,23 @@ func TestWithoutOverlap(t *testing.T) {
 		return contextpack.Chunk{Stage: stage, Path: path, StartLine: start, EndLine: end,
 			Text: strings.TrimSuffix(strings.Repeat("code\n", end-start+1), "\n")}
 	}
-	// A definition of 200 lines cut as contextpack cuts one over
-	// MaxChunkBytes: it shows its first 60 lines, the last of them in part.
-	cut := shown(contextpack.StageDefinition, "cut.go", 1, 200)
-	cut.Text = strings.TrimSuffix(strings.Repeat(strings.Repeat("x", 99)+"\n", 200), "\n")
-	cut.Text = textcut.Prefix(cut.Text, contextpack.DefaultOptions.MaxChunkBytes) + "\n… (truncated)"
+	// Definitions of 200 lines cut as contextpack cuts one over
+	// MaxChunkBytes. Of 100-byte lines it shows the first 60 whole, the cut
+	// falling after the newline that ends line 60; of 99-byte lines it shows
+	// the first 60 and line 61 in part.
+	cutAt := func(path string, width int) contextpack.Chunk {
+		c := shown(contextpack.StageDefinition, path, 1, 200)
+		c.Text = strings.TrimSuffix(strings.Repeat(strings.Repeat("x", width-1)+"\n", 200), "\n")
+		c.Text = textcut.Prefix(c.Text, contextpack.DefaultOptions.MaxChunkBytes) + "\n… (truncated)"
+		return c
+	}
 	others := []contextpack.Chunk{
 		shown(contextpack.StageDefinition, "util.go", 10, 20),
 		shown(contextpack.StageCaller, "caller.go", 5, 5),
 		shown(contextpack.StageCaller, "two.go", 1, 3),
 		shown(contextpack.StageDefinition, "two.go", 6, 8),
-		cut,
+		cutAt("cut.go", 100),
+		cutAt("part.go", 99),
 		similar("kept.go", 1, 9),
 	}
 	for _, tt := range []struct {
@@ -259,6 +265,9 @@ func TestWithoutOverlap(t *testing.T) {
 		{"under another similar chunk", similar("kept.go", 1, 9), true},
 		{"in the lines a cut definition shows", similar("cut.go", 10, 20), false},
 		{"past the lines a cut definition shows", similar("cut.go", 150, 170), true},
+		{"the line after a cut at a newline", similar("cut.go", 61, 61), true},
+		{"the line a cut shows in part", similar("part.go", 61, 61), false},
+		{"the line after one a cut shows in part", similar("part.go", 62, 62), true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := withoutOverlap([]contextpack.Chunk{tt.in}, others); (len(got) == 1) != tt.kept {
