@@ -336,7 +336,7 @@ func Pieces(f *chunk.File, opts Options) []chunk.Decl {
 		d := f.Decls[i]
 		if d.Symbol != "" && d.Kind != importKind || d.Lines() > opts.WindowLines || c.split(i) {
 			flush()
-			out = append(out, c.cover(i)...)
+			out = c.cover(i, out)
 			continue
 		}
 		if len(run) > 0 && (d.EndLine-run[0].StartLine >= opts.WindowLines ||
@@ -424,11 +424,13 @@ type cutter struct {
 	kids [][]int
 }
 
-// segment is a piece of an oversized declaration: a nested declaration
-// stored whole, or a part of it, or the lines between nested ones.
+// segment is a part of an oversized declaration: a nested declaration
+// stored whole, or the lines between nested ones, or else the nested
+// declaration kid, which is split in turn.
 type segment struct {
 	chunk.Decl
 	whole, gap bool
+	kid        int
 }
 
 // split reports whether declaration i is stored as its nested declarations
@@ -452,11 +454,13 @@ func (c *cutter) named(i int) bool {
 	return false
 }
 
-// cover returns the pieces of declaration i.
-func (c *cutter) cover(i int) []chunk.Decl {
+// cover appends the pieces of declaration i to out. A nested declaration
+// that is split in turn appends its own pieces to out as it is reached, so
+// each piece is copied once however deep it is nested.
+func (c *cutter) cover(i int, out []chunk.Decl) []chunk.Decl {
 	d := c.f.Decls[i]
 	if !c.split(i) {
-		return []chunk.Decl{d}
+		return append(out, d)
 	}
 	var segs []segment
 	gap := func(start, end int) {
@@ -479,9 +483,7 @@ func (c *cutter) cover(i int) []chunk.Decl {
 		if !c.split(k) {
 			segs = append(segs, segment{Decl: n, whole: true})
 		} else {
-			for _, p := range c.cover(k) {
-				segs = append(segs, segment{Decl: p})
-			}
+			segs = append(segs, segment{kid: k})
 		}
 		next = max(next, n.EndLine+1)
 	}
@@ -491,7 +493,6 @@ func (c *cutter) cover(i int) []chunk.Decl {
 	fits := func(start, end int) bool {
 		return end-start < c.opts.MaxDeclLines && len(c.f.Bytes(start, end)) <= c.opts.MaxChunkBytes
 	}
-	var out []chunk.Decl
 	for j, s := range segs {
 		if s.gap && c.words(s.StartLine, s.EndLine) < minGapLines {
 			if j+1 < len(segs) && segs[j+1].whole && fits(s.StartLine, segs[j+1].EndLine) {
@@ -503,10 +504,13 @@ func (c *cutter) cover(i int) []chunk.Decl {
 				continue
 			}
 		}
-		if s.gap {
+		switch {
+		case s.gap:
 			out = append(out, c.windows(s.Decl, s.StartLine, s.EndLine, c.opts.WindowLines)...)
-		} else {
+		case s.whole:
 			out = append(out, s.Decl)
+		default:
+			out = c.cover(s.kid, out)
 		}
 	}
 	return out

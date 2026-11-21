@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/textcut"
@@ -323,5 +324,44 @@ func TestPiecesDoNotCopyTheSource(t *testing.T) {
 	}
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > uint64(len(src))/4 {
 		t.Errorf("Pieces allocated %d bytes for a %d-byte file, over a quarter of it", allocated, len(src))
+	}
+}
+
+// TestPiecesCopyEachNestedPieceOnce: the pieces of declarations nested in a
+// chain of oversized ones go straight to the result, so the allocation of
+// cutting a hundred levels around four hundred functions grows with the
+// levels plus the functions, and not with the two multiplied. Allocation is
+// counted in bytes, which does not depend on how fast the machine is.
+func TestPiecesCopyEachNestedPieceOnce(t *testing.T) {
+	const depth, leaves = 100, 400
+	var src strings.Builder
+	for i := range depth {
+		fmt.Fprintf(&src, "function outer%d() {\n", i)
+	}
+	src.WriteString(lines(leaves, "function leaf%d() { return 1; }"))
+	src.WriteString(strings.Repeat("}\n", depth))
+	f := (&chunk.Parser{}).Parse("deep.js", []byte(src.String()))
+	defer f.Close()
+	want := Pieces(f, DefaultOptions)
+	named := 0
+	for _, p := range want {
+		if strings.HasPrefix(p.Symbol, "leaf") {
+			named++
+		}
+	}
+	if named != leaves {
+		t.Fatalf("%d of %d pieces are leaf functions, want %d", named, len(want), leaves)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := Pieces(f, DefaultOptions)
+	runtime.ReadMemStats(&after)
+	if !slices.Equal(got, want) {
+		t.Fatalf("pieces differ between two cuts of one file")
+	}
+	bound := 32 * (depth + leaves) * uint64(unsafe.Sizeof(chunk.Decl{}))
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > bound {
+		t.Errorf("Pieces allocated %d bytes, over %d for %d levels around %d functions", allocated, bound, depth, leaves)
 	}
 }
