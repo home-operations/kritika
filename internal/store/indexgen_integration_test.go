@@ -374,6 +374,11 @@ apps:
 	// The copy is the stored vector exactly: inserted again from what was
 	// read, it equals the source.
 	insert(ours, one, built, copied, found[string(shared)])
+	// A later batch of the build finds what an earlier one stored, though
+	// the repository has an active generation too.
+	if got := lookup(ours, one, built, active, copied); len(got) != 1 || !slices.Equal(got[string(copied)], want) {
+		t.Fatalf("vectors/one found %v, want the copied vector %v from the run being built", got, want)
+	}
 	var equal bool
 	if err := s.owner.QueryRow(ctx, `SELECT (SELECT embedding FROM index_chunks WHERE content_hash = $1 AND account_id = $3) =
 		(SELECT embedding FROM index_chunks WHERE content_hash = $2)`, shared, copied, ours).Scan(&equal); err != nil {
