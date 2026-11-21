@@ -3,6 +3,7 @@ package github
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -181,6 +182,16 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	tip, branch, err := c.BranchTip(t.Context(), "o", "r", "")
 	if err != nil || tip != "tip456" || branch != "trunk" {
 		t.Fatalf("BranchTip = %q %q, %v", tip, branch, err)
+	}
+	// An answer of 200 with no body, for the branch or the repository whose
+	// default branch is read, is cut short, io.EOF, as Forgejo's client
+	// reports one.
+	f.reply("GET /api/v3/repos/o/r/branches/blank", 200, "")
+	f.reply("GET /api/v3/repos/o/blank", 200, "")
+	for _, tc := range []struct{ repo, branch string }{{"r", "blank"}, {"blank", ""}} {
+		if _, _, err := c.BranchTip(t.Context(), "o", tc.repo, tc.branch); !errors.Is(err, io.EOF) {
+			t.Fatalf("BranchTip(%s, %q) of an empty answer = %v, want io.EOF", tc.repo, tc.branch, err)
+		}
 	}
 	// A branch or repository that is gone is forge.ErrNotFound, and still
 	// carries GitHub's status.

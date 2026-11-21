@@ -28,6 +28,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 )
 
@@ -445,6 +446,41 @@ func emptyBranchAnswer(t *testing.T) error {
 	return err
 }
 
+// emptyGitHubBranchAnswer is what the GitHub client returns for a branch
+// whose endpoint answers 200 with no body: go-github's Do decodes nothing
+// from it and returns no error.
+func emptyGitHubBranchAnswer(t *testing.T) error {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v3/app/installations/42/access_tokens", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"token":"ghs_test","expires_at":"`+time.Now().Add(time.Hour).UTC().Format(time.RFC3339)+`"}`)
+	})
+	mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	app, err := github.NewApp("Iv1.abc", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
+		srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := github.NewClient(app, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if err == nil {
+		t.Fatal("BranchTip of an empty answer succeeded")
+	}
+	return err
+}
+
 // plainBehindHTTPS is what a Forgejo client's branch lookup fails with when
 // its https URL reaches a plain HTTP listener.
 func plainBehindHTTPS(t *testing.T) error {
@@ -489,6 +525,7 @@ func TestTransientForge(t *testing.T) {
 		{name: "connection refused", err: &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection refused")}, want: true},
 		{name: "cut short", err: fmt.Errorf("github: read: %w", io.ErrUnexpectedEOF), want: true},
 		{name: "empty answer", err: emptyBranchAnswer(t), want: true},
+		{name: "empty GitHub answer", err: emptyGitHubBranchAnswer(t), want: true},
 		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},
 		{name: "dns timeout", err: unanswered(&net.DNSError{Err: "i/o timeout", Name: "forgejo.example", IsTimeout: true}), want: true},
 		{name: "dns server failure", err: unanswered(&net.DNSError{Err: "server misbehaving", Name: "forgejo.example", IsTemporary: true}),

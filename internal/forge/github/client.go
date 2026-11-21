@@ -1,7 +1,9 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"iter"
@@ -104,7 +106,8 @@ func (c *Client) GitToken(ctx context.Context, repo string) (string, error) {
 // BranchTip implements forge.Client.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
 	if branch == "" {
-		r, resp, err := c.api.Repositories.Get(ctx, owner, repo)
+		var r gh.Repository
+		resp, err := c.getJSON(ctx, fmt.Sprintf("repos/%v/%v", owner, repo), &r)
 		if err != nil {
 			return "", "", fmt.Errorf("github: repository %s/%s: %w", owner, repo, notFound(resp, err))
 		}
@@ -113,12 +116,8 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 	// Not Repositories.GetBranch: it bypasses go-github's response checks
 	// and returns a generic status error, losing secondary rate limits that
 	// can be recognized only from the response body.
-	req, err := c.api.NewRequest(ctx, http.MethodGet, fmt.Sprintf("repos/%v/%v/branches/%v", owner, repo, url.PathEscape(branch)), nil)
-	if err != nil {
-		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, err)
-	}
 	var b gh.Branch
-	resp, err := c.api.Do(req, &b)
+	resp, err := c.getJSON(ctx, fmt.Sprintf("repos/%v/%v/branches/%v", owner, repo, url.PathEscape(branch)), &b)
 	if err != nil {
 		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, notFound(resp, err))
 	}
@@ -126,6 +125,23 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 		return "", "", fmt.Errorf("github: branch %s of %s/%s has no commit", branch, owner, repo)
 	}
 	return b.GetCommit().GetSHA(), branch, nil
+}
+
+// getJSON reads the answer to a GET of path, under the API's base URL, into
+// v. go-github's Do checks its status and rate limits, but the body is
+// decoded here: Do leaves v as it is for an empty body, where this fails
+// with io.EOF, an answer cut short that a later try can get whole.
+func (c *Client) getJSON(ctx context.Context, path string, v any) (*gh.Response, error) {
+	req, err := c.api.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var body bytes.Buffer
+	resp, err := c.api.Do(req, &body)
+	if err != nil {
+		return resp, err
+	}
+	return resp, json.NewDecoder(&body).Decode(v)
 }
 
 // notFound wraps err, from a call that GitHub answered with resp, as
