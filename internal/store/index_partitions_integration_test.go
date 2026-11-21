@@ -765,7 +765,13 @@ func TestDrainLegacyIndexChunksBesideADiscard(t *testing.T) {
 	runners := map[string]string{lost: "", kept: ""}
 	jobIDs := make([]int64, 0, len(runners))
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE id = ANY($1)`, jobIDs)
+		ctx := context.Background()
+		if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE account_id = $1`, account); err != nil {
+			t.Error(err)
+		}
+		if _, err := s.owner.Exec(ctx, `DELETE FROM river_job WHERE id = ANY($1)`, jobIDs); err != nil {
+			t.Error(err)
+		}
 	})
 	for run := range runners {
 		var job int64
