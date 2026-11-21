@@ -747,9 +747,10 @@ refuses, within a three-minute retry window, by which time a rollout has
 usually replaced the old replicas. The window bounds the retries, not an
 upload: each attempt has its own timeout, and a refused attempt that itself
 lasted longer than the window starts a fresh one. A runner that still fails
-costs its index job one of three attempts. When a job spends them all, the
-next poll queues the push again, and the onboarding feeder offers an index
-not yet built again.
+costs its index job one of three attempts. When a job spends them all, a
+later look at the default branch can queue the update again after a
+one-hour backoff, and the onboarding feeder can offer an index not yet
+built again after the same hour.
 
 ### Prompts
 
