@@ -3,8 +3,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -12,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
@@ -20,6 +24,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
@@ -165,6 +170,9 @@ func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
 // TestIndexWaitsForTheAppliedFormat: a pod of another index format than the
 // one the leader's build applied, as during a rollout, snoozes the job
 // instead of building an index that the onboarding feeder rebuilds again.
+// Each wait is counted on kritika_index_snoozes_total{reason="build"}, and a
+// job that has waited buildWaitWarn times says so as a warning, since a
+// leader that never applies this pod's build keeps it waiting for good.
 func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -195,15 +203,40 @@ func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	repo := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	before := indexRunCount(t, st, account.ID(), repo)
-	w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Embedders: refusingEmbedders()}
-	job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{ID: 1, Attempt: 1},
-		Args: jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerOnboard}}
-	err = w.Work(ctx, job)
-	if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != appliedBuildWait {
-		t.Fatalf("Work = %v, want the job snoozed for %s", err, appliedBuildWait)
-	}
-	if after := indexRunCount(t, st, account.ID(), repo); after != before {
-		t.Fatalf("index runs = %d, want %d: the job started one", after, before)
+	for _, tc := range []struct {
+		name string
+		// metadata is the job's, with the waits before this one.
+		metadata string
+		warn     bool
+	}{
+		{name: "first wait", metadata: `{}`},
+		{name: "a rollout's wait", metadata: fmt.Sprintf(`{"build_waits": %d}`, buildWaitWarn-2)},
+		{name: "a long wait", metadata: fmt.Sprintf(`{"build_waits": %d}`, buildWaitWarn-1), warn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			reg := prometheus.NewRegistry()
+			w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+				Embedders: refusingEmbedders(), Metrics: metrics.New(reg)}
+			job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{ID: 1, Attempt: 1, Metadata: []byte(tc.metadata)},
+				Args: jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerOnboard}}
+			err := w.Work(ctx, job)
+			if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != appliedBuildWait {
+				t.Fatalf("Work = %v, want the job snoozed for %s", err, appliedBuildWait)
+			}
+			if after := indexRunCount(t, st, account.ID(), repo); after != before {
+				t.Fatalf("index runs = %d, want %d: the job started one", after, before)
+			}
+			if got := strings.Contains(logs.String(), `level=WARN msg="index has waited long`); got != tc.warn {
+				t.Fatalf("warned = %v, want %v:\n%s", got, tc.warn, logs.String())
+			}
+			want := "# HELP kritika_index_snoozes_total Index jobs put back on the queue to wait, by reason.\n" +
+				"# TYPE kritika_index_snoozes_total counter\n" +
+				fmt.Sprintf("kritika_index_snoozes_total{account=%q,reason=\"build\"} 1\n", account.Key())
+			if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_index_snoozes_total"); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
