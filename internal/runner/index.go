@@ -92,10 +92,12 @@ func buildIndex(
 }
 
 // fetchForIndex fetches head, and base for an incremental step, with trees.
-// A base that the remote says it does not serve falls back to a full build.
-// Any other failure is returned, a refused head or a refusal that names no
-// commit among them, so a fetch cut short is tried again rather than the
-// whole repository embedded anew.
+// A refusal that names the base, or names no commit, falls back to a full
+// build: a remote that does not say which commit it refused would otherwise
+// fail every incremental step, while a head it refused fails the full build's
+// fetch as well, one fetch later. A refusal that names the head, and any
+// other failure, is returned, so a fetch cut short is tried again rather
+// than the whole repository embedded anew.
 func fetchForIndex(
 	ctx context.Context, p runspec.Spec, token string, trees func(context.Context, gitfetch.Fetch) (*gitfetch.Result, error),
 	logger *slog.Logger,
@@ -105,10 +107,10 @@ func fetchForIndex(
 		if err == nil {
 			return res, runspec.IndexModeIncremental, nil
 		}
-		if e, ok := errors.AsType[*gitfetch.UnavailableError](err); !ok || e.SHA != p.Base {
+		if e, ok := errors.AsType[*gitfetch.UnavailableError](err); !ok || e.SHA != "" && e.SHA != p.Base {
 			return nil, "", err
 		}
-		logger.Warn("the remote does not serve the base, building the index in full", "base", p.Base[:7], "error", err)
+		logger.Warn("the remote refused the base or an unnamed commit, building the index in full", "base", p.Base[:7], "error", err)
 	}
 	res, err := trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head})
 	if err != nil {

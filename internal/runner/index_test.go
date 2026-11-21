@@ -118,7 +118,8 @@ func TestFetchForIndex(t *testing.T) {
 		{name: "base unavailable", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{SHA: base}),
 			wantMode: store.IndexModeFull, fetches: 2},
 		{name: "head unavailable", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{SHA: head}), wantErr: true, fetches: 1},
-		{name: "unavailable, unnamed", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{}), wantErr: true, fetches: 1},
+		{name: "unavailable, unnamed", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{}),
+			wantMode: store.IndexModeFull, fetches: 2},
 		{name: "fetch failed", base: base, incr: errors.New("gitfetch: fetch: connection reset"), wantErr: true, fetches: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
