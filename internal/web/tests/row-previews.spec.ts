@@ -103,7 +103,7 @@ test('repository previews load effective settings on demand without changing sel
   await expect(preview).toContainText((g.repoDetail.repoConfig?.settings ?? g.repoDetail.settings).models.review);
   await expect(preview).toContainText(g.repoDetail.index.activeCommit!);
   await expect(preview.locator('dt').filter({ hasText: 'Indexed commit' }).locator('+ dd')).toContainText('partial');
-  await expect(preview.getByText(/^The build stopped at the indexer's limit on files, bytes or chunks/)).toBeVisible();
+  await expect(preview.getByText(/^The last full build hit the indexer's limit on files, bytes or chunks\. The index may still be missing files or portions of files\.$/)).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Select alpha/one', exact: true })).toBeChecked();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await preview.getByRole('link', { name: 'Open repository' }).click();

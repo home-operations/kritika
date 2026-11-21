@@ -209,7 +209,7 @@ test("a repository's index lists its files and their chunks, the text for an adm
   await expect(page.locator('dt').filter({ hasText: 'Files' }).locator('+ dd')).toHaveText('2 partial');
   // Its reason is in the page's text, for keyboard and touch too, not in a
   // tooltip alone.
-  await expect(page.getByText(/^The build stopped at the indexer's limit on files, bytes or chunks/)).toBeVisible();
+  await expect(page.getByText(/^The last full build hit the indexer's limit on files, bytes or chunks\. The index may still be missing files or portions of files\.$/)).toBeVisible();
   await expect(page.getByRole('cell', { name: 'docs/readme.md', exact: true })).toBeVisible();
   await page.getByPlaceholder('Filter by path').fill('cmd');
   await expect(page.getByRole('cell', { name: 'docs/readme.md', exact: true })).toHaveCount(0);
