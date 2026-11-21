@@ -68,11 +68,12 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // of its candidates, and a failure is logged and counted as the reranker's
 // call. What it sends is reserved against the run's budget first, at four
 // characters a token of each query beside each of its documents, as a
-// reranker reads them in pairs. A run whose budget the embedding spent
-// keeps the fused order. The reservation is settled at the tokens that the
-// provider reports. A request that reranked records a usage row of the
-// review with them, none for search units alone, which the usage and its
-// caps do not count.
+// reranker reads them in pairs, and only if it fits in what is left of the
+// budget: the reranking is optional, and must not take what the review's
+// own steps need. A run with less left keeps the fused order. The
+// reservation is settled at the tokens that the provider reports. A request
+// that reranked records a usage row of the review with them, none for
+// search units alone, which the usage and its caps do not count.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
@@ -91,8 +92,13 @@ func (g *Server) rerank(
 		}
 	}
 	reserved := int64(chars)/4 + 1
-	if err := g.reserveRun(ctx, r.token, reserved); err != nil {
+	fits, err := g.Store.ReserveGatewayTokensWithin(ctx, r.token, reserved)
+	if err != nil {
 		logger.Warn("gateway: similar code not reranked: the fused order stands", "error", err)
+		return
+	}
+	if !fits {
+		logger.Info("similar code not reranked: the run's budget has less left than the reranking would read", "tokens", reserved)
 		return
 	}
 	var spent model.RerankUsage

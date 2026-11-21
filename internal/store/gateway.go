@@ -136,6 +136,19 @@ func (s *Store) ReserveGatewayTokens(ctx context.Context, token string, tokens i
 	return tag.RowsAffected() == 1, nil
 }
 
+// ReserveGatewayTokensWithin adds tokens to what the token's run spent, as
+// ReserveGatewayTokens does, only if they fit in what is left of its
+// budget: for a step that the run can do without, which must not spend
+// what the steps it cannot do without need. It reports whether it did.
+func (s *Store) ReserveGatewayTokensWithin(ctx context.Context, token string, tokens int64) (bool, error) {
+	tag, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2
+		WHERE token_hash = $1 AND expires_at > now() AND spent_tokens + $2 <= budget_tokens`, tokenHash(token), tokens)
+	if err != nil {
+		return false, fmt.Errorf("store: reserve gateway tokens: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // ChargeGatewayToken adds tokens, which can be negative, to what the
 // token's run spent: a step's actual spend less its reservation.
 func (s *Store) ChargeGatewayToken(ctx context.Context, token string, tokens int64) error {

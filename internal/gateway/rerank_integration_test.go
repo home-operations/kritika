@@ -39,8 +39,8 @@ func (f rerankFunc) Rerank(ctx context.Context, query string, documents []string
 // the query's rare name to the one the vector search finds, unless it is
 // turned off. A reranker orders them, and its failure leaves the fused
 // order. What the reranker reports spending is recorded as its usage and
-// charged to the run's budget, and a run whose budget the embedding spent
-// keeps the fused order.
+// charged to the run's budget, and a run that the embedding left less than
+// the reranking would read keeps the fused order.
 func TestSimilarHybridAndRerank(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -145,6 +145,9 @@ apps:
 		{"reranker failure", hybrid, failing, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 1, 0, 0, 1},
 		// The embedding spends the run's budget, so nothing is reranked.
 		{"budget spent", hybrid, byNear, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0, 1, 1},
+		// The embedding leaves the run less than the reranking would read, so
+		// nothing is reranked: the review keeps what is left.
+		{"budget short of the reranking", hybrid, byNear, []string{"named.go:shares ParseHTTPRequest", "near.go:similarity 1.00"}, 0, 0, 10, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
