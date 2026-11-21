@@ -43,6 +43,17 @@ const indexChunkPartitions = 64
 // and leave the partitions through it, so its row-level security policy
 // applies to them.
 func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string, dims int) error {
+	if _, err := tx.Exec(ctx, strings.Join(partitionedIndexChunksDDL(appRole, dims), ";\n")); err != nil {
+		return fmt.Errorf("store: create index_chunks: %w", err)
+	}
+	return nil
+}
+
+// partitionedIndexChunksDDL is what createPartitionedIndexChunks runs. With
+// no arguments, pgx sends statements joined by semicolons in one request of
+// the simple protocol, which runs them in order in the transaction, so the
+// whole tree costs one round trip, not one for each of its 74 statements.
+func partitionedIndexChunksDDL(appRole string, dims int) []string {
 	app := pgx.Identifier{appRole}.Sanitize()
 	stmts := make([]string, 0, indexChunkPartitions+10)
 	stmts = append(stmts,
@@ -86,12 +97,7 @@ func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string
 			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO `+app,
 	)
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("store: create index_chunks: %w", err)
-		}
-	}
-	return nil
+	return stmts
 }
 
 // legacyIndexChunksIndexes are the indexes of an index_chunks that a build
@@ -228,33 +234,28 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		if err := yieldLocks(ctx, tx); err != nil {
 			return err
 		}
-		for _, stmt := range []string{
-			`LOCK TABLE index_chunks IN ACCESS EXCLUSIVE MODE`,
-			`LOCK TABLE accounts, repositories, index_runs IN SHARE ROW EXCLUSIVE MODE`,
-		} {
-			if _, err := tx.Exec(ctx, stmt); err != nil {
-				return err
-			}
+		// From here every search and build waits, so each request is a round
+		// trip that they wait for too: the locks are one, the constraints'
+		// names another, and the conversion, every statement of it, a third.
+		if _, err := tx.Exec(ctx, `LOCK TABLE index_chunks IN ACCESS EXCLUSIVE MODE;
+			LOCK TABLE accounts, repositories, index_runs IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+			return err
 		}
 		// The lock waited for every transaction that wrote a chunk, so the
 		// table holds each one written before the partitioned table exists.
+		constraints, err := renameLegacyConstraints(ctx, tx)
+		if err != nil {
+			return err
+		}
 		stmts := []string{`ALTER TABLE index_chunks RENAME TO index_chunks_legacy`}
 		for _, suffix := range legacyIndexChunksIndexes {
 			stmts = append(stmts, `ALTER INDEX IF EXISTS index_chunks_`+suffix+` RENAME TO index_chunks_legacy_`+suffix)
 		}
 		stmts = append(stmts, `REVOKE ALL ON index_chunks_legacy FROM `+pgx.Identifier{appRole}.Sanitize())
-		for _, stmt := range stmts {
-			if _, err := tx.Exec(ctx, stmt); err != nil {
-				return err
-			}
-		}
-		if err := renameLegacyConstraints(ctx, tx); err != nil {
-			return err
-		}
-		if err := createPartitionedIndexChunks(ctx, tx, appRole, schema.Dims); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks ATTACH PARTITION index_chunks_legacy FOR VALUES IN (true)`); err != nil {
+		stmts = append(stmts, constraints...)
+		stmts = append(stmts, partitionedIndexChunksDDL(appRole, schema.Dims)...)
+		stmts = append(stmts, `ALTER TABLE index_chunks ATTACH PARTITION index_chunks_legacy FOR VALUES IN (true)`)
+		if _, err := tx.Exec(ctx, strings.Join(stmts, ";\n")); err != nil {
 			return err
 		}
 		s.logger.Info("index_chunks partitioned: its chunks move to the hash partitions a repository at a time",
@@ -359,32 +360,32 @@ func validateLegacyMark(ctx context.Context, tx pgx.Tx) error {
 	return err
 }
 
-// renameLegacyConstraints gives the constraints of the renamed plain table,
-// its foreign keys and, from Postgres 18, its NOT NULL constraints, the
-// index_chunks_legacy_ prefix. Postgres names a new table's constraints
+// renameLegacyConstraints returns the statements that give the constraints
+// of the plain index_chunks, its foreign keys and, from Postgres 18, its NOT
+// NULL constraints, the index_chunks_legacy_ prefix, once the table is
+// renamed index_chunks_legacy. Postgres names a new table's constraints
 // after the table and makes each name unique within the schema, so with
 // the old names in place the partitioned table's would take a suffix
 // ("index_chunks_account_id_fkey1") and keep it once the legacy partition
 // is dropped, unlike a table created partitioned.
-func renameLegacyConstraints(ctx context.Context, tx pgx.Tx) error {
+func renameLegacyConstraints(ctx context.Context, tx pgx.Tx) ([]string, error) {
 	rows, err := tx.Query(ctx, `SELECT conname FROM pg_constraint
-		WHERE conrelid = 'index_chunks_legacy'::regclass AND contype <> 'p'
+		WHERE conrelid = 'index_chunks'::regclass AND contype <> 'p'
 		AND conname LIKE 'index\_chunks\_%' AND conname NOT LIKE 'index\_chunks\_legacy\_%'`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		return err
+		return nil, err
 	}
+	stmts := make([]string, 0, len(names))
 	for _, name := range names {
 		renamed := "index_chunks_legacy_" + strings.TrimPrefix(name, "index_chunks_")
-		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks_legacy RENAME CONSTRAINT `+
-			pgx.Identifier{name}.Sanitize()+` TO `+pgx.Identifier{renamed}.Sanitize()); err != nil {
-			return err
-		}
+		stmts = append(stmts, `ALTER TABLE index_chunks_legacy RENAME CONSTRAINT `+
+			pgx.Identifier{name}.Sanitize()+` TO `+pgx.Identifier{renamed}.Sanitize())
 	}
-	return nil
+	return stmts, nil
 }
 
 // legacyDrainSlice is how many chunks DrainLegacyIndexChunks moves or
