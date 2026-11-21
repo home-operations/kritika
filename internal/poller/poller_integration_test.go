@@ -704,12 +704,11 @@ func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 
 // stallTipForge looks up no branch until the test releases it, whatever its
 // context, as a forge that never answers. It lists a pull request of
-// home-ops alone, and counts the listings of home-ops.
+// home-ops alone.
 type stallTipForge struct {
 	tipForge
 	entered, release chan struct{}
 	enter            sync.Once
-	listed           atomic.Int32
 }
 
 func (f *stallTipForge) BranchTip(context.Context, string, string, string) (string, string, error) {
@@ -722,11 +721,10 @@ func (*stallTipForge) ListInline(context.Context, string, string, int) ([]forge.
 	return nil, nil
 }
 
-func (f *stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ time.Time) ([]forge.OpenPullRequest, error) {
+func (*stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ time.Time) ([]forge.OpenPullRequest, error) {
 	if name != "home-ops" {
 		return nil, nil
 	}
-	f.listed.Add(1)
 	return []forge.OpenPullRequest{{
 		Number: 19, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "h", HeadSHA: "abc919", BaseRef: "main",
 		UpdatedAt: time.Now(), DefaultBranch: "main",
@@ -738,7 +736,7 @@ func (f *stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, 
 // the poll state still advances. The next poll starts on its interval while
 // the lookup still hangs.
 func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
-	t.Setenv("KRITIKA_POLL_INTERVAL", "300ms")
+	t.Setenv("KRITIKA_POLL_INTERVAL", "1s")
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
 	s.exec(`DELETE FROM poll_state WHERE account_id = $1`, s.account.ID())
 	s.exec(`DELETE FROM pull_requests WHERE number = 19`)
@@ -764,7 +762,15 @@ func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("no branch was looked up within 10s of the poller starting")
 	}
-	waitUntil(t, "second poll of the pull requests while the branch lookup hangs", func() bool { return f.listed.Load() >= 2 })
+	// A poll is recorded once it has dispatched every pull request it
+	// listed, so two recorded polls are two whole ones. Ending at the second
+	// listing could cancel the second poll before its dispatch.
+	var first time.Time
+	waitUntil(t, "first recorded poll while the branch lookup hangs", func() bool {
+		first = lastPolled(t, s)
+		return !first.IsZero()
+	})
+	waitUntil(t, "second recorded poll while the branch lookup hangs", func() bool { return lastPolled(t, s).After(first) })
 	end()
 	var polled []int
 	for _, ev := range s.dispatched.events {
@@ -772,15 +778,25 @@ func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
 			polled = append(polled, ev.PullRequest.Number)
 		}
 	}
-	var recorded bool
+	if len(polled) < 2 || slices.ContainsFunc(polled, func(n int) bool { return n != 19 }) {
+		t.Fatalf("pull requests of home-ops polled %v; want #19 at each of two recorded polls", polled)
+	}
+}
+
+// lastPolled is when s's account was last recorded as polled, zero before
+// its first poll.
+func lastPolled(t *testing.T, s *tipPoll) time.Time {
+	t.Helper()
+	var at *time.Time
 	if err := s.st.WithAccount(t.Context(), s.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(t.Context(), `SELECT EXISTS (SELECT 1 FROM poll_state WHERE account_id = $1)`, s.account.ID()).Scan(&recorded)
+		return tx.QueryRow(t.Context(), `SELECT max(last_polled_at) FROM poll_state WHERE account_id = $1`, s.account.ID()).Scan(&at)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(polled) < 2 || slices.ContainsFunc(polled, func(n int) bool { return n != 19 }) || !recorded {
-		t.Fatalf("pull requests of home-ops polled %v, poll state recorded %v; want #19 at each poll and the state recorded", polled, recorded)
+	if at == nil {
+		return time.Time{}
 	}
+	return *at
 }
 
 // waitUntil fails the test unless cond holds within 10s.
