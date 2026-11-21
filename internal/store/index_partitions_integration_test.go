@@ -187,6 +187,19 @@ func chunkPartitions(t *testing.T, s *Store, run string) map[string]int {
 	return out
 }
 
+// onlyPartition is the partition that holds every chunk of the generation.
+func onlyPartition(t *testing.T, s *Store, run string) string {
+	t.Helper()
+	parts := chunkPartitions(t, s, run)
+	if len(parts) != 1 {
+		t.Fatalf("the generation is in %v, want one partition", parts)
+	}
+	for name := range parts {
+		return name
+	}
+	return ""
+}
+
 // appDenied makes sure that the application role cannot read the table
 // directly, only through index_chunks.
 func appDenied(t *testing.T, s *Store, account, table string) {
@@ -249,8 +262,22 @@ func TestIndexChunksPartitioned(t *testing.T) {
 		t.Fatalf("the search by name read %v, not one partition alone:\n%s", partitionsRead(plan), strings.Join(plan, "\n"))
 	}
 	appDenied(t, s, account, "index_chunks_00")
-	// An incremental step's chunks move to the generation's partition.
-	step := partitionRun(t, s, account, repo, false, "c.go")
+	// An incremental step's chunks move to the generation's partition from
+	// another one. A step in the generation's own would be updated in place,
+	// so one is taken whose run is in another.
+	leaf := onlyPartition(t, s, run)
+	var step string
+	for try := 0; step == ""; try++ {
+		if try == 100 {
+			t.Fatalf("100 steps' runs were all in the generation's partition, %s", leaf)
+		}
+		candidate := partitionRun(t, s, account, repo, false, "c.go")
+		if onlyPartition(t, s, candidate) != leaf {
+			step = candidate
+		} else if _, err := s.owner.Exec(ctx, `DELETE FROM index_runs WHERE id = $1`, candidate); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, step, run)
 		return err
@@ -260,8 +287,8 @@ func TestIndexChunksPartitioned(t *testing.T) {
 	if got := similarPaths(t, s, account, run); len(got) != 3 {
 		t.Fatalf("search after the step found %v, want three chunks", got)
 	}
-	if parts := chunkPartitions(t, s, run); len(parts) != 1 {
-		t.Fatalf("the generation is in %v, want one partition", parts)
+	if parts := chunkPartitions(t, s, run); len(parts) != 1 || parts[leaf] != 3 {
+		t.Fatalf("the generation is in %v, want its three chunks in %s alone", parts, leaf)
 	}
 	// Deleting the generation deletes its chunks.
 	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repo); err != nil {
