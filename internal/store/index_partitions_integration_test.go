@@ -591,9 +591,12 @@ func slowLockWaits(t *testing.T) {
 }
 
 // TestPartitionIndexChunksYieldsToPublication: a publication that holds its
-// repository and then waits for index_chunks behind the partitioner, which
-// then waits for repositories, publishes. The partitioner gives way, and
-// partitions the table at its next try, once the publication commits.
+// repository and then waits for index_chunks behind the partitioner
+// publishes. The partitioner, once it holds index_chunks, gives way at once
+// rather than wait for repositories, and partitions the table at its next
+// try, once the publication commits. A wait would close a cycle that the
+// publication's deadlock check could find first, as its role's
+// deadlock_timeout can be shorter than the owner's.
 func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	slowLockWaits(t)
 	s := openStore(t)
@@ -633,7 +636,11 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 		err         error
 	}
 	gaveUp := 0
-	gaveWay = func(error) { gaveUp++ }
+	gave := make(chan error, partitionTries)
+	gaveWay = func(err error) {
+		gaveUp++
+		gave <- err
+	}
 	partitioned := make(chan result, 1)
 	partitionerDone := make(chan struct{})
 	go func() {
@@ -662,11 +669,36 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	publication := relationLock{table, "AccessShareLock"}
 	waitBehind(t, s, partitioner, publication, publishedDone)
 	// Without the writer, the partitioner, first in the queue, takes
-	// index_chunks and waits for the repository that the publication holds.
+	// index_chunks, and gives way at once to the publication that holds the
+	// repository.
 	if err := writer.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitBehind(t, s, publication, relationLock{repositories, "ShareRowExclusiveLock"}, publishedDone)
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(2 * time.Millisecond) {
+		var err error
+		select {
+		case err = <-gave:
+		default:
+		}
+		if err != nil {
+			if !lockNotAvailable(err) {
+				t.Fatalf("the partitioner gave way with %v, want a lock not available", err)
+			}
+			break
+		}
+		var waiting bool
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks
+			WHERE locktype = 'relation' AND relation = $1 AND mode = 'ShareRowExclusiveLock' AND NOT granted)`,
+			repositories).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			t.Fatal("the partitioner waited for repositories while it held index_chunks")
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the partitioner neither gave way nor took index_chunks")
+		}
+	}
 	if err := <-published; err != nil {
 		t.Fatalf("the publication failed beside the partitioner: %v", err)
 	}

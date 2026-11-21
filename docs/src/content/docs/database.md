@@ -535,13 +535,15 @@ then reuses the content hash's index, and copies and rebuilds nothing:
 
 1. It takes the table's exclusive lock, and then a lock on `accounts`,
    `repositories` and `index_runs` that blocks writes to them. A publication
-   takes those locks in the other order, so the two can wait on each other.
-   Each of the sweep's waits is bounded to an eighth of PostgreSQL's
-   `deadlock_timeout`, so the sweep gives way before PostgreSQL would abort
-   the publication. While the sweep waits, searches and index builds queue
-   behind it. When a wait times out, the sweep changes nothing and tries
-   again a second later. After five tries it logs a warning and tries again
-   an hour later.
+   takes those locks in the other order, so the sweep takes the second lock
+   at once or gives way, rather than wait on a publication that waits on
+   it: the publication's role can have a shorter `deadlock_timeout` than
+   the owner's, and PostgreSQL would then abort the publication. The wait
+   for the table's lock is bounded to an eighth of PostgreSQL's
+   `deadlock_timeout`, as searches and index builds queue behind it. When
+   either lock is not to be had, the sweep changes nothing and tries again a
+   second later. After five tries it logs a warning and tries again an hour
+   later.
 2. It renames the table, with its indexes and constraints, to
    `index_chunks_legacy`. It creates the partitioned `index_chunks` and
    attaches the old table as its partition for `legacy` true, so every chunk

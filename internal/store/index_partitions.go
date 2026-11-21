@@ -117,14 +117,16 @@ func partitionedIndexChunksDDL(appRole string, dims int) []string {
 // before partitioning created, by the suffix of their names.
 var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_idx", "account_id_idx", "embedding_idx"}
 
-// PartitionIndexChunks waits for locks that publications and embedding
-// batches also take, in another order, so it can close a cycle with one of
-// them. It is to give way, not the other transaction: yieldLocks bounds each
-// of its waits to 1/lockYieldShare of deadlock_timeout. A transaction that
-// waits on it began to wait after its first lock request, so its waits, four
-// at most, end before that transaction runs the deadlock check, which would
-// abort it. While it waits for index_chunks, every search and build queues
-// behind it, which the short waits also bound. DropLegacyIndexChunks takes
+// PartitionIndexChunks takes locks that publications and embedding batches
+// also take, in another order, so it could close a cycle with one of them.
+// It is to give way, not the other transaction. Once it holds index_chunks,
+// it takes the tables that its foreign keys reference at once or gives up,
+// rather than wait while it holds what a publication waits for: the
+// publication's deadlock check, at a deadlock_timeout that its role can set
+// shorter than the owner's, could find that cycle first and abort it. Its
+// waits for index_chunks hold no lock that another waits for, but every
+// search and build queues behind them, so yieldLocks bounds each to
+// 1/lockYieldShare of deadlock_timeout. DropLegacyIndexChunks takes
 // index_chunks at once or gives up, but at its last try, and then waits for
 // the legacy partition alone, which only the owner's own reads of it can
 // hold. Each tries partitionTries times, partitionRetryPause apart, and the
@@ -244,7 +246,8 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		// the tables that its foreign keys reference, as an embedding batch
 		// does, finishes before this one locks those. A publication takes
 		// them the other way round, its repository and index_runs before
-		// index_chunks, and this transaction gives way to it.
+		// index_chunks, and this transaction gives way to it, taking those
+		// at once or not at all.
 		if err := yieldLocks(ctx, tx); err != nil {
 			return err
 		}
@@ -252,7 +255,7 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		// trip that they wait for too: the locks are one, the constraints'
 		// names another, and the conversion, every statement of it, a third.
 		if _, err := tx.Exec(ctx, `LOCK TABLE index_chunks IN ACCESS EXCLUSIVE MODE;
-			LOCK TABLE accounts, repositories, index_runs IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+			LOCK TABLE accounts, repositories, index_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT`); err != nil {
 			return err
 		}
 		// The lock waited for every transaction that wrote a chunk, so the
