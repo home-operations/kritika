@@ -195,6 +195,8 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 		{"the chunks' content hash", []string{"0063_index_content_hash", "0070_index_content_hash_idx"},
 			`ALTER TABLE index_chunks DROP COLUMN content_hash`,
 			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
+		{"the chunks' lexemes", []string{"0064_index_lexemes"}, `ALTER TABLE index_chunks DROP COLUMN lexemes`,
+			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, column("index_chunks", "lexemes")},
 		{"the content hash's index", []string{"0070_index_content_hash_idx"}, `DROP INDEX index_chunks_content_hash_idx`,
 			`LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
 		{"the usage check", []string{"0065_usage_rerank", "0068_usage_rerank_validate"}, "",
