@@ -83,8 +83,9 @@ func NewReranker(api, baseURL, key, model string, timeout time.Duration) *HTTPRe
 	}
 }
 
-// Rerank implements Reranker. A document the answer leaves out scores -1,
-// below every score the APIs give.
+// Rerank implements Reranker. A document the answer leaves out scores
+// negative infinity, below every score an answer can give, as JSON has no
+// infinite number and the APIs bound their scores to no range.
 func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []string) ([]float64, RerankUsage, error) {
 	body, err := json.Marshal(r.request(query, documents))
 	if err != nil {
@@ -137,7 +138,7 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	scores := make([]float64, len(documents))
 	for i := range scores {
-		scores[i] = -1
+		scores[i] = math.Inf(-1)
 	}
 	seen := make([]bool, len(documents))
 	for i, rk := range ranks {

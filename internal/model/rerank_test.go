@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -54,14 +55,21 @@ func TestReranker(t *testing.T) {
 			api: RerankCohere, path: "/v2/rerank",
 			want:   `{"model":"rerank-v3.5","query":"q","documents":["a","b","c"],"top_n":3}`,
 			answer: `{"results":[{"index":0,"relevance_score":0.2}],"meta":{"billed_units":{"search_units":1},"tokens":{"input_tokens":40}}}`,
-			scores: []float64{0.2, -1, -1}, used: RerankUsage{Tokens: 40, SearchUnits: 1},
+			scores: []float64{0.2, math.Inf(-1), math.Inf(-1)}, used: RerankUsage{Tokens: 40, SearchUnits: 1},
 		},
 		{
 			// A document the answer leaves out ranks last.
 			api: RerankCohere, path: "/v2/rerank",
 			want:   `{"model":"rerank-v3.5","query":"q","documents":["a","b","c"],"top_n":3}`,
 			answer: `{"results":[{"index":1,"relevance_score":0.3}]}`,
-			scores: []float64{-1, 0.3, -1},
+			scores: []float64{math.Inf(-1), 0.3, math.Inf(-1)},
+		},
+		{
+			// Below every score a document the answer ranks, however low.
+			api: RerankCohere, path: "/v2/rerank",
+			want:   `{"model":"rerank-v3.5","query":"q","documents":["a","b","c"],"top_n":3}`,
+			answer: `{"results":[{"index":2,"relevance_score":-7.5}]}`,
+			scores: []float64{math.Inf(-1), math.Inf(-1), -7.5},
 		},
 	}
 	models := map[string]string{RerankCohere: "rerank-v3.5", RerankJina: "jina-reranker-v3", RerankVoyage: "rerank-2.5", RerankTEI: "bge"}
