@@ -311,6 +311,9 @@ func takeLeads(out []Decl, lead []bool, starts []int) {
 			above[l] = above[l-1]
 		}
 	}
+	if walked != nil {
+		*walked += len(above)
+	}
 	for i, d := range out {
 		if line := above[d.StartLine]; line < d.StartLine && d.StartByte == first[d.StartLine] {
 			out[i].StartLine, out[i].StartByte = line, starts[line-1]
@@ -387,6 +390,9 @@ func lineTexts(src []byte, starts []int) [][2]int {
 		trimmed := bytes.TrimLeftFunc(line, unicode.IsSpace)
 		lo += len(line) - len(trimmed)
 		text[row] = [2]int{lo, lo + len(bytes.TrimRightFunc(trimmed, unicode.IsSpace))}
+		if walked != nil {
+			*walked += len(line) - (text[row][1] - text[row][0])
+		}
 	}
 	return text
 }
@@ -458,11 +464,23 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 // skipSpace is the offset of the first byte from i to hi that is not white
 // space, or hi.
 func skipSpace(src []byte, i, hi int) int {
+	from := i
 	for i < hi && (src[i] == ' ' || src[i] == '\t' || src[i] == '\r' || src[i] == '\n' || src[i] == '\v' || src[i] == '\f') {
 		i++
 	}
+	if walked != nil {
+		*walked += i - from
+	}
 	return i
 }
+
+// walked, when a test points it at a count, adds up the white space that
+// lineTexts and skipSpace walk and the lines that takeLeads does. Walking
+// them again for each declaration or comment on a row is quadratic in the
+// file's size, and the count shows that on any machine, where a bound on
+// the parse's time holds only on a known one. A test that sets it does not
+// run in parallel, as declarations runs outside the parser's lock.
+var walked *int
 
 // wrapped returns the index in out of the one outlined top-level
 // declaration that d wraps, or -1. d wraps it when it holds no other one and
