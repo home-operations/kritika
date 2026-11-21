@@ -123,12 +123,30 @@ func TestLexicalExclusionsJoinOnce(t *testing.T) {
 // planNode is a node of a plan that EXPLAIN (FORMAT JSON) gives, with
 // ANALYZE the times that it ran and the rows that it emitted each time.
 type planNode struct {
-	NodeType    string     `json:"Node Type"`
-	CTEName     string     `json:"CTE Name"`
-	IndexName   string     `json:"Index Name"`
-	ActualRows  float64    `json:"Actual Rows"`
-	ActualLoops float64    `json:"Actual Loops"`
-	Plans       []planNode `json:"Plans"`
+	NodeType    string  `json:"Node Type"`
+	CTEName     string  `json:"CTE Name"`
+	IndexName   string  `json:"Index Name"`
+	Alias       string  `json:"Alias"`
+	ActualRows  float64 `json:"Actual Rows"`
+	ActualLoops float64 `json:"Actual Loops"`
+	// Filtered is how many rows that a scan read and its filter then
+	// removed, each time that it ran.
+	Filtered float64    `json:"Rows Removed by Filter"`
+	Plans    []planNode `json:"Plans"`
+}
+
+// rowsRead counts the rows that the scans of alias in n's tree read, in all
+// the times that they ran: those that they emitted, and those that their
+// filters removed.
+func (n planNode) rowsRead(alias string) float64 {
+	var rows float64
+	if n.Alias == alias {
+		rows = (n.ActualRows + n.Filtered) * n.ActualLoops
+	}
+	for _, c := range n.Plans {
+		rows += c.rowsRead(alias)
+	}
+	return rows
 }
 
 // excludedScans counts the scans of the excluded CTE in n's tree, the times

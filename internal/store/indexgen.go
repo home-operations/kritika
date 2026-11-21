@@ -105,9 +105,16 @@ type Generation struct {
 // that it advanced (stepped_run_id, which migration 0062's trigger sets),
 // so a build from before index formats, which records its runs as format 1
 // and during a rollout steps the generations that the new build publishes,
-// records it too.
-const steppedInAnotherFormat = `EXISTS (SELECT 1 FROM index_runs st WHERE st.repository_id = g.repository_id
-	AND st.stepped_run_id = g.id AND st.status = 'completed' AND st.index_format <> g.index_format)`
+// records it too. It compares the lowest and the highest format of the
+// steps, each the first entry of index_runs_stepped_idx at its end of the
+// generation's steps. An EXISTS of a step of another format reads every
+// step of the generation's own format, or the repository's every run where
+// the planner, which cannot tell how many steps are of another format,
+// expects one to turn up soon.
+const steppedInAnotherFormat = `coalesce((SELECT min(st.index_format) FROM index_runs st WHERE st.repository_id = g.repository_id
+		AND st.stepped_run_id = g.id AND st.status = 'completed') <> g.index_format
+	OR (SELECT max(st.index_format) FROM index_runs st WHERE st.repository_id = g.repository_id
+		AND st.stepped_run_id = g.id AND st.status = 'completed') <> g.index_format, false)`
 
 // FindGeneration reads a completed index generation, or ErrNotFound.
 func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, error) {

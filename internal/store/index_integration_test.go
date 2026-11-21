@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"slices"
 	"strings"
@@ -155,6 +156,100 @@ func TestMixedWhateverTheClock(t *testing.T) {
 			}
 			checkMixed(t, s, "mixed-clock", repo, tt.want)
 		})
+	}
+}
+
+// TestMixedReadsOtherFormats: whether a step of another index format
+// advanced a generation, which a search asks each time it runs, reads the
+// lowest and the highest format of the steps that advanced it alone. Neither
+// the repository's history of runs, which grows with each push, nor the rest
+// of the steps of the generation's own format, which do too while it stays
+// active, is read. A step of a format either below or above the
+// generation's is found.
+func TestMixedReadsOtherFormats(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("mixed-plan"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "mixed-plan")
+	listRepos(t, s, "mixed-plan", "mixed-plan/one")
+	var repo, gen string
+	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE name = 'mixed-plan/one'`).Scan(&repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		_, _ = s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repo)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM index_runs WHERE repository_id = $1`, repo)
+	})
+	// The history: generations that were superseded, and the steps that
+	// advanced each.
+	const history, steps = 2000, 1000
+	if _, err := s.owner.Exec(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+			index_format, stepped_run_id)
+		SELECT $1, $2, 'old', 'm', 8, CASE WHEN i % 2 = 0 THEN 'full' ELSE 'incremental' END,
+			CASE WHEN i % 2 = 0 THEN 'superseded' ELSE 'completed' END, $3, CASE WHEN i % 2 = 1 THEN gen_random_uuid() END
+		FROM generate_series(1, $4) AS i`, account, repo, runspec.IndexFormat, history); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.owner.QueryRow(ctx, `WITH g AS (INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode,
+			status, index_format) VALUES ($1, $2, 'abc', 'm', 8, 'full', 'completed', $3) RETURNING id, repository_id)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`,
+		account, repo, runspec.IndexFormat).Scan(&gen); err != nil {
+		t.Fatal(err)
+	}
+	// The generation's own steps, which the trigger records as advancing
+	// it.
+	if _, err := s.owner.Exec(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+			index_format)
+		SELECT $1, $2, 'new', 'm', 8, 'incremental', 'completed', $3 FROM generate_series(1, $4)`,
+		account, repo, runspec.IndexFormat, steps); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `ANALYZE index_runs`); err != nil {
+		t.Fatal(err)
+	}
+	mixed := `SELECT ` + steppedInAnotherFormat + ` FROM index_runs g WHERE g.id = $1`
+	var plan []byte
+	var got bool
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `EXPLAIN (ANALYZE, FORMAT JSON) `+mixed, gen).Scan(&plan); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, mixed, gen).Scan(&got)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got {
+		t.Fatal("a generation that only steps of its own format advanced is mixed")
+	}
+	var root []struct{ Plan planNode }
+	if err := json.Unmarshal(plan, &root); err != nil || len(root) != 1 {
+		t.Fatalf("plan %s: %v", plan, err)
+	}
+	// A step at each end of the generation's formats, the lowest and the
+	// highest.
+	var read float64
+	for _, alias := range []string{"st", "st_1"} {
+		read += root[0].Plan.rowsRead(alias)
+	}
+	if read > 2 {
+		t.Errorf("the check reads %v runs, want one at each end of the generation's formats, "+
+			"and none of the %d of the repository's history or the rest of the generation's %d steps:\n%s",
+			read, history, steps, plan)
+	}
+	for _, format := range []int{runspec.IndexFormat - 1, runspec.IndexFormat + 1} {
+		var step string
+		if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+				index_format) VALUES ($1, $2, 'other', 'm', 8, 'incremental', 'completed', $3) RETURNING id`,
+			account, repo, format).Scan(&step); err != nil {
+			t.Fatal(err)
+		}
+		checkMixed(t, s, "mixed-plan", repo, true)
+		if _, err := s.owner.Exec(ctx, `DELETE FROM index_runs WHERE id = $1`, step); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
