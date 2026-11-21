@@ -672,10 +672,11 @@ pull request. Both show a chunk as the pull request's head has it: found
 by its text, at its lines in the head, which differ from the index's when
 code above it moved. A chunk whose text or file the head no longer has
 is left out, as is one found at lines that a chunk before it mostly
-shows. Both leave out the files the change touches, whose copies in the
-index are older or newer than the head's. A change of more than 5,000
-files, counting both names of a rename, goes without similar code and
-`search_code`.
+shows. Both leave out the files the change touches, by both names of a
+rename, whose copies in the index are older or newer than the head's. The
+run reports them to the gateway once, which keeps them for the run, so
+however many files a change touches, a directory move of thousands among
+them, neither a search nor its request grows with them.
 
 How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and

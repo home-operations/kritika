@@ -123,7 +123,7 @@ func similarPaths(t *testing.T, s *Store, account, run string) []string {
 	ctx := t.Context()
 	var paths []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		hits, err := SimilarChunks(ctx, tx, run, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, nil, 10)
+		hits, err := SimilarChunks(ctx, tx, run, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, Exclusions{}, 10)
 		for _, h := range hits {
 			paths = append(paths, h.Chunk.Path)
 		}
@@ -142,7 +142,7 @@ func lexicalPaths(t *testing.T, s *Store, account, run string) []string {
 	var paths []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "main"}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, nil, 10, LexicalBar{Least: 100}, 100)
+		hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, Exclusions{}, 10, LexicalBar{Least: 100}, 100)
 		for _, h := range hits {
 			paths = append(paths, h.Chunk.Path)
 		}
@@ -384,7 +384,7 @@ func searchPlan(t *testing.T, s *Store, account, run string) string {
 		if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, "EXPLAIN "+similarChunksSQL, "[1,0,0,0,0,0,0,0]", run, []string{}, 4)
+		rows, err := tx.Query(ctx, "EXPLAIN "+similarChunksSQL, "[1,0,0,0,0,0,0,0]", run, []string{}, 4, nil)
 		if err != nil {
 			return err
 		}
@@ -405,7 +405,7 @@ func lexicalPlan(t *testing.T, s *Store, account, run string) []string {
 	var plan []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []bool{false}, []string{"main"}, 0, 100,
-			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 4+LexicalCommonMax, 100, LexicalCommonMax, 0, postingsIndexFormat)
+			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 4+LexicalCommonMax, 100, LexicalCommonMax, 0, postingsIndexFormat, nil)
 		if err != nil {
 			return err
 		}
@@ -1010,7 +1010,7 @@ func executedPartitions(t *testing.T, s *Store, account, run, mode string) ([]st
 			}
 		}
 		rows, err := tx.Query(ctx, fmt.Sprintf(`EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
-			EXECUTE partition_search('[1,0,0,0,0,0,0,0]', '%s', '{}', 4)`, run))
+			EXECUTE partition_search('[1,0,0,0,0,0,0,0]', '%s', '{}', 4, NULL)`, run))
 		if err != nil {
 			return err
 		}

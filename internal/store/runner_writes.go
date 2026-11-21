@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -62,16 +63,30 @@ func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.
 	return SetRunnerPhase(ctx, tx, runID, phase)
 }
 
+// similarExcludeBatch is the most paths that one statement of
+// SetSimilarExclude writes, so that a statement stays small however many
+// paths a report holds.
+const similarExcludeBatch = 1000
+
 // SetSimilarExclude records the paths the run's similar-code searches leave
-// out. The first report holds: a later one, which can only be the same
-// report sent again, leaves it as it is.
+// out, in the run's account, a batch at a time within tx. The first report
+// holds: a later one, which can only be the same report sent again, leaves it
+// as it is.
 func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []string) error {
-	if paths == nil {
-		paths = []string{}
-	}
-	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET similar_exclude = $2 WHERE id = $1 AND similar_exclude IS NULL`,
-		runID, paths); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE runner_runs SET similar_exclude_reported_at = now()
+		WHERE id = $1 AND similar_exclude_reported_at IS NULL`, runID)
+	if err != nil {
 		return fmt.Errorf("store: set similar exclusions: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	for batch := range slices.Chunk(paths, similarExcludeBatch) {
+		if _, err := tx.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path)
+			SELECT r.id, r.account_id, p.path FROM runner_runs r, unnest($2::text[]) AS p (path) WHERE r.id = $1
+			ON CONFLICT DO NOTHING`, runID, batch); err != nil {
+			return fmt.Errorf("store: set similar exclusions: %w", err)
+		}
 	}
 	return nil
 }

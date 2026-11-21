@@ -189,7 +189,7 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 		applied func() bool
 	}{
 		{"a column of runner_runs", []string{"0061_similar_exclude"}, "",
-			`LOCK TABLE runner_runs IN ACCESS SHARE MODE`, column("runner_runs", "similar_exclude")},
+			`LOCK TABLE runner_runs IN ACCESS SHARE MODE`, column("runner_runs", "similar_exclude_reported_at")},
 		{"the index format's columns", []string{"0062_index_format"}, "",
 			`LOCK TABLE index_packs IN ACCESS SHARE MODE`, column("index_packs", "truncated")},
 		{"the chunks' content hash", []string{"0063_index_content_hash", "0070_index_content_hash_idx"},

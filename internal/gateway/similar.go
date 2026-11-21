@@ -56,14 +56,6 @@ const maxSimilarBody = 256 << 10
 // variable for the tests.
 var similarAnswerWithin = 50 * time.Second
 
-// maxSimilarExclude is the most paths a run's similar-code searches leave
-// out. The run's report is read back for every search and carried by each of
-// its statements, a dozen in one request. A request's own exclusions, under
-// maxSimilarBody, stopped at a few thousand paths. A change of more is mostly
-// renamed, vendored or generated files, which similar code helps little, so
-// its review goes without, as it did then.
-const maxSimilarExclude = 5000
-
 // What became of a similar-code request, as kritika_similar_requests_total
 // counts it, and of a hit that it found, as kritika_similar_hits_total does.
 const (
@@ -152,17 +144,13 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	outcome = similarError
 	var jobID int64
-	var excluded []string
 	// A request without queries searches nothing, so it reads nothing of the
 	// run: it costs what any request that the run token admits does, and one
 	// read of the repository's generation.
 	if len(req.Queries) > 0 {
 		err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
 			var err error
-			if jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID); err != nil {
-				return err
-			}
-			excluded, err = store.SimilarExclude(ctx, tx, c.grant.RunID)
+			jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID)
 			return err
 		})
 		if err != nil {
@@ -173,7 +161,8 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	chunks, searched, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
-		token: c.token, queries: req.Queries, texts: texts, exclude: slices.Concat(excluded, req.Exclude), limit: answerLimit(req.Limit),
+		token: c.token, queries: req.Queries, texts: texts, limit: answerLimit(req.Limit),
+		exclude:  store.Exclusions{Run: c.grant.RunID, Paths: req.Exclude},
 		answerBy: arrived.Add(similarAnswerWithin),
 	}, c.logger)
 	outcome = searched
@@ -225,7 +214,7 @@ type similarRequest struct {
 	// without the prompt. exclude are the paths left out of the answer.
 	queries []string
 	texts   []string
-	exclude []string
+	exclude store.Exclusions
 	// limit is the most chunks the answer holds.
 	limit int
 	// answerBy is when the reranking ends at the latest, so that the answer
@@ -463,7 +452,7 @@ const lexicalAlone = similarPerQuery
 // Each hit's Matched are the query's spellings of the words that the chunk
 // holds.
 func lexicalHits(
-	ctx context.Context, tx pgx.Tx, runID string, texts []string, vectors [][]float32, exclude []string, perQuery int,
+	ctx context.Context, tx pgx.Tx, runID string, texts []string, vectors [][]float32, exclude store.Exclusions, perQuery int,
 ) ([]store.SimilarHit, error) {
 	words := make([][]lexical.Word, len(texts))
 	queries := make([]store.LexicalQuery, len(texts))

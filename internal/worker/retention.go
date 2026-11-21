@@ -12,7 +12,7 @@ import (
 // retentionSweepInterval is how often the leader deletes these items past
 // their retention window: model-call transcripts, egress refusals, settled
 // model invocations, review diffs, agent conversations, stopped repositories'
-// indexes and dashboard sessions.
+// indexes, finished runs' similar-code exclusions and dashboard sessions.
 const retentionSweepInterval = time.Hour
 
 // conversationRetention is how long an agent's conversation is kept for a
@@ -32,6 +32,7 @@ type retentionStore interface {
 	SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepEgressRefusals(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepModelInvocations(ctx context.Context, olderThan time.Duration) (int64, error)
+	SweepSimilarExclusions(ctx context.Context) (int64, error)
 	PartitionIndexChunks(ctx context.Context, appRole string) (bool, error)
 	DrainLegacyIndexChunks(ctx context.Context) (moved, removed int64, err error)
 	DropLegacyIndexChunks(ctx context.Context) (bool, error)
@@ -41,7 +42,8 @@ type retentionStore interface {
 // row-level security. With that pool, Retention deletes model-call
 // transcripts, egress refusals, and settled model invocations older than the
 // current configuration's transcript retention window. It also deletes review
-// diffs past their own retention window. It also deletes the indexes of
+// diffs past their own retention window, and the paths that finished runs'
+// similar-code searches left out. It also deletes the indexes of
 // repositories that the configuration did not run for longer than its index
 // grace, and agent conversations older than conversationRetention. It also
 // partitions an index table that a build before partitioning created. It
@@ -94,6 +96,8 @@ func (r *Retention) Run(ctx context.Context) {
 		report("egress refusals", "rows", n, err)
 		n, err = r.Store.SweepModelInvocations(ctx, r.Current.Get().TranscriptRetention())
 		report("settled model invocations", "rows", n, err)
+		n, err = r.Store.SweepSimilarExclusions(ctx)
+		report("finished runs' similar-code exclusions", "rows", n, err)
 		moved, n, err := r.partitionIndex(ctx)
 		report("legacy index partition", "chunks", n, err)
 		if moved > 0 {

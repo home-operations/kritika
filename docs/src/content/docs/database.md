@@ -282,9 +282,10 @@ what runner Jobs report to the gateway. Runner Jobs open no connection of their
 own.
 
 The leader runs hourly retention sweeps of transcripts, egress refusals,
-settled model invocations, stored diffs and agent conversations. The sweeps
-work in batches, and each batch is its own statement. A backlog larger than
-what one statement can clear is worked off over the sweep rather than rolled
+settled model invocations, stored diffs, agent conversations, and the paths
+that finished runs' similar-code searches left out. The sweeps work in
+batches, and each batch is its own statement. A backlog larger than what one
+statement can clear is worked off over the sweep rather than rolled
 back.
 
 Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the

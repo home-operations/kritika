@@ -48,16 +48,17 @@ func BenchmarkSimilarChunks(b *testing.B) {
 				run, foreign := seedSimilarBenchmark(b, s, account.ID(), other.ID(), dims, size)
 				for _, excluded := range []int{0, size / 10} {
 					b.Run(fmt.Sprintf("exclude=%d", excluded), func(b *testing.B) {
-						exclude := make([]string, excluded)
-						for i := range exclude {
-							exclude[i] = fmt.Sprintf("group-0/chunk-%d.go", i)
+						paths := make([]string, excluded)
+						for i := range paths {
+							paths[i] = fmt.Sprintf("group-0/chunk-%d.go", i)
 						}
+						exclude := reportSimilarBenchmark(b, s, account.ID(), paths)
 						queries := make([][]float32, 20)
 						rng := rand.New(rand.NewPCG(911, 1))
 						for i := range queries {
 							queries[i] = benchmarkVector(rng, dims, i%16)
 						}
-						recall := checkSimilarRecall(b, s, account.ID(), run, foreign, queries, exclude)
+						recall := checkSimilarRecall(b, s, account.ID(), run, foreign, queries, exclude, paths)
 						i := 0
 						for b.Loop() {
 							if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -146,7 +147,9 @@ func seedSimilarBenchmark(b *testing.B, s *Store, account, other string, dims, s
 	return run, foreign
 }
 
-func checkSimilarRecall(b *testing.B, s *Store, account, run, foreign string, queries [][]float32, exclude []string) float64 {
+func checkSimilarRecall(
+	b *testing.B, s *Store, account, run, foreign string, queries [][]float32, exclude Exclusions, excluded []string,
+) float64 {
 	b.Helper()
 	ctx := b.Context()
 	var matched, total int
@@ -167,7 +170,7 @@ func checkSimilarRecall(b *testing.B, s *Store, account, run, foreign string, qu
 				return err
 			}
 			if i == 0 {
-				rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+similarChunksSQL, model.VectorLiteral(q), run, exclude, 4)
+				rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+similarChunksSQL, model.VectorLiteral(q), run, []string{}, 4, exclude.Run)
 				if err != nil {
 					return err
 				}
@@ -185,7 +188,7 @@ func checkSimilarRecall(b *testing.B, s *Store, account, run, foreign string, qu
 				return err
 			}
 			if i == 0 {
-				rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+similarChunksSQL, model.VectorLiteral(q), run, exclude, 4)
+				rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+similarChunksSQL, model.VectorLiteral(q), run, []string{}, 4, exclude.Run)
 				if err != nil {
 					return err
 				}
@@ -212,7 +215,7 @@ func checkSimilarRecall(b *testing.B, s *Store, account, run, foreign string, qu
 				}
 			}
 			for _, h := range approx {
-				if slices.Contains(exclude, h.Chunk.Path) {
+				if slices.Contains(excluded, h.Chunk.Path) {
 					return fmt.Errorf("search returned excluded path %s", h.Chunk.Path)
 				}
 				if slices.ContainsFunc(exact, func(e SimilarHit) bool { return e.Chunk.Path == h.Chunk.Path }) {
@@ -225,4 +228,31 @@ func checkSimilarRecall(b *testing.B, s *Store, account, run, foreign string, qu
 		b.Fatal(err)
 	}
 	return float64(matched) / float64(total)
+}
+
+// reportSimilarBenchmark is a runner run of the account that reported paths,
+// as the application's searches leave them out.
+func reportSimilarBenchmark(b *testing.B, s *Store, account string, paths []string) Exclusions {
+	b.Helper()
+	ctx := b.Context()
+	var runner string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, account).Scan(&runner); err != nil {
+			return err
+		}
+		return SetSimilarExclude(ctx, tx, runner, paths)
+	}); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id = $1`, runner); err != nil {
+			b.Error(err)
+		}
+	})
+	if _, err := s.owner.Exec(ctx, `ANALYZE similar_exclusions`); err != nil {
+		b.Fatal(err)
+	}
+	return Exclusions{Run: runner}
 }

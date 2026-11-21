@@ -36,10 +36,13 @@ import (
 // drawn from a few of the corpus's topics, offset by a style of its own.
 type scaleRepo struct {
 	account, id, name, run string
-	size                   int
-	topics                 []int
-	style                  []float32
-	seed                   uint64
+	// runner is the runner run whose reported paths its searches leave out,
+	// "" for none.
+	runner string
+	size   int
+	topics []int
+	style  []float32
+	seed   uint64
 }
 
 // scaleCorpus is the synthetic, clustered corpus: topic centroids shared by
@@ -269,7 +272,8 @@ type scaleLayout struct {
 var vectorLiteral = regexp.MustCompile(`'\[[^\]]*\]'`)
 
 const scaleQueryRepo = `SELECT path, start_line, end_line, language, symbol, kind, scope, text, 1 - (embedding <=> $1::halfvec)
-			FROM index_chunks WHERE repository_id = $5 AND index_run_id = $2 AND NOT (path = ANY($3))
+			FROM index_chunks c WHERE repository_id = $6 AND index_run_id = $2 AND NOT (path = ANY($3))
+				AND NOT EXISTS (SELECT 1 FROM similar_exclusions e WHERE e.runner_run_id = $5::uuid AND e.path = c.path)
 			ORDER BY embedding <=> $1::halfvec LIMIT $4`
 
 // scaleSearch runs layout's search for one query vector as the application
@@ -284,9 +288,10 @@ func scaleSearch(ctx context.Context, s *Store, l scaleLayout, r *scaleRepo, q [
 				return err
 			}
 		}
-		args := []any{model.VectorLiteral(q), r.run, []string{}, scaleRecallK, r.id}
-		if !strings.Contains(l.query, "$5") {
-			args = args[:4]
+		runner, _ := Exclusions{Run: r.runner}.args()
+		args := []any{model.VectorLiteral(q), r.run, []string{}, scaleRecallK, runner, r.id}
+		if !strings.Contains(l.query, "$6") {
+			args = args[:5]
 		}
 		if explain {
 			rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+l.query, args...)
@@ -333,7 +338,10 @@ func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 // minutes and gigabytes of disk.
 // KRITIKA_INDEX_SCALE_DIMS (1024), KRITIKA_INDEX_SCALE_QUERIES (50) and
 // KRITIKA_INDEX_SCALE_LAYOUTS (scaleDefaultLayouts, comma-separated names
-// from scaleLayouts) vary it.
+// from scaleLayouts) vary it. KRITIKA_INDEX_SCALE_EXCLUDE (none) is how many
+// paths a runner run reports for each target's searches to leave out: up to
+// half of them, and of the target's chunks, the target's own, the rest
+// paths that no chunk has.
 func BenchmarkIndexScale(b *testing.B) {
 	if os.Getenv("KRITIKA_INDEX_SCALE_ROWS") == "" {
 		b.Skip("KRITIKA_INDEX_SCALE_ROWS not set")
@@ -344,6 +352,9 @@ func BenchmarkIndexScale(b *testing.B) {
 	}
 	s, corpus := loadIndexScale(b, rows, scaleEnvInt(b, "KRITIKA_INDEX_SCALE_DIMS", 1024))
 	ctx := b.Context()
+	if n := scaleEnvInt(b, "KRITIKA_INDEX_SCALE_EXCLUDE", 0); n > 0 {
+		reportScaleExclusions(b, s, corpus, n)
+	}
 	qs, truth := scaleTruth(b, s, corpus, scaleEnvInt(b, "KRITIKA_INDEX_SCALE_QUERIES", 50))
 	wanted := strings.Split(cmp.Or(os.Getenv("KRITIKA_INDEX_SCALE_LAYOUTS"), scaleDefaultLayouts), ",")
 	for _, l := range scaleLayouts(rows) {
@@ -416,6 +427,7 @@ func loadIndexScale(b *testing.B, rows, dims int) (*Store, *scaleCorpus) {
 			`UPDATE repositories SET active_index_run_id = NULL`,
 			`DROP TABLE IF EXISTS index_chunks`,
 			`DELETE FROM index_schema`,
+			`DELETE FROM runner_runs WHERE account_id = ANY($1::uuid[])`,
 			`DELETE FROM index_runs WHERE account_id = ANY($1::uuid[])`,
 			`DELETE FROM repositories WHERE account_id = ANY($1::uuid[])`,
 		} {
@@ -431,6 +443,31 @@ func loadIndexScale(b *testing.B, rows, dims int) (*Store, *scaleCorpus) {
 	corpus := newScaleCorpus(dims, rows, accounts)
 	corpus.load(b, s)
 	return s, corpus
+}
+
+// reportScaleExclusions has a runner run of each target report n paths for
+// its searches to leave out, as a change of n paths does: up to half of them,
+// and of the target's chunks, the target's own, the rest paths that no
+// chunk has, so that each search still has chunks to find. The runs go with
+// the corpus's accounts.
+func reportScaleExclusions(b *testing.B, s *Store, corpus *scaleCorpus, n int) {
+	ctx := b.Context()
+	for _, r := range corpus.targets {
+		if err := s.owner.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`,
+			r.account).Scan(&r.runner); err != nil {
+			b.Fatal(err)
+		}
+		own := min(n/2, r.size/2)
+		if _, err := s.owner.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path)
+			SELECT $1, $2, CASE WHEN i < $5 THEN $3 || '/chunk-' || i || '.go' ELSE 'moved/' || $3 || '/file-' || i || '.go' END
+			FROM generate_series(0, $4 - 1) AS i`, r.runner, r.account, r.name, n, own); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if _, err := s.owner.Exec(ctx, `ANALYZE similar_exclusions`); err != nil {
+		b.Fatal(err)
+	}
+	b.Logf("each target's runner run reported %d paths", n)
 }
 
 // scaleTruth draws the queries of each target repository and their exact
@@ -758,7 +795,10 @@ func lexicalScaleCorpus(b testing.TB, rng *rand.Rand, tree string, size int) (ch
 // and of the chunks with their indexes, and how long an incremental step of
 // ten changed paths took to publish. KRITIKA_LEXICAL_SCALE_TREE, a
 // repository's path, makes the chunks of its HEAD rather than synthetic
-// code. It is opt-in: a hundred thousand chunks take minutes to load.
+// code. KRITIKA_LEXICAL_SCALE_EXCLUDE is how many paths a runner run reports
+// for the searches to leave out: up to half of them, and of the generation's
+// paths, its own, the rest paths that no chunk has. It is opt-in: a hundred
+// thousand chunks take minutes to load.
 func BenchmarkLexicalScale(b *testing.B) {
 	sizes := os.Getenv("KRITIKA_LEXICAL_SCALE_CHUNKS")
 	if sizes == "" {
@@ -879,13 +919,14 @@ func BenchmarkLexicalScale(b *testing.B) {
 				}
 			}
 			common := LexicalBar{Per: 100, Least: 20, Share: 2}
+			exclude := lexicalScaleExclusions(b, s, account.ID(), chunks)
 			var took []time.Duration
 			var hits int
 			for b.Loop() {
 				for _, req := range requests {
 					began := time.Now()
 					if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-						h, err := LexicalChunks(ctx, tx, run, req, nil, lexicalScalePerQuery, common, lexicalScalePerQuery)
+						h, err := LexicalChunks(ctx, tx, run, req, exclude, lexicalScalePerQuery, common, lexicalScalePerQuery)
 						hits += len(h)
 						return err
 					}); err != nil {
@@ -957,6 +998,23 @@ func scaleLayoutIs(ctx context.Context, s *Store, legacy bool) error {
 }
 
 // lexicalScalePaths is the distinct paths of chunks, sorted.
+// lexicalScaleExclusions are the KRITIKA_LEXICAL_SCALE_EXCLUDE paths that a
+// runner run of the account reports, none when it is unset: up to half of
+// them, and of the chunks' paths, the chunks' own, the rest paths that no
+// chunk has.
+func lexicalScaleExclusions(b *testing.B, s *Store, account string, chunks []StagedChunk) Exclusions {
+	n := scaleEnvInt(b, "KRITIKA_LEXICAL_SCALE_EXCLUDE", 0)
+	if n == 0 {
+		return Exclusions{}
+	}
+	own := lexicalScalePaths(chunks)
+	reported := slices.Clone(own[:min(n/2, len(own)/2)])
+	for i := len(reported); i < n; i++ {
+		reported = append(reported, fmt.Sprintf("moved/file-%d.go", i))
+	}
+	return reportSimilarBenchmark(b, s, account, reported)
+}
+
 func lexicalScalePaths(chunks []StagedChunk) []string {
 	paths := make([]string, 0, len(chunks))
 	for _, c := range chunks {

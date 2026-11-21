@@ -221,7 +221,7 @@ func searchesMatch(t *testing.T, s *Store, account, run string, words ...string)
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			// Every chunk that holds a word is kept, up to the most a word
 			// can be in and still be searched for.
-			hits, err := lexicalChunks(ctx, tx, query, run, queries, nil, 1000, LexicalBar{Least: LexicalCommonMax}, 1000)
+			hits, err := lexicalChunks(ctx, tx, query, run, queries, Exclusions{}, 1000, LexicalBar{Least: LexicalCommonMax}, 1000)
 			for _, h := range hits {
 				got = append(got, fmt.Sprintf("%s\t%s:%d\t%.6f\t%v", words[h.Query], h.Chunk.Path, h.Chunk.StartLine, h.Lexical, h.Matched))
 			}
@@ -482,7 +482,7 @@ func TestLexicalChunksCommonMax(t *testing.T) {
 	f.in(func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "commonword", Compound: true}, {Lexeme: "rareword", Compound: true}},
 			Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, nil, 1000, LexicalBar{Per: 1, Least: 2 * LexicalCommonMax}, 1000)
+		hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, Exclusions{}, 1000, LexicalBar{Per: 1, Least: 2 * LexicalCommonMax}, 1000)
 		for _, h := range hits {
 			found = append(found, fmt.Sprint(h.Chunk.Path, h.Matched))
 		}
@@ -603,7 +603,7 @@ func TestLexicalChunksOneSnapshot(t *testing.T) {
 	var weights []string
 	f.in(func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "foobar", Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, publishingTx{Tx: tx, publish: publish, statements: &statements}, full, []LexicalQuery{q}, nil,
+		hits, err := LexicalChunks(ctx, publishingTx{Tx: tx, publish: publish, statements: &statements}, full, []LexicalQuery{q}, Exclusions{},
 			100, LexicalBar{Least: 100}, 100)
 		for _, h := range hits {
 			weights = append(weights, fmt.Sprintf("%.3f", h.Lexical))
@@ -653,7 +653,7 @@ func TestLexicalChunksStepOfAnotherFormat(t *testing.T) {
 	var got []string
 	f.in(func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "foobar", Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, publishingTx{Tx: tx, publish: publish, statements: &statements}, full, []LexicalQuery{q}, nil,
+		hits, err := LexicalChunks(ctx, publishingTx{Tx: tx, publish: publish, statements: &statements}, full, []LexicalQuery{q}, Exclusions{},
 			10, LexicalBar{Least: 100}, 10)
 		for _, h := range hits {
 			got = append(got, h.Chunk.Path)
@@ -690,7 +690,7 @@ func TestLexicalChunksTiesBeyondTheCut(t *testing.T) {
 	var sent int
 	f.in(func(tx pgx.Tx) error {
 		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "leaseslots", Compound: true}}, Vector: []float32{0, 1, 0, 0, 0, 0, 0, 0}}
-		hits, err := LexicalChunks(ctx, countingTx{Tx: tx, rows: &sent}, run, []LexicalQuery{q}, nil, 1, LexicalBar{Least: 100}, 0)
+		hits, err := LexicalChunks(ctx, countingTx{Tx: tx, rows: &sent}, run, []LexicalQuery{q}, Exclusions{}, 1, LexicalBar{Least: 100}, 0)
 		for _, h := range hits {
 			got = append(got, h.Chunk.Path)
 		}
@@ -836,7 +836,7 @@ func TestLexicalChunksBarWithoutPer(t *testing.T) {
 			var got []string
 			f.in(func(tx pgx.Tx) error {
 				q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "rareword", Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
-				hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, nil, 10, tt.bar, 10)
+				hits, err := LexicalChunks(t.Context(), tx, run, []LexicalQuery{q}, Exclusions{}, 10, tt.bar, 10)
 				for _, h := range hits {
 					got = append(got, h.Chunk.Path)
 				}

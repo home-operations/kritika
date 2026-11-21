@@ -313,7 +313,7 @@ func TestSimilarLexicalTies(t *testing.T) {
 		map[string][]float32{"a.go": e(2), "b.go": e(0), "c.go": e(3), "d.go": e(3), "e.go": e(3)})
 	var got []string
 	if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
-		hits, err := lexicalHits(t.Context(), tx, r.run, []string{"leaseSlots()"}, [][]float32{e(0)}, nil, 1)
+		hits, err := lexicalHits(t.Context(), tx, r.run, []string{"leaseSlots()"}, [][]float32{e(0)}, store.Exclusions{}, 1)
 		for _, h := range hits {
 			got = append(got, h.Chunk.Path)
 		}
@@ -363,7 +363,7 @@ func TestSimilarLexicalReadsPostings(t *testing.T) {
 		if _, err := tx.Exec(ctx, `SELECT set_config('app.account_id', $1, true)`, r.account.ID()); err != nil {
 			return err
 		}
-		hits, err := lexicalHits(ctx, tx, r.run, []string{"zebraCrossing(serveWidget)"}, [][]float32{e(0)}, nil, 4)
+		hits, err := lexicalHits(ctx, tx, r.run, []string{"zebraCrossing(serveWidget)"}, [][]float32{e(0)}, store.Exclusions{}, 4)
 		if err != nil {
 			return err
 		}
@@ -588,7 +588,7 @@ func TestSearchByNameClaims(t *testing.T) {
 	t.Run("rarity", func(t *testing.T) {
 		var got []string
 		if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
-			hits, err := lexicalHits(t.Context(), tx, r.run, []string{"commonName(rareName)"}, [][]float32{e(0)}, nil, 4)
+			hits, err := lexicalHits(t.Context(), tx, r.run, []string{"commonName(rareName)"}, [][]float32{e(0)}, store.Exclusions{}, 4)
 			for _, h := range hits {
 				got = append(got, h.Chunk.Path)
 			}

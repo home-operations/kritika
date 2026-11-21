@@ -109,6 +109,14 @@ func (s *fakeRetentionStore) SweepModelInvocations(_ context.Context, olderThan 
 	return 1, nil
 }
 
+func (s *fakeRetentionStore) SweepSimilarExclusions(context.Context) (int64, error) {
+	s.calls <- sweepCall{name: "similarExclusions"}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	return 1, nil
+}
+
 // warnCounter counts warn-level (or higher) records.
 type warnCounter struct{ n atomic.Int32 }
 
@@ -181,6 +189,9 @@ func TestRetentionSweep(t *testing.T) {
 	if seventh := next(); seventh.name != "modelInvocations" || seventh.swept != current.Get().TranscriptRetention() {
 		t.Fatalf("seventh call = %q older than %s, want modelInvocations older than the transcript retention",
 			seventh.name, seventh.swept)
+	}
+	if got := next(); got.name != "similarExclusions" {
+		t.Fatalf("eighth call = %q, want similarExclusions", got.name)
 	}
 	if got := next(); got.name != "partitionIndex" || got.role != "kritika_app" {
 		t.Fatalf("call = %q for role %q, want partitionIndex for kritika_app", got.name, got.role)
@@ -273,10 +284,10 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		close(done)
 	}()
 
-	// Every sweep fails on every pass. Wait for two full passes (16 calls) to
+	// Every sweep fails on every pass. Wait for two full passes (18 calls) to
 	// prove that a failure does not stop the loop. Wait for one call more,
-	// which the sixteenth call's warning is logged before.
-	for range 17 {
+	// which the eighteenth call's warning is logged before.
+	for range 19 {
 		select {
 		case <-st.calls:
 		case <-time.After(5 * time.Second):
@@ -290,8 +301,8 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Retention did not return once ctx ended")
 	}
-	if n := logs.n.Load(); n < 16 {
-		t.Fatalf("logged %d warnings for two failed passes, want >= 16", n)
+	if n := logs.n.Load(); n < 18 {
+		t.Fatalf("logged %d warnings for two failed passes, want >= 18", n)
 	}
 }
 

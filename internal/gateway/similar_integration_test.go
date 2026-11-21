@@ -297,8 +297,9 @@ func checkVectorSearchMetric(t *testing.T, reg *prometheus.Registry, wantSearche
 }
 
 // TestSimilarReportedExclusions: a search leaves out the paths that its run
-// reported, which the first report sets for good, and the paths that an
-// older runner's request still carries.
+// reported, however many a directory move gives it, which the first report
+// sets for good, and the paths that an older runner's request still carries.
+// Only the report token reports them.
 func TestSimilarReportedExclusions(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -380,9 +381,9 @@ apps:
 		g.ServeHTTP(out, req)
 		return out
 	}
-	found := func(body string) []string {
+	foundAt := func(path, body string) []string {
 		t.Helper()
-		out := call("/v1/similar", gatewayToken, body)
+		out := call(path, gatewayToken, body)
 		if out.Code != http.StatusOK {
 			t.Fatalf("status=%d: %s", out.Code, out.Body.String())
 		}
@@ -397,30 +398,54 @@ apps:
 		slices.Sort(paths)
 		return paths
 	}
+	found := func(body string) []string { t.Helper(); return foundAt(runspec.SimilarPath, body) }
 	if got := found(`{"queries":["hello"]}`); !slices.Equal(got, []string{"main.go", "old.go", "other.go"}) {
 		t.Fatalf("before the report: %q", got)
 	}
 	if out := call("/v1/run/similar-exclude", gatewayToken, `{"paths":["main.go"]}`); out.Code != http.StatusUnauthorized {
 		t.Fatalf("exclusions reported with the run token: %d %s", out.Code, out.Body.String())
 	}
-	// A report of more paths than a search can carry is refused, which
-	// leaves the run without similar code, and holds nothing.
-	tooMany, err := json.Marshal(runspec.SimilarExcludeReport{Paths: slices.Repeat([]string{"x.go"}, maxSimilarExclude+1)})
+	// A directory move: old.go renamed to main.go, and 2,500 files moved
+	// from vendor/ to third_party/, whose old names the index holds, nearer
+	// the query than other.go. The run reports both names of each of the
+	// 2,501 renames, 5,002 paths.
+	moved := []string{"main.go", "old.go"}
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var run string
+		if err := tx.QueryRow(ctx, `SELECT active_index_run_id FROM repositories WHERE id = $1`, repo).Scan(&run); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE index_chunks SET embedding = '[1,0.5,0,0,0,0,0,0]' WHERE index_run_id = $1 AND path = 'other.go'`,
+			run); err != nil {
+			return err
+		}
+		for i := range 2500 {
+			moved = append(moved, fmt.Sprintf("vendor/lib/f%04d.go", i), fmt.Sprintf("third_party/lib/f%04d.go", i))
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO index_chunks(account_id,repository_id,index_run_id,path,start_line,end_line,text,embedding)
+   SELECT $1,$2,$3,p,1,1,'func f() {}','[1,0,0,0,0,0,0,0]' FROM unnest($4::text[]) p WHERE p LIKE 'vendor/%'`,
+			account.ID(), repo, run, moved)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	directoryMove, err := json.Marshal(runspec.SimilarExcludeReport{Paths: moved})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out := call("/v1/run/similar-exclude", reportToken, string(tooMany)); out.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("too many exclusions: %d %s", out.Code, out.Body.String())
-	}
-	for _, body := range []string{`{"paths":["main.go","old.go"]}`, `{"paths":["other.go"]}`} {
+	for _, body := range []string{string(directoryMove), `{"paths":["other.go"]}`} {
 		if out := call("/v1/run/similar-exclude", reportToken, body); out.Code != http.StatusNoContent {
-			t.Fatalf("report %s: %d %s", body, out.Code, out.Body.String())
+			t.Fatalf("report of %d bytes: %d %s", len(body), out.Code, out.Body.String())
 		}
 	}
 	if got := found(`{"queries":["hello"]}`); !slices.Equal(got, []string{"other.go"}) {
 		t.Fatalf("after the report: %q, want the first report's exclusions to hold", got)
 	}
-	if got := found(`{"queries":["hello"],"exclude":["other.go"]}`); len(got) != 0 {
+	if got := found(`{"queries":["hello"],"kind":"search"}`); !slices.Equal(got, []string{"other.go"}) {
+		t.Fatalf("search_code after the report: %q", got)
+	}
+	// An older runner sends its exclusions in each request, to /v1/similar.
+	if got := foundAt("/v1/similar", `{"queries":["hello"],"exclude":["other.go"]}`); len(got) != 0 {
 		t.Fatalf("with a request's own exclusions: %q", got)
 	}
 	// A request without queries embeds nothing, and learns that there is an
@@ -432,7 +457,7 @@ apps:
 	if out := call("/v1/similar", gatewayToken, `{"queries":["hello"],"kind":"other"}`); out.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown kind = %d", out.Code)
 	}
-	want := map[string]float64{"diff/ok": 2, "diff/empty": 1, "diff/no_queries": 1, "diff/too_large": 1, "unknown/invalid": 1}
+	want := map[string]float64{"diff/ok": 2, "search/ok": 1, "diff/empty": 1, "diff/no_queries": 1, "unknown/invalid": 1}
 	if got := similarRequests(t, reg); !maps.Equal(got, want) {
 		t.Fatalf("requests counted %v, want %v", got, want)
 	}

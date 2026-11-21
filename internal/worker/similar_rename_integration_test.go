@@ -118,7 +118,8 @@ func TestSimilarCodeRenameEndToEnd(t *testing.T) {
 	}
 	var excluded []string
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `SELECT coalesce(similar_exclude, '{}') FROM runner_runs WHERE review_id = $1`, reviewID).Scan(&excluded)
+		return tx.QueryRow(h.ctx, `SELECT coalesce(array_agg(e.path ORDER BY e.path), '{}') FROM similar_exclusions e
+			JOIN runner_runs r ON r.id = e.runner_run_id WHERE r.review_id = $1`, reviewID).Scan(&excluded)
 	}); err != nil {
 		t.Fatal(err)
 	}

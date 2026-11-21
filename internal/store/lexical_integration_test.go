@@ -95,6 +95,19 @@ func TestLexicalChunks(t *testing.T) {
 		{Path: "a.go", Text: "leaseSlots"}, {Path: "b.go", Text: "leaseSlots"}, {Path: "c.go", Text: "leaseSlots"}, {Path: "d.go", Text: "other"},
 	}, vec, near, near, vec)
 
+	// A runner run of alpha that reported the path its searches leave out.
+	var reported string
+	if err := s.WithAccount(ctx, accountID(t, s, "alpha"), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, accountID(t, s, "alpha")).
+			Scan(&reported); err != nil {
+			return err
+		}
+		return SetSimilarExclude(ctx, tx, reported, []string{"internal/lease/lease.go", "internal/lease/renamed.go"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id = $1`, reported) })
+
 	// Of the four chunks, two hold each of acquirelease, acquire and slots,
 	// one releaselease, and every one internal, in its path.
 	two, one := idf(2, 4), idf(1, 4)
@@ -149,7 +162,7 @@ func TestLexicalChunks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := s.WithAccount(ctx, accountID(t, s, tt.account), func(tx pgx.Tx) error {
 				// A term in every chunk of a generation is too common.
-				hits, err := LexicalChunks(ctx, tx, tt.run, tt.queries, tt.exclude, tt.perQuery, LexicalBar{Per: 1, Least: 2},
+				hits, err := LexicalChunks(ctx, tx, tt.run, tt.queries, Exclusions{Paths: tt.exclude}, tt.perQuery, LexicalBar{Per: 1, Least: 2},
 					tt.alone)
 				if err != nil {
 					return err
@@ -170,6 +183,29 @@ func TestLexicalChunks(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+	// The paths a runner run reported are left out as a request's own are,
+	// and with them.
+	for _, tt := range []struct {
+		exclude Exclusions
+		want    []string
+	}{
+		{Exclusions{Run: reported}, []string{"internal/lease/release.go", "internal/other/other.go"}},
+		{Exclusions{Run: reported, Paths: []string{"internal/other/other.go"}}, []string{"internal/lease/release.go"}},
+	} {
+		var got []string
+		if err := s.WithAccount(ctx, accountID(t, s, "alpha"), func(tx pgx.Tx) error {
+			hits, err := LexicalChunks(ctx, tx, run, []LexicalQuery{query}, tt.exclude, 3, LexicalBar{Per: 1, Least: 2}, 2)
+			for _, h := range hits {
+				got = append(got, h.Chunk.Path)
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("with %+v: hits = %q, want %q", tt.exclude, got, tt.want)
+		}
 	}
 }
 

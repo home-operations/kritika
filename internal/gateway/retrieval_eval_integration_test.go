@@ -307,11 +307,11 @@ func (ix evalIndexed) search(
 	if err := ix.st.WithAccount(ctx, ix.account, func(tx pgx.Tx) error {
 		started := time.Now()
 		var err error
-		if found.hits, err = store.SimilarChunks(ctx, tx, ix.run, vectors, exclude, depth); err != nil {
+		if found.hits, err = store.SimilarChunks(ctx, tx, ix.run, vectors, store.Exclusions{Paths: exclude}, depth); err != nil {
 			return err
 		}
 		searched := time.Now()
-		if found.named, err = lexicalHits(ctx, tx, ix.run, queries, vectors, exclude, depth); err != nil {
+		if found.named, err = lexicalHits(ctx, tx, ix.run, queries, vectors, store.Exclusions{Paths: exclude}, depth); err != nil {
 			return err
 		}
 		timed.requests++
