@@ -360,8 +360,8 @@ func TestSimilarLexicalFailure(t *testing.T) {
 		failures       float64
 	}{
 		// A table that an older leader rebuilt mid-rollout lacks the column.
-		{"the chunks' words are gone", `ALTER TABLE index_chunks DROP COLUMN lexemes`,
-			`ALTER TABLE index_chunks ADD COLUMN IF NOT EXISTS lexemes tsvector`, 0},
+		{"the chunks' words are gone", `ALTER TABLE index_chunks RENAME COLUMN lexemes TO lexemes_hidden`,
+			`ALTER TABLE index_chunks RENAME COLUMN lexemes_hidden TO lexemes`, 0},
 		{"the postings cannot be read", `REVOKE SELECT ON index_postings FROM kritika_app`,
 			`GRANT SELECT ON index_postings TO kritika_app`, 1},
 	} {
@@ -369,7 +369,11 @@ func TestSimilarLexicalFailure(t *testing.T) {
 			if _, err := owner.Exec(t.Context(), tt.damage); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _, _ = owner.Exec(context.Background(), tt.repair) })
+			t.Cleanup(func() {
+				if _, err := owner.Exec(context.Background(), tt.repair); err != nil {
+					t.Errorf("repair %q: %v", tt.repair, err)
+				}
+			})
 			reg := prometheus.NewRegistry()
 			code, got := r.ask(t, r.file, nil, reg, "widgetFactory()")
 			if code != http.StatusOK || !slices.Contains(got, "near.go:similarity 1.00") {
@@ -379,6 +383,13 @@ func TestSimilarLexicalFailure(t *testing.T) {
 				t.Errorf("search-by-name failures counted %g, want %g", n, tt.failures)
 			}
 		})
+	}
+	// Hiding the words keeps them: the table is shared, and a publication
+	// reads them to update the postings.
+	var lost int
+	if err := owner.QueryRow(t.Context(), `SELECT count(*) FROM index_chunks WHERE index_run_id = $1 AND lexemes IS NULL`, r.run).
+		Scan(&lost); err != nil || lost != 0 {
+		t.Fatalf("%d of the generation's chunks lost their words (%v)", lost, err)
 	}
 }
 
