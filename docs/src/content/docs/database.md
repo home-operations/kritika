@@ -337,7 +337,9 @@ interval.
 
 A migration that changes a table that searches, index builds or model calls
 use waits at most five seconds for that table's lock, so that the queries
-queued behind it wait no longer. When another transaction holds the lock
+queued behind it wait no longer. One that builds an index of such a table
+does so in a transaction of its own, which lets the table be read while it
+builds but holds up writes to it. When another transaction holds the lock
 longer, the migration fails and the leader logs it and releases the leader
 lock. A leader tries the migration again within one
 `KRITIKA_LEADER_RETRY_INTERVAL`. Replicas start working jobs once every

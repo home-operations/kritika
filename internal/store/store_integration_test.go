@@ -155,42 +155,93 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 // TestMigrationGivesWayToALock: a migration that changes a busy table gives
 // up its wait for the table's lock rather than hold up every query that
-// queues behind it, and applies once the lock is free. A check it replaces
-// is validated without that lock.
+// queues behind it, and applies once the lock is free, whatever of it the
+// table already has. A check it replaces is validated without that lock.
 func TestMigrationGivesWayToALock(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
-	validated := func() bool {
-		t.Helper()
-		var ok bool
-		if err := s.owner.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`).Scan(&ok); err != nil {
-			t.Fatal(err)
+	dropIndexChunks(t, s)
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	exists := func(query string) func() bool {
+		return func() bool {
+			t.Helper()
+			var ok bool
+			if err := s.owner.QueryRow(ctx, query).Scan(&ok); err != nil {
+				t.Fatal(err)
+			}
+			return ok
 		}
-		return ok
 	}
-	if !validated() {
-		t.Fatal("usage_role_check is not validated after Migrate")
+	column := func(table, name string) func() bool {
+		return exists(`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = '` + table + `'::regclass AND attname = '` + name +
+			`' AND NOT attisdropped)`)
 	}
-	if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version IN ('0068_usage_rerank', '0071_usage_rerank_validate')`); err != nil {
-		t.Fatal(err)
-	}
-	reader, err := s.owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := reader.Exec(ctx, `LOCK TABLE usage IN ACCESS SHARE MODE`); err != nil {
-		t.Fatal(err)
-	}
-	err = s.Migrate(ctx, "kritika_app")
-	_ = reader.Rollback(ctx)
-	if !lockNotAvailable(err) {
-		t.Fatalf("Migrate while usage is read = %v, want a lock timeout", err)
-	}
-	if err := s.Migrate(ctx, "kritika_app"); err != nil {
-		t.Fatalf("Migrate once usage is free: %v", err)
-	}
-	if !validated() {
-		t.Fatal("usage_role_check is not validated after Migrate again")
+	for _, tt := range []struct {
+		name string
+		// versions are the migrations applied again, each undone first by
+		// undo, "" for none. The first is the one that meets the lock.
+		versions []string
+		undo     string
+		// lock is what another transaction holds while they apply.
+		lock    string
+		applied func() bool
+	}{
+		{"a column of runner_runs", []string{"0062_similar_exclude"}, "",
+			`LOCK TABLE runner_runs IN ACCESS SHARE MODE`, column("runner_runs", "similar_exclude")},
+		{"the index format's columns", []string{"0063_index_format"}, "",
+			`LOCK TABLE index_packs IN ACCESS SHARE MODE`, column("index_packs", "truncated")},
+		{"the chunks' content hash", []string{"0064_index_content_hash", "0073_index_content_hash_idx"},
+			`ALTER TABLE index_chunks DROP COLUMN content_hash`,
+			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
+		{"the content hash's index", []string{"0073_index_content_hash_idx"}, `DROP INDEX index_chunks_content_hash_idx`,
+			`LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
+		{"the usage check", []string{"0068_usage_rerank", "0071_usage_rerank_validate"}, "",
+			`LOCK TABLE usage IN ACCESS SHARE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
+		{"the usage check's validation", []string{"0071_usage_rerank_validate"}, "",
+			`LOCK TABLE usage IN SHARE UPDATE EXCLUSIVE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
+		{"a column of index_staging", []string{"0069_index_staging_signature"}, "",
+			`LOCK TABLE index_staging IN ACCESS SHARE MODE`, column("index_staging", "signature")},
+		{"a column of repositories", []string{"0070_repository_config_off"}, "",
+			`LOCK TABLE repositories IN ACCESS SHARE MODE`, column("repositories", "repo_config_off")},
+		{"the postings and the generation's count", []string{"0072_index_postings"}, "",
+			`LOCK TABLE index_runs IN ACCESS SHARE MODE`, column("index_runs", "generation_chunks")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.applied() {
+				t.Fatal("not applied after Migrate")
+			}
+			if tt.undo != "" {
+				if _, err := s.owner.Exec(ctx, tt.undo); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.versions); err != nil {
+				t.Fatal(err)
+			}
+			holder, err := s.owner.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := holder.Exec(ctx, tt.lock); err != nil {
+				t.Fatal(err)
+			}
+			// A migration that waited for the lock for good is ended here.
+			waiting, cancel := context.WithTimeout(ctx, 20*time.Second)
+			err = s.Migrate(waiting, "kritika_app")
+			cancel()
+			_ = holder.Rollback(ctx)
+			if !lockNotAvailable(err) || !strings.Contains(fmt.Sprint(err), tt.versions[0]) {
+				t.Fatalf("Migrate while the table is locked = %v, want a lock timeout in %s", err, tt.versions[0])
+			}
+			if err := s.Migrate(ctx, "kritika_app"); err != nil {
+				t.Fatalf("Migrate once the table is free: %v", err)
+			}
+			if !tt.applied() {
+				t.Fatal("not applied after Migrate again")
+			}
+		})
 	}
 }
 
@@ -546,9 +597,12 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 // build before them, as during a rollout, and then kept by a leader of this
 // build.
 func TestIndexAddedColumns(t *testing.T) {
-	for _, tt := range []struct{ column, index, migration string }{
-		{"content_hash", "index_chunks_content_hash_idx", "0064_index_content_hash"},
-		{"lexemes", "", "0065_index_lexemes"},
+	for _, tt := range []struct {
+		column, index string
+		migrations    []string
+	}{
+		{"content_hash", "index_chunks_content_hash_idx", []string{"0064_index_content_hash", "0073_index_content_hash_idx"}},
+		{"lexemes", "", []string{"0065_index_lexemes"}},
 	} {
 		t.Run(tt.column, func(t *testing.T) {
 			ctx := t.Context()
@@ -579,7 +633,7 @@ func TestIndexAddedColumns(t *testing.T) {
 			}
 			check("created")
 			drop()
-			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = $1`, tt.migration); err != nil {
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.migrations); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.Migrate(ctx, "kritika_app"); err != nil {

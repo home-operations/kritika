@@ -109,7 +109,7 @@ func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (IndexSchema, bool, error) {
 }
 
 // contentHashIndex finds the chunks of a repository that hold a content
-// hash, as migration 0064 creates it.
+// hash, as migration 0073 creates it.
 const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_idx ON index_chunks (repository_id, content_hash)
 	WHERE content_hash IS NOT NULL`
 
