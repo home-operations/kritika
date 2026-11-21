@@ -127,30 +127,59 @@ func TestMergeParts(t *testing.T) {
 }
 
 // TestPartPrompts: each part is shown its own files' diff and told which part
-// it is. It is given the similar code of its own hunks, asked for once the run
-// learns that there is an index and has reported every changed path, once for
-// all its parts, and offered search_code. It is given the rules of its own
-// paths and refused a finding on the other part's file. The first part looks
-// at the earlier finding on a file that no part reviews. A split with no
-// rules reports an empty list, not a nil one, which the pack's rule_ids
-// column will refuse.
+// it is. It is given the similar code of its own hunks, searched for only
+// after a probe finds an index and the run has reported every changed path,
+// once for all its parts: a search sent before the report can find the
+// changed files' own copies. It is offered search_code. It is given the
+// rules of its own paths and refused a finding on the other part's file. The
+// first part looks at the earlier finding on a file that no part reviews. A
+// split with no rules reports an empty list, not a nil one, which the pack's
+// rule_ids column will refuse.
 func TestPartPrompts(t *testing.T) {
-	asked := 0
-	var reported [][]string
+	var (
+		mu       sync.Mutex
+		events   []string
+		reported [][]string
+	)
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == runspec.ReportSimilarExcludePath {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case runspec.ReportSimilarExcludePath:
 			var v runspec.SimilarExcludeReport
 			if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
 				t.Error(err)
 			}
-			reported = append(reported, v.Paths)
+			events, reported = append(events, "report"), append(reported, v.Paths)
 			w.WriteHeader(http.StatusNoContent)
-			return
+		case runspec.SimilarPath:
+			var req contextpack.SimilarRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			if len(req.Queries) == 0 {
+				events = append(events, "probe")
+				_, _ = w.Write([]byte(`{"indexed":true}`))
+				return
+			}
+			events = append(events, "search")
+			_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"lib/z.go","start_line":1,"end_line":1,"text":"func z() {}"}]}`))
+		default:
+			t.Errorf("unexpected request to %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
 		}
-		asked++
-		_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"lib/z.go","start_line":1,"end_line":1,"text":"func z() {}"}]}`))
 	}))
 	t.Cleanup(gw.Close)
+	// sequence is the requests the gateway has had since the last call, and
+	// forgets them.
+	sequence := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		got := events
+		events = nil
+		return got
+	}
+	want := []string{"probe", "report", "search", "search"}
 	s := reviewSpec()
 	s.GatewayURL, s.PriorHead = gw.URL, shaB
 	s.Prompt.Rules = []configfile.Rule{{ID: "a-rule", Rule: "Mind a.", Paths: []string{"a/**"}}, {ID: "b-rule", Rule: "Mind b.", Paths: []string{"b/**"}}}
@@ -164,11 +193,16 @@ func TestPartPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parts) != 2 || asked != 3 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
-		t.Fatalf("%d parts, %d similar requests, search %v, %d chunks, rules %q; want each part's own", len(parts), asked,
-			tools.search != nil, len(chunks), rules)
+	if len(parts) != 2 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
+		t.Fatalf("%d parts, search %v, %d chunks, rules %q; want each part's own", len(parts), tools.search != nil, len(chunks), rules)
 	}
-	if !slices.EqualFunc(reported, [][]string{{"a/x.go", "b/y.go"}}, slices.Equal) {
+	if got := sequence(); !slices.Equal(got, want) {
+		t.Fatalf("gateway requests %q, want %q: the exclusions reported before either search", got, want)
+	}
+	mu.Lock()
+	once := slices.EqualFunc(reported, [][]string{{"a/x.go", "b/y.go"}}, slices.Equal)
+	mu.Unlock()
+	if !once {
 		t.Fatalf("reported exclusions %q, want every changed path once for the run, not once a part", reported)
 	}
 	const earlier = "main.go:1 [p2] earlier finding"
@@ -196,6 +230,9 @@ func TestPartPrompts(t *testing.T) {
 	}
 	if rules == nil || len(rules) != 0 {
 		t.Fatalf("rules of a split with none = %#v, want an empty list", rules)
+	}
+	if got := sequence(); !slices.Equal(got, want) {
+		t.Fatalf("gateway requests of a split with no rules %q, want %q", got, want)
 	}
 }
 
