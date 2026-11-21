@@ -178,10 +178,12 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 
 // regionQueries is the queries of one changed region: the region itself when
 // it fits the gateway's bound. Otherwise it is the outermost named
-// declarations that hold an added line, each cut to the bound, as the index
-// cuts a file. A declaration over the bound gives way to the ones nested in
-// it that hold an added line. Without such a declaration, it is the windows
-// of the region's lines that hold an added line.
+// declarations that hold an added line, as the index cuts a file. A
+// declaration over the bound gives way to the ones nested in it that hold an
+// added line, or without any, to the windows of its lines that hold one:
+// its first bound's worth can be all unchanged code. Without such a
+// declaration, it is the windows of the region's lines that hold an added
+// line.
 func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []string {
 	var b strings.Builder
 	var added []int
@@ -212,12 +214,16 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 			continue
 		}
 		body := f.Text(d.StartLine, d.EndLine) + "\n"
-		if len(body) > contextpack.SimilarQueryChars && slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
+		switch {
+		case len(body) <= contextpack.SimilarQueryChars:
+			out = append(out, body)
+		case slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
 			return n.StartLine > d.StartLine && n.EndLine <= d.EndLine && holds(n)
-		}) {
+		}):
 			continue
+		default:
+			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))])...)
 		}
-		out = append(out, textcut.Prefix(body, contextpack.SimilarQueryChars))
 		lastEnd = d.EndLine
 	}
 	if len(out) > 0 {
