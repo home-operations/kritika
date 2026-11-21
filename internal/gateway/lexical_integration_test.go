@@ -537,6 +537,91 @@ func TestSimilarRerankUsage(t *testing.T) {
 	}
 }
 
+// TestSimilarRerankSlotFreeForUsage: a reranked request lets its slot go
+// before it records its usage, so a usage write that waits on Postgres
+// holds none of the reranker's slots. A trigger holds the write on an
+// advisory lock that the test takes, until the slot is seen free.
+func TestSimilarRerankSlotFreeForUsage(t *testing.T) {
+	r := newLexicalRepo(t, "rerank-slot-usage", runspec.IndexFormat, widgets, widgetVectors())
+	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/slotfree, api: tei } }`)
+	owner, err := pgx.Connect(t.Context(), storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+	const lock = 7321554
+	for _, sql := range []string{
+		`CREATE OR REPLACE FUNCTION test_hold_rerank_usage() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN PERFORM pg_advisory_xact_lock(` + strconv.Itoa(lock) + `); RETURN NEW; END $$`,
+		`DROP TRIGGER IF EXISTS test_hold_rerank_usage ON usage`,
+		`CREATE TRIGGER test_hold_rerank_usage BEFORE INSERT ON usage FOR EACH ROW
+			WHEN (NEW.role = 'rerank' AND NEW.repository_id = '` + r.id + `') EXECUTE FUNCTION test_hold_rerank_usage()`,
+	} {
+		if _, err := owner.Exec(t.Context(), sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		if _, err := owner.Exec(context.Background(), `DROP TRIGGER IF EXISTS test_hold_rerank_usage ON usage`); err != nil {
+			t.Errorf("drop the usage trigger: %v", err)
+		}
+	})
+	if _, err := owner.Exec(t.Context(), `SELECT pg_advisory_lock($1)`, lock); err != nil {
+		t.Fatal(err)
+	}
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			unlocked = true
+			if _, err := owner.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lock); err != nil {
+				t.Errorf("unlock: %v", err)
+			}
+		}
+	}
+	defer unlock()
+	reranker := rerankFunc(func(_ context.Context, _ string, docs []string) ([]float64, model.RerankUsage, error) {
+		return make([]float64, len(docs)), model.RerankUsage{Tokens: 1}, nil
+	})
+	answered := make(chan int, 1)
+	go func() {
+		code, _ := r.ask(t, file, reranker, prometheus.NewRegistry(), "widgetFactory()")
+		answered <- code
+	}()
+	// A hang guard: the usage write reaches the lock, whatever the slot.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	for {
+		var waiting int
+		if err := owner.QueryRow(ctx, `SELECT count(*) FROM pg_locks
+			WHERE locktype = 'advisory' AND classid = 0 AND objid = $1 AND objsubid = 1 AND NOT granted`, lock).Scan(&waiting); err != nil {
+			t.Fatalf("the rerank usage write never waited on the lock: %v", err)
+		}
+		if waiting > 0 {
+			break
+		}
+		select {
+		case code := <-answered:
+			t.Fatalf("answered %d without recording rerank usage", code)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	var held int
+	if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT count(*) FROM model_leases
+			WHERE account_id = $1 AND model_key = 'rerank:slotfree' AND job_id IS NOT NULL AND expires_at >= now()`,
+			r.account.ID()).Scan(&held)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if held != 0 {
+		t.Errorf("%d rerank slots held while the request's usage write waits, want none", held)
+	}
+	unlock()
+	if code := <-answered; code != http.StatusOK {
+		t.Fatalf("answer = %d, want 200", code)
+	}
+}
+
 // TestSimilarPartialRerank: when the reranker answers some of a request's
 // queries and not others, their best chunks are compared on the fused scale
 // that every query has, not the reranker's against the fusion's.

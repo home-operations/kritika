@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -85,8 +86,9 @@ func rescore(cands []candidate, q int, idx []int, scores []float64) {
 // review's own steps need, nor bring the run to its budget, which refuses
 // them. A run with less left keeps the fused order. The reservation is
 // settled at the tokens that the provider reports.
-// A request that reranked records a usage row of the review with them, none
-// for search units alone, which the usage and its caps do not count.
+// A request that reranked records a usage row of the review with them, one of
+// no tokens when the provider reports search units alone, which the usage and
+// its caps do not count.
 func (g *Server) rerank(
 	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
 	cands []candidate, logger *slog.Logger,
@@ -133,13 +135,15 @@ func (g *Server) rerank(
 		logger.Warn("gateway: similar code not reranked: no slot", "error", err)
 		return
 	}
-	defer func() {
+	// Released once the reranker has answered, and here only when it panics.
+	release := sync.OnceFunc(func() {
 		rctx, cancel := detach(ctx)
 		defer cancel()
 		if _, err := lease.Release(rctx); err != nil {
 			logger.Warn("lease not released", "key", key, "error", err)
 		}
-	}()
+	})
+	defer release()
 	started := time.Now()
 	reranked := 0
 	for _, q := range slices.Sorted(maps.Keys(byQuery)) {
@@ -160,6 +164,9 @@ func (g *Server) rerank(
 		rescore(cands, q, idx, scores)
 		reranked++
 	}
+	// The slot first: the usage and the charge can wait for Postgres, and the
+	// reranker's other callers must not wait with them.
+	release()
 	if reranked == len(byQuery) {
 		rerankedAll(cands)
 	}
