@@ -346,7 +346,9 @@ func TestSimilarLexicalReadsPostings(t *testing.T) {
 }
 
 // TestSimilarLexicalFailure: when the search by name fails, the request is
-// answered by the vector search alone, and the failure is counted.
+// answered by the vector search alone, and the failure is counted. A table
+// without its chunks' words column still has their postings, which are what
+// the search by name reads, so it still finds the chunk by its name.
 func TestSimilarLexicalFailure(t *testing.T) {
 	r := newLexicalRepo(t, "failure", runspec.IndexFormat, widgets, widgetVectors())
 	owner, err := pgx.Connect(t.Context(), storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
@@ -358,12 +360,14 @@ func TestSimilarLexicalFailure(t *testing.T) {
 		name           string
 		damage, repair string
 		failures       float64
+		want           []string
 	}{
 		// A table that an older leader rebuilt mid-rollout lacks the column.
 		{"the chunks' words are gone", `ALTER TABLE index_chunks RENAME COLUMN lexemes TO lexemes_hidden`,
-			`ALTER TABLE index_chunks RENAME COLUMN lexemes_hidden TO lexemes`, 0},
+			`ALTER TABLE index_chunks RENAME COLUMN lexemes_hidden TO lexemes`, 0,
+			[]string{"factory.go:shares widgetFactory", "near.go:similarity 1.00"}},
 		{"the postings cannot be read", `REVOKE SELECT ON index_postings FROM kritika_app`,
-			`GRANT SELECT ON index_postings TO kritika_app`, 1},
+			`GRANT SELECT ON index_postings TO kritika_app`, 1, []string{"near.go:similarity 1.00"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := owner.Exec(t.Context(), tt.damage); err != nil {
@@ -376,8 +380,8 @@ func TestSimilarLexicalFailure(t *testing.T) {
 			})
 			reg := prometheus.NewRegistry()
 			code, got := r.ask(t, r.file, nil, reg, "widgetFactory()")
-			if code != http.StatusOK || !slices.Contains(got, "near.go:similarity 1.00") {
-				t.Fatalf("answer = %d %q, want 200 with the vector search's near.go", code, got)
+			if code != http.StatusOK || !slices.Equal(got, tt.want) {
+				t.Fatalf("answer = %d %q, want 200 %q", code, got, tt.want)
 			}
 			if n := lexicalFailures(t, reg); n != tt.failures {
 				t.Errorf("search-by-name failures counted %g, want %g", n, tt.failures)
