@@ -288,7 +288,8 @@ func refusingUploadPack(t *testing.T, tip, refused string) string {
 // upload-pack words it, counts as the commit being unavailable, and so does
 // go-git's own server not finding a commit that was asked for. Each names
 // the commit refused, as a whole SHA. Other errors that the server or the
-// transport send do not count, nor an object missing that was not asked for.
+// transport send do not count, nor a refusal or a missing object that names
+// only a commit that was not asked for.
 func TestRefusedCommit(t *testing.T) {
 	head, base := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	for _, tc := range []struct {
@@ -299,7 +300,9 @@ func TestRefusedCommit(t *testing.T) {
 	}{
 		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + head}), want: true, sha: head},
 		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + base), want: true, sha: base},
-		{name: "refusal of a commit not asked for", err: &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("c", 40)}, want: true},
+		{name: "refusal of a commit not asked for", err: &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("c", 40)}},
+		{name: "refusal of a sha256 commit not asked for", err: &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("c", 64)}},
+		{name: "refusal naming a short hex word", err: &pktline.ErrorLine{Text: "upload-pack: not our ref cafe"}, want: true},
 		{name: "refusal naming no commit", err: &pktline.ErrorLine{Text: "upload-pack: not our ref"}, want: true},
 		{name: "wanted object not found", err: fmt.Errorf("getting wanted object %s: %w", base, plumbing.ErrObjectNotFound), want: true, sha: base},
 		{name: "other object not found", err: fmt.Errorf("getting tree %s: %w", strings.Repeat("c", 40), plumbing.ErrObjectNotFound)},

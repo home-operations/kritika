@@ -370,11 +370,12 @@ func renderChanges(ctx context.Context, changes object.Changes, gained map[strin
 // serve a commit that it was asked for, one of wanted, and which: git's
 // upload-pack answers "not our ref" and the commit over the wire, and go-git's
 // own server, which a local path reaches, does not find the object and names
-// it. The commit is empty when a refusal names none of wanted. Another object
-// missing is the fetch's own trouble, not the commit's.
+// it. The commit is empty when a refusal names no object at all. A refusal
+// that names only some other object, or another object missing, is the
+// fetch's own trouble, not the commit's.
 func refusedCommit(err error, wanted ...string) (string, bool) {
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		sha := namedCommit(err.Error(), wanted)
+		sha, _ := namedCommit(err.Error(), wanted)
 		return sha, sha != ""
 	}
 	var text string
@@ -384,20 +385,23 @@ func refusedCommit(err error, wanted ...string) (string, bool) {
 		text = e.Reason
 	}
 	if _, after, ok := strings.Cut(text, "not our ref"); ok {
-		return namedCommit(after, wanted), true
+		sha, named := namedCommit(after, wanted)
+		return sha, sha != "" || !named
 	}
 	return "", false
 }
 
 // namedCommit is the first of wanted that text names as a whole hex word, or
-// empty: a SHA within a longer one is not named.
-func namedCommit(text string, wanted []string) string {
+// empty: a SHA within a longer one is not named. named reports whether text
+// names any full object id, SHA-1 or SHA-256, of wanted or not.
+func namedCommit(text string, wanted []string) (sha string, named bool) {
 	for _, w := range strings.FieldsFunc(text, func(r rune) bool { return (r < '0' || r > '9') && (r < 'a' || r > 'f') }) {
 		if slices.Contains(wanted, w) {
-			return w
+			return w, true
 		}
+		named = named || len(w) == 40 || len(w) == 64
 	}
-	return ""
+	return "", named
 }
 
 // unavailable marks commit sha missing from the fetched repository as
