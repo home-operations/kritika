@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -394,6 +395,30 @@ func TestLexicalWithin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := lexicalWithin(now, now.Add(tt.left)); got != tt.want {
 				t.Errorf("lexicalWithin with %v left = %v, want %v", tt.left, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRerankDeadline: reranking, the wait for a slot included, ends at the
+// reranker's configured timeout, not the default one, unless the request's
+// answer is due first.
+func TestRerankDeadline(t *testing.T) {
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name     string
+		timeout  time.Duration
+		answerBy time.Time
+		want     time.Time
+	}{
+		{name: "the configured timeout", timeout: time.Second, answerBy: now.Add(time.Hour), want: now.Add(time.Second)},
+		{name: "a configured timeout past the default", timeout: time.Minute, answerBy: now.Add(time.Hour), want: now.Add(time.Minute)},
+		{name: "the default timeout", answerBy: now.Add(time.Hour), want: now.Add(configfile.DefaultRerankTimeout)},
+		{name: "an answer due first", timeout: time.Minute, answerBy: now.Add(time.Second), want: now.Add(time.Second)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rerankDeadline(now, &configfile.Rerank{Timeout: tc.timeout}, tc.answerBy); !got.Equal(tc.want) {
+				t.Fatalf("rerankDeadline = %s, want %s", got, tc.want)
 			}
 		})
 	}

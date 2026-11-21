@@ -27,6 +27,16 @@ func rerankDocument(c contextpack.Chunk) string {
 	return head + "\n" + c.Text
 }
 
+// rerankDeadline is when reranking that starts at now ends, the wait for a
+// slot included: once the reranker's timeout has passed, or at answerBy, the
+// request's own deadline, when that comes first.
+func rerankDeadline(now time.Time, rr *configfile.Rerank, answerBy time.Time) time.Time {
+	if d := now.Add(rr.Deadline()); d.Before(answerBy) {
+		return d
+	}
+	return answerBy
+}
+
 // rerankBatches is, for each query of cands, the indices of its n best
 // candidates by their fused order, the best first: what the reranker is
 // sent of it.
@@ -85,10 +95,7 @@ func (g *Server) rerank(
 	if len(byQuery) == 0 {
 		return
 	}
-	deadline := time.Now().Add(rr.Deadline())
-	if r.answerBy.Before(deadline) {
-		deadline = r.answerBy
-	}
+	deadline := rerankDeadline(time.Now(), rr, r.answerBy)
 	if time.Until(deadline) <= 0 {
 		logger.Info("similar code not reranked: the answer is due", "answer_by", r.answerBy)
 		return

@@ -457,8 +457,10 @@ func lexicalFailures(t *testing.T, reg *prometheus.Registry) float64 {
 
 // TestSimilarRerankSlotWait: a reranker whose every slot is held waits no
 // longer than its timeout for one, and the fused order answers. The answer is
-// due an hour on and the slots are held for good, so only the reranker's 1s
-// timeout can end the wait within the test's minute.
+// due an hour on and the slots are held for good, so only the reranker's
+// timeout can end the wait. The test's minute is a guard against a hang, not
+// a bound on the wait: TestRerankDeadline shows that the timeout is the
+// configured one rather than the default.
 func TestSimilarRerankSlotWait(t *testing.T) {
 	r := newLexicalRepo(t, "rerank-wait", runspec.IndexFormat, widgets, widgetVectors())
 	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, timeout: 1s } }`)
