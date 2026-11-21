@@ -1887,6 +1887,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})
 
+	t.Run("a repository turned on in the dashboard is reviewed under a default of off", func(t *testing.T) {
+		checkTurnedOnUnderDefaultOff(ctx, t, svc, account, current, lf, waitReview, dir, base)
+	})
+
 	t.Run("the pull request's eyes stay on while another review of it runs", func(t *testing.T) {
 		checkOtherReviewRunning(ctx, t, &wb, account.ID())
 	})
@@ -2155,6 +2159,34 @@ func checkRepoConfigPrompt(t *testing.T, system, user string) {
 		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.") ||
 		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
+	}
+}
+
+// checkTurnedOnUnderDefaultOff reviews a pull request of a repository that
+// the dashboard turned on while the admin's default is off. The dashboard's
+// choice runs it, so the default does not skip its review as the
+// repository's own .kritika.yaml would.
+func checkTurnedOnUnderDefaultOff(
+	ctx context.Context, t *testing.T, svc *ingest.Service, account *configfile.Account, current *configfile.Current,
+	lf *localForge, waitReview func(string) (string, string, string), dir, base string,
+) {
+	t.Helper()
+	original := current.Get()
+	t.Cleanup(func() { current.Set(original) })
+	off := configfiletest.Load(t, configYAML+"\nenabled: false\n")
+	current.Set(off)
+	lf.setBase(base)
+	head := commitOnBase(t, dir, base, "turned on under a default of off", "package main\n\nfunc dashboard() {}\n")
+	out, err := svc.Dispatch(ctx, ingest.Request{File: off, Account: account, Event: webhook.Event{
+		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
+		Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
+		PullRequest: &webhook.PullRequest{Number: 41, Title: "t", Author: "a", State: "open", HeadRef: "f", HeadSHA: head, BaseRef: "main"},
+	}})
+	if err != nil || out.Status != ingest.Enqueued {
+		t.Fatalf("dispatch = %+v, %v; want the dashboard's choice to queue the review", out, err)
+	}
+	if status, _, _ := waitReview(head); status != "completed" {
+		t.Fatalf("status = %s, want completed: only the repository's own file turns its reviews off", status)
 	}
 }
 

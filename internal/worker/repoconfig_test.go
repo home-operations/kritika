@@ -247,6 +247,9 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		// read are the files the follow-up's runner reads from the merge
 		// base, sorted.
 		read []string
+		// adminOff is an admin default of off, which a dashboard choice
+		// overrides before a follow-up is queued.
+		adminOff bool
 	}{
 		{name: "no file", files: files, model: "p/big", read: []string{"ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"}},
 		{
@@ -258,12 +261,15 @@ func TestFollowUpRepoConfig(t *testing.T) {
 			read: []string{".kritika.yaml", "ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"},
 		},
 		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritika.yaml", model: "p/big"},
+		{name: "an admin default of off", files: files, adminOff: true, model: "p/big", read: []string{"ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"}},
+		{name: "disabled under an admin default of off", files: with("enabled: false\n"), adminOff: true, reason: "disabled in .kritika.yaml", model: "p/big"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			settings := adminSettings(t)
 			settings.Models.Review = "p/big"
 			settings.Providers = []string{"p"}
+			settings.Enabled = !tt.adminOff
 			f := &followUp{client: fileForge{files: tt.files}, owner: "o", repo: "r", pr: &pullRequest{number: 1}, settings: settings}
 			reason, err := f.repoConfig(t.Context())
 			if err != nil || reason != tt.reason {

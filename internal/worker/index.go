@@ -90,9 +90,6 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
-	// Runs settled kritika's side, where a dashboard choice overrides the
-	// admin's default. Only the repository's own file can still turn it off.
-	settings.Enabled = true
 	client, err := w.client(ctx, file, account, repo.Name)
 	if err != nil {
 		return w.waitOutForge(ctx, job, account.Key(), logger, err)

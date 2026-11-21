@@ -53,7 +53,12 @@ func readRepoConfig(ctx context.Context, client forge.Client, owner, repo, ref s
 // effective applies doc, the merge-base .kritika.yaml or nil when there is
 // none, onto the admin's configuration (see repoconfig.Merge). The notes say
 // which of the file's values were dropped, or why the whole file was ignored.
+// The admin's enabled is not applied: it says only whether the repository
+// runs, which a dashboard choice overrides and which was settled before the
+// job (see configfile.File.Runs). Only the repository's own file can still
+// turn it off.
 func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
+	settings.Enabled = true
 	m, err := repoconfig.Merge(doc, settings)
 	notes := m.Dropped
 	if err != nil {
