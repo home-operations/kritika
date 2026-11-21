@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/home-operations/kritika/internal/gittest"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // corpus is a tree of the shapes the chunker used to drop code from: an
@@ -229,11 +230,14 @@ func checkChunks(t *testing.T, chunks []Chunk, src []string) map[int]Chunk {
 			t.Fatalf("chunk %s L%d-%d is outside the file's %d lines", c.Symbol, c.StartLine, c.EndLine, len(src))
 		}
 		want := strings.Join(src[c.StartLine-1:c.EndLine], "\n")
-		if c.Text != want && (c.StartLine != c.EndLine || !strings.HasPrefix(want, c.Text)) {
-			t.Errorf("chunk %s L%d-%d holds %d bytes of its lines' %d", c.Symbol, c.StartLine, c.EndLine, len(c.Text), len(want))
+		if len(want) > DefaultOptions.MaxChunkBytes {
+			if c.StartLine != c.EndLine {
+				t.Errorf("chunk %s L%d-%d spans %d bytes, over %d", c.Symbol, c.StartLine, c.EndLine, len(want), DefaultOptions.MaxChunkBytes)
+			}
+			want = textcut.Prefix(want, DefaultOptions.MaxChunkBytes)
 		}
-		if len(c.Text) > DefaultOptions.MaxChunkBytes && c.StartLine != c.EndLine {
-			t.Errorf("chunk %s L%d-%d is %d bytes, over %d", c.Symbol, c.StartLine, c.EndLine, len(c.Text), DefaultOptions.MaxChunkBytes)
+		if c.Text != want {
+			t.Errorf("chunk %s L%d-%d holds %d bytes, want %d", c.Symbol, c.StartLine, c.EndLine, len(c.Text), len(want))
 		}
 		if strings.IndexFunc(c.Text, isWord) < 0 {
 			t.Errorf("chunk %s L%d-%d holds no word: %q", c.Symbol, c.StartLine, c.EndLine, c.Text)
