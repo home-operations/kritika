@@ -576,6 +576,56 @@ func TestPollerLooksPastARepositoryTheAppDoesNotFind(t *testing.T) {
 	}
 }
 
+// limitedDiscovery finds no GitHub App installation past the App's rate
+// limit, which resets at reset, until it is given a client. It counts the
+// clients it was asked for.
+type limitedDiscovery struct {
+	f     forge.Client
+	reset time.Time
+	asked int
+}
+
+func (d *limitedDiscovery) For(_ context.Context, _ *configfile.Connection, repo string) (forge.Client, error) {
+	d.asked++
+	if d.f == nil {
+		return nil, fmt.Errorf("github: find App installation for %s: %w", repo, &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: d.reset}}, Response: &http.Response{StatusCode: http.StatusForbidden,
+				Request: httptest.NewRequest(http.MethodGet, "/repos/"+repo+"/installation", http.NoBody)},
+		})
+	}
+	return d.f, nil
+}
+
+// TestPollerPausesTipChecksAtAnInstallationsDiscoveryRateLimit: an account
+// whose client the App's rate limit keeps from being built can look at no
+// branch until the limit resets. Its look stops there, as at a branch
+// lookup's limit, the next asks for no client before the reset, and the one
+// after it resumes at the repository it stopped at.
+func TestPollerPausesTipChecksAtAnInstallationsDiscoveryRateLimit(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
+	s.tf.tip = "indexed"
+	now := time.Now()
+	s.p.now = func() time.Time { return now }
+	d := &limitedDiscovery{reset: now.Add(time.Hour)}
+	s.p.Forges = d
+	for range 2 {
+		if err := s.p.pollTips(t.Context(), s.file, s.account, s.in); err != nil {
+			t.Fatalf("a look past the App's rate limit = %v, want it waited out", err)
+		}
+	}
+	if d.asked != 1 || !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
+		t.Fatalf("two looks within the App's rate limit asked for %d clients, logs:\n%s\nwant one, logged as cut by the limit", d.asked, s.logs.String())
+	}
+	now = d.reset.Add(2 * time.Second)
+	d.f = s.tf
+	if err := s.p.pollTips(t.Context(), s.file, s.account, s.in); err != nil {
+		t.Fatal(err)
+	}
+	if s.tf.calls != 2 {
+		t.Fatalf("a look past the reset looked at %d branches, want both", s.tf.calls)
+	}
+}
+
 // TestPollerBacksOffAfterAnIndexJobThatPublishedNothing: an index job that
 // ended without bringing the index to the tip, failed or skipped because
 // the repository's .kritika.yaml turns indexing off, will end so again. So

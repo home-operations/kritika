@@ -624,19 +624,27 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 			p.branchUnknown(in, r, err)
 			continue
 		}
-		if err != nil {
-			p.tipsCut(account.ID(), r.Name)
-			return err
+		built := err == nil
+		if built {
+			err = p.pollTip(ctx, file, account, in, client, r, started)
 		}
-		err = p.pollTip(ctx, file, account, in, client, r, started)
 		// Past the rate limit, any forge's, every other branch would only be
-		// refused too.
+		// refused too. The limit of the GitHub App, which finds the
+		// installation that a client is built for, holds back the account's
+		// looks alone, as scope names them: the App's other accounts with a
+		// client built look with their installations' tokens, and go-github
+		// refuses the App's next discovery until the reset without asking
+		// GitHub.
 		if wait, limited := rateLimited(err, p.clock()); limited {
 			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
 				"repository", r.Name, "error", err)
 			p.tipsCut(account.ID(), r.Name)
 			p.tipsLimit(scope, p.clock().Add(wait))
 			return nil
+		}
+		if !built {
+			p.tipsCut(account.ID(), r.Name)
+			return err
 		}
 		switch {
 		case ctx.Err() != nil:
