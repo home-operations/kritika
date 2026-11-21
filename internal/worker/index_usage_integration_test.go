@@ -281,22 +281,7 @@ func TestIndexReusesVectors(t *testing.T) {
 				runner).Scan(&rows, &tokens); err != nil {
 				return err
 			}
-			// Every chunk holds the vector its text was first embedded to.
-			var wrong []string
-			for text, v := range vectors {
-				var n int
-				if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1 AND text = $2
-					AND (embedding <> $3::halfvec OR content_hash IS NULL)`, run, text, model.VectorLiteral(v)).Scan(&n); err != nil {
-					return err
-				}
-				if n > 0 {
-					wrong = append(wrong, text)
-				}
-			}
-			if len(wrong) > 0 {
-				t.Errorf("chunks of %q hold another vector than their text's, or no content hash", wrong)
-			}
-			return nil
+			return checkStagedVectors(t, tx, run, texts, vectors)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -320,4 +305,32 @@ func TestIndexReusesVectors(t *testing.T) {
 	if rows, tokens := build("three", "func reuseA() {}", "func reuseB() {}", "func reuseC2() {}", "func reuseC() {}"); rows != 0 || tokens != 0 || len(sent) != 0 {
 		t.Fatalf("unchanged rebuild: %d usage rows, %d tokens, sent %q; want none", rows, tokens, sent)
 	}
+}
+
+// checkStagedVectors checks that run has a chunk for each of texts, staged as
+// main.go's lines in order, that holds the vector its text was first
+// embedded to, by the embedder input in vectors, and a content hash.
+func checkStagedVectors(t *testing.T, tx pgx.Tx, run string, texts []string, vectors map[string][]float32) error {
+	t.Helper()
+	for i, text := range texts {
+		want, ok := vectors["main.go\n"+text]
+		if !ok {
+			t.Errorf("line %d, %q: never embedded", i+1, text)
+			continue
+		}
+		var right, hashed bool
+		err := tx.QueryRow(t.Context(), `SELECT embedding = $3::halfvec, content_hash IS NOT NULL FROM index_chunks
+			WHERE index_run_id = $1 AND start_line = $2`, run, i+1, model.VectorLiteral(want)).Scan(&right, &hashed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			t.Errorf("line %d, %q: no chunk", i+1, text)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !right || !hashed {
+			t.Errorf("line %d, %q: holds its text's vector %t, has a content hash %t; want both", i+1, text, right, hashed)
+		}
+	}
+	return nil
 }
