@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -120,9 +122,11 @@ func TestSimilarExclusions(t *testing.T) {
 		return paths
 	}
 
-	// More paths than a batch, one of them twice, are written whole.
-	paths := make([]string, 0, 3+2*similarExcludeBatch)
-	paths = append(paths, "moved/a.go", "moved/b.go", "moved/a.go")
+	// More paths than a batch, one of them twice, are written whole, and so
+	// is a path longer than a B-tree entry can be, which compression leaves
+	// as long.
+	paths := make([]string, 0, 4+2*similarExcludeBatch)
+	paths = append(paths, "moved/a.go", "moved/b.go", "moved/a.go", longGitPath())
 	for i := range 2 * similarExcludeBatch {
 		paths = append(paths, fmt.Sprintf("vendor/f%04d.go", i))
 	}
@@ -236,4 +240,21 @@ func similarExclusionsFixture(t *testing.T, s *Store, alpha, beta string) (gen s
 		}
 	}
 	return gen, runs
+}
+
+// longGitPath is a nested path of about 4 KiB that compression cannot
+// shorten, longer than PostgreSQL's limit on a B-tree entry of a little
+// under 2.7 KiB on its default 8 KiB page. Git takes it as a path.
+func longGitPath() string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	r := rand.New(rand.NewPCG(1, 2))
+	parts := make([]string, 20)
+	for i := range parts {
+		b := make([]byte, 200)
+		for j := range b {
+			b[j] = letters[r.IntN(len(letters))]
+		}
+		parts[i] = string(b)
+	}
+	return strings.Join(parts, "/") + ".go"
 }

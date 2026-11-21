@@ -102,7 +102,7 @@ func TestLexicalChunks(t *testing.T) {
 			Scan(&reported); err != nil {
 			return err
 		}
-		return SetSimilarExclude(ctx, tx, reported, []string{"internal/lease/lease.go", "internal/lease/renamed.go"})
+		return SetSimilarExclude(ctx, tx, reported, []string{"internal/lease/lease.go", longGitPath(), "internal/lease/renamed.go"})
 	}); err != nil {
 		t.Fatal(err)
 	}

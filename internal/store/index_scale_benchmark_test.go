@@ -273,7 +273,7 @@ var vectorLiteral = regexp.MustCompile(`'\[[^\]]*\]'`)
 
 const scaleQueryRepo = `SELECT path, start_line, end_line, language, symbol, kind, scope, text, 1 - (embedding <=> $1::halfvec)
 			FROM index_chunks c WHERE repository_id = $6 AND index_run_id = $2 AND NOT (path = ANY($3))
-				AND NOT EXISTS (SELECT 1 FROM similar_exclusions e WHERE e.runner_run_id = $5::uuid AND e.path = c.path)
+				AND NOT EXISTS (SELECT 1 FROM similar_exclusions e WHERE e.runner_run_id = $5::uuid AND md5(e.path) = md5(c.path) AND e.path = c.path)
 			ORDER BY embedding <=> $1::halfvec LIMIT $4`
 
 // scaleSearch runs layout's search for one query vector as the application

@@ -69,9 +69,9 @@ func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.
 const similarExcludeBatch = 1000
 
 // SetSimilarExclude records the paths the run's similar-code searches leave
-// out, in the run's account, a batch at a time within tx. The first report
-// holds: a later one, which can only be the same report sent again, leaves it
-// as it is.
+// out, in the run's account, a batch at a time within tx, each path once. The
+// first report holds: a later one, which can only be the same report sent
+// again, leaves it as it is.
 func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []string) error {
 	tag, err := tx.Exec(ctx, `UPDATE runner_runs SET similar_exclude_reported_at = now()
 		WHERE id = $1 AND similar_exclude_reported_at IS NULL`, runID)
@@ -81,10 +81,12 @@ func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []str
 	if tag.RowsAffected() == 0 {
 		return nil
 	}
-	for batch := range slices.Chunk(paths, similarExcludeBatch) {
+	// The table's index is of the paths' digests, which two paths can share,
+	// so no key keeps a path from being written twice.
+	for batch := range slices.Chunk(slices.Compact(slices.Sorted(slices.Values(paths))), similarExcludeBatch) {
 		if _, err := tx.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path)
-			SELECT r.id, r.account_id, p.path FROM runner_runs r, unnest($2::text[]) AS p (path) WHERE r.id = $1
-			ON CONFLICT DO NOTHING`, runID, batch); err != nil {
+			SELECT r.id, r.account_id, p.path FROM runner_runs r, unnest($2::text[]) AS p (path) WHERE r.id = $1`,
+			runID, batch); err != nil {
 			return fmt.Errorf("store: set similar exclusions: %w", err)
 		}
 	}
