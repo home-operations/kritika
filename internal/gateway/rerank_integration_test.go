@@ -185,13 +185,18 @@ apps:
 	}
 	// The runner stops waiting a minute after it asks. An embedding that
 	// leaves less than the reranker's timeout before the answer is due cuts
-	// the reranking there, and one that leaves no time skips it: either way
-	// the fused order is answered in time, not at the reranker's timeout.
+	// the reranking there, and one that leaves no time skips it, and the
+	// search by name with it: either way the fused order of what was searched
+	// is answered in time, not at the reranker's timeout.
 	for _, tt := range []struct {
 		name     string
 		embedFor time.Duration
 		reranks  int32
-	}{{"answer due during the reranking", 0, 1}, {"answer due before the reranking", 300 * time.Millisecond, 0}} {
+		want     []string
+	}{
+		{"answer due during the reranking", 0, 1, []string{"named.go", "near.go"}},
+		{"answer due before the reranking", 300 * time.Millisecond, 0, []string{"near.go"}},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
 			similarAnswerWithin = 200 * time.Millisecond
@@ -222,8 +227,12 @@ apps:
 			if took := time.Since(started); took > 5*time.Second {
 				t.Fatalf("answered after %v, want it due 200ms after the request arrived, not at the reranker's 30s", took)
 			}
-			if len(resp.Chunks) != 2 || resp.Chunks[0].Path != "named.go" {
-				t.Errorf("chunks %+v, want the fused order", resp.Chunks)
+			paths := make([]string, 0, len(resp.Chunks))
+			for _, c := range resp.Chunks {
+				paths = append(paths, c.Path)
+			}
+			if !slices.Equal(paths, tt.want) {
+				t.Errorf("chunks %+v, want the fused order of %q", resp.Chunks, tt.want)
 			}
 			if n := reranks.Load(); n != tt.reranks {
 				t.Errorf("%d rerank calls, want %d", n, tt.reranks)
