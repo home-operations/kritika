@@ -93,6 +93,7 @@ func TestDocumentHyphens(t *testing.T) {
 		{"minus in Go", "go", "internal/rate-limit/limit.go", "n := end-start", []string{"internal", "ratelimit", "rate", "limit", "go",
 			"end", "start"}},
 		{"kebab case in CSS", "css", "web/site.css", ".max-width { }", []string{"web", "site", "css", "maxwidth", "max", "width"}},
+		{"names of one-letter words in CSS", "css", "web/site.css", ".x-y { --x-y: 0 }", []string{"web", "site", "css", "xy"}},
 		{"no language", "", "notes.txt", "end-start", []string{"notes", "txt", "endstart", "end", "start"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,6 +201,8 @@ func TestHyphenAfterADigit(t *testing.T) {
 // language, as Document has it: a minus between two names in Go or
 // JavaScript, which joins no compound the code's chunks lack, and part of a
 // name in CSS or YAML, or when the language is unknown, as Words has it.
+// Only in CSS is it always part of a name, so a name of one-letter words is
+// one there, and two words left out elsewhere.
 func TestCodeWordsHyphens(t *testing.T) {
 	for _, tt := range []struct {
 		name, language, text string
@@ -209,8 +212,14 @@ func TestCodeWordsHyphens(t *testing.T) {
 		{"minus between digit names in Go", "go", "old2-new2", []string{"old2", "old", "new2"}},
 		{"minus in JavaScript", "javascript", "const d = end-start;", []string{"end", "start"}},
 		{"kebab case in CSS", "css", ".max-width { }", []string{"maxwidth", "max", "width"}},
+		{"a name of one-letter words in CSS", "css", ".x-y { }", []string{"xy"}},
+		{"a custom property of one-letter words in CSS", "css", "--x-y: 0;", []string{"xy"}},
 		{"kebab case in YAML", "yaml", "end-start: 1", []string{"endstart", "end", "start"}},
+		{"one-letter words in YAML", "yaml", "x-y: bg-blue-500", []string{"bgblue", "bg", "blue"}},
+		{"minus between one-letter names in Go", "go", "d := x-y", nil},
+		{"minus before a number in Go", "go", "d := gap-2", []string{"gap"}},
 		{"no language", "", "end-start", []string{"endstart", "end", "start"}},
+		{"one-letter words with no language", "", "x-y bg-blue-500", []string{"bgblue", "bg", "blue"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			words := CodeWords(tt.language, tt.text)

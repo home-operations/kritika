@@ -49,16 +49,43 @@ type Word struct {
 // letters joins them, and so does one between a name's digit and a letter,
 // as a query's text can be any language's, or prose, where rate-limit names
 // rateLimit and http2-server names http2Server.
-func Words(text string) []Word { return words(text, true) }
+func Words(text string) []Word { return words(text, hyphenJoins) }
 
 // CodeWords are the Words of text that is code of the language, as package
-// chunk names it, such as a diff's lines: a hyphen is a minus in the code of
-// minusLanguages, as Document has it, so end-start there gives end and
-// start, and no endstart that the language's chunks never hold. Of another
-// language, or none (""), they are Words.
-func CodeWords(language, text string) []Word { return words(text, !minusLanguages[language]) }
+// chunk names it, such as a diff's lines, with its hyphens read as Document
+// reads them (hyphenationOf): a minus in the code of minusLanguages, so
+// end-start there gives end and start, and no endstart that the language's
+// chunks never hold, and part of the name in CSS, so .x-y gives xy. Of
+// another language, or none (""), they are Words.
+func CodeWords(language, text string) []Word { return words(text, hyphenationOf(language)) }
 
-func words(text string, hyphens bool) []Word {
+// hyphenation is how a text's hyphens are read.
+type hyphenation int
+
+const (
+	// hyphenMinus is a minus, never part of a name.
+	hyphenMinus hyphenation = iota
+	// hyphenJoins joins the words around it into a name, but can be a minus,
+	// as in prose or a language that it is either in: a-b is two names of a
+	// letter, and so is x2-y2.
+	hyphenJoins
+	// hyphenName is part of the name it is in, as in CSS, where a minus
+	// stands apart: x-y is one name.
+	hyphenName
+)
+
+// hyphenationOf is how the code of the language reads its hyphens.
+func hyphenationOf(language string) hyphenation {
+	switch {
+	case minusLanguages[language]:
+		return hyphenMinus
+	case nameLanguages[language]:
+		return hyphenName
+	}
+	return hyphenJoins
+}
+
+func words(text string, hyphens hyphenation) []Word {
 	var out []Word
 	at := map[string]int{}
 	strength := func(w Word) int {
@@ -87,11 +114,12 @@ func words(text string, hyphens bool) []Word {
 	var identifier func(id string)
 	identifier = func(id string) {
 		parts := split(id)
-		// a-b is two names, as a hyphen can be a minus, but an underscore is
-		// part of a name: x86_64 and a_b are one each, as k8s and v2 are. So
-		// a hyphenated id whose parts are all of one letter is the names
-		// between its hyphens: x2-y2 is x2 and y2.
-		if strings.Contains(id, "-") && !slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
+		// a-b is two names where a hyphen can be a minus, but an underscore
+		// is part of a name: x86_64 and a_b are one each, as k8s and v2 are.
+		// So there a hyphenated id whose parts are all of one letter is the
+		// names between its hyphens: x2-y2 is x2 and y2.
+		if hyphens == hyphenJoins && strings.Contains(id, "-") &&
+			!slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
 			for name := range strings.SplitSeq(id, "-") {
 				identifier(name)
 			}
@@ -120,14 +148,18 @@ var separators = strings.NewReplacer("_", "", "-", "")
 // Document is the lexemes of an index chunk of the language (package chunk
 // names it): of its path, the scope and symbol of its declaration, and its
 // text, each once and at most maxDocumentLexemes. A hyphen joins the words
-// of the path, but is a minus in the code of a language whose names hold
-// none (minusLanguages).
+// of the path, and is read in the rest as the language's code reads it
+// (hyphenationOf).
 func Document(language, path, scope, symbol, text string) []string {
 	var out []string
 	seen := map[string]bool{}
-	joins := !minusLanguages[language]
+	code := hyphenationOf(language)
 	for i, s := range []string{path, scope, symbol, text} {
-		for _, w := range words(s, i == 0 || joins) {
+		hyphens := code
+		if i == 0 {
+			hyphens = hyphenJoins
+		}
+		for _, w := range words(s, hyphens) {
 			if len(out) == maxDocumentLexemes {
 				return out
 			}
@@ -154,6 +186,11 @@ var minusLanguages = func() map[string]bool {
 	return m
 }()
 
+// nameLanguages are the languages, as package chunk names them, in whose
+// code a hyphen inside a name is always part of it: CSS's, whose minus has
+// whitespace around it.
+var nameLanguages = map[string]bool{"css": true, "scss": true, "less": true}
+
 // identifiers are text's runs of letters, digits and underscores, and the
 // combining marks on them. With hyphens, a hyphen before a letter is kept
 // inside a run when a letter is before it, or a digit in a run that starts
@@ -162,7 +199,7 @@ var minusLanguages = func() map[string]bool {
 // is a number and is left out. Underscores around a run are trimmed, but for
 // one before a digit, which makes a name of what follows when a letter does:
 // _2faEnabled is a name, and _2fa the same one as __2fa, where _123 is not.
-func identifiers(text string, hyphens bool) []string {
+func identifiers(text string, hyphens hyphenation) []string {
 	var out []string
 	start := -1
 	flush := func(end int) {
@@ -186,7 +223,7 @@ func identifiers(text string, hyphens bool) []string {
 		case unicode.IsMark(r) && start >= 0:
 			// A combining mark continues an identifier, as most languages'
 			// rules for one let it.
-		case r == '-' && hyphens && start >= 0 && i > 0:
+		case r == '-' && hyphens != hyphenMinus && start >= 0 && i > 0:
 			prev, _ := utf8.DecodeLastRuneInString(text[:i])
 			next, _ := utf8.DecodeRuneInString(text[i+1:])
 			after := unicode.IsLetter(prev) || unicode.IsMark(prev) ||

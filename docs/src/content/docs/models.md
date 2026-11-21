@@ -845,7 +845,10 @@ changes, underscores, hyphens and digits. `parseHTTPRequest` and
 `parse_http_request` both give `parsehttprequest`, `parse`, `http` and
 `request`. A hyphen is a minus in the code of a language whose names hold
 none, such as Go or JavaScript, so `end-start` there is `end` and `start`,
-while it joins `max-width` in CSS or YAML and the words of a path. Language
+while it joins `max-width` in CSS or YAML and the words of a path. Of those,
+only CSS, SCSS and Less put a minus apart from the names around it, so their
+hyphens always join: `.x-y` gives `xy` there, where elsewhere its two words of
+one letter give nothing. Language
 keywords, names nearly every function uses (`err`, `ctx`, `self`), English
 stop words and numbers are left out. A review's query is split the same
 way, as code of its file's language, and a `search_code` query's words,
