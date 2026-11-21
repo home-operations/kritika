@@ -342,7 +342,7 @@ KRITIKA_EVAL_CACHE=/tmp/kritika-eval \
 | `KRITIKA_EVAL_EMBED_MODEL`/`DIMS` | `trigrams`, 256    | the model and its dimension                                                                  |
 | `KRITIKA_EVAL_CACHE`              | a temporary folder | an existing folder where vectors are kept, by text, between runs                             |
 | `KRITIKA_EVAL_FLOOR`              | 0.5                | `similarFloor`                                                                               |
-| `KRITIKA_EVAL_DEPTH`              | 8                  | how many chunks each search finds for a query without a reranker                             |
+| `KRITIKA_EVAL_DEPTH`              | 8                  | how many chunks each search finds for a query without a reranker, at least 1                 |
 | `KRITIKA_EVAL_RERANK_URL`         |                    | a Text Embeddings Inference reranker, which adds the reranked variants                       |
 | `KRITIKA_EVAL_RERANK_CANDIDATES`  | 32                 | the candidates of each query reranked                                                        |
 

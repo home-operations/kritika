@@ -64,14 +64,17 @@ func TestRetrievalEval(t *testing.T) {
 	}
 	history, window, diffed := evalHistory(t)
 	embed, dims := evalEmbedder(t)
-	// The reranker's settings are read before the tree is indexed, so that
-	// one that would send nothing fails at once.
+	// The depth and the reranker's settings are read before the tree is
+	// indexed, so that one that would search or send nothing fails at once.
+	depth, err := evalDepthSetting()
+	if err != nil {
+		t.Fatal(err)
+	}
 	var reranker model.Reranker
 	candidates := configfile.DefaultTEIRerankCandidates
 	rerankURL := os.Getenv("KRITIKA_EVAL_RERANK_URL")
 	if rerankURL != "" {
-		var err error
-		if candidates, err = evalIntWithin("KRITIKA_EVAL_RERANK_CANDIDATES", candidates, 1, math.MaxInt); err != nil {
+		if candidates, err = evalIntWithin("KRITIKA_EVAL_RERANK_CANDIDATES", candidates, math.MaxInt); err != nil {
 			t.Fatal(err)
 		}
 		reranker = model.NewReranker(model.RerankTEI, rerankURL, "", "", time.Minute)
@@ -80,7 +83,6 @@ func TestRetrievalEval(t *testing.T) {
 	truth := newEvalTruth(t, ix.chunks, history[:diffed])
 	floor, margin := evalFloat(t, "KRITIKA_EVAL_FLOOR", configfile.DefaultSimilarFloor), configfile.DefaultSimilarMargin
 	variants := []string{"vector", "lexical", "hybrid"}
-	evalDepth = evalInt(t, "KRITIKA_EVAL_DEPTH", similarDepth)
 	if reranker != nil {
 		variants = append(variants, "vector+rerank", "hybrid+rerank")
 	}
@@ -113,7 +115,7 @@ func TestRetrievalEval(t *testing.T) {
 		// deeper for one sent more candidates than that.
 		base, deep := evalSearches(func(depth int, timed *evalSearchTime) evalHits {
 			return ix.search(t, timed, queries, qv, changed, depth)
-		}, &timing, evalDepth, max(evalDepth, candidates), reranker != nil)
+		}, &timing, depth, max(depth, candidates), reranker != nil)
 		for _, v := range variants {
 			found := base
 			if strings.HasSuffix(v, "+rerank") {
@@ -578,9 +580,13 @@ func (s *evalTally) String() string {
 			s.qCos, ratio(s.qCoHits, s.qCos), s.qCoRR/float64(max(1, s.qCos)))
 }
 
-// evalDepth is how many hits of each query each search answers without a
-// reranker.
-var evalDepth int
+// evalDepthSetting is KRITIKA_EVAL_DEPTH, how many hits of each query each
+// search answers without a reranker, similarDepth unless set. A depth of 0
+// would find nothing, and the search by name adds store.LexicalCommonMax to
+// the depth, which must not overflow.
+func evalDepthSetting() (int, error) {
+	return evalIntWithin("KRITIKA_EVAL_DEPTH", similarDepth, math.MaxInt-store.LexicalCommonMax)
+}
 
 var identifierRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
@@ -602,8 +608,8 @@ func evalInt(t *testing.T, key string, def int) int {
 }
 
 // evalIntWithin is the environment's int of key, or def when key is unset,
-// refused when it lies outside lo through hi.
-func evalIntWithin(key string, def, lo, hi int) (int, error) {
+// refused when it lies outside 1 through hi.
+func evalIntWithin(key string, def, hi int) (int, error) {
 	n := def
 	if v := os.Getenv(key); v != "" {
 		var err error
@@ -611,8 +617,8 @@ func evalIntWithin(key string, def, lo, hi int) (int, error) {
 			return 0, fmt.Errorf("%s: %w", key, err)
 		}
 	}
-	if n < lo || n > hi {
-		return 0, fmt.Errorf("%s = %d, want %d through %d", key, n, lo, hi)
+	if n < 1 || n > hi {
+		return 0, fmt.Errorf("%s = %d, want 1 through %d", key, n, hi)
 	}
 	return n, nil
 }
@@ -690,7 +696,7 @@ func commitDiff(t *testing.T, c *object.Commit) (string, string) {
 // character trigrams, caching each text's vector by its hash.
 func evalEmbedder(t *testing.T) (func([]string) [][]float32, int) {
 	url := os.Getenv("KRITIKA_EVAL_EMBED_URL")
-	dims, err := evalIntWithin("KRITIKA_EVAL_EMBED_DIMS", 256, 1, configfile.MaxEmbedDims)
+	dims, err := evalIntWithin("KRITIKA_EVAL_EMBED_DIMS", 256, configfile.MaxEmbedDims)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,9 +801,33 @@ func TestEvalIntWithin(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("KRITIKA_EVAL_TEST", tt.value)
-			n, err := evalIntWithin("KRITIKA_EVAL_TEST", 256, 1, configfile.MaxEmbedDims)
+			n, err := evalIntWithin("KRITIKA_EVAL_TEST", 256, configfile.MaxEmbedDims)
 			if n != tt.want || (err == nil) != (tt.err == "") || err != nil && !strings.HasPrefix(err.Error(), tt.err) {
 				t.Fatalf("evalIntWithin = %d, %v; want %d, %q", n, err, tt.want, tt.err)
+			}
+		})
+	}
+}
+
+// TestEvalDepthSetting: the replay refuses a search depth that would find
+// nothing, before it indexes the tree, rather than print an empty baseline.
+func TestEvalDepthSetting(t *testing.T) {
+	for _, tt := range []struct {
+		name, value string
+		want        int
+		refused     bool
+	}{
+		{"unset", "", similarDepth, false},
+		{"one", "1", 1, false},
+		{"zero", "0", 0, true},
+		{"negative", "-1", 0, true},
+		{"past the bound", strconv.Itoa(math.MaxInt - store.LexicalCommonMax + 1), 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KRITIKA_EVAL_DEPTH", tt.value)
+			n, err := evalDepthSetting()
+			if n != tt.want || (err != nil) != tt.refused {
+				t.Fatalf("evalDepthSetting = %d, %v; want %d, refused %v", n, err, tt.want, tt.refused)
 			}
 		})
 	}
