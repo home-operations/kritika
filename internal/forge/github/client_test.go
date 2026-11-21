@@ -208,20 +208,21 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	if _, limited := RetryAfter(err, time.Now()); !limited {
 		t.Fatalf("BranchTip over the rate limit = %v, want a rate limit", err)
 	}
-	// A secondary limit is told apart by its body alone, with a wait longer
-	// than the transport waits out itself. A client of its own: the primary
-	// limit above holds this one's requests back until its reset.
+	// A secondary limit with primary quota left and no Retry-After is told
+	// apart from a refusal by its body alone, and waited out for
+	// rateLimitMaxWait. A client of its own: the primary limit above holds
+	// this one's requests back until its reset.
 	f, c = newFakeAPI(t)
 	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/secondary", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Retry-After", "120")
+		w.Header().Set("X-RateLimit-Remaining", "4321")
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit",` +
 			`"documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
 	})
 	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
-	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != 2*time.Minute {
-		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of 2m", err, wait, limited)
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != rateLimitMaxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, rateLimitMaxWait)
 	}
 	if c.CloneURL("o", "r") != "https://github.com/o/r.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
