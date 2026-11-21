@@ -230,6 +230,7 @@ func TestTreesCommitUnavailable(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
+	refusing := refusingUploadPack(t, r.head, missing)
 	for _, tc := range []struct {
 		name        string
 		fetch       Fetch
@@ -237,6 +238,7 @@ func TestTreesCommitUnavailable(t *testing.T) {
 	}{
 		{name: "base the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: r.head, Base: missing}, unavailable: true},
 		{name: "head the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: missing, Base: r.base}, unavailable: true},
+		{name: "base that smart HTTP refuses", fetch: Fetch{CloneURL: refusing + "/acme/webapp.git", Head: r.head, Base: missing}, unavailable: true},
 		{name: "remote unavailable", fetch: Fetch{CloneURL: srv.URL + "/acme/webapp.git", Head: r.head, Base: r.base}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -246,6 +248,38 @@ func TestTreesCommitUnavailable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// refusingUploadPack serves smart HTTP as git's upload-pack does for a
+// repository whose branch is at tip: it advertises the branch, and answers a
+// fetch that wants refused with the error packet git sends, "not our ref". It
+// returns the server's URL.
+func refusingUploadPack(t *testing.T, tip, refused string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs") && r.URL.Query().Get("service") == "git-upload-pack":
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, err = pktline.Writeln(w, "# service=git-upload-pack")
+			err = errors.Join(err, pktline.WriteFlush(w))
+			_, werr := pktline.WriteString(w, tip+" HEAD\x00multi_ack_detailed side-band-64k thin-pack ofs-delta shallow no-progress "+
+				"allow-tip-sha1-in-want allow-reachable-sha1-in-want symref=HEAD:refs/heads/main\n")
+			err = errors.Join(err, werr)
+			_, werr = pktline.Writeln(w, tip+" refs/heads/main")
+			err = errors.Join(err, werr, pktline.WriteFlush(w))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack"):
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+			err = (&pktline.ErrorLine{Text: "upload-pack: not our ref " + refused}).Encode(w)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+		if err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }
 
 // TestCommitRefused: the server's refusal to serve a commit by SHA, as git's
