@@ -93,9 +93,14 @@ type SimilarHit struct {
 }
 
 // similarChunksSQL is the nearest chunks of generation $2 to vector $1, $4 of
-// them, outside paths $3 and those that runner run $5 reported.
+// them, outside paths $3 and those that runner run $5 reported. A chunk
+// embedded as zeros has no cosine similarity: pgvector gives NaN, which,
+// seen first, would stay its query's best. It is given -2 instead, below any
+// cosine, as lexicalChunksSQL gives it. The order is still the
+// distance's, which the index reads: the index holds no such chunk, and an
+// exact scan sorts its NaN distance last.
 const similarChunksSQL = `SELECT c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text,
-				1 - (c.embedding <=> $1::halfvec)
+				coalesce(nullif(1 - (c.embedding <=> $1::halfvec), 'NaN'::float8), -2::float8)
 			FROM index_chunks c WHERE c.index_run_id = $2 AND NOT (c.path = ANY($3))
 				AND NOT EXISTS (SELECT 1 FROM similar_exclusions e WHERE e.runner_run_id = $5::uuid AND md5(e.path) = md5(c.path) AND e.path = c.path)
 			ORDER BY c.embedding <=> $1::halfvec LIMIT $4`

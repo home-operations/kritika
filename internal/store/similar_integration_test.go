@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -265,4 +266,81 @@ func longGitPath() string {
 		parts[i] = string(b)
 	}
 	return strings.Join(parts, "/") + ".go"
+}
+
+// TestSimilarZeroEmbedded: a chunk embedded as zeros, whose cosine
+// similarity to any query is undefined, comes back with a finite one below
+// any cosine, and after the chunk nearest the query, whether the search
+// reads the vector index or scans the generation.
+func TestSimilarZeroEmbedded(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("similar-zero"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "similar-zero")
+	repo := configfile.RepositoryID(account, "similar/zero")
+	t.Cleanup(func() {
+		ctx := context.Background()
+		_, _ = s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM index_runs WHERE repository_id = $1`, repo)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM repositories WHERE id = $1`, repo)
+	})
+	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, 'similar/zero')`, repo, account); err != nil {
+		t.Fatal(err)
+	}
+	var run string
+	if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+		VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, account, repo).Scan(&run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+		SELECT $1, $2, $3, p, 1, 1, 'package main', e::halfvec FROM unnest($4::text[], $5::text[]) AS t(p, e)`, account, repo, run,
+		[]string{"zero.go", "near.go", "far.go"},
+		[]string{"[0,0,0,0,0,0,0,0]", "[1,0.1,0,0,0,0,0,0]", "[0,1,0,0,0,0,0,0]"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, session string
+		// zero says the plan finds the zero-embedded chunk: an exact scan
+		// does, and the vector index holds none.
+		zero bool
+	}{
+		{"vector index", `SET LOCAL enable_seqscan = off; SET LOCAL enable_sort = off`, false},
+		{"exact scan", `SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off`, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, tt.session); err != nil {
+					return err
+				}
+				hits, err := SimilarChunks(ctx, tx, run, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, Exclusions{}, 3)
+				if err != nil {
+					return err
+				}
+				var got []string
+				for _, h := range hits {
+					got = append(got, h.Chunk.Path)
+					if math.IsNaN(h.Similarity) || h.Similarity < -2 || h.Similarity > 1 {
+						t.Errorf("%s: similarity %g, want a finite one", h.Chunk.Path, h.Similarity)
+					}
+					if h.Chunk.Path == "zero.go" && h.Similarity >= -1 {
+						t.Errorf("zero.go: similarity %g, want one below any cosine", h.Similarity)
+					}
+				}
+				if len(got) == 0 || got[0] != "near.go" {
+					t.Errorf("hits = %q, want near.go first", got)
+				}
+				if tt.zero && !slices.Contains(got, "zero.go") {
+					t.Errorf("hits = %q, want zero.go among them", got)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
