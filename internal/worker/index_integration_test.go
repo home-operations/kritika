@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
@@ -415,5 +416,71 @@ func checkIndexWaitsOutForge(
 	}
 	if indexed != newer {
 		t.Fatalf("index at %s after the wait, want %s", indexed, newer)
+	}
+}
+
+// TestIndexJobIsUniqueAcrossQueues: updates and first builds run on queues of
+// their own, but a repository has one live index job between them. A push
+// while its onboarding job is queued or running folds into that job, which
+// indexes the tip it finds, and an onboarding offer folds into a live update.
+// A forced rebuild and a rebuild's catch-up are keyed apart, so each queues
+// beside an update, and a job that finished holds nothing back.
+func TestIndexJobIsUniqueAcrossQueues(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	var lastJob int64
+	if err := st.App().QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM river_job`).Scan(&lastJob); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id > $1`, lastJob) })
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const account = "00000000-0000-0000-0000-0000000000aa"
+	push := jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerPush, CommitSHA: "pushed"}
+	onboard := jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerOnboard}
+	for i, tc := range []struct {
+		name string
+		live jobs.IndexArgs
+		// state is the first job's state when the second is queued.
+		state string
+		next  jobs.IndexArgs
+		// wantQueue is the queue the second job goes to, empty when it folds
+		// into the first.
+		wantQueue string
+	}{
+		{name: "push onto a queued onboarding", live: onboard, state: "available", next: push},
+		{name: "push onto a running onboarding", live: onboard, state: "running", next: push},
+		{name: "push onto a scheduled onboarding", live: onboard, state: "scheduled", next: push},
+		{name: "onboarding onto a queued update", live: push, state: "available", next: onboard},
+		{name: "push onto a finished onboarding", live: onboard, state: "completed", next: push, wantQueue: jobs.QueueIndexUpdate},
+		{name: "forced rebuild beside an update", live: push, state: "running",
+			next: jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerReindex, Full: true}, wantQueue: jobs.QueueIndex},
+		{name: "catch-up beside an update", live: push, state: "running",
+			next: jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerPush, CatchUp: "run"}, wantQueue: jobs.QueueIndexUpdate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repository := fmt.Sprintf("00000000-0000-0000-0000-%012d", 900+i)
+			tc.live.RepositoryID, tc.next.RepositoryID = repository, repository
+			first, err := queue.Insert(ctx, tc.live, nil)
+			if err != nil || first.UniqueSkippedAsDuplicate {
+				t.Fatalf("first Insert = %+v, %v", first, err)
+			}
+			if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = $2::text::river_job_state,
+				finalized_at = CASE WHEN $2::text = 'completed' THEN now() END WHERE id = $1`, first.Job.ID, tc.state); err != nil {
+				t.Fatal(err)
+			}
+			second, err := queue.Insert(ctx, tc.next, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if folded := tc.wantQueue == ""; second.UniqueSkippedAsDuplicate != folded {
+				t.Fatalf("second job folded = %v, want %v", second.UniqueSkippedAsDuplicate, folded)
+			}
+			if tc.wantQueue != "" && second.Job.Queue != tc.wantQueue {
+				t.Fatalf("second job on %s, want %s", second.Job.Queue, tc.wantQueue)
+			}
+		})
 	}
 }
