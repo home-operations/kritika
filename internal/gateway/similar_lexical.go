@@ -62,15 +62,7 @@ func (g *Server) searchByName(
 	outcome := adapter.Outcome(err)
 	var past error
 	if err == nil {
-		qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
-			best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Lexical, b.Lexical) })
-			return namedBy(last.Lexical, best.Lexical)
-		}
-		named, past = pastFull(named, len(vectors), func(found, window []store.SimilarHit) []string {
-			return fullFiles(found, window, depth, qualifies)
-		}, func(q int, full []string) ([]store.SimilarHit, error) {
-			return search(r.texts[q:q+1], vectors[q:q+1], store.Exclusions{Run: r.exclude.Run, Paths: slices.Concat(r.exclude.Paths, full)})
-		})
+		named, past = pastFullNames(named, r.texts, vectors, r.exclude, depth, search)
 	}
 	if err != nil && ctx.Err() != nil {
 		outcome = "canceled"
@@ -87,6 +79,29 @@ func (g *Server) searchByName(
 		logger.Warn("gateway: similar code searched by name without looking past every full window", "error", past)
 	}
 	return named, nil
+}
+
+// pastFullNames adds to named, the search by name's window of each of texts,
+// what search finds for a query past the files of which its hits hold
+// similarPerFile or more, while the file cap leaves the query short, its
+// window is full, and its query's names still vouch for the window's last
+// hit (namedBy): pastFullFiles' looking, for the search by name. search is
+// the search by name of texts and their vectors, depth deep, outside exclude.
+// A search's failure ends the looking, and pastFullNames returns what it
+// found until then, with the error.
+func pastFullNames(
+	named []store.SimilarHit, texts []string, vectors [][]float32, exclude store.Exclusions, depth int,
+	search func(texts []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error),
+) ([]store.SimilarHit, error) {
+	qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
+		best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Lexical, b.Lexical) })
+		return namedBy(last.Lexical, best.Lexical)
+	}
+	return pastFull(named, len(vectors), func(found, window []store.SimilarHit) []string {
+		return fullFiles(found, window, depth, qualifies)
+	}, func(q int, full []string) ([]store.SimilarHit, error) {
+		return search(texts[q:q+1], vectors[q:q+1], store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)})
+	})
 }
 
 // lexicalTerms is how many words of a query are searched for, the longest

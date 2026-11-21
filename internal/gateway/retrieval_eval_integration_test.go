@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -363,8 +364,10 @@ func evalSearches(
 // search runs both searches of a request, depth deep, as the gateway does,
 // the vector search looking again past the files that fill a query's window
 // while floor and margin say more can qualify (pastFullFiles), within the
-// time the gateway gives a request. A look that fails or runs out of it
-// fails the replay rather than measure a search cut short.
+// time the gateway gives a request, and the search by name past the files
+// that fill a query's window while its names vouch for more (pastFullNames).
+// A look that fails or runs out of time fails the replay rather than measure
+// a search cut short.
 func (ix evalIndexed) search(
 	t *testing.T, timed *evalSearchTime, queries []string, vectors [][]float32, exclude []string, depth int, floor, margin float64,
 ) evalHits {
@@ -381,7 +384,13 @@ func (ix evalIndexed) search(
 			return err
 		}
 		searched := time.Now()
-		if found.named, err = lexicalHits(ctx, tx, ix.run, queries, vectors, store.Exclusions{Paths: exclude}, depth); err != nil {
+		byName := func(texts []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error) {
+			return lexicalHits(ctx, tx, ix.run, texts, vectors, exclude, depth)
+		}
+		if found.named, err = byName(queries, vectors, store.Exclusions{Paths: exclude}); err != nil {
+			return err
+		}
+		if found.named, err = pastFullNames(found.named, queries, vectors, store.Exclusions{Paths: exclude}, depth, byName); err != nil {
 			return err
 		}
 		timed.requests++
@@ -971,6 +980,35 @@ func TestEvalSearchesAtEachDepth(t *testing.T) {
 				t.Fatalf("base found %s and deep %s, want %s and %s", base.named[0].Chunk.Path, deep.named[0].Chunk.Path, tt.base, tt.deep)
 			}
 		})
+	}
+}
+
+// TestEvalSearchLooksPastAFullWindowByName: when one file holds every chunk
+// that the replay's search by name finds for a query, it looks again past
+// that file, as the gateway's does (TestSimilarLexicalLooksPastAFullWindow),
+// and finds the other file that holds the query's names.
+func TestEvalSearchLooksPastAFullWindowByName(t *testing.T) {
+	chunks, vectors := map[string]string{}, map[string][]float32{}
+	for i := range similarDepth {
+		key := fmt.Sprintf("a.go@%d", 10*i+1)
+		chunks[key], vectors[key] = "func widgetFactory() {}", e(2)
+	}
+	chunks["b.go@1"], vectors["b.go@1"] = "func widgetFactory() {}", e(2)
+	for i := range 2 * similarDepth {
+		key := fmt.Sprintf("other%d.go", i)
+		chunks[key], vectors[key] = fmt.Sprintf("func other%d() {}", i), e(3)
+	}
+	r := newLexicalRepo(t, "eval-lexical-full-window", runspec.IndexFormat, chunks, vectors)
+	ix := evalIndexed{st: r.st, account: r.account.ID(), run: r.run}
+	var timed evalSearchTime
+	found := ix.search(t, &timed, []string{"widgetFactory()"}, [][]float32{e(0)}, nil, similarDepth,
+		configfile.DefaultSimilarFloor, configfile.DefaultSimilarMargin)
+	perFile := map[string]int{}
+	for _, h := range found.named {
+		perFile[h.Chunk.Path]++
+	}
+	if want := map[string]int{"a.go": similarDepth, "b.go": 1}; !maps.Equal(perFile, want) {
+		t.Fatalf("the replay's search by name found %v, want %v", perFile, want)
 	}
 }
 
