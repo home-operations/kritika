@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -468,11 +469,76 @@ func waitForLockWait(t *testing.T, s *Store, relation uint32, mode string, done 
 	t.Fatalf("no transaction waited for %s on relation %d", mode, relation)
 }
 
+// relationLock is a lock of a mode on a relation.
+type relationLock struct {
+	relation uint32
+	mode     string
+}
+
+// waitBehind waits until a transaction waits for next while another still
+// waits for first. It fails if first's wait ends before, or if done is
+// closed.
+func waitBehind(t *testing.T, s *Store, first, next relationLock, done <-chan struct{}) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
+		select {
+		case <-done:
+			t.Fatalf("the transaction to wait for %s on relation %d finished first", next.mode, next.relation)
+		default:
+		}
+		var held, queued bool
+		if err := s.owner.QueryRow(t.Context(), `SELECT
+			EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'relation' AND relation = $1 AND mode = $2 AND NOT granted),
+			EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'relation' AND relation = $3 AND mode = $4 AND NOT granted)`,
+			first.relation, first.mode, next.relation, next.mode).Scan(&held, &queued); err != nil {
+			t.Fatal(err)
+		}
+		if !held {
+			t.Fatalf("the wait for %s on relation %d ended before a transaction waited for %s on relation %d",
+				first.mode, first.relation, next.mode, next.relation)
+		}
+		if queued {
+			return
+		}
+	}
+	t.Fatalf("no transaction waited for %s on relation %d", next.mode, next.relation)
+}
+
+// slowLockWaits sets the database's deadlock_timeout to 80s, for every
+// connection opened after it until the test ends. A transaction that gives
+// way after an eighth of it (yieldLocks) then waits 10s, as long as a lock
+// wait's hang guard here, rather than 125ms, too short to be seen waiting
+// in. Every transaction keeps the same deadlock_timeout, so the one that
+// gives way still does so before another's deadlock check.
+func slowLockWaits(t *testing.T) {
+	t.Helper()
+	ctx := t.Context()
+	super, err := pgxpool.New(ctx, testEnv(t, "KRITIKA_TEST_SUPER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(super.Close)
+	var name string
+	if err := super.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	database := pgx.Identifier{name}.Sanitize()
+	if _, err := super.Exec(ctx, `ALTER DATABASE `+database+` SET deadlock_timeout = '80s'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := super.Exec(context.Background(), `ALTER DATABASE `+database+` RESET deadlock_timeout`); err != nil {
+			t.Error(err)
+		}
+	})
+}
+
 // TestPartitionIndexChunksYieldsToPublication: a publication that holds its
 // repository and then waits for index_chunks behind the partitioner, which
 // then waits for repositories, publishes. The partitioner gives way, and
-// partitions the table once the publication commits.
+// partitions the table at its next try, once the publication commits.
 func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
+	slowLockWaits(t)
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-yield"))); err != nil {
@@ -485,8 +551,8 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	repo := configfile.RepositoryID(account, "index-yield/one")
 	partitionRun(t, s, account, repo, true, "a.go")
 	next := partitionRun(t, s, account, repo, false, "b.go")
-	var table uint32
-	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid`).Scan(&table); err != nil {
+	var table, repositories uint32
+	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid, 'repositories'::regclass::oid`).Scan(&table, &repositories); err != nil {
 		t.Fatal(err)
 	}
 
@@ -499,14 +565,29 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
-	partitioned := make(chan error, 1)
+	type result struct {
+		partitioned bool
+		err         error
+	}
+	gaveUp := 0
+	gaveWay = func() { gaveUp++ }
+	partitioned := make(chan result, 1)
+	partitionerDone := make(chan struct{})
 	go func() {
-		_, err := s.PartitionIndexChunks(ctx, "kritika_app")
-		partitioned <- err
+		defer close(partitionerDone)
+		got, err := s.PartitionIndexChunks(ctx, "kritika_app")
+		partitioned <- result{got, err}
 	}()
-	waitForLockWait(t, s, table, "AccessExclusiveLock", nil)
-	// The publication updates the repository and then queues behind the
-	// partitioner for index_chunks.
+	// A failure lets the writer go, and the partitioner then ends before
+	// gaveWay is unset.
+	t.Cleanup(func() {
+		<-partitionerDone
+		gaveWay = nil
+	})
+	partitioner := relationLock{table, "AccessExclusiveLock"}
+	waitForLockWait(t, s, partitioner.relation, partitioner.mode, nil)
+	// The publication locks the repository and then queues behind the
+	// partitioner to read index_chunks for the generation's postings.
 	published := make(chan error, 1)
 	publishedDone := make(chan struct{})
 	go func() {
@@ -515,18 +596,20 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 			return ActivateGeneration(ctx, tx, repo, next)
 		})
 	}()
-	waitForLockWait(t, s, table, "RowExclusiveLock", publishedDone)
+	publication := relationLock{table, "AccessShareLock"}
+	waitBehind(t, s, partitioner, publication, publishedDone)
+	// Without the writer, the partitioner, first in the queue, takes
+	// index_chunks and waits for the repository that the publication holds.
 	if err := writer.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
+	waitBehind(t, s, publication, relationLock{repositories, "ShareRowExclusiveLock"}, publishedDone)
 	if err := <-published; err != nil {
 		t.Fatalf("the publication failed beside the partitioner: %v", err)
 	}
-	if err := <-partitioned; err != nil {
-		t.Logf("the partitioner gave way: %v", err)
-	}
-	if _, err := s.PartitionIndexChunks(ctx, "kritika_app"); err != nil {
-		t.Fatal(err)
+	if got := <-partitioned; got.err != nil || !got.partitioned || gaveUp != 1 {
+		t.Fatalf("PartitionIndexChunks beside the publication = %v, %v after giving way %d times; "+
+			"want it partitioned at the next try after giving way once", got.partitioned, got.err, gaveUp)
 	}
 	var kind string
 	if err := s.owner.QueryRow(ctx, `SELECT relkind::text FROM pg_class WHERE oid = 'index_chunks'::regclass`).Scan(&kind); err != nil {
