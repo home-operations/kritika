@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -250,6 +253,39 @@ func TestForgeWaitsEndWithinAnHour(t *testing.T) {
 	}
 	if total < 30*time.Minute || total > 61*time.Minute {
 		t.Fatalf("waits add up to %s, want about an hour at most", total)
+	}
+}
+
+// TestWaitOutGitLabRateLimit: an index job that GitLab refuses with a 429
+// naming its reset snoozes until then, past the longest forge wait, and
+// spends neither an attempt nor a forge wait, so even a job whose forge
+// waits are used up snoozes.
+func TestWaitOutGitLabRateLimit(t *testing.T) {
+	h := http.Header{}
+	h.Set("Ratelimit-Reset", strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10))
+	h.Set("Retry-After", "60")
+	limited := fmt.Errorf("gitlab: branch main of o/r: %w", &gl.ErrorResponse{
+		StatusCode: http.StatusTooManyRequests,
+		Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: h,
+			Request: &http.Request{URL: &url.URL{Scheme: "https", Host: "gitlab.example.com", Path: "/api/v4/projects/o%2Fr/repository/branches/main"}}},
+	})
+	for _, metadata := range []string{`{}`, fmt.Sprintf(`{"forge_waits": %d}`, forgeWaits)} {
+		t.Run(metadata, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			w := &Index{Metrics: metrics.New(reg)}
+			job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(metadata)}}
+			err := w.waitOutForge(t.Context(), job, "acme", slog.New(slog.DiscardHandler), limited)
+			snooze, ok := errors.AsType[*river.JobSnoozeError](err)
+			if !ok || snooze.Duration <= forgeWaitMax || snooze.Duration > 2*time.Hour {
+				t.Fatalf("waitOutForge = %v, want a snooze until the reset two hours away", err)
+			}
+			want := "# HELP kritika_index_snoozes_total Index jobs put back on the queue to wait, by reason.\n" +
+				"# TYPE kritika_index_snoozes_total counter\n" +
+				"kritika_index_snoozes_total{account=\"acme\",reason=\"forge\"} 1\n"
+			if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_index_snoozes_total"); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

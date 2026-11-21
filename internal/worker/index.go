@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -366,10 +367,17 @@ func clearForgeWaits(ctx context.Context, metadata []byte, logger *slog.Logger) 
 }
 
 // waitOutForge snoozes the job, as its error, when forgeWait says that it
-// waits out err. Otherwise it returns err.
+// waits out err. Otherwise it returns err. GitLab's 429 that names when to
+// ask again snoozes the job until then instead, which can be past any
+// forge wait, and spends none: ForgeRateLimit does the same for GitHub's.
 func (w *Index) waitOutForge(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger, err error) error {
 	if ctx.Err() != nil {
 		return err
+	}
+	if d, limited := gitlab.RetryAfter(err, time.Now()); limited {
+		logger.Warn("index waits out GitLab's rate limit", "for", d.Round(time.Second), "error", err)
+		w.Metrics.IndexSnoozed(account, "forge")
+		return river.JobSnooze(d)
 	}
 	d, waits := forgeWait(err, job.Metadata)
 	if waits == 0 {
