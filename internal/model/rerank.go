@@ -3,13 +3,14 @@ package model
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -100,12 +101,7 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
-		// A *url.Error names the endpoint, whose path can carry a key that
-		// the operator put there, and the gateway logs the error.
-		if ue, ok := errors.AsType[*url.Error](err); ok {
-			return nil, RerankUsage{}, fmt.Errorf("model: rerank: %s the endpoint: %w", ue.Op, ue.Err)
-		}
-		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %w", err)
+		return nil, RerankUsage{}, fmt.Errorf("model: rerank: send the request: %w", transportError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// A refusal's body can echo the query, a document or the key, and the
@@ -117,7 +113,7 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer))
 	if err != nil {
-		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %w", err)
+		return nil, RerankUsage{}, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
 	}
 	ranks, used, err := r.decode(answer)
 	if err != nil {
@@ -250,6 +246,28 @@ func usageCount(n json.Number) int64 {
 		return 0
 	}
 	return int64(f)
+}
+
+// transportError is err, from sending a rerank request or reading its
+// answer, as one that names neither the endpoint nor anything the provider
+// sent: net/http quotes both, a Location header that does not parse, say,
+// or a malformed header line, and a provider can echo the query, a document
+// or a key into them, and the gateway logs the error. A cancellation or a
+// deadline stays one, a client timeout included.
+func transportError(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	}
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return errors.New("the endpoint's certificate does not verify")
+	}
+	if oe, ok := errors.AsType[*net.OpError](err); ok && oe.Op == "dial" {
+		return errors.New("the endpoint cannot be reached")
+	}
+	return errors.New("the endpoint's answer failed in transport")
 }
 
 // decodeError is err, from decoding a rerank answer, without what

@@ -1,6 +1,8 @@
 package model
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -242,9 +244,67 @@ func TestRerankerTimeout(t *testing.T) {
 	defer srv.Close()
 	defer close(done)
 	_, _, err := NewReranker(RerankTEI, srv.URL, "", "m", 50*time.Millisecond).Rerank(t.Context(), "q", []string{"a"})
-	if err == nil {
-		t.Fatal("a reranker that never answers must time out")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want a reranker that never answers to time out", err)
 	}
+}
+
+// TestRerankerTransportErrorValues: a request that fails in transport fails
+// with an error that quotes nothing the provider sent, such as a redirect's
+// Location that does not parse, which net/http quotes before it would ask
+// whether to follow it, or a malformed header line. A cancellation stays
+// one, and a certificate that does not verify says so.
+func TestRerankerTransportErrorValues(t *testing.T) {
+	raw := func(answer string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			conn, buf, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			_, _ = buf.WriteString(answer)
+			_ = buf.Flush()
+		}
+	}
+	for _, tt := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"unparsable redirect", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Location", "/%zz-sk-echoed")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		}},
+		{"malformed header", raw("HTTP/1.1 200 OK\r\nsk-echoed\r\nContent-Length: 0\r\n\r\n")},
+		{"malformed trailer", raw("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n[]\r\n0\r\nsk-echoed\r\n\r\n")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.handler)
+			defer srv.Close()
+			_, _, err := NewReranker(RerankTEI, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+			if err == nil || strings.Contains(err.Error(), "sk-echoed") {
+				t.Fatalf("err = %v, want a failure that quotes none of the answer", err)
+			}
+		})
+	}
+	t.Run("canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		srv := httptest.NewServer(http.NotFoundHandler())
+		defer srv.Close()
+		_, _, err := NewReranker(RerankTEI, srv.URL, "", "m", time.Minute).Rerank(ctx, "q", []string{"a"})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	})
+	t.Run("unverified certificate", func(t *testing.T) {
+		srv := httptest.NewTLSServer(http.NotFoundHandler())
+		defer srv.Close()
+		_, _, err := NewReranker(RerankTEI, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+		if err == nil || !strings.Contains(err.Error(), "certificate does not verify") {
+			t.Fatalf("err = %v, want the certificate named", err)
+		}
+	})
 }
 
 // TestRerankerTransportErrorEndpoint: a reranker that cannot be reached
@@ -255,8 +315,8 @@ func TestRerankerTransportErrorEndpoint(t *testing.T) {
 	base := srv.URL + "/v1/sk-in-path"
 	srv.Close()
 	_, _, err := NewReranker(RerankCohere, base, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
-	if err == nil || strings.Contains(err.Error(), "sk-in-path") {
-		t.Fatalf("err = %v, want a failure that does not name the endpoint", err)
+	if err == nil || strings.Contains(err.Error(), "sk-in-path") || !strings.Contains(err.Error(), "cannot be reached") {
+		t.Fatalf("err = %v, want a failure to reach the endpoint that does not name it", err)
 	}
 }
 
