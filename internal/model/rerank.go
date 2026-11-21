@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,11 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
+		// A *url.Error names the endpoint, whose path can carry a key that
+		// the operator put there, and the gateway logs the error.
+		if ue, ok := errors.AsType[*url.Error](err); ok {
+			return nil, RerankUsage{}, fmt.Errorf("model: rerank: %s the endpoint: %w", ue.Op, ue.Err)
+		}
 		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -183,7 +189,7 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 	var used RerankUsage
 	if r.api == RerankTEI {
 		if err := json.Unmarshal(answer, &ranks); err != nil {
-			return nil, used, err
+			return nil, used, decodeError(err)
 		}
 	} else {
 		var out struct {
@@ -203,7 +209,7 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 			} `json:"meta"`
 		}
 		if err := json.Unmarshal(answer, &out); err != nil {
-			return nil, used, err
+			return nil, used, decodeError(err)
 		}
 		ranks = out.Results
 		if r.api == RerankVoyage {
@@ -244,4 +250,18 @@ func usageCount(n json.Number) int64 {
 		return 0
 	}
 	return int64(f)
+}
+
+// decodeError is err, from decoding a rerank answer, without what
+// encoding/json quotes of the answer in it, a value or a character: a
+// provider can echo the query, a document or a key into any field of its
+// answer, and the gateway logs the error.
+func decodeError(err error) error {
+	if se, ok := errors.AsType[*json.SyntaxError](err); ok {
+		return fmt.Errorf("the answer is not JSON at byte %d", se.Offset)
+	}
+	if te, ok := errors.AsType[*json.UnmarshalTypeError](err); ok && te.Offset > 0 {
+		return fmt.Errorf("the answer has a value of the wrong type at byte %d", te.Offset)
+	}
+	return errors.New("the answer has a value of the wrong type")
 }

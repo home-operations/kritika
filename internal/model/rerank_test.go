@@ -246,3 +246,43 @@ func TestRerankerTimeout(t *testing.T) {
 		t.Fatal("a reranker that never answers must time out")
 	}
 }
+
+// TestRerankerTransportErrorEndpoint: a reranker that cannot be reached
+// fails with an error that does not name its endpoint, whose path can carry
+// a key, since the gateway logs the error.
+func TestRerankerTransportErrorEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	base := srv.URL + "/v1/sk-in-path"
+	srv.Close()
+	_, _, err := NewReranker(RerankCohere, base, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+	if err == nil || strings.Contains(err.Error(), "sk-in-path") {
+		t.Fatalf("err = %v, want a failure that does not name the endpoint", err)
+	}
+}
+
+// TestRerankerDecodeErrorValues: an answer that does not decode fails with
+// an error that quotes none of it, since a provider can echo the query, a
+// document or a key into any of its fields, and the gateway logs the error.
+func TestRerankerDecodeErrorValues(t *testing.T) {
+	for _, tt := range []struct {
+		name, api, answer string
+	}{
+		{"usage that is not a number", RerankJina, `{"results":[{"index":0,"relevance_score":0.5}],"usage":{"total_tokens":"sk-echoed"}}`},
+		{"billed units that are not a number", RerankCohere, `{"results":[{"index":0,"relevance_score":0.5}],"meta":{"billed_units":{"search_units":"sk-echoed"}}}`},
+		{"an index of the wrong type", RerankVoyage, `{"data":[{"index":"sk-echoed","relevance_score":0.5}]}`},
+		{"an index past an int", RerankTEI, `[{"index":12345678901234567890123,"score":0.5}]`},
+		{"invalid JSON", RerankTEI, `[{"index":0,"score":sk-echoed}]`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, tt.answer)
+			}))
+			defer srv.Close()
+			_, _, err := NewReranker(tt.api, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+			if err == nil || !strings.Contains(err.Error(), "decode") ||
+				strings.Contains(err.Error(), "sk-echoed") || strings.Contains(err.Error(), "12345678901234567890123") {
+				t.Fatalf("err = %v, want a decode failure that quotes none of the answer", err)
+			}
+		})
+	}
+}

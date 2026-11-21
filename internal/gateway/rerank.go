@@ -144,7 +144,8 @@ func (g *Server) rerank(
 		spent.SearchUnits += used.SearchUnits
 		g.Metrics.ModelCall(r.account.Key(), rr.Model, store.RoleRerank, adapter.Outcome(err), used.Tokens, 0, 0, 0, false)
 		if err != nil {
-			// The provider's error can carry its URL.
+			// The error names neither the endpoint nor what the reranker
+			// answered: either can carry a key, a document or the query.
 			logger.Warn("gateway: similar code not reranked: the fused order stands", "query", q, "error", err)
 			continue
 		}
