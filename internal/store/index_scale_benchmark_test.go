@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/go-git/go-git/v6"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/sync/errgroup"
 
@@ -1077,8 +1079,16 @@ func TestScaleRepoHashSetupRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	i := slices.IndexFunc(scaleLayouts(1000), func(l scaleLayout) bool { return l.name == "repo-hash" })
-	if err := scaleLayouts(1000)[i].setup(ctx, s); err == nil {
+	// The setup fails at that partition, after the DDL before it, and not at
+	// a statement before the rename that would leave the table as it was
+	// without rolling anything back.
+	err := scaleLayouts(1000)[i].setup(ctx, s)
+	if err == nil {
 		t.Fatal("the repo-hash setup succeeded beside a table in its way")
+	}
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || pgErr.Code != "42P07" || !strings.HasPrefix(err.Error(), "CREATE TABLE index_chunks_p1 PARTITION OF index_chunks ") {
+		t.Fatalf("the repo-hash setup failed with %v; want 42P07 from the statement that creates index_chunks_p1", err)
 	}
 	var loaded, flat bool
 	if err := s.owner.QueryRow(ctx, `SELECT to_regclass('index_chunks') IS NOT NULL AND
