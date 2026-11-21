@@ -689,23 +689,33 @@ repositories where a floor cannot. Keep the floor low, under the weakest
 match worth showing anywhere, and narrow the margin to keep fewer.
 
 Indexing is off without an embedder, and reviews run without similar code.
-The index holds one model, dimension and document prompt. A configuration
-that changes any of them drops every repository's index. The leader then
-builds each index again, a few at a time, as `KRITIKA_ONBOARD_WINDOW`
-paces them. Removing the embedder keeps the index, and adding back the
-same model, dimension and document prompt uses it again.
+The index holds one model, by its id on the provider, one dimension and one
+document prompt. A configuration that changes any of them drops every
+repository's index. The leader then builds each index again, a few at a
+time, as `KRITIKA_ONBOARD_WINDOW` paces them. Removing the embedder keeps
+the index, and adding back the same model, dimension and document prompt
+uses it again.
 
 Any rebuild of a repository's index, and any update for a push, sends the
 embedder only the chunks whose text its index does not already hold for
 the same embedder. Each chunk stores a hash of the text it was embedded
-from and of the embedder, and a chunk whose hash the index holds takes the
-vector already stored, so the provider is not paid twice for code that did
-not change. Chunks indexed by a release before these hashes have none and
-match nothing, so the first rebuild of each index after that upgrade, the
-rebuild in the new index format below, embeds those chunks again, once. A
-reindex from the dashboard is the exception to reuse: it sends the embedder
-every chunk again. Use it to replace stored vectors, as when the model
-behind an unchanged endpoint and model name changed.
+from, its document prompt included and cut to `maxItemChars`, and of the
+embedder's model id, dimension and document prompt. A chunk whose hash the
+index holds takes the vector already stored, so the provider is not paid
+twice for code that did not change. Chunks indexed by a release before
+these hashes have none and match nothing, so the first rebuild of each
+index after that upgrade, the rebuild in the new index format below, embeds
+those chunks again, once. A reindex from the dashboard is the exception to
+reuse: it sends the embedder every chunk again.
+
+Neither the hash nor the index records the provider or its `baseUrl`. So
+moving the embedder to another endpoint, or another provider, that serves
+a model under the same id, with the same dimension and document prompt,
+keeps every stored vector, as does a new model behind an unchanged endpoint
+and id. When the model now behind that id is not the one that embedded the
+index, reindex each repository from the dashboard to replace its vectors:
+otherwise searches compare the new model's query vectors with the old
+model's.
 
 A kritika release can also change how it chunks code or what it embeds
 for each chunk: the index format. A new format drops no index. Each
