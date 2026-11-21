@@ -61,7 +61,7 @@
         <dt>Chunks</dt><dd>{wholeNumber(c.chunks)}</dd>
         {#if c.builtAt}<dt>Built</dt><dd><Time iso={c.builtAt} /></dd>{/if}
       </dl>
-      {#if c.truncated}<p class="mx-4 mt-0 mb-3 text-ui-sm text-muted">The last full build hit the indexer's limit on files, bytes or chunks. The index may still be missing files or portions of files.</p>{/if}
+      {#if c.truncated}<p class="mx-4 mt-0 mb-3 text-ui-sm text-muted">The full build for this index hit the indexer's limit on files, bytes or chunks. The index may still be missing files or portions of files.</p>{/if}
       <div class="toolbar flex flex-wrap items-center gap-2 mx-4 mb-2">
         <label class="search-box [flex:1_1_240px] min-w-0 flex">
           <span class="sr-only">Filter indexed files</span>

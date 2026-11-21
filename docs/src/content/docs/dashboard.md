@@ -187,12 +187,13 @@ effective configuration. Expand **Index runs** to investigate indexing
 failures. Expand **Index contents** to see what the similar-code index holds:
 the commit and embedder it was built at, and its files and their chunks. A
 **partial** pill there, and in the repository's preview, marks an index whose
-last full build stopped at the indexer's limits of 50,000 files, 500 MiB or
-100,000 chunks, and a note below it says so. That build left out the files
-past them, and at the chunk limit the rest of the file it stopped in. The
-mark stays while pushes update the index, even a push that indexes some of
-that code, until a full rebuild fits within the limits, so the note says
-only that the index may still be missing files or portions of files.
+own full build, not a later one that failed, stopped at the indexer's limits
+of 50,000 files, 500 MiB or 100,000 chunks, and a note below it says so.
+That build left out the files past them, and at the chunk limit the rest of
+the file it stopped in. The mark stays while pushes update the index, even
+a push that indexes some of that code, until a full rebuild fits within the
+limits, so the note says only that the index may still be missing files or
+portions of files.
 
 Only admins see a chunk's text. The paths that the indexer skipped, such as
 those an ignore rule matches, are not recorded, so they are not listed. See

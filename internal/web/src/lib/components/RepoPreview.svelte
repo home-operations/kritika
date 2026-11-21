@@ -42,7 +42,7 @@
             <dt>Chunks</dt><dd>{wholeNumber(run.chunkCount)}</dd>
           {/if}
         </dl>
-        {#if d.index.truncated}<p class="text-muted mt-1">The last full build hit the indexer's limit on files, bytes or chunks. The index may still be missing files or portions of files.</p>{/if}
+        {#if d.index.truncated}<p class="text-muted mt-1">The full build for this index hit the indexer's limit on files, bytes or chunks. The index may still be missing files or portions of files.</p>{/if}
         {#if run?.error}<p class="text-danger line-clamp-2 wrap-anywhere mt-1">{run.error}</p>{/if}
       </div>
     </div>
