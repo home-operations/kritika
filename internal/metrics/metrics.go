@@ -358,6 +358,24 @@ func (m *Metrics) IndexSnoozed(account, reason string) {
 	}
 }
 
+// InitIndexSnoozes exposes zero counts of the account's index snoozes, of
+// each reason, before any job snoozes, so a first snooze following a scrape
+// is visible to rate/increase.
+func (m *Metrics) InitIndexSnoozes(account string) {
+	if m != nil {
+		for _, reason := range []string{"forge", "build"} {
+			m.indexSnoozes.WithLabelValues(account, reason)
+		}
+	}
+}
+
+// InitAccount exposes the account's zero series at startup: those of
+// InitVectorSearch and InitIndexSnoozes.
+func (m *Metrics) InitAccount(account string) {
+	m.InitVectorSearch(account)
+	m.InitIndexSnoozes(account)
+}
+
 // JobRescued counts a job of a dead replica that the leader handed back to
 // the queue. It counts by job kind and the state that the job was handed back
 // in.

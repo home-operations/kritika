@@ -204,7 +204,7 @@ func serve(
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
 	for _, account := range file.Accounts {
-		m.InitVectorSearch(account.Key())
+		m.InitAccount(account.Key())
 	}
 	queueCollector := metrics.NewQueueCollector(ctx, func(ctx context.Context) ([]metrics.QueueStats, error) {
 		stats, err := st.QueueStats(ctx)

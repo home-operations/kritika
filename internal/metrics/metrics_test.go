@@ -26,6 +26,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.Leading(true)
 	none.QueueWait("review", time.Second)
 	none.InitVectorSearch("account")
+	none.InitAccount("account")
 	none.VectorSearch("account", "ok", time.Second)
 	none.LexicalSearch("account", "ok", time.Second)
 	none.CacheUploadSkipped("queue_full")
@@ -254,4 +255,33 @@ func TestSimilarBestNegative(t *testing.T) {
 		}
 	}
 	t.Fatal("-0.3 lands in no bucket")
+}
+
+// TestInitAccountIndexSnoozes: startup exposes an account's index snoozes of
+// each reason at zero, beside its searches, so the first snooze after a
+// scrape shows in rate/increase. Initializing again keeps a snooze recorded
+// since.
+func TestInitAccountIndexSnoozes(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := New(reg)
+	m.InitAccount("account")
+	if n, err := testutil.GatherAndCount(reg, "kritika_index_snoozes_total"); err != nil || n != 2 {
+		t.Fatalf("index snooze series = %d, %v; want 2", n, err)
+	}
+	if n, err := testutil.GatherAndCount(reg, "kritika_vector_search_seconds"); err != nil || n != 3 {
+		t.Fatalf("vector search series = %d, %v; want 3", n, err)
+	}
+	for _, reason := range []string{"forge", "build"} {
+		t.Run(reason, func(t *testing.T) {
+			counter := m.indexSnoozes.WithLabelValues("account", reason)
+			if got := testutil.ToFloat64(counter); got != 0 {
+				t.Fatalf("initialized snoozes = %v, want 0", got)
+			}
+			m.IndexSnoozed("account", reason)
+			m.InitAccount("account")
+			if got := testutil.ToFloat64(counter); got != 1 {
+				t.Fatalf("snoozes after one and initializing again = %v, want 1", got)
+			}
+		})
+	}
 }
