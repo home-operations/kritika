@@ -58,10 +58,12 @@ const defaultMaxBytes = 1 << 20
 // A parse has no timeout. Every limit on it counts the parser's work, not
 // time, so that a file is cut the same on a loaded machine as on an idle
 // one, which the index's chunks and the vectors kept by their text rely on.
-// A gotreesitter v0.57.0 parse that its deadline stops partway can also
-// return, with no error, a tree of one error node, which is cut as one
-// declaration in place of many. The limits below and the library's own
-// per-byte ones stop pathological inputs in about a second.
+// A deadline that cuts error recovery short returns a tree other than an
+// unbounded parse's, with no error and an accepted stop reason
+// (odvcencio/gotreesitter#1600), so a timeout added here would also have to
+// drop a tree whose RetryStopReason, added by odvcencio/gotreesitter#1619,
+// is not ParseStopNone. The limits below and the library's own per-byte
+// ones stop pathological inputs in about a second.
 
 // parseMemoryBudget bounds one parse's arena and scratch memory. The
 // library's default is the larger of 512 MiB and 512 bytes per input byte.
@@ -136,7 +138,8 @@ func (p *Parser) Parse(path string, src []byte) *File {
 	p.mu.Unlock()
 	// A parse stopped early returns its partial tree with the error. One
 	// that recovers from errors can also return a tree that ends before the
-	// source does, with none.
+	// source does, with none: odvcencio/gotreesitter#1632 fixed some C++
+	// cases, and others are not fixed upstream.
 	if err != nil || tree == nil || tree.RootNode() == nil ||
 		int(tree.RootNode().EndByte()) < len(bytes.TrimRightFunc(src, unicode.IsSpace)) {
 		tree.Release()
@@ -248,6 +251,8 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		// Error recovery can leave a grammar's hidden nodes (a
 		// translation_unit_repeat1) at the top level in place of the
 		// statements they hold, so only an anonymous token is passed over.
+		// odvcencio/gotreesitter#1632 fixed some C++ cases, and others are
+		// not fixed upstream.
 		if !c.IsNamed() && c.ChildCount() == 0 || comment(typ) || bytes.IndexFunc(src[c.StartByte():c.EndByte()], Worded) < 0 {
 			continue
 		}

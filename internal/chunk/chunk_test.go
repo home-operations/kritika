@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/odvcencio/gotreesitter"
 )
 
 func TestFileWindow(t *testing.T) {
@@ -553,6 +555,57 @@ func TestStatementsWithoutLetters(t *testing.T) {
 				t.Errorf("line %d in a declaration = %t, want %t: %+v", tt.line, got, tt.want, f.Decls)
 			}
 		})
+	}
+}
+
+// TestParseFallsBackForATreeThatEndsShort: a tree that ends before the source
+// does, with no error, gives fixed windows. The indexer's corpus and pieces
+// tests hold the same input.
+func TestParseFallsBackForATreeThatEndsShort(t *testing.T) {
+	var p Parser
+	src := []byte("struct a : b<c>\n#endif\nint x;\n")
+	tree, err := p.language("short.hpp").parser.ParseStrict(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := tree.RootNode().EndByte()
+	tree.Release()
+	if int(end) >= len(bytes.TrimSpace(src)) {
+		t.Fatalf("the parse ends at byte %d of %d: the input no longer exercises the fallback", end, len(src))
+	}
+	if f := p.Parse("short.hpp", src); len(f.Decls) != 0 {
+		t.Errorf("declarations = %+v, want none", f.Decls)
+	}
+}
+
+// TestHiddenNodeAtTheTopLevel: the statements that error recovery leaves in a
+// hidden node at the top level are a declaration. No known input gives that
+// tree since odvcencio/gotreesitter#1632, so the test builds it.
+func TestHiddenNodeAtTheTopLevel(t *testing.T) {
+	var p Parser
+	lp := p.language("hidden.hpp")
+	src := []byte("int x = 1;\nint y = 2;\nint after() { return 1; }\n")
+	parsed, err := lp.parser.ParseStrict(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parsed.Release()
+	top := parsed.RootNode()
+	repeat, ok1 := lp.lang.SymbolByName("translation_unit_repeat1")
+	unit, ok2 := lp.lang.SymbolByName("translation_unit")
+	if !ok1 || !ok2 || top.ChildCount() != 3 {
+		t.Fatalf("translation_unit_repeat1 %t, translation_unit %t, %d top-level nodes", ok1, ok2, top.ChildCount())
+	}
+	//nolint:staticcheck // a parse no longer gives this tree, so it is built by hand
+	hidden := gotreesitter.NewParentNode(repeat, false, []*gotreesitter.Node{top.Child(0), top.Child(1)}, nil, 0)
+	//nolint:staticcheck // as above
+	root := gotreesitter.NewParentNode(unit, true, []*gotreesitter.Node{hidden, top.Child(2)}, nil, 0)
+	tree := gotreesitter.NewTree(root, src, lp.lang) //nolint:staticcheck // as above
+	decls := declarations(lp, tree, src)
+	for line := 1; line <= 3; line++ {
+		if !slices.ContainsFunc(decls, func(d Decl) bool { return d.Contains(line) }) {
+			t.Errorf("line %d is in no declaration: %+v", line, decls)
+		}
 	}
 }
 

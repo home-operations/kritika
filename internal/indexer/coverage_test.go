@@ -108,7 +108,7 @@ var corpus = []struct {
 	{path: "values.yaml", src: lines(70, "k%d: v") + "big: " + strings.Repeat("z", 7000) + "\n" + lines(5, "after%d: v")},
 	{path: "run.sh", src: "f() { echo hi; }\nf\n"},
 	{path: "schema.sql", src: "CREATE TABLE t (a int);\nCOMMENT ON COLUMN t.a IS 'the a column';\nCREATE INDEX i ON t (a);\n"},
-	{path: "short.hpp", src: "public:\n#if !defined(DOCS)\n  typedef int type;\n#endif\n\nint run() { return 1; }\n"},
+	{path: "short.hpp", src: "struct a : b<c>\n#endif\nint x;\n"},
 }
 
 // corpusTree is the tree of a commit that holds the corpus.
