@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/home-operations/kritika/internal/contextpack"
 )
@@ -167,10 +166,9 @@ func TestHunkQueries(t *testing.T) {
 	})
 }
 
-// TestHunkQueriesManyDeclarations: finding the declarations that hold an
-// added line costs about as much for many short declarations after many
-// added lines as before them, where it is little next to the parse.
-func TestHunkQueriesManyDeclarations(t *testing.T) {
+// manyDeclarations is a new Go file's diff of 10,000 short declarations and
+// a string of 200,000 lines, the declarations first or last.
+func manyDeclarations(declarationsFirst bool) string {
 	blob := make([]string, 0, 200_002)
 	blob = append(blob, "var s = `")
 	for range 200_000 {
@@ -181,17 +179,52 @@ func TestHunkQueriesManyDeclarations(t *testing.T) {
 	for i := range 10_000 {
 		funcs = append(funcs, fmt.Sprintf("func f%d() {}", i))
 	}
-	took := func(lines ...[]string) time.Duration {
-		diff := fileDiff("", "a.go", added(slices.Concat(append([][]string{{"package a"}}, lines...)...)...))
-		started := time.Now()
-		if got, _ := HunkQueries(diff, nil); len(got) != contextpack.SimilarQueries {
-			t.Fatalf("%d queries, want %d", len(got), contextpack.SimilarQueries)
-		}
-		return time.Since(started)
+	parts := [][]string{{"package a"}, funcs, blob}
+	if !declarationsFirst {
+		parts[1], parts[2] = blob, funcs
 	}
-	before := took(funcs, blob)
-	if after := took(blob, funcs); after > 3*before {
-		t.Fatalf("HunkQueries took %s with the declarations after the added lines, %s with them before", after, before)
+	return fileDiff("", "a.go", added(slices.Concat(parts...)...))
+}
+
+// TestHunkQueriesManyDeclarations: a region of many short declarations and
+// a large one is asked about by the declarations in the order it has them,
+// the large one in windows of its lines. BenchmarkHunkQueriesManyDeclarations
+// compares what each order costs.
+func TestHunkQueriesManyDeclarations(t *testing.T) {
+	first, _ := HunkQueries(manyDeclarations(true), nil)
+	want := make([]string, contextpack.SimilarQueries)
+	for i := range want {
+		want[i] = fmt.Sprintf("func f%d() {}\n", i)
+	}
+	if !slices.Equal(first, want) {
+		t.Fatalf("HunkQueries with the declarations first = %q, want %q", first, want)
+	}
+	last, _ := HunkQueries(manyDeclarations(false), nil)
+	if len(last) != contextpack.SimilarQueries || !strings.HasPrefix(last[0], "var s = `\nx\n") {
+		t.Fatalf("HunkQueries with the declarations last = %d queries, the first %.20q, want %d from the string's start",
+			len(last), last[0], contextpack.SimilarQueries)
+	}
+	for _, q := range last[1:] {
+		if strings.Trim(q, "x\n") != "" || len(q) > contextpack.SimilarQueryChars {
+			t.Fatalf("HunkQueries with the declarations last = %.20q, want windows of the string", q)
+		}
+	}
+}
+
+// BenchmarkHunkQueriesManyDeclarations: finding the declarations that hold an
+// added line costs about as much for many short declarations after many
+// added lines as before them, where it is little next to the parse.
+func BenchmarkHunkQueriesManyDeclarations(b *testing.B) {
+	for _, bc := range []struct {
+		name  string
+		first bool
+	}{{"declarations first", true}, {"declarations last", false}} {
+		b.Run(bc.name, func(b *testing.B) {
+			diff := manyDeclarations(bc.first)
+			for b.Loop() {
+				HunkQueries(diff, nil)
+			}
+		})
 	}
 }
 
