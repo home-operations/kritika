@@ -2567,7 +2567,7 @@ func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoI
 			Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text,
 			StartLine: c.StartLine, EndLine: c.EndLine, Signature: c.Signature,
 		}
-		inputs[i] = embedText(emb.DocumentPrompt, staged[i])
+		inputs[i] = staged[i].EmbedText(emb.DocumentPrompt)
 	}
 	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritika_app", emb.Model, emb.Dims, emb.DocumentPrompt); err != nil {
 		t.Fatal(err)

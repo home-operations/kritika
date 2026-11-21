@@ -612,7 +612,7 @@ func (w *Index) vectorsFor(
 	texts := make([]string, len(batch))
 	hashes := make([][]byte, len(batch))
 	for i := range batch {
-		texts[i] = embedText(emb.DocumentPrompt, batch[i])
+		texts[i] = batch[i].EmbedText(emb.DocumentPrompt)
 		hashes[i] = contentHash(emb, texts[i])
 		batch[i].ContentHash = hashes[i]
 	}
@@ -705,27 +705,6 @@ func indexIgnoreHash(ignore []string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%q", patterns))))
 }
 
-// embedText is what the embedder sees: the embedder's document prompt, then
-// the path and symbol, qualified by its scope. They give the vector a little
-// of the file's identity, the way a reader knows where a snippet came from.
-// A window of a large declaration has the declaration's symbol, and its
-// signature on a line of its own when the window does not show it, so it is
-// placed though it does not start where the declaration does.
-func embedText(prompt string, c store.StagedChunk) string {
-	head := c.Path
-	if c.Symbol != "" {
-		head += " " + c.Kind + " "
-		if c.Scope != "" {
-			head += c.Scope + "."
-		}
-		head += c.Symbol
-	}
-	if c.Signature != "" {
-		head += "\n" + c.Signature
-	}
-	return prompt + head + "\n" + c.Text
-}
-
 // recordRun writes what the executor learned about a runner Job and counts
 // it.
 func recordRun(
@@ -759,9 +738,9 @@ func runOutcome(res executor.Result) string {
 
 // indexResumeKey excludes credentials and scheduling limits, which do not
 // change vector contents. The version is the index format, which
-// invalidates incompatible code changes to staging or embedText. A field that is empty unless configured
-// is omitted when empty, so adding one leaves the keys of runs in flight
-// valid.
+// invalidates incompatible code changes to staging or StagedChunk.EmbedText.
+// A field that is empty unless configured is omitted when empty, so adding
+// one leaves the keys of runs in flight valid.
 func indexResumeKey(commit, mode, base string, active *store.Generation, emb *configfile.Embedding, ignoreHash string) string {
 	baseRun := ""
 	if mode == store.IndexModeIncremental && active != nil {

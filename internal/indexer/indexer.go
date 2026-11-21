@@ -1,6 +1,7 @@
 // Package indexer cuts a repository tree into the chunks that the embedding
 // index stores. It runs in the runner pod, which holds the fetched trees and
-// no model key. The worker embeds what it stages.
+// no model key. The worker embeds what it stages. HunkQueries is what a run
+// asks that index about a diff.
 package indexer
 
 import (

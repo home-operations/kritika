@@ -25,6 +25,7 @@ import (
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -382,7 +383,7 @@ func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Sec
 func similarCodeFor(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
-	queries := hunkQueries(diff, p.Ignore)
+	queries, _ := indexer.HunkQueries(diff, p.Ignore)
 	if len(queries) == 0 {
 		return contextpack.SimilarResponse{Indexed: true}, true
 	}

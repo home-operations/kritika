@@ -219,6 +219,29 @@ type StagedChunk struct {
 	ContentHash []byte
 }
 
+// EmbedText is what the embedder sees of c: the embedder's document prompt,
+// then the path and symbol, qualified by its scope. They give the vector a
+// little of the file's identity, the way a reader knows where a snippet came
+// from. A window of a large declaration has the declaration's symbol, and its
+// signature on a line of its own when the window does not show it, so it is
+// placed though it does not start where the declaration does. A chunk's
+// content hash is of this text, so a change to it changes the hash of
+// every chunk stored.
+func (c StagedChunk) EmbedText(prompt string) string {
+	head := c.Path
+	if c.Symbol != "" {
+		head += " " + c.Kind + " "
+		if c.Scope != "" {
+			head += c.Scope + "."
+		}
+		head += c.Symbol
+	}
+	if c.Signature != "" {
+		head += "\n" + c.Signature
+	}
+	return prompt + head + "\n" + c.Text
+}
+
 // ReadStagedChunks reads up to limit of a runner run's staged chunks with
 // an id past after, in id order.
 func ReadStagedChunks(ctx context.Context, tx pgx.Tx, runnerRunID string, after int64, limit int) ([]StagedChunk, error) {

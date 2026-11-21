@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/executor"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestErrText(t *testing.T) {
@@ -21,34 +20,6 @@ func TestErrText(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := errText(tt.err); got != tt.want {
 				t.Errorf("errText(%v) = %q, want %q", tt.err, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestEmbedText(t *testing.T) {
-	tests := []struct {
-		name, prompt string
-		chunk        store.StagedChunk
-		want         string
-	}{
-		{name: "with a symbol", chunk: store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"},
-			want: "a/b.go function Build\nfunc Build() {}"},
-		{name: "with a scope", chunk: store.StagedChunk{Path: "a/b.py", Symbol: "bar", Kind: "function", Scope: "Foo", Text: "def bar(self): pass"},
-			want: "a/b.py function Foo.bar\ndef bar(self): pass"},
-		{name: "a window with a signature", chunk: store.StagedChunk{Path: "a/b.py", Symbol: "bar", Kind: "function", Scope: "Foo",
-			Signature: "def bar(self):", Text: "        total += 1"},
-			want: "a/b.py function Foo.bar\ndef bar(self):\n        total += 1"},
-		{name: "a scope without a symbol", chunk: store.StagedChunk{Path: "a/b.go", Kind: "import", Scope: "Foo", Text: "import \"x\""},
-			want: "a/b.go\nimport \"x\""},
-		{name: "without a symbol", chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "values.yaml\na: 1"},
-		{name: "with a document prompt", prompt: "Represent the document for retrieval: ",
-			chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "Represent the document for retrieval: values.yaml\na: 1"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := embedText(tt.prompt, tt.chunk); got != tt.want {
-				t.Errorf("embedText(%q, %+v) = %q, want %q", tt.prompt, tt.chunk, got, tt.want)
 			}
 		})
 	}

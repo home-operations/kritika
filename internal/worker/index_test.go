@@ -157,7 +157,7 @@ func TestIndexContentHash(t *testing.T) {
 func TestIndexContentHashSignature(t *testing.T) {
 	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: "}
 	window := store.StagedChunk{Path: "main.go", Symbol: "f", Kind: "function", Signature: "func f(a int) int {", Text: "\ta++\n\treturn a\n"}
-	base := contentHash(emb, embedText(emb.DocumentPrompt, window))
+	base := contentHash(emb, window.EmbedText(emb.DocumentPrompt))
 	for _, tc := range []struct {
 		name, signature string
 		same            bool
@@ -169,10 +169,27 @@ func TestIndexContentHashSignature(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := window
 			c.Signature = tc.signature
-			if got := contentHash(emb, embedText(emb.DocumentPrompt, c)); bytes.Equal(got, base) != tc.same {
+			if got := contentHash(emb, c.EmbedText(emb.DocumentPrompt)); bytes.Equal(got, base) != tc.same {
 				t.Fatalf("hash %x against %x, want same %v", got, base, tc.same)
 			}
 		})
+	}
+}
+
+// TestIndexContentHashPinned: the embedded text of a chunk, and so its
+// content hash, stays byte for byte what the index has stored. A change to
+// either finds none of the stored vectors, which every index then embeds
+// again.
+func TestIndexContentHashPinned(t *testing.T) {
+	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", MaxItemChars: 1000}
+	c := store.StagedChunk{Path: "a/b.py", Symbol: "bar", Kind: "function", Scope: "Foo", Signature: "def bar(self):",
+		Text: "        total += 1\n        return total"}
+	text := c.EmbedText(emb.DocumentPrompt)
+	if want := "text: a/b.py function Foo.bar\ndef bar(self):\n        total += 1\n        return total"; text != want {
+		t.Fatalf("embedded text %q, want %q", text, want)
+	}
+	if got, want := fmt.Sprintf("%x", contentHash(emb, text)), "fe1650022732986fb73043e01287b8c8cfd2e7d6bee51d3ee24ffdae430e9da3"; got != want {
+		t.Fatalf("content hash %s, want %s", got, want)
 	}
 }
 

@@ -23,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -31,7 +30,6 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
-	"github.com/home-operations/kritika/internal/textcut"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -83,7 +81,7 @@ func TestRetrievalEval(t *testing.T) {
 			continue
 		}
 		diff, added := commitDiff(t, c)
-		queries, paths := evalQueries(diff)
+		queries, paths := indexer.HunkQueries(diff, configfile.DefaultIgnore)
 		if len(queries) == 0 {
 			continue
 		}
@@ -182,7 +180,7 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 	for i, c := range chunks {
 		staged[i] = store.StagedChunk{Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope, Text: c.Text,
 			StartLine: c.StartLine, EndLine: c.EndLine, Signature: c.Signature}
-		texts[i] = evalDocument(c)
+		texts[i] = staged[i].EmbedText("")
 	}
 	started := time.Now()
 	vectors := embed(texts)
@@ -558,58 +556,6 @@ func commitDiff(t *testing.T, c *object.Commit) (string, string) {
 	return diff, added.String()
 }
 
-// evalQueries are the changed regions of the diff's hunks, and the path of
-// each, as the runner's
-// stage 4 picks them in the simple case: each hunk's added lines with three
-// lines around them, of the files that the index has a language for, the
-// most changed files first, at most contextpack.SimilarQueries.
-func evalQueries(diff string) (texts, paths []string) {
-	type region struct {
-		text, path string
-		added      int
-	}
-	var regions []region
-	for _, f := range udiff.Parse(diff) {
-		if f.NewPath == "" || chunk.Matches(configfile.DefaultIgnore, f.NewPath) {
-			continue
-		}
-		if lang, _ := chunk.Language(f.NewPath); lang == "" {
-			continue
-		}
-		for _, h := range f.Hunks {
-			var lines []udiff.Line
-			first, last, n := -1, -1, 0
-			for _, l := range h.Lines {
-				if l.Kind != '+' && l.Kind != ' ' {
-					continue
-				}
-				if l.Kind == '+' && strings.TrimSpace(l.Text) != "" {
-					if first < 0 {
-						first = len(lines)
-					}
-					last = len(lines)
-					n++
-				}
-				lines = append(lines, l)
-			}
-			if n == 0 {
-				continue
-			}
-			var b strings.Builder
-			for _, l := range lines[max(0, first-3):min(len(lines), last+4)] {
-				b.WriteString(l.Text)
-				b.WriteByte('\n')
-			}
-			regions = append(regions, region{textcut.Prefix(b.String(), contextpack.SimilarQueryChars), f.NewPath, n})
-		}
-	}
-	slices.SortStableFunc(regions, func(a, b region) int { return cmp.Compare(b.added, a.added) })
-	for _, r := range regions[:min(len(regions), contextpack.SimilarQueries)] {
-		texts, paths = append(texts, r.text), append(paths, r.path)
-	}
-	return texts, paths
-}
-
 // evalEmbedder embeds with the configured endpoint, or with hashed
 // character trigrams, caching each text's vector by its hash.
 func evalEmbedder(t *testing.T) (func([]string) [][]float32, int) {
@@ -716,41 +662,5 @@ func TestEvalRerankScale(t *testing.T) {
 	got := keepCandidates(cands, map[hitKey]int{}, 1)
 	if len(got) != 1 || got[0].Path != "b.go" {
 		t.Fatalf("kept %+v, want b.go, which the reranker scores higher", got)
-	}
-}
-
-// evalDocument is what the index embeds of a chunk, as the worker's
-// embedText makes it without a document prompt: its path and declaration,
-// the signature of a window that does not show it, then its text.
-func evalDocument(c indexer.Chunk) string {
-	head := c.Path
-	if c.Symbol != "" {
-		head += " " + c.Kind + " " + strings.TrimPrefix(c.Scope+"."+c.Symbol, ".")
-	}
-	if c.Signature != "" {
-		head += "\n" + c.Signature
-	}
-	return head + "\n" + c.Text
-}
-
-// TestEvalDocument: the replay embeds a window of a declaration under its
-// signature, as the index does.
-func TestEvalDocument(t *testing.T) {
-	for _, tt := range []struct {
-		name  string
-		chunk indexer.Chunk
-		want  string
-	}{
-		{"a declaration", indexer.Chunk{Path: "a.go", Symbol: "Run", Kind: "method", Scope: "Server", Text: "func (s *Server) Run() {}"},
-			"a.go method Server.Run\nfunc (s *Server) Run() {}"},
-		{"a window under its signature", indexer.Chunk{Path: "a.go", Symbol: "Run", Kind: "func", Signature: "func Run(ctx context.Context) error {",
-			Text: "\treturn nil\n}"}, "a.go func Run\nfunc Run(ctx context.Context) error {\n\treturn nil\n}"},
-		{"no declaration", indexer.Chunk{Path: "go.mod", Text: "module x"}, "go.mod\nmodule x"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := evalDocument(tt.chunk); got != tt.want {
-				t.Errorf("evalDocument = %q, want %q", got, tt.want)
-			}
-		})
 	}
 }
