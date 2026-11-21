@@ -919,3 +919,26 @@ func listingInput(node map[string]any) (n int) {
 	}
 	return n
 }
+
+// TestIndexPostingsGoWithTheirRun: deleting a generation's run deletes its
+// postings with its chunks, as no run is left to find them by.
+func TestIndexPostingsGoWithTheirRun(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-cascade")
+	run := f.run(IndexModeFull, "running")
+	f.insert(run, "", map[string]string{"a.go": "func fooBar() {}"})
+	f.publish(run)
+	if f.rows(run) == 0 {
+		t.Fatal("the published run has no postings")
+	}
+	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, f.repo); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `DELETE FROM index_runs WHERE id = $1`, run); err != nil {
+		t.Fatal(err)
+	}
+	if chunks, rows := f.chunks(run), f.rows(run); chunks != 0 || rows != 0 {
+		t.Fatalf("a deleted run left %d chunks and %d postings, want none", chunks, rows)
+	}
+}

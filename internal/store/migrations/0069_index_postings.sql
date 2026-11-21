@@ -16,7 +16,8 @@
 -- publishes, from the chunks' lexemes. An incremental step updates the rows
 -- of the words of the chunks it replaces and adds, and lists again the chunks
 -- of a word that falls back under the bar. Every other path drops a
--- generation's rows with its chunks.
+-- generation's rows with its chunks, and deleting its run deletes them, as it
+-- does its chunks.
 --
 -- It is not partitioned: the key starts with the generation, so a search and
 -- a generation's deletion read that generation's rows alone, as a partition
@@ -25,7 +26,7 @@
 -- new index format.
 SET LOCAL lock_timeout = '5s';
 CREATE TABLE IF NOT EXISTS index_postings (
-    index_run_id uuid   NOT NULL,
+    index_run_id uuid   NOT NULL REFERENCES index_runs (id) ON DELETE CASCADE,
     lexeme       text   NOT NULL,
     account_id   uuid   NOT NULL,
     chunks       int    NOT NULL,
