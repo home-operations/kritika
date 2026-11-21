@@ -339,3 +339,136 @@ func checkStagedVectors(t *testing.T, tx pgx.Tx, run string, texts []string, vec
 	}
 	return nil
 }
+
+// TestIndexFullBuildYieldsToAForcedRebuild: an ordinary full build that took
+// vectors from the active generation does not publish over a forced rebuild
+// that replaced that generation while it embedded. The forced rebuild is how
+// an admin replaces those very vectors, so the build is superseded and
+// starts again from the generation it published.
+func TestIndexFullBuildYieldsToAForcedRebuild(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	repo := configfile.RepositoryID(account.ID(), "reuse/forced")
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO repositories(id,account_id,name) VALUES($1,$2,'reuse/forced')`, repo, account.ID())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush}
+	inserted, err := queue.Insert(ctx, args, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id=$1`, inserted.Job.ID); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = 'running', attempt = 1 WHERE id = $1`, inserted.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	inserted.Job.State, inserted.Job.Attempt = "running", 1
+	job := &river.Job[jobs.IndexArgs]{JobRow: inserted.Job, Args: args}
+	// start stages texts as one file's chunks of a full build at commit.
+	start := func(tx pgx.Tx, commit string, texts ...string) (run, runner string, err error) {
+		run, runner, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
+			AccountID: account.ID(), RepositoryID: repo, Commit: commit, Mode: store.IndexModeFull, Trigger: jobs.TriggerPush,
+			Embedding: *file.Embedding, IgnoreHash: indexIgnoreHash(nil), JobID: job.ID, StrayAfter: time.Hour,
+		})
+		if err != nil {
+			return "", "", err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO index_packs(runner_run_id,account_id,mode,chunk_count) VALUES($1,$2,'full',$3)`,
+			runner, account.ID(), len(texts)); err != nil {
+			return "", "", err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO index_staging(runner_run_id,account_id,path,start_line,end_line,text)
+			SELECT $1, $2, 'main.go', n, n, t FROM unnest($3::text[]) WITH ORDINALITY AS s(t, n)`, runner, account.ID(), texts)
+		return run, runner, err
+	}
+	active := func() string {
+		t.Helper()
+		var id string
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			r, err := store.FindIndexRepo(ctx, tx, repo)
+			id = r.ActiveRun
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	// Each call's vectors differ from the last's, so a vector tells which
+	// embedding it came from.
+	calls := 0
+	var publish func()
+	embed := indexEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+		calls++
+		if publish != nil {
+			publish()
+		}
+		out := make([][]float32, len(inputs))
+		for i := range inputs {
+			out[i] = make([]float32, 8)
+			out[i][calls%8] = float32(calls)
+		}
+		return out, int64(len(inputs)), nil
+	})
+	w := Index{Store: st, Logger: slog.New(slog.DiscardHandler), batch: 1}
+	var old, oldRunner string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		old, oldRunner, err = start(tx, "one", "func reused() {}")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, "one", old, oldRunner, nil, 1); err != nil {
+		t.Fatalf("first build: %v", err)
+	}
+	var run, runner string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		run, runner, err = start(tx, "two", "func reused() {}", "func added() {}")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The forced rebuild publishes while the build embeds its second batch,
+	// after it took the first one's vector from the old generation.
+	var forced string
+	publish = func() {
+		publish = nil
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			var err error
+			if forced, _, err = start(tx, "one"); err != nil {
+				return err
+			}
+			return store.ActivateGeneration(ctx, tx, repo, forced)
+		}); err != nil {
+			t.Error(err)
+		}
+	}
+	_, _, err = w.embed(ctx, job, account, embed, file.Embedding, "two", run, runner, &store.Generation{ID: old}, 1)
+	if !errors.Is(err, store.ErrGenerationChanged) {
+		t.Fatalf("embed over a forced rebuild = %v, want store.ErrGenerationChanged", err)
+	}
+	if got := active(); got != forced {
+		t.Fatalf("active generation = %s, want the forced rebuild's %s, not the build that reused the old vectors (%s)", got, forced, run)
+	}
+}

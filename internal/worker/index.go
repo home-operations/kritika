@@ -133,7 +133,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		}
 		mode, base = store.IndexModeIncremental, active.Commit
 	}
-	resumeKey := indexResumeKey(commit, mode, base, active, emb, ignoreHash)
+	resumeKey := indexResumeKey(commit, mode, base, vectorSource(active, args.Full), emb, ignoreHash)
 	var runID, runnerRunID string
 	var resumed bool
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
@@ -545,13 +545,7 @@ func (w *Index) embed(
 	if err != nil {
 		return 0, pack, err
 	}
-	// A forced rebuild is how an admin replaces vectors that the active
-	// generation holds, as for a model replaced behind an unchanged
-	// endpoint, so it reuses only what this run embedded.
-	var activeRun string
-	if active != nil && !args.Full {
-		activeRun = active.ID
-	}
+	activeRun := vectorSource(active, args.Full)
 	err = w.withLease(ctx, account, "embed:"+emb.Model, slots, job.ID, func(ctx context.Context) error {
 		for {
 			var batch []store.StagedChunk
@@ -595,6 +589,18 @@ func (w *Index) embed(
 				return err
 			}
 		} else {
+			// A build that took vectors from the active generation must not
+			// replace another that published since, as a forced rebuild that
+			// replaced those very vectors.
+			if activeRun != "" {
+				repo, err := store.FindIndexRepo(ctx, tx, args.RepositoryID)
+				if err != nil {
+					return err
+				}
+				if repo.ActiveRun != activeRun {
+					return store.ErrGenerationChanged
+				}
+			}
 			if err := store.ActivateGeneration(ctx, tx, args.RepositoryID, runID); err != nil {
 				return err
 			}
@@ -764,19 +770,29 @@ func runOutcome(res executor.Result) string {
 // change vector contents. The version is the index format, which
 // invalidates incompatible code changes to staging or StagedChunk.EmbedText.
 // A field that is empty unless configured is omitted when empty, so adding
-// one leaves the keys of runs in flight valid.
-func indexResumeKey(commit, mode, base string, active *store.Generation, emb *configfile.Embedding, ignoreHash string) string {
-	baseRun := ""
-	if mode == store.IndexModeIncremental && active != nil {
-		baseRun = active.ID
-	}
+// one leaves the keys of runs in flight valid. source is the generation the
+// run takes vectors from, see vectorSource: progress that took them from a
+// generation since replaced is not resumed.
+func indexResumeKey(commit, mode, base, source string, emb *configfile.Embedding, ignoreHash string) string {
 	_, _, itemChars := emb.Bounds()
 	identity := struct {
 		Version                                              int
 		Commit, Mode, Base, BaseRun, Ignore, Endpoint, Model string
 		Dims, ItemChars                                      int
 		DocumentPrompt                                       string `json:",omitempty"`
-	}{runspec.IndexFormat, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars, emb.DocumentPrompt}
+	}{runspec.IndexFormat, commit, mode, base, source, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars, emb.DocumentPrompt}
 	data, _ := json.Marshal(identity) // Only strings and integers, so encoding cannot fail.
 	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
+
+// vectorSource is the generation whose vectors a build of the repository
+// whose active generation is active takes for the chunks of the same text,
+// "" for none. A forced rebuild, full, is how an admin replaces vectors that
+// the active generation holds, as for a model replaced behind an unchanged
+// endpoint, so it reuses only what it embedded itself.
+func vectorSource(active *store.Generation, full bool) string {
+	if active == nil || full {
+		return ""
+	}
+	return active.ID
 }

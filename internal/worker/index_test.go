@@ -52,20 +52,19 @@ func TestIndexIgnoreHash(t *testing.T) {
 
 func TestIndexResumeIdentity(t *testing.T) {
 	emb := &configfile.Embedding{BaseURL: "https://embed.example", Model: "model", Dims: 8}
-	active := &store.Generation{ID: "base-run"}
-	key := indexResumeKey("head", store.IndexModeIncremental, "base", active, emb, "ignore")
+	key := indexResumeKey("head", store.IndexModeIncremental, "base", "base-run", emb, "ignore")
 	for _, tc := range []struct {
 		name string
 		key  string
 		same bool
 	}{
-		{"same", indexResumeKey("head", store.IndexModeIncremental, "base", active, emb, "ignore"), true},
-		{"new base commit", indexResumeKey("head", store.IndexModeIncremental, "other", active, emb, "ignore"), false},
-		{"replacement base", indexResumeKey("head", store.IndexModeIncremental, "base", &store.Generation{ID: "other"}, emb, "ignore"), false},
-		{"batch limits", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxBatch: 1, MaxBatchChars: 100}, "ignore"), true},
-		{"input truncation", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxItemChars: 12}, "ignore"), false},
-		{"document prompt", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, DocumentPrompt: "text: "}, "ignore"), false},
-		{"query prompt", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, QueryPrompt: "query: "}, "ignore"), true},
+		{"same", indexResumeKey("head", store.IndexModeIncremental, "base", "base-run", emb, "ignore"), true},
+		{"new base commit", indexResumeKey("head", store.IndexModeIncremental, "other", "base-run", emb, "ignore"), false},
+		{"replacement base", indexResumeKey("head", store.IndexModeIncremental, "base", "other", emb, "ignore"), false},
+		{"batch limits", indexResumeKey("head", store.IndexModeIncremental, "base", "base-run", &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxBatch: 1, MaxBatchChars: 100}, "ignore"), true},
+		{"input truncation", indexResumeKey("head", store.IndexModeIncremental, "base", "base-run", &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxItemChars: 12}, "ignore"), false},
+		{"document prompt", indexResumeKey("head", store.IndexModeIncremental, "base", "base-run", &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, DocumentPrompt: "text: "}, "ignore"), false},
+		{"query prompt", indexResumeKey("head", store.IndexModeIncremental, "base", "base-run", &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, QueryPrompt: "query: "}, "ignore"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if (tc.key == key) != tc.same {
@@ -73,8 +72,17 @@ func TestIndexResumeIdentity(t *testing.T) {
 			}
 		})
 	}
-	if indexResumeKey("head", store.IndexModeFull, "", active, emb, "ignore") != indexResumeKey("head", store.IndexModeFull, "", nil, emb, "ignore") {
-		t.Fatal("full build depends on the active generation")
+	// A full build takes vectors from the active generation, unless forced:
+	// its progress is not resumed once that generation is replaced.
+	active := &store.Generation{ID: "base-run"}
+	full := func(active *store.Generation, forced bool) string {
+		return indexResumeKey("head", store.IndexModeFull, "", vectorSource(active, forced), emb, "ignore")
+	}
+	if full(active, false) == full(&store.Generation{ID: "replacement"}, false) {
+		t.Fatal("a full build resumes after the generation it took vectors from was replaced")
+	}
+	if full(active, true) != full(nil, true) {
+		t.Fatal("a forced rebuild depends on the active generation, whose vectors it does not take")
 	}
 }
 
