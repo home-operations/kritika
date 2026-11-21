@@ -90,10 +90,12 @@ apps:
 type localForge struct {
 	dir string
 
-	mu       sync.Mutex
-	base     string
-	tip      string
-	tipErr   error
+	mu     sync.Mutex
+	base   string
+	tip    string
+	tipErr error
+	// tokenErr fails GitToken.
+	tokenErr error
 	comments map[int64]string
 	authors  map[int64]string
 	// threads are the inline comments GetComment serves, by id.
@@ -203,8 +205,13 @@ func (l *localForge) StackBelow(_ context.Context, _, _ string, number int) ([]f
 	defer l.mu.Unlock()
 	return l.below[number], nil
 }
-func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
-func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
+func (l *localForge) GitToken(context.Context, string) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return "", l.tokenErr
+}
+
+func (l *localForge) BotLogin(context.Context) (string, error) { return "kritika[bot]", nil }
 
 func (l *localForge) CommitSubject(context.Context, string, string, string) (string, error) {
 	return "feat(x): the head commit", nil
@@ -224,6 +231,13 @@ func (l *localForge) failTip(err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.tipErr = err
+}
+
+// failToken makes GitToken fail with err, nil to answer again.
+func (l *localForge) failToken(err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tokenErr = err
 }
 
 // fakeEmbedder maps text to an 8-dimensional vector of character-bigram
@@ -1834,7 +1848,12 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("an index job waits out a forge that fails transiently", func(t *testing.T) {
 		newer := commitOnBase(t, dir, base, "tip after a forge wait", "package main\n\nfunc waited() {}\n")
-		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head, newer)
+		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, lf.failTip, account.ID(), repoID, head, newer)
+	})
+
+	t.Run("an index job waits out a forge that does not mint the runner's git token", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "tip after a token wait", "package main\n\nfunc tokened() {}\n")
+		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, lf.failToken, account.ID(), repoID, head, newer)
 	})
 
 	t.Run("ignore rules rebuild unchanged files", func(t *testing.T) {

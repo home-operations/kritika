@@ -169,10 +169,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			Forge: string(account.Forge), Head: commit, Base: base, Ignore: eff.Ignore,
 		}, logger)
 		if err != nil {
-			w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
-			fctx, cancel := detach(ctx)
-			defer cancel()
-			return errors.Join(err, w.finish(fctx, job, runID, runnerRunID, store.IndexFailed, 0, err.Error()))
+			return w.stageFailed(ctx, job, account.Key(), mode, runID, runnerRunID, err, logger)
 		}
 	} else {
 		logger.Info("index embedding resumed", "run", runID)
@@ -248,6 +245,26 @@ func (w *Index) repoConfig(
 		return eff, true, nil
 	}
 	return eff, false, nil
+}
+
+// stageFailed ends the run that stage failed with err as failed, and returns
+// what the job returns: a wait when the forge did not mint the runner's git
+// token, err otherwise.
+func (w *Index) stageFailed(
+	ctx context.Context, job *river.Job[jobs.IndexArgs], account, mode, runID, runnerRunID string, err error, logger *slog.Logger,
+) error {
+	w.Metrics.IndexRun(account, mode, string(store.IndexFailed), 0)
+	fctx, cancel := detach(ctx)
+	defer cancel()
+	if ferr := w.finish(fctx, job, runID, runnerRunID, store.IndexFailed, 0, err.Error()); ferr != nil {
+		return errors.Join(err, ferr)
+	}
+	// Not errors.As: stage joins a failure of its own cleanup to the token's,
+	// and that one must spend the attempt.
+	if tokenErr, ok := err.(*runnerTokenError); ok {
+		return w.waitOutForge(ctx, job, account, logger, tokenErr)
+	}
+	return err
 }
 
 // completed logs and counts an index run that published n chunks from pack.

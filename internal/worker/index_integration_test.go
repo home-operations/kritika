@@ -351,14 +351,15 @@ func checkRunStatus(ctx context.Context, t *testing.T, st *store.Store, account,
 	}
 }
 
-// checkIndexWaitsOutForge runs an update to newer while the forge does not
-// answer for the branch tip: the job is snoozed, its wait counted and no
+// checkIndexWaitsOutForge runs an update to newer while fail makes one of the
+// forge's calls go unanswered: the job is snoozed, its wait counted and no
 // attempt spent. Once the forge answers, the job runs, publishes and
 // completes on its first attempt. The publication clears the count, so a job
 // that indexes again after it has every wait again. The index is left at
 // head again.
 func checkIndexWaitsOutForge(
-	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository, head, newer string,
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, fail func(error),
+	account, repository, head, newer string,
 ) {
 	t.Helper()
 	lf.setTip(newer)
@@ -373,8 +374,8 @@ func checkIndexWaitsOutForge(
 		}
 		indexJobDone(cctx, t, st, job.Job.ID)
 	})
-	lf.failTip(&url.Error{Op: "Get", URL: "https://api.github.com/repos/onedr0p/home-ops/branches/main", Err: errors.New("connection reset by peer")})
-	t.Cleanup(func() { lf.failTip(nil) })
+	fail(&url.Error{Op: "Get", URL: "https://api.github.com/repos/onedr0p/home-ops", Err: errors.New("connection reset by peer")})
+	t.Cleanup(func() { fail(nil) })
 	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -392,7 +393,7 @@ func checkIndexWaitsOutForge(
 		}
 		return state == "scheduled" && attempt == 0 && waits == 1
 	})
-	lf.failTip(nil)
+	fail(nil)
 	if _, err := st.App().Exec(ctx, `UPDATE river_job SET scheduled_at = now() WHERE id = $1`, job.Job.ID); err != nil {
 		t.Fatal(err)
 	}
