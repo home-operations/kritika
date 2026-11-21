@@ -79,8 +79,9 @@ func words(text string, hyphens bool) []Word {
 	for _, id := range identifiers(text, hyphens) {
 		parts := split(id)
 		whole := strings.ToLower(separators.Replace(id))
-		// a_b is two names, not one, but k8s and v2 are one each.
-		if !strings.ContainsAny(id, "_-") || slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
+		// a-b is two names, as a hyphen can be a minus, but an underscore is
+		// part of a name: x86_64 and a_b are one each, as k8s and v2 are.
+		if !strings.Contains(id, "-") || slices.ContainsFunc(parts, func(p string) bool { return utf8.RuneCountInString(p) > 1 }) {
 			add(whole, id, true, len(parts) > 1)
 		}
 		if len(parts) == 1 && strings.ToLower(parts[0]) == whole {
