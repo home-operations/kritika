@@ -222,17 +222,19 @@ func distinct(chunks []contextpack.Chunk) []contextpack.Chunk {
 }
 
 // headLines is the lines of path at head, none when the head has no such
-// file or it is larger than any file the index holds.
+// file, it is empty, or it is larger than any file the index holds. A final
+// newline ends the last line rather than starting an empty one, as the
+// indexer counts lines.
 func headLines(head *object.Tree, path string) []string {
 	f, err := head.File(path)
 	if err != nil || f.Size > int64(indexer.DefaultOptions.MaxFileBytes) {
 		return nil
 	}
 	src, err := f.Contents()
-	if err != nil {
+	if err != nil || src == "" {
 		return nil
 	}
-	return strings.Split(src, "\n")
+	return strings.Split(strings.TrimSuffix(src, "\n"), "\n")
 }
 
 // findText is the 0-based first and last of lines that text shows, where

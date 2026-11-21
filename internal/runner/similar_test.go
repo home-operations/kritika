@@ -306,6 +306,7 @@ func TestAtHead(t *testing.T) {
 		"big.go": "package lib\n" + big + "\n", "comment.go": "package lib\n" + comment + "\nfunc f() {}\n",
 		"comment_more.go": "package lib\n" + comment + " more\nfunc f() {}\n",
 		"more.go":         "package lib\n\nfunc a() {\n\treturn\n} // a\n\nfunc b() {}\n", "near.go": "package lib\n" + near + " + y\n",
+		"tight.go": "package lib\n\nfunc a() {\n\treturn\n}\n",
 	})
 	chunk := func(path string, start, end int, text string) contextpack.Chunk {
 		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end, Text: text}
@@ -322,6 +323,7 @@ func TestAtHead(t *testing.T) {
 		{"cut at a newline after a line the head has more of", chunk("comment_more.go", 2, 3, comment+"\n"), nil},
 		{"ending on a blank line", chunk("lib.go", 3, 6, "func a() {\n\treturn\n}\n"), []contextpack.Chunk{chunk("lib.go", 3, 6, "func a() {\n\treturn\n}\n")}},
 		{"ending on a blank line after a line the head has more of", chunk("more.go", 3, 6, "func a() {\n\treturn\n}\n"), nil},
+		{"ending on a blank line past the head's last", chunk("tight.go", 3, 6, "func a() {\n\treturn\n}\n"), nil},
 		{"a whole line near the bound that the head has more of", chunk("near.go", 2, 2, near), nil},
 		{
 			"one line cut short", chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes]),
