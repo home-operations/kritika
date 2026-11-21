@@ -416,7 +416,10 @@ with `read_diff`. `ignore` is not an access restriction.
 
 Changing the effective ignore rules triggers a full rebuild on the next
 index run. The rebuild chunks every file again, but it sends the embedder
-only the chunks whose text the repository's index does not already hold.
+only the chunks whose text the repository's index does not already hold,
+by the content hash that each chunk stores. A chunk indexed before kritika
+stored that hash is embedded again (see
+[the embedder](/models/#the-embedder)).
 Editing instance configuration does not queue index jobs by itself. To
 apply new ignore rules immediately, reindex an idle repository from the
 dashboard.

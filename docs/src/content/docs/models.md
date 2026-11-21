@@ -689,8 +689,12 @@ same model, dimension and document prompt uses it again.
 
 Any rebuild of a repository's index, and any update for a push, sends the
 embedder only the chunks whose text its index does not already hold for
-the same embedder. The others take the vector already stored, so the
-provider is not paid twice for code that did not change.
+the same embedder. Each chunk stores a hash of the text it was embedded
+from and of the embedder, and a chunk whose hash the index holds takes the
+vector already stored, so the provider is not paid twice for code that did
+not change. Chunks indexed by a release before these hashes have none and
+match nothing, so the first rebuild of each index after that upgrade, the
+rebuild in the new index format below, embeds those chunks again, once.
 
 A kritika release can also change how it chunks code or what it embeds
 for each chunk: the index format. A new format drops no index. Each
