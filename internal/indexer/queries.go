@@ -134,7 +134,8 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 // declarations that hold an added line, as the index cuts a file. A
 // declaration over the bound gives way to the ones nested in it that hold an
 // added line, or without any, to the windows of its lines that hold one:
-// its first bound's worth can be all unchanged code. The windows of the lines
+// its first bound's worth can be all unchanged code. Those from its head
+// line come before those of the comments above it. The windows of the lines
 // of a declaration that gave way that hold an added line outside the nested
 // ones, such as a field beside a method, come after the declarations, so
 // that they do not crowd them out. Without such a declaration, it is the
@@ -197,7 +198,14 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 			gave[min(d.EndLine, len(region))+1]--
 			continue
 		default:
-			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))], limit-len(out))...)
+			// The comments above the head line can fill every query on their
+			// own, so the windows from the head line come first.
+			end := min(d.EndLine, len(region))
+			head := min(max(d.HeadLine, d.StartLine), end)
+			out = append(out, regionWindows(region[head-1:end], limit-len(out))...)
+			if head > d.StartLine && len(out) < limit {
+				out = append(out, regionWindows(region[d.StartLine-1:head-1], limit-len(out))...)
+			}
 		}
 		for l := d.StartLine; l <= min(d.EndLine, len(region)); l++ {
 			asked[l] = true

@@ -210,6 +210,27 @@ func TestHunkQueries(t *testing.T) {
 	})
 }
 
+// TestHunkQueriesLeadingComments: a comment block that leads straight into
+// a declaration is part of it. When the declaration's own lines are changed
+// too, they are asked about first, so a block long enough to fill every
+// query does not crowd them out; when only the comment is, it is still asked
+// about.
+func TestHunkQueriesLeadingComments(t *testing.T) {
+	header := strings.Split(strings.TrimSuffix(strings.Repeat("# Licensed under the terms that are long enough to fill a query on their own.\n", 500), "\n"), "\n")
+	t.Run("a declaration under a comment block that fills every query", func(t *testing.T) {
+		got, _ := HunkQueries(fileDiff("", "run.py", added(append(header, "def first(x):", "    return x")...)), nil, nil)
+		if len(got) != contextpack.SimilarQueries || got[0] != "def first(x):\n    return x\n" || !strings.HasPrefix(got[1], "# Licensed") {
+			t.Fatalf("HunkQueries = %d queries, first %q, want %d, def first(x) and then the comment", len(got), got[:min(len(got), 2)], contextpack.SimilarQueries)
+		}
+	})
+	t.Run("a changed comment block over an unchanged declaration", func(t *testing.T) {
+		got, _ := HunkQueries(fileDiff("run.py", "run.py", "@@ -1,2 +1,502 @@\n+"+strings.Join(header, "\n+")+"\n def first(x):\n     return x\n"), nil, nil)
+		if len(got) != contextpack.SimilarQueries || !strings.HasPrefix(got[0], "# Licensed") {
+			t.Fatalf("HunkQueries = %d queries, first %q, want %d of the comment", len(got), got[:min(len(got), 1)], contextpack.SimilarQueries)
+		}
+	})
+}
+
 // manyDeclarations is a new Go file's diff of 10,000 short declarations and
 // a string of 200,000 lines, the declarations first or last.
 func manyDeclarations(declarationsFirst bool) string {
