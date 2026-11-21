@@ -181,6 +181,14 @@ func (s *Store) SweepIndexProgress(ctx context.Context, limit int) error {
 	var errs []error
 	for _, c := range candidates {
 		if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+			// The index schema's lock, before any other, so that a rebuild for a
+			// new embedder runs before or after the discard. The rebuild marks
+			// the running runs before it drops index_chunks and empties
+			// index_postings, and the discard deletes from those before it
+			// marks its run: interleaved, each waits for the other.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
+				return err
+			}
 			var live bool
 			err := tx.QueryRow(ctx, `SELECT state IN (`+jobs.LiveStatesSQL()+`) FROM river_job WHERE id = $1 FOR UPDATE`, c.Job).Scan(&live)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {

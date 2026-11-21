@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -702,5 +703,75 @@ func TestAdvanceGenerationCount(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestSweepIndexProgressBesideSchemaRebuild: the sweep that discards a
+// left-behind run's progress, which deletes its postings and chunks and
+// marks its run, takes turns with a rebuild of index_chunks for another
+// embedder, which marks the runs and drops the chunks and postings, rather
+// than take their locks the other way round and deadlock it.
+func TestSweepIndexProgressBesideSchemaRebuild(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-sweep")
+	// A run whose job is gone, as the sweep finds one, with a chunk.
+	var run, runner string
+	f.in(func(tx pgx.Tx) error {
+		var err error
+		run, runner, err = StartIndexRun(ctx, tx, NewIndexRun{AccountID: f.account, RepositoryID: f.repo, Commit: "A", Mode: IndexModeFull,
+			Embedding: configfile.Embedding{Model: "test-embed", Dims: 8}, ResumeKey: "key", JobID: 1 << 40})
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET finished_at = now() WHERE id = $1`, runner)
+		return err
+	})
+	f.insert(run, "", map[string]string{"a.go": "func left() {}"})
+
+	// A transaction that holds index_chunks keeps the sweep and the rebuild
+	// waiting, the sweep first, until both are under way.
+	hold, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback(context.Background()) }()
+	if _, err := hold.Exec(ctx, `LOCK TABLE index_chunks IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	waiting := func(n int) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			var waits int
+			if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+				WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waits); err != nil {
+				t.Fatal(err)
+			}
+			if waits >= n {
+				return
+			}
+		}
+		t.Fatalf("fewer than %d transactions wait for a lock", n)
+	}
+	swept, rebuilt := make(chan error, 1), make(chan error, 1)
+	go func() { swept <- s.SweepIndexProgress(ctx, 1000) }()
+	waiting(1)
+	go func() {
+		_, err := s.EnsureIndexSchema(ctx, "kritika_app", "other-embed", 8, "")
+		rebuilt <- err
+	}()
+	waiting(2)
+	if err := hold.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for name, done := range map[string]chan error{"sweep": swept, "rebuild": rebuilt} {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("the %s failed: %v", name, err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatalf("the %s did not end", name)
+		}
 	}
 }
