@@ -67,12 +67,15 @@ const (
 	similarRefused    = "refused"
 	similarError      = "error"
 
-	hitKept      = "kept"
-	hitFloor     = "floor"
-	hitMargin    = "margin"
-	hitDuplicate = "duplicate"
-	hitFileCap   = "file_cap"
-	hitLimit     = "limit"
+	hitKept   = "kept"
+	hitFloor  = "floor"
+	hitMargin = "margin"
+	// hitLexicalFloor is a chunk that only the search by name found, under
+	// lexicalShare of its query's best weight by name.
+	hitLexicalFloor = "lexical_floor"
+	hitDuplicate    = "duplicate"
+	hitFileCap      = "file_cap"
+	hitLimit        = "limit"
 )
 
 // similarCode searches the run's repository index for the request's queries.
@@ -472,8 +475,9 @@ type candidate struct {
 	// which of them vouch for it: its similarity clears the floor and the
 	// margin, or its lexical weight clears lexicalShare of its query's best.
 	vector, lexical, close, named bool
-	// score orders the query's candidates: reciprocal rank fusion of the
-	// searches that vouch for it, or the reranker's score.
+	// score orders the query's candidates: reciprocal rank fusion of every
+	// search that found it, whether or not that search vouches for it, or the
+	// reranker's score.
 	score float64
 	// shared orders the candidates of different queries that hold the same
 	// place in their own: the fusion's score, which every query has on one
@@ -548,7 +552,9 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 		switch {
 		case c.close || c.named:
 			kept = append(kept, c)
-		case c.vector && c.Similarity < floor:
+		case !c.vector:
+			counts[hitKey{hitLexicalFloor, c.source()}]++
+		case c.Similarity < floor:
 			counts[hitKey{hitFloor, c.source()}]++
 		default:
 			counts[hitKey{hitMargin, c.source()}]++

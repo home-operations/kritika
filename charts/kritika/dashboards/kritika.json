@@ -2734,7 +2734,7 @@
           "refId": "A"
         }
       ],
-      "description": "Index chunks the searches found, kept or dropped, and which search found them: the vector search, the lexical search by name, or both. A chunk is dropped under the floor, past the margin below its query's best, a duplicate, past two of one file, or past the four of its query or the most an answer keeps. Kept is what the run is sent: its prompt can still leave out a chunk the head no longer has, one other stages mostly show, or one past the ten it shows. Paths the run excluded never leave the database and are not counted."
+      "description": "Index chunks the searches found, kept or dropped, and which search found them: the vector search, the lexical search by name, or both. A chunk is dropped under the floor, past the margin below its query's best, found by name alone under half its query's best weight by name (lexical_floor), a duplicate, past two of one file, or past the four of its query or the most an answer keeps. Kept is what the run is sent: its prompt can still leave out a chunk the head no longer has, one other stages mostly show, or one past the ten it shows. Paths the run excluded never leave the database and are not counted."
     },
     {
       "id": 42,

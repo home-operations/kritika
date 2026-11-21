@@ -187,7 +187,7 @@ func TestHybridSimilar(t *testing.T) {
 			named: []store.SimilarHit{lex(0, "c.go", 0.3, 8, "parseHTTPRequest"), lex(0, "d.go", 0.2, 3, "request")},
 			want:  []string{"a.go:similarity 0.70", "c.go:shares parseHTTPRequest"},
 			wantCounts: map[hitKey]int{
-				{hitKept, sourceVector}: 1, {hitKept, sourceLexical}: 1, {hitMargin, sourceLexical}: 1,
+				{hitKept, sourceVector}: 1, {hitKept, sourceLexical}: 1, {"lexical_floor", sourceLexical}: 1,
 			},
 		},
 		{

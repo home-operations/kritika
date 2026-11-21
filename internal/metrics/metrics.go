@@ -186,7 +186,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		similarHits: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_similar_hits_total",
 			Help: "Index chunks that similar-code searches found, by what became of them: kept, or dropped by floor, margin, " +
-				"duplicate, file_cap or limit; and by the searches that found them: vector, lexical or both.",
+				"lexical_floor, duplicate, file_cap or limit; and by the searches that found them: vector, lexical or both.",
 		}, []string{lblAccount, lblOutcome, "source"}),
 		leaseWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
