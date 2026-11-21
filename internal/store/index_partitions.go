@@ -389,7 +389,8 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool
 // asks, and its indexes and foreign keys become the table's again rather
 // than being built. Detaching and attaching it does take the exclusive lock
 // of the tables that its foreign keys reference, for a moment, as their
-// triggers are moved. It takes index_chunks first and gives way for each
+// triggers are moved. It takes index_chunks_legacy first, in a mode that
+// stops writes to it but not reads, then index_chunks, and gives way for each
 // lock, as PartitionIndexChunks does. Leader only.
 func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 	if s.owner == nil {
@@ -406,19 +407,26 @@ func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil || !legacy {
 				return err
 			}
-			// Read before the lock, so that a partition with chunks does not
-			// hold up searches, and again under it, as a write whose clock is
-			// behind the bound can still add one.
+			// Read before any lock, so that a partition with chunks does not
+			// hold up searches, and again under one that stops writes to it,
+			// as a write whose clock is behind the bound can still add one.
+			// The second read is not under index_chunks' exclusive lock: a
+			// partition that the drain emptied and VACUUM has not cleaned is
+			// read through all of its dead rows, which searches must not wait
+			// for.
 			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
 				return err
 			}
 			if err := yieldLocks(ctx, tx); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`); err != nil {
+			if _, err := tx.Exec(ctx, `LOCK TABLE index_chunks_legacy IN SHARE MODE`); err != nil {
 				return err
 			}
 			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`); err != nil {
 				return err
 			}
 			for _, stmt := range []string{

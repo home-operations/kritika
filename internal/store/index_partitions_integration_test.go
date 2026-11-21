@@ -516,7 +516,9 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 // TestDropLegacyIndexChunksYieldsToSearch: a search that read repositories
 // and then waits for index_chunks behind the drop, which then waits for
 // repositories, finishes. The drop gives way, and drops the legacy partition
-// once the search ends.
+// once the search ends. The drop reads the legacy partition one last
+// time before it queues for index_chunks, under a lock that stops writes to
+// the partition and not reads, so that searches do not wait for that read.
 func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -536,13 +538,14 @@ func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A writer holds index_chunks, so the drop queues for it.
+	// A writer holds index_chunks, as an insert that the hash partitions
+	// take does, so the drop queues for it.
 	writer, err := s.owner.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = writer.Rollback(context.Background()) }()
-	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
+	if _, err := writer.Exec(ctx, `LOCK TABLE ONLY index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
 	dropped := make(chan error, 1)
@@ -550,6 +553,19 @@ func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 		_, err := s.DropLegacyIndexChunks(ctx)
 		dropped <- err
 	}()
+	// Each of the drop's waits for index_chunks gives way after a moment, so
+	// the lock it holds while it waits is looked for across its tries.
+	legacyFirst := false
+	for deadline := time.Now().Add(10 * time.Second); !legacyFirst && time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks w JOIN pg_locks l USING (pid)
+			WHERE w.relation = 'index_chunks'::regclass AND w.mode = 'AccessExclusiveLock' AND NOT w.granted
+			AND l.relation = 'index_chunks_legacy'::regclass AND l.mode = 'ShareLock' AND l.granted)`).Scan(&legacyFirst); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !legacyFirst {
+		t.Fatal("the drop queued for index_chunks without holding the legacy partition against writes")
+	}
 	waitForLockWait(t, s, table, "AccessExclusiveLock", nil)
 	searched := make(chan error, 1)
 	searchedDone := make(chan struct{})
