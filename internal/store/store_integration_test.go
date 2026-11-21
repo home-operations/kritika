@@ -192,13 +192,10 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			`LOCK TABLE runner_runs IN ACCESS SHARE MODE`, column("runner_runs", "similar_exclude_reported_at")},
 		{"the index format's columns", []string{"0062_index_format"}, "",
 			`LOCK TABLE index_packs IN ACCESS SHARE MODE`, column("index_packs", "truncated")},
-		{"the chunks' content hash", []string{"0063_index_content_hash", "0070_index_content_hash_idx"},
-			`ALTER TABLE index_chunks DROP COLUMN content_hash`,
-			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
+		{"the chunks' content hash", []string{"0063_index_content_hash"}, `ALTER TABLE index_chunks DROP COLUMN content_hash`,
+			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, column("index_chunks", "content_hash")},
 		{"the chunks' lexemes", []string{"0064_index_lexemes"}, `ALTER TABLE index_chunks DROP COLUMN lexemes`,
 			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, column("index_chunks", "lexemes")},
-		{"the content hash's index", []string{"0070_index_content_hash_idx"}, `DROP INDEX index_chunks_content_hash_idx`,
-			`LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`)},
 		{"the usage check", []string{"0065_usage_rerank", "0068_usage_rerank_validate"}, "",
 			`LOCK TABLE usage IN ACCESS SHARE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
 		{"the usage check's validation", []string{"0068_usage_rerank_validate"}, `ALTER TABLE usage DROP CONSTRAINT usage_role_check;
@@ -773,17 +770,18 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 }
 
 // TestIndexAddedColumns: index_chunks has each column that a migration
-// added, and its index if it has one, however it was made: created by the leader, migrated
-// from a table made before them, or made without them by the leader of a
-// build before them, as during a rollout, and then kept by a leader of this
-// build.
+// added, however it was made: created by the leader, migrated from a table
+// made before them, or made without them by the leader of a build before
+// them, as during a rollout, and then kept by a leader of this build. The
+// content hash's index of a table made before it is the partitioning
+// sweep's (TestContentHashIndexBuiltApart).
 func TestIndexAddedColumns(t *testing.T) {
 	for _, tt := range []struct {
-		column, index string
-		migrations    []string
+		column     string
+		migrations []string
 	}{
-		{"content_hash", "index_chunks_content_hash_idx", []string{"0063_index_content_hash", "0070_index_content_hash_idx"}},
-		{"lexemes", "", []string{"0064_index_lexemes"}},
+		{"content_hash", []string{"0063_index_content_hash"}},
+		{"lexemes", []string{"0064_index_lexemes"}},
 	} {
 		t.Run(tt.column, func(t *testing.T) {
 			ctx := t.Context()
@@ -793,14 +791,13 @@ func TestIndexAddedColumns(t *testing.T) {
 			})
 			check := func(how string) {
 				t.Helper()
-				var column, index bool
-				if err := s.owner.QueryRow(ctx, `SELECT
-					EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped),
-					$2 = '' OR to_regclass($2) IS NOT NULL`, tt.column, tt.index).Scan(&column, &index); err != nil {
+				var column bool
+				if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
+					WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped)`, tt.column).Scan(&column); err != nil {
 					t.Fatal(err)
 				}
-				if !column || !index {
-					t.Fatalf("%s: %s column %v, index %v; want both", how, tt.column, column, index)
+				if !column {
+					t.Fatalf("%s: no %s column", how, tt.column)
 				}
 			}
 			drop := func() {
@@ -826,18 +823,6 @@ func TestIndexAddedColumns(t *testing.T) {
 				t.Fatalf("EnsureIndexSchema: %v", err)
 			}
 			check("kept by a leader")
-			if tt.index == "" {
-				return
-			}
-			// A leader whose index build gave up after the column committed
-			// builds the index alone the next time.
-			if _, err := s.owner.Exec(ctx, `DROP INDEX `+tt.index); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
-				t.Fatalf("EnsureIndexSchema: %v", err)
-			}
-			check("its index built again by a leader")
 		})
 	}
 }

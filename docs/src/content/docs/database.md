@@ -523,13 +523,17 @@ table again during a rollout, after the migrations ran, for a new embedder.
 That table lacks the
 columns that the migrations add, `content_hash` and `lexemes`, and the
 content hash's index. When it takes the lead with an embedder configured,
-and before it converts the table, the leader adds them in two transactions.
-The first adds the columns and holds the table's exclusive lock for a
-moment, as adding a column writes no row. The second builds the index, which
-reads every chunk under a lock that lets searches read the table but holds
-up index builds' writes. Each looks for what it adds first, so a retry after
-the first committed builds the index alone, and each gives up its wait for a
-lock after five seconds and is tried again later.
+and before it converts the table, the leader adds the columns in a
+transaction that holds the table's exclusive lock for a moment, as adding a
+column writes no row. It looks for each column first, gives up its wait for
+the lock after five seconds, and is tried again later.
+
+Before it converts a plain table, whichever build created it, the sweep
+builds the content hash's index with `CREATE INDEX CONCURRENTLY`. That reads
+every chunk without holding up searches or index builds' writes, but waits
+for every transaction that writes the table, or that began before the
+build, to end. A build that stops early, as when the leader steps down,
+leaves the index invalid, and the next sweep drops it and builds it again.
 
 Then, also in two transactions, the leader marks every chunk of the table
 as legacy, so that the conversion can attach it without reading it. The

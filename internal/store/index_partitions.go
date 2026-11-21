@@ -209,8 +209,9 @@ var gaveWay func(error)
 // (markLegacyIndexChunks). So attaching it under the table's exclusive lock
 // reads no chunk: the CHECK's validation reads them all, before, under a
 // lock that lets searches read the table and builds write it. A table that a
-// build before this one's columns created gains them, and the content hash's
-// index, first, outside that lock too (prepareIndexChunks).
+// build before this one's columns created gains them first, outside that lock
+// too (prepareIndexChunks), and then the content hash's index, built
+// concurrently (buildContentHashIndex).
 //
 // New chunks go to the hash partitions. DrainLegacyIndexChunks moves the
 // legacy partition's chunks there, or deletes those that no build needs, a
@@ -225,6 +226,9 @@ func (s *Store) PartitionIndexChunks(ctx context.Context, appRole string) (bool,
 	// attaches the content hash's index rather than build one, and reads no
 	// chunk to attach the table.
 	if err := s.prepareIndexChunks(ctx, nil); err != nil {
+		return false, fmt.Errorf("store: partition index_chunks: %w", err)
+	}
+	if err := s.buildContentHashIndex(ctx); err != nil {
 		return false, fmt.Errorf("store: partition index_chunks: %w", err)
 	}
 	if err := s.markLegacyIndexChunks(ctx); err != nil {

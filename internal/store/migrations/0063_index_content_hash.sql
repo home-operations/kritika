@@ -3,8 +3,10 @@
 -- its repository with the same hash rather than embed the text again. A
 -- chunk embedded before has none, and is embedded again once.
 -- index_chunks is created by the leader once an embedder is configured
--- (store.EnsureIndexSchema), which creates it with the column, so it may
--- not exist yet. 0070_index_content_hash_idx indexes the column.
+-- (store.EnsureIndexSchema), which creates it with the column and its
+-- index, so it may not exist yet. Of a table that a build before this one
+-- created, the leader's partitioning sweep indexes the column without
+-- holding up writes (store.PartitionIndexChunks).
 --
 -- Adding the column takes the exclusive lock of index_chunks and of each of
 -- its partitions, which it looks for first so that it takes none when the

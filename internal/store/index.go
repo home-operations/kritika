@@ -121,10 +121,17 @@ func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (IndexSchema, bool, error) {
 	return s, true, nil
 }
 
-// contentHashIndex finds the chunks of a repository that hold a content
-// hash, as migration 0070 creates it.
-const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_idx ON index_chunks (repository_id, content_hash)
+// contentHashIndexOn is the content hash's index, which finds the chunks of
+// a repository that hold a content hash. It is partial: the chunks that have
+// none, every chunk of a table that a build before content hashes created at
+// first, cost it nothing.
+const contentHashIndexOn = `index_chunks_content_hash_idx ON index_chunks (repository_id, content_hash)
 	WHERE content_hash IS NOT NULL`
+
+// contentHashIndex creates the content hash's index of a table created
+// partitioned, as it is created. buildContentHashIndex builds it on a plain
+// one.
+const contentHashIndex = `CREATE INDEX IF NOT EXISTS ` + contentHashIndexOn
 
 // addedColumns are the columns of index_chunks that migrations added, with
 // their types. Of them, the content hash alone is indexed, by
@@ -156,63 +163,100 @@ func addColumns(ctx context.Context, tx pgx.Tx) error {
 	return nil
 }
 
-// addContentHashIndex builds contentHashIndex unless it exists. It looks
-// first, as CREATE INDEX takes the table's lock even when the index exists.
-func addContentHashIndex(ctx context.Context, tx pgx.Tx) error {
-	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`).Scan(&exists); err != nil {
-		return fmt.Errorf("store: read index_chunks indexes: %w", err)
-	}
-	if exists {
-		return nil
-	}
-	if _, err := tx.Exec(ctx, contentHashIndex); err != nil {
-		return fmt.Errorf("store: index index_chunks.content_hash: %w", err)
-	}
-	return nil
-}
-
 // prepareIndexChunks brings an index_chunks that a build before
-// addedColumns created up to them and to contentHashIndex. During a rollout,
-// such a build can still be leader after the migrations ran and create the
-// table again for a new embedder. keep, nil for any, says whether the table
-// built for the recorded index schema stays: one that the caller drops
-// instead is left as it is.
+// addedColumns created up to them. During a rollout, such a build can still
+// be leader after the migrations ran and create the table again for a new
+// embedder. keep, nil for any, says whether the table built for the recorded
+// index schema stays: one that the caller drops instead is left as it is.
 //
-// The columns are added, and committed, before the index is built in a
-// transaction of its own. Adding one takes the table's exclusive lock, which
-// every search queues behind, for a moment: it writes no row. Building the
-// index reads every chunk, under a lock that lets searches read the table
-// and holds up builds' writes until it is done. Each looks for what it adds
-// first, so a retry after the columns committed builds the index alone. As
-// the migrations do, each gives up its wait for a lock after a few seconds
-// rather than hold up what queues behind it, and the caller tries again
-// later.
+// Adding a column takes the table's exclusive lock, which every search
+// queues behind, for a moment: it writes no row. It looks for each column
+// first, and, as the migrations do, gives up its wait for the lock after a
+// few seconds rather than hold up what queues behind it, and the caller
+// tries again later. The content hash's index is left to
+// buildContentHashIndex.
 func (s *Store) prepareIndexChunks(ctx context.Context, keep func(IndexSchema) bool) error {
-	for _, step := range []func(context.Context, pgx.Tx) error{addColumns, addContentHashIndex} {
-		prepared := false
-		err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
-				return fmt.Errorf("store: lock index schema: %w", err)
-			}
-			schema, ok, err := IndexSchemaIn(ctx, tx)
-			if err != nil || !ok || keep != nil && !keep(schema) {
-				return err
-			}
-			var exists bool
-			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks') IS NOT NULL`).Scan(&exists); err != nil || !exists {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
-				return fmt.Errorf("store: prepare index_chunks: %w", err)
-			}
-			prepared = true
-			return step(ctx, tx)
-		})
-		if err != nil || !prepared {
+	return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
+			return fmt.Errorf("store: lock index schema: %w", err)
+		}
+		schema, ok, err := IndexSchemaIn(ctx, tx)
+		if err != nil || !ok || keep != nil && !keep(schema) {
 			return err
 		}
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+			return fmt.Errorf("store: prepare index_chunks: %w", err)
+		}
+		return addColumns(ctx, tx)
+	})
+}
+
+// contentHashBuildLock is the advisory lock of the session that builds the
+// content hash's index of a plain index_chunks (buildContentHashIndex).
+const contentHashBuildLock = `hashtext('kritika-index-content-hash')`
+
+// errContentHashBuildHeld says that another session holds
+// contentHashBuildLock, as one of a leader that stopped can until it ends.
+var errContentHashBuildHeld = errors.New("store: another session builds the content hash's index")
+
+// buildContentHashIndex builds the content hash's index of a plain
+// index_chunks that lacks a valid one, concurrently: it reads every chunk
+// under a lock that conflicts with no search or write, nor makes either queue
+// behind its wait. It waits instead for every transaction that writes the
+// table, or that is older than the build, to end, which holds up no search or
+// write either. So neither a lock_timeout, which would end it at any
+// transaction that lasts a few seconds, nor the owner's statement_timeout
+// bounds it. A build
+// that ends early, as when ctx does, leaves its index invalid: the next
+// drops it and builds it again. A table created partitioned has the index
+// from the start.
+//
+// The build cannot run in a transaction, so it runs on a session of its own,
+// closed once it is done, which holds contentHashBuildLock. It takes the lock
+// at once or not at all: a session that waited for it would be a
+// transaction older than the build that holds it, which that build waits
+// for in turn.
+func (s *Store) buildContentHashIndex(ctx context.Context) error {
+	conn, err := s.owner.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("store: build the content hash's index: %w", err)
 	}
+	defer func() {
+		// Closed, the session lets its lock and its settings go, and the
+		// pool then drops it rather than reuse it.
+		_ = conn.Conn().Close(ctx) // its end is all that is wanted of it
+		conn.Release()
+	}()
+	var mine, plain, exists, valid bool
+	err = conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(`+contentHashBuildLock+`),
+		coalesce((SELECT relkind = 'r' FROM pg_class WHERE oid = to_regclass('index_chunks')), false),
+		i.indexrelid IS NOT NULL, coalesce(i.indisvalid, false)
+		FROM (SELECT 1) AS one LEFT JOIN pg_index i
+			ON i.indexrelid = to_regclass('index_chunks_content_hash_idx') AND i.indrelid = to_regclass('index_chunks')`).
+		Scan(&mine, &plain, &exists, &valid)
+	switch {
+	case err != nil:
+		return fmt.Errorf("store: build the content hash's index: %w", err)
+	case !mine:
+		return errContentHashBuildHeld
+	case !plain || valid:
+		return nil
+	}
+	stmts := []string{`SET statement_timeout = 0`}
+	if exists {
+		stmts = append(stmts, `DROP INDEX CONCURRENTLY index_chunks_content_hash_idx`)
+	}
+	stmts = append(stmts, `CREATE INDEX CONCURRENTLY `+contentHashIndexOn)
+	for _, stmt := range stmts {
+		if _, err := conn.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("store: build the content hash's index: %w", err)
+		}
+	}
+	s.logger.Info("index_chunks_content_hash_idx built")
 	return nil
 }
 

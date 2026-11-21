@@ -1651,26 +1651,36 @@ func lockWaiters(t *testing.T, s *Store, n int) {
 	t.Fatalf("fewer than %d transactions wait for a lock", n)
 }
 
-// TestContentHashIndexBuiltApart: a populated plain index_chunks that a
-// leader of a build before content hashes recreated gains the column in a
-// transaction of its own, whose exclusive lock is gone by the time the
-// content hash's index is built. So searches read the table while the index
-// reads every chunk. That holds whether the leader brings the table up to
-// its schema or the sweep partitions it, which then attaches the index
-// built rather than build one under its own exclusive lock.
+// TestContentHashIndexBuiltApart: a populated plain index_chunks without
+// content hashes, as a build before them left it or a leader of such a build
+// recreated it, gains the column in a transaction of its own, whether the
+// migrations, the leader or the partitioning sweep brings the table up to its
+// schema. Only the sweep builds the content hash's index, concurrently: while
+// it reads every chunk, searches read the table and writers write it, and
+// the conversion then attaches the index built rather than build one under
+// its own exclusive lock.
 func TestContentHashIndexBuiltApart(t *testing.T) {
 	for _, tt := range []struct {
-		name, index string
-		run         func(ctx context.Context, s *Store) error
+		name string
+		run  func(ctx context.Context, s *Store) error
+		// partitions says that run converts the table.
+		partitions bool
 	}{
-		{"by the leader", "index_chunks_content_hash_idx", func(ctx context.Context, s *Store) error {
+		{"by the migrations", func(ctx context.Context, s *Store) error {
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations
+				WHERE version IN ('0063_index_content_hash', '0070_index_content_hash_idx')`); err != nil {
+				return err
+			}
+			return s.Migrate(ctx, "kritika_app")
+		}, false},
+		{"by the leader", func(ctx context.Context, s *Store) error {
 			_, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, "")
 			return err
-		}},
-		{"by the partitioning sweep", "index_chunks_legacy_content_hash_idx", func(ctx context.Context, s *Store) error {
+		}, false},
+		{"by the partitioning sweep", func(ctx context.Context, s *Store) error {
 			_, err := s.PartitionIndexChunks(ctx, "kritika_app")
 			return err
-		}},
+		}, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := openStore(t)
@@ -1741,19 +1751,18 @@ func TestContentHashIndexBuiltApart(t *testing.T) {
 			if held.err != nil {
 				t.Fatal(held.err)
 			}
-			waitForLockWait(t, s, table, "ShareLock", done)
-			select {
-			case <-done:
-				t.Fatalf("the index was built in the column's transaction, under its exclusive lock (err %v)", ran)
-			default:
-			}
-			var exclusive bool
-			if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'relation' AND relation = $1
-				AND mode = 'AccessExclusiveLock' AND granted)`, table).Scan(&exclusive); err != nil {
+			// Whatever builds the index once the column is there does so
+			// beside the second writer: once run ends or waits for a lock,
+			// a third writer takes the table at once.
+			waitForDoneOrLockWait(t, s, done)
+			third, err := s.owner.Begin(ctx)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if exclusive {
-				t.Fatal("the index waits to be built while the table's exclusive lock is held")
+			_, err = third.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE NOWAIT`)
+			_ = third.Rollback(ctx)
+			if err != nil {
+				t.Fatalf("a write while the content hash's index is built: %v", err)
 			}
 			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 				if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '1s'`); err != nil {
@@ -1762,7 +1771,7 @@ func TestContentHashIndexBuiltApart(t *testing.T) {
 				var n int
 				return tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks`).Scan(&n)
 			}); err != nil {
-				t.Fatalf("a search while the index waits to be built: %v", err)
+				t.Fatalf("a search while the content hash's index is built: %v", err)
 			}
 			if err := held.tx.Rollback(ctx); err != nil {
 				t.Fatal(err)
@@ -1771,12 +1780,125 @@ func TestContentHashIndexBuiltApart(t *testing.T) {
 			if ran != nil {
 				t.Fatal(ran)
 			}
-			var built bool
-			if err := s.owner.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, tt.index).Scan(&built); err != nil || !built {
-				t.Fatalf("%s built = %v, %v; want it built", tt.index, built, err)
+			if tt.partitions {
+				if again, err := s.PartitionIndexChunks(ctx, "kritika_app"); err != nil || again {
+					t.Fatalf("PartitionIndexChunks once the table is partitioned = %v, %v", again, err)
+				}
+			} else {
+				partitionLegacy(t, s)
 			}
+			checkContentHashIndex(t, s)
 		})
 	}
+}
+
+// waitForDoneOrLockWait waits until done is closed or a transaction waits
+// for a lock.
+func waitForDoneOrLockWait(t *testing.T, s *Store, done <-chan struct{}) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		var waiting bool
+		if err := s.owner.QueryRow(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted)`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			return
+		}
+	}
+	t.Fatal("the run neither ended nor waited for a lock")
+}
+
+// checkContentHashIndex fails t unless the content hash's index of the
+// partitioned index_chunks is valid and holds an index of each of its
+// partitions, the legacy partition's among them.
+func checkContentHashIndex(t *testing.T, s *Store) {
+	t.Helper()
+	var indexes, invalid int
+	var legacy bool
+	if err := s.owner.QueryRow(t.Context(), `SELECT count(*), count(*) FILTER (WHERE NOT i.indisvalid),
+			coalesce(bool_or(i.indrelid = 'index_chunks_legacy'::regclass), false)
+		FROM pg_partition_tree('index_chunks_content_hash_idx') p JOIN pg_index i ON i.indexrelid = p.relid`).
+		Scan(&indexes, &invalid, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	// index_chunks', index_chunks_current's, each hash partition's and the
+	// legacy partition's.
+	if want := indexChunkPartitions + 3; indexes != want || invalid != 0 || !legacy {
+		t.Fatalf("the content hash's index has %d indexes, %d invalid, the legacy partition's among them %v; want %d valid",
+			indexes, invalid, legacy, want)
+	}
+}
+
+// TestContentHashIndexBuiltAfterACancel: a concurrent build of the content
+// hash's index that ends before it is done, as when the leader stops, leaves
+// the index behind, invalid. The next sweep drops it and builds it again,
+// rather than take it for built and attach it.
+func TestContentHashIndexBuiltAfterACancel(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-cancel"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-cancel", "index-cancel/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+	if _, err := s.owner.Exec(ctx, `DROP INDEX index_chunks_content_hash_idx`); err != nil {
+		t.Fatal(err)
+	}
+	// A writer holds the table, so the build waits for it.
+	writer, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Rollback(context.Background()) })
+	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	sweep, stop := context.WithCancel(ctx)
+	defer stop()
+	done := make(chan struct{})
+	var ran error
+	go func() {
+		defer close(done)
+		_, ran = s.PartitionIndexChunks(sweep, "kritika_app")
+	}()
+	waitForDoneOrLockWait(t, s, done)
+	stop()
+	<-done
+	if ran == nil {
+		t.Fatal("PartitionIndexChunks ended before the writer did, want it stopped while it builds")
+	}
+	var valid bool
+	if err := s.owner.QueryRow(ctx, `SELECT indisvalid FROM pg_index WHERE indexrelid = 'index_chunks_content_hash_idx'::regclass`).
+		Scan(&valid); err != nil || valid {
+		t.Fatalf("the stopped build's index valid = %v, %v; want it left invalid", valid, err)
+	}
+	if err := writer.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The stopped build's session lets its lock go as it ends, which can be
+	// after the sweep returned.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(2 * time.Millisecond) {
+		var held bool
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l, (SELECT `+contentHashBuildLock+`::bigint AS k) w
+			WHERE l.locktype = 'advisory' AND l.objsubid = 1
+				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`).Scan(&held); err != nil {
+			t.Fatal(err)
+		}
+		if !held {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stopped build's session still holds its lock")
+		}
+	}
+	partitionLegacy(t, s)
+	checkContentHashIndex(t, s)
 }
 
 // TestPartitionIndexChunksWhateverTheClock: the partitions route a chunk by
