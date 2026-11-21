@@ -104,6 +104,7 @@ func TestLexicalExclusionsJoinOnce(t *testing.T) {
 type planNode struct {
 	NodeType           string     `json:"Node Type"`
 	CTEName            string     `json:"CTE Name"`
+	IndexName          string     `json:"Index Name"`
 	ParentRelationship string     `json:"Parent Relationship"`
 	Plans              []planNode `json:"Plans"`
 }
@@ -123,4 +124,16 @@ func (n planNode) excludedScans(inSubPlan bool) (scans, perRow int) {
 		scans, perRow = scans+s, perRow+p
 	}
 	return scans, perRow
+}
+
+// indexes are the names of the indexes that n's tree reads.
+func (n planNode) indexes() []string {
+	var names []string
+	if n.IndexName != "" {
+		names = append(names, n.IndexName)
+	}
+	for _, c := range n.Plans {
+		names = append(names, c.indexes()...)
+	}
+	return names
 }

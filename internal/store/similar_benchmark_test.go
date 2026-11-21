@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -170,6 +171,9 @@ func checkSimilarRecall(
 				return err
 			}
 			if i == 0 {
+				if err := annPlan(ctx, tx, run, q, exclude); err != nil {
+					return err
+				}
 				rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+similarChunksSQL, model.VectorLiteral(q), run, []string{}, 4, exclude.Run)
 				if err != nil {
 					return err
@@ -255,4 +259,30 @@ func reportSimilarBenchmark(b *testing.B, s *Store, account string, paths []stri
 		b.Fatal(err)
 	}
 	return Exclusions{Run: runner}
+}
+
+// annPlan returns an error unless the application's search of generation
+// run for q reads a VectorChord index, so that the recall measured against
+// an exact scan is the approximate search's and not another exact one's.
+// The vector index is told from the exclusions' B-tree by the catalog's
+// access method of each index the plan reads, not by the scan's kind.
+func annPlan(ctx context.Context, tx pgx.Tx, run string, q []float32, exclude Exclusions) error {
+	var plan []byte
+	if err := tx.QueryRow(ctx, "EXPLAIN (FORMAT JSON) "+similarChunksSQL, model.VectorLiteral(q), run, []string{}, 4, exclude.Run).
+		Scan(&plan); err != nil {
+		return err
+	}
+	var root []struct{ Plan planNode }
+	if err := json.Unmarshal(plan, &root); err != nil || len(root) != 1 {
+		return fmt.Errorf("plan %s: %w", plan, err)
+	}
+	var vector bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_class c JOIN pg_am a ON a.oid = c.relam
+		WHERE c.relkind IN ('i', 'I') AND c.relname = ANY($1) AND a.amname = 'vchordrq')`, root[0].Plan.indexes()).Scan(&vector); err != nil {
+		return err
+	}
+	if !vector {
+		return fmt.Errorf("the approximate search read no vchordrq index, so its recall would be an exact scan's: %s", plan)
+	}
+	return nil
 }
