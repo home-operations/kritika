@@ -451,13 +451,18 @@ similar-code search names one index generation of one repository. So that its
 cost follows that generation's partition rather than the whole table, the
 table is partitioned:
 
-- `index_chunks` is partitioned by the range of `created_at`.
-- `index_chunks_current` holds the chunks created since the table was
-  partitioned. It is hash partitioned by generation (`index_run_id`) into 64
-  partitions, `index_chunks_00` to `index_chunks_63`.
-- Each partition has its own VectorChord (`vchordrq`) index. A search reads
-  the partition of its generation and that partition's index alone, about
-  1/64 of the table.
+- `index_chunks` is list partitioned by a Boolean column, `legacy`, not by
+  `created_at`. A chunk is written with `legacy` false, whatever its date.
+- `index_chunks_current` is the partition of `legacy` false, so it holds
+  every chunk but those of a table partitioned on upgrade that have yet to
+  move (see below). It is hash partitioned by generation (`index_run_id`)
+  into 64 partitions, `index_chunks_00` to `index_chunks_63`.
+- Each leaf partition has its own VectorChord (`vchordrq`) index. A search
+  reads the hash partition of its generation and that partition's index,
+  and also the legacy partition and its index while that is attached. Once
+  the legacy partition is dropped, or on a table created partitioned, it
+  reads the hash partition alone, about 1/64 of the table if the chunks are
+  spread evenly.
 - The [search by name](/models/#search-by-name) reads `index_postings`, which
   holds a row for each word of a generation's chunks under the key
   generation and word: how many of the chunks hold the word and, while
@@ -520,12 +525,13 @@ the index, and copies and rebuilds nothing:
    again a second later. After five tries it logs a warning and tries again
    an hour later.
 2. It renames the table, with its indexes and constraints, to
-   `index_chunks_legacy`. It creates the partitioned `index_chunks` and
-   attaches the old table as its partition for everything created until
-   then. Its indexes and foreign keys
-   become those of the partitioned table. Attaching reads the old table once,
-   under the lock, to check `created_at`. That read takes seconds for millions
-   of chunks. Searches and index builds wait for it.
+   `index_chunks_legacy`, and adds `legacy` to it with a default of `true`,
+   which writes no row. It creates the partitioned `index_chunks` and
+   attaches the old table as its partition for `legacy` true, so every chunk
+   it held is in the legacy partition. Its indexes and foreign keys become
+   those of the partitioned table. Attaching reads the old table once, under
+   the lock, to check that every chunk's `legacy` is true. That read takes
+   seconds for millions of chunks. Searches and index builds wait for it.
 3. That sweep, and each later one, empties `index_chunks_legacy`, up to
    5,000 chunks of one generation per transaction. The active generations
    go first, moved into the hash partitions. Then the chunks of the other
@@ -542,15 +548,16 @@ the index, and copies and rebuilds nothing:
    drops it. Before upgrading, leave room for the whole legacy partition
    and its indexes, a copy of the chunks that move and their indexes, and
    the WAL that the moves write.
-4. Once the legacy partition is empty, the sweep drops it. In the same
-   transaction it attaches the hash partitions again to cover every
-   `created_at`, as in a table created partitioned. So a chunk whose
-   `created_at` falls before the old bound, from a database clock that
-   stepped back, still has a partition. Attaching them again reads no chunk
-   and builds no index. It takes the exclusive lock on `index_chunks`, then
-   on `accounts`, `repositories` and `index_runs`, whose foreign key
-   triggers it moves, for a moment, with the same short, retried waits as
-   the first step.
+4. Once the legacy partition is empty, the sweep drops it. It first reads
+   the partition, under no lock, and leaves it if a chunk is left. It then
+   takes the exclusive lock on `index_chunks` at once or not at all, rather
+   than queue searches behind a waiting lock request, and drops
+   `index_chunks_legacy`, waiting for that partition with the same short
+   wait as the first step. When either lock is not to be had, it changes
+   nothing and tries again a second later, five times, and the next hourly
+   sweep tries again. The hash partitions stay attached throughout: no chunk
+   is moved and no index is built, and this step takes no lock on
+   `accounts`, `repositories` or `index_runs`.
 
 A search reads the legacy partition's vector index until it is dropped, so
 until then it costs what a search of the plain table did. A rebuild for a
