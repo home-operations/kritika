@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -643,6 +645,43 @@ func TestRepositories(t *testing.T) {
 	}
 	if repos, err = c.Repositories(ctx, "dev"); err != nil || len(repos) != 1 || repos[0].FullName != "dev/tool" || repos[0].Fork {
 		t.Fatalf("user = %+v, %v", repos, err)
+	}
+}
+
+// TestBranchTipWithoutRateLimitWait: under WithoutRateLimitWait, a 429 is
+// answered at once with the limit's headers, where the SDK would sleep until
+// its Ratelimit-Reset, hours here. A server error is still retried.
+func TestBranchTipWithoutRateLimitWait(t *testing.T) {
+	f := newFake(t)
+	reset := time.Now().Add(2 * time.Hour).Unix()
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/limited", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Ratelimit-Reset", strconv.FormatInt(reset, 10))
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	var flaky atomic.Int32
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/flaky", func(w http.ResponseWriter, _ *http.Request) {
+		if flaky.Add(1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"flaky","commit":{"id":"abc"}}`)
+	})
+	c := f.client(t)
+	// A hang guard: the SDK's sleep until the reset lasts hours.
+	guard, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	ctx := WithoutRateLimitWait(guard)
+	_, _, err := c.BranchTip(ctx, "acme", "widgets", "limited")
+	e, ok := errors.AsType[*gl.ErrorResponse](err)
+	if Status(err) != http.StatusTooManyRequests || !ok || e.Response.Header.Get("Ratelimit-Reset") == "" ||
+		f.called("GET "+repoAPI+"/repository/branches/limited") != 1 {
+		t.Fatalf("BranchTip past the rate limit = %v after %d requests, want its 429 with Ratelimit-Reset after one",
+			err, f.called("GET "+repoAPI+"/repository/branches/limited"))
+	}
+	if sha, _, err := c.BranchTip(ctx, "acme", "widgets", "flaky"); err != nil || sha != "abc" || flaky.Load() != 2 {
+		t.Fatalf("BranchTip of a failing GitLab = %q, %v after %d requests, want abc after two", sha, err, flaky.Load())
 	}
 }
 

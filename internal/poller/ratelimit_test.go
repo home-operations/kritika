@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -26,6 +27,13 @@ func TestRateLimited(t *testing.T) {
 			Response:   &http.Response{StatusCode: http.StatusTooManyRequests, Header: header(retryAfter)},
 		})
 	}
+	gitlabReset := func(reset int64, retryAfter string) error {
+		err := gitlab429(retryAfter)
+		if e, ok := errors.AsType[*gl.ErrorResponse](err); ok {
+			e.Response.Header.Set("Ratelimit-Reset", strconv.FormatInt(reset, 10))
+		}
+		return err
+	}
 	for _, tc := range []struct {
 		name    string
 		err     error
@@ -40,6 +48,10 @@ func TestRateLimited(t *testing.T) {
 			wait: 90 * time.Second, limited: true},
 		{name: "GitLab's 429 without a Retry-After", err: gitlab429(""), wait: forgeRateLimitWait, limited: true},
 		{name: "GitLab's 429 with a Retry-After that does not parse", err: gitlab429("soon"), wait: forgeRateLimitWait, limited: true},
+		{name: "GitLab's 429 until its Ratelimit-Reset, past its Retry-After", err: gitlabReset(now.Add(2*time.Hour).Unix(), "60"),
+			wait: 2 * time.Hour, limited: true},
+		{name: "GitLab's 429 with a Ratelimit-Reset that has passed", err: gitlabReset(now.Add(-time.Minute).Unix(), "60"),
+			wait: time.Minute, limited: true},
 		{name: "GitHub's 429 that is no limit it knows", err: &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: header("30")},
 		}, wait: 30 * time.Second, limited: true},

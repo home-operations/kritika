@@ -21,9 +21,10 @@ const forgeRateLimitWait = time.Minute
 
 // rateLimited reports how long to wait before asking the forge again after
 // err, when err is the forge's rate limit: GitHub's, as github.RetryAfter
-// reads it, or any forge's 429. A 429 waits for the Retry-After that it
-// names when its client keeps the answer's headers, as go-github's and
-// GitLab's do, and forgeRateLimitWait otherwise, as for Forgejo's.
+// reads it, or any forge's 429. A 429 waits until the Ratelimit-Reset that
+// GitLab names, or for the Retry-After that it names, when its client keeps
+// the answer's headers, as go-github's and GitLab's do, and
+// forgeRateLimitWait otherwise, as for Forgejo's.
 func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	if wait, limited := github.RetryAfter(err, now); limited {
 		return wait, true
@@ -34,6 +35,11 @@ func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	var resp *http.Response
 	if e, ok := errors.AsType[*gl.ErrorResponse](err); ok {
 		resp = e.Response
+		if resp != nil {
+			if wait, ok := rateLimitReset(resp.Header.Get("Ratelimit-Reset"), now); ok {
+				return wait, true
+			}
+		}
 	} else if e, ok := errors.AsType[*gh.ErrorResponse](err); ok {
 		resp = e.Response
 	}
@@ -58,4 +64,15 @@ func retryAfter(v string, now time.Time) (time.Duration, bool) {
 		return max(t.Sub(now), time.Second), true
 	}
 	return 0, false
+}
+
+// rateLimitReset is the wait until the time that GitLab's Ratelimit-Reset
+// header of v names, in Unix seconds, and at least a second. A reset that has
+// passed names no wait.
+func rateLimitReset(v string, now time.Time) (time.Duration, bool) {
+	s, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || s <= now.Unix() {
+		return 0, false
+	}
+	return max(time.Unix(s, 0).Sub(now), time.Second), true
 }

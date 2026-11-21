@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/forge"
@@ -283,10 +284,43 @@ func (c *Client) GitToken(context.Context, string) (string, error) {
 	return c.runnerToken, nil
 }
 
+// noRateLimitWait marks a context whose caller waits out GitLab's rate limit
+// itself.
+type noRateLimitWait struct{}
+
+// WithoutRateLimitWait is ctx for a caller that waits out GitLab's rate limit
+// itself: BranchTip under it answers a 429 at once, with its headers, rather
+// than sleeping until the limit's Ratelimit-Reset and asking again, a sleep
+// that can outlast the caller's deadline, which go-retryablehttp then
+// returns alone.
+func WithoutRateLimitWait(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noRateLimitWait{}, true)
+}
+
+// readOptions are the options of a request that BranchTip makes under ctx.
+func readOptions(ctx context.Context) []gl.RequestOptionFunc {
+	opts := []gl.RequestOptionFunc{gl.WithContext(ctx)}
+	if ctx.Value(noRateLimitWait{}) != nil {
+		opts = append(opts, gl.WithRequestRetry(retryAllButRateLimit))
+	}
+	return opts
+}
+
+// retryAllButRateLimit retries what go-retryablehttp's default policy does,
+// but a 429. The SDK's own policy is not exported: the two differ in that
+// this one retries a read after any failed connection but those it cannot
+// recover from, as a certificate that does not verify.
+func retryAllButRateLimit(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	if err == nil && resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+		return false, nil
+	}
+	return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+}
+
 // defaultBranch is the project's default branch, which a merge request
 // does not carry.
 func (c *Client) defaultBranch(ctx context.Context, pid string) (string, error) {
-	p, _, err := c.api.Projects.GetProject(pid, nil, gl.WithContext(ctx))
+	p, _, err := c.api.Projects.GetProject(pid, nil, readOptions(ctx)...)
 	if err != nil {
 		return "", fmt.Errorf("gitlab: project %s: %w", pid, apiError(err))
 	}
@@ -302,7 +336,7 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 			return "", "", err
 		}
 	}
-	b, _, err := c.api.Branches.GetBranch(pid, branch, gl.WithContext(ctx))
+	b, _, err := c.api.Branches.GetBranch(pid, branch, readOptions(ctx)...)
 	if err != nil {
 		return "", "", fmt.Errorf("gitlab: branch %s of %s: %w", branch, pid, apiError(err))
 	}

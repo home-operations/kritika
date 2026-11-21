@@ -18,6 +18,7 @@ require (
 	github.com/google/go-github/v93 v93.0.0
 	github.com/google/uuid v1.6.0
 	github.com/gookit/validate/v2 v2.0.4
+	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/klauspost/compress v1.20.4
 	github.com/knadh/koanf/providers/confmap v1.0.1
@@ -110,7 +111,6 @@ require (
 	github.com/gookit/goutil v0.8.6 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/in-toto/attestation v1.2.0 // indirect

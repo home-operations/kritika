@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
+	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
@@ -736,6 +738,85 @@ func TestPollerPausesTipChecksAtAForgejoRateLimit(t *testing.T) {
 	now = now.Add(2 * time.Second)
 	if got := look(); !slices.Equal(got, []string{"flux", "home-ops"}) {
 		t.Fatalf("a look past the limit's wait asked for %q, want flux's branch and then home-ops's", got)
+	}
+}
+
+// TestPollerPausesTipChecksAtAGitLabRateLimit: GitLab's 429 reaches the look
+// at once, rather than after the client sleeps until the limit resets, which
+// can outlast the look. The look stops at the repository that it refused,
+// and the next asks for no branch until the limit's Ratelimit-Reset, which
+// comes after its Retry-After, then resumes there.
+func TestPollerPausesTipChecksAtAGitLabRateLimit(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
+	now := time.Now()
+	reset := now.Add(2 * time.Hour)
+	var mu sync.Mutex
+	var asked []string
+	limited := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		asked = append(asked, r.URL.Path)
+		if limited {
+			w.Header().Set("Ratelimit-Remaining", "0")
+			w.Header().Set("Ratelimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, "Retry later\n")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"main","default_branch":"main","commit":{"id":"indexed"}}`)
+	}))
+	defer srv.Close()
+	c, err := gitlab.NewClient(srv.URL, "glpat-test", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.p.Forges = &forges{f: c}
+	s.p.now = func() time.Time { return now }
+	look := func() []string {
+		t.Helper()
+		mu.Lock()
+		from := len(asked)
+		mu.Unlock()
+		// A hang guard: a client that sleeps until the reset sleeps for hours.
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		if err := s.p.pollTips(ctx, s.file, s.account, s.in); err != nil {
+			t.Fatal(err)
+		}
+		if ctx.Err() != nil {
+			t.Fatal("the look waited out its context, not the rate limit")
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		var repos []string
+		for _, p := range asked[from:] {
+			for _, name := range []string{"flux", "home-ops"} {
+				if strings.Contains(p, "/projects/onedr0p/"+name) {
+					repos = append(repos, name)
+				}
+			}
+		}
+		return repos
+	}
+	if got := look(); !slices.Equal(got, []string{"flux"}) {
+		t.Fatalf("a look refused with 429 asked for %q, want flux's branch alone, once", got)
+	}
+	if !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
+		t.Fatalf("logs:\n%s\nwant the 429 logged as the rate limit", s.logs.String())
+	}
+	mu.Lock()
+	limited = false
+	mu.Unlock()
+	now = reset.Add(-time.Second)
+	if got := look(); len(got) != 0 {
+		t.Fatalf("a look past the Retry-After and before the reset asked for %q, want none", got)
+	}
+	now = reset.Add(time.Second)
+	if got := look(); !slices.Equal(slices.Compact(got), []string{"flux", "home-ops"}) {
+		t.Fatalf("a look past the reset asked for %q, want flux's branch and then home-ops's", got)
 	}
 }
 
