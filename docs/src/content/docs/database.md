@@ -271,10 +271,12 @@ calls from occupying the application pool used by heartbeats and requests.
 An `index_update` job that has to wait for an embedding slot likewise holds a
 connection of its own for as long as it waits, one per job and so at most one
 per index worker. That connection is what puts the update before first builds
-for the next slot. Where it cannot be opened, or its login and first query
-take longer than five seconds, as behind a pooler with no server connection to
-give it, the update logs a warning and waits through the application pool
-instead, without that priority. When you size `max_connections`, include these connections:
+for the next slot, and the update tries for the slot on it, so the wait needs
+no connection of the application pool. Where it cannot be opened, or its login
+and first query take longer than five seconds, as behind a pooler with no
+server connection to give it, or it fails during the wait, the update logs a
+warning and waits through the application pool instead, without that
+priority. When you size `max_connections`, include these connections:
 they are outside both pools, so raising a pool's `pool_max_conns` makes no room
 for them.
 

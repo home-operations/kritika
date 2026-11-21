@@ -275,7 +275,7 @@ func (s *Store) assertExtension(ctx context.Context) error {
 // account set transaction-locally. So every policy resolves to that account
 // and nothing survives on the pooled connection after commit or rollback.
 func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
-	return s.withAccount(ctx, pgx.TxOptions{}, accountID, fn)
+	return withAccount(ctx, s.app, pgx.TxOptions{}, accountID, fn)
 }
 
 // WithAccountSnapshot is WithAccount in a read-only, repeatable-read
@@ -283,11 +283,17 @@ func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.T
 // so reads that the caller joins see one version of the rows, whatever
 // commits between them.
 func (s *Store) WithAccountSnapshot(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
-	return s.withAccount(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, accountID, fn)
+	return withAccount(ctx, s.app, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, accountID, fn)
 }
 
-func (s *Store) withAccount(ctx context.Context, opts pgx.TxOptions, accountID string, fn func(pgx.Tx) error) error {
-	tx, err := s.app.BeginTx(ctx, opts)
+// txBeginner is what withAccount begins its transaction on: the application
+// pool, or a connection of the application role's own.
+type txBeginner interface {
+	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+}
+
+func withAccount(ctx context.Context, db txBeginner, opts pgx.TxOptions, accountID string, fn func(pgx.Tx) error) error {
+	tx, err := db.BeginTx(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}

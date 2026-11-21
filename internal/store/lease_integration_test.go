@@ -650,7 +650,7 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 		}
 	})
 	if dial == nil {
-		go signalWaitLockQueued(ctx, s, alpha, model, refused)
+		go signalWaitLock(ctx, s, alpha, model, false, refused)
 	}
 	select {
 	case <-refused:
@@ -672,18 +672,18 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 	}
 }
 
-// signalWaitLockQueued signals queued once a session waits for the wait
-// lock of account and model, or returns when ctx ends.
-func signalWaitLockQueued(ctx context.Context, s *Store, account, model string, queued chan<- struct{}) {
+// signalWaitLock signals seen once a session holds the wait lock of account
+// and model, or waits for it when granted is false, or returns when ctx ends.
+func signalWaitLock(ctx context.Context, s *Store, account, model string, granted bool, seen chan<- struct{}) {
 	poll := time.NewTicker(10 * time.Millisecond)
 	defer poll.Stop()
 	for {
 		var found bool
 		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l, (SELECT `+indexWaitLock+` AS k) w
-			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND NOT l.granted AND l.objsubid = 1
-				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`, account, model).
+			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted = $3 AND l.objsubid = 1
+				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`, account, model, granted).
 			Scan(&found); err == nil && found {
-			signal(queued)
+			signal(seen)
 			return
 		}
 		select {
@@ -691,5 +691,137 @@ func signalWaitLockQueued(ctx context.Context, s *Store, account, model string, 
 			return
 		case <-poll.C:
 		}
+	}
+}
+
+// TestIndexUpdateWaitsOnItsOwnSession: an index update whose wait's session
+// is set up tries for the slot on that session, not on the application pool.
+// So it takes the slot let go although the pool can open no connection, as
+// when that session took the last one that Postgres allows while the pool's
+// own were busy. A session that ends while it waits costs the update its
+// priority alone: it waits on the pool from then on.
+func TestIndexUpdateWaitsOnItsOwnSession(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// lost ends the session once it holds the wait lock, and lets the
+		// pool open connections.
+		lost bool
+	}{
+		{"the pool can open no connection", false},
+		{"its session ends", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			indexUpdateWaitsOnSession(t, tt.lost)
+		})
+	}
+}
+
+// indexUpdateWaitsOnSession runs TestIndexUpdateWaitsOnItsOwnSession.
+func indexUpdateWaitsOnSession(t *testing.T, lost bool) {
+	s := openStore(t)
+	// A bound on the test's waits alone, for an update that never takes the
+	// slot: the test then fails rather than hold up the suite.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	const model = "embed:test/index-own-session"
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
+	})
+	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", appStatementTimeout, appPoolMaxConns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pool keeps no connection, so each of its uses dials one. The first
+	// two dials, the pool's for the update's try for a free slot and then
+	// the wait's session, reach Postgres. Every later one is refused, as at
+	// Postgres's connection limit, while refusing holds.
+	cfg.AfterRelease = func(*pgx.Conn) bool { return false }
+	var dials atomic.Int64
+	var refusing atomic.Bool
+	refusing.Store(!lost)
+	refused := make(chan struct{}, 1)
+	var dialer net.Dialer
+	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if dials.Add(1) <= 2 || !refusing.Load() {
+			return dialer.DialContext(ctx, network, addr)
+		}
+		client, server := net.Pipe()
+		go func() {
+			if refuseLogin(server) == nil {
+				signal(refused)
+			}
+		}()
+		return client, nil
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	held, err := s.TakeLease(ctx, alpha, model, 1, 1)
+	if err != nil || held == nil {
+		t.Fatalf("TakeLease = %v, %v", held, err)
+	}
+	t.Cleanup(func() { _, _ = held.Release(context.Background()) })
+
+	limited := &Store{app: pool, owner: s.owner, logger: s.logger}
+	var updated *Lease
+	var updateErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		updated, updateErr = limited.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+		refusing.Store(false)
+		if updated != nil {
+			_, _ = updated.Release(context.Background())
+		}
+	})
+	waitLock := func(granted bool, what string) {
+		t.Helper()
+		seen := make(chan struct{}, 1)
+		go signalWaitLock(ctx, s, alpha, model, granted, seen)
+		select {
+		case <-seen:
+		case <-done:
+			t.Fatalf("the update ended with %v, %v while every slot is held", updated, updateErr)
+		case <-ctx.Done():
+			t.Fatalf("%s not seen: %v", what, ctx.Err())
+		}
+	}
+	waitLock(true, "the update's wait lock")
+	if lost {
+		// The application role's, as the session is, which the owner may
+		// not end.
+		var ended bool
+		if err := s.app.QueryRow(ctx, `SELECT bool_and(pg_terminate_backend(l.pid)) FROM pg_locks l, (SELECT `+indexWaitLock+` AS k) w
+			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted AND l.objsubid = 1
+				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295`, alpha, model).
+			Scan(&ended); err != nil || !ended {
+			t.Fatalf("end the update's session = %v, %v", ended, err)
+		}
+	}
+	if _, err := held.Release(ctx); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatalf("the update did not take the slot let go: %v", ctx.Err())
+	}
+	if updateErr != nil || updated == nil {
+		t.Fatalf("AcquireIndexLease = %v, %v; want the slot let go", updated, updateErr)
+	}
+	select {
+	case <-refused:
+		t.Fatal("the update asked the pool for a connection while its session waited")
+	default:
 	}
 }
