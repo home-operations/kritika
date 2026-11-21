@@ -997,9 +997,11 @@ change, joins that job and waits behind the onboarding wave with it.
 
 A release without the `index_update` queue (0.0.122 and earlier) never works
 it, and its pushes join the repository's job there rather than queue their
-own, which leaves that repository's index where it is. After rolling back to
-one, once no replica of the newer release is left, move those jobs to
-`index` as the database owner:
+own, which leaves that repository's index where it is. Before starting
+an older release, restore its configuration, or remove `searchPrompt`,
+`lexical` and `rerank` from `embedding`: older releases reject these keys.
+Once no replica of the newer release is left, move those jobs to `index`
+as the database owner:
 
 ```sql
 UPDATE river_job SET queue = 'index'
