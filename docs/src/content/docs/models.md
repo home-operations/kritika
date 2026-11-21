@@ -65,11 +65,13 @@ keeps its own slot until it ends. A review also takes one of the replica's
 `reviewWorkers` ([how kritika runs](/configuration/#how-kritika-runs)) for
 as long as it runs, so a review cannot take a free slot while every one of
 them is busy.
-Index runs hold all but one of the embedder's slots while
-they embed, so a review's similar-code lookup has a slot unless
-`concurrency` is 1. `concurrency` is one value for the provider; an
-account that needs another on the same endpoint declares a provider of
-its own under [`accounts`](/configuration/#accounts).
+Index runs take no more than all but one of the embedder's slots, so a
+review's similar-code lookup has a slot unless `concurrency` is 1. An
+index run holds a slot for each batch it sends the embedder, not for its
+whole build, and an update of an indexed repository that waits for one
+gets the next that a first build or a rebuild lets go. `concurrency` is
+one value for the provider; an account that needs another on the same
+endpoint declares a provider of its own under [`accounts`](/configuration/#accounts).
 
 A [fallback](#fallback) on another provider has slots of its own: a step
 that goes to it takes one of the fallback model's for the step, and waits

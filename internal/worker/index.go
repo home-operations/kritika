@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -27,7 +26,6 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
-	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // embedBatch is how many staged chunks are embedded and inserted at once.
@@ -35,9 +33,8 @@ const embedBatch = 128
 
 // indexSlots is how many of an account's embed slots index runs can hold at
 // once: all but one. So a review's similar-code lookup, which takes a slot
-// for one short call, always has one to take. That is true while an
-// onboarding wave holds the rest for the length of a repository's embedding
-// pass. An account with one slot has none to spare.
+// for one short call, always has one to take, however many index jobs wait
+// for theirs. An account with one slot has none to spare.
 func indexSlots(concurrency int) int { return max(1, concurrency-1) }
 
 // Index works the index queue: one job builds or advances a repository's
@@ -514,7 +511,8 @@ func (w *Index) finish(
 }
 
 // embed turns the staged chunks into index_chunks rows under the run, a batch
-// at a time, with no transaction open while the embedder works. It then swaps
+// at a time, with no transaction open while the embedder works, and a slot
+// of the embedder held for each batch's call alone (vectorsFor). It then swaps
 // them in and ends the run as completed with one short transaction. So a
 // review never sees a half-built index, and a retry never finds an active
 // generation still running. A full build makes its run the active generation.
@@ -546,39 +544,37 @@ func (w *Index) embed(
 		return 0, pack, err
 	}
 	activeRun := vectorSource(active, args.Full)
-	err = w.withLease(ctx, account, "embed:"+emb.Model, slots, job.ID, func(ctx context.Context) error {
-		for {
-			var batch []store.StagedChunk
-			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-				var err error
-				batch, err = store.ReadStagedChunks(ctx, tx, runnerRunID, last, cmp.Or(w.batch, embedBatch))
-				return err
-			})
-			if err != nil || len(batch) == 0 {
-				return err
-			}
-			vectors, err := w.vectorsFor(ctx, args, account, embedder, emb, runID, runnerRunID, activeRun, batch)
-			if err != nil {
-				return err
-			}
-			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-				if err := store.LockIndexJob(ctx, tx, args.AccountID, job.ID, job.Attempt); err != nil {
-					return err
-				}
-				if err := store.InsertIndexChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors); err != nil {
-					return err
-				}
-				return store.CheckpointIndexBatch(ctx, tx, runID, last, batch[len(batch)-1].ID, len(batch))
-			})
-			if err != nil {
-				return err
-			}
-			total += len(batch)
-			last = batch[len(batch)-1].ID
+	for {
+		var batch []store.StagedChunk
+		err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+			var err error
+			batch, err = store.ReadStagedChunks(ctx, tx, runnerRunID, last, cmp.Or(w.batch, embedBatch))
+			return err
+		})
+		if err != nil {
+			return total, pack, err
 		}
-	})
-	if err != nil {
-		return total, pack, err
+		if len(batch) == 0 {
+			break
+		}
+		vectors, err := w.vectorsFor(ctx, job, account, embedder, emb, runID, runnerRunID, activeRun, batch, slots)
+		if err != nil {
+			return total, pack, err
+		}
+		err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+			if err := store.LockIndexJob(ctx, tx, args.AccountID, job.ID, job.Attempt); err != nil {
+				return err
+			}
+			if err := store.InsertIndexChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors); err != nil {
+				return err
+			}
+			return store.CheckpointIndexBatch(ctx, tx, runID, last, batch[len(batch)-1].ID, len(batch))
+		})
+		if err != nil {
+			return total, pack, err
+		}
+		total += len(batch)
+		last = batch[len(batch)-1].ID
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		if err := store.LockIndexBuild(ctx, tx, args.AccountID, args.RepositoryID, job.ID, job.Attempt); err != nil {
@@ -628,88 +624,6 @@ func (w *Index) embed(
 		return nil
 	})
 	return total, pack, err
-}
-
-// vectorsFor returns a vector for each chunk of batch and sets each chunk's
-// content hash. A chunk whose hash run, the run being built, or activeRun,
-// the repository's active generation, already holds takes the vector held.
-// The others are embedded, each distinct text once, and only their tokens
-// count as usage.
-func (w *Index) vectorsFor(
-	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
-	runID, runnerRunID, activeRun string, batch []store.StagedChunk,
-) ([][]float32, error) {
-	texts := make([]string, len(batch))
-	hashes := make([][]byte, len(batch))
-	for i := range batch {
-		texts[i] = batch[i].EmbedText(emb.DocumentPrompt)
-		hashes[i] = contentHash(emb, texts[i])
-		batch[i].ContentHash = hashes[i]
-	}
-	var held map[string][]float32
-	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		var err error
-		held, err = store.IndexVectors(ctx, tx, args.RepositoryID, runID, activeRun, hashes)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	vectors := make([][]float32, len(batch))
-	var missing []string
-	sent := map[string]int{}
-	for i, h := range hashes {
-		if v, ok := held[string(h)]; ok {
-			vectors[i] = v
-		} else if _, ok := sent[string(h)]; !ok {
-			sent[string(h)] = len(missing)
-			missing = append(missing, texts[i])
-		}
-	}
-	if len(missing) == 0 {
-		w.Metrics.IndexVectors(account.Key(), len(batch), 0)
-		return vectors, nil
-	}
-	embedded, used, err := embedder.Embed(ctx, missing)
-	w.Metrics.ModelCall(account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
-	if err == nil || used > 0 {
-		// Provider usage survives cancellation and failures to store its vectors.
-		dctx, cancel := detach(ctx)
-		uerr := w.Store.WithAccount(dctx, args.AccountID, func(tx pgx.Tx) error {
-			return store.InsertUsage(dctx, tx, store.Usage{
-				AccountID: args.AccountID, RepositoryID: args.RepositoryID, RunnerRunID: runnerRunID,
-				Role: store.RoleEmbedding, Model: emb.Model, Input: used,
-			})
-		})
-		cancel()
-		err = errors.Join(err, uerr)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if len(embedded) != len(missing) {
-		return nil, fmt.Errorf("worker: %d vectors for %d texts", len(embedded), len(missing))
-	}
-	// Counted once the embedder has answered for every text: a batch whose
-	// embedding fails, and is tried again, counts none of its vectors.
-	w.Metrics.IndexVectors(account.Key(), len(batch)-len(missing), len(missing))
-	for i, h := range hashes {
-		if vectors[i] == nil {
-			vectors[i] = embedded[sent[string(h)]]
-		}
-	}
-	return vectors, nil
-}
-
-// contentHash identifies the vector of an index chunk whose embedded text is
-// text: the text as the embedder is sent it, cut to its item limit, and the
-// embedder that embeds it. Two chunks of one hash take the same vector.
-func contentHash(emb *configfile.Embedding, text string) []byte {
-	_, _, itemChars := emb.Bounds()
-	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%q %d %q\n", emb.Model, emb.Dims, emb.DocumentPrompt) // A hash.Hash never fails to write.
-	_, _ = io.WriteString(h, textcut.Prefix(text, itemChars))
-	return h.Sum(nil)
 }
 
 // indexMatches reports whether a job of trigger can step g, the active

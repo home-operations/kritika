@@ -60,12 +60,85 @@ func (s *Store) AcquireLease(ctx context.Context, accountID, modelKey string, sl
 		if err != nil || l != nil {
 			return l, err
 		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("store: waiting for a %s slot: %w", modelKey, ctx.Err())
-		case <-time.After(Backoff(try, leasePollMin, leasePollMax)):
+		if err := leaseWait(ctx, modelKey, Backoff(try, leasePollMin, leasePollMax)); err != nil {
+			return nil, err
 		}
 	}
+}
+
+// indexWaitLock is the advisory lock of account $1 and model key $2 that an
+// index update holds, shared, while it waits for a slot (AcquireIndexLease).
+const indexWaitLock = `hashtextextended('kritika-index-wait ' || $1::text || ' ' || $2::text, 0)`
+
+// AcquireIndexLease is AcquireLease for one embedding call of an index job,
+// which holds the slot for that call alone. An update, of a repository
+// already indexed, comes before every build, onboarding or forced: while one
+// waits for a slot, no build takes one (TakeIndexBuildLease), so it gets the
+// next that a build lets go, between two of the build's calls. It tries
+// again at the shortest of AcquireLease's waits, since the builds leave it
+// the slot meanwhile.
+func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, update bool) (*Lease, error) {
+	if !update {
+		for try := 0; ; try++ {
+			l, err := s.TakeIndexBuildLease(ctx, accountID, modelKey, slots, jobID)
+			if err != nil || l != nil {
+				return l, err
+			}
+			if err := leaseWait(ctx, modelKey, Backoff(try, leasePollMin, leasePollMax)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// The wait is a session of its own, which takes none of the pool's
+	// connections for as long as it lasts, and whose end, closed or lost,
+	// lets the lock go.
+	cfg := s.app.Config().ConnConfig
+	cfg.RuntimeParams["application_name"] = "kritika-index-wait"
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
+	}
+	defer func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
+		defer cancel()
+		if err := conn.Close(cctx); err != nil {
+			s.logger.Warn("index slot wait not closed cleanly", "model", modelKey, "error", err)
+		}
+	}()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock_shared(`+indexWaitLock+`)`, accountID, modelKey); err != nil {
+		return nil, fmt.Errorf("store: wait for a %s slot: %w", modelKey, err)
+	}
+	for {
+		l, err := s.TakeLease(ctx, accountID, modelKey, slots, jobID)
+		if err != nil || l != nil {
+			return l, err
+		}
+		if err := leaseWait(ctx, modelKey, Backoff(0, leasePollMin, leasePollMin)); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// indexWaitClose bounds closing the session of an index update's wait for a
+// slot.
+const indexWaitClose = 5 * time.Second
+
+// leaseWait waits d before another try for a slot of modelKey, or until ctx
+// ends.
+func leaseWait(ctx context.Context, modelKey string, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("store: waiting for a %s slot: %w", modelKey, ctx.Err())
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// TakeIndexBuildLease claims a slot for one embedding call of an index
+// build, as TakeLease does, unless an index update waits for one: nil then
+// too.
+func (s *Store) TakeIndexBuildLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
+	return s.takeLease(ctx, accountID, modelKey, slots, jobID, claimIndexBuild)
 }
 
 // leaseClaim is whose claim of a slot it is, which decides the reviews that
@@ -81,6 +154,9 @@ const (
 	// claimExtra is a slot beyond a review's first. It comes after every
 	// review that waits for its first.
 	claimExtra
+	// claimIndexBuild is an index build's, which comes after every index
+	// update that waits for a slot.
+	claimIndexBuild
 )
 
 func claimSQL(c leaseClaim) string { return strconv.Itoa(int(c)) }
@@ -176,6 +252,18 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text || ' ' || $2::text, 0))`,
 				accountID, modelKey); err != nil {
 				return fmt.Errorf("store: lock review claims: %w", err)
+			}
+		}
+		if claim == claimIndexBuild {
+			// An update that waits holds the lock shared, so a build cannot
+			// take it. Nor can two builds at once, the second of which tries
+			// again later, as it would for a slot that the first took.
+			var free bool
+			if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(`+indexWaitLock+`)`, accountID, modelKey).Scan(&free); err != nil {
+				return fmt.Errorf("store: look for index updates waiting: %w", err)
+			}
+			if !free {
+				return nil
 			}
 		}
 		err := tx.QueryRow(ctx, `UPDATE model_leases SET job_id = $3, expires_at = now() + $4::interval

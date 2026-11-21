@@ -349,3 +349,84 @@ func TestWakeIfSlotFree(t *testing.T) {
 		t.Fatalf("Release woke job %d, %v, want the older waiter %d", woken, err, older)
 	}
 }
+
+// TestIndexUpdateComesBeforeBuilds: while an index update waits for a slot
+// of an account's model, no index build takes one of that model, not even a
+// slot that the update could not take, and the builds of other accounts are
+// not held off. Once the update has its slot, builds take slots again.
+func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	const model = "embed:test/index-wait"
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
+	})
+	take := func(account string, slots int, job int64) *Lease {
+		t.Helper()
+		l, err := s.TakeIndexBuildLease(ctx, account, model, slots, job)
+		if err != nil {
+			t.Fatalf("TakeIndexBuildLease: %v", err)
+		}
+		return l
+	}
+	release := func(l *Lease) {
+		t.Helper()
+		if _, err := l.Release(ctx); err != nil {
+			t.Fatalf("Release: %v", err)
+		}
+	}
+	// The update can take only the first slot, which this lease holds, so
+	// the second is free for the builds but for the update's wait.
+	held, err := s.TakeLease(ctx, alpha, model, 1, 1)
+	if err != nil || held == nil {
+		t.Fatalf("TakeLease = %v, %v", held, err)
+	}
+	type result struct {
+		l   *Lease
+		err error
+	}
+	updated := make(chan result, 1)
+	go func() {
+		l, err := s.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
+		updated <- result{l, err}
+	}()
+	for waiting := false; !waiting; {
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks l, (SELECT `+indexWaitLock+` AS k) w
+			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted AND l.objsubid = 1
+				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`, alpha, model).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case r := <-updated:
+			t.Fatalf("the update ended its wait with %v, %v while every slot it can take is held", r.l, r.err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		default:
+		}
+	}
+	if l := take(alpha, 2, 3); l != nil {
+		release(l)
+		t.Fatal("a build took a slot while an update of its account waited for one")
+	}
+	other := take(beta, 2, 4)
+	if other == nil {
+		t.Fatal("another account's build took no slot while an update of this account waited")
+	}
+	release(other)
+	release(held)
+	r := <-updated
+	if r.err != nil || r.l == nil {
+		t.Fatalf("AcquireIndexLease = %v, %v; want the slot let go", r.l, r.err)
+	}
+	l := take(alpha, 2, 3)
+	if l == nil {
+		t.Fatal("a build took no slot once the update had its own")
+	}
+	release(l)
+	release(r.l)
+}
