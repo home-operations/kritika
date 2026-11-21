@@ -199,7 +199,11 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 	f := parser.Parse(path, []byte(text))
 	defer f.Close()
 	holds := func(d chunk.Decl) bool {
-		return d.Symbol != "" && d.Kind != "import" && slices.ContainsFunc(added, d.Contains)
+		if d.Symbol == "" || d.Kind == "import" {
+			return false
+		}
+		i, _ := slices.BinarySearch(added, d.StartLine)
+		return i < len(added) && added[i] <= d.EndLine
 	}
 	var out []string
 	lastEnd := 0

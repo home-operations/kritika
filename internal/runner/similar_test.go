@@ -267,6 +267,34 @@ func TestHunkQueries(t *testing.T) {
 	})
 }
 
+// TestHunkQueriesManyDeclarations: finding the declarations that hold an
+// added line costs about as much for many short declarations after many
+// added lines as before them, where it is little next to the parse.
+func TestHunkQueriesManyDeclarations(t *testing.T) {
+	blob := make([]string, 0, 200_002)
+	blob = append(blob, "var s = `")
+	for range 200_000 {
+		blob = append(blob, "x")
+	}
+	blob = append(blob, "`")
+	funcs := make([]string, 0, 10_000)
+	for i := range 10_000 {
+		funcs = append(funcs, fmt.Sprintf("func f%d() {}", i))
+	}
+	took := func(lines ...[]string) time.Duration {
+		diff := fileDiff("", "a.go", added(slices.Concat(append([][]string{{"package a"}}, lines...)...)...))
+		started := time.Now()
+		if got := hunkQueries(diff, nil); len(got) != contextpack.SimilarQueries {
+			t.Fatalf("%d queries, want %d", len(got), contextpack.SimilarQueries)
+		}
+		return time.Since(started)
+	}
+	before := took(funcs, blob)
+	if after := took(blob, funcs); after > 3*before {
+		t.Fatalf("hunkQueries took %s with the declarations after the added lines, %s with them before", after, before)
+	}
+}
+
 // TestWithoutOverlap: a similar chunk is left out when other stages already
 // show more than half of its lines, and kept when they show fewer.
 func TestWithoutOverlap(t *testing.T) {
