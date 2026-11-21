@@ -123,7 +123,8 @@ type Rerank struct {
 	API string `yaml:"api"`
 	// Candidates is how many of each query's candidates, the best fused
 	// first, are sent to be reranked, at most MaxRerankCandidates. The two
-	// searches each look for that many. Unset is DefaultRerankCandidates.
+	// searches each look for that many. Unset is DefaultRerankCandidates, or
+	// DefaultTEIRerankCandidates for the tei API.
 	Candidates int `yaml:"candidates,omitempty"`
 	// Timeout bounds the reranking of one similar-code request, all of its
 	// queries, at most MaxRerankTimeout. A query not reranked by then keeps
@@ -150,8 +151,19 @@ const (
 	MaxRerankTimeout        = 30 * time.Second
 )
 
-// CandidateCount returns Candidates, DefaultRerankCandidates when unset.
-func (r *Rerank) CandidateCount() int { return cmp.Or(r.Candidates, DefaultRerankCandidates) }
+// DefaultTEIRerankCandidates is the candidates sent to a Text Embeddings
+// Inference reranker when unset: the most that its --max-client-batch-size
+// takes by default, which refuses a request of more with a 422.
+const DefaultTEIRerankCandidates = 32
+
+// CandidateCount returns Candidates when set, DefaultTEIRerankCandidates for
+// the tei API, and DefaultRerankCandidates otherwise.
+func (r *Rerank) CandidateCount() int {
+	if r.Candidates == 0 && r.API == model.RerankTEI {
+		return DefaultTEIRerankCandidates
+	}
+	return cmp.Or(r.Candidates, DefaultRerankCandidates)
+}
 
 // Deadline returns Timeout, DefaultRerankTimeout when unset.
 func (r *Rerank) Deadline() time.Duration { return cmp.Or(r.Timeout, DefaultRerankTimeout) }

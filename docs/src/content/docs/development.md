@@ -339,7 +339,7 @@ KRITIKA_EVAL_CACHE=/tmp/kritika-eval \
 | `KRITIKA_EVAL_FLOOR`              | 0.5                | `similarFloor`                                                                               |
 | `KRITIKA_EVAL_DEPTH`              | 4                  | how many chunks each search finds for a query without a reranker                             |
 | `KRITIKA_EVAL_RERANK_URL`         |                    | a Text Embeddings Inference reranker, which adds the reranked variants                       |
-| `KRITIKA_EVAL_RERANK_CANDIDATES`  | 50                 | the candidates of each query reranked                                                        |
+| `KRITIKA_EVAL_RERANK_CANDIDATES`  | 32                 | the candidates of each query reranked                                                        |
 
 No reviewer judges the answers. Two proxies stand in for relevance:
 

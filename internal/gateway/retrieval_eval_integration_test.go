@@ -67,7 +67,7 @@ func TestRetrievalEval(t *testing.T) {
 	floor, margin := evalFloat(t, "KRITIKA_EVAL_FLOOR", configfile.DefaultSimilarFloor), configfile.DefaultSimilarMargin
 	variants := []string{"vector", "lexical", "hybrid"}
 	var reranker model.Reranker
-	candidates := evalInt(t, "KRITIKA_EVAL_RERANK_CANDIDATES", configfile.DefaultRerankCandidates)
+	candidates := evalInt(t, "KRITIKA_EVAL_RERANK_CANDIDATES", configfile.DefaultTEIRerankCandidates)
 	evalDepth = evalInt(t, "KRITIKA_EVAL_DEPTH", similarDepth)
 	if url := os.Getenv("KRITIKA_EVAL_RERANK_URL"); url != "" {
 		reranker = model.NewReranker(model.RerankTEI, url, "", "", time.Minute)

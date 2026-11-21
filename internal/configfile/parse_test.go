@@ -249,3 +249,27 @@ func TestParseAccountProviders(t *testing.T) {
 		t.Fatalf("Provider(acme, own) = %+v, %v", p, ok)
 	}
 }
+
+// TestRerankCandidates: a reranker of Text Embeddings Inference is sent no
+// more candidates than its default client batch takes, unless they are set.
+func TestRerankCandidates(t *testing.T) {
+	t.Setenv("TEST_KEY", "rk")
+	for _, tt := range []struct {
+		rerank string
+		want   int
+	}{
+		{"{ model: rr/m, api: tei }", 32},
+		{"{ model: rr/m, api: tei, candidates: 64 }", 64},
+		{"{ model: rr/m, api: cohere }", 50},
+	} {
+		t.Run(tt.rerank, func(t *testing.T) {
+			f, err := Parse([]byte(rerankDoc(tt.rerank)))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if got := f.Embedding.Rerank.CandidateCount(); got != tt.want {
+				t.Fatalf("CandidateCount = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

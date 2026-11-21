@@ -849,12 +849,12 @@ weight by name keep, at most `candidates` of each query, the best fused
 first, are sent to the reranker, and its scores order them in place of the
 fusion's. The answer then takes each query's best four as before.
 
-| Key          | Default | What                                                                                                                        |
-| ------------ | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `model`      |         | a model of one of the instance's `openai` providers whose `baseUrl` is the reranker's API root. It uses that provider's key |
-| `api`        |         | the API's shape: `cohere`, `jina`, `voyage` or `tei`                                                                        |
-| `candidates` | 50      | the candidates of each query sent to be reranked, at most 100                                                               |
-| `timeout`    | 15s     | how long the reranking of one similar-code request, the wait for a slot and all its queries, can take, at most 30s          |
+| Key          | Default          | What                                                                                                                                                    |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`      |                  | a model of one of the instance's `openai` providers whose `baseUrl` is the reranker's API root. It uses that provider's key                             |
+| `api`        |                  | the API's shape: `cohere`, `jina`, `voyage` or `tei`                                                                                                    |
+| `candidates` | 50, 32 for `tei` | the candidates of each query sent to be reranked, at most 100. Text Embeddings Inference refuses more than its `--max-client-batch-size`, 32 unless set |
+| `timeout`    | 15s              | how long the reranking of one similar-code request, the wait for a slot and all its queries, can take, at most 30s                                      |
 
 The reranker's provider is of type `openai`, which stands for any
 endpoint that takes a bearer key, and it sets `baseUrl`: kritika posts to
