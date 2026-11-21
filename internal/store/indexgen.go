@@ -348,12 +348,22 @@ func lockActiveGeneration(ctx context.Context, tx pgx.Tx, repositoryID string) (
 
 // writePostingsSQL writes the postings of generation $1 from its chunks'
 // lexemes: a row of each word, with the chunks that hold it while they are
-// fewer than $2.
+// fewer than $2. The words are counted first, and the chunks listed of those
+// under $2 alone: an aggregate computes every row's list before any
+// expression drops it, and most of a large generation's words are of the
+// common ones, whose lists are never stored. That reads the chunks' lexemes
+// twice.
 const writePostingsSQL = `INSERT INTO index_postings (index_run_id, lexeme, account_id, chunks, chunk_ids)
-	SELECT $1, l, r.account_id, count(*), CASE WHEN count(*) < $2 THEN array_agg(c.id) END
-	FROM index_runs r, index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
-	WHERE r.id = $1 AND c.index_run_id = $1
-	GROUP BY l, r.account_id`
+	WITH counted AS MATERIALIZED (
+		SELECT l, count(*)::int AS n FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $1 GROUP BY l
+	), listed AS (
+		SELECT l, array_agg(c.id) AS ids FROM index_chunks c, unnest(tsvector_to_array(c.lexemes)) AS l
+		WHERE c.index_run_id = $1 AND l IN (SELECT l FROM counted WHERE n < $2) GROUP BY l
+	)
+	SELECT $1, k.l, r.account_id, k.n, x.ids
+	FROM index_runs r, counted k LEFT JOIN listed x USING (l)
+	WHERE r.id = $1`
 
 // ActivateGeneration makes a full build the active generation, writes its
 // postings, and counts its chunks. It supersedes whichever generation is
