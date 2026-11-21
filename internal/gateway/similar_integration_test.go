@@ -838,3 +838,152 @@ func TestSimilarSearchesTheGenerationActiveAtTheSearch(t *testing.T) {
 		})
 	}
 }
+
+// TestSimilarSearchFillsItsLimit: a search_code request of one query keeps
+// as many chunks as it asks for whenever that many qualify. Its search finds
+// at least that many, and looks past the files that the file cap fills
+// until the query holds that many, not just similarPerQuery: q0's nearest
+// eight chunks are five of big.go's and three others, and seven more files
+// qualify past them; q1's twelve files of one chunk each all qualify.
+func TestSimilarSearchFillsItsLimit(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_SECRET", "test-key")
+	file := configfiletest.Load(t, `providers:
+  test:
+    type: openai
+    baseUrl: http://unused.invalid/v1
+    apiKey: { env: TEST_SECRET }
+review: { model: test/reviewer }
+embedding: { model: test/embed, dims: 8, lexical: false }
+apps:
+  test:
+    accounts: [similar-fill]
+    clientId: Iv1.test
+    privateKey: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_SECRET }
+`)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	storetest.Repositories(t, st, file, "similar-fill/repo")
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "similar-fill")
+	repo := configfile.RepositoryID(account.ID(), "similar-fill/repo")
+	// The k-th chunk near axis q leans k steps toward axis q+2: each
+	// is less similar to q than the one before it, and all of them are
+	// within the margin of the first. Every chunk is under the floor of the
+	// other query.
+	near := func(q, k int) []float32 {
+		v := make([]float32, 8)
+		v[q], v[q+2] = 1, 0.03*float32(k)
+		return v
+	}
+	type placed struct {
+		path string
+		line int
+	}
+	q0 := []placed{
+		{"big.go", 1}, {"o0.go", 1}, {"big.go", 2}, {"o1.go", 1}, {"big.go", 3}, {"o2.go", 1}, {"big.go", 4}, {"big.go", 5},
+		{"o3.go", 1}, {"o4.go", 1}, {"o5.go", 1}, {"o6.go", 1}, {"o7.go", 1}, {"o8.go", 1}, {"o9.go", 1},
+	}
+	var runner string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var run string
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status)
+   VALUES($1,$2,'abc','embed',8,'full','completed') RETURNING id`, account.ID(), repo).Scan(&run); err != nil {
+			return err
+		}
+		insert := func(path string, line int, v []float32) error {
+			_, err := tx.Exec(ctx, `INSERT INTO index_chunks(account_id,repository_id,index_run_id,path,start_line,end_line,text,embedding)
+   VALUES($1,$2,$3,$4,$5,$5,'func f() {}',$6::halfvec)`, account.ID(), repo, run, path, line, model.VectorLiteral(v))
+			return err
+		}
+		for k, c := range q0 {
+			if err := insert("q0/"+c.path, c.line, near(0, k)); err != nil {
+				return err
+			}
+		}
+		for k := range 12 {
+			if err := insert(fmt.Sprintf("q1/f%d.go", k), 1, near(1, k)); err != nil {
+				return err
+			}
+		}
+		if err := store.ActivateGeneration(ctx, tx, repo, run); err != nil {
+			return err
+		}
+		var err error
+		runner, err = store.InsertRunnerRun(ctx, tx, account.ID(), store.RunnerKindReview, "", 0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error { return store.FailRunnerRun(ctx, tx, runner, "test finished") }); err != nil {
+			t.Error(err)
+		}
+	})
+	token, err := st.MintGatewayToken(ctx, store.GatewayGrant{
+		RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1 << 20,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+		out := make([][]float32, len(inputs))
+		for i, in := range inputs {
+			var q int
+			if _, err := fmt.Sscanf(in, "q%d", &q); err != nil {
+				return nil, 0, err
+			}
+			out[i] = near(q, 0)
+		}
+		return out, 1, nil
+	})
+	g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: st, Current: configfile.NewCurrent(file),
+		Logger:    slog.New(slog.DiscardHandler),
+		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+	}
+	for _, tt := range []struct {
+		name  string
+		query string
+		limit int
+		want  int
+	}{
+		{"past a file that fills the first window", "q0", 8, 8},
+		{"a deeper first window", "q1", contextpack.SimilarLimit, 12},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(contextpack.SimilarRequest{
+				Queries: []string{tt.query}, Kind: contextpack.SimilarKindSearch, Limit: tt.limit,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/v1/similar", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			out := httptest.NewRecorder()
+			g.ServeHTTP(out, req)
+			var resp contextpack.SimilarResponse
+			if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil || out.Code != http.StatusOK {
+				t.Fatalf("status=%d: %s", out.Code, out.Body.String())
+			}
+			perFile := map[string]int{}
+			for _, c := range resp.Chunks {
+				if !strings.HasPrefix(c.Path, tt.query+"/") {
+					t.Errorf("chunk %s:%d is not near %s", c.Path, c.StartLine, tt.query)
+				}
+				perFile[c.Path]++
+			}
+			if len(resp.Chunks) != tt.want {
+				t.Fatalf("%d chunks, want %d: %v", len(resp.Chunks), tt.want, perFile)
+			}
+			if n := perFile["q0/big.go"]; n > similarPerFile {
+				t.Fatalf("%d chunks of big.go, want at most %d", n, similarPerFile)
+			}
+		})
+	}
+}

@@ -390,7 +390,7 @@ func (ix evalIndexed) search(
 			return err
 		}
 		due := started.Add(similarAnswerWithin)
-		if found.hits, err = pastFullFiles(ctx, tx, ix.run, vectors, store.Exclusions{Paths: exclude}, depth, found.hits, floor, margin, due); err != nil {
+		if found.hits, err = pastFullFiles(ctx, tx, ix.run, vectors, store.Exclusions{Paths: exclude}, depth, similarPerQuery, found.hits, floor, margin, due); err != nil {
 			return err
 		}
 		searched := time.Now()
@@ -398,7 +398,7 @@ func (ix evalIndexed) search(
 		if found.named, err = byName(queries, languages, vectors, store.Exclusions{Paths: exclude}); err != nil {
 			return err
 		}
-		if found.named, err = pastFullNames(found.named, queries, languages, vectors, store.Exclusions{Paths: exclude}, depth, byName); err != nil {
+		if found.named, err = pastFullNames(found.named, queries, languages, vectors, store.Exclusions{Paths: exclude}, depth, similarPerQuery, byName); err != nil {
 			return err
 		}
 		timed.requests++

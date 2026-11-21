@@ -474,7 +474,7 @@ func TestPastFull(t *testing.T) {
 	}
 	hits = append(hits, hit(2, "c.go", 1))
 	full := func(found, window []store.SimilarHit) []string {
-		return fullFiles(found, window, similarDepth, func([]store.SimilarHit, store.SimilarHit) bool { return true })
+		return fullFiles(found, window, similarDepth, similarPerQuery, func([]store.SimilarHit, store.SimilarHit) bool { return true })
 	}
 	failed := errors.New("search failed")
 	for _, tt := range []struct {
@@ -489,7 +489,7 @@ func TestPastFull(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var searched []int
-			got, err := pastFull(hits, 3, full, func(q int, files []string) ([]store.SimilarHit, error) {
+			got, err := pastFull(hits, 3, similarPerQuery, full, func(q int, files []string) ([]store.SimilarHit, error) {
 				searched = append(searched, q)
 				if !slices.Equal(files, []string{"a.go"}) {
 					t.Errorf("query %d searched past %q, want a.go", q, files)
@@ -532,7 +532,7 @@ func TestPastFullNamesLanguage(t *testing.T) {
 	type searched struct{ texts, languages []string }
 	var got []searched
 	_, err := pastFullNames(named, []string{"key-name: 1", "d := end-start"}, []string{"yaml", "go"}, [][]float32{{1}, {1}},
-		store.Exclusions{}, similarDepth, func(texts, languages []string, _ [][]float32, _ store.Exclusions) ([]store.SimilarHit, error) {
+		store.Exclusions{}, similarDepth, similarPerQuery, func(texts, languages []string, _ [][]float32, _ store.Exclusions) ([]store.SimilarHit, error) {
 			got = append(got, searched{texts, languages})
 			return nil, nil
 		})

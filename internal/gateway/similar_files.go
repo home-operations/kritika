@@ -17,12 +17,12 @@ import (
 // each query, the next nearest outside the files of which the query's hits
 // hold similarPerFile or more, for each query that the file cap would
 // otherwise leave short: its hits fill the window, the last of them still
-// qualifies, and the cap keeps fewer than similarPerQuery of them. A window
-// that is not full has nothing past it, and nothing past a last hit under
-// the floor or the margin qualifies either. A query is searched again until
-// it is no longer short, at most similarPerQuery times: each full window
-// past the files the cap fills adds a chunk that the cap keeps, so that
-// many fill the query whenever enough chunks qualify. The cap of one file
+// qualifies, and the cap keeps fewer than target of them, the most chunks a
+// query keeps. A window that is not full has nothing past it, and nothing
+// past a last hit under the floor or the margin qualifies either. A query is
+// searched again until it is no longer short, at most target times: each
+// full window past the files the cap fills adds a chunk that the cap keeps,
+// so that many fill the query whenever enough chunks qualify. The cap of one file
 // across the queries and the duplicates between them can still leave a
 // query short.
 //
@@ -32,15 +32,15 @@ import (
 // pastFullFiles returns the hits found until then with the error, for the
 // caller to answer with them unless the request itself ended.
 func pastFullFiles(
-	ctx context.Context, tx pgx.Tx, runID string, vectors [][]float32, exclude store.Exclusions, depth int,
+	ctx context.Context, tx pgx.Tx, runID string, vectors [][]float32, exclude store.Exclusions, depth, target int,
 	hits []store.SimilarHit, floor, margin float64, deadline time.Time,
 ) ([]store.SimilarHit, error) {
 	qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
 		best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Similarity, b.Similarity) })
 		return closeTo(last.Similarity, best.Similarity, floor, margin)
 	}
-	return pastFull(hits, len(vectors), func(found, window []store.SimilarHit) []string {
-		return fullFiles(found, window, depth, qualifies)
+	return pastFull(hits, len(vectors), target, func(found, window []store.SimilarHit) []string {
+		return fullFiles(found, window, depth, target, qualifies)
 	}, func(q int, full []string) ([]store.SimilarHit, error) {
 		past := store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)}
 		var window []store.SimilarHit
@@ -80,10 +80,10 @@ func inSavepoint(ctx context.Context, tx pgx.Tx, deadline time.Time, search func
 // pastFull adds to hits, a search's window of each of queries queries, what
 // search finds for a query past the files that full names for it, given the
 // query's hits so far and its last window, until full names none, at most
-// similarPerQuery times (pastFullFiles). A search's failure ends the looking:
+// target times (pastFullFiles). A search's failure ends the looking:
 // pastFull returns what it found until then, with the error.
 func pastFull(
-	hits []store.SimilarHit, queries int, full func(found, window []store.SimilarHit) []string,
+	hits []store.SimilarHit, queries, target int, full func(found, window []store.SimilarHit) []string,
 	search func(q int, full []string) ([]store.SimilarHit, error),
 ) ([]store.SimilarHit, error) {
 	byQuery := make([][]store.SimilarHit, queries)
@@ -94,7 +94,7 @@ func pastFull(
 	for q := range byQuery {
 		found := byQuery[q]
 		window := found
-		for range similarPerQuery {
+		for range target {
 			files := full(found, window)
 			if files == nil {
 				break
@@ -120,12 +120,12 @@ func pastFull(
 }
 
 // fullFiles is the files of which found, a query's hits, holds
-// similarPerFile or more, when the file cap leaves the query short and the
-// search's last window, which found ends with, says that more chunks past
-// it can qualify: it is depth long, and qualifies its last hit, given
-// found. It is nil otherwise.
+// similarPerFile or more, when the file cap leaves the query short of
+// target chunks and the search's last window, which found ends with, says
+// that more chunks past it can qualify: it is depth long, and qualifies its
+// last hit, given found. It is nil otherwise.
 func fullFiles(
-	found, window []store.SimilarHit, depth int, qualifies func(found []store.SimilarHit, last store.SimilarHit) bool,
+	found, window []store.SimilarHit, depth, target int, qualifies func(found []store.SimilarHit, last store.SimilarHit) bool,
 ) []string {
 	if len(window) < depth || len(found) == 0 || !qualifies(found, window[len(window)-1]) {
 		return nil
@@ -142,7 +142,7 @@ func fullFiles(
 			full = append(full, path)
 		}
 	}
-	if kept >= similarPerQuery {
+	if kept >= target {
 		return nil
 	}
 	slices.Sort(full)

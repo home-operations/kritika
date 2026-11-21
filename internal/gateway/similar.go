@@ -35,11 +35,11 @@ const (
 )
 
 // similarDepth is how many chunks each search finds for a query, without a
-// reranker, for the fusion to rank: twice what a query keeps, so that the
-// places of chunks that the file cap or a duplicate turns away go to the
-// query's next ones. A query whose window of either search the file cap
-// leaves short is searched again past the files that fill it (pastFullFiles,
-// searchByName).
+// reranker, for the fusion to rank, unless the query keeps more: twice what
+// a query of a review keeps, so that the places of chunks that the file cap
+// or a duplicate turns away go to the query's next ones. A query whose
+// window of either search the file cap leaves short is searched again past
+// the files that fill it (pastFullFiles, searchByName).
 const similarDepth = 2 * similarPerQuery
 
 // maxSimilarBody bounds a similar-code request: its queries, each cut to
@@ -382,7 +382,7 @@ func (g *Server) similar(
 	// A reranker sorts a pool of candidates for each query, which both
 	// searches look deeper to fill, and never shallower than without one:
 	// the candidates past those it is sent are what a query falls back on.
-	depth := similarDepth
+	depth := max(similarDepth, r.perQuery)
 	reranker, rr := g.Rerankers.Reranker(file)
 	if reranker != nil {
 		depth = max(depth, rr.CandidateCount())
@@ -446,7 +446,7 @@ func (g *Server) searchActive(
 	// found before one fails or runs out of it still answer: only the
 	// request's own end, which the transaction cannot outlive, is an error.
 	var past error
-	hits, past = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, hits, emb.Floor(), emb.Margin(), r.answerBy)
+	hits, past = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, r.perQuery, hits, emb.Floor(), emb.Margin(), r.answerBy)
 	if past != nil {
 		if ctx.Err() != nil {
 			return nil, nil, past

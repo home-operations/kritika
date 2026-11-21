@@ -53,7 +53,7 @@ func (g *Server) searchByName(
 	outcome := adapter.Outcome(err)
 	var past error
 	if err == nil {
-		named, past = pastFullNames(named, r.texts, r.languages, vectors, r.exclude, depth, search)
+		named, past = pastFullNames(named, r.texts, r.languages, vectors, r.exclude, depth, r.perQuery, search)
 	}
 	if err != nil && ctx.Err() != nil {
 		outcome = "canceled"
@@ -92,22 +92,22 @@ func namedWithin(
 
 // pastFullNames adds to named, the search by name's window of each of texts,
 // what search finds for a query past the files of which its hits hold
-// similarPerFile or more, while the file cap leaves the query short, its
-// window is full, and its query's names still vouch for the window's last
-// hit (namedBy): pastFullFiles' looking, for the search by name. search is
-// the search by name of texts, of languages, and their vectors, depth deep,
-// outside exclude. A search's failure ends the looking, and pastFullNames
+// similarPerFile or more, while the file cap leaves the query short of
+// target chunks, its window is full, and its query's names still vouch for
+// the window's last hit (namedBy): pastFullFiles' looking, for the search by
+// name. search is the search by name of texts, of languages, and their
+// vectors, depth deep, outside exclude. A search's failure ends the looking, and pastFullNames
 // returns what it found until then, with the error.
 func pastFullNames(
-	named []store.SimilarHit, texts, languages []string, vectors [][]float32, exclude store.Exclusions, depth int,
+	named []store.SimilarHit, texts, languages []string, vectors [][]float32, exclude store.Exclusions, depth, target int,
 	search func(texts, languages []string, vectors [][]float32, exclude store.Exclusions) ([]store.SimilarHit, error),
 ) ([]store.SimilarHit, error) {
 	qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
 		best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Lexical, b.Lexical) })
 		return namedBy(last.Lexical, best.Lexical)
 	}
-	return pastFull(named, len(vectors), func(found, window []store.SimilarHit) []string {
-		return fullFiles(found, window, depth, qualifies)
+	return pastFull(named, len(vectors), target, func(found, window []store.SimilarHit) []string {
+		return fullFiles(found, window, depth, target, qualifies)
 	}, func(q int, full []string) ([]store.SimilarHit, error) {
 		past := store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)}
 		return search(texts[q:q+1], languages[q:q+1], vectors[q:q+1], past)
