@@ -28,12 +28,15 @@ import (
 // similar-code requests with answer. It records both. A similar-code request
 // over maxBody, when set, is refused as the gateway refuses one over its
 // bound. When unanswered is set, it answers no exclusion report, and closes
-// it once the run gives the report up.
+// it once the run gives the report up. When perQuery is set, an answer to a
+// request of one query holds that many of answer's chunks at most, or the
+// request's Limit when that is more.
 type fakeSimilarGateway struct {
 	status     int
 	answer     contextpack.SimilarResponse
 	maxBody    int64
 	unanswered chan struct{}
+	perQuery   int
 
 	mu       sync.Mutex
 	excluded [][]string
@@ -77,7 +80,11 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 				t.Error(err)
 			}
 			f.requests = append(f.requests, req)
-			_ = json.NewEncoder(w).Encode(f.answer)
+			answer := f.answer
+			if f.perQuery > 0 && len(req.Queries) == 1 {
+				answer.Chunks = answer.Chunks[:min(len(answer.Chunks), max(f.perQuery, req.Limit))]
+			}
+			_ = json.NewEncoder(w).Encode(answer)
 		default:
 			t.Errorf("unexpected request %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -643,4 +650,55 @@ func atHeadOf(t *testing.T, head *object.Tree, chunks []contextpack.Chunk) []con
 		t.Fatal(err)
 	}
 	return out
+}
+
+// TestSearchToolAsksForSpares: search_code asks the gateway for more chunks
+// than it shows, so a found chunk that the head no longer has, or that the
+// run now ignores, leaves its place to the next one rather than leaving it
+// empty. It shows no more than searchShown however many are found.
+func TestSearchToolAsksForSpares(t *testing.T) {
+	files := map[string]string{"vendor/dep.go": "func dep() {}\n"}
+	found := func(path, text string) contextpack.Chunk {
+		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text, Ref: "similarity 0.9"}
+	}
+	stale := []contextpack.Chunk{
+		found("gone.go", "func gone() {}"), found("vendor/dep.go", "func dep() {}"), found("old.go", "func old() {}"),
+		found("vendor/other.go", "func other() {}"),
+	}
+	valid := make([]contextpack.Chunk, 0, searchShown+2)
+	for i := range searchShown + 2 {
+		path, text := fmt.Sprintf("lib/f%d.go", i), fmt.Sprintf("func f%d() {}", i)
+		files[path] = text + "\n"
+		valid = append(valid, found(path, text))
+	}
+	files["old.go"] = "func old() { changed() }\n"
+	head := tree(t, files)
+	for _, tt := range []struct {
+		name  string
+		found []contextpack.Chunk
+		want  []string
+	}{
+		{"the fifth past four left out", append(slices.Clone(stale), valid[0]), []string{"lib/f0.go"}},
+		{"more than it shows", valid, []string{"lib/f0.go", "lib/f1.go", "lib/f2.go", "lib/f3.go"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// As the gateway does, one query's answer holds similarPerQuery
+			// chunks unless the request asks for more.
+			gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: tt.found}, perQuery: 4}
+			tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "run", head: head, ignore: []string{"vendor/**"}, maxBytes: 1 << 10}
+			out, err := tool.Run(t.Context(), json.RawMessage(`{"query":"f"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var shown []string
+			for block := range strings.SplitSeq(out, "\n\n") {
+				if path, _, ok := strings.Cut(block, ":"); ok {
+					shown = append(shown, path)
+				}
+			}
+			if !slices.Equal(shown, tt.want) {
+				t.Fatalf("search_code = %q, want %q", out, tt.want)
+			}
+		})
+	}
 }

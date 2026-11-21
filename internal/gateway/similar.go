@@ -176,6 +176,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	chunks, searched, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID, kind: kind,
 		token: c.token, queries: req.Queries, texts: texts, languages: languages, limit: answerLimit(req.Limit),
+		perQuery: queryLimit(kind, len(req.Queries), req.Limit),
 		exclude:  store.Exclusions{Run: c.grant.RunID, Paths: req.Exclude},
 		answerBy: arrived.Add(similarAnswerWithin),
 	}, c.logger)
@@ -233,8 +234,9 @@ type similarRequest struct {
 	// names it, which the search by name splits it by: "" for a query of none
 	// or of SimilarKindSearch.
 	languages []string
-	// limit is the most chunks the answer holds.
-	limit int
+	// limit is the most chunks the answer holds, and perQuery the most of
+	// them one query keeps.
+	limit, perQuery int
 	// answerBy is when the vector search's looks past full files, the
 	// search by name and the reranking end at the latest, so that the answer
 	// reaches the runner while it still waits.
@@ -256,6 +258,17 @@ func answerLimit(asked int) int {
 		return similarMax
 	}
 	return min(asked, contextpack.SimilarLimit)
+}
+
+// queryLimit is the most chunks one query keeps: similarPerQuery, or, for a
+// request of SimilarKindSearch of one query that asks for more, its
+// answerLimit. No other query shares that answer, and search_code asks for
+// spares, as it leaves out the chunks that the head no longer has.
+func queryLimit(kind string, queries, asked int) int {
+	if kind != contextpack.SimilarKindSearch || queries != 1 || asked <= 0 {
+		return similarPerQuery
+	}
+	return max(similarPerQuery, answerLimit(asked))
 }
 
 // reserveRun reserves tokens against the budget of the run whose gateway
@@ -401,7 +414,7 @@ func (g *Server) similar(
 	if reranker != nil {
 		g.rerank(ctx, file, r, reranker, rr, kept, logger)
 	}
-	chunks = keepCandidates(kept, counts, r.limit)
+	chunks = keepCandidates(kept, counts, r.limit, r.perQuery)
 	for k, n := range counts {
 		g.Metrics.SimilarHits(r.account.Key(), k.outcome, k.source, n)
 	}
@@ -595,8 +608,8 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 	}
 }
 
-// keepCandidates keeps each chunk once, at most similarPerQuery of one
-// query, similarPerFile of one file and limit in all, and labels each with
+// keepCandidates keeps each chunk once, at most queryMax of one query,
+// similarPerFile of one file and limit in all, and labels each with
 // its similarity or the names it shares with its query. It takes every
 // query's best, by its order among its query's (candidateOrder) and then by
 // its shared score, before any query's second, and so on. So neither one
@@ -605,7 +618,7 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 // keeps: one that a duplicate or the file cap turns away gives the turn to
 // the query's next candidate, which competes for the same round's places as
 // the other queries' first. It adds what it drops to counts.
-func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []contextpack.Chunk {
+func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax int) []contextpack.Chunk {
 	queues := map[int][]candidate{}
 	for _, c := range cands {
 		queues[c.Query] = append(queues[c.Query], c)
@@ -622,7 +635,7 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []conte
 		pick := -1
 		for _, q := range queries {
 			queue := queues[q]
-			for len(queue) > 0 && perQuery[q] < similarPerQuery {
+			for len(queue) > 0 && perQuery[q] < queryMax {
 				c := queue[0]
 				if seen[key(c)] {
 					counts[hitKey{hitDuplicate, c.source()}]++
@@ -634,7 +647,7 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []conte
 				queue = queue[1:]
 			}
 			queues[q] = queue
-			if len(queue) == 0 || perQuery[q] == similarPerQuery {
+			if len(queue) == 0 || perQuery[q] == queryMax {
 				continue
 			}
 			if pick < 0 || nextTurn(perQuery[q], queue[0], perQuery[pick], queues[pick][0]) {

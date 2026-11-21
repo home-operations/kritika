@@ -34,6 +34,12 @@ const maxSimilarBody = 1 << 20
 // searchCalls is how many times one run can call search_code.
 const searchCalls = 10
 
+// searchShown is the most chunks one search_code answer shows. It asks the
+// gateway for twice as many, as it leaves out those that the head no longer
+// has or that the run ignores, and the gateway caps one query's answer at
+// as many as this unless asked for more.
+const searchShown = 4
+
 // similarCode asks the gateway for the chunks of the repository's index
 // nearest each query, outside the paths that the run reported. It asks on
 // runspec.SimilarPath, which only a gateway that leaves them out serves.
@@ -118,7 +124,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	}
 	s.calls++
 	out, err := similarCode(ctx, s.gatewayURL, s.token, contextpack.SimilarRequest{
-		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)}, Kind: contextpack.SimilarKindSearch,
+		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)}, Kind: contextpack.SimilarKindSearch, Limit: 2 * searchShown,
 	})
 	if err != nil {
 		return "", fmt.Errorf("agent: search_code: %w", err)
@@ -133,6 +139,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 		return "", fmt.Errorf("agent: search_code: %w", err)
 	}
 	chunks := distinct(current)
+	chunks = chunks[:min(len(chunks), searchShown)]
 	if len(chunks) == 0 {
 		return "No similar code found.", nil
 	}

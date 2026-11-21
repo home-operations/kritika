@@ -138,7 +138,7 @@ func TestKeepSimilarCounts(t *testing.T) {
 // keepSimilar is what the gateway keeps of vector hits alone.
 func keepSimilar(hits []store.SimilarHit, floor, margin float64) ([]contextpack.Chunk, map[hitKey]int) {
 	kept, counts, _ := gateCandidates(fuse(hits, nil), floor, margin)
-	return keepCandidates(kept, counts, similarMax), counts
+	return keepCandidates(kept, counts, similarMax, similarPerQuery), counts
 }
 
 // TestSimilarLimit: an answer holds the chunks its request asks for, up to
@@ -160,8 +160,42 @@ func TestSimilarLimit(t *testing.T) {
 			Query: i % 4})
 	}
 	kept, counts, _ := gateCandidates(fuse(hits, nil), 0.5, 0.1)
-	if got := keepCandidates(kept, counts, contextpack.SimilarLimit); len(got) != contextpack.SimilarLimit {
+	if got := keepCandidates(kept, counts, contextpack.SimilarLimit, similarPerQuery); len(got) != contextpack.SimilarLimit {
 		t.Fatalf("kept %d, want %d", len(got), contextpack.SimilarLimit)
+	}
+}
+
+// TestQueryLimit: a query keeps similarPerQuery chunks, but for a search of
+// one query that asks for more, which no other query shares the answer with:
+// search_code asks for spares, as it leaves out those the head no longer
+// has.
+func TestQueryLimit(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		kind           string
+		queries, asked int
+		want           int
+	}{
+		{"a search that asks for spares", contextpack.SimilarKindSearch, 1, 8, 8},
+		{"a search that asks for past the most", contextpack.SimilarKindSearch, 1, contextpack.SimilarLimit + 1, contextpack.SimilarLimit},
+		{"a search that asks for fewer", contextpack.SimilarKindSearch, 1, 2, similarPerQuery},
+		{"a search that asks for none", contextpack.SimilarKindSearch, 1, 0, similarPerQuery},
+		{"a search of two queries", contextpack.SimilarKindSearch, 2, 8, similarPerQuery},
+		{"a diff of one query", contextpack.SimilarKindDiff, 1, 8, similarPerQuery},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := queryLimit(tt.kind, tt.queries, tt.asked); got != tt.want {
+				t.Fatalf("queryLimit(%q, %d, %d) = %d, want %d", tt.kind, tt.queries, tt.asked, got, tt.want)
+			}
+		})
+	}
+	hits := make([]store.SimilarHit, 0, 2*similarPerQuery)
+	for i := range 2 * similarPerQuery {
+		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("f%d.go", i), StartLine: 1}, Similarity: 0.9})
+	}
+	kept, counts, _ := gateCandidates(fuse(hits, nil), 0.5, 0.1)
+	if got := keepCandidates(kept, counts, similarMax, 2*similarPerQuery); len(got) != 2*similarPerQuery {
+		t.Fatalf("kept %d of one query, want %d", len(got), 2*similarPerQuery)
 	}
 }
 
@@ -227,7 +261,7 @@ func TestHybridSimilar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kept, counts, _ := gateCandidates(fuse(tt.hits, tt.named), 0.5, 0.1)
-			got := keepCandidates(kept, counts, similarMax)
+			got := keepCandidates(kept, counts, similarMax, similarPerQuery)
 			var keys []string
 			for _, c := range got {
 				keys = append(keys, c.Path+":"+c.Ref)
@@ -332,7 +366,7 @@ func TestKeepCandidatesTurns(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			counts := map[hitKey]int{}
 			got := make([]string, 0, tt.limit)
-			for _, c := range keepCandidates(tt.cands, counts, tt.limit) {
+			for _, c := range keepCandidates(tt.cands, counts, tt.limit, similarPerQuery) {
 				got = append(got, c.Path)
 			}
 			if !slices.Equal(got, tt.want) {
@@ -367,7 +401,7 @@ func TestRerankBackfill(t *testing.T) {
 	// left query 1 out, queries are still compared on the fused scale.
 	rescore(cands, 0, batches[0], []float64{-3, -2})
 	got := make([]string, 0, len(cands))
-	for _, c := range keepCandidates(cands, map[hitKey]int{}, similarMax) {
+	for _, c := range keepCandidates(cands, map[hitKey]int{}, similarMax, similarPerQuery) {
 		got = append(got, c.Path)
 	}
 	if want := []string{"e.go", "b.go", "a.go", "f.go", "g.go", "c.go", "d.go"}; !slices.Equal(got, want) {

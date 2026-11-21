@@ -160,7 +160,7 @@ func TestRetrievalEval(t *testing.T) {
 			for q, text := range queries {
 				tallies[v].addQuery(top, q, truth.defs(text, changed), truth.related([]string{paths[q]}, changed))
 			}
-			tallies[v].add(keepCandidates(kept, counts, similarMax), defs, related)
+			tallies[v].add(keepCandidates(kept, counts, similarMax, similarPerQuery), defs, related)
 		}
 	}
 	t.Logf("floor %.2f, margin %.2f; %s", floor, margin, timing.String())
@@ -948,7 +948,7 @@ func TestEvalRerankScale(t *testing.T) {
 		return []float64{map[string]float64{"q0": 0.1, "q1": 0.9}[query]}, model.RerankUsage{}, nil
 	})
 	evalRerank(t, reranker, []string{"q0", "q1"}, cands, 1)
-	got := keepCandidates(cands, map[hitKey]int{}, 1)
+	got := keepCandidates(cands, map[hitKey]int{}, 1, similarPerQuery)
 	if len(got) != 1 || got[0].Path != "b.go" {
 		t.Fatalf("kept %+v, want b.go, which the reranker scores higher", got)
 	}
