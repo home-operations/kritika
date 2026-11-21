@@ -196,11 +196,13 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// index again at once, as a snooze that is not an attempt. A tip that the
 	// forge did not give is asked for again the same way. The index is
 	// published, so the job must not fail over it and lose the push, nor
-	// spend an attempt on it.
+	// spend an attempt on it. GitLab's 429 that names a later time to ask
+	// again is asked again then, not within its limit.
 	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
 	if err != nil {
-		logger.Warn("index tip not checked after publication, checking again", "error", err, "in", tipCheckWait)
-		return river.JobSnooze(tipCheckWait)
+		wait := tipCheckDelay(err)
+		logger.Warn("index tip not checked after publication, checking again", "error", err, "in", wait)
+		return river.JobSnooze(wait)
 	}
 	if tip != commit {
 		logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
@@ -321,6 +323,16 @@ const (
 	appliedBuildWait = time.Minute
 	tipCheckWait     = time.Minute
 )
+
+// tipCheckDelay is how long an index job waits to ask for the branch tip
+// again after the forge did not give it, with err: tipCheckWait, or until
+// the later time that GitLab's 429 names.
+func tipCheckDelay(err error) time.Duration {
+	if d, limited := gitlab.RetryAfter(err, time.Now()); limited {
+		return max(tipCheckWait, d)
+	}
+	return tipCheckWait
+}
 
 // An index job waits out a forge that failed transiently before its run
 // starts, from forgeWaitMin doubling to forgeWaitMax, forgeWaits times: up to
