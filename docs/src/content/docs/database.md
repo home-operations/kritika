@@ -516,8 +516,13 @@ starts. It copies and rebuilds nothing:
    lock, as a publication does, for the few seconds its slice takes, and
    skips a repository whose lock another transaction holds. A generation
    whose move is under way is split between the two partitions, and a
-   search reads it whole. A move rewrites the generation's rows. Until
-   autovacuum reclaims the old rows, the table needs room for both copies.
+   search reads it whole. A move writes the generation's rows again, into
+   the hash partitions and their indexes. Autovacuum can mark the space of
+   the old rows free, but only for new rows of the legacy partition, which
+   gets none, so its files keep their size on the volume until the sweep
+   drops it. Before upgrading, leave room for the whole legacy partition
+   and its indexes, a copy of the chunks that move and their indexes, and
+   the WAL that the moves write.
 4. Once the legacy partition is empty, the sweep drops it. In the same
    transaction it attaches the hash partitions again to cover every
    `created_at`, as in a table created partitioned. So a chunk whose
