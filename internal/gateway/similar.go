@@ -323,12 +323,14 @@ func (g *Server) similar(
 	logger.Info("similar queries embedded", "queries", len(r.queries), "elapsed", time.Since(embedStarted),
 		"outcome", adapter.Outcome(err))
 	g.Metrics.ModelCall(r.account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), tokens, 0, 0, 0, false)
-	g.chargeRun(ctx, r.token, tokens-reserved, logger)
+	// The slot first: the charge can wait for the run's row, and the
+	// embedder's other callers must not wait with it.
 	rctx, cancel := detach(ctx)
 	if _, rerr := lease.Release(rctx); rerr != nil {
 		logger.Warn("lease not released", "key", "embed:"+emb.Model, "error", rerr)
 	}
 	cancel()
+	g.chargeRun(ctx, r.token, tokens-reserved, logger)
 	if err == nil || tokens > 0 {
 		// Provider usage must survive cancellation and failed vector searches.
 		uctx, ucancel := detach(ctx)

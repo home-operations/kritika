@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -162,6 +163,117 @@ apps:
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestSimilarReleasesTheSlotBeforeCharging: once the embedder answered, the
+// request lets its embedding slot go before it settles the run's budget, so
+// a charge that waits for the run's token row holds no other caller of the
+// embedder back.
+func TestSimilarReleasesTheSlotBeforeCharging(t *testing.T) {
+	r := newLexicalRepo(t, "charge-after-release", runspec.IndexFormat, widgets, widgetVectors())
+	ctx := t.Context()
+	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+	// The application role's own session sees what its pool's sessions wait for.
+	watch, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_APP_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = watch.Close(context.Background()) })
+	// While the slot is held, the embedder locks the run's token row, which
+	// the charge that follows it waits for, and hands the lock over.
+	locked := make(chan pgx.Tx, 1)
+	embed := similarEmbedFunc(func(ctx context.Context, inputs []string) ([][]float32, int64, error) {
+		tx, err := owner.Begin(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM gateway_tokens WHERE runner_run_id = $1 FOR UPDATE`, r.runner); err != nil {
+			return nil, 0, err
+		}
+		locked <- tx
+		out := make([][]float32, len(inputs))
+		for i := range out {
+			out[i] = e(0)
+		}
+		return out, 7, nil
+	})
+	g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: r.st, Current: configfile.NewCurrent(r.file),
+		Logger: slog.New(slog.DiscardHandler), Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+	}
+	token, err := r.st.MintGatewayToken(ctx, store.GatewayGrant{
+		RunID: r.runner, AccountID: r.account.ID(), RepositoryID: r.id, Model: "test/reviewer", Budget: 100000,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.st.RevokeGatewayTokens(context.Background(), r.runner) })
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, runspec.SimilarPath, strings.NewReader(`{"queries":["hello"]}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	out := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		g.ServeHTTP(out, req)
+	}()
+	rollback := func(tx pgx.Tx) {
+		if err := tx.Rollback(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}
+	// Whatever the outcome, the lock is let go before the request is waited for.
+	t.Cleanup(func() {
+		for {
+			select {
+			case tx := <-locked:
+				rollback(tx)
+			case <-done:
+				return
+			}
+		}
+	})
+
+	var tx pgx.Tx
+	select {
+	case tx = <-locked:
+	case <-done:
+		t.Fatalf("the request ended before it embedded: %d %s", out.Code, out.Body.String())
+	case <-time.After(15 * time.Second):
+		t.Fatal("timed out waiting for the embedder")
+	}
+	unlock := sync.OnceFunc(func() { rollback(tx) })
+	defer unlock()
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		var charging, held bool
+		if err := watch.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+			WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE gateway_tokens SET spent_tokens%')`).Scan(&charging); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.st.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM model_leases
+				WHERE account_id = $1 AND model_key LIKE 'embed:%' AND job_id IS NOT NULL)`, r.account.ID()).Scan(&held)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if charging && !held {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("charging %t with the embedding slot held %t, want the charge to wait with the slot let go", charging, held)
+		}
+	}
+	unlock()
+	<-done
+	if out.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", out.Code, out.Body.String())
+	}
+	grant, err := r.st.LookupGatewayToken(ctx, token)
+	if err != nil || grant.Spent != 7 {
+		t.Fatalf("spent = %d, want the 7 tokens the embedder reported: %v", grant.Spent, err)
 	}
 }
 
