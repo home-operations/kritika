@@ -28,6 +28,7 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 	"github.com/home-operations/kritika/internal/udiff"
@@ -212,8 +213,9 @@ func evalIndex(t *testing.T, base *object.Commit, embed func([]string) [][]float
 	repoID := configfile.RepositoryID(account.ID(), "retrieval-eval/repo")
 	var run string
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, $3, 'eval', $4, 'full', 'completed') RETURNING id`, account.ID(), repoID, base.Hash.String(), dims).Scan(&run); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			VALUES ($1, $2, $3, 'eval', $4, 'full', 'completed', $5) RETURNING id`,
+			account.ID(), repoID, base.Hash.String(), dims, runspec.IndexFormat).Scan(&run); err != nil {
 			return err
 		}
 		for start := 0; start < len(staged); start += 500 {
