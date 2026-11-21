@@ -377,3 +377,38 @@ func TestBuildSkipsWordlessWindows(t *testing.T) {
 		t.Fatalf("chunks %q, truncated %v; want the two worded lines alone, untruncated", texts, stats.Truncated)
 	}
 }
+
+// TestBuildKeepsALineIndentedPastTheBound: a line with more white space
+// before its first word than a chunk holds is stored from that word, so
+// the name on it is found, as a query of the same line asks about it.
+func TestBuildKeepsALineIndentedPastTheBound(t *testing.T) {
+	line := strings.Repeat(" ", DefaultOptions.MaxChunkBytes+10) + "callSomething()"
+	head := oneFileTree(t, "deep.go", "package lib\n\nfunc F() {\n"+line+"\n}\n")
+	chunks, _, _, err := Build(t.Context(), head, nil, nil, DefaultOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(chunks, func(c Chunk) bool {
+		return c.StartLine == 4 && c.EndLine == 4 && c.Symbol == "F" && c.Text == "callSomething()"
+	}) {
+		t.Fatalf("chunks %+v hold no chunk of line 4 from its first word", chunks)
+	}
+}
+
+// TestChunkText: a piece's text is cut to the bound, from its start unless
+// that leaves no word and the piece has one past the bound.
+func TestChunkText(t *testing.T) {
+	for _, tt := range []struct{ name, text, want string }{
+		{"within the bound", " a b", " a b"},
+		{"cut from the start", "abcdefgh", "abcd"},
+		{"a word within the bound", "  ab" + strings.Repeat(" ", 10) + "cd", "  ab"},
+		{"indented past the bound", strings.Repeat(" ", 10) + "(name)", "name"},
+		{"wordless", strings.Repeat(" ", 10) + "()", "    "},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ChunkText(tt.text, 4); got != tt.want {
+				t.Errorf("ChunkText(%q, 4) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}

@@ -213,7 +213,7 @@ func (b *builder) file(f *object.File) error {
 		// A window of a file without declarations can be white space
 		// alone, a line too long to share a window with its neighbours, and
 		// a piece cut to MaxChunkBytes can keep only its white space.
-		text := textcut.Prefix(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
+		text := ChunkText(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
 		if strings.IndexFunc(text, chunk.Worded) < 0 {
 			continue
 		}
@@ -231,6 +231,22 @@ func (b *builder) file(f *object.File) error {
 		})
 	}
 	return nil
+}
+
+// ChunkText is what the index stores of a piece's text: its first maxBytes
+// bytes, cut at a rune, or, when those hold no word and the text does, the
+// maxBytes from its first word. Only a piece of one line is over maxBytes,
+// and one indented past it would otherwise store its white space alone and
+// none of the names on it, which a query of the line asks about.
+func ChunkText(text string, maxBytes int) string {
+	cut := textcut.Prefix(text, maxBytes)
+	if len(cut) == len(text) || strings.IndexFunc(cut, chunk.Worded) >= 0 {
+		return cut
+	}
+	if i := strings.IndexFunc(text, chunk.Worded); i >= 0 {
+		return textcut.Prefix(text[i:], maxBytes)
+	}
+	return cut
 }
 
 // readBlob reads the file's contents in one pass.

@@ -288,7 +288,7 @@ func distinct(chunks []contextpack.Chunk) []contextpack.Chunk {
 
 // findText is the 0-based first and last of lines that text shows, where
 // text is what the index holds of n lines: them joined and cut at
-// MaxChunkBytes, as the indexer cuts a chunk. When text is in more than one
+// MaxChunkBytes, as indexer.ChunkText cuts a chunk. When text is in more than one
 // place it is the one nearest near, false when it is in none. The lines past
 // a cut need not be the index's, and the line after a cut that ends a line
 // is not shown. A whole text of exactly MaxChunkBytes is also what a cut of a
@@ -315,6 +315,11 @@ func findText(lines []string, text string, near, n int, accept func(first, last 
 				continue
 			}
 			if !strings.HasPrefix(lines[j], line) {
+				// A line indented past the bound is stored from its first
+				// word, and so is a chunk of its own.
+				if j == i && len(lines[j]) > most && indexer.ChunkText(lines[j], most) == text {
+					return j, true
+				}
 				return 0, false
 			}
 			var b strings.Builder

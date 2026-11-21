@@ -530,3 +530,33 @@ func TestAtHeadLooksPastAnotherDeclaration(t *testing.T) {
 		t.Fatalf("atHead = %+v, want the window at lines %d-%d of A", got, want.StartLine, want.EndLine)
 	}
 }
+
+// TestAtHeadFindsALineIndentedPastTheBound: a line that the index stores
+// from its first word, its indentation being over the bound, is found at
+// the head's lines, where the code above it moved too.
+func TestAtHeadFindsALineIndentedPastTheBound(t *testing.T) {
+	line := strings.Repeat(" ", indexer.DefaultOptions.MaxChunkBytes+10) + "callSomething()"
+	src := "func F() {\n" + line + "\n}\n"
+	built, _, _, err := indexer.Build(t.Context(), tree(t, map[string]string{"deep.go": "package lib\n\n" + src}), nil, nil, indexer.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored contextpack.Chunk
+	for _, c := range built {
+		if c.StartLine == 4 {
+			stored = contextpack.Chunk{
+				Stage: contextpack.StageSimilar, Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind,
+				StartLine: c.StartLine, EndLine: c.EndLine, Text: c.Text,
+			}
+		}
+	}
+	if stored.Text != "callSomething()" {
+		t.Fatalf("index %+v stores no chunk of line 4 from its first word", built)
+	}
+	got := atHead(tree(t, map[string]string{"deep.go": "package lib\n\n// moved\n" + src}), []contextpack.Chunk{stored})
+	want := stored
+	want.StartLine, want.EndLine = 5, 5
+	if !slices.Equal(got, []contextpack.Chunk{want}) {
+		t.Fatalf("atHead = %+v, want %+v", got, want)
+	}
+}
