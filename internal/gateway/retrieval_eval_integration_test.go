@@ -54,7 +54,7 @@ import (
 // judgement. Definitions: the chunks outside the change that declare a
 // name, declared at most twice in the tree, that its added lines use.
 // Co-change: the files that changed with its files in at least two other
-// commits of the history.
+// commits of the history, of those that the index holds.
 func TestRetrievalEval(t *testing.T) {
 	if os.Getenv("KRITIKA_RETRIEVAL_EVAL") == "" {
 		t.Skip("KRITIKA_RETRIEVAL_EVAL is not set")
@@ -362,11 +362,15 @@ type evalTruth struct {
 	// of at most 20 paths change each pair of paths.
 	changes map[*object.Commit][]string
 	pairs   map[[2]string]int
+	// indexed are the paths that the index holds a chunk of: no search can
+	// find another, so no other is relevant code that one misses.
+	indexed map[string]bool
 }
 
 func newEvalTruth(t *testing.T, chunks []indexer.Chunk, history []*object.Commit) evalTruth {
-	e := evalTruth{declared: map[string][]defKey{}, changes: map[*object.Commit][]string{}, pairs: map[[2]string]int{}}
+	e := evalTruth{declared: map[string][]defKey{}, changes: map[*object.Commit][]string{}, pairs: map[[2]string]int{}, indexed: map[string]bool{}}
 	for _, c := range chunks {
+		e.indexed[c.Path] = true
 		if len(c.Symbol) >= 4 {
 			e.declared[c.Symbol] = append(e.declared[c.Symbol], defKey{c.Path, c.StartLine})
 		}
@@ -404,17 +408,30 @@ func (e evalTruth) defs(added string, changed []string) map[defKey]bool {
 	return out
 }
 
-// related are the paths outside changed that changed with one of from in at
-// least two commits. A commit pairs none of its own paths with a path it
-// does not change, so it is not among them.
+// related are the indexed paths outside changed that changed with one of
+// from in at least two commits. A commit pairs none of its own paths with a
+// path it does not change, so it is not among them.
 func (e evalTruth) related(from, changed []string) map[string]bool {
 	out := map[string]bool{}
 	for pair, n := range e.pairs {
-		if n >= 2 && slices.Contains(from, pair[0]) && !slices.Contains(changed, pair[1]) {
+		if n >= 2 && e.indexed[pair[1]] && slices.Contains(from, pair[0]) && !slices.Contains(changed, pair[1]) {
 			out[pair[1]] = true
 		}
 	}
 	return out
+}
+
+// TestEvalTruthRelatedIndexed: a path that changed often enough with a
+// commit's path, but that the index holds no chunk of, as one added after
+// the indexed tree or skipped by the indexer, is not code that the search
+// should have found for the commit.
+func TestEvalTruthRelatedIndexed(t *testing.T) {
+	e := newEvalTruth(t, []indexer.Chunk{{Path: "a.go"}, {Path: "indexed.go"}}, nil)
+	e.pairs[[2]string{"a.go", "indexed.go"}] = 2
+	e.pairs[[2]string{"a.go", "added_later.go"}] = 3
+	if got := e.related([]string{"a.go"}, []string{"a.go"}); len(got) != 1 || !got["indexed.go"] {
+		t.Fatalf("related = %v, want indexed.go alone", got)
+	}
 }
 
 // evalTally adds up one variant's answers, and its queries' four best
