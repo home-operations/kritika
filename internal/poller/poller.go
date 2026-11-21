@@ -548,17 +548,11 @@ func (p *Poller) setTipsFirst(accountID string) {
 // once they have. A repository named before where a sweep was cut, added
 // meanwhile, waits for the next sweep.
 func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
-	started, err := p.Store.Now(ctx)
-	if err != nil {
-		return err
-	}
-	var repos []store.PollRepo
+	// Whether the look is due needs only when the webhook last arrived, so a
+	// look that is not due lists no repository and reads no job.
 	var state store.PollState
-	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter); err != nil {
-			return err
-		}
 		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
 		return err
 	})
@@ -568,6 +562,19 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 	next, due := p.tipsDue(account.ID(), state.Delivered, file.PollLookback())
 	if !due {
 		return nil
+	}
+	started, err := p.Store.Now(ctx)
+	if err != nil {
+		return err
+	}
+	var repos []store.PollRepo
+	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter)
+		return err
+	})
+	if err != nil {
+		return err
 	}
 	// In Go's order, which the database's collation need not be.
 	slices.SortFunc(repos, func(a, b store.PollRepo) int { return strings.Compare(a.Name, b.Name) })

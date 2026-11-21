@@ -1441,3 +1441,32 @@ func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
 		t.Fatalf("looks asked for %q, want onedr0p's branch at each of three", f.asked)
 	}
 }
+
+// TestPollerReadsNoRepositoryForALookNotDue: a look at an account's default
+// branches that is not due, while webhooks arrive and within
+// tipCheckInterval of the last sweep, reads neither the repositories nor
+// their index jobs. A lock that holds every reader of the jobs back must not
+// hold it back.
+func TestPollerReadsNoRepositoryForALookNotDue(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/home-ops")
+	s.webhooks(true)
+	s.p.tips = map[string]*tipScan{s.account.ID(): {swept: time.Now()}}
+	owner, err := pgx.Connect(t.Context(), storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+	lock, err := owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Rollback(context.Background()) }()
+	if _, err := lock.Exec(t.Context(), `LOCK TABLE river_job IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := s.p.pollTips(ctx, s.file, s.account, s.in); err != nil || s.tf.calls != 0 {
+		t.Fatalf("a look not due = %v with %d tip checks, want it to return at once without reading the index jobs", err, s.tf.calls)
+	}
+}
