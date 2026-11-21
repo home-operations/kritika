@@ -13,6 +13,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 
+	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
@@ -187,7 +189,9 @@ func contains(ss []string, s string) bool {
 }
 
 // TestBuildSkipsUnindexedFiles: files that SOPS encrypted or a code generator
-// wrote are left out of the index without an ignore rule.
+// wrote are left out of the index without an ignore rule. The review's
+// default ignores leave them in, so a pull request that changes one is still
+// reviewed, and Unindexed says the same as Build.
 func TestBuildSkipsUnindexedFiles(t *testing.T) {
 	tests := []struct {
 		path    string
@@ -229,6 +233,12 @@ func TestBuildSkipsUnindexedFiles(t *testing.T) {
 			}
 			if indexed := len(chunks) > 0; indexed != tt.indexed {
 				t.Fatalf("indexed = %v, want %v: %+v", indexed, tt.indexed, chunks)
+			}
+			if Unindexed(tt.path) == tt.indexed {
+				t.Errorf("Unindexed(%q) = %v, want %v", tt.path, !tt.indexed, tt.indexed)
+			}
+			if chunk.Matches(configfile.DefaultIgnore, tt.path) {
+				t.Errorf("the review's default ignores leave out %s", tt.path)
 			}
 		})
 	}
