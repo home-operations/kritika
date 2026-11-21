@@ -377,6 +377,9 @@ func TestBuildSignaturesCopyTheirCut(t *testing.T) {
 	if held := int64(after.HeapAlloc) - int64(before.HeapAlloc); held > int64(carried/4*len(head)) {
 		t.Errorf("the %d chunks hold %d bytes, over %d copies of the %d-byte naming line", len(b.chunks), held, carried/4, len(head))
 	}
+	// The file's blob, in the repository's memory, was live before the
+	// build and must still count as live after it.
+	runtime.KeepAlive(f)
 	runtime.KeepAlive(b.chunks)
 }
 
