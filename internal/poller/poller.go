@@ -67,6 +67,10 @@ type Poller struct {
 	// branches ask again, by the credential that it limits, as limitScope
 	// names it.
 	tipsLimited map[string]time.Time
+	// tipsRefused is the account, by ID, whose lookup the rate limit last
+	// refused, by the credential that it limits, until that account's look
+	// goes ahead.
+	tipsRefused map[string]string
 	// now is the clock that schedules the looks at the default branches,
 	// time.Now when nil: a field for the tests.
 	now func() time.Time
@@ -500,25 +504,18 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 }
 
 // pollTipsAll looks at the default branches of every account of the current
-// file through the connection serving it, with pollTips. It starts at the
-// account that the last look ran out of time before reaching, or after the
-// one it ran out of time in. So an account that takes a look's whole
-// interval, every time, does not keep the accounts after it from their
-// turn. Each account's own sweep resumes where it stopped, whatever the
-// order. Without an embedder it looks at none: no index job runs, and the
-// one that a moved branch queued would only be cancelled, and queued again
-// at the next look past its backoff, while the indexes wait for an embedder.
+// file through the connection serving it, with pollTips, in tipsOrder. Each
+// account's own sweep resumes where it stopped, whatever the order. Without
+// an embedder it looks at none: no index job runs, and the one that a moved
+// branch queued would only be cancelled, and queued again at the next look
+// past its backoff, while the indexes wait for an embedder.
 func (p *Poller) pollTipsAll(ctx context.Context) {
 	file := p.Current.Get()
 	if file.Embedding == nil {
 		return
 	}
-	n := len(file.Accounts)
-	p.mu.Lock()
-	first := max(slices.IndexFunc(file.Accounts, func(a configfile.Account) bool { return a.ID() == p.tipsFirst }), 0)
-	p.mu.Unlock()
-	for i := range n {
-		account := &file.Accounts[(first+i)%n]
+	order := p.tipsOrder(file)
+	for i, account := range order {
 		in := file.ConnectionFor(account)
 		if in == nil {
 			continue
@@ -531,7 +528,7 @@ func (p *Poller) pollTipsAll(ctx context.Context) {
 			p.Logger.Warn("default branches not polled", "connection", in.Name, "account", account.Key(), "error", err)
 		}
 		if ctx.Err() != nil {
-			p.setTipsFirst(file.Accounts[(first+i+1)%n].ID())
+			p.setTipsFirst(order[(i+1)%len(order)].ID())
 			return
 		}
 	}
@@ -639,7 +636,7 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
 				"repository", r.Name, "error", err)
 			p.tipsCut(account.ID(), r.Name)
-			p.tipsLimit(scope, p.clock().Add(wait))
+			p.tipsLimit(scope, account.ID(), p.clock().Add(wait))
 			return nil
 		}
 		if !built {
@@ -663,18 +660,22 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 // tipsDue reports whether this look asks for the account's default branches,
 // and the repository to start at, "" for the first. It does not look while
 // the rate limit of the credential that scope names, as limitScope does, has
-// not passed, whichever of its accounts' looks the limit refused. It looks
-// when a look was cut short. It also looks when the connection's
-// webhook, which last delivered at delivered, has been silent for lookback,
-// and otherwise when tipCheckInterval has passed since a look last went
-// through every repository in this process: a newly elected leader looks at
-// once.
+// not passed, whichever of its accounts' looks the limit refused. Past it,
+// the account whose lookup the limit refused takes the first turn that
+// tipsOrder kept for it. It looks when a look was cut short, as the refused
+// one was. It also looks when the connection's webhook, which last
+// delivered at delivered, has been silent for lookback, and otherwise when
+// tipCheckInterval has passed since a look last went through every
+// repository in this process: a newly elected leader looks at once.
 func (p *Poller) tipsDue(accountID, scope string, delivered *time.Time, lookback time.Duration) (string, bool) {
 	now := p.clock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if now.Before(p.tipsLimited[scope]) {
 		return "", false
+	}
+	if p.tipsRefused[scope] == accountID {
+		delete(p.tipsRefused, scope)
 	}
 	s := p.tips[accountID]
 	if s == nil {
@@ -696,14 +697,19 @@ func (p *Poller) tipsCut(accountID, next string) {
 }
 
 // tipsLimit records that the rate limit of the credential that scope names
-// refuses every look that uses it until then.
-func (p *Poller) tipsLimit(scope string, until time.Time) {
+// refuses every look that uses it until then, and that it refused the
+// account's.
+func (p *Poller) tipsLimit(scope, accountID string, until time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.tipsLimited == nil {
 		p.tipsLimited = map[string]time.Time{}
 	}
+	if p.tipsRefused == nil {
+		p.tipsRefused = map[string]string{}
+	}
 	p.tipsLimited[scope] = until
+	p.tipsRefused[scope] = accountID
 }
 
 // limitScope names the credential that the account's branch lookups use,

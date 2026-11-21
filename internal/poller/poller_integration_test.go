@@ -998,6 +998,65 @@ func (f *limitForge) BranchTip(_ context.Context, _, name, _ string) (string, st
 	return f.tip, "main", nil
 }
 
+// quotaForge answers allowed branch lookups with each repository's tip in
+// tips, and refuses the rest with GitLab's 429. It records the repositories
+// it was asked for.
+type quotaForge struct {
+	tipForge
+	tips    map[string]string
+	allowed int
+	asked   []string
+}
+
+func (f *quotaForge) BranchTip(_ context.Context, owner, name, _ string) (string, string, error) {
+	f.asked = append(f.asked, owner+"/"+name)
+	if f.allowed == 0 {
+		return "", "", fmt.Errorf("gitlab: branch main: %w", &gl.ErrorResponse{StatusCode: http.StatusTooManyRequests})
+	}
+	f.allowed--
+	return f.tips[owner+"/"+name], "main", nil
+}
+
+// TestPollerResumesTheAccountASharedRateLimitRefused: the accounts of a
+// GitLab connection share its credential's rate limit, and with their
+// webhooks silent each is due at every look. An earlier account that spends
+// the quota at each reset would leave a later one refused at every look. So
+// the look past the limit's wait starts, among the connection's accounts,
+// at the one whose lookup the limit refused, and its moved branch is queued.
+func TestPollerResumesTheAccountASharedRateLimitRefused(t *testing.T) {
+	t.Setenv("TEST_GL_HOOK", "whsec_c2lnbmluZy1rZXk=")
+	s := newTipPollOf(t, labTipYAML, "acme/widgets", "globex/gadgets")
+	labA := &quotaForge{tips: map[string]string{"acme/widgets": "indexed", "globex/gadgets": "moved"}}
+	s.p.Forges = connForges{"bot-ross": s.tf, "lab-a": labA, "lab-b": &askForge{}}
+	now := time.Now()
+	s.p.now = func() time.Time { return now }
+	look := func() {
+		labA.allowed = 1
+		s.p.pollTipsAll(t.Context())
+	}
+	look()
+	if want := []string{"acme/widgets", "globex/gadgets"}; !slices.Equal(labA.asked, want) {
+		t.Fatalf("a look with one lookup left asked lab-a for %q, want %q", labA.asked, want)
+	}
+	now = now.Add(forgeRateLimitWait + time.Second)
+	look()
+	if want := []string{"globex/gadgets", "acme/widgets"}; !slices.Equal(labA.asked[2:], want) {
+		t.Fatalf("the look past the limit's wait asked lab-a for %q, want %q: the refused account first", labA.asked[2:], want)
+	}
+	rows, err := s.st.App().Query(t.Context(), `SELECT coalesce(args->>'commit_sha', '') FROM river_job
+		WHERE kind = 'index' AND args->>'repository_id' = $1`, s.repoIDs[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(commits, []string{"moved"}) {
+		t.Fatalf("index jobs of globex/gadgets = %q, want one at its moved tip", commits)
+	}
+}
+
 // TestPollerResumesTipChecksCutByARateLimit: a look at the default branches
 // that the rate limit cuts short waits the limit out, and then resumes at
 // the branch it stopped at, even while webhooks arrive. So looks that the

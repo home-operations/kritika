@@ -4,12 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
+
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 )
 
 func TestRateLimited(t *testing.T) {
@@ -67,5 +71,67 @@ func TestRateLimited(t *testing.T) {
 				t.Fatalf("rateLimited = %s %t, want %s %t", wait, limited, tc.wait, tc.limited)
 			}
 		})
+	}
+}
+
+// TestTipsOrderStartsAScopeAtItsRefusedAccount: among the accounts that one
+// credential's rate limit counts, a look starts at the one whose lookup the
+// limit refused, and goes round from it, while every other account keeps
+// its place. Once that account's look goes ahead, the order is as before.
+func TestTipsOrderStartsAScopeAtItsRefusedAccount(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	t.Setenv("TEST_GL_HOOK", "whsec_c2lnbmluZy1rZXk=")
+	file := configfiletest.Load(t, `
+apps:
+  bot-ross:
+    accounts: [onedr0p]
+    clientId: Iv1.x
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
+gitlab:
+  lab-a:
+    host: gitlab.example.com
+    accounts: [acme, globex, hooli]
+    token: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_GL_HOOK }
+  lab-b:
+    host: gitlab.other.example
+    accounts: [initech]
+    token: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_GL_HOOK }
+`)
+	p := &Poller{}
+	ids := func(order []*configfile.Account) []string {
+		out := make([]string, len(order))
+		for i, a := range order {
+			out[i] = a.ID()
+		}
+		return out
+	}
+	order := p.tipsOrder(file)
+	before := ids(order)
+	var lab []int
+	for i, a := range order {
+		if file.ConnectionFor(a).Name == "lab-a" {
+			lab = append(lab, i)
+		}
+	}
+	if len(lab) != 3 || len(order) != 5 {
+		t.Fatalf("accounts %q with lab-a's at %v, want five with three of lab-a's", before, lab)
+	}
+	refused := order[lab[1]]
+	scope := limitScope(file.ConnectionFor(refused), refused)
+	p.tipsLimit(scope, refused.ID(), time.Now())
+	want := slices.Clone(before)
+	want[lab[0]], want[lab[1]], want[lab[2]] = before[lab[1]], before[lab[2]], before[lab[0]]
+	if got := ids(p.tipsOrder(file)); !slices.Equal(got, want) {
+		t.Fatalf("order after lab-a refused %s = %q, want %q", refused.ID(), got, want)
+	}
+	if _, due := p.tipsDue(refused.ID(), scope, nil, time.Hour); !due {
+		t.Fatal("the refused account's look is not due past the limit")
+	}
+	if got := ids(p.tipsOrder(file)); !slices.Equal(got, before) {
+		t.Fatalf("order after the refused account's look = %q, want %q", got, before)
 	}
 }

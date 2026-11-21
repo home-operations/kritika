@@ -4,11 +4,13 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
@@ -61,4 +63,43 @@ func retryAfter(v string, now time.Time) (time.Duration, bool) {
 // when it carries none.
 func forgeStatus(err error) int {
 	return cmp.Or(github.Status(err), gitlab.Status(err), forgejo.Status(err))
+}
+
+// tipsOrder is the order that a look takes the file's accounts in. It starts
+// at the account that the last look ran out of time before reaching, or after
+// the one it ran out of time in. So an account that takes a look's whole
+// interval, every time, does not keep the accounts after it from their turn.
+// Among the accounts whose lookups one credential's rate limit counts, as
+// limitScope names them, it starts at the one whose lookup the limit refused
+// last, until that one's look goes ahead. So an account earlier in the file,
+// due at every look, does not spend the quota at every reset before a later
+// one is asked for again. The other accounts keep their places.
+func (p *Poller) tipsOrder(file *configfile.File) []*configfile.Account {
+	n := len(file.Accounts)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	first := max(slices.IndexFunc(file.Accounts, func(a configfile.Account) bool { return a.ID() == p.tipsFirst }), 0)
+	order := make([]*configfile.Account, n)
+	places := map[string][]int{}
+	for i := range n {
+		order[i] = &file.Accounts[(first+i)%n]
+		if in := file.ConnectionFor(order[i]); in != nil {
+			scope := limitScope(in, order[i])
+			places[scope] = append(places[scope], i)
+		}
+	}
+	for scope, at := range places {
+		k := slices.IndexFunc(at, func(i int) bool { return order[i].ID() == p.tipsRefused[scope] })
+		if k <= 0 {
+			continue
+		}
+		turned := make([]*configfile.Account, len(at))
+		for j := range at {
+			turned[j] = order[at[(k+j)%len(at)]]
+		}
+		for j, i := range at {
+			order[i] = turned[j]
+		}
+	}
+	return order
 }
