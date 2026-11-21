@@ -44,3 +44,22 @@ CREATE POLICY account_isolation ON index_postings
 -- run itself embedded. A generation published before has none, and is not
 -- searched by name.
 ALTER TABLE index_runs ADD COLUMN IF NOT EXISTS generation_chunks int;
+
+-- A generation's postings go as it is superseded, whatever supersedes it. A
+-- build from before postings, as after a rollback, retires generations as it
+-- always did: its publication supersedes the generation before, and its
+-- stopped-index sweep detaches one and supersedes it, each dropping the
+-- generation's chunks but not its postings. A repository then left off is
+-- built again by no build whose start would drop them as stray. Nothing
+-- makes a superseded generation active again, and the paths of this build
+-- that supersede one drop its postings too, which finds none left.
+CREATE OR REPLACE FUNCTION kritika_index_superseded() RETURNS trigger AS $$
+BEGIN
+    DELETE FROM index_postings WHERE index_run_id = NEW.id;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER kritika_index_superseded
+    AFTER UPDATE OF status ON index_runs
+    FOR EACH ROW WHEN (NEW.status = 'superseded' AND OLD.status IS DISTINCT FROM 'superseded')
+    EXECUTE FUNCTION kritika_index_superseded();

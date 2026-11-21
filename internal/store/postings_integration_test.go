@@ -872,3 +872,77 @@ func (r countedRows) Next() bool {
 	}
 	return ok
 }
+
+// TestIndexPostingsRetiredByAnOlderBuild: a build from before postings, as
+// after a rollback, retires generations as it always did, and leaves their
+// postings to the database: its stopped-index sweep detaches a generation,
+// marks it superseded and drops its chunks, and its publication supersedes
+// the generation before and drops that one's chunks. The postings of both go
+// as they are superseded, and those of a live generation stay.
+func TestIndexPostingsRetiredByAnOlderBuild(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-older")
+	other := func(name string) postingsFixture {
+		t.Helper()
+		repo := configfile.RepositoryID(f.account, name)
+		if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repo, f.account, name); err != nil {
+			t.Fatal(err)
+		}
+		return postingsFixture{t: t, s: s, account: f.account, repo: repo}
+	}
+	replacing, staying := other("postings-older/two"), other("postings-older/three")
+	generation := func(f postingsFixture, path, text string) string {
+		t.Helper()
+		run := f.run(IndexModeFull, "running")
+		f.insert(run, "", map[string]string{path: text})
+		f.publish(run)
+		if f.postings(run) == 0 {
+			t.Fatalf("generation of %s published without postings", path)
+		}
+		return run
+	}
+	swept := generation(f, "a.go", "func sweptLease() {}")
+	replaced := generation(replacing, "b.go", "func replacedLease() {}")
+	live := generation(staying, "c.go", "func liveLease() {}")
+	livePostings := f.rows(live)
+
+	// The older build's sweep of a stopped repository, on the owner
+	// connection.
+	for _, stmt := range []string{
+		`UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,
+		`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = ANY($1::uuid[])`,
+		`DELETE FROM index_chunks WHERE index_run_id = ANY($1::uuid[])`,
+	} {
+		if _, err := s.owner.Exec(ctx, stmt, []string{swept}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The older build's publication of a full build, as the application.
+	newer := replacing.run(IndexModeFull, "running")
+	replacing.insert(newer, "", map[string]string{"b.go": "func newerLease() {}"})
+	replacing.in(func(tx pgx.Tx) error {
+		for _, stmt := range []struct {
+			sql  string
+			args []any
+		}{
+			{`UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, []any{replacing.repo, newer}},
+			{`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = $1`, []any{replaced}},
+			{`DELETE FROM index_chunks WHERE index_run_id = $1`, []any{replaced}},
+			{`UPDATE index_runs SET status = 'completed', finished_at = now() WHERE id = $1`, []any{newer}},
+		} {
+			if _, err := tx.Exec(ctx, stmt.sql, stmt.args...); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	for _, run := range []string{swept, replaced} {
+		if n := f.rows(run); n != 0 {
+			t.Fatalf("generation %s keeps %d postings once an older build retired it, want none", run, n)
+		}
+	}
+	if n := f.postings(live); n != livePostings {
+		t.Fatalf("the live generation holds %d postings beside the older build, want its %d", n, livePostings)
+	}
+}
