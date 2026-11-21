@@ -491,9 +491,10 @@ starts. It copies and rebuilds nothing:
    behind it. When a wait times out, the sweep changes nothing and tries
    again a second later. After five tries it logs a warning and tries again
    an hour later.
-2. It renames the table, with its indexes, to `index_chunks_legacy`. It
-   creates the partitioned `index_chunks` and attaches the old table as its
-   partition for everything created until then. Its indexes and foreign keys
+2. It renames the table, with its indexes and constraints, to
+   `index_chunks_legacy`. It creates the partitioned `index_chunks` and
+   attaches the old table as its partition for everything created until
+   then. Its indexes and foreign keys
    become those of the partitioned table. Attaching reads the old table once,
    under the lock, to check `created_at`. That read takes seconds for millions
    of chunks. Searches and index builds wait for it.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -224,6 +225,9 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 				return err
 			}
 		}
+		if err := renameLegacyConstraints(ctx, tx); err != nil {
+			return err
+		}
 		if err := createPartitionedIndexChunks(ctx, tx, appRole, schema.Dims, from); err != nil {
 			return err
 		}
@@ -237,6 +241,34 @@ func (s *Store) partitionIndexChunks(ctx context.Context, appRole string) (bool,
 		return nil
 	})
 	return partitioned, err
+}
+
+// renameLegacyConstraints gives the constraints of the renamed plain table,
+// its foreign keys and, from Postgres 18, its NOT NULL constraints, the
+// index_chunks_legacy_ prefix. Postgres names a new table's constraints
+// after the table and makes each name unique within the schema, so with
+// the old names in place the partitioned table's would take a suffix
+// ("index_chunks_account_id_fkey1") and keep it once the legacy partition
+// is dropped, unlike a table created partitioned.
+func renameLegacyConstraints(ctx context.Context, tx pgx.Tx) error {
+	rows, err := tx.Query(ctx, `SELECT conname FROM pg_constraint
+		WHERE conrelid = 'index_chunks_legacy'::regclass AND contype <> 'p'
+		AND conname LIKE 'index\_chunks\_%' AND conname NOT LIKE 'index\_chunks\_legacy\_%'`)
+	if err != nil {
+		return err
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		renamed := "index_chunks_legacy_" + strings.TrimPrefix(name, "index_chunks_")
+		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks_legacy RENAME CONSTRAINT `+
+			pgx.Identifier{name}.Sanitize()+` TO `+pgx.Identifier{renamed}.Sanitize()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // legacyDrainSlice is how many chunks DrainLegacyIndexChunks moves or
