@@ -61,6 +61,14 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			symbols: map[string]string{"        t += 159;": "big", "    /// Small.": "small"},
 		},
 		{
+			name: "class over the byte cap within the line cap", path: "wide.ts",
+			src: "export class Wide {\n" + lines(40, "  private w%d = \""+strings.Repeat("x", 200)+"\";") +
+				"  // small doc\n  small(): number { return 1; }\n}\n",
+			symbols: map[string]string{
+				"export class Wide {": "Wide", "  // small doc": "small", "  small(): number { return 1; }": "small",
+			},
+		},
+		{
 			name: "go function of long lines", path: "long.go",
 			src:     "package demo\n\nfunc Long() {\n" + lines(120, "\t_ = %03d // "+strings.Repeat("x", 90)) + "}\n",
 			symbols: map[string]string{"func Long() {": "Long", "\t_ = 119 // " + strings.Repeat("x", 90): "Long"},
