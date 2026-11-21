@@ -126,9 +126,10 @@ type Rerank struct {
 	// searches each look for that many. Unset is DefaultRerankCandidates, or
 	// DefaultTEIRerankCandidates for the tei API.
 	Candidates int `yaml:"candidates,omitempty"`
-	// Timeout bounds the reranking of one similar-code request, all of its
-	// queries, at most MaxRerankTimeout. A query not reranked by then keeps
-	// the fused order. Unset is DefaultRerankTimeout.
+	// Timeout bounds the reranking of one similar-code request, at most
+	// MaxRerankTimeout: the wait for one of the reranker's slots and then all
+	// of its queries. A query not reranked by then keeps the fused order. Unset
+	// is DefaultRerankTimeout.
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load.
@@ -140,10 +141,10 @@ type Rerank struct {
 // APIKeyValue returns the resolved API key.
 func (r *Rerank) APIKeyValue() Secret { return r.apiKey }
 
-// Reranker bounds and defaults. A request reranks each of its queries in
-// turn, after the wait for a slot, so the timeout covers them all. A run
-// waits a minute for its answer, of which the timeout leaves at least half
-// to the embedding, its slot and the searches.
+// Reranker bounds and defaults. The timeout starts before the wait for a
+// slot, so it covers that wait and the reranking of each of the request's
+// queries in turn. A run waits a minute for its answer, of which the timeout
+// leaves at least half to the embedding, its slot and the searches.
 const (
 	DefaultRerankCandidates = 50
 	MaxRerankCandidates     = 100
