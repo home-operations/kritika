@@ -24,16 +24,21 @@ func TestKeepSimilar(t *testing.T) {
 	hits := []store.SimilarHit{
 		hit("a.go", 1, 0.65), hit("b.go", 1, 0.91), hit("a.go", 1, 0.65), hit("c.go", 10, 0.70), hit("d.go", 1, 0.49),
 	}
+	// Query 0 finds best.go twice, and five more queries two candidates
+	// each, so that the answer's limit, not a query's, is what cuts.
 	best := make([]store.SimilarHit, 0, 3+similarMax)
 	best = append(best, hit("best.go", 1, 0.55), hit("other.go", 1, 0.80), hit("best.go", 1, 0.99))
-	wantBest := make([]string, 0, similarMax)
-	wantBest = append(wantBest, "best.go:1:similarity 0.99", "other.go:1:similarity 0.80")
 	for i := range similarMax {
-		path := fmt.Sprintf("candidate%d.go", i)
-		best = append(best, hit(path, 1, 0.70))
-		if len(wantBest) < similarMax {
-			wantBest = append(wantBest, path+":1:similarity 0.70")
-		}
+		best = append(best, near(1+i/2, fmt.Sprintf("candidate%d.go", i), 0.70))
+	}
+	wantBest := make([]string, 0, similarMax)
+	wantBest = append(wantBest, "best.go:1:similarity 0.99")
+	for _, i := range []int{0, 2, 4, 6, 8} {
+		wantBest = append(wantBest, fmt.Sprintf("candidate%d.go:1:similarity 0.70", i))
+	}
+	wantBest = append(wantBest, "other.go:1:similarity 0.80")
+	for _, i := range []int{1, 3, 5} {
+		wantBest = append(wantBest, fmt.Sprintf("candidate%d.go:1:similarity 0.70", i))
 	}
 	tests := []struct {
 		name          string
@@ -97,7 +102,9 @@ func TestKeepSimilarCounts(t *testing.T) {
 	}
 	many := make([]store.SimilarHit, 0, similarMax+2)
 	for i := range similarMax + 2 {
-		many = append(many, hit(fmt.Sprintf("f%d.go", i), 1, 0.9))
+		h := hit(fmt.Sprintf("f%d.go", i), 1, 0.9)
+		h.Query = i % 3
+		many = append(many, h)
 	}
 	for _, tt := range []struct {
 		name string
@@ -146,7 +153,8 @@ func TestSimilarLimit(t *testing.T) {
 	}
 	hits := make([]store.SimilarHit, 0, contextpack.SimilarLimit)
 	for i := range contextpack.SimilarLimit {
-		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("f%d.go", i), StartLine: 1}, Similarity: 0.9})
+		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("f%d.go", i), StartLine: 1}, Similarity: 0.9,
+			Query: i % 4})
 	}
 	kept, counts, _ := gateCandidates(fuse(hits, nil), 0.5, 0.1)
 	if got := keepCandidates(kept, counts, contextpack.SimilarLimit); len(got) != contextpack.SimilarLimit {
@@ -216,7 +224,7 @@ func TestHybridSimilar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kept, counts, _ := gateCandidates(fuse(tt.hits, tt.named), 0.5, 0.1)
-			got := keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts, similarMax)
+			got := keepCandidates(kept, counts, similarMax)
 			var keys []string
 			for _, c := range got {
 				keys = append(keys, c.Path+":"+c.Ref)

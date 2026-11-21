@@ -656,13 +656,14 @@ An embedder builds each repository's similar-code index. With an embedder,
 a review's prompt carries the index's chunks (pieces of files) nearest the
 change. The agent gets a `search_code` tool over the same index. A query
 is either a hunk of the diff or a `search_code` query. Its vector search
-keeps a chunk when the chunk scores at least `similarFloor` and no more
+finds its eight nearest chunks, and keeps one when the chunk scores at least `similarFloor` and no more
 than `similarMargin` below the best match of the query. Unless `lexical`
 is `false`, a chunk that the [search by name](#search-by-name) keeps is
 kept too, whatever its similarity. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
-chunks of one file and ten in all, or sixteen for a review's prompt. The
-prompt leaves out a chunk more than half of whose lines another context
+chunks of one file, four of one query, and ten in all, or sixteen for a
+review's prompt. A chunk that the file cap turns away leaves its query's
+place to the query's next. The prompt leaves out a chunk more than half of whose lines another context
 stage already shows, and shows the first ten of the rest.
 
 The index is of the default branch, which can be ahead of or behind the
@@ -857,7 +858,7 @@ it: `vector`, `lexical` or `both`.
 A reranker reads each query beside each of its candidates and scores how
 well the candidate answers it, which an embedding of each alone cannot.
 With `rerank` set, both searches look for `candidates` chunks for each
-query rather than four. The candidates that the floor, the margin and the
+query rather than eight. The candidates that the floor, the margin and the
 weight by name keep, at most `candidates` of each query, the best fused
 first, are sent to the reranker, and its scores order them in place of the
 fusion's. The answer then takes each query's best four as before.

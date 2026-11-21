@@ -119,7 +119,7 @@ func TestRetrievalEval(t *testing.T) {
 			for q, text := range queries {
 				tallies[v].addQuery(top, q, truth.defs(text, changed), truth.related([]string{paths[q]}, changed))
 			}
-			tallies[v].add(keepCandidates(top, counts, similarMax), defs, related)
+			tallies[v].add(keepCandidates(kept, counts, similarMax), defs, related)
 		}
 	}
 	t.Logf("floor %.2f, margin %.2f; %s", floor, margin, timing.String())

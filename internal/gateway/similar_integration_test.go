@@ -594,8 +594,10 @@ apps:
 			}
 		})
 	}
-	// Each request found sixteen chunks, four a query, and kept what it
-	// asked for: 10, 3, 16 and 16. Each query measured its best match.
+	// Each request found sixteen chunks near its queries, four a query, and
+	// kept what it asked for: 10, 3, 16 and 16. Each query, searched
+	// similarDepth deep, also found four of another's, under the floor. Each
+	// query measured its best match.
 	hits := map[string]float64{}
 	var bests uint64
 	families, err := reg.Gather()
@@ -616,7 +618,7 @@ apps:
 			}
 		}
 	}
-	if want := map[string]float64{hitKept: 45, hitLimit: 19}; !maps.Equal(hits, want) || bests != 16 {
+	if want := map[string]float64{hitKept: 45, hitLimit: 19, hitFloor: 64}; !maps.Equal(hits, want) || bests != 16 {
 		t.Fatalf("hits counted %v, best similarities %d; want %v, 16", hits, bests, want)
 	}
 }

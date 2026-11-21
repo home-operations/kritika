@@ -8,9 +8,11 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +73,8 @@ func e(i int) []float32 {
 }
 
 // newLexicalRepo indexes chunks, path and text, with their vectors, as the
-// active generation of a repository built by a build of format.
+// active generation of a repository built by a build of format. A path
+// path@n is a chunk of path that starts on line n, which is 1 otherwise.
 func newLexicalRepo(t *testing.T, name string, format int, chunks map[string]string, vectors map[string][]float32) lexicalRepo {
 	t.Helper()
 	ctx := t.Context()
@@ -94,9 +97,17 @@ func newLexicalRepo(t *testing.T, name string, format int, chunks map[string]str
 		}
 		var batch []store.StagedChunk
 		var vecs [][]float32
-		for _, path := range slices.Sorted(maps.Keys(chunks)) {
-			batch = append(batch, store.StagedChunk{Path: path, Language: "go", StartLine: 1, EndLine: 1, Text: chunks[path]})
-			vecs = append(vecs, vectors[path])
+		for _, key := range slices.Sorted(maps.Keys(chunks)) {
+			path, line := key, 1
+			if p, n, ok := strings.Cut(key, "@"); ok {
+				var err error
+				if line, err = strconv.Atoi(n); err != nil {
+					return err
+				}
+				path = p
+			}
+			batch = append(batch, store.StagedChunk{Path: path, Language: "go", StartLine: line, EndLine: line, Text: chunks[key]})
+			vecs = append(vecs, vectors[key])
 		}
 		if err := store.InsertIndexChunks(ctx, tx, account.ID(), r.id, r.run, batch, vecs); err != nil {
 			return err
@@ -238,6 +249,23 @@ func TestSimilarLexicalSmallGeneration(t *testing.T) {
 				t.Errorf("answer = %d %q, want 200 %q", code, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestSimilarFileCapBackfills: when one file holds a query's nearest chunks,
+// those past its cap give their places to the query's next chunks of other
+// files, so the query is answered by as many files as qualify.
+func TestSimilarFileCapBackfills(t *testing.T) {
+	at := func(similarity float64) []float32 {
+		return []float32{float32(similarity), float32(math.Sqrt(1 - similarity*similarity)), 0, 0, 0, 0, 0, 0}
+	}
+	r := newLexicalRepo(t, "file-cap", runspec.IndexFormat, map[string]string{
+		"a.go@1": "func one() {}", "a.go@10": "func two() {}", "a.go@20": "func three() {}", "a.go@30": "func four() {}",
+		"b.go@1": "func five() {}",
+	}, map[string][]float32{"a.go@1": at(0.99), "a.go@10": at(0.98), "a.go@20": at(0.97), "a.go@30": at(0.96), "b.go@1": at(0.95)})
+	code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "zzyzx quux")
+	if want := []string{"a.go:similarity 0.99", "a.go:similarity 0.98", "b.go:similarity 0.95"}; code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
 	}
 }
 

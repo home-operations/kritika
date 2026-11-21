@@ -37,8 +37,10 @@ const (
 )
 
 // similarDepth is how many chunks each search finds for a query, without a
-// reranker, for the fusion to rank.
-const similarDepth = similarPerQuery
+// reranker, for the fusion to rank: twice what a query keeps, so that the
+// places of chunks that the file cap or a duplicate turns away go to the
+// query's next ones.
+const similarDepth = 2 * similarPerQuery
 
 // maxSimilarBody bounds a similar-code request: its queries, each cut to
 // contextpack.SimilarQueryChars, with room for their encoding. The paths a
@@ -327,7 +329,7 @@ func (g *Server) similar(
 		kept = topPerQuery(kept, rr.CandidateCount(), counts)
 		g.rerank(ctx, file, r, reranker, rr, kept, logger)
 	}
-	chunks = keepCandidates(topPerQuery(kept, similarPerQuery, counts), counts, r.limit)
+	chunks = keepCandidates(kept, counts, r.limit)
 	for k, n := range counts {
 		g.Metrics.SimilarHits(r.account.Key(), k.outcome, k.source, n)
 	}
@@ -589,13 +591,15 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 	}
 }
 
-// keepCandidates keeps each chunk once, at most similarPerFile of one file
-// and at most limit in all, and labels each with its similarity or the
-// names it shares with its query. It takes every query's best, by its score
+// keepCandidates keeps each chunk once, at most similarPerQuery of one
+// query, similarPerFile of one file and limit in all, and labels each with
+// its similarity or the names it shares with its query. It takes every query's best, by its score
 // among its query's and then by its shared score, before any query's
 // second, and so on. So neither one query whose neighbours all score
-// high nor one file's neighbouring declarations take every place. It adds
-// what it drops to counts.
+// high nor one file's neighbouring declarations take every place. A query's
+// place is spent only on a chunk it keeps, so one that a duplicate or the
+// file cap turns away goes to the query's next candidate. It adds what it
+// drops to counts.
 func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []contextpack.Chunk {
 	cands = slices.Clone(cands)
 	slices.SortStableFunc(cands, func(a, b candidate) int {
@@ -612,13 +616,13 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []conte
 		return cmp.Or(cmp.Compare(a.rank, b.rank), cmp.Compare(b.hit.shared, a.hit.shared), cmp.Compare(b.hit.Similarity, a.hit.Similarity))
 	})
 	seen := map[string]bool{}
-	perFile := map[string]int{}
+	perFile, perQuery := map[string]int{}, map[int]int{}
 	chunks := make([]contextpack.Chunk, 0, min(len(cands), limit))
 	for _, r := range ranked {
 		c := r.hit
 		key := fmt.Sprintf("%s:%d", c.Chunk.Path, c.Chunk.StartLine)
 		switch {
-		case len(chunks) == limit:
+		case len(chunks) == limit || perQuery[c.Query] == similarPerQuery:
 			counts[hitKey{hitLimit, c.source()}]++
 			continue
 		case seen[key]:
@@ -630,6 +634,7 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []conte
 		}
 		seen[key] = true
 		perFile[c.Chunk.Path]++
+		perQuery[c.Query]++
 		c.Chunk.Ref = similarRef(c)
 		chunks = append(chunks, c.Chunk)
 		counts[hitKey{hitKept, c.source()}]++

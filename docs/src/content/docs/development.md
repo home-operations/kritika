@@ -342,7 +342,7 @@ KRITIKA_EVAL_CACHE=/tmp/kritika-eval \
 | `KRITIKA_EVAL_EMBED_MODEL`/`DIMS` | `trigrams`, 256    | the model and its dimension                                                                  |
 | `KRITIKA_EVAL_CACHE`              | a temporary folder | an existing folder where vectors are kept, by text, between runs                             |
 | `KRITIKA_EVAL_FLOOR`              | 0.5                | `similarFloor`                                                                               |
-| `KRITIKA_EVAL_DEPTH`              | 4                  | how many chunks each search finds for a query without a reranker                             |
+| `KRITIKA_EVAL_DEPTH`              | 8                  | how many chunks each search finds for a query without a reranker                             |
 | `KRITIKA_EVAL_RERANK_URL`         |                    | a Text Embeddings Inference reranker, which adds the reranked variants                       |
 | `KRITIKA_EVAL_RERANK_CANDIDATES`  | 32                 | the candidates of each query reranked                                                        |
 
@@ -363,7 +363,8 @@ before the answer's limits across queries.
 On 2026-11-20 this repository was measured with
 `jinaai/jina-embeddings-v2-base-code` served by Text Embeddings Inference
 1.9.4 on a CPU: 9,499 chunks of 1,034 files, 60 commits (341 queries with
-definitions, 285 with co-changed files), the defaults otherwise:
+definitions, 285 with co-changed files), each search four deep, as the
+gateway then searched (`KRITIKA_EVAL_DEPTH=4`), the defaults otherwise:
 
 | Variant | defs hit@10 | co hit@10 | co precision | query defs hit@4 | query defs mrr | query co hit@4 | query co mrr |
 | ------- | ----------- | --------- | ------------ | ---------------- | -------------- | -------------- | ------------ |
