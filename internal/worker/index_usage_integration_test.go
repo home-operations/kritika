@@ -462,6 +462,15 @@ func TestIndexFullBuildYieldsToAForcedRebuild(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The worker clears a superseded run's staging as it finishes it, which
+	// this test does not: the suites after it count staging left behind.
+	t.Cleanup(func() {
+		if err := st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
+			return store.ClearIndexStaging(context.Background(), tx, run, runner)
+		}); err != nil {
+			t.Error(err)
+		}
+	})
 	// The forced rebuild publishes while the build embeds its second batch,
 	// after it took the first one's vector from the old generation.
 	var forced string
