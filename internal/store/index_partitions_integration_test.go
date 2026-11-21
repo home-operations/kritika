@@ -513,12 +513,14 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 	}
 }
 
-// TestDropLegacyIndexChunksYieldsToSearch: a search that read repositories
-// and then waits for index_chunks behind the drop, which then waits for
-// repositories, finishes. The drop gives way, and drops the legacy partition
-// once the search ends. The drop reads the legacy partition one last
-// time before it queues for index_chunks, under a lock that stops writes to
-// the partition and not reads, so that searches do not wait for that read.
+// TestDropLegacyIndexChunksYieldsToSearch: once the drop holds the legacy
+// partition against writes, it waits for no other lock. A transaction that
+// holds index_chunks, as a chunk writer does, or a table that its foreign
+// keys reference, as a search does, makes it give way at once, so a writer
+// that holds index_chunks and then waits for the legacy partition is never
+// in a cycle with it, however long the drop's read of the partition took.
+// Nothing of the drop's is left for that writer to wait for, and the drop
+// drops the legacy partition once the transaction ends.
 func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -533,61 +535,34 @@ func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 	run := partitionRun(t, s, account, repo, true, "a.go")
 	partitionLegacy(t, s)
 	drainLegacy(t, s)
-	var table uint32
-	if err := s.owner.QueryRow(ctx, `SELECT 'index_chunks'::regclass::oid`).Scan(&table); err != nil {
-		t.Fatal(err)
-	}
 
-	// A writer holds index_chunks, as an insert that the hash partitions
-	// take does, so the drop queues for it.
-	writer, err := s.owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = writer.Rollback(context.Background()) }()
-	if _, err := writer.Exec(ctx, `LOCK TABLE ONLY index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
-		t.Fatal(err)
-	}
-	dropped := make(chan error, 1)
-	go func() {
-		_, err := s.DropLegacyIndexChunks(ctx)
-		dropped <- err
-	}()
-	// Each of the drop's waits for index_chunks gives way after a moment, so
-	// the lock it holds while it waits is looked for across its tries.
-	legacyFirst := false
-	for deadline := time.Now().Add(10 * time.Second); !legacyFirst && time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
-		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks w JOIN pg_locks l USING (pid)
-			WHERE w.relation = 'index_chunks'::regclass AND w.mode = 'AccessExclusiveLock' AND NOT w.granted
-			AND l.relation = 'index_chunks_legacy'::regclass AND l.mode = 'ShareLock' AND l.granted)`).Scan(&legacyFirst); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if !legacyFirst {
-		t.Fatal("the drop queued for index_chunks without holding the legacy partition against writes")
-	}
-	waitForLockWait(t, s, table, "AccessExclusiveLock", nil)
-	searched := make(chan error, 1)
-	searchedDone := make(chan struct{})
-	go func() {
-		defer close(searchedDone)
-		searched <- s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			var n int
-			if err := tx.QueryRow(ctx, `SELECT count(*) FROM repositories`).Scan(&n); err != nil {
-				return err
+	for _, tt := range []struct{ name, relation, hold string }{
+		{"a chunk writer", "index_chunks", `LOCK TABLE ONLY index_chunks IN ROW EXCLUSIVE MODE`},
+		{"a search", "repositories", `SELECT count(*) FROM repositories`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			holder, err := s.owner.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
 			}
-			return tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, run).Scan(&n)
+			defer func() { _ = holder.Rollback(context.Background()) }()
+			if _, err := holder.Exec(ctx, tt.hold); err != nil {
+				t.Fatal(err)
+			}
+			// A wait that lock_timeout ends is "canceling statement due to
+			// lock timeout"; this is the lock not taken at all.
+			dropped, err := s.DropLegacyIndexChunks(ctx)
+			pgErr, ok := errors.AsType[*pgconn.PgError](err)
+			if want := `could not obtain lock on relation "` + tt.relation + `"`; dropped || !ok || pgErr.Code != "55P03" || pgErr.Message != want {
+				t.Fatalf("DropLegacyIndexChunks beside %s = %v, %v; want it to give way at once: %s", tt.name, dropped, err, want)
+			}
+			if !legacyExists(t, s) {
+				t.Fatal("the legacy partition was dropped beside a transaction that holds a table it locks")
+			}
+			if _, err := holder.Exec(ctx, `LOCK TABLE index_chunks_legacy IN ROW EXCLUSIVE MODE NOWAIT`); err != nil {
+				t.Fatalf("the drop that gave way still holds the legacy partition: %v", err)
+			}
 		})
-	}()
-	waitForLockWait(t, s, table, "AccessShareLock", searchedDone)
-	if err := writer.Rollback(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-searched; err != nil {
-		t.Fatalf("the search failed beside the drop: %v", err)
-	}
-	if err := <-dropped; err != nil {
-		t.Logf("the drop gave way: %v", err)
 	}
 	if _, err := s.DropLegacyIndexChunks(ctx); err != nil {
 		t.Fatal(err)

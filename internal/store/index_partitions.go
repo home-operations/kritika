@@ -99,8 +99,9 @@ var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_id
 // of its waits to 1/lockYieldShare of deadlock_timeout. A transaction that
 // waits on it began to wait after its first lock request, so its waits, four
 // at most, end before that transaction runs the deadlock check, which would
-// abort it. While it, or DropLegacyIndexChunks, waits for index_chunks, every
-// search and build queues behind it, which the short waits also bound. Each
+// abort it. While it waits for index_chunks, every search and build queues
+// behind it, which the short waits also bound. DropLegacyIndexChunks waits
+// only for its first lock, and takes the others or gives up at once. Each
 // tries partitionTries times, partitionRetryPause apart, and the next sweep
 // tries again.
 const (
@@ -398,8 +399,12 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool
 // than being built. Detaching and attaching it does take the exclusive lock
 // of the tables that its foreign keys reference, for a moment, as their
 // triggers are moved. It takes index_chunks_legacy first, in a mode that
-// stops writes to it but not reads, then index_chunks, and gives way for each
-// lock, as PartitionIndexChunks does. Leader only.
+// stops writes to it but not reads, giving way as PartitionIndexChunks does,
+// then index_chunks and those tables, each at once or not at all. A writer
+// that holds index_chunks can begin to wait for the legacy partition while
+// the drop reads it, for as long as that read takes. A wait of the drop's
+// then would close a cycle that the writer's deadlock check, run first, would
+// end by aborting the writer. Leader only.
 func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: DropLegacyIndexChunks needs the owner connection")
@@ -434,11 +439,9 @@ func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM index_chunks_legacy)`).Scan(&empty); err != nil || !empty {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`); err != nil {
-				return err
-			}
 			for _, stmt := range []string{
-				`LOCK TABLE accounts, repositories, index_runs IN ACCESS EXCLUSIVE MODE`,
+				`LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE NOWAIT`,
+				`LOCK TABLE accounts, repositories, index_runs IN ACCESS EXCLUSIVE MODE NOWAIT`,
 				`DROP TABLE index_chunks_legacy`,
 				`ALTER TABLE index_chunks DETACH PARTITION index_chunks_current`,
 				`ALTER TABLE index_chunks ATTACH PARTITION index_chunks_current FOR VALUES FROM (MINVALUE) TO (MAXVALUE)`,
