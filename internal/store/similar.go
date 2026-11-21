@@ -176,7 +176,10 @@ type LexicalBar struct{ Per, Least, Share int }
 // ranked chunks: first without their text, to compare the ties by their
 // vectors, and then whole, the hits each query keeps alone. A score is
 // rounded so that two chunks holding the same terms tie, whatever order they
-// were added in.
+// were added in. A chunk embedded as zeros has no cosine similarity:
+// pgvector gives NaN, which PostgreSQL sorts above every number. It is given
+// -2 instead, below any cosine, so that it comes after the chunks of its
+// weight that are near the query, and is still found by its words.
 //
 // $1 is the generation, $2, $3 and $4 each query's index, term and whether
 // the term is compound, $5 every term once, $6, $7 and $14 the LexicalBar's
@@ -223,7 +226,8 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 		SELECT * FROM (
 			SELECT r.qi, r.id, r.score, r.matched, c.similarity, c.path, c.start_line,
 				row_number() OVER (PARTITION BY r.qi ORDER BY r.score DESC, c.similarity DESC, c.path, c.start_line) AS place
-			FROM top r, LATERAL (SELECT c.path, c.start_line, 1 - (c.embedding <=> (($9::text[])[r.qi + 1])::halfvec) AS similarity
+			FROM top r, LATERAL (SELECT c.path, c.start_line,
+				coalesce(nullif(1 - (c.embedding <=> (($9::text[])[r.qi + 1])::halfvec), 'NaN'::float8), -2::float8) AS similarity
 				FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = r.id LIMIT 1) c
 		) k WHERE place <= $10
 	)

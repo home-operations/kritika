@@ -94,6 +94,10 @@ func TestLexicalChunks(t *testing.T) {
 	ties := build("alpha", "lexical/ties", []StagedChunk{
 		{Path: "a.go", Text: "leaseSlots"}, {Path: "b.go", Text: "leaseSlots"}, {Path: "c.go", Text: "leaseSlots"}, {Path: "d.go", Text: "other"},
 	}, vec, near, near, vec)
+	// Two chunks that hold the same words, the first of them embedded as
+	// zeros, whose cosine similarity to any query is undefined.
+	zero := build("alpha", "lexical/zero", []StagedChunk{{Path: "a.go", Text: "leaseSlots"}, {Path: "b.go", Text: "leaseSlots"}, {Path: "d.go", Text: "other"}},
+		make([]float32, 8), near, vec)
 
 	// A runner run of alpha that reported the path its searches leave out.
 	var reported string
@@ -158,6 +162,10 @@ func TestLexicalChunks(t *testing.T) {
 			[]string{"c.go"}, 1, 0, []string{
 				fmt.Sprintf("0 a.go %.3f [leaseslots]", idf(3, 4)),
 			}},
+		{"an undefined similarity after ties of a defined one", "alpha", zero, []LexicalQuery{{Terms: []LexicalTerm{{"leaseslots", true}}, Vector: near}},
+			nil, 1, 0, []string{fmt.Sprintf("0 b.go %.3f [leaseslots]", idf(2, 3))}},
+		{"an undefined similarity found by its words", "alpha", zero, []LexicalQuery{{Terms: []LexicalTerm{{"leaseslots", true}}, Vector: near}},
+			nil, 2, 0, []string{fmt.Sprintf("0 b.go %.3f [leaseslots]", idf(2, 3)), fmt.Sprintf("0 a.go %.3f [leaseslots]", idf(2, 3))}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := s.WithAccount(ctx, accountID(t, s, tt.account), func(tx pgx.Tx) error {
@@ -170,6 +178,9 @@ func TestLexicalChunks(t *testing.T) {
 				var got []string
 				for _, h := range hits {
 					got = append(got, fmt.Sprintf("%d %s %.3f %v", h.Query, h.Chunk.Path, h.Lexical, h.Matched))
+					if math.IsNaN(h.Similarity) {
+						t.Errorf("%s: similarity NaN, want a finite one", h.Chunk.Path)
+					}
 					if q := tt.queries[h.Query]; h.Similarity < 0.99 && slices.Equal(q.Vector, vec) && h.Chunk.Path != "b.go" {
 						t.Errorf("%s: similarity %g, want the query vector's", h.Chunk.Path, h.Similarity)
 					}
