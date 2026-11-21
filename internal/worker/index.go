@@ -235,7 +235,9 @@ func (w *Index) repoConfig(
 	read int64, settings configfile.Settings, logger *slog.Logger,
 ) (eff Effective, off bool, err error) {
 	owner, name, _ := strings.Cut(repo.Name, "/")
-	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
+	// The job waits out GitLab's rate limit itself, by waitOutForge, rather
+	// than the SDK sleeping on it, which can outlast the job's deadline.
+	doc, _, err := readRepoConfig(gitlab.WaitOwnRateLimit(ctx), client, owner, name, commit)
 	if err != nil {
 		return eff, false, w.waitOutForge(ctx, job, account, logger, err)
 	}

@@ -288,7 +288,14 @@ func (c *Client) GitToken(context.Context, string) (string, error) {
 // itself.
 type noRateLimitWait struct{}
 
-// readOptions are the options of a request under ctx. Under noRateLimitWait
+// WaitOwnRateLimit marks ctx as that of a caller that waits out GitLab's
+// rate limit itself, as RetryAfter reads it: the client's reads under it
+// answer a 429 at once (see readOptions).
+func WaitOwnRateLimit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noRateLimitWait{}, true)
+}
+
+// readOptions are the options of a request under ctx. Under WaitOwnRateLimit
 // a 429 is answered at once, with its headers, rather than slept on until
 // the limit's Ratelimit-Reset and asked again: a sleep that can outlast the
 // caller's deadline, which go-retryablehttp then returns alone.
@@ -324,7 +331,7 @@ func (c *Client) defaultBranch(ctx context.Context, pid string) (string, error) 
 // BranchTip implements forge.Client. Both its poller and its index jobs wait
 // out GitLab's rate limit themselves, so it answers a 429 at once.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
-	ctx = context.WithValue(ctx, noRateLimitWait{}, true)
+	ctx = WaitOwnRateLimit(ctx)
 	pid := project(owner, repo)
 	if branch == "" {
 		var err error
@@ -369,12 +376,12 @@ func (b *boundedFile) Write(p []byte) (int, error) {
 }
 
 // FileAt implements forge.Client through the raw file endpoint, read up
-// to the size limit.
+// to the size limit. Under WaitOwnRateLimit it answers a 429 at once.
 func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error) {
 	apiPath := fmt.Sprintf("projects/%s/repository/files/%s/raw", gl.PathEscape(project(owner, repo)), gl.PathEscape(path))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	req, err := c.api.NewRequest(http.MethodGet, apiPath, &gl.GetRawFileOptions{Ref: new(ref)}, []gl.RequestOptionFunc{gl.WithContext(ctx)})
+	req, err := c.api.NewRequest(http.MethodGet, apiPath, &gl.GetRawFileOptions{Ref: new(ref)}, readOptions(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
 	}

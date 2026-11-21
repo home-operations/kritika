@@ -2,15 +2,19 @@ package worker
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,6 +25,7 @@ import (
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -286,6 +291,45 @@ func TestWaitOutGitLabRateLimit(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestIndexRepoConfigWaitsOutGitLabRateLimit: GitLab serves the branch but
+// rate-limits the read of .kritika.yaml until a reset hours away. The read
+// answers the 429 at once, rather than the SDK sleeping on it past the
+// job's deadline, so the job snoozes until the reset.
+func TestIndexRepoConfigWaitsOutGitLabRateLimit(t *testing.T) {
+	reset := strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v4/projects/{project}/repository/branches/main", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"name": "main", "commit": {"id": "abc"}}`)
+	})
+	var reads atomic.Int32
+	mux.HandleFunc("GET /api/v4/projects/{project}/repository/files/{path}/raw", func(w http.ResponseWriter, _ *http.Request) {
+		reads.Add(1)
+		w.Header().Set("Ratelimit-Reset", reset)
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client, err := gitlab.NewClient(srv.URL, "glpat-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A hang guard: the SDK's sleep until the reset lasts hours.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	commit, _, err := client.BranchTip(ctx, "acme", "widgets", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Index{Metrics: metrics.New(prometheus.NewRegistry())}
+	job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(`{}`)}}
+	repo := store.IndexRepo{Name: "acme/widgets", DefaultBranch: "main", Enabled: true}
+	_, _, err = w.repoConfig(ctx, job, "acme", client, repo, commit, 0, configfile.Settings{}, slog.New(slog.DiscardHandler))
+	snooze, ok := errors.AsType[*river.JobSnoozeError](err)
+	if !ok || snooze.Duration <= forgeWaitMax || reads.Load() != 1 {
+		t.Fatalf("repoConfig past GitLab's rate limit = %v after %d reads, want a snooze until the reset after one", err, reads.Load())
 	}
 }
 
