@@ -92,16 +92,30 @@ postgres_tag=18.6-standard-bookworm
 # renovate: datasource=docker depName=ghcr.io/home-operations/vchord
 vchord_tag=1.3.0
 docker pull -q "ghcr.io/home-operations/vchord:${vchord_tag}" >/dev/null
-cid=$(docker run -d --rm -p 127.0.0.1::5432 \
+cid=$(docker run -d -p 127.0.0.1::5432 \
   --mount "type=image,source=ghcr.io/home-operations/vchord:${vchord_tag},target=/ext" \
   "ghcr.io/cloudnative-pg/postgresql:${postgres_tag}" \
   bash -c 'echo super >/tmp/pwfile && initdb -D /tmp/pgdata -U postgres --encoding=UTF8 --locale=C --pwfile=/tmp/pwfile --auth-local=trust --auth-host=scram-sha-256 >/dev/null && echo "host all all all scram-sha-256" >>/tmp/pgdata/pg_hba.conf && exec postgres -D /tmp/pgdata "$@"' postgres \
   -c listen_addresses='*' -c shared_preload_libraries=vchord \
   -c dynamic_library_path=/usr/lib/postgresql/18/lib:/ext/usr/lib/postgresql/18/lib \
   -c extension_control_path=/usr/share/postgresql/18:/ext/usr/share/postgresql/18)
-trap 'docker stop "$cid" >/dev/null' EXIT
+# The container is kept until the task ends, so that when Postgres does not
+# come up, from initdb to loading VectorChord, its log says why.
+ready=
+cleanup() {
+  status=$?
+  if [ -z "$ready" ]; then docker logs "$cid" >&2 || true; fi
+  docker rm -f "$cid" >/dev/null
+  exit "$status"
+}
+trap cleanup EXIT
 port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
-for i in $(seq 1 30); do docker exec "$cid" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break; sleep 1; done
+for i in $(seq 1 30); do
+  if docker exec "$cid" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then ready=1; break; fi
+  [ -n "$(docker ps -q --filter "id=$cid" --filter status=running)" ] || break
+  sleep 1
+done
+if [ -z "$ready" ]; then echo "test-integration: Postgres did not become ready" >&2; exit 1; fi
 docker exec "$cid" psql -U postgres -v ON_ERROR_STOP=1 -q -c "CREATE ROLE kritika LOGIN PASSWORD 'owner'" -c "CREATE ROLE kritika_app LOGIN PASSWORD 'app'" -c "CREATE DATABASE kritika OWNER kritika"
 docker exec "$cid" psql -U postgres -d kritika -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION vchord CASCADE" -c "GRANT ALL ON SCHEMA public TO kritika" -c "GRANT USAGE ON SCHEMA public TO kritika_app"
 export KRITIKA_TEST_SUPER_URL="postgres://postgres:super@127.0.0.1:${port}/kritika?sslmode=disable"
