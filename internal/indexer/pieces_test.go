@@ -69,6 +69,16 @@ func TestPiecesCoverTheFile(t *testing.T) {
 			},
 		},
 		{
+			name: "short gaps that fit their methods' lines but not their bytes", path: "gaps.ts",
+			src: "export class Gaps {\n  private head = \"" + strings.Repeat("h", 4000) + "\";\n  m(): number {\n    let t = 0;\n" +
+				lines(40, "    t += %d; // "+strings.Repeat("m", 60)) + "    return t;\n  }\n  n(): number {\n    let u = 0;\n" +
+				lines(40, "    u += %d; // "+strings.Repeat("n", 60)) + "    return u;\n  }\n  private tail = \"" + strings.Repeat("t", 4000) + "\";\n}\n",
+			symbols: map[string]string{
+				"  private head = \"" + strings.Repeat("h", 4000) + "\";": "Gaps", "  m(): number {": "m",
+				"  n(): number {": "n", "  private tail = \"" + strings.Repeat("t", 4000) + "\";": "Gaps",
+			},
+		},
+		{
 			name: "go function of long lines", path: "long.go",
 			src:     "package demo\n\nfunc Long() {\n" + lines(120, "\t_ = %03d // "+strings.Repeat("x", 90)) + "}\n",
 			symbols: map[string]string{"func Long() {": "Long", "\t_ = 119 // " + strings.Repeat("x", 90): "Long"},

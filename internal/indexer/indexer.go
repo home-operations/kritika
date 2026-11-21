@@ -357,7 +357,7 @@ func nesting(ds []chunk.Decl) [][]int {
 // minGapLines is the fewest worded lines that a gap between an oversized
 // declaration's nested ones needs to be stored by itself. A smaller gap, such
 // as a field or a class's opening line, joins the nested declaration next to
-// it.
+// it when the two fit one piece.
 const minGapLines = 3
 
 type cutter struct {
@@ -428,14 +428,19 @@ func (c *cutter) cover(i int) []chunk.Decl {
 		next = max(next, n.EndLine+1)
 	}
 	gap(next, d.EndLine)
+	// fits reports whether lines start to end can be one piece, so that a gap
+	// joined to a whole declaration does not have it cut into windows.
+	fits := func(start, end int) bool {
+		return end-start < c.opts.MaxDeclLines && len(c.f.Bytes(start, end)) <= c.opts.MaxChunkBytes
+	}
 	var out []chunk.Decl
 	for j, s := range segs {
 		if s.gap && c.words(s.StartLine, s.EndLine) < minGapLines {
-			if j+1 < len(segs) && segs[j+1].whole && segs[j+1].EndLine-s.StartLine < c.opts.MaxDeclLines {
+			if j+1 < len(segs) && segs[j+1].whole && fits(s.StartLine, segs[j+1].EndLine) {
 				segs[j+1].StartLine = s.StartLine
 				continue
 			}
-			if last := len(out) - 1; j > 0 && segs[j-1].whole && last >= 0 && s.EndLine-out[last].StartLine < c.opts.MaxDeclLines {
+			if last := len(out) - 1; j > 0 && segs[j-1].whole && last >= 0 && fits(out[last].StartLine, s.EndLine) {
 				out[last].EndLine = s.EndLine
 				continue
 			}
