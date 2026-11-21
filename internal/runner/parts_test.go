@@ -127,15 +127,22 @@ func TestMergeParts(t *testing.T) {
 
 // TestPartPrompts: each part is shown its own files' diff and told which part
 // it is. It is given the similar code of its own hunks, asked for once the run
-// learns that there is an index, and offered search_code. It is given the
-// rules of its own paths and refused a finding on the other part's file. The
-// first part looks at the earlier finding on a
-// file that no part reviews. A split with no rules reports an empty list, not
-// a nil one, which the pack's rule_ids column will refuse.
+// learns that there is an index and has reported every changed path, once for
+// all its parts, and offered search_code. It is given the rules of its own
+// paths and refused a finding on the other part's file. The first part looks
+// at the earlier finding on a file that no part reviews. A split with no
+// rules reports an empty list, not a nil one, which the pack's rule_ids
+// column will refuse.
 func TestPartPrompts(t *testing.T) {
 	asked := 0
+	var reported [][]string
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == runspec.ReportSimilarExcludePath {
+			var v runspec.SimilarExcludeReport
+			if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+				t.Error(err)
+			}
+			reported = append(reported, v.Paths)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -159,6 +166,9 @@ func TestPartPrompts(t *testing.T) {
 	if len(parts) != 2 || asked != 3 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
 		t.Fatalf("%d parts, %d similar requests, search %v, %d chunks, rules %q; want each part's own", len(parts), asked,
 			tools.search != nil, len(chunks), rules)
+	}
+	if !slices.EqualFunc(reported, [][]string{{"a/x.go", "b/y.go"}}, slices.Equal) {
+		t.Fatalf("reported exclusions %q, want every changed path once for the run, not once a part", reported)
 	}
 	const earlier = "main.go:1 [p2] earlier finding"
 	if !strings.Contains(parts[0].prompt.user, earlier) || strings.Contains(parts[1].prompt.user, earlier) ||

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -20,10 +21,13 @@ import (
 )
 
 // fakeSimilarGateway answers a run's exclusion report with status, and its
-// similar-code requests with answer. It records both.
+// similar-code requests with answer. It records both. A similar-code request
+// over maxBody, when set, is refused as the gateway refuses one over its
+// bound.
 type fakeSimilarGateway struct {
-	status int
-	answer contextpack.SimilarResponse
+	status  int
+	answer  contextpack.SimilarResponse
+	maxBody int64
 
 	mu       sync.Mutex
 	excluded [][]string
@@ -47,8 +51,16 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 			f.excluded = append(f.excluded, v.Paths)
 			w.WriteHeader(f.status)
 		case "/v1/similar":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+			}
+			if f.maxBody > 0 && int64(len(body)) > f.maxBody {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			var req contextpack.SimilarRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if err := json.Unmarshal(body, &req); err != nil {
 				t.Error(err)
 			}
 			f.requests = append(f.requests, req)
@@ -122,6 +134,35 @@ func TestSimilarContextExclusions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSimilarContextLargeChange: a change of thousands of files still gets
+// similar code. Its exclusions, which outgrow the gateway's 256 KiB bound on
+// a similar-code request, are reported once, and its requests carry only
+// their queries.
+func TestSimilarContextLargeChange(t *testing.T) {
+	changed := make([]string, 0, 4000)
+	for i := range cap(changed) {
+		changed = append(changed, fmt.Sprintf("vendor/example.com/a-module-with-a-long-name/pkg/subpackage/file%04d.go", i))
+	}
+	res := &gitfetch.Result{Diff: fileDiff("", "a.go", added("func a() {}")), Changed: append(changed, "a.go")}
+	found := contextpack.Chunk{Stage: contextpack.StageSimilar, Path: "lib/b.go", StartLine: 1, EndLine: 1, Text: "func b() {}"}
+	gw := &fakeSimilarGateway{
+		status: http.StatusNoContent, maxBody: 256 << 10,
+		answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{found}},
+	}
+	s := reviewSpec()
+	s.GatewayURL = gw.serve(t).URL
+	chunks, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"},
+		tree(t, map[string]string{"lib/b.go": "func b() {}\n"}), res, nil, slog.New(slog.DiscardHandler))
+	if !slices.Equal(chunks, []contextpack.Chunk{found}) || search == nil {
+		t.Fatalf("similar code %+v, search_code offered %t; want the gateway's chunk and search_code", chunks, search != nil)
+	}
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	if len(gw.excluded) != 1 || len(gw.excluded[0]) != len(res.Changed) {
+		t.Fatalf("reported %d exclusion lists, want one of %d paths", len(gw.excluded), len(res.Changed))
 	}
 }
 
@@ -342,4 +383,33 @@ func TestAtHead(t *testing.T) {
 			t.Fatalf("atHead = %+v, want %+v", got, want)
 		}
 	})
+}
+
+// TestSearchToolAtHead: search_code shows what it finds as the head has it,
+// at the head's lines, and leaves out what the head no longer has.
+func TestSearchToolAtHead(t *testing.T) {
+	head := tree(t, map[string]string{"retry.go": "package r\n\n// retry tries again.\nfunc retry() {}\n"})
+	moved := contextpack.Chunk{Stage: contextpack.StageSimilar, Path: "retry.go", StartLine: 1, EndLine: 1, Ref: "similarity 0.81",
+		Text: "func retry() {}"}
+	gone := contextpack.Chunk{Stage: contextpack.StageSimilar, Path: "backoff.go", StartLine: 1, EndLine: 1, Ref: "similarity 0.80",
+		Text: "func backoff() {}"}
+	changed := moved
+	changed.Text = "func retry() { panic(1) }"
+	for _, tt := range []struct {
+		name  string
+		found []contextpack.Chunk
+		want  string
+	}{
+		{"moved", []contextpack.Chunk{moved}, "retry.go:4-4 similarity 0.81\nfunc retry() {}"},
+		{"the file gone", []contextpack.Chunk{gone, moved}, "retry.go:4-4 similarity 0.81\nfunc retry() {}"},
+		{"the text changed", []contextpack.Chunk{changed}, "No similar code found."},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: tt.found}}
+			tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "run", head: head, maxBytes: 1 << 10}
+			if out, err := tool.Run(t.Context(), json.RawMessage(`{"query":"retry"}`)); err != nil || out != tt.want {
+				t.Fatalf("Run = %q, %v; want %q", out, err, tt.want)
+			}
+		})
+	}
 }
