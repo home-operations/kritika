@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // TestLexicalChunks: a chunk holds the words of its path, symbol and text as
@@ -49,8 +50,9 @@ func TestLexicalChunks(t *testing.T) {
 			t.Fatal(err)
 		}
 		var run string
-		if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, id, repo).Scan(&run); err != nil {
+		if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+			index_format) VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed', $3) RETURNING id`, id, repo, runspec.IndexFormat).
+			Scan(&run); err != nil {
 			t.Fatal(err)
 		}
 		for len(vectors) < len(chunks) {

@@ -29,6 +29,7 @@ import (
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/lexical"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // scaleRepo is one repository of the index scale benchmark: its chunks are
@@ -813,9 +814,9 @@ func BenchmarkLexicalScale(b *testing.B) {
 			newRun := func(mode string) string {
 				var run string
 				if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-					return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-						VALUES ($1, $2, 'scale', 'lexical-scale', $3, $4, 'completed') RETURNING id`, account.ID(), repo, lexicalScaleDims, mode).
-						Scan(&run)
+					return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+						index_format) VALUES ($1, $2, 'scale', 'lexical-scale', $3, $4, 'completed', $5) RETURNING id`,
+						account.ID(), repo, lexicalScaleDims, mode, runspec.IndexFormat).Scan(&run)
 				}); err != nil {
 					b.Fatal(err)
 				}

@@ -51,8 +51,9 @@ func newPostingsFixture(t *testing.T, s *Store, name string) postingsFixture {
 func (f postingsFixture) run(mode, status string) string {
 	f.t.Helper()
 	var id string
-	if err := f.s.owner.QueryRow(f.t.Context(), `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-		VALUES ($1, $2, 'A', 'test-embed', 8, $3, $4) RETURNING id`, f.account, f.repo, mode, status).Scan(&id); err != nil {
+	if err := f.s.owner.QueryRow(f.t.Context(), `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+		index_format) VALUES ($1, $2, 'A', 'test-embed', 8, $3, $4, $5) RETURNING id`, f.account, f.repo, mode, status, runspec.IndexFormat).
+		Scan(&id); err != nil {
 		f.t.Fatal(err)
 	}
 	return id
@@ -188,7 +189,7 @@ var bruteLexicalSQL = func() string {
 		SELECT h.t, h.chunk_id, h.n FROM g, (SELECT t.t, c.id AS chunk_id, count(*) OVER (PARTITION BY t.t) AS n
 			FROM unnest($5::text[]) AS t (t), index_chunks c
 			WHERE c.index_run_id = $1 AND t.t = ANY (tsvector_to_array(c.lexemes))) h
-		WHERE h.n < least(greatest(trunc(g.n / nullif($6::int, 0)), $7::int), $13::int)
+		WHERE h.n < least(greatest(trunc(g.n / nullif($6::int, 0)), nullif($7::int, 0)), $13::int)
 			AND ($14::int = 0 OR h.n::float8 * $14::int <= g.n)
 	), weights AS (` + rest
 }()
@@ -615,6 +616,52 @@ func TestLexicalChunksOneSnapshot(t *testing.T) {
 	}
 	if statements != 1 {
 		t.Errorf("a search by name sent %d statements that read the index, want one", statements)
+	}
+}
+
+// TestLexicalChunksStepOfAnotherFormat: a step of another index format, an
+// older build's during a rollout, that publishes after the caller found the
+// generation searchable by name (ActiveGenerationFor) but before the search
+// reads its postings, which it left as they were, leaves the search with no
+// hit rather than one of the stale postings.
+func TestLexicalChunksStepOfAnotherFormat(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newPostingsFixture(t, s, "postings-old-step")
+	full := f.run(IndexModeFull, "running")
+	f.insert(full, "", map[string]string{"a.go": "func fooBar() {}", "b.go": "func other() {}"})
+	f.publish(full)
+	f.in(func(tx pgx.Tx) error {
+		_, lexical, err := ActiveGenerationFor(ctx, tx, f.repo, "test-embed", 8, "")
+		if err == nil && !lexical {
+			err = fmt.Errorf("the generation is not searched by name before the step")
+		}
+		return err
+	})
+	published := false
+	publish := func() {
+		if published {
+			return
+		}
+		published = true
+		if _, err := s.owner.Exec(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+			index_format) VALUES ($1, $2, 'B', 'test-embed', 8, 'incremental', 'completed', $3)`, f.account, f.repo, runspec.IndexFormat-1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var statements int
+	var got []string
+	f.in(func(tx pgx.Tx) error {
+		q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "foobar", Compound: true}}, Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}}
+		hits, err := LexicalChunks(ctx, publishingTx{Tx: tx, publish: publish, statements: &statements}, full, []LexicalQuery{q}, nil,
+			10, LexicalBar{Least: 100}, 10)
+		for _, h := range hits {
+			got = append(got, h.Chunk.Path)
+		}
+		return err
+	})
+	if !published || len(got) != 0 {
+		t.Fatalf("a search during a step of another format found %q, want nothing", got)
 	}
 }
 

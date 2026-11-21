@@ -134,7 +134,10 @@ type LexicalBar struct{ Per, Least, Share int }
 // common to search for, which. The generation's chunks, which the weights
 // and the bar are measured against, are read in the same statement, so that
 // both are of the snapshot that the postings are: a publication that commits
-// during the search is seen whole or not at all. Only the excluded paths'
+// during the search is seen whole or not at all. So is whether the
+// generation is still searched by name, as ActiveGenerationFor found it: a
+// step of another index format, which leaves the postings as they were, can
+// publish in between, and the search then finds nothing. Only the excluded paths'
 // chunks and the few ranked chunks are read from index_chunks. A score is
 // rounded so that two chunks holding the same terms tie, whatever order they
 // were added in.
@@ -144,12 +147,12 @@ type LexicalBar struct{ Per, Least, Share int }
 // Per, Least and Share, and $13 LexicalCommonMax, $8 the excluded paths, $9
 // each query's vector, $10 the hits each query keeps, $11 the most of them
 // read when they tie and $12 the most chunks a term can be in and still find
-// a chunk alone. A generation that no publication of this build counted,
+// a chunk alone, and $15 postingsIndexFormat. A generation that no publication of this build counted,
 // which only a test searches, is counted here: coalesce reads its second
 // argument only when the first is null.
 const lexicalChunksSQL = `WITH g AS MATERIALIZED (
-		SELECT coalesce(generation_chunks, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1))::float8 AS n
-		FROM index_runs WHERE id = $1
+		SELECT coalesce(g.generation_chunks, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1))::float8 AS n
+		FROM index_runs g WHERE g.id = $1 AND g.index_format >= $15 AND NOT ` + steppedInAnotherFormat + `
 	), held AS MATERIALIZED (
 		SELECT t.t, x.chunk_id, p.chunks AS n
 		FROM g, unnest($5::text[]) AS t (t)
@@ -234,7 +237,7 @@ func lexicalChunks(
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}
 	rows, err := tx.Query(ctx, query, runID, qis, terms, compound, all, bar.Per, bar.Least, exclude,
-		vectors, perQuery, perQuery+LexicalCommonMax, alone, LexicalCommonMax, bar.Share)
+		vectors, perQuery, perQuery+LexicalCommonMax, alone, LexicalCommonMax, bar.Share, postingsIndexFormat)
 	if err != nil {
 		return nil, fmt.Errorf("store: lexical chunks: %w", err)
 	}

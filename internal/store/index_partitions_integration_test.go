@@ -93,8 +93,9 @@ func partitionRun(t *testing.T, s *Store, account, repo string, active bool, pat
 	ctx := t.Context()
 	var run string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, account, repo).Scan(&run); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status,
+			index_format) VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed', $3) RETURNING id`, account, repo, runspec.IndexFormat).
+			Scan(&run); err != nil {
 			return err
 		}
 		chunks := make([]StagedChunk, len(paths))
@@ -404,7 +405,7 @@ func lexicalPlan(t *testing.T, s *Store, account, run string) []string {
 	var plan []string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, "EXPLAIN "+lexicalChunksSQL, run, []int32{0}, []string{"main"}, []bool{false}, []string{"main"}, 0, 100,
-			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 4+LexicalCommonMax, 100, LexicalCommonMax, 0)
+			[]string{}, []string{"[1,0,0,0,0,0,0,0]"}, 4, 4+LexicalCommonMax, 100, LexicalCommonMax, 0, postingsIndexFormat)
 		if err != nil {
 			return err
 		}
