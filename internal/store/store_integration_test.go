@@ -347,6 +347,13 @@ func TestMigrationBesideAWriter(t *testing.T) {
 			"runner_runs",
 			`SELECT to_regclass('similar_exclusions') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_attribute
 				WHERE attrelid = 'runner_runs'::regclass AND attname = 'similar_exclude_reported_at' AND NOT attisdropped)`},
+		{"an index pack's read beside the index format", "0062_index_format", "",
+			// As ReadIndexPack, before index formats, reads the pack and
+			// then records its mode on the run.
+			`SELECT count(*) FROM index_packs WHERE runner_run_id = $1`,
+			`UPDATE index_runs SET mode = 'full' WHERE id = (SELECT index_run_id FROM runner_runs WHERE id = $1)`,
+			"index_packs",
+			`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_packs'::regclass AND attname = 'truncated' AND NOT attisdropped)`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.undo != "" {

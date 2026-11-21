@@ -9,7 +9,16 @@
 -- hold up every index job's reads behind. So a wait gives up after a few
 -- seconds, the migration fails, and the leader tries it again a retry
 -- interval later (KRITIKA_LEADER_RETRY_INTERVAL).
+--
+-- The migration waits for index_runs' lock alone, while it holds none that
+-- an index job waits for, and takes the other tables' at once or fails. A
+-- job of a build from before index formats reads its pack and then writes
+-- its run (ReadIndexPack). Had the migration held index_runs while it waited
+-- for index_packs, that write would wait for the migration while the
+-- migration waits for the job: a deadlock that can abort the job.
 SET LOCAL lock_timeout = '5s';
+LOCK TABLE index_runs IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE index_schema, index_packs IN ACCESS EXCLUSIVE MODE NOWAIT;
 ALTER TABLE index_runs ADD COLUMN IF NOT EXISTS index_format int NOT NULL DEFAULT 1;
 ALTER TABLE index_schema ADD COLUMN IF NOT EXISTS index_format int NOT NULL DEFAULT 1;
 
