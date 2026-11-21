@@ -5,6 +5,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertest"
 	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/adapter"
@@ -238,6 +240,52 @@ func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 			}
 		})
 	}
+	// River keeps each wait's count in the job's metadata for the next attempt,
+	// so a job that keeps waiting reaches the warning.
+	t.Run("waits counted across attempts", func(t *testing.T) {
+		var logs bytes.Buffer
+		w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+			Embedders: refusingEmbedders()}
+		tx, err := st.App().Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		// Earlier suites leave the repository's index jobs, onto which this
+		// one would be deduplicated.
+		if _, err := tx.Exec(ctx, `DELETE FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1`, repo); err != nil {
+			t.Fatal(err)
+		}
+		tw := rivertest.NewWorker(t, riverpgxv5.New(st.App()), &river.Config{}, river.Worker[jobs.IndexArgs](w))
+		client, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inserted, err := client.InsertTx(ctx, tx, jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		row := inserted.Job
+		for waits := 1; waits <= buildWaitWarn; waits++ {
+			logs.Reset()
+			res, err := tw.WorkJob(ctx, t, tx, row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var meta struct {
+				Waits int `json:"build_waits"`
+			}
+			if err := json.Unmarshal(res.Job.Metadata, &meta); err != nil {
+				t.Fatal(err)
+			}
+			warned := strings.Contains(logs.String(), `level=WARN msg="index has waited long`)
+			if res.EventKind != river.EventKindJobSnoozed || meta.Waits != waits || warned != (waits == buildWaitWarn) {
+				t.Fatalf("attempt %d: %s with %d build waits recorded, warned %v; want snoozed with %d, warned only at %d",
+					waits, res.EventKind, meta.Waits, warned, waits, buildWaitWarn)
+			}
+			row = res.Job
+		}
+	})
 }
 
 // rebuildingForge is a forge during whose BranchTip the leader applies
