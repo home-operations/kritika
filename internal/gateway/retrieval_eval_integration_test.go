@@ -64,15 +64,24 @@ func TestRetrievalEval(t *testing.T) {
 	}
 	history, window, diffed := evalHistory(t)
 	embed, dims := evalEmbedder(t)
+	// The reranker's settings are read before the tree is indexed, so that
+	// one that would send nothing fails at once.
+	var reranker model.Reranker
+	candidates := configfile.DefaultTEIRerankCandidates
+	rerankURL := os.Getenv("KRITIKA_EVAL_RERANK_URL")
+	if rerankURL != "" {
+		var err error
+		if candidates, err = evalIntWithin("KRITIKA_EVAL_RERANK_CANDIDATES", candidates, 1, math.MaxInt); err != nil {
+			t.Fatal(err)
+		}
+		reranker = model.NewReranker(model.RerankTEI, rerankURL, "", "", time.Minute)
+	}
 	ix := evalIndex(t, history[window], embed, dims)
 	truth := newEvalTruth(t, ix.chunks, history[:diffed])
 	floor, margin := evalFloat(t, "KRITIKA_EVAL_FLOOR", configfile.DefaultSimilarFloor), configfile.DefaultSimilarMargin
 	variants := []string{"vector", "lexical", "hybrid"}
-	var reranker model.Reranker
-	candidates := evalInt(t, "KRITIKA_EVAL_RERANK_CANDIDATES", configfile.DefaultTEIRerankCandidates)
 	evalDepth = evalInt(t, "KRITIKA_EVAL_DEPTH", similarDepth)
-	if url := os.Getenv("KRITIKA_EVAL_RERANK_URL"); url != "" {
-		reranker = model.NewReranker(model.RerankTEI, url, "", "", time.Minute)
+	if reranker != nil {
 		variants = append(variants, "vector+rerank", "hybrid+rerank")
 	}
 	tallies := map[string]*evalTally{}
@@ -584,6 +593,22 @@ func evalInt(t *testing.T, key string, def int) int {
 	return def
 }
 
+// evalIntWithin is the environment's int of key, or def when key is unset,
+// refused when it lies outside lo through hi.
+func evalIntWithin(key string, def, lo, hi int) (int, error) {
+	n := def
+	if v := os.Getenv(key); v != "" {
+		var err error
+		if n, err = strconv.Atoi(v); err != nil {
+			return 0, fmt.Errorf("%s: %w", key, err)
+		}
+	}
+	if n < lo || n > hi {
+		return 0, fmt.Errorf("%s = %d, want %d through %d", key, n, lo, hi)
+	}
+	return n, nil
+}
+
 func evalFloat(t *testing.T, key string, def float64) float64 {
 	if v := os.Getenv(key); v != "" {
 		f, err := strconv.ParseFloat(v, 64)
@@ -657,7 +682,10 @@ func commitDiff(t *testing.T, c *object.Commit) (string, string) {
 // character trigrams, caching each text's vector by its hash.
 func evalEmbedder(t *testing.T) (func([]string) [][]float32, int) {
 	url := os.Getenv("KRITIKA_EVAL_EMBED_URL")
-	dims := evalInt(t, "KRITIKA_EVAL_EMBED_DIMS", 256)
+	dims, err := evalIntWithin("KRITIKA_EVAL_EMBED_DIMS", 256, 1, configfile.MaxEmbedDims)
+	if err != nil {
+		t.Fatal(err)
+	}
 	name := cmp.Or(os.Getenv("KRITIKA_EVAL_EMBED_MODEL"), "trigrams")
 	cachePath := filepath.Join(cmp.Or(os.Getenv("KRITIKA_EVAL_CACHE"), t.TempDir()),
 		fmt.Sprintf("vectors-%x.json", sha256.Sum256([]byte(name+url+strconv.Itoa(dims)))))
@@ -739,6 +767,32 @@ func trigramVector(s string, dims int) []float32 {
 		}
 	}
 	return v
+}
+
+// TestEvalIntWithin: a replay setting outside its bounds is refused, with
+// its name and value, before it reaches the code that would divide by it
+// or send nothing for it.
+func TestEvalIntWithin(t *testing.T) {
+	for _, tt := range []struct {
+		name, value string
+		want        int
+		err         string
+	}{
+		{"unset", "", 256, ""},
+		{"within", "1024", 1024, ""},
+		{"zero", "0", 0, "KRITIKA_EVAL_TEST = 0, want 1 through 4000"},
+		{"negative", "-8", 0, "KRITIKA_EVAL_TEST = -8, want 1 through 4000"},
+		{"past the bound", "4001", 0, "KRITIKA_EVAL_TEST = 4001, want 1 through 4000"},
+		{"not a number", "many", 0, "KRITIKA_EVAL_TEST: "},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KRITIKA_EVAL_TEST", tt.value)
+			n, err := evalIntWithin("KRITIKA_EVAL_TEST", 256, 1, configfile.MaxEmbedDims)
+			if n != tt.want || (err == nil) != (tt.err == "") || err != nil && !strings.HasPrefix(err.Error(), tt.err) {
+				t.Fatalf("evalIntWithin = %d, %v; want %d, %q", n, err, tt.want, tt.err)
+			}
+		})
+	}
 }
 
 // TestEvalRerankScale: once every query is reranked, the replay compares
