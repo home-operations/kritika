@@ -833,8 +833,8 @@ one that both find comes first. Of those, an answer takes four for each
 query, and the answer's other bounds hold as before. A chunk the vector
 search keeps shows its similarity, as in `(similarity 0.81)`. One kept by
 name alone shows the names it shares with the query instead, as in
-`(shares AcquireLease, Lease)`, as its similarity sits under the floor and
-would read as a poor match.
+`(shares AcquireLease, Lease)`: its similarity is under the floor, or more
+than the margin below its query's best, and is not shown.
 
 The search by name is one statement, which runs within five seconds,
 after the vector search, and reads the repository's count of chunks and
