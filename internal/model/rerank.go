@@ -115,16 +115,18 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	if err != nil {
 		return nil, RerankUsage{}, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
 	}
+	// An answer refused for its ranks still reports what the provider spent
+	// on it, which the gateway charges the run.
 	ranks, used, err := r.decode(answer)
-	if err != nil {
-		return nil, RerankUsage{}, fmt.Errorf("model: rerank: decode the answer: %w", err)
-	}
 	if used.Tokens == 0 {
 		// TEI reports what a request computed in a header of its answer
 		// alone.
 		if n, err := strconv.ParseUint(resp.Header.Get("X-Compute-Tokens"), 10, 32); err == nil {
 			used.Tokens = int64(n)
 		}
+	}
+	if err != nil {
+		return nil, used, fmt.Errorf("model: rerank: decode the answer: %w", err)
 	}
 	scores := make([]float64, len(documents))
 	for i := range scores {

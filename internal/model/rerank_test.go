@@ -320,6 +320,39 @@ func TestRerankerTransportErrorEndpoint(t *testing.T) {
 	}
 }
 
+// TestRerankerRefusalKeepsUsage: an answer refused for its ranks still
+// reports what the provider said it spent, in its JSON or in TEI's header,
+// which the gateway charges the run.
+func TestRerankerRefusalKeepsUsage(t *testing.T) {
+	for _, tt := range []struct {
+		name, api, answer, header string
+		want                      RerankUsage
+	}{
+		{name: "a Cohere rank without its score", api: RerankCohere,
+			answer: `{"results":[{"index":0}],"meta":{"billed_units":{"search_units":1,"input_tokens":12}}}`,
+			want:   RerankUsage{Tokens: 12, SearchUnits: 1}},
+		{name: "a Cohere rank out of range", api: RerankCohere,
+			answer: `{"results":[{"index":5,"relevance_score":0.3}],"meta":{"billed_units":{"search_units":1}}}`,
+			want:   RerankUsage{SearchUnits: 1}},
+		{name: "a TEI answer that is not JSON", api: RerankTEI, answer: `[{"index":0,`, header: "33", want: RerankUsage{Tokens: 33}},
+		{name: "a TEI rank without its score", api: RerankTEI, answer: `[{"index":0}]`, header: "7", want: RerankUsage{Tokens: 7}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tt.header != "" {
+					w.Header().Set("X-Compute-Tokens", tt.header)
+				}
+				_, _ = io.WriteString(w, tt.answer)
+			}))
+			defer srv.Close()
+			scores, used, err := NewReranker(tt.api, srv.URL, "", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+			if err == nil || scores != nil || used != tt.want {
+				t.Fatalf("Rerank = %v, %+v, %v; want a refusal that reports %+v spent", scores, used, err, tt.want)
+			}
+		})
+	}
+}
+
 // TestRerankerDecodeErrorValues: an answer that does not decode fails with
 // an error that quotes none of it, since a provider can echo the query, a
 // document or a key into any of its fields, and the gateway logs the error.
