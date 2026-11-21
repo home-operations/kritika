@@ -284,6 +284,7 @@ func partitionBehindWriter(t *testing.T, s *Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = writer.Rollback(context.Background()) }()
 	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
@@ -808,18 +809,23 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 		if i == 0 {
 			besideDrainSlice(t, s, account, advance)
 			// The rest of the steps publish beside a drain of its own pace,
-			// which leaves chunks for the full build to contend for.
+			// which leaves chunks for the full build to contend for: of the
+			// files-1 left, the steps replace at most files/2 and the drain
+			// moves drainBudget.
+			const drainBudget = 15
 			draining = true
 			go func() {
 				drained <- func() error {
-					for drainCtx.Err() == nil {
+					for done := 0; done < drainBudget && drainCtx.Err() == nil; {
 						var left int
-						if err := s.owner.QueryRow(drainCtx, `SELECT count(*) FROM index_chunks_legacy`).Scan(&left); err != nil || left <= 5 {
+						if err := s.owner.QueryRow(drainCtx, `SELECT count(*) FROM index_chunks_legacy`).Scan(&left); err != nil || left == 0 {
 							return err
 						}
-						if _, _, err := s.DrainLegacyIndexChunks(drainCtx); err != nil {
+						moved, removed, err := s.DrainLegacyIndexChunks(drainCtx)
+						if err != nil {
 							return err
 						}
+						done += int(moved + removed)
 					}
 					return nil
 				}()
@@ -830,10 +836,11 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 		active.Commit = commit
 		want[path] = text
 	}
-	if err := <-drained; err != nil {
+	err := <-drained
+	draining = false
+	if err != nil {
 		t.Fatal(err)
 	}
-	draining = false
 	rows, err := s.owner.Query(ctx, `SELECT path, text FROM index_chunks WHERE index_run_id = $1`, run)
 	if err != nil {
 		t.Fatal(err)
