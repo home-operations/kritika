@@ -96,7 +96,11 @@ func TestAuthenticationRedirects(t *testing.T) {
 					redirected = r.Header.Get("Authorization")
 					_, _ = io.WriteString(w, `{"data":{"repository":null}}`)
 				}
-				foreign := httptest.NewServer(http.HandlerFunc(destination))
+				foreignCalls := 0
+				foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					foreignCalls++
+					destination(w, r)
+				}))
 				defer foreign.Close()
 				mux := http.NewServeMux()
 				mux.HandleFunc("/api/graphql", func(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +118,7 @@ func TestAuthenticationRedirects(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				var callErr error
 				if kind == "installation" {
 					tokens := app.InstallationTokens(7)
 					tokens.tok, tokens.exp = "ghs_test", time.Now().Add(time.Hour)
@@ -121,25 +126,33 @@ func TestAuthenticationRedirects(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if _, _, err := client.ThreadResolved(t.Context(), "o", "r", 7, 11); err != nil {
-						t.Fatal(err)
-					}
+					_, _, callErr = client.ThreadResolved(t.Context(), "o", "r", 7, 11)
 				} else {
 					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/api/graphql", nil)
 					if err != nil {
 						t.Fatal(err)
 					}
-					resp, err := app.apps.Client().Do(req)
-					if err != nil {
-						t.Fatal(err)
+					var resp *http.Response
+					if resp, callErr = app.apps.Client().Do(req); callErr == nil {
+						_ = resp.Body.Close()
 					}
-					_ = resp.Body.Close()
 				}
 				if !strings.HasPrefix(initial, "Bearer ") {
 					t.Fatal("configured origin did not receive credentials")
 				}
-				if same && redirected != initial || !same && redirected != "" {
-					t.Fatalf("redirect Authorization = %q, same origin = %v", redirected, same)
+				// A redirect off the origin is refused before it is sent, so no
+				// answer from elsewhere is read as GitHub's.
+				if !same {
+					if callErr == nil || foreignCalls != 0 {
+						t.Fatalf("redirect off the origin = %v, with %d requests there; want an error and none", callErr, foreignCalls)
+					}
+					return
+				}
+				if callErr != nil {
+					t.Fatal(callErr)
+				}
+				if redirected != initial {
+					t.Fatalf("redirect Authorization = %q, want %q", redirected, initial)
 				}
 			})
 		}

@@ -246,8 +246,24 @@ func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
 	return newClient(a.limit(&installTransport{base: a.base, origin: a.origin, tokens: tokens}), a.apiBase)
 }
 
+// newClient answers a redirect off the API's origin with an error rather than
+// following it: the transports withhold credentials from such a hop, but its
+// answer would still be read as GitHub's.
 func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
-	opts := []gh.ClientOptionsFunc{gh.WithTransport(rt)}
+	origin, err := url.Parse(cmp.Or(apiBase, "https://api.github.com"))
+	if err != nil {
+		return nil, fmt.Errorf("github: parse API origin: %w", err)
+	}
+	redirects := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if !sameOrigin(req.URL, origin) {
+			return fmt.Errorf("github: refusing a redirect off %s to %s", origin.Host, req.URL.Host)
+		}
+		if len(via) >= 10 {
+			return errors.New("github: stopped after 10 redirects")
+		}
+		return nil
+	}}
+	opts := []gh.ClientOptionsFunc{gh.WithHTTPClient(redirects), gh.WithTransport(rt)}
 	if apiBase != "" {
 		opts = append(opts, gh.WithEnterpriseURLs(apiBase, apiBase))
 	}

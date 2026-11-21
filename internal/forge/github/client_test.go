@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -274,6 +275,33 @@ func TestBranchTipDoesNotWaitForTheBodyToEnd(t *testing.T) {
 	tip, _, err := c.BranchTip(ctx, "o", "r", "main")
 	if err != nil || tip != "tip456" {
 		t.Fatalf("BranchTip of an answer whose body stalls after the branch = %q, %v; want tip456", tip, err)
+	}
+}
+
+// TestBranchTipStaysOnTheAPIOrigin: a redirect within the API's origin is
+// followed, and one to another origin is refused before any request reaches
+// it, so nothing but GitHub answers for a branch.
+func TestBranchTipStaysOnTheAPIOrigin(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		elsewhere.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"main","commit":{"sha":"forged"}}`))
+	}))
+	t.Cleanup(other.Close)
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/branches/main", 200, `{"name":"main","commit":{"sha":"tip456"}}`)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/renamed", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/v3/repos/o/r/branches/main", http.StatusMovedPermanently)
+	})
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/moved", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/api/v3/repos/o/r/branches/main", http.StatusMovedPermanently)
+	})
+	if tip, _, err := c.BranchTip(t.Context(), "o", "r", "renamed"); err != nil || tip != "tip456" {
+		t.Fatalf("BranchTip redirected within the API = %q, %v; want tip456", tip, err)
+	}
+	if tip, _, err := c.BranchTip(t.Context(), "o", "r", "moved"); err == nil || elsewhere.Load() != 0 {
+		t.Fatalf("BranchTip redirected to another origin = %q, %v, with %d requests there; want an error and none", tip, err, elsewhere.Load())
 	}
 }
 
