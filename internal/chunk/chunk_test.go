@@ -291,6 +291,19 @@ func TestParseBounds(t *testing.T) {
 			f.Decls[0].StartLine, f.Decls[1].StartLine)
 	}
 	f.Close()
+	// Many comments trailing code on a line that a comment, then a long run
+	// of white space, starts: the run is walked once, not once for each
+	// comment.
+	gapped := "/**/" + strings.Repeat(" ", 640<<10) + strings.Repeat("x;/**/", 60000) + "\nfunction g(){}\n"
+	start = time.Now()
+	f = p.Parse("gapped.js", []byte(gapped))
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a line of comments after a long gap took %s", took)
+	}
+	if n := len(f.Decls); n == 0 || f.Decls[n-1].Symbol != "g" || f.Decls[n-1].StartLine != 2 {
+		t.Errorf("a line of comments after a long gap: declarations %+v, want the last to be g on line 2", f.Decls)
+	}
+	f.Close()
 }
 
 // TestDeclarationsTakeTheirLead: a declaration's range takes in the comments,

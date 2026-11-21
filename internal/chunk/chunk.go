@@ -414,8 +414,10 @@ func comment(typ string) bool { return strings.HasSuffix(typ, "comment") }
 // and a node that continues onto the line began on a lead line.
 func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, text [][2]int) []bool {
 	// reach is, by 0-based row, the end of the row's text that lead nodes
-	// fill from its start, with only white space between them. from is the
-	// 1-based line where a lead node that continues onto the row began.
+	// fill from its start, with only white space between them, or, once
+	// something else stops them, where that thing starts, so that the white
+	// space before it is walked once. from is the 1-based line where a lead
+	// node that continues onto the row began.
 	reach, from := make([]int, len(text)), make([]int, len(text))
 	var walk func(n *gotreesitter.Node)
 	walk = func(n *gotreesitter.Node) {
@@ -431,7 +433,9 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 		}
 		for row := first; row <= last && row < len(text); row++ {
 			lo, hi := text[row][0], text[row][1]
-			if p := skipSpace(src, cmp.Or(reach[row], lo), hi); int(n.StartByte()) <= p {
+			p := skipSpace(src, cmp.Or(reach[row], lo), hi)
+			reach[row] = p
+			if int(n.StartByte()) <= p {
 				reach[row] = max(p, int(n.EndByte()))
 			}
 			if row > first {
