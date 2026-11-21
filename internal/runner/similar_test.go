@@ -2,6 +2,7 @@ package runner
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,14 +29,16 @@ import (
 // similar-code requests with answer. It records both. A similar-code request
 // over maxBody, when set, is refused as the gateway refuses one over its
 // bound. When unanswered is set, it answers no exclusion report, and closes
-// it once the run gives the report up. When perQuery is set, an answer to a
-// request of one query holds that many of answer's chunks at most, or the
-// request's Limit when that is more.
+// it once the run gives the report up. When reported is set, it is called
+// with the number of exclusion reports so far as each arrives. When perQuery
+// is set, an answer to a request of one query holds that many of answer's
+// chunks at most, or the request's Limit when that is more.
 type fakeSimilarGateway struct {
 	status     int
 	answer     contextpack.SimilarResponse
 	maxBody    int64
 	unanswered chan struct{}
+	reported   func(n int)
 	perQuery   int
 
 	mu       sync.Mutex
@@ -58,6 +61,9 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 				t.Error(err)
 			}
 			f.excluded = append(f.excluded, v.Paths)
+			if f.reported != nil {
+				f.reported(len(f.excluded))
+			}
 			if f.unanswered != nil {
 				f.mu.Unlock()
 				<-r.Context().Done()
@@ -97,17 +103,15 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 // TestSimilarContextExclusions: a run first asks, with no queries, whether
 // its repository has an index. It reports the paths its searches leave out
 // once, both names of a rename among them, and only when there is an index.
-// Its requests carry none. A run whose report is refused, still fails once
-// similarReportWindow is over, or is not answered within it, searches
-// nothing: the index would answer with the old copies of the files the
-// prompt shows. The window, not the report's own retries, ends the wait.
+// Its requests carry none. A run whose report is refused, fails until the
+// run ends, or is not answered within similarReportWindow, searches nothing:
+// the index would answer with the old copies of the files the prompt shows.
+// A report that fails is sent again, and the window, not the report's own
+// retries, ends the wait.
 func TestSimilarContextExclusions(t *testing.T) {
 	const diff = "diff --git a/old.go b/new.go\nsimilarity index 80%\nrename from old.go\nrename to new.go\n" +
 		"--- a/old.go\n+++ b/new.go\n@@ -1,1 +1,2 @@\n package main\n+func n() {}\n"
 	res := &gitfetch.Result{Diff: diff, Changed: []string{"new.go", "main.go"}, RenamedFrom: []string{"old.go"}}
-	window := similarReportWindow
-	similarReportWindow = 300 * time.Millisecond
-	t.Cleanup(func() { similarReportWindow = window })
 	excluded := [][]string{{"main.go", "new.go", "old.go"}}
 	for _, tt := range []struct {
 		name       string
@@ -115,30 +119,47 @@ func TestSimilarContextExclusions(t *testing.T) {
 		unanswered bool
 		indexed    bool
 		excluded   [][]string
-		queries    []int
-		offered    bool
+		// endAt is the report at which the gateway ends the run, when set.
+		endAt   int
+		queries []int
+		offered bool
 	}{
 		{name: "reported", status: http.StatusNoContent, indexed: true, excluded: excluded, queries: []int{0, 1}, offered: true},
 		{name: "refused", status: http.StatusBadRequest, indexed: true, excluded: excluded, queries: []int{0}},
-		{name: "failing", status: http.StatusServiceUnavailable, indexed: true, queries: []int{0}},
+		{name: "failing", status: http.StatusServiceUnavailable, indexed: true, excluded: slices.Repeat(excluded, 2), endAt: 2, queries: []int{0}},
 		{name: "never answered", unanswered: true, indexed: true, excluded: excluded, queries: []int{0}},
 		{name: "no index", status: http.StatusNoContent, queries: []int{0}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			fastRetries(t, time.Minute)
+			window := similarReportWindow
+			t.Cleanup(func() { similarReportWindow = window })
+			// Only a report never answered waits for the window to end.
+			similarReportWindow = time.Minute
 			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: tt.indexed}}
 			if tt.unanswered {
+				similarReportWindow = 300 * time.Millisecond
 				gw.unanswered = make(chan struct{})
+			}
+			// A report that fails is sent again until the run ends.
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			gw.reported = func(n int) {
+				if n == tt.endAt {
+					cancel()
+				}
 			}
 			s := reviewSpec()
 			s.GatewayURL = gw.serve(t).URL
 			searched := make(chan *searchTool, 1)
 			go func() {
-				_, search := similarContext(t.Context(), s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
+				_, search := similarContext(ctx, s, runspec.Secrets{GatewayToken: "run", ReportToken: "report"}, nil, res, nil,
 					slog.New(slog.DiscardHandler))
 				searched <- search
 			}()
-			// The report's own retries and timeout last minutes: only the window
-			// ends the wait within the test's minute.
+			// The report's own retries last a minute, and its timeout longer:
+			// only the window or the run's end ends the wait within the test's
+			// minute.
 			var search *searchTool
 			select {
 			case search = <-searched:
@@ -157,9 +178,7 @@ func TestSimilarContextExclusions(t *testing.T) {
 			}
 			gw.mu.Lock()
 			defer gw.mu.Unlock()
-			// A report that the gateway fails is sent again until the window
-			// ends, however many times that is.
-			if tt.status != http.StatusServiceUnavailable && !slices.EqualFunc(gw.excluded, tt.excluded, slices.Equal) {
+			if !slices.EqualFunc(gw.excluded, tt.excluded, slices.Equal) {
 				t.Fatalf("reported exclusions %q, want %q", gw.excluded, tt.excluded)
 			}
 			var queries []int
