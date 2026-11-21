@@ -292,6 +292,113 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 	})
 }
 
+// TestMigrationBesideAWriter: a migration that changes tables a transaction
+// of an older build reads and then writes, while it applies, ends neither
+// that transaction nor itself as a deadlock's victim. The transaction takes
+// a lock of one table, the migration starts, and once the migration waits
+// for a lock, or has ended, the transaction writes another or the same
+// table. The write succeeds, and the migration applies or gives up its wait,
+// to apply once the transaction is done.
+func TestMigrationBesideAWriter(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("migrate-writer"))); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "migrate-writer")
+	var runner string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		runner, err = InsertRunnerRun(ctx, tx, account, RunnerKindReview, "", 0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if err := s.Migrate(ctx, "kritika_app"); err != nil {
+			t.Error(err)
+		}
+		if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id = $1`, runner); err != nil {
+			t.Error(err)
+		}
+	})
+	exists := func(query string) bool {
+		t.Helper()
+		var ok bool
+		if err := s.owner.QueryRow(ctx, query).Scan(&ok); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	for _, tt := range []struct {
+		name, version, undo string
+		// hold is what the transaction takes before the migration starts,
+		// and write what it does once the migration waits, each with the
+		// runner run's id. The migration waits for waitFor, which it
+		// changes.
+		hold, write, waitFor string
+		applied              string
+	}{
+		{"a runner's report beside similar_exclusions", "0061_similar_exclude",
+			`DROP TABLE similar_exclusions; ALTER TABLE runner_runs DROP COLUMN similar_exclude_reported_at`,
+			// As WithRunner reads the run's row, and its report then writes it.
+			`SELECT 1 FROM runner_runs WHERE id = $1 FOR NO KEY UPDATE`, `UPDATE runner_runs SET finished_at = now() WHERE id = $1`,
+			"runner_runs",
+			`SELECT to_regclass('similar_exclusions') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_attribute
+				WHERE attrelid = 'runner_runs'::regclass AND attname = 'similar_exclude_reported_at' AND NOT attisdropped)`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.undo != "" {
+				if _, err := s.owner.Exec(ctx, tt.undo); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = $1`, tt.version); err != nil {
+				t.Fatal(err)
+			}
+			var table uint32
+			if err := s.owner.QueryRow(ctx, `SELECT $1::regclass::oid`, tt.waitFor).Scan(&table); err != nil {
+				t.Fatal(err)
+			}
+			writer, err := s.owner.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = writer.Rollback(context.Background()) }()
+			if _, err := writer.Exec(ctx, tt.hold, runner); err != nil {
+				t.Fatal(err)
+			}
+			var migrateErr error
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				migrateErr = s.Migrate(ctx, "kritika_app")
+			}()
+			// A test that fails rolls the writer back, which ends the
+			// migration's wait, before it ends.
+			t.Cleanup(func() { <-done })
+			waitForLockWait(t, s, table, "AccessExclusiveLock", done)
+			if _, err := writer.Exec(ctx, tt.write, runner); err != nil {
+				t.Fatalf("the write beside the migration: %v", err)
+			}
+			if err := writer.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+			<-done
+			if migrateErr != nil && (!lockNotAvailable(migrateErr) || !strings.Contains(migrateErr.Error(), tt.version)) {
+				t.Fatalf("Migrate beside the writer = %v, want it applied or a lock wait in %s given up", migrateErr, tt.version)
+			}
+			if err := s.Migrate(ctx, "kritika_app"); err != nil {
+				t.Fatalf("Migrate once the writer is done: %v", err)
+			}
+			if !exists(tt.applied) {
+				t.Fatal("not applied after Migrate")
+			}
+		})
+	}
+}
+
 // twoAccounts serves alpha and beta. alphaAccount serves alpha alone.
 const (
 	twoAccounts = `
