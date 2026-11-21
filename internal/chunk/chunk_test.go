@@ -281,6 +281,23 @@ func Build() {}
 			want: []want{{"Widget", "struct", "", 3, 5, 5}, {"Build", "function", "", 9, 9, 9}},
 		},
 		{
+			name: "go block doc comment of paragraphs", path: "demo.go",
+			src: `package demo
+
+/*
+Widget is a thing.
+
+It has a name.
+*/
+type Widget struct{ Name string }
+
+/* unattached */
+
+func Build() {}
+`,
+			want: []want{{"Widget", "struct", "", 3, 8, 8}, {"Build", "function", "", 12, 12, 12}},
+		},
+		{
 			name: "python decorators and comments", path: "demo.py",
 			src: `import os
 

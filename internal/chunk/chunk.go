@@ -413,8 +413,10 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 	walk(root)
 	lead := make([]bool, len(starts)+1)
 	for row := range starts {
+		// A blank line inside a block comment is the comment's, while one
+		// between two comments separates them.
 		lo, hi := lineText(src, starts, row)
-		lead[row+1] = lo < hi && reach[row] > 0 && skipSpace(src, reach[row], hi) >= hi &&
+		lead[row+1] = (lo < hi || from[row] != 0) && reach[row] > 0 && skipSpace(src, reach[row], hi) >= hi &&
 			(from[row] == 0 || lead[from[row]])
 	}
 	return lead
