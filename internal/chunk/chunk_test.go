@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"maps"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -932,36 +931,38 @@ func TestImportKinds(t *testing.T) {
 // ones its declarations were found with, so reading its lines first builds
 // no second table. Unparsed files still build theirs on that first read.
 func TestParsedFileReusesItsLineOffsets(t *testing.T) {
-	const n = 50
 	p := &Parser{}
 	src := []byte("package demo\n\nfunc F() {\n\t_ = 1\n}\n")
-	parsed := make([]*File, n)
-	for i := range parsed {
-		parsed[i] = p.Parse("demo.go", src)
-		parsed[i].Close()
-		if len(parsed[i].Decls) == 0 {
+	want := []int{0, 13, 14, 25, 32}
+	read := func(t *testing.T, f *File) {
+		t.Helper()
+		if got := f.Bytes(3, 3); !bytes.Equal(got, []byte("func F() {")) {
+			t.Fatalf("line 3 = %q", got)
+		}
+		if !slices.Equal(f.lineOffsets, want) {
+			t.Fatalf("line offsets = %v, want %v", f.lineOffsets, want)
+		}
+	}
+	t.Run("parsed", func(t *testing.T) {
+		f := p.Parse("demo.go", src)
+		f.Close()
+		if len(f.Decls) == 0 {
 			t.Fatalf("demo.go parsed into no declarations")
 		}
-	}
-	unparsed := make([]*File, n)
-	for i := range unparsed {
-		unparsed[i] = p.Parse("demo.txt", src)
-	}
-	firstReads := func(files []*File) uint64 {
-		var before, after runtime.MemStats
-		runtime.ReadMemStats(&before)
-		for _, f := range files {
-			if got := f.Bytes(3, 3); !bytes.Equal(got, []byte("func F() {")) {
-				t.Fatalf("line 3 = %q", got)
-			}
+		if len(f.lineOffsets) == 0 {
+			t.Fatalf("parsed file has no line offsets before its first read")
 		}
-		runtime.ReadMemStats(&after)
-		return after.Mallocs - before.Mallocs
-	}
-	if allocs := firstReads(parsed); allocs >= n/2 {
-		t.Errorf("first reads of %d parsed files allocated %d times, want their parse's offsets reused", n, allocs)
-	}
-	if allocs := firstReads(unparsed); allocs < n {
-		t.Errorf("first reads of %d unparsed files allocated %d times, want one table each", n, allocs)
-	}
+		table := &f.lineOffsets[0]
+		read(t, f)
+		if &f.lineOffsets[0] != table {
+			t.Errorf("first read replaced the parse's line offsets")
+		}
+	})
+	t.Run("unparsed", func(t *testing.T) {
+		f := p.Parse("demo.txt", src)
+		if f.lineOffsets != nil {
+			t.Fatalf("unparsed file has line offsets %v before its first read", f.lineOffsets)
+		}
+		read(t, f)
+	})
 }
