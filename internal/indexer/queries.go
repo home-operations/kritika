@@ -175,10 +175,10 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 		if d.EndByte <= lastEndByte || !holds(d, lastEnd+1) {
 			continue
 		}
-		body := f.Text(d.StartLine, d.EndLine) + "\n"
+		body := f.Bytes(d.StartLine, d.EndLine)
 		switch {
-		case len(body) <= contextpack.SimilarQueryChars:
-			out = append(out, body)
+		case len(body)+1 <= contextpack.SimilarQueryChars:
+			out = append(out, string(body)+"\n")
 		case slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
 			return n.EndByte <= d.EndByte && (n.StartByte > d.StartByte || n.EndByte < d.EndByte) && holds(n, lastEnd+1)
 		}):
