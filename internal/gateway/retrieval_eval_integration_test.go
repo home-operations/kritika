@@ -356,7 +356,9 @@ func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands [
 // evalTruth is what the evaluation judges an answer by.
 type evalTruth struct {
 	// declared are the chunks that declare each symbol of four bytes or
-	// more.
+	// more: those that hold its declaration's line, which a window of a
+	// declaration too large for one chunk names in Signature when it does
+	// not.
 	declared map[string][]defKey
 	// changes are each commit's changed paths, and pairs how many commits
 	// of at most 20 paths change each pair of paths.
@@ -371,7 +373,7 @@ func newEvalTruth(t *testing.T, chunks []indexer.Chunk, history []*object.Commit
 	e := evalTruth{declared: map[string][]defKey{}, changes: map[*object.Commit][]string{}, pairs: map[[2]string]int{}, indexed: map[string]bool{}}
 	for _, c := range chunks {
 		e.indexed[c.Path] = true
-		if len(c.Symbol) >= 4 {
+		if len(c.Symbol) >= 4 && c.Signature == "" {
 			e.declared[c.Symbol] = append(e.declared[c.Symbol], defKey{c.Path, c.StartLine})
 		}
 	}
@@ -770,5 +772,21 @@ func TestEvalTruthLeavesOutAChangedPathWithAColon(t *testing.T) {
 	defs := truth.defs("AcquireLease(ctx); ReleaseLease(ctx)", []string{"docs/a:b.go"})
 	if len(defs) != 1 || !defs[defKey{"lease.go", 7}] {
 		t.Fatalf("definitions %v, want lease.go's alone", defs)
+	}
+}
+
+// TestEvalTruthDeclaredByItsHead: of a declaration split into windows, each
+// under its symbol, the one that holds its declaration's line declares it.
+// The others, which name that line in Signature, neither count as a
+// definition nor make the name look declared too often to count.
+func TestEvalTruthDeclaredByItsHead(t *testing.T) {
+	truth := newEvalTruth(t, []indexer.Chunk{
+		{Path: "lease.go", StartLine: 10, Symbol: "AcquireLease"},
+		{Path: "lease.go", StartLine: 70, Symbol: "AcquireLease", Signature: "func AcquireLease(ctx context.Context) error {"},
+		{Path: "lease.go", StartLine: 130, Symbol: "AcquireLease", Signature: "func AcquireLease(ctx context.Context) error {"},
+	}, nil)
+	defs := truth.defs("AcquireLease(ctx)", []string{"main.go"})
+	if len(defs) != 1 || !defs[defKey{"lease.go", 10}] {
+		t.Fatalf("definitions %v, want the window at line 10 alone", defs)
 	}
 }
