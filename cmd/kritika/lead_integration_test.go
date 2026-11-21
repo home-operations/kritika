@@ -25,96 +25,140 @@ import (
 	"github.com/home-operations/kritika/internal/worker"
 )
 
-// TestLeadSweepsOnceTheConfigurationIsApplied: a new leader's retention sweep
-// waits for the configuration to be applied, so that it never converts an
-// index table that applying an embedder replaces. A configuration held up in
-// the store holds the sweep back, and the sweep runs once it is applied.
-func TestLeadSweepsOnceTheConfigurationIsApplied(t *testing.T) {
-	st := storetest.Open(t)
+// holdTx begins a transaction on its own owner connection, runs sql in it,
+// and returns a release that rolls it back, once, and is also a cleanup.
+func holdTx(t *testing.T, sql string) (release func()) {
+	t.Helper()
 	ctx := t.Context()
-	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	conn, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, sql); err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	release = func() {
+		if !released {
+			released = true
+			if err := tx.Rollback(context.Background()); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	t.Cleanup(release)
+	return release
+}
+
+// expiredLogin plants an expired login that only retention deletes, and
+// returns whether it is gone.
+func expiredLogin(t *testing.T, st *store.Store, hash string) (swept func() bool) {
+	t.Helper()
+	ctx := t.Context()
+	if _, err := st.App().Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
+		VALUES (decode($1, 'hex'), 'test', 'n', 'v', now() - interval '1 hour', '\x00')`, hash); err != nil {
+		t.Fatal(err)
+	}
+	return func() bool {
+		t.Helper()
+		var left bool
+		if err := st.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM login_states WHERE state_hash = decode($1, 'hex'))`, hash).
+			Scan(&left); err != nil {
+			t.Fatal(err)
+		}
+		return !left
+	}
+}
+
+// indexSchemaWaiters counts the sessions that wait for the index schema's
+// lock, which retention's index work takes first.
+func indexSchemaWaiters(t *testing.T, watch *pgx.Conn) int {
+	t.Helper()
+	var n int
+	if err := watch.QueryRow(t.Context(), `SELECT count(*) FROM pg_stat_activity
+		WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND query LIKE '%kritika-index-schema%'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// startLead runs lead until the test ends.
+func startLead(
+	t *testing.T, st *store.Store, file *configfile.File,
+	reach func(context.Context, *configfile.Connection) (map[string]store.Listing, error),
+) {
+	t.Helper()
+	cfg := &config.Config{DatabaseAppRole: "kritika_app", LeaderRetryInterval: time.Second}
+	queue, qerr := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if qerr != nil {
+		t.Fatal(qerr)
+	}
+	apps := &worker.Forges{}
+	if reach == nil {
+		reach = apps.Reach
+	}
+	reg := prometheus.NewRegistry()
+	leadCtx, stop := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	var leadErr error
+	go func() {
+		defer close(done)
+		leadErr = lead(leadCtx, st, cfg, configfile.NewCurrent(file), queue, ingest.NewService(st, queue), reach,
+			&worker.ForgeCache{Build: apps.Build}, nil, nil, metrics.New(reg), server.NewConfigErrorGauge(reg), slog.New(slog.DiscardHandler))
+	}()
+	t.Cleanup(func() {
+		stop()
+		<-done
+		// A stop cuts short what the leader was doing, such as ensuring the
+		// index schema once a test released its lock.
+		if leadErr != nil && !errors.Is(leadErr, context.Canceled) {
+			t.Error(leadErr)
+		}
+	})
+}
+
+// TestLeadPartitionsOnceTheConfigurationIsApplied: a new leader's retention
+// holds its index work back until the configuration is applied, so that it
+// never converts an index table that applying an embedder replaces. Its
+// other sweeps, such as expired logins, do not wait for that.
+func TestLeadPartitionsOnceTheConfigurationIsApplied(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
 	// Another session watches: a transaction sees one snapshot of pg_stat_activity.
 	watch, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = watch.Close(context.Background()) })
-	// An expired login only the sweep deletes.
-	if _, err := st.App().Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
-		VALUES ('\x6c656164', 'test', 'n', 'v', now() - interval '1 hour', '\x00')`); err != nil {
-		t.Fatal(err)
-	}
-	swept := func() bool {
-		t.Helper()
-		var left bool
-		if err := st.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM login_states WHERE state_hash = '\x6c656164')`).Scan(&left); err != nil {
-			t.Fatal(err)
-		}
-		return !left
-	}
-	hold, err := owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	swept := expiredLogin(t, st, "6c656164")
 	// Applying a configuration ends by recording its hash on this row.
-	if _, err := hold.Exec(ctx, `INSERT INTO config_state (id, applied_hash) VALUES (1, '')
-		ON CONFLICT (id) DO UPDATE SET applied_hash = config_state.applied_hash`); err != nil {
-		t.Fatal(err)
-	}
-	released := false
-	release := func() {
-		if !released {
-			released = true
-			if err := hold.Rollback(context.Background()); err != nil {
-				t.Error(err)
-			}
-		}
-	}
-	t.Cleanup(release)
+	releaseConfig := holdTx(t, `INSERT INTO config_state (id, applied_hash) VALUES (1, '')
+		ON CONFLICT (id) DO UPDATE SET applied_hash = config_state.applied_hash`)
+	// And the index work, once it starts, waits here, where it shows.
+	holdTx(t, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`)
 
-	cfg := &config.Config{DatabaseAppRole: "kritika_app", LeaderRetryInterval: time.Second}
-	current := configfile.NewCurrent(configfiletest.Load(t, "{}"))
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	apps := &worker.Forges{}
-	reg := prometheus.NewRegistry()
-	logger := slog.New(slog.DiscardHandler)
-	leadCtx, stop := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() {
-		done <- lead(leadCtx, st, cfg, current, queue, ingest.NewService(st, queue), apps.Reach, &worker.ForgeCache{Build: apps.Build}, nil, nil,
-			metrics.New(reg), server.NewConfigErrorGauge(reg), logger)
-	}()
-	t.Cleanup(func() {
-		stop()
-		release()
-		if err := <-done; err != nil {
-			t.Error(err)
-		}
-	})
-
-	waitLead(t, "the configuration to wait on the store", func() bool {
+	startLead(t, st, configfiletest.Load(t, "{}"), nil)
+	waitLead(t, "the configuration to wait on the store and retention to sweep the expired login", func() bool {
 		var waiting bool
 		if err := watch.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
 			WHERE wait_event_type = 'Lock' AND query LIKE '%INSERT INTO config_state%')`).
 			Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
-		return waiting
+		return waiting && swept()
 	})
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
-		if swept() {
-			t.Fatal("retention swept before the configuration was applied")
-		}
+	if n := indexSchemaWaiters(t, watch); n != 0 {
+		t.Fatalf("%d sessions wait for the index schema's lock before the configuration is applied, want none", n)
 	}
-	release()
-	waitLead(t, "retention to sweep once the configuration is applied", swept)
+	releaseConfig()
+	waitLead(t, "retention's index work to start once the configuration is applied", func() bool {
+		return indexSchemaWaiters(t, watch) > 0
+	})
 }
 
 func waitLead(t *testing.T, what string, done func() bool) {
@@ -127,11 +171,12 @@ func waitLead(t *testing.T, what string, done func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// TestLeadSweepsOnceTheIndexSchemaIsEnsured: with an embedder configured, a
-// new leader's retention sweep also waits for the index schema to be
-// ensured, which can replace the index table that the sweep would convert:
-// the configuration's commit alone does not start it.
-func TestLeadSweepsOnceTheIndexSchemaIsEnsured(t *testing.T) {
+// TestLeadSweepsWhileTheIndexSchemaWaits: with an embedder configured, a
+// new leader's retention also holds its index work back until the index
+// schema is ensured, which can replace the index table that the work would
+// convert: the configuration's commit alone does not start it. Its other
+// sweeps run while ensuring the schema waits for a lock.
+func TestLeadSweepsWhileTheIndexSchemaWaits(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 	t.Setenv("TEST_SECRET", "test-provider-key")
@@ -143,82 +188,29 @@ providers:
     apiKey: { env: TEST_SECRET }
 embedding: { model: test/fake-embed, dims: 8 }
 `)
-	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = owner.Close(context.Background()) })
 	watch, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = watch.Close(context.Background()) })
-	if _, err := st.App().Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
-		VALUES ('\x736368656d61', 'test', 'n', 'v', now() - interval '1 hour', '\x00')`); err != nil {
-		t.Fatal(err)
-	}
-	swept := func() bool {
-		t.Helper()
-		var left bool
-		if err := st.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM login_states WHERE state_hash = '\x736368656d61')`).Scan(&left); err != nil {
-			t.Fatal(err)
-		}
-		return !left
-	}
+	swept := expiredLogin(t, st, "736368656d61")
 	// Ensuring the index schema starts by taking this lock.
-	hold, err := owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := hold.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
-		t.Fatal(err)
-	}
-	released := false
-	release := func() {
-		if !released {
-			released = true
-			if err := hold.Rollback(context.Background()); err != nil {
-				t.Error(err)
-			}
-		}
-	}
-	t.Cleanup(release)
+	release := holdTx(t, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`)
 
-	cfg := &config.Config{DatabaseAppRole: "kritika_app", LeaderRetryInterval: time.Second}
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	apps := &worker.Forges{}
-	reg := prometheus.NewRegistry()
-	leadCtx, stop := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() {
-		done <- lead(leadCtx, st, cfg, configfile.NewCurrent(file), queue, ingest.NewService(st, queue), apps.Reach, &worker.ForgeCache{Build: apps.Build},
-			nil, nil, metrics.New(reg), server.NewConfigErrorGauge(reg), slog.New(slog.DiscardHandler))
-	}()
-	t.Cleanup(func() {
-		stop()
-		release()
-		if err := <-done; err != nil {
-			t.Error(err)
-		}
-	})
-
-	waitLead(t, "the configuration to be applied and the index schema to wait on its lock", func() bool {
-		var applied, waiting bool
-		if err := watch.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM config_state WHERE id = 1 AND applied_hash = $1),
-			EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'
-				AND query LIKE '%kritika-index-schema%')`, file.Hash()).Scan(&applied, &waiting); err != nil {
+	startLead(t, st, file, nil)
+	waitLead(t, "the configuration to be applied, the index schema to wait on its lock, and retention to sweep the expired login", func() bool {
+		var applied bool
+		if err := watch.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM config_state WHERE id = 1 AND applied_hash = $1)`, file.Hash()).
+			Scan(&applied); err != nil {
 			t.Fatal(err)
 		}
-		return applied && waiting
+		return applied && indexSchemaWaiters(t, watch) > 0 && swept()
 	})
-	if swept() {
-		t.Fatal("retention swept once the configuration was applied, before the index schema was ensured")
+	// Ensuring the schema is the one waiting: retention's index work is not.
+	if n := indexSchemaWaiters(t, watch); n != 1 {
+		t.Fatalf("%d sessions wait for the index schema's lock, want only the one ensuring it", n)
 	}
 	release()
-	waitLead(t, "retention to sweep once the index schema is ensured", swept)
 }
 
 // TestLeadSweepsWhileRepositoriesAreListed: a new leader's retention sweep
@@ -228,7 +220,6 @@ embedding: { model: test/fake-embed, dims: 8 }
 // timeout does when retention waits for it.
 func TestLeadSweepsWhileRepositoriesAreListed(t *testing.T) {
 	st := storetest.Open(t)
-	ctx := t.Context()
 	t.Setenv("TEST_GT_TOKEN", "gitea-api")
 	t.Setenv("TEST_GT_HOOK", "gitea-hook")
 	file := configfiletest.Load(t, `
@@ -239,7 +230,7 @@ gitea:
     token: { env: TEST_GT_TOKEN }
     webhookSecret: { env: TEST_GT_HOOK }
 `)
-	if _, err := st.App().Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
+	if _, err := st.App().Exec(t.Context(), `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
 		VALUES ('\x6c69737473', 'test', 'n', 'v', now() - interval '1 hour', '\x00')`); err != nil {
 		t.Fatal(err)
 	}
@@ -276,25 +267,7 @@ gitea:
 		return nil, errors.New("not listed")
 	}
 
-	cfg := &config.Config{DatabaseAppRole: "kritika_app", LeaderRetryInterval: time.Second}
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	apps := &worker.Forges{}
-	reg := prometheus.NewRegistry()
-	leadCtx, stop := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() {
-		done <- lead(leadCtx, st, cfg, configfile.NewCurrent(file), queue, ingest.NewService(st, queue), reach, &worker.ForgeCache{Build: apps.Build},
-			nil, nil, metrics.New(reg), server.NewConfigErrorGauge(reg), slog.New(slog.DiscardHandler))
-	}()
-	t.Cleanup(func() {
-		stop()
-		if err := <-done; err != nil {
-			t.Error(err)
-		}
-	})
+	startLead(t, st, file, reach)
 	if !<-listed {
 		t.Fatal("retention waited for the repositories to be listed")
 	}

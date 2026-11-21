@@ -679,12 +679,12 @@ func lead(
 		rescuer.Runs = kube
 	}
 	duties.Go(func() { rescuer.Run(pollCtx) })
-	// And so is retention: transcripts and stopped indexes past their windows
-	// (owner pool), expired dashboard sessions (app pool), and partitioning a
-	// legacy index table. It starts once the index schema, which can replace
-	// that table, is ensured or the configuration refused: ahead of the listing.
-	retention := &worker.Retention{Store: st, Current: current, Logger: logger, AppRole: cfg.DatabaseAppRole}
-	startRetention := sync.OnceFunc(func() { duties.Go(func() { retention.Run(pollCtx) }) })
+	// And so is retention, at once. Its index work waits until the index schema, which can
+	// replace a legacy table that it partitions, is ensured or the configuration refused.
+	indexReady := make(chan struct{})
+	openIndex := sync.OnceFunc(func() { close(indexReady) })
+	retention := &worker.Retention{Store: st, Current: current, Logger: logger, AppRole: cfg.DatabaseAppRole, IndexReady: indexReady}
+	duties.Go(func() { retention.Run(pollCtx) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err
@@ -692,7 +692,7 @@ func lead(
 		if err := ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger); err != nil {
 			return err
 		}
-		startRetention()
+		openIndex()
 		// Once the accounts exist: a fresh instance, or a new connection,
 		// knows its repositories before any webhook names one.
 		poll.SyncRepositories(ctx)
@@ -700,7 +700,7 @@ func lead(
 	}, onboarder.Offer, configErrors, events, logger); err != nil {
 		return err
 	}
-	startRetention()
+	openIndex()
 	duties.Go(func() { poll.Run(pollCtx) })
 	<-ctx.Done()
 	return nil

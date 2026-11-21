@@ -167,31 +167,31 @@ func TestRetentionSweep(t *testing.T) {
 	if got := next(); got.name != "sessions" {
 		t.Fatalf("third call = %q, want sessions", got.name)
 	}
-	fourth := next()
-	if fourth.name != "stoppedIndexes" {
-		t.Fatalf("fourth call = %q, want stoppedIndexes", fourth.name)
+	if fourth := next(); fourth.name != "conversations" || fourth.swept != conversationRetention {
+		t.Fatalf("fourth call = %q older than %s, want conversations older than %s", fourth.name, fourth.swept, conversationRetention)
 	}
-	if want := current.Get().DisabledIndexGrace(); fourth.swept != want {
-		t.Fatalf("grace = %s, want %s", fourth.swept, want)
+	if fifth := next(); fifth.name != "egressRefusals" || fifth.swept != current.Get().TranscriptRetention() {
+		t.Fatalf("fifth call = %q older than %s, want egressRefusals older than the transcript retention", fifth.name, fifth.swept)
 	}
-	acme := configfile.AccountID(configfile.ForgeGitHub, "acme")
-	if !fourth.runs(acme, configfile.RepoTraits{}) || fourth.runs(acme, configfile.RepoTraits{Archived: true}) ||
-		fourth.runs(configfile.AccountID(configfile.ForgeGitHub, "gone"), configfile.RepoTraits{}) {
-		t.Fatal("a repository runs as the configuration says, and none of an account it does not serve does")
-	}
-	if fifth := next(); fifth.name != "conversations" || fifth.swept != conversationRetention {
-		t.Fatalf("fifth call = %q older than %s, want conversations older than %s", fifth.name, fifth.swept, conversationRetention)
-	}
-	if sixth := next(); sixth.name != "egressRefusals" || sixth.swept != current.Get().TranscriptRetention() {
-		t.Fatalf("sixth call = %q older than %s, want egressRefusals older than the transcript retention", sixth.name, sixth.swept)
-	}
-	// A second pass proves the loop actually re-runs after the interval.
-	if seventh := next(); seventh.name != "modelInvocations" || seventh.swept != current.Get().TranscriptRetention() {
-		t.Fatalf("seventh call = %q older than %s, want modelInvocations older than the transcript retention",
-			seventh.name, seventh.swept)
+	if sixth := next(); sixth.name != "modelInvocations" || sixth.swept != current.Get().TranscriptRetention() {
+		t.Fatalf("sixth call = %q older than %s, want modelInvocations older than the transcript retention",
+			sixth.name, sixth.swept)
 	}
 	if got := next(); got.name != "similarExclusions" {
-		t.Fatalf("eighth call = %q, want similarExclusions", got.name)
+		t.Fatalf("seventh call = %q, want similarExclusions", got.name)
+	}
+	// No IndexReady: the index work follows at once.
+	stopped := next()
+	if stopped.name != "stoppedIndexes" {
+		t.Fatalf("eighth call = %q, want stoppedIndexes", stopped.name)
+	}
+	if want := current.Get().DisabledIndexGrace(); stopped.swept != want {
+		t.Fatalf("grace = %s, want %s", stopped.swept, want)
+	}
+	acme := configfile.AccountID(configfile.ForgeGitHub, "acme")
+	if !stopped.runs(acme, configfile.RepoTraits{}) || stopped.runs(acme, configfile.RepoTraits{Archived: true}) ||
+		stopped.runs(configfile.AccountID(configfile.ForgeGitHub, "gone"), configfile.RepoTraits{}) {
+		t.Fatal("a repository runs as the configuration says, and none of an account it does not serve does")
 	}
 	if got := next(); got.name != "partitionIndex" || got.role != "kritika_app" {
 		t.Fatalf("call = %q for role %q, want partitionIndex for kritika_app", got.name, got.role)
@@ -206,6 +206,7 @@ func TestRetentionSweep(t *testing.T) {
 	if got := next(); got.name != "dropLegacyIndexChunks" {
 		t.Fatalf("call = %q, want dropLegacyIndexChunks", got.name)
 	}
+	// A second pass proves the loop actually re-runs after the interval.
 	if got := next(); got.name != "modelCalls" {
 		t.Fatalf("second pass's first call = %q, want modelCalls", got.name)
 	}
@@ -215,6 +216,74 @@ func TestRetentionSweep(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Retention did not return once ctx ended")
+	}
+}
+
+// TestRetentionSweepHoldsIndexWorkUntilReady: until IndexReady closes, every
+// pass sweeps all but the stopped indexes and the legacy partition, which
+// take the index schema's lock. Once it closes, they run: at once, not at the
+// next tick.
+func TestRetentionSweepHoldsIndexWorkUntilReady(t *testing.T) {
+	ordinary := []string{"modelCalls", "diffs", "sessions", "conversations", "egressRefusals", "modelInvocations", "similarExclusions"}
+	for _, tc := range []struct {
+		name string
+		// every is the sweep interval, and passes how many passes run before
+		// IndexReady closes: an hour's interval leaves only the close to
+		// start another.
+		every  time.Duration
+		passes int
+	}{
+		{name: "across passes", every: 5 * time.Millisecond, passes: 2},
+		{name: "at once", every: time.Hour, passes: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := configfile.NewCurrent(retentionAccount(t))
+			st := &fakeRetentionStore{calls: make(chan sweepCall, 16)}
+			ready := make(chan struct{})
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan struct{})
+			go func() {
+				(&Retention{Store: st, Current: current, Logger: slog.New(slog.DiscardHandler), IndexReady: ready, every: tc.every}).Run(ctx)
+				close(done)
+			}()
+			defer func() {
+				cancel()
+				for {
+					select {
+					case <-done:
+						return
+					case <-st.calls:
+					case <-time.After(5 * time.Second):
+						t.Fatal("Retention did not return once ctx ended")
+					}
+				}
+			}()
+			next := func() string {
+				select {
+				case c := <-st.calls:
+					return c.name
+				case <-time.After(5 * time.Second):
+					t.Fatal("Retention never called the store")
+					return ""
+				}
+			}
+			for pass := range tc.passes {
+				for _, want := range ordinary {
+					if got := next(); got != want {
+						t.Fatalf("pass %d called %q, want %q before IndexReady closes", pass+1, got, want)
+					}
+				}
+			}
+			close(ready)
+			for got := next(); got != "stoppedIndexes"; got = next() {
+				if got == "partitionIndex" {
+					t.Fatal("the legacy partition came before the stopped indexes")
+				}
+			}
+			if got := next(); got != "partitionIndex" {
+				t.Fatalf("call after stoppedIndexes = %q, want partitionIndex", got)
+			}
+		})
 	}
 }
 

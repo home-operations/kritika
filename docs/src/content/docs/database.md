@@ -489,9 +489,11 @@ measures the effect.
 ### Partitioning an existing index
 
 A build before partitioning created `index_chunks` as a plain table. The
-leader's hourly retention sweep converts such a table, first when the leader
-starts. The leader of such a build can also create the table again during a
-rollout, after the migrations ran, for a new embedder. That table lacks the
+leader's hourly retention sweep converts such a table, first once a new
+leader has applied the configuration and ensured the index schema, which its
+other sweeps do not wait for. The leader of such a build can also create the
+table again during a rollout, after the migrations ran, for a new embedder.
+That table lacks the
 columns that the migrations add, `content_hash` and `lexemes`, and the
 content hash's index. When it takes the lead with an embedder configured,
 and before it converts the table, the leader adds them in two transactions.

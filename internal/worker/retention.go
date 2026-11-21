@@ -56,13 +56,20 @@ type Retention struct {
 	Logger  *slog.Logger
 	// AppRole is the application role, which a partitioned index table grants.
 	AppRole string
+	// IndexReady, unless nil, holds back the work that takes the index
+	// schema's lock until it is closed: dropping stopped repositories'
+	// indexes and partitioning a legacy index table. The leader closes it
+	// once the configuration is applied or refused and the index schema is
+	// ensured, which can replace the table. The other sweeps run meanwhile,
+	// so a schema change that waits for a lock holds none of them up.
+	IndexReady <-chan struct{}
 	// every overrides retentionSweepInterval in tests.
 	every time.Duration
 }
 
 // Run sweeps once immediately, then every retentionSweepInterval until ctx
-// ends. A sweep failure is logged, never fatal: it just leaves stale rows
-// for the next tick.
+// ends, and once more when IndexReady closes. A sweep failure is logged,
+// never fatal: it just leaves stale rows for the next tick.
 func (r *Retention) Run(ctx context.Context) {
 	t := time.NewTicker(cmp.Or(r.every, retentionSweepInterval))
 	defer t.Stop()
@@ -77,6 +84,8 @@ func (r *Retention) Run(ctx context.Context) {
 			r.Logger.Info("retention sweep removed", "sweep", what, "removed", n, "unit", unit)
 		}
 	}
+	// A nil channel never receives: ready is nil once the index work runs.
+	ready := r.IndexReady
 	for {
 		n, err := r.Store.SweepModelCalls(ctx, r.Current.Get().TranscriptRetention())
 		report("model call transcripts", "rows", n, err)
@@ -84,12 +93,6 @@ func (r *Retention) Run(ctx context.Context) {
 		report("review diffs", "packs", n, err)
 		n, err = r.Store.SweepSessions(ctx, time.Now())
 		report("dashboard sessions", "rows", n, err)
-		f := r.Current.Get()
-		n, err = r.Store.SweepStoppedIndexes(ctx, f.DisabledIndexGrace(), func(accountID string, traits configfile.RepoTraits) bool {
-			a, ok := f.AccountByID(accountID)
-			return ok && f.Runs(a, traits)
-		})
-		report("stopped repositories' indexes", "repositories", n, err)
 		n, err = r.Store.SweepConversations(ctx, conversationRetention)
 		report("agent conversations", "rows", n, err)
 		n, err = r.Store.SweepEgressRefusals(ctx, r.Current.Get().TranscriptRetention())
@@ -98,15 +101,29 @@ func (r *Retention) Run(ctx context.Context) {
 		report("settled model invocations", "rows", n, err)
 		n, err = r.Store.SweepSimilarExclusions(ctx)
 		report("finished runs' similar-code exclusions", "rows", n, err)
-		moved, n, err := r.partitionIndex(ctx)
-		report("legacy index partition", "chunks", n, err)
-		if moved > 0 {
-			r.Logger.Info("retention sweep moved", "sweep", "legacy index partition", "moved", moved, "unit", "chunks")
+		select {
+		case <-ready:
+			ready = nil
+		default:
+		}
+		if ready == nil {
+			f := r.Current.Get()
+			n, err = r.Store.SweepStoppedIndexes(ctx, f.DisabledIndexGrace(), func(accountID string, traits configfile.RepoTraits) bool {
+				a, ok := f.AccountByID(accountID)
+				return ok && f.Runs(a, traits)
+			})
+			report("stopped repositories' indexes", "repositories", n, err)
+			moved, n, err := r.partitionIndex(ctx)
+			report("legacy index partition", "chunks", n, err)
+			if moved > 0 {
+				r.Logger.Info("retention sweep moved", "sweep", "legacy index partition", "moved", moved, "unit", "chunks")
+			}
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-ready:
 		}
 	}
 }
