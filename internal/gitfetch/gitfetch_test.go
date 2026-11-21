@@ -221,8 +221,8 @@ func TestRunNotFoundNamesTheToken(t *testing.T) {
 }
 
 // TestTreesCommitUnavailable: a commit that the remote does not serve fails
-// the fetch with ErrCommitUnavailable, and a remote that fails for any other
-// reason does not.
+// the fetch with an UnavailableError that names it, and a remote that fails
+// for any other reason does not.
 func TestTreesCommitUnavailable(t *testing.T) {
 	r := build(t)
 	missing := "0123456789abcdef0123456789abcdef01234567"
@@ -232,19 +232,21 @@ func TestTreesCommitUnavailable(t *testing.T) {
 	t.Cleanup(srv.Close)
 	refusing := refusingUploadPack(t, r.head, missing)
 	for _, tc := range []struct {
-		name        string
-		fetch       Fetch
-		unavailable bool
+		name    string
+		fetch   Fetch
+		refused string
 	}{
-		{name: "base the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: r.head, Base: missing}, unavailable: true},
-		{name: "head the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: missing, Base: r.base}, unavailable: true},
-		{name: "base that smart HTTP refuses", fetch: Fetch{CloneURL: refusing + "/acme/webapp.git", Head: r.head, Base: missing}, unavailable: true},
+		{name: "base the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: r.head, Base: missing}, refused: missing},
+		{name: "head the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: missing, Base: r.base}, refused: missing},
+		{name: "base that smart HTTP refuses", fetch: Fetch{CloneURL: refusing + "/acme/webapp.git", Head: r.head, Base: missing}, refused: missing},
+		{name: "head that smart HTTP refuses", fetch: Fetch{CloneURL: refusing + "/acme/webapp.git", Head: missing, Base: r.head}, refused: missing},
 		{name: "remote unavailable", fetch: Fetch{CloneURL: srv.URL + "/acme/webapp.git", Head: r.head, Base: r.base}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Trees(t.Context(), tc.fetch)
-			if err == nil || errors.Is(err, ErrCommitUnavailable) != tc.unavailable {
-				t.Fatalf("err = %v, want unavailable %v", err, tc.unavailable)
+			e, ok := errors.AsType[*UnavailableError](err)
+			if err == nil || ok != (tc.refused != "") || errors.Is(err, ErrCommitUnavailable) != ok || ok && e.SHA != tc.refused {
+				t.Fatalf("err = %v, want the commit %q unavailable", err, tc.refused)
 			}
 		})
 	}
@@ -282,30 +284,34 @@ func refusingUploadPack(t *testing.T, tip, refused string) string {
 	return srv.URL
 }
 
-// TestCommitRefused: the server's refusal to serve a commit by SHA, as git's
+// TestRefusedCommit: the server's refusal to serve a commit by SHA, as git's
 // upload-pack words it, counts as the commit being unavailable, and so does
-// go-git's own server not finding a commit that was asked for. Other errors
-// that the server or the transport send do not, nor an object missing that
-// was not asked for.
-func TestCommitRefused(t *testing.T) {
+// go-git's own server not finding a commit that was asked for. Each names
+// the commit refused, as a whole SHA. Other errors that the server or the
+// transport send do not count, nor an object missing that was not asked for.
+func TestRefusedCommit(t *testing.T) {
 	head, base := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	for _, tc := range []struct {
 		name string
 		err  error
 		want bool
+		sha  string
 	}{
-		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + head}), want: true},
-		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + head), want: true},
-		{name: "wanted object not found", err: fmt.Errorf("getting wanted object %s: %w", base, plumbing.ErrObjectNotFound), want: true},
+		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + head}), want: true, sha: head},
+		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + base), want: true, sha: base},
+		{name: "refusal of a commit not asked for", err: &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("c", 40)}, want: true},
+		{name: "refusal naming no commit", err: &pktline.ErrorLine{Text: "upload-pack: not our ref"}, want: true},
+		{name: "wanted object not found", err: fmt.Errorf("getting wanted object %s: %w", base, plumbing.ErrObjectNotFound), want: true, sha: base},
 		{name: "other object not found", err: fmt.Errorf("getting tree %s: %w", strings.Repeat("c", 40), plumbing.ErrObjectNotFound)},
+		{name: "object not found within a longer id", err: fmt.Errorf("getting tree %s0: %w", base, plumbing.ErrObjectNotFound)},
 		{name: "object not found unnamed", err: fmt.Errorf("decoding pack: %w", plumbing.ErrObjectNotFound)},
 		{name: "other error line", err: &pktline.ErrorLine{Text: "upload-pack: internal error"}},
 		{name: "repository not found", err: transport.ErrRepositoryNotFound},
 		{name: "cut short", err: io.ErrUnexpectedEOF},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := commitRefused(tc.err, head, base); got != tc.want {
-				t.Fatalf("commitRefused(%v) = %v, want %v", tc.err, got, tc.want)
+			if sha, got := refusedCommit(tc.err, head, base); got != tc.want || sha != tc.sha {
+				t.Fatalf("refusedCommit(%v) = %q, %v, want %q, %v", tc.err, sha, got, tc.sha, tc.want)
 			}
 		})
 	}

@@ -115,8 +115,10 @@ func TestFetchForIndex(t *testing.T) {
 	}{
 		{name: "incremental", base: base, wantMode: store.IndexModeIncremental, fetches: 1},
 		{name: "no base", wantMode: store.IndexModeFull, fetches: 1},
-		{name: "base unavailable", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", gitfetch.ErrCommitUnavailable),
+		{name: "base unavailable", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{SHA: base}),
 			wantMode: store.IndexModeFull, fetches: 2},
+		{name: "head unavailable", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{SHA: head}), wantErr: true, fetches: 1},
+		{name: "unavailable, unnamed", base: base, incr: fmt.Errorf("gitfetch: fetch: %w", &gitfetch.UnavailableError{}), wantErr: true, fetches: 1},
 		{name: "fetch failed", base: base, incr: errors.New("gitfetch: fetch: connection reset"), wantErr: true, fetches: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -138,10 +140,10 @@ func TestFetchForIndex(t *testing.T) {
 }
 
 // TestFetchForIndexFromARemote: through the real fetch, a base that the
-// remote does not have falls back to a full build of the head. A remote that
-// fails for any other reason, as a forge that answers 503 does, fails the run
-// after the one fetch, rather than fetching the repository again to embed it
-// all anew.
+// remote does not have falls back to a full build of the head. A head that it
+// does not have, or a remote that fails for any other reason, as a forge that
+// answers 503 does, fails the run after the one fetch, rather than fetching
+// the repository again to embed it all anew.
 func TestFetchForIndexFromARemote(t *testing.T) {
 	dir := t.TempDir()
 	r, err := git.PlainInit(dir, false)
@@ -182,26 +184,34 @@ func TestFetchForIndexFromARemote(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		cloneURL string
-		wantMode string
-		wantErr  bool
+		name       string
+		cloneURL   string
+		head, base string
+		wantMode   string
+		wantErr    bool
 		// wantRequests is what the failing remote is asked, 0 for the local one.
 		wantRequests int32
+		wantFetches  int
 	}{
-		{name: "base the remote does not have", cloneURL: dir, wantMode: store.IndexModeFull},
-		{name: "remote unavailable", cloneURL: unavailable, wantErr: true, wantRequests: perFetch},
+		{name: "base the remote does not have", cloneURL: dir, head: head, base: missing, wantMode: store.IndexModeFull, wantFetches: 2},
+		{name: "head the remote does not have", cloneURL: dir, head: missing, base: head, wantErr: true, wantFetches: 1},
+		{name: "remote unavailable", cloneURL: unavailable, head: head, base: missing, wantErr: true, wantRequests: perFetch, wantFetches: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requests.Store(0)
-			res, mode, err := fetchForIndex(t.Context(), runspec.Spec{CloneURL: tc.cloneURL, Head: head, Base: missing}, "",
-				gitfetch.Trees, slog.New(slog.DiscardHandler))
+			fetches := 0
+			trees := func(ctx context.Context, f gitfetch.Fetch) (*gitfetch.Result, error) {
+				fetches++
+				return gitfetch.Trees(ctx, f)
+			}
+			res, mode, err := fetchForIndex(t.Context(), runspec.Spec{CloneURL: tc.cloneURL, Head: tc.head, Base: tc.base}, "",
+				trees, slog.New(slog.DiscardHandler))
 			if res != nil {
 				t.Cleanup(func() { _ = res.Close() })
 			}
-			if (err != nil) != tc.wantErr || mode != tc.wantMode || requests.Load() != tc.wantRequests {
-				t.Fatalf("fetchForIndex = %q, %v after %d requests to the remote, want %q, error %v after %d",
-					mode, err, requests.Load(), tc.wantMode, tc.wantErr, tc.wantRequests)
+			if (err != nil) != tc.wantErr || mode != tc.wantMode || requests.Load() != tc.wantRequests || fetches != tc.wantFetches {
+				t.Fatalf("fetchForIndex = %q, %v after %d fetches and %d requests to the remote, want %q, error %v after %d and %d",
+					mode, err, fetches, requests.Load(), tc.wantMode, tc.wantErr, tc.wantFetches, tc.wantRequests)
 			}
 		})
 	}
