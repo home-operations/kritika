@@ -324,7 +324,6 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) 
 // each of repos indexed at "indexed", no index job of any of them and no
 // webhook delivered.
 type tipPoll struct {
-	t          *testing.T
 	st         *store.Store
 	file       *configfile.File
 	account    *configfile.Account
@@ -357,7 +356,7 @@ func newTipPollOf(t *testing.T, yaml string, repos ...string) *tipPoll {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &tipPoll{t: t, st: st, file: file, tf: &tipForge{tip: "moved"}}
+	s := &tipPoll{st: st, file: file, tf: &tipForge{tip: "moved"}}
 	s.in, _ = file.Connection("bot-ross")
 	s.account, _ = file.Account(configfile.ForgeGitHub, "onedr0p")
 	storetest.Repositories(t, st, file, repos...)
@@ -377,19 +376,19 @@ func newTipPollOf(t *testing.T, yaml string, repos ...string) *tipPoll {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		s.execAs(account.ID(), `UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
+		s.execAs(t, account.ID(), `UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
 		// The worker's tests share the database and index these repositories
 		// from nothing.
 		t.Cleanup(func() {
-			s.execAs(account.ID(), `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
-			s.execAs(account.ID(), `DELETE FROM index_runs WHERE id = $1`, runID)
+			s.execAs(t, account.ID(), `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
+			s.execAs(t, account.ID(), `DELETE FROM index_runs WHERE id = $1`, runID)
 		})
 		s.repoIDs = append(s.repoIDs, repoID)
 	}
-	t.Cleanup(s.clearIndexJobs)
+	t.Cleanup(func() { s.clearIndexJobs(t) })
 	// Earlier suites leave index jobs of these repositories behind.
-	s.clearIndexJobs()
-	s.webhooks(false)
+	s.clearIndexJobs(t)
+	s.webhooks(t, false)
 	s.dispatched = &recordingDispatcher{Dispatcher: ingest.NewService(st, queue)}
 	s.p = &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: s.tf}, Dispatcher: s.dispatched,
@@ -398,60 +397,60 @@ func newTipPollOf(t *testing.T, yaml string, repos ...string) *tipPoll {
 	return s
 }
 
-func (s *tipPoll) exec(sql string, args ...any) {
-	s.t.Helper()
-	s.execAs(s.account.ID(), sql, args...)
+func (s *tipPoll) exec(t testing.TB, sql string, args ...any) {
+	t.Helper()
+	s.execAs(t, s.account.ID(), sql, args...)
 }
 
-func (s *tipPoll) execAs(accountID, sql string, args ...any) {
-	s.t.Helper()
+func (s *tipPoll) execAs(t testing.TB, accountID, sql string, args ...any) {
+	t.Helper()
 	if err := s.st.WithAccount(context.Background(), accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(context.Background(), sql, args...)
 		return err
 	}); err != nil {
-		s.t.Fatal(err)
+		t.Fatal(err)
 	}
 }
 
-func (s *tipPoll) clearIndexJobs() {
-	s.t.Helper()
+func (s *tipPoll) clearIndexJobs(t testing.TB) {
+	t.Helper()
 	if _, err := s.st.App().Exec(context.Background(), `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
-		s.t.Fatal(err)
+		t.Fatal(err)
 	}
 }
 
 // webhooks marks the connection's webhook as delivered just now, or as
 // never delivered.
-func (s *tipPoll) webhooks(arriving bool) {
-	s.t.Helper()
+func (s *tipPoll) webhooks(t testing.TB, arriving bool) {
+	t.Helper()
 	if arriving {
-		s.exec(`UPDATE connections SET last_webhook_at = now() WHERE id = $1`, s.in.ID())
+		s.exec(t, `UPDATE connections SET last_webhook_at = now() WHERE id = $1`, s.in.ID())
 		return
 	}
-	s.exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, s.in.ID())
+	s.exec(t, `UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, s.in.ID())
 }
 
-func (s *tipPoll) poll() {
-	s.t.Helper()
-	if _, err := s.p.Poll(s.t.Context(), s.file, s.account, s.in); err != nil {
-		s.t.Fatal(err)
+func (s *tipPoll) poll(t testing.TB) {
+	t.Helper()
+	if _, err := s.p.Poll(t.Context(), s.file, s.account, s.in); err != nil {
+		t.Fatal(err)
 	}
-	if err := s.p.pollTips(s.t.Context(), s.file, s.account, s.in); err != nil {
-		s.t.Fatal(err)
+	if err := s.p.pollTips(t.Context(), s.file, s.account, s.in); err != nil {
+		t.Fatal(err)
 	}
 }
 
 // indexJobs are the commits of the index jobs of the first repository.
-func (s *tipPoll) indexJobs() []string {
-	s.t.Helper()
-	rows, err := s.st.App().Query(s.t.Context(), `SELECT coalesce(args->>'commit_sha', '') FROM river_job
+func (s *tipPoll) indexJobs(t testing.TB) []string {
+	t.Helper()
+	rows, err := s.st.App().Query(t.Context(), `SELECT coalesce(args->>'commit_sha', '') FROM river_job
 		WHERE kind = 'index' AND args->>'repository_id' = $1 ORDER BY id`, s.repoIDs[0])
 	if err != nil {
-		s.t.Fatal(err)
+		t.Fatal(err)
 	}
 	commits, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		s.t.Fatal(err)
+		t.Fatal(err)
 	}
 	return commits
 }
@@ -464,8 +463,8 @@ func (s *tipPoll) indexJobs() []string {
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	ctx := t.Context()
 	s := newTipPoll(t, "onedr0p/home-ops")
-	s.poll()
-	if got := s.indexJobs(); len(got) != 1 || got[0] != "moved" {
+	s.poll(t)
+	if got := s.indexJobs(t); len(got) != 1 || got[0] != "moved" {
 		t.Fatalf("index jobs = %v, want one at the moved tip", got)
 	}
 	// The push carries the traits the poll read, which ingest writes back
@@ -483,15 +482,15 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	// The job is still queued: the branch is not asked for again.
 	calls := s.tf.calls
 	s.tf.tip = "moved again"
-	s.poll()
-	if got := s.indexJobs(); s.tf.calls != calls || len(got) != 1 || got[0] != "moved" {
+	s.poll(t)
+	if got := s.indexJobs(t); s.tf.calls != calls || len(got) != 1 || got[0] != "moved" {
 		t.Fatalf("with an index job queued: %d tip checks and index jobs %v, want none and the one queued", s.tf.calls-calls, got)
 	}
 
-	s.clearIndexJobs()
+	s.clearIndexJobs(t)
 	s.tf.tip = "indexed"
-	s.poll()
-	if got := s.indexJobs(); len(got) != 0 {
+	s.poll(t)
+	if got := s.indexJobs(t); len(got) != 0 {
 		t.Fatalf("index jobs = %v, want none for a tip the index covers", got)
 	}
 
@@ -507,12 +506,12 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 		}
 		return at
 	}
-	s.exec(`UPDATE poll_state SET last_polled_at = now() - interval '1 hour' WHERE account_id = $1`, s.account.ID())
+	s.exec(t, `UPDATE poll_state SET last_polled_at = now() - interval '1 hour' WHERE account_id = $1`, s.account.ID())
 	before := polledAt()
 	s.tf.err = errors.New("branch not found")
-	s.poll()
-	if after := polledAt(); !after.After(before) || len(s.indexJobs()) != 0 {
-		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, s.indexJobs())
+	s.poll(t)
+	if after := polledAt(); !after.After(before) || len(s.indexJobs(t)) != 0 {
+		t.Fatalf("after a failed tip: polled at %s, before %s, index jobs %v; want the poll recorded and no job", after, before, s.indexJobs(t))
 	}
 }
 
@@ -523,7 +522,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 func TestPollerSweepsNoBranchWithoutAnEmbedder(t *testing.T) {
 	s := newTipPollOf(t, configYAML, "onedr0p/home-ops")
 	s.p.pollTipsAll(t.Context())
-	if got := s.indexJobs(); s.tf.calls != 0 || len(got) != 0 {
+	if got := s.indexJobs(t); s.tf.calls != 0 || len(got) != 0 {
 		t.Fatalf("without an embedder: %d branch lookups and index jobs %v, want neither", s.tf.calls, got)
 	}
 }
@@ -534,8 +533,8 @@ func TestPollerSweepsNoBranchWithoutAnEmbedder(t *testing.T) {
 func TestPollerLogsAMissingBranchOnce(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.tf.err = fmt.Errorf("github: branch main of onedr0p/home-ops: %w", forge.ErrNotFound)
-	s.poll()
-	s.poll()
+	s.poll(t)
+	s.poll(t)
 	logs := s.logs.String()
 	if s.tf.calls != 2 || strings.Count(logs, "default branch unknown to the forge") != 1 || strings.Contains(logs, "default branch not polled") {
 		t.Fatalf("%d tip checks, logs after two polls of a missing branch:\n%s\nwant it asked for twice and logged once", s.tf.calls, logs)
@@ -568,7 +567,7 @@ func TestPollerLooksPastARepositoryTheAppDoesNotFind(t *testing.T) {
 	if err := s.p.pollTips(t.Context(), s.file, s.account, s.in); err != nil {
 		t.Fatalf("a look past a repository the App does not find = %v, want none", err)
 	}
-	if got := s.indexJobs(); len(got) != 1 || got[0] != "moved" {
+	if got := s.indexJobs(t); len(got) != 1 || got[0] != "moved" {
 		t.Fatalf("index jobs of home-ops = %v, want one at the moved tip", got)
 	}
 	if logs := s.logs.String(); !strings.Contains(logs, "default branch unknown to the forge") || !strings.Contains(logs, "onedr0p/flux") {
@@ -686,21 +685,21 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() {
-				s.exec(`DELETE FROM index_runs WHERE commit_sha = 'published' AND repository_id = $1`, s.repoIDs[0])
-				s.exec(`UPDATE repositories SET repo_config_off = false WHERE id = $1`, s.repoIDs[0])
+				s.exec(t, `DELETE FROM index_runs WHERE commit_sha = 'published' AND repository_id = $1`, s.repoIDs[0])
+				s.exec(t, `UPDATE repositories SET repo_config_off = false WHERE id = $1`, s.repoIDs[0])
 			})
-			s.clearIndexJobs()
+			s.clearIndexJobs(t)
 			s.tf.tip = "moved"
-			s.poll()
+			s.poll(t)
 			var id int64
 			if err := s.st.App().QueryRow(t.Context(), `SELECT id FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1`,
 				s.repoIDs[0]).Scan(&id); err != nil {
 				t.Fatalf("the first poll's index job: %v", err)
 			}
-			s.exec(tc.end, id)
-			calls, jobs := s.tf.calls, len(s.indexJobs())
-			s.poll()
-			asked, queued := s.tf.calls-calls, len(s.indexJobs())-jobs
+			s.exec(t, tc.end, id)
+			calls, jobs := s.tf.calls, len(s.indexJobs(t))
+			s.poll(t)
+			asked, queued := s.tf.calls-calls, len(s.indexJobs(t))-jobs
 			if tc.backsOff && (asked != 0 || queued != 0) {
 				t.Fatalf("%d tip checks and %d index jobs queued, want the branch left alone", asked, queued)
 			}
@@ -736,14 +735,14 @@ func TestPollerChecksTipsHourlyWhileWebhooksArrive(t *testing.T) {
 		{name: "never arrived", delivered: "NULL", checked: time.Minute, want: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s.exec(`UPDATE connections SET last_webhook_at = `+tc.delivered+` WHERE id = $1`, s.in.ID())
+			s.exec(t, `UPDATE connections SET last_webhook_at = `+tc.delivered+` WHERE id = $1`, s.in.ID())
 			s.p.tips = nil
 			if tc.checked > 0 {
 				s.p.tips = map[string]*tipScan{s.account.ID(): {swept: time.Now().Add(-tc.checked)}}
 			}
 			calls := s.tf.calls
-			s.poll()
-			s.poll()
+			s.poll(t)
+			s.poll(t)
 			if got := s.tf.calls - calls; got != tc.want {
 				t.Fatalf("two polls looked at the branch %d times, want %d", got, tc.want)
 			}
@@ -758,7 +757,7 @@ func TestPollerStopsTipChecksAtARateLimit(t *testing.T) {
 	s.tf.err = fmt.Errorf("github: branch main of onedr0p/flux: %w", &gh.RateLimitError{
 		Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Now().Add(time.Hour)}}, Response: &http.Response{StatusCode: http.StatusForbidden},
 	})
-	s.poll()
+	s.poll(t)
 	if s.tf.calls != 1 || !strings.Contains(s.logs.String(), "default branches not polled past the rate limit") {
 		t.Fatalf("%d tip checks, logs:\n%s\nwant one, and the rest logged as left", s.tf.calls, s.logs.String())
 	}
@@ -1008,7 +1007,7 @@ func (f *limitForge) BranchTip(_ context.Context, _, name, _ string) (string, st
 // a look within the limit's wait is one however long the polls take.
 func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops", "onedr0p/talos")
-	s.webhooks(true)
+	s.webhooks(t, true)
 	lf := &limitForge{now: time.Now()}
 	lf.tip = "indexed"
 	s.p.Forges = &forges{f: lf}
@@ -1016,7 +1015,7 @@ func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	look := func() {
 		t.Helper()
 		lf.allowed = 1
-		s.poll()
+		s.poll(t)
 	}
 	look()
 	look()
@@ -1074,8 +1073,8 @@ func (*stallTipForge) ListOpenPullRequests(_ context.Context, _, name string, _ 
 func TestPollerPollsPullRequestsPastAStalledBranch(t *testing.T) {
 	t.Setenv("KRITIKA_POLL_INTERVAL", "1s")
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
-	s.exec(`DELETE FROM poll_state WHERE account_id = $1`, s.account.ID())
-	s.exec(`DELETE FROM pull_requests WHERE number = 19`)
+	s.exec(t, `DELETE FROM poll_state WHERE account_id = $1`, s.account.ID())
+	s.exec(t, `DELETE FROM pull_requests WHERE number = 19`)
 	f := &stallTipForge{entered: make(chan struct{}), release: make(chan struct{})}
 	s.p.Forges = &forges{f: f}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1155,16 +1154,16 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 func TestPollerRechecksAnOptOutAtTheIndexedCommit(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.tf.tip = "indexed"
-	s.exec(`UPDATE repositories SET repo_config_off = true WHERE id = $1`, s.repoIDs[0])
-	t.Cleanup(func() { s.exec(`UPDATE repositories SET repo_config_off = false WHERE id = $1`, s.repoIDs[0]) })
-	s.poll()
-	if got := s.indexJobs(); !slices.Equal(got, []string{"indexed"}) {
+	s.exec(t, `UPDATE repositories SET repo_config_off = true WHERE id = $1`, s.repoIDs[0])
+	t.Cleanup(func() { s.exec(t, `UPDATE repositories SET repo_config_off = false WHERE id = $1`, s.repoIDs[0]) })
+	s.poll(t)
+	if got := s.indexJobs(t); !slices.Equal(got, []string{"indexed"}) {
 		t.Fatalf("index jobs = %v, want one at the indexed commit", got)
 	}
-	s.exec(`UPDATE river_job SET state = 'completed', finalized_at = now() WHERE kind = 'index'`)
+	s.exec(t, `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE kind = 'index'`)
 	calls := s.tf.calls
-	s.poll()
-	if got := s.indexJobs(); s.tf.calls != calls || len(got) != 1 {
+	s.poll(t)
+	if got := s.indexJobs(t); s.tf.calls != calls || len(got) != 1 {
 		t.Fatalf("after a job that found it off: %d tip checks and index jobs %v, want none and the one", s.tf.calls-calls, got)
 	}
 }
@@ -1811,7 +1810,7 @@ func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
 // hold it back.
 func TestPollerReadsNoRepositoryForALookNotDue(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
-	s.webhooks(true)
+	s.webhooks(t, true)
 	s.p.tips = map[string]*tipScan{s.account.ID(): {swept: time.Now()}}
 	owner, err := pgx.Connect(t.Context(), storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
 	if err != nil {
@@ -1848,7 +1847,7 @@ func TestPollerWarnsOfATipSweepOnlyWhenItIsCut(t *testing.T) {
 	const cut = "default branches not all looked at within the poll interval"
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.tf.tip = "indexed"
-	s.webhooks(true)
+	s.webhooks(t, true)
 	s.p.sweepTips(t.Context(), time.Hour)
 	s.p.sweepTips(t.Context(), time.Hour)
 	if s.tf.calls != 1 {
