@@ -145,11 +145,12 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 	}
 	f := parser.Parse(path, []byte(text))
 	defer f.Close()
-	holds := func(d chunk.Decl) bool {
+	// holds reports whether d is named and holds an added line from line from.
+	holds := func(d chunk.Decl, from int) bool {
 		if d.Symbol == "" || d.Kind == "import" {
 			return false
 		}
-		i, _ := slices.BinarySearch(added, d.StartLine)
+		i, _ := slices.BinarySearch(added, max(d.StartLine, from))
 		return i < len(added) && added[i] <= d.EndLine
 	}
 	// asked marks, by 1-based line, the lines that a query holds, and gave
@@ -161,9 +162,13 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 		}
 	}
 	var out []string
-	lastEnd := 0
+	// lastEnd and lastEndByte are where the last declaration asked about ends.
+	// One nested in it is asked about with it, while one that starts on its
+	// last line, as `} function next() {` does, is asked about for the added
+	// lines below that line.
+	lastEnd, lastEndByte := 0, 0
 	for i, d := range f.Decls {
-		if d.StartLine <= lastEnd || !holds(d) {
+		if d.EndByte <= lastEndByte || !holds(d, lastEnd+1) {
 			continue
 		}
 		body := f.Text(d.StartLine, d.EndLine) + "\n"
@@ -171,7 +176,7 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 		case len(body) <= contextpack.SimilarQueryChars:
 			out = append(out, body)
 		case slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
-			return n.StartLine > d.StartLine && n.EndLine <= d.EndLine && holds(n)
+			return n.EndByte <= d.EndByte && (n.StartByte > d.StartByte || n.EndByte < d.EndByte) && holds(n, lastEnd+1)
 		}):
 			mark(gave, d)
 			continue
@@ -179,7 +184,7 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))])...)
 		}
 		mark(asked, d)
-		lastEnd = d.EndLine
+		lastEnd, lastEndByte = d.EndLine, d.EndByte
 	}
 	if len(out) == 0 {
 		return regionWindows(region)

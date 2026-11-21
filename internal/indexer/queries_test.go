@@ -152,6 +152,41 @@ func TestHunkQueries(t *testing.T) {
 			}
 		})
 	}
+	// Declarations that share a line: a sibling that starts on the line the
+	// last one asked about ends on is asked about for its own changes, and a
+	// declaration nested from its parent's first line takes the parent's
+	// place as one nested further down does.
+	jsBody := strings.Split(strings.TrimSuffix(lines(40, "  const v%02d = \""+strings.Repeat("x", 40)+"\";"), "\n"), "\n")
+	jsFields := lines(70, "  f%02d = \""+strings.Repeat("x", 40)+"\";")
+	for _, tt := range []struct {
+		name, diff string
+		want       func([]string) bool
+	}{
+		{
+			name: "siblings on a shared line, both changed",
+			diff: fileDiff("", "two.js", added(slices.Concat([]string{"function first() {"}, jsBody,
+				[]string{"} function next() {"}, jsBody, []string{"}"})...)),
+			want: func(got []string) bool {
+				return len(got) == 2 && strings.HasPrefix(got[0], "function first() {") && strings.HasSuffix(got[0], "} function next() {\n") &&
+					strings.HasPrefix(got[1], "} function next() {") && strings.HasSuffix(got[1], "\n}\n")
+			},
+		},
+		{
+			name: "a method nested from its class's first line",
+			diff: fileDiff("big.js", "big.js", "@@ -1,72 +1,72 @@\n-class Big { small() { return 0; }\n+class Big { small() { return 1; }\n"+
+				unchanged(jsFields)+"-}\n+};\n"),
+			want: func(got []string) bool {
+				return len(got) == 2 && got[0] == "class Big { small() { return 1; }\n" && strings.HasSuffix(got[1], "\n};\n")
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := HunkQueries(tt.diff, nil)
+			if !tt.want(got) {
+				t.Fatalf("HunkQueries = %d queries %q", len(got), got)
+			}
+		})
+	}
 	t.Run("bounded", func(t *testing.T) {
 		var many strings.Builder
 		for i := range contextpack.SimilarQueries + 3 {
