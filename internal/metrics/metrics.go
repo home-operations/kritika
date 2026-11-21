@@ -183,7 +183,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		similarBest: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "kritika_similar_best_similarity",
 			Help:    "Best cosine similarity among the chunks found for each similar-code query that found any, by query kind (diff, search).",
-			Buckets: []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1},
+			Buckets: []float64{-1, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1},
 		}, []string{lblAccount, lblKind}),
 		similarHits: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_similar_hits_total",

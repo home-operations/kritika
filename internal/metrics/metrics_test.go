@@ -220,3 +220,26 @@ func TestDurationBucketsReachTheirLongest(t *testing.T) {
 		t.Fatalf("found %d of the 3 histograms", seen)
 	}
 }
+
+// TestSimilarBestNegative: a query whose best match points away from it has
+// a negative cosine similarity, which lands in a bucket at or below zero, so
+// that a quantile of the histogram reads it as negative and not as a small
+// positive similarity.
+func TestSimilarBestNegative(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := New(reg)
+	m.SimilarBest("account", "diff", -0.3)
+	var metric dto.Metric
+	if err := m.similarBest.WithLabelValues("account", "diff").(prometheus.Metric).Write(&metric); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range metric.GetHistogram().GetBucket() {
+		if b.GetCumulativeCount() == 1 {
+			if b.GetUpperBound() > 0 {
+				t.Fatalf("-0.3 first lands in the bucket up to %g, want one at or below 0", b.GetUpperBound())
+			}
+			return
+		}
+	}
+	t.Fatal("-0.3 lands in no bucket")
+}
