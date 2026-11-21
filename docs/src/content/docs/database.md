@@ -261,11 +261,16 @@ Connections open on demand, so an idle replica holds few:
 | the owner pool           | replica | 4                                                                                                                 | ten minutes, for a migration that builds an index                                        | `kritika-owner`       |
 | the `LISTEN` connection  | replica | 1                                                                                                                 | one minute, as the application pool's                                                    | `kritika-listen`      |
 | review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute                                                                               | `kritika-publication` |
+| index update slot waits  | replica | `KRITIKA_INDEX_WORKERS` (1 unless set)                                                                            | one minute                                                                               | `kritika-index-wait`  |
 
 Each active review publication holds a separate application-role connection
 for its advisory lock, without an open transaction. This keeps slow forge
 calls from occupying the application pool used by heartbeats and requests.
-When you size `max_connections`, include these connections.
+An `index_update` job that has to wait for an embedding slot likewise holds a
+connection of its own for as long as it waits, one per job and so at most one
+per index worker. When you size `max_connections`, include these connections:
+they are outside both pools, so raising a pool's `pool_max_conns` makes no room
+for them.
 
 A `pool_max_conns` in a URI replaces that pool's ceiling. If jobs wait on the
 pool, raise the application pool's ceiling.

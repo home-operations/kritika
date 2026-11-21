@@ -990,7 +990,9 @@ Index jobs that keep indexed repositories at their default branch use an
 worker for each repository's whole first build, so it can fill every
 `index` worker in the fleet without taking one that an update needs. Updates
 still share the embedder's slots with first builds, which hold one for a
-batch of chunks at a time and leave the next to an update that waits. Each
+batch of chunks at a time and leave the next to an update that waits. An
+update that waits holds a database connection of its own until it gets the
+slot ([connections](/database/#connections)). Each
 replica runs up to `indexWorkers` jobs on each queue, each with a runner
 pod. Updates queued on `index` by an earlier version finish there. A push to a repository
 whose index is queued for a rebuild on `index`, as after an index format
