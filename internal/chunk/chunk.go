@@ -270,7 +270,11 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		// An export, a decorated definition or a C++ template around one
 		// outlined declaration widens that declaration, which keeps its
 		// symbol. A parse error is no such statement.
-		if j := wrapped(out, top, d, lead, d.Symbol == "" && !c.IsError()); j >= 0 {
+		var bare *gotreesitter.Node
+		if d.Symbol == "" && !c.IsError() {
+			bare = c
+		}
+		if j := wrapped(out, top, d, lead, bare, lp.lang); j >= 0 {
 			out[j].StartLine, out[j].StartByte = d.StartLine, d.StartByte
 			continue
 		}
@@ -481,28 +485,6 @@ func skipSpace(src []byte, i, hi int) int {
 // the parse's time holds only on a known one. A test that sets it does not
 // run in parallel, as declarations runs outside the parser's lock.
 var walked *int
-
-// wrapped returns the index in out of the one outlined top-level
-// declaration that d wraps, or -1. d wraps it when it holds no other one and
-// ends on its last line, and, unless bare, holds nothing above it but lead
-// lines. A bare d is a statement with no name of its own, such as a C++
-// template. top indexes the top-level declarations of out by StartByte.
-func wrapped(out []Decl, top []int, d Decl, lead []bool, bare bool) int {
-	k, _ := slices.BinarySearchFunc(top, d.StartByte, func(i, b int) int { return cmp.Compare(out[i].StartByte, b) })
-	if k == len(top) || k+1 < len(top) && out[top[k+1]].EndByte <= d.EndByte {
-		return -1
-	}
-	o := out[top[k]]
-	if o.EndByte > d.EndByte || o.EndLine != d.EndLine {
-		return -1
-	}
-	for l := d.StartLine; l < o.StartLine && !bare; l++ {
-		if !lead[l] {
-			return -1
-		}
-	}
-	return top[k]
-}
 
 // nodeAt finds the node with exactly the given byte range. It descends from
 // root, and returns nil when no node has it.
