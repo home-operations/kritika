@@ -26,25 +26,44 @@ func pastFullFiles(
 	ctx context.Context, tx pgx.Tx, runID string, vectors [][]float32, exclude store.Exclusions, depth int,
 	hits []store.SimilarHit, floor, margin float64,
 ) ([]store.SimilarHit, error) {
-	byQuery := make([][]store.SimilarHit, len(vectors))
+	qualifies := func(found []store.SimilarHit, last store.SimilarHit) bool {
+		best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Similarity, b.Similarity) })
+		return closeTo(last.Similarity, best.Similarity, floor, margin)
+	}
+	return pastFull(hits, len(vectors), func(found, window []store.SimilarHit) []string {
+		return fullFiles(found, window, depth, qualifies)
+	}, func(q int, full []string) ([]store.SimilarHit, error) {
+		past := store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)}
+		return store.SimilarChunks(ctx, tx, runID, vectors[q:q+1], past, depth)
+	})
+}
+
+// pastFull adds to hits, a search's window of each of queries queries, what
+// search finds for a query past the files that full names for it, given the
+// query's hits so far and its last window, until full names none, at most
+// similarPerQuery times (pastFullFiles). A search's failure ends the looking:
+// pastFull returns what it found until then, with the error.
+func pastFull(
+	hits []store.SimilarHit, queries int, full func(found, window []store.SimilarHit) []string,
+	search func(q int, full []string) ([]store.SimilarHit, error),
+) ([]store.SimilarHit, error) {
+	byQuery := make([][]store.SimilarHit, queries)
 	for _, h := range hits {
 		byQuery[h.Query] = append(byQuery[h.Query], h)
 	}
-	out := make([]store.SimilarHit, 0, len(hits))
-	for q, found := range byQuery {
+	var err error
+	for q := range byQuery {
+		found := byQuery[q]
 		window := found
 		for range similarPerQuery {
-			full := fullFiles(found, window, depth, floor, margin)
-			if full == nil {
+			files := full(found, window)
+			if files == nil {
 				break
 			}
-			past := store.Exclusions{Run: exclude.Run, Paths: slices.Concat(exclude.Paths, full)}
-			next, err := store.SimilarChunks(ctx, tx, runID, vectors[q:q+1], past, depth)
-			if err != nil {
-				return nil, err
+			if window, err = search(q, files); err != nil {
+				break
 			}
-			window = next
-			for _, h := range next {
+			for _, h := range window {
 				if !slices.ContainsFunc(found, func(f store.SimilarHit) bool {
 					return f.Chunk.Path == h.Chunk.Path && f.Chunk.StartLine == h.Chunk.StartLine
 				}) {
@@ -53,21 +72,23 @@ func pastFullFiles(
 				}
 			}
 		}
-		out = append(out, found...)
+		byQuery[q] = found
+		if err != nil {
+			break
+		}
 	}
-	return out, nil
+	return slices.Concat(byQuery...), err
 }
 
 // fullFiles is the files of which found, a query's hits, holds
 // similarPerFile or more, when the file cap leaves the query short and the
-// vector search's last window, which found ends with, says that more
-// chunks past it can qualify (pastFullFiles), and nil otherwise.
-func fullFiles(found, window []store.SimilarHit, depth int, floor, margin float64) []string {
-	if len(window) < depth || len(found) == 0 {
-		return nil
-	}
-	best := slices.MaxFunc(found, func(a, b store.SimilarHit) int { return cmp.Compare(a.Similarity, b.Similarity) }).Similarity
-	if !closeTo(window[len(window)-1].Similarity, best, floor, margin) {
+// search's last window, which found ends with, says that more chunks past
+// it can qualify: it is depth long, and qualifies its last hit, given
+// found. It is nil otherwise.
+func fullFiles(
+	found, window []store.SimilarHit, depth int, qualifies func(found []store.SimilarHit, last store.SimilarHit) bool,
+) []string {
+	if len(window) < depth || len(found) == 0 || !qualifies(found, window[len(window)-1]) {
 		return nil
 	}
 	perFile := map[string]int{}
@@ -95,4 +116,10 @@ func fullFiles(found, window []store.SimilarHit, depth int, floor, margin float6
 // below it.
 func closeTo(similarity, best, floor, margin float64) bool {
 	return similarity >= floor && similarity >= best-margin-1e-9
+}
+
+// namedBy reports whether a lexical weight is at least lexicalShare of best,
+// its query's best lexical weight: whether its names alone vouch for a hit.
+func namedBy(lexical, best float64) bool {
+	return lexical >= lexicalShare*best
 }

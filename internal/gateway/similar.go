@@ -11,7 +11,6 @@ import (
 	"maps"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
-	"github.com/home-operations/kritika/internal/lexical"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
@@ -39,8 +37,9 @@ const (
 // similarDepth is how many chunks each search finds for a query, without a
 // reranker, for the fusion to rank: twice what a query keeps, so that the
 // places of chunks that the file cap or a duplicate turns away go to the
-// query's next ones. A query whose window the file cap leaves short is
-// searched again past the files that fill it (pastFullFiles).
+// query's next ones. A query whose window of either search the file cap
+// leaves short is searched again past the files that fill it (pastFullFiles,
+// searchByName).
 const similarDepth = 2 * similarPerQuery
 
 // maxSimilarBody bounds a similar-code request: its queries, each cut to
@@ -401,128 +400,6 @@ func (g *Server) similar(
 	return chunks, similarOK, nil
 }
 
-// lexicalTimeout bounds the search by name, which a request can do without.
-// The search is one statement (store.LexicalChunks), so its statement timeout
-// bounds the whole of it.
-const lexicalTimeout = 5 * time.Second
-
-// lexicalWithin is how long the search by name of a request due by answerBy
-// can take, starting at now: lexicalTimeout, or what is left before
-// answerBy when that is less, in whole milliseconds, which is what a
-// statement timeout takes. Under a millisecond is none, and not a timeout of
-// 0, which would not bound the search at all.
-func lexicalWithin(now, answerBy time.Time) time.Duration {
-	return max(min(lexicalTimeout, answerBy.Sub(now)).Truncate(time.Millisecond), 0)
-}
-
-// searchByName is lexicalHits for the request in a savepoint of tx, within
-// lexicalWithin of the request's answerBy: a slow search by name ends while
-// the runner still waits for the vector search's hits, and none is made
-// once the answer is due. Its failure leaves the vector search's hits to
-// answer the request alone: it is logged and counted, and no hit is
-// returned. Only the request's own end, which the transaction cannot
-// outlive, is an error.
-func (g *Server) searchByName(
-	ctx context.Context, tx pgx.Tx, r similarRequest, runID string, vectors [][]float32, depth int, logger *slog.Logger,
-) ([]store.SimilarHit, error) {
-	started := time.Now()
-	within := lexicalWithin(started, r.answerBy)
-	if within == 0 {
-		logger.Info("similar code searched by vector alone: the answer is due", "answer_by", r.answerBy)
-		return nil, nil
-	}
-	var named []store.SimilarHit
-	err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
-		timeout := strconv.FormatInt(within.Milliseconds(), 10)
-		if _, err := sp.Exec(ctx, `SELECT set_config('statement_timeout', $1, true)`, timeout); err != nil {
-			return err
-		}
-		var err error
-		named, err = lexicalHits(ctx, sp, runID, r.texts, vectors, r.exclude, depth)
-		return err
-	})
-	outcome := adapter.Outcome(err)
-	if err != nil && ctx.Err() != nil {
-		outcome = "canceled"
-	}
-	g.Metrics.LexicalSearch(r.account.Key(), outcome, time.Since(started))
-	if ctx.Err() != nil {
-		return nil, err
-	}
-	if err != nil {
-		logger.Warn("gateway: similar code searched by vector alone: the search by name failed", "error", err)
-		return nil, nil
-	}
-	return named, nil
-}
-
-// lexicalTerms is how many words of a query are searched for, the longest
-// first.
-const lexicalTerms = 32
-
-// lexicalCommon bars the words too common to tell a generation's chunks
-// apart: a word in a hundredth of them, rounded down, or more is left out of
-// the search, the cutoff raised to 20 when it is less and lowered to
-// store.LexicalCommonMax, 200, when it is more, and so is a word in more than
-// half of them. The half bars, in a generation of fewer
-// than 40 chunks, a word that nearly all of them hold: its weight is too
-// small to say anything of a chunk, yet it would be its query's best by
-// name, and every chunk holding it would clear lexicalShare.
-var lexicalCommon = store.LexicalBar{Per: 100, Least: 20, Share: 2}
-
-// lexicalAlone is the most of a generation's chunks that a word of a query
-// can be in and still find a chunk alone, without another of the query's
-// words or a compound identifier of it: no more than a query keeps.
-const lexicalAlone = similarPerQuery
-
-// lexicalHits finds, for each query text, the perQuery chunks that hold the
-// most weight of its lexicalTerms longest words, outside the excluded paths.
-// Each hit's Matched are the query's spellings of the words that the chunk
-// holds.
-func lexicalHits(
-	ctx context.Context, tx pgx.Tx, runID string, texts []string, vectors [][]float32, exclude store.Exclusions, perQuery int,
-) ([]store.SimilarHit, error) {
-	words := make([][]lexical.Word, len(texts))
-	queries := make([]store.LexicalQuery, len(texts))
-	for i, text := range texts {
-		w := lexical.Words(text)
-		slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
-		words[i] = w[:min(len(w), lexicalTerms)]
-		queries[i].Vector = vectors[i]
-		for _, w := range words[i] {
-			queries[i].Terms = append(queries[i].Terms, store.LexicalTerm{Lexeme: w.Lexeme, Compound: w.Compound})
-		}
-	}
-	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery, lexicalCommon, lexicalAlone)
-	if err != nil {
-		return nil, err
-	}
-	for i := range hits {
-		hits[i].Matched = spellings(words[hits[i].Query], hits[i].Matched)
-	}
-	return hits, nil
-}
-
-// spellings is the query's spellings of matched, its lexemes: the whole
-// identifiers, which say what their parts would, or the parts when no
-// whole one matched.
-func spellings(words []lexical.Word, matched []string) []string {
-	var whole, parts []string
-	for _, w := range words {
-		switch {
-		case !slices.Contains(matched, w.Lexeme):
-		case w.Whole:
-			whole = append(whole, w.Spelling)
-		default:
-			parts = append(parts, w.Spelling)
-		}
-	}
-	if len(whole) > 0 {
-		return whole
-	}
-	return parts
-}
-
 // Which searches found a hit, as kritika_similar_hits_total counts it.
 const (
 	sourceVector  = "vector"
@@ -636,7 +513,7 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 	kept := make([]candidate, 0, len(cands))
 	for _, c := range cands {
 		c.close = closeTo(c.Similarity, best[c.Query], floor, margin)
-		c.named = c.lexical && c.Lexical >= lexicalShare*bestLexical[c.Query]
+		c.named = c.lexical && namedBy(c.Lexical, bestLexical[c.Query])
 		switch {
 		case c.close || c.named:
 			kept = append(kept, c)

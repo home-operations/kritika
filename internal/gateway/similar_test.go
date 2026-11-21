@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -419,6 +420,68 @@ func TestRerankDeadline(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := rerankDeadline(now, &configfile.Rerank{Timeout: tc.timeout}, tc.answerBy); !got.Equal(tc.want) {
 				t.Fatalf("rerankDeadline = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPastFull: a query whose full window the file cap leaves short is
+// searched again past the files that fill it, and a search that fails ends
+// the looking but keeps every hit found until then.
+func TestPastFull(t *testing.T) {
+	hit := func(query int, path string, line int) store.SimilarHit {
+		return store.SimilarHit{Query: query, Chunk: contextpack.Chunk{Path: path, StartLine: line}}
+	}
+	hits := make([]store.SimilarHit, 0, 2*similarDepth+1)
+	for q := range 2 {
+		for i := range similarDepth {
+			hits = append(hits, hit(q, "a.go", i+1))
+		}
+	}
+	hits = append(hits, hit(2, "c.go", 1))
+	full := func(found, window []store.SimilarHit) []string {
+		return fullFiles(found, window, similarDepth, func([]store.SimilarHit, store.SimilarHit) bool { return true })
+	}
+	failed := errors.New("search failed")
+	for _, tt := range []struct {
+		name     string
+		fail     int
+		want     []string
+		wantErr  error
+		searched []int
+	}{
+		{"every search answers", -1, []string{"0:b.go", "1:b.go"}, nil, []int{0, 1}},
+		{"the second search fails", 1, []string{"0:b.go"}, failed, []int{0, 1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var searched []int
+			got, err := pastFull(hits, 3, full, func(q int, files []string) ([]store.SimilarHit, error) {
+				searched = append(searched, q)
+				if !slices.Equal(files, []string{"a.go"}) {
+					t.Errorf("query %d searched past %q, want a.go", q, files)
+				}
+				if q == tt.fail {
+					return nil, failed
+				}
+				return []store.SimilarHit{hit(0, "b.go", 1)}, nil
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("pastFull error = %v, want %v", err, tt.wantErr)
+			}
+			if !slices.Equal(searched, tt.searched) {
+				t.Errorf("searched queries %v, want %v", searched, tt.searched)
+			}
+			var past []string
+			for _, h := range got {
+				if h.Chunk.Path != "a.go" && h.Chunk.Path != "c.go" {
+					past = append(past, fmt.Sprintf("%d:%s", h.Query, h.Chunk.Path))
+				}
+			}
+			if !slices.Equal(past, tt.want) {
+				t.Errorf("found past the full files %q, want %q", past, tt.want)
+			}
+			if len(got) != len(hits)+len(tt.want) {
+				t.Errorf("%d hits, want the first search's %d kept beside those past the full files", len(got), len(hits))
 			}
 		})
 	}

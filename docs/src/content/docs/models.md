@@ -669,7 +669,7 @@ chunks of one file, four of one query, and ten in all, or sixteen for a
 review's prompt. A chunk that the file cap or a duplicate turns away gives
 its query's turn to the query's next, which then comes before any query's
 later match. When the file cap would leave a query fewer than four of the
-chunks its vector search found, and the last of them still qualifies, the
+chunks that one search found, and the last of them still qualifies, that
 search looks again past the files that it found two or more chunks of. The prompt leaves out a chunk more than half of whose lines another context
 stage already shows, and shows the first ten of the rest.
 
@@ -860,15 +860,19 @@ as in `(shares AcquireLease, Lease)`. One kept by its lexical weight alone
 shows only the names: its similarity is under the floor, or more than the
 margin below its query's best, and is not shown.
 
-The search by name is one statement, which runs after the vector search
-within five seconds, or within what is left of 50 seconds after the
-request reached the gateway when that is less, so that a slow one does not
-keep the vector search's hits from the run. It reads the repository's count
-of chunks and its words' postings as one publication left them. If it
+The search by name runs after the vector search within five seconds, or
+within what is left of 50 seconds after the request reached the gateway
+when that is less, so that a slow one does not keep the vector search's
+hits from the run. It reads the repository's count of chunks and its
+words' postings as one publication left them. If its first statement
 fails, the request is answered by the vector search alone, and
-`kritika_lexical_search_seconds` counts the failure. Once those 50 seconds
-have passed, the request is answered by the vector search alone without
-one, and logs `similar code searched by vector alone: the answer is due`.
+`kritika_lexical_search_seconds` counts the failure. Each look past the
+files that fill a query's window is a statement of its own, within what is
+left of the same time. One that fails, or that finds the time spent, ends
+the looking, and the request keeps the chunks found until then. Once
+those 50 seconds have passed, the request is answered by the vector search
+alone without one, and logs
+`similar code searched by vector alone: the answer is due`.
 
 The words of a generation's chunks are stored as postings: a row of
 `index_postings` for each word, under the key generation and word, that
