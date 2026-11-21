@@ -89,6 +89,13 @@ func (s *Store) AcquireIndexLease(ctx context.Context, accountID, modelKey strin
 			}
 		}
 	}
+	// A free slot is taken on the pool, and the wait's session below, a
+	// login of its own, opened only for an update that has to wait. Postgres
+	// at its connection limit refuses that login, which would otherwise fail
+	// an update that the pool can serve.
+	if l, err := s.TakeLease(ctx, accountID, modelKey, slots, jobID); err != nil || l != nil {
+		return l, err
+	}
 	// The wait is a session of its own, which takes none of the pool's
 	// connections for as long as it lasts, and whose end, closed or lost,
 	// lets the lock go.

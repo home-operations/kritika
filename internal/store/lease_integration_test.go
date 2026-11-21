@@ -4,9 +4,12 @@ package store
 
 import (
 	"context"
+	"net"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -429,4 +432,52 @@ func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	}
 	release(l)
 	release(r.l)
+}
+
+// TestIndexUpdateTakesAFreeSlotOnThePool: an index update that finds a slot
+// free takes it on the application pool, and opens no session of its own to
+// wait in. Where Postgres is at its connection limit, that session would be
+// refused although the pool can serve the update.
+func TestIndexUpdateTakesAFreeSlotOnThePool(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	const model = "embed:test/index-free"
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
+	})
+	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", appStatementTimeout, appPoolMaxConns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dials atomic.Int64
+	var dialer net.Dialer
+	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dials.Add(1)
+		return dialer.DialContext(ctx, network, addr)
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	// One connection, idle in the pool once the ping is done.
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	counted := &Store{app: pool, owner: s.owner, logger: s.logger}
+	before := dials.Load()
+	l, err := counted.AcquireIndexLease(ctx, alpha, model, 1, 1, true)
+	if err != nil || l == nil {
+		t.Fatalf("AcquireIndexLease = %v, %v; want the free slot", l, err)
+	}
+	if _, err := l.Release(ctx); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	if opened := dials.Load() - before; opened != 0 {
+		t.Fatalf("the update opened %d connections to take a free slot, want none", opened)
+	}
 }
