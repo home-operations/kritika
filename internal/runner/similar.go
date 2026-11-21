@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 
@@ -383,12 +382,9 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // moved, at the nearest place the head holds it, and shown at those lines. A
 // chunk whose text the head no longer holds is left out rather than shown
 // by its old lines: those now hold code that its similarity was not measured
-// for. The index cuts a long chunk's text short at MaxChunkBytes, which
-// leaves it fewer lines than its range or a text of that length. Only then
-// need its last line merely begin the head's, and the chunk claims the lines
-// its text covers. Any other chunk's lines must all be the head's, or a line
-// that the head has since extended would be shown as the head's. Two chunks
-// of the index can be found at the same head lines, so one whose lines an
+// for. A chunk is found where the head's lines, cut as the indexer cuts a
+// chunk, give its text, and claims the lines its text shows. Two chunks of
+// the index can be found at the same head lines, so one whose lines an
 // earlier one mostly shows is left out.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string][]string{}
@@ -399,13 +395,11 @@ func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 			lines = headLines(head, c.Path)
 			files[c.Path] = lines
 		}
-		n := strings.Count(strings.TrimSuffix(c.Text, "\n"), "\n") + 1
-		cut := n < c.EndLine-c.StartLine+1 || len(c.Text) > indexer.DefaultOptions.MaxChunkBytes-utf8.UTFMax
-		start, ok := findText(lines, c.Text, c.StartLine-1, cut)
+		start, end, ok := findText(lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1)
 		if !ok {
 			continue
 		}
-		c.StartLine, c.EndLine = start+1, start+n
+		c.StartLine, c.EndLine = start+1, end+1
 		if !mostlyShown(c, out) {
 			out = append(out, c)
 		}
@@ -427,34 +421,63 @@ func headLines(head *object.Tree, path string) []string {
 	return strings.Split(src, "\n")
 }
 
-// findText is the 0-based line of lines where text starts, the one nearest
-// near when it is in more than one place, false when it is in none. A cut
-// text's last line need only begin the line it is at.
-func findText(lines []string, text string, near int, cut bool) (int, bool) {
-	text = strings.TrimSuffix(text, "\n")
-	if text == "" {
+// findText is the 0-based first and last of lines that text shows, where
+// text is what the index holds of n lines: them joined and cut at
+// MaxChunkBytes, as the indexer cuts a chunk. When text is in more than one
+// place it is the one nearest near, false when it is in none. The lines past
+// a cut need not be the index's, and the line after a cut that ends a line
+// is not shown. A whole text of exactly MaxChunkBytes is also what a cut of a
+// longer one gives, so the head can have more of its last line.
+func findText(lines []string, text string, near, n int) (int, int, bool) {
+	if text == "" || n < 1 {
+		return 0, 0, false
+	}
+	most := indexer.DefaultOptions.MaxChunkBytes
+	at := func(i int) (int, bool) {
+		if i < 0 {
+			return 0, false
+		}
+		end := min(i+n, len(lines))
+		rest := text
+		for j := i; j < end; j++ {
+			line, tail, more := strings.Cut(rest, "\n")
+			if more {
+				if lines[j] != line {
+					return 0, false
+				}
+				rest = tail
+				continue
+			}
+			if !strings.HasPrefix(lines[j], line) {
+				return 0, false
+			}
+			var b strings.Builder
+			b.WriteString(text[:len(text)-len(line)])
+			for k := j; k < end && b.Len() <= most; k++ {
+				if k > j {
+					b.WriteByte('\n')
+				}
+				b.WriteString(lines[k])
+			}
+			if textcut.Prefix(b.String(), most) != text {
+				return 0, false
+			}
+			if line == "" && b.Len() > len(text) {
+				return j - 1, true
+			}
+			return j, true
+		}
 		return 0, false
 	}
-	want := strings.Split(text, "\n")
-	at := func(i int) bool {
-		if i < 0 || i+len(want) > len(lines) {
-			return false
-		}
-		last := len(want) - 1
-		if !cut {
-			return slices.Equal(lines[i:i+len(want)], want)
-		}
-		return slices.Equal(lines[i:i+last], want[:last]) && strings.HasPrefix(lines[i+last], want[last])
-	}
 	for d := 0; near-d >= 0 || near+d < len(lines); d++ {
-		if at(near - d) {
-			return near - d, true
+		if last, ok := at(near - d); ok {
+			return near - d, last, true
 		}
-		if at(near + d) {
-			return near + d, true
+		if last, ok := at(near + d); ok {
+			return near + d, last, true
 		}
 	}
-	return 0, false
+	return 0, 0, false
 }
 
 // maxSimilarShown is the most similar chunks a prompt shows.

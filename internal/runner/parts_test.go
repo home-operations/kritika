@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
@@ -207,7 +208,7 @@ func TestPartPromptsContext(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		path, text := "lib/z.go", "func z() {}"
 		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "yyyy") {
-			path, text = "lib/big.go", strings.Repeat("x", 60_000)
+			path, text = "lib/big.go", strings.Repeat("x", indexer.DefaultOptions.MaxChunkBytes)
 		}
 		_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
 			{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text},
@@ -216,11 +217,14 @@ func TestPartPromptsContext(t *testing.T) {
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
-	s.Agent.MaxPromptTokens = 24_000
+	// The user budget is at its floor whatever the system prompt's size: room
+	// for a part's diff and a small chunk, not for one as large as the index
+	// holds.
+	s.Agent.MaxPromptTokens = 1
 	head := tree(t, map[string]string{
 		"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "func z() {}\n", "lib/big.go": strings.Repeat("x", 60_000) + "\n",
 	})
-	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10) + strings.ReplaceAll(sizedDiff("b/y.go", 50<<10), "xxxx", "yyyy"),
+	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 4<<10) + strings.ReplaceAll(sizedDiff("b/y.go", 4<<10), "xxxx", "yyyy"),
 		Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
 	parts, chunks, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,

@@ -400,8 +400,19 @@ func TestSimilarContextWithoutQueries(t *testing.T) {
 // it shows. One whose text or file the head no longer has is left out, as is
 // one not cut short whose last line the head has more of.
 func TestAtHead(t *testing.T) {
-	long := "var x = \"" + strings.Repeat("x", indexer.DefaultOptions.MaxChunkBytes) + "\""
-	head := tree(t, map[string]string{"lib.go": "package lib\n\nfunc a() {\n\treturn\n}\n\nfunc b() {}\n", "long.go": "package lib\n" + long + "\n"})
+	most := indexer.DefaultOptions.MaxChunkBytes
+	long := "var x = \"" + strings.Repeat("x", most) + "\""
+	// big's text, as the index cuts it, ends in its second line; comment's
+	// ends with the newline after its first.
+	big := "func big() {\n\ts := \"" + strings.Repeat("x", most) + "\"\n}"
+	comment := "// " + strings.Repeat("x", most-4)
+	near := "var y = " + strings.Repeat("y", most-10)
+	head := tree(t, map[string]string{
+		"lib.go": "package lib\n\nfunc a() {\n\treturn\n}\n\nfunc b() {}\n", "long.go": "package lib\n" + long + "\n",
+		"big.go": "package lib\n" + big + "\n", "comment.go": "package lib\n" + comment + "\nfunc f() {}\n",
+		"comment_more.go": "package lib\n" + comment + " more\nfunc f() {}\n",
+		"more.go":         "package lib\n\nfunc a() {\n\treturn\n} // a\n\nfunc b() {}\n", "near.go": "package lib\n" + near + " + y\n",
+	})
 	chunk := func(path string, start, end int, text string) contextpack.Chunk {
 		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: start, EndLine: end, Text: text}
 	}
@@ -412,7 +423,12 @@ func TestAtHead(t *testing.T) {
 	}{
 		{"where the index has it", chunk("lib.go", 3, 5, "func a() {\n\treturn\n}"), []contextpack.Chunk{chunk("lib.go", 3, 5, "func a() {\n\treturn\n}")}},
 		{"moved", chunk("lib.go", 1, 3, "func a() {\n\treturn\n}"), []contextpack.Chunk{chunk("lib.go", 3, 5, "func a() {\n\treturn\n}")}},
-		{"cut short", chunk("lib.go", 3, 5, "func a() {\n\tret"), []contextpack.Chunk{chunk("lib.go", 3, 4, "func a() {\n\tret")}},
+		{"cut short", chunk("big.go", 2, 4, textcut.Prefix(big, most)), []contextpack.Chunk{chunk("big.go", 2, 3, textcut.Prefix(big, most))}},
+		{"cut at a newline", chunk("comment.go", 2, 3, comment+"\n"), []contextpack.Chunk{chunk("comment.go", 2, 2, comment+"\n")}},
+		{"cut at a newline after a line the head has more of", chunk("comment_more.go", 2, 3, comment+"\n"), nil},
+		{"ending on a blank line", chunk("lib.go", 3, 6, "func a() {\n\treturn\n}\n"), []contextpack.Chunk{chunk("lib.go", 3, 6, "func a() {\n\treturn\n}\n")}},
+		{"ending on a blank line after a line the head has more of", chunk("more.go", 3, 6, "func a() {\n\treturn\n}\n"), nil},
+		{"a whole line near the bound that the head has more of", chunk("near.go", 2, 2, near), nil},
 		{
 			"one line cut short", chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes]),
 			[]contextpack.Chunk{chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes])},
