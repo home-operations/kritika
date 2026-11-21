@@ -156,9 +156,11 @@ ALTER EXTENSION vchord UPDATE;
 The upgrade leaves existing index pages as they are. kritika's embedding
 index is a `halfvec` cosine index. One built before 1.2.0 on a CPU with fp16
 arithmetic (ARM with fp16, or x86 with AVX512-FP16) can have lost recall to
-an fp16 overflow. One built before 1.3.0 that holds a zero vector stores it
-wrongly. Rebuild the index after the upgrade when either can apply. The owner
-role can do it without blocking writes:
+an fp16 overflow. One built before 1.2.0 for one-dimensional vectors
+(`embedding.dims: 1`) stores invalid metadata for them, and one built
+before 1.3.0 that holds a zero vector stores it wrongly. Rebuild the index
+after the upgrade when any of these can apply. The owner role can do it
+without blocking writes:
 
 ```sql
 REINDEX INDEX CONCURRENTLY index_chunks_embedding_idx;
