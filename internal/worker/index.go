@@ -489,8 +489,11 @@ func (w *Index) embed(
 	if err != nil {
 		return 0, pack, err
 	}
+	// A forced rebuild is how an admin replaces vectors that the active
+	// generation holds, as for a model replaced behind an unchanged
+	// endpoint, so it reuses only what this run embedded.
 	var activeRun string
-	if active != nil {
+	if active != nil && !args.Full {
 		activeRun = active.ID
 	}
 	err = w.withLease(ctx, account, "embed:"+emb.Model, slots, job.ID, func(ctx context.Context) error {

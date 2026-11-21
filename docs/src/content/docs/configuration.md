@@ -422,7 +422,7 @@ stored that hash is embedded again (see
 [the embedder](/models/#the-embedder)).
 Editing instance configuration does not queue index jobs by itself. To
 apply new ignore rules immediately, reindex an idle repository from the
-dashboard.
+dashboard. That reindex sends the embedder every chunk again.
 
 ```yaml
 review:

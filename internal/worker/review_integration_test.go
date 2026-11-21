@@ -1828,6 +1828,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkUpdateOverRebuild(ctx, t, appStore, insertOnly, exec, account.ID(), repoID, head)
 	})
 
+	t.Run("a forced rebuild embeds the unchanged tree again", func(t *testing.T) {
+		checkForcedRebuildEmbedsAgain(ctx, t, appStore, insertOnly, fe, account.ID(), repoID)
+	})
+
 	t.Run("an index job waits out a forge that fails transiently", func(t *testing.T) {
 		newer := commitOnBase(t, dir, base, "tip after a forge wait", "package main\n\nfunc waited() {}\n")
 		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head, newer)

@@ -484,3 +484,49 @@ func TestIndexJobIsUniqueAcrossQueues(t *testing.T) {
 		})
 	}
 }
+
+// checkForcedRebuildEmbedsAgain spoils the vectors of the active generation,
+// as a model replaced behind an unchanged endpoint leaves them, and forces a
+// rebuild at the same commit. The rebuild sends the embedder every chunk
+// again, rather than copy the vectors that the generation holds for the
+// same text, and publishes none of the spoiled ones.
+func checkForcedRebuildEmbedsAgain(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, account, repository string,
+) {
+	t.Helper()
+	const spoiled = "[9,9,9,9,9,9,9,9]"
+	active := activeIndexGeneration(ctx, t, st, account, repository)
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE index_chunks SET embedding = $2::halfvec WHERE index_run_id = $1`, active, spoiled)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fe.mu.Lock()
+	before := fe.calls
+	fe.mu.Unlock()
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexJobDone(ctx, t, st, job.Job.ID)
+	rebuilt := activeIndexGeneration(ctx, t, st, account, repository)
+	if rebuilt == active {
+		t.Fatalf("the forced rebuild left generation %s active", active)
+	}
+	indexCatchUpDone(ctx, t, st, rebuilt)
+	fe.mu.Lock()
+	embedded := fe.calls - before
+	fe.mu.Unlock()
+	var chunks, kept int
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE embedding = $2::halfvec) FROM index_chunks WHERE index_run_id = $1`,
+			rebuilt, spoiled).Scan(&chunks, &kept)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if chunks == 0 || kept != 0 || embedded == 0 {
+		t.Fatalf("forced rebuild: %d chunks, %d with the spoiled vector, %d embedder calls; want chunks, none spoiled, and calls",
+			chunks, kept, embedded)
+	}
+}
