@@ -269,7 +269,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	var state store.PollState
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter); err != nil {
+		if repos, err = store.PollPullRepositories(ctx, tx); err != nil {
 			return err
 		}
 		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())

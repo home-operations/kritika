@@ -262,7 +262,8 @@ func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, reposit
 	return nil
 }
 
-// PollRepo is one enabled repository as a poll sees it. IndexedCommit is
+// PollRepo is one enabled repository as a poll sees it, the index state
+// left out by PollPullRepositories. IndexedCommit is
 // the commit its active index generation covers, "" when it has none.
 // RepoConfigOff says that its .kritika.yaml turned indexing off, as of the
 // last index job that read it. Indexing says that an index job of it is
@@ -301,6 +302,27 @@ func PollRepositories(ctx context.Context, tx pgx.Tx, unmovedFor time.Duration) 
 		var r PollRepo
 		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.RepoConfigOff, &r.Indexing, &r.IndexUnmoved, &r.Traits.Archived,
 			&r.Traits.Fork, &r.Traits.TurnedOn, &r.TurnedAt)
+		return r, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: list repositories to poll: %w", err)
+	}
+	return out, nil
+}
+
+// PollPullRepositories lists the account's enabled repositories, by name,
+// as a poll of their pull requests reads them: without their index state,
+// which only PollRepositories reads. So a lock on River's jobs, which that
+// state is read from, holds back no pull request.
+func PollPullRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
+	rows, err := tx.Query(ctx, `SELECT name, default_branch, archived, fork, turned_on, turned_at
+		FROM repositories WHERE enabled ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list repositories to poll: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PollRepo, error) {
+		var r PollRepo
+		err := row.Scan(&r.Name, &r.DefaultBranch, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn, &r.TurnedAt)
 		return r, err
 	})
 	if err != nil {

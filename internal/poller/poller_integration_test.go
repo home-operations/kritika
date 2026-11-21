@@ -1502,3 +1502,36 @@ func TestPollerWarnsOfATipSweepOnlyWhenItIsCut(t *testing.T) {
 		t.Fatalf("log = %q, want the sweep that the interval stopped reported cut", s.logs.String())
 	}
 }
+
+// TestPollerPollsPullRequestsPastALockedJobTable: a poll of the pull
+// requests reads no index job, which only the look at the default branches
+// needs. So a lock on River's job table, as one of its migrations or a
+// long transaction takes, holds back no listing of pull requests.
+func TestPollerPollsPullRequestsPastALockedJobTable(t *testing.T) {
+	ctx := t.Context()
+	s := newTipPoll(t, "onedr0p/home-ops")
+	lf := &listForge{}
+	s.p.Forges = &forges{f: lf}
+	conn, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+	hold, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback(context.Background()) }()
+	if _, err := hold.Exec(ctx, `LOCK TABLE river_job IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = s.p.Poll(pctx, s.file, s.account, s.in)
+	lf.mu.Lock()
+	listed := len(lf.sinces)
+	lf.mu.Unlock()
+	if err != nil || listed != 1 {
+		t.Fatalf("Poll = %v with %d listings while river_job was locked, want the repository's pull requests listed", err, listed)
+	}
+}
