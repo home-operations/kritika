@@ -823,6 +823,10 @@ name alone shows the names it shares with the query instead, as in
 `(shares AcquireLease, Lease)`, as its similarity sits under the floor and
 would read as a poor match.
 
+The search by name runs within five seconds, after the vector search. If it
+fails, the request is answered by the vector search alone, and
+`kritika_lexical_search_seconds` counts the failure.
+
 Each word of each chunk is stored as a posting: a row of `index_postings`
 whose key starts with the generation and the word. A request's queries are
 searched for together, and each of their words reads its chunks, and how

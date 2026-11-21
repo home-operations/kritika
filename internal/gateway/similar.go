@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -304,7 +305,7 @@ func (g *Server) similar(
 		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil || !emb.LexicalSearch() || !lexicalReady {
 			return err
 		}
-		named, err = lexicalHits(ctx, tx, runID, r.texts, vectors, r.exclude, depth)
+		named, err = g.searchByName(ctx, tx, r, runID, vectors, depth, logger)
 		return err
 	})
 	searched := adapter.Outcome(err)
@@ -333,6 +334,42 @@ func (g *Server) similar(
 		return chunks, tokens, similarEmpty, nil
 	}
 	return chunks, tokens, similarOK, nil
+}
+
+// lexicalTimeout bounds the search by name, which a request can do without.
+const lexicalTimeout = 5 * time.Second
+
+// searchByName is lexicalHits for the request in a savepoint of tx, within
+// lexicalTimeout. Its failure leaves the vector search's hits to answer the
+// request alone: it is logged and counted, and no hit is returned. Only the
+// request's own end, which the transaction cannot outlive, is an error.
+func (g *Server) searchByName(
+	ctx context.Context, tx pgx.Tx, r similarRequest, runID string, vectors [][]float32, depth int, logger *slog.Logger,
+) ([]store.SimilarHit, error) {
+	started := time.Now()
+	var named []store.SimilarHit
+	err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
+		timeout := strconv.FormatInt(lexicalTimeout.Milliseconds(), 10)
+		if _, err := sp.Exec(ctx, `SELECT set_config('statement_timeout', $1, true)`, timeout); err != nil {
+			return err
+		}
+		var err error
+		named, err = lexicalHits(ctx, sp, runID, r.texts, vectors, r.exclude, depth)
+		return err
+	})
+	outcome := adapter.Outcome(err)
+	if err != nil && ctx.Err() != nil {
+		outcome = "canceled"
+	}
+	g.Metrics.LexicalSearch(r.account.Key(), outcome, time.Since(started))
+	if ctx.Err() != nil {
+		return nil, err
+	}
+	if err != nil {
+		logger.Warn("gateway: similar code searched by vector alone: the search by name failed", "error", err)
+		return nil, nil
+	}
+	return named, nil
 }
 
 // lexicalTerms is how many words of a query are searched for, the longest

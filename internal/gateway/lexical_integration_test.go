@@ -274,3 +274,63 @@ func TestSimilarLexicalReadsPostings(t *testing.T) {
 		t.Fatalf("search by name found %q reading %d rows of index_chunks, want rare.go reading a few of its 301", got, read)
 	}
 }
+
+// TestSimilarLexicalFailure: when the search by name fails, the request is
+// answered by the vector search alone, and the failure is counted.
+func TestSimilarLexicalFailure(t *testing.T) {
+	r := newLexicalRepo(t, "failure", runspec.IndexFormat, widgets, widgetVectors())
+	owner, err := pgx.Connect(t.Context(), storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = owner.Close(context.Background()) }()
+	for _, tt := range []struct {
+		name           string
+		damage, repair string
+		failures       float64
+	}{
+		// A table that an older leader rebuilt mid-rollout lacks the column.
+		{"the chunks' words are gone", `ALTER TABLE index_chunks DROP COLUMN lexemes`,
+			`ALTER TABLE index_chunks ADD COLUMN IF NOT EXISTS lexemes tsvector`, 0},
+		{"the postings cannot be read", `REVOKE SELECT ON index_postings FROM kritika_app`,
+			`GRANT SELECT ON index_postings TO kritika_app`, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := owner.Exec(t.Context(), tt.damage); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = owner.Exec(context.Background(), tt.repair) })
+			reg := prometheus.NewRegistry()
+			code, got := r.ask(t, r.file, nil, reg, "widgetFactory()")
+			if code != http.StatusOK || !slices.Contains(got, "near.go:similarity 1.00") {
+				t.Fatalf("answer = %d %q, want 200 with the vector search's near.go", code, got)
+			}
+			if n := lexicalFailures(t, reg); n != tt.failures {
+				t.Errorf("search-by-name failures counted %g, want %g", n, tt.failures)
+			}
+		})
+	}
+}
+
+// lexicalFailures counts the failed searches by name.
+func lexicalFailures(t *testing.T, reg *prometheus.Registry) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n float64
+	for _, family := range families {
+		if family.GetName() != "kritika_lexical_search_seconds" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			for _, label := range metric.Label {
+				if label.GetName() == "outcome" && label.GetValue() == "error" {
+					n += float64(metric.GetHistogram().GetSampleCount())
+				}
+			}
+		}
+	}
+	return n
+}

@@ -38,6 +38,7 @@ type Metrics struct {
 	leaseWait       *prometheus.HistogramVec
 	queueWait       *prometheus.HistogramVec
 	vectorSearch    *prometheus.HistogramVec
+	lexicalSearch   *prometheus.HistogramVec
 	similarRequests *prometheus.CounterVec
 	similarBest     *prometheus.HistogramVec
 	similarHits     *prometheus.CounterVec
@@ -164,6 +165,12 @@ func New(reg prometheus.Registerer) *Metrics {
 		vectorSearch: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "kritika_vector_search_seconds",
 			Help:    "Database vector-search transaction time per request, excluding embedding and model-slot waits.",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
+		}, []string{lblAccount, lblOutcome}),
+		lexicalSearch: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "kritika_lexical_search_seconds",
+			Help: "Search-by-name time per similar-code request, within its vector-search transaction. outcome is ok, error or " +
+				"canceled; an error leaves the request to the vector search alone.",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
 		}, []string{lblAccount, lblOutcome}),
 		similarRequests: f.NewCounterVec(prometheus.CounterOpts{
@@ -432,12 +439,14 @@ func (m *Metrics) QueueWait(queue string, took time.Duration) {
 	}
 }
 
-// InitVectorSearch exposes zero counters before requests arrive so a first
-// error following a scrape is visible to rate/increase.
+// InitVectorSearch exposes zero counters of the vector search and the search
+// by name before requests arrive so a first error following a scrape is
+// visible to rate/increase.
 func (m *Metrics) InitVectorSearch(account string) {
 	if m != nil {
 		for _, outcome := range []string{"ok", outcomeError, outcomeCanceled} {
 			m.vectorSearch.WithLabelValues(account, outcome)
+			m.lexicalSearch.WithLabelValues(account, outcome)
 		}
 	}
 }
@@ -446,6 +455,13 @@ func (m *Metrics) InitVectorSearch(account string) {
 func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
 	if m != nil {
 		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
+	}
+}
+
+// LexicalSearch records the search by name. outcome is ok, error or canceled.
+func (m *Metrics) LexicalSearch(account, outcome string, took time.Duration) {
+	if m != nil {
+		m.lexicalSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
 	}
 }
 

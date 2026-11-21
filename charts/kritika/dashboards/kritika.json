@@ -2367,9 +2367,22 @@
           "instant": false,
           "format": "time_series",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (namespace, job, outcome, le) (rate(kritika_lexical_search_seconds_bucket{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval])))",
+          "legendFormat": "{{namespace}}/{{job}} by name {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
         }
       ],
-      "description": "Database search transaction per request, including pool acquisition and all query vectors. Canceled requests are separate from errors. Excludes embedding, model-slot waits and usage recording."
+      "description": "Database search transaction per request, including pool acquisition, all query vectors and the search by name, which is also shown alone. Canceled requests are separate from errors. Excludes embedding, model-slot waits and usage recording."
     },
     {
       "id": 40,
@@ -2432,9 +2445,22 @@
           "instant": false,
           "format": "time_series",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, job, outcome) (rate(kritika_lexical_search_seconds_count{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} by name {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
         }
       ],
-      "description": "Search requests reaching the database, including errors. Embedding failures and missing indexes do not count as searches."
+      "description": "Search requests reaching the database, including errors, and their searches by name. A failed search by name leaves its request to the vector search alone. Embedding failures and missing indexes do not count as searches."
     },
     {
       "id": 41,
