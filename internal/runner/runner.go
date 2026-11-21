@@ -340,7 +340,7 @@ func similarContext(
 	if !ok {
 		return nil, nil
 	}
-	return similarShown(head, p.Ignore, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
+	return similarShown(ctx, head, p.Ignore, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
 }
 
 // similarReportWindow bounds what a run spends, before it searches, on

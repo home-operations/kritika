@@ -19,6 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/memory"
+
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -403,6 +409,82 @@ func TestSearchToolHeadLock(t *testing.T) {
 		len(locks.head) != 0 || len(locks.search) != 0 {
 		t.Fatalf("Run = %q, %v; head lock held %d, search lock %d", out, err, len(locks.head), len(locks.search))
 	}
+}
+
+// TestSearchToolStopsReadingTheHeadWhenItsPartEnds: a part that ends while
+// search_code reads its answer at the head reads no further file, returns
+// why it ended, and lets the head lock go, which the other parts wait on.
+func TestSearchToolStopsReadingTheHeadWhenItsPartEnds(t *testing.T) {
+	st := memory.NewStorage()
+	blob := func(content string) plumbing.Hash {
+		o := st.NewEncodedObject()
+		o.SetType(plumbing.BlobObject)
+		w, err := o.Writer()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(content))
+		_ = w.Close()
+		h, err := st.SetEncodedObject(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	a, b := blob("package a\n"), blob("package b\n")
+	o := st.NewEncodedObject()
+	if err := (&object.Tree{Entries: []object.TreeEntry{
+		{Name: "a.go", Mode: filemode.Regular, Hash: a}, {Name: "b.go", Mode: filemode.Regular, Hash: b},
+	}}).Encode(o); err != nil {
+		t.Fatal(err)
+	}
+	root, err := st.SetEncodedObject(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended := errors.New("the part ended")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	reads := &countingStorer{EncodedObjectStorer: st, read: map[plumbing.Hash]int{}, after: func(h plumbing.Hash) {
+		if h == a {
+			cancel(ended)
+		}
+	}}
+	head, err := object.GetTree(reads, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "a.go", StartLine: 1, EndLine: 1, Text: "package a"},
+		{Stage: contextpack.StageSimilar, Path: "b.go", StartLine: 1, EndLine: 1, Text: "package b"},
+	}}}
+	locks := newPartLocks()
+	tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "t", head: head, headLock: locks.head, maxBytes: 1 << 10}
+	out, err := tool.Run(ctx, json.RawMessage(`{"query":"package"}`))
+	if !errors.Is(err, ended) || out != "" {
+		t.Errorf("Run = %q, %v; want it to stop with %v", out, err, ended)
+	}
+	if reads.read[a] != 1 || reads.read[b] != 0 {
+		t.Errorf("a.go read %d times and b.go %d, want a.go once and b.go not after the part ended", reads.read[a], reads.read[b])
+	}
+	if len(locks.head) != 0 {
+		t.Error("the head lock is still held")
+	}
+}
+
+// countingStorer counts the reads of each object, and calls after with each
+// one read.
+type countingStorer struct {
+	storer.EncodedObjectStorer
+	read  map[plumbing.Hash]int
+	after func(plumbing.Hash)
+}
+
+func (s *countingStorer) EncodedObject(typ plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	o, err := s.EncodedObjectStorer.EncodedObject(typ, h)
+	s.read[h]++
+	s.after(h)
+	return o, err
 }
 
 // TestRunPartLoopsShareSearch: parts that run at once share one search_code,

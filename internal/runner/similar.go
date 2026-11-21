@@ -127,8 +127,12 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	if err != nil {
 		return "", err
 	}
-	chunks := distinct(atHead(s.head, s.ignore, out.Chunks))
+	current, err := atHead(ctx, s.head, s.ignore, out.Chunks)
 	release()
+	if err != nil {
+		return "", fmt.Errorf("agent: search_code: %w", err)
+	}
+	chunks := distinct(current)
 	if len(chunks) == 0 {
 		return "No similar code found.", nil
 	}
@@ -207,8 +211,10 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // moved down can leave the same lines in another function at its old place.
 // A chunk of a path that the run's ignore globs match, or that is
 // Unindexed, is left out unread: an index built under older rules can hold
-// one, and the exclusions that the run reported name only changed paths.
-func atHead(head *object.Tree, ignore []string, chunks []contextpack.Chunk) []contextpack.Chunk {
+// one, and the exclusions that the run reported name only changed paths. It
+// stops with the cause when ctx ends: a part reads the head holding the head
+// lock, and one past its deadline would keep the other parts from the head.
+func atHead(ctx context.Context, head *object.Tree, ignore []string, chunks []contextpack.Chunk) ([]contextpack.Chunk, error) {
 	files := map[string]*headFile{}
 	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions.MaxFileBytes}}
 	var out []contextpack.Chunk
@@ -216,23 +222,29 @@ func atHead(head *object.Tree, ignore []string, chunks []contextpack.Chunk) []co
 		if chunk.Matches(ignore, c.Path) || indexer.Unindexed(c.Path) {
 			continue
 		}
+		if ctx.Err() != nil {
+			return nil, context.Cause(ctx)
+		}
 		f, ok := files[c.Path]
 		if !ok {
 			f = readHeadFile(head, c.Path)
 			files[c.Path] = f
 		}
-		start, end, ok := findText(f.lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1, func(start, end int) bool {
+		start, end, ok := findText(ctx, f.lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1, func(start, end int) bool {
 			at := c
 			at.StartLine, at.EndLine = start+1, end+1
-			return at.Symbol == "" || f.declares(parser, at)
+			return at.Symbol == "" || (ctx.Err() == nil && f.declares(parser, at))
 		})
+		if ctx.Err() != nil {
+			return nil, context.Cause(ctx)
+		}
 		if !ok {
 			continue
 		}
 		c.StartLine, c.EndLine = start+1, end+1
 		out = append(out, c)
 	}
-	return out
+	return out, nil
 }
 
 // headFile is a file as the head has it. Its declarations, and the pieces
@@ -303,8 +315,9 @@ func distinct(chunks []contextpack.Chunk) []contextpack.Chunk {
 // a cut need not be the index's, and the line after a cut that ends a line
 // is not shown. A whole text of exactly MaxChunkBytes is also what a cut of a
 // longer one gives, so the head can have more of its last line. A place
-// counts only when accept takes its first and last line.
-func findText(lines []string, text string, near, n int, accept func(first, last int) bool) (int, int, bool) {
+// counts only when accept takes its first and last line. It gives up, false,
+// once ctx ends.
+func findText(ctx context.Context, lines []string, text string, near, n int, accept func(first, last int) bool) (int, int, bool) {
 	if text == "" || n < 1 {
 		return 0, 0, false
 	}
@@ -350,7 +363,7 @@ func findText(lines []string, text string, near, n int, accept func(first, last 
 		}
 		return 0, false
 	}
-	for d := 0; near-d >= 0 || near+d < len(lines); d++ {
+	for d := 0; (near-d >= 0 || near+d < len(lines)) && ctx.Err() == nil; d++ {
 		if last, ok := at(near - d); ok && accept(near-d, last) {
 			return near - d, last, true
 		}
@@ -368,8 +381,14 @@ const maxSimilarShown = 10
 // them and outside ignore, none that others, the other stages' chunks,
 // mostly show or that an earlier one shown mostly shows, and the first
 // maxSimilarShown of the rest.
-func similarShown(head *object.Tree, ignore []string, found, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
-	current := atHead(head, ignore, found)
+func similarShown(
+	ctx context.Context, head *object.Tree, ignore []string, found, others []contextpack.Chunk, logger *slog.Logger,
+) []contextpack.Chunk {
+	current, err := atHead(ctx, head, ignore, found)
+	if err != nil {
+		logger.Warn("similar chunks not checked at the head", "error", err)
+		return nil
+	}
 	shown := distinct(withoutOverlap(current, others))
 	logger.Info("similar chunks shown", "found", len(found), "at_head", len(current), "apart", len(shown),
 		"shown", min(len(shown), maxSimilarShown))

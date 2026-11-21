@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing/object"
+
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/indexer"
@@ -290,7 +292,7 @@ func TestSimilarShown(t *testing.T) {
 	}
 	found[0].Text = "func gone() {}"
 	others := []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "f01.go", StartLine: 1, EndLine: 1}}
-	got := similarShown(tree(t, files), nil, found, others, slog.New(slog.DiscardHandler))
+	got := similarShown(t.Context(), tree(t, files), nil, found, others, slog.New(slog.DiscardHandler))
 	if want := found[2 : 2+maxSimilarShown]; !slices.Equal(got, want) {
 		t.Fatalf("shown %+v, want %+v", got, want)
 	}
@@ -306,7 +308,7 @@ func TestSimilarShown(t *testing.T) {
 		head := tree(t, map[string]string{"tail.go": strings.Join(lines, "\n") + "\n"})
 		found := []contextpack.Chunk{chunk(contextpack.StageSimilar, 1, 60), chunk(contextpack.StageSimilar, 51, 61)}
 		others := []contextpack.Chunk{chunk(contextpack.StageDefinition, 1, 40)}
-		if got := similarShown(head, nil, found, others, slog.New(slog.DiscardHandler)); !slices.Equal(got, found[1:]) {
+		if got := similarShown(t.Context(), head, nil, found, others, slog.New(slog.DiscardHandler)); !slices.Equal(got, found[1:]) {
 			t.Fatalf("shown %+v, want the tail", got)
 		}
 	})
@@ -379,14 +381,14 @@ func TestAtHead(t *testing.T) {
 		{"empty", chunk("lib.go", 1, 1, ""), nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := atHead(head, nil, []contextpack.Chunk{tt.in}); !slices.Equal(got, tt.want) {
+			if got := atHeadOf(t, head, []contextpack.Chunk{tt.in}); !slices.Equal(got, tt.want) {
 				t.Fatalf("atHead = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
 	t.Run("found at lines an earlier one mostly shows", func(t *testing.T) {
 		a := "func a() {\n\treturn\n}"
-		got := distinct(atHead(head, nil, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}))
+		got := distinct(atHeadOf(t, head, []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 1, 3, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}))
 		if want := []contextpack.Chunk{chunk("lib.go", 3, 5, a), chunk("lib.go", 5, 7, "}\n\nfunc b() {}")}; !slices.Equal(got, want) {
 			t.Fatalf("atHead = %+v, want %+v", got, want)
 		}
@@ -456,7 +458,7 @@ func TestAtHeadChecksDeclarations(t *testing.T) {
 			t.Fatalf("index %+v has no chunk of %s from line %d in %s", index, want.symbol, want.start, want.path)
 		}
 	}
-	if got := atHead(tree(t, base), nil, index); !slices.Equal(got, index) {
+	if got := atHeadOf(t, tree(t, base), index); !slices.Equal(got, index) {
 		for _, c := range index {
 			if !slices.Contains(got, c) {
 				t.Errorf("atHead of an unchanged tree left out %s:%d-%d under %q", c.Path, c.StartLine, c.EndLine, c.Symbol)
@@ -468,7 +470,7 @@ func TestAtHeadChecksDeclarations(t *testing.T) {
 	renamed["long.go"] = long("func Longer()")
 	renamed["method.go"] = long("func (c *Client) handle()")
 	for _, path := range []string{"long.go", "method.go"} {
-		if got := atHead(tree(t, renamed), nil, bodies(path)); len(got) != 0 {
+		if got := atHeadOf(t, tree(t, renamed), bodies(path)); len(got) != 0 {
 			t.Errorf("atHead under another declaration = %+v, want none", got)
 		}
 	}
@@ -532,7 +534,7 @@ func TestAtHeadLooksPastAnotherDeclaration(t *testing.T) {
 	}
 	// B, as long as A, now sits above it: the window's old lines are B's.
 	moved := len(strings.Split(fn("B"), "\n"))
-	got := atHead(tree(t, map[string]string{"lib.go": "package lib\n\n" + fn("B") + "\n" + fn("A")}), nil, []contextpack.Chunk{window})
+	got := atHeadOf(t, tree(t, map[string]string{"lib.go": "package lib\n\n" + fn("B") + "\n" + fn("A")}), []contextpack.Chunk{window})
 	want := window
 	want.StartLine, want.EndLine = window.StartLine+moved, window.EndLine+moved
 	if !slices.Equal(got, []contextpack.Chunk{want}) {
@@ -562,7 +564,7 @@ func TestAtHeadFindsALineIndentedPastTheBound(t *testing.T) {
 	if stored.Text != "callSomething()" {
 		t.Fatalf("index %+v stores no chunk of line 4 from its first word", built)
 	}
-	got := atHead(tree(t, map[string]string{"deep.go": "package lib\n\n// moved\n" + src}), nil, []contextpack.Chunk{stored})
+	got := atHeadOf(t, tree(t, map[string]string{"deep.go": "package lib\n\n// moved\n" + src}), []contextpack.Chunk{stored})
 	want := stored
 	want.StartLine, want.EndLine = 5, 5
 	if !slices.Equal(got, []contextpack.Chunk{want}) {
@@ -627,4 +629,14 @@ func TestSimilarLeavesOutPathsTheRunWouldNotIndex(t *testing.T) {
 	if want := "lib/kept.go:1-1 similarity 0.9\n" + kept; err != nil || out != want {
 		t.Fatalf("search_code = %q, %v; want %q", out, err, want)
 	}
+}
+
+// atHeadOf is atHead without ignore globs, with a context that does not end.
+func atHeadOf(t *testing.T, head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
+	t.Helper()
+	out, err := atHead(t.Context(), head, nil, chunks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
