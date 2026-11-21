@@ -167,11 +167,14 @@ type LexicalBar struct{ Per, Least, Share int }
 // during the search is seen whole or not at all. So is whether the
 // generation is still searched by name, as ActiveGenerationFor found it: a
 // step of another index format, which leaves the postings as they were, can
-// publish in between, and the search then finds nothing. Only the excluded
-// paths' chunks and the few ranked chunks are read from index_chunks: the
-// ranked ones first without their text, to compare the ties by their vectors,
-// and then whole, the hits each query keeps alone. A score is rounded so that
-// two chunks holding the same terms tie, whatever order they were added in.
+// publish in between, and the search then finds nothing. Only the chunks
+// that the postings find are read from index_chunks, and only their paths,
+// to leave out those of the excluded paths, however many chunks those paths
+// hold, and then the few
+// ranked chunks: first without their text, to compare the ties by their
+// vectors, and then whole, the hits each query keeps alone. A score is
+// rounded so that two chunks holding the same terms tie, whatever order they
+// were added in.
 //
 // $1 is the generation, $2, $3 and $4 each query's index, term and whether
 // the term is compound, $5 every term once, $6, $7 and $14 the LexicalBar's
@@ -196,23 +199,23 @@ const lexicalChunksSQL = `WITH g AS MATERIALIZED (
 		SELECT q.qi, q.t, q.compound, f.n, ln(1 + (g.n - f.n + 0.5) / (f.n + 0.5)) AS w
 		FROM g, unnest($2::int[], $3::text[], $4::bool[]) AS q (qi, t, compound)
 		JOIN (SELECT DISTINCT t, n FROM held) f ON f.t = q.t
-	), excluded AS MATERIALIZED (
-		SELECT id FROM index_chunks WHERE index_run_id = $1 AND path = ANY($8::text[])
-		UNION ALL
-		SELECT c.id FROM similar_exclusions e JOIN index_chunks c ON c.index_run_id = $1 AND c.path = e.path
-		WHERE e.runner_run_id = $16::uuid
-	), scored AS (
+	), scored AS MATERIALIZED (
 		SELECT w.qi, h.chunk_id AS id, round(sum(w.w)::numeric, 9)::float8 AS score,
 			array_agg(w.t ORDER BY w.w DESC, w.t) AS matched
 		FROM held h JOIN weights w ON w.t = h.t
-		WHERE NOT EXISTS (SELECT 1 FROM excluded e WHERE e.id = h.chunk_id)
 		GROUP BY w.qi, h.chunk_id
 		HAVING count(*) > 1 OR bool_or(w.compound) OR min(w.n) <= $12
+	), excluded AS MATERIALIZED (
+		SELECT c.id FROM (SELECT DISTINCT id FROM scored) s,
+			LATERAL (SELECT c.id, c.path FROM index_chunks c WHERE c.index_run_id = $1 AND c.id = s.id LIMIT 1) c
+		WHERE (cardinality($8::text[]) > 0 OR $16::uuid IS NOT NULL)
+			AND (c.path = ANY($8::text[]) OR EXISTS (SELECT 1 FROM similar_exclusions e
+				WHERE e.runner_run_id = $16::uuid AND md5(e.path) = md5(c.path) AND e.path = c.path))
 	), top AS MATERIALIZED (
 		SELECT * FROM (
 			SELECT s.*, rank() OVER (PARTITION BY s.qi ORDER BY s.score DESC) AS rank,
 				row_number() OVER (PARTITION BY s.qi ORDER BY s.score DESC, s.id) AS place
-			FROM scored s
+			FROM scored s WHERE NOT EXISTS (SELECT 1 FROM excluded e WHERE e.id = s.id)
 		) r WHERE rank <= $10 AND place <= $11
 	), kept AS MATERIALIZED (
 		SELECT * FROM (
