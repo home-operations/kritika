@@ -380,6 +380,59 @@ func TestBuildSignaturesCopyTheirCut(t *testing.T) {
 	runtime.KeepAlive(b.chunks)
 }
 
+// TestBuildChunksCopyTheirCut: a line over MaxChunkBytes is stored cut,
+// and its chunk holds only the cut, not the whole line, until the index is
+// uploaded. That holds for a line indented past the bound too, which is
+// stored from its first word. What the chunks hold is counted in bytes of
+// live heap.
+func TestBuildChunksCopyTheirCut(t *testing.T) {
+	const n, size = 8, 100 << 10
+	var src strings.Builder
+	for i := range n {
+		indent := ""
+		if i%2 == 1 {
+			indent = strings.Repeat(" ", DefaultOptions.MaxChunkBytes+10)
+		}
+		fmt.Fprintf(&src, "%sline%d %s\n", indent, i, strings.Repeat("word ", size/5))
+	}
+	f, err := oneFileTree(t, "long.md", src.String()).File("long.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newBuilder := func() *builder {
+		return &builder{opts: DefaultOptions, parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: DefaultOptions.MaxFileBytes}}}
+	}
+	if err := newBuilder().file(f); err != nil {
+		t.Fatal(err)
+	}
+	b := newBuilder()
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	if err := b.file(f); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if len(b.chunks) != n {
+		t.Fatalf("%d chunks, want one per line, %d", len(b.chunks), n)
+	}
+	for i, c := range b.chunks {
+		if !strings.HasPrefix(c.Text, fmt.Sprintf("line%d word", i)) || len(c.Text) > DefaultOptions.MaxChunkBytes {
+			t.Fatalf("chunk %d text = %q, %d bytes, want line%d from its first word within %d bytes", i, textcut.Prefix(c.Text, 40), len(c.Text), i, DefaultOptions.MaxChunkBytes)
+		}
+	}
+	if held := int64(after.HeapAlloc) - int64(before.HeapAlloc); held > int64(n*size/4) {
+		t.Errorf("the %d chunks hold %d bytes, over a quarter of their %d-byte lines", n, held, n*size)
+	}
+	// The file's blob, in the repository's memory, was live before the
+	// build and must still count as live after it.
+	runtime.KeepAlive(f)
+	runtime.KeepAlive(b.chunks)
+}
+
 // oneFileTree is the tree of a commit that holds one file.
 func oneFileTree(t *testing.T, path, content string) *object.Tree {
 	t.Helper()
@@ -451,18 +504,26 @@ func TestBuildKeepsALineIndentedPastTheBound(t *testing.T) {
 }
 
 // TestChunkText: a piece's text is cut to the bound, from its start unless
-// that leaves no word and the piece has one past the bound.
+// that leaves no word and the piece has one past the bound. The indexer's
+// cut of the source's bytes is the same as the runner's of a string.
 func TestChunkText(t *testing.T) {
 	for _, tt := range []struct{ name, text, want string }{
 		{"within the bound", " a b", " a b"},
+		{"at the bound", "abcd", "abcd"},
 		{"cut from the start", "abcdefgh", "abcd"},
+		{"cut before a rune across the bound", "abcéf", "abc"},
 		{"a word within the bound", "  ab" + strings.Repeat(" ", 10) + "cd", "  ab"},
 		{"indented past the bound", strings.Repeat(" ", 10) + "(name)", "name"},
+		{"indented past the bound to a rune", strings.Repeat(" ", 10) + "éabcd", "éab"},
 		{"wordless", strings.Repeat(" ", 10) + "()", "    "},
+		{"empty", "", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ChunkText(tt.text, 4); got != tt.want {
 				t.Errorf("ChunkText(%q, 4) = %q, want %q", tt.text, got, tt.want)
+			}
+			if got := chunkText([]byte(tt.text), 4); got != tt.want {
+				t.Errorf("chunkText(%q, 4) = %q, want %q", tt.text, got, tt.want)
 			}
 		})
 	}

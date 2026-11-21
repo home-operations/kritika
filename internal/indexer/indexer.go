@@ -248,7 +248,7 @@ func (b *builder) file(f *object.File) error {
 		// A window of a file without declarations can be white space
 		// alone, a line too long to share a window with its neighbours, and
 		// a piece cut to MaxChunkBytes can keep only its white space.
-		text := ChunkText(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
+		text := chunkText(pf.Bytes(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
 		if strings.IndexFunc(text, chunk.Worded) < 0 {
 			continue
 		}
@@ -284,6 +284,22 @@ func ChunkText(text string, maxBytes int) string {
 	}
 	if i := strings.IndexFunc(text, chunk.Worded); i >= 0 {
 		return textcut.Prefix(text[i:], maxBytes)
+	}
+	return cut
+}
+
+// chunkText is ChunkText of src, which copies only the bytes it keeps, so a
+// chunk of a long line does not hold the whole line until the index is
+// uploaded. textcut.Prefix reads one byte past maxBytes to find where a rune
+// starts.
+func chunkText(src []byte, maxBytes int) string {
+	head := func(b []byte) string { return textcut.Prefix(string(b[:min(len(b), maxBytes+1)]), maxBytes) }
+	cut := head(src)
+	if len(src) <= maxBytes || strings.IndexFunc(cut, chunk.Worded) >= 0 {
+		return cut
+	}
+	if i := bytes.IndexFunc(src, chunk.Worded); i >= 0 {
+		return head(src[i:])
 	}
 	return cut
 }
