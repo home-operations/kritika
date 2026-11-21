@@ -32,8 +32,13 @@ type Merged struct {
 // Merge applies doc over the admin's configuration op. doc is the merge-base
 // FileName, or nil when the repository has none.
 //
-// The file narrows what an admin allows: enabled, ignore, and include and
-// exclude lists of its own, with no condition under an admin's name. The
+// The admin's enabled is not applied: it says only whether a repository
+// runs, which a dashboard choice overrides and which is settled before the
+// file is read (see configfile.File.Runs). The file can turn its own
+// repository off.
+//
+// The file narrows what an admin allows: ignore, and include and exclude
+// lists of its own, with no condition under an admin's name. The
 // file appends its context files and rules to the admin's. It can only turn
 // review.fixes on and can only lower confidence.risk. It replaces the models,
 // their effort, the confidence threshold, how the review comments, whether
@@ -49,6 +54,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
 	op.Review.Context = slices.Clone(op.Review.Context)
 	op.Review.Rules = slices.Clone(op.Review.Rules)
+	op.Enabled = true
 	m := Merged{Settings: op}
 	if doc == nil {
 		return m, nil

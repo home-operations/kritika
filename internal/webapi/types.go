@@ -289,6 +289,8 @@ type RepoConfig struct {
 	// Found is false when there was no file there.
 	Found bool `json:"found"`
 	// Settings are the repository's configuration with the file applied.
+	// Their enabled says only whether the file turns the repository off. The
+	// repository's own enabled says whether it runs.
 	Settings RepoSettings `json:"settings"`
 	// Filters are the file's own conditions, passed beside the admin's.
 	Filters configfile.Filters `json:"filters"`
