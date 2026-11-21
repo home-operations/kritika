@@ -254,7 +254,10 @@ func TestSimilarLexicalSmallGeneration(t *testing.T) {
 
 // TestSimilarFileCapBackfills: when one file holds a query's nearest chunks,
 // those past its cap give their places to the query's next chunks of other
-// files, so the query is answered by as many files as qualify.
+// files, so the query is answered by as many files as qualify. A reranker
+// sent fewer candidates than the search finds without one leaves the query
+// as deep a pool: the chunks it is not sent follow those it scores, and all
+// of them keep their fused order when it fails.
 func TestSimilarFileCapBackfills(t *testing.T) {
 	at := func(similarity float64) []float32 {
 		return []float32{float32(similarity), float32(math.Sqrt(1 - similarity*similarity)), 0, 0, 0, 0, 0, 0}
@@ -263,9 +266,41 @@ func TestSimilarFileCapBackfills(t *testing.T) {
 		"a.go@1": "func one() {}", "a.go@10": "func two() {}", "a.go@20": "func three() {}", "a.go@30": "func four() {}",
 		"b.go@1": "func five() {}",
 	}, map[string][]float32{"a.go@1": at(0.99), "a.go@10": at(0.98), "a.go@20": at(0.97), "a.go@30": at(0.96), "b.go@1": at(0.95)})
-	code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "zzyzx quux")
-	if want := []string{"a.go:similarity 0.99", "a.go:similarity 0.98", "b.go:similarity 0.95"}; code != http.StatusOK || !slices.Equal(got, want) {
-		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
+	fourCandidates := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, candidates: 4 } }`)
+	var sent []int
+	reversed := rerankFunc(func(_ context.Context, _ string, docs []string) ([]float64, model.RerankUsage, error) {
+		sent = append(sent, len(docs))
+		scores := make([]float64, len(docs))
+		for i := range scores {
+			scores[i] = float64(i)
+		}
+		return scores, model.RerankUsage{}, nil
+	})
+	failing := rerankFunc(func(context.Context, string, []string) ([]float64, model.RerankUsage, error) {
+		return nil, model.RerankUsage{}, errors.New("reranker down")
+	})
+	for _, tt := range []struct {
+		name     string
+		file     *configfile.File
+		reranker model.Reranker
+		want     []string
+		wantSent []int
+	}{
+		{"no reranker", r.file, nil, []string{"a.go:similarity 0.99", "a.go:similarity 0.98", "b.go:similarity 0.95"}, nil},
+		{"a failing reranker", fourCandidates, failing, []string{"a.go:similarity 0.99", "a.go:similarity 0.98", "b.go:similarity 0.95"}, nil},
+		// It puts a.go's last first, and is not sent b.go.
+		{"a reranker", fourCandidates, reversed, []string{"a.go:similarity 0.96", "a.go:similarity 0.97", "b.go:similarity 0.95"}, []int{4}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sent = nil
+			code, got := r.ask(t, tt.file, tt.reranker, prometheus.NewRegistry(), "zzyzx quux")
+			if code != http.StatusOK || !slices.Equal(got, tt.want) {
+				t.Fatalf("answer = %d %q, want 200 %q", code, got, tt.want)
+			}
+			if !slices.Equal(sent, tt.wantSent) {
+				t.Errorf("sent the reranker %v candidates, want %v", sent, tt.wantSent)
+			}
+		})
 	}
 }
 

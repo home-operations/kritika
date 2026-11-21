@@ -662,8 +662,9 @@ is `false`, a chunk that the [search by name](#search-by-name) keeps is
 kept too, whatever its similarity. Of the chunks kept, an answer
 takes each query's best match before any query's second, at most two
 chunks of one file, four of one query, and ten in all, or sixteen for a
-review's prompt. A chunk that the file cap turns away leaves its query's
-place to the query's next. The prompt leaves out a chunk more than half of whose lines another context
+review's prompt. A chunk that the file cap or a duplicate turns away gives
+its query's turn to the query's next, which then comes before any query's
+later match. The prompt leaves out a chunk more than half of whose lines another context
 stage already shows, and shows the first ten of the rest.
 
 The index is of the default branch, which can be ahead of or behind the
@@ -858,10 +859,14 @@ it: `vector`, `lexical` or `both`.
 A reranker reads each query beside each of its candidates and scores how
 well the candidate answers it, which an embedding of each alone cannot.
 With `rerank` set, both searches look for `candidates` chunks for each
-query rather than eight. The candidates that the floor, the margin and the
-weight by name keep, at most `candidates` of each query, the best fused
-first, are sent to the reranker, and its scores order them in place of the
-fusion's. The answer then takes each query's best four as before.
+query, or eight when that is more. Of the candidates that the floor, the
+margin and the weight by name keep, each query's best `candidates` by the
+fused order are sent to the reranker, and its scores order them in place
+of the fusion's. Its others follow them in the fused order, and a query
+that the reranker does not answer keeps the fused order of all of its
+candidates, so a duplicate or the file cap leaves it the same chunks to
+fall back on as without a reranker. The answer then takes each query's
+best four as before.
 
 | Key          | Default          | What                                                                                                                                                    |
 | ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |

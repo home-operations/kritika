@@ -88,32 +88,38 @@ func TestRetrievalEval(t *testing.T) {
 		changed := truth.changes[c]
 		defs, related := truth.defs(added, changed), truth.related(changed, changed)
 		qv := embed(queries)
+		// The gateway searches as deep with a reranker as without one, and
+		// deeper for one sent more candidates than that.
+		rerankDepth := max(evalDepth, candidates)
 		depth := evalDepth
 		if reranker != nil {
-			depth = max(depth, candidates)
+			depth = rerankDepth
 		}
 		hits, named := ix.search(t, &timing, queries, qv, changed, depth)
 		for _, v := range variants {
+			vdepth := evalDepth
+			if strings.HasSuffix(v, "+rerank") {
+				vdepth = rerankDepth
+			}
 			var cands []candidate
 			f := floor
 			switch strings.TrimSuffix(v, "+rerank") {
 			case "vector":
-				cands = fuse(evalTop(hits, v), nil)
+				cands = fuse(evalTop(hits, vdepth), nil)
 			case "lexical":
 				// No similarity vouches for a chunk.
-				cands, f = fuse(nil, evalTop(named, v)), 2
+				cands, f = fuse(nil, evalTop(named, vdepth)), 2
 			case "hybrid":
-				cands = fuse(evalTop(hits, v), evalTop(named, v))
+				cands = fuse(evalTop(hits, vdepth), evalTop(named, vdepth))
 			}
 			counts := map[hitKey]int{}
 			kept, _, _ := gateCandidates(cands, f, margin)
 			if strings.HasSuffix(v, "+rerank") {
-				kept = topPerQuery(kept, candidates, counts)
 				started := time.Now()
-				evalRerank(t, reranker, queries, kept)
+				evalRerank(t, reranker, queries, kept, candidates)
 				timing.rerank += time.Since(started)
 			}
-			top := topPerQuery(kept, similarPerQuery, counts)
+			top := evalBest(kept, similarPerQuery)
 			for q, text := range queries {
 				tallies[v].addQuery(top, q, truth.defs(text, changed), truth.related([]string{paths[q]}, changed))
 			}
@@ -280,28 +286,32 @@ func (ix evalIndexed) search(
 	return hits, named
 }
 
-// evalTop is each query's evalDepth first hits, as the gateway searches
-// without a reranker, unless the variant reranks, which takes them all.
-func evalTop(hits []store.SimilarHit, variant string) []store.SimilarHit {
-	if strings.HasSuffix(variant, "+rerank") {
-		return hits
-	}
+// evalTop is each query's depth first hits, as a search of the gateway's
+// answers at that depth.
+func evalTop(hits []store.SimilarHit, depth int) []store.SimilarHit {
 	taken := map[int]int{}
 	return slices.DeleteFunc(slices.Clone(hits), func(h store.SimilarHit) bool {
 		taken[h.Query]++
-		return taken[h.Query] > evalDepth
+		return taken[h.Query] > depth
 	})
 }
 
-// evalRerank scores each query's candidates as the gateway's rerank does,
-// and, as it fails unless every query is reranked, compares queries by the
-// reranker's scores.
-func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands []candidate) {
-	byQuery := map[int][]int{}
-	for i, c := range cands {
-		byQuery[c.Query] = append(byQuery[c.Query], i)
-	}
-	for q, idx := range byQuery {
+// evalBest is each query's n best candidates, in its order.
+func evalBest(cands []candidate, n int) []candidate {
+	cands = slices.Clone(cands)
+	slices.SortStableFunc(cands, candidateOrder)
+	taken := map[int]int{}
+	return slices.DeleteFunc(cands, func(c candidate) bool {
+		taken[c.Query]++
+		return taken[c.Query] > n
+	})
+}
+
+// evalRerank scores each query's n best candidates as the gateway's rerank
+// does, and, as it fails unless every query is reranked, compares queries by
+// the reranker's scores.
+func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands []candidate, n int) {
+	for q, idx := range rerankBatches(cands, n) {
 		docs := make([]string, len(idx))
 		for j, i := range idx {
 			docs[j] = rerankDocument(cands[i].Chunk)
@@ -310,9 +320,7 @@ func evalRerank(t *testing.T, reranker model.Reranker, queries []string, cands [
 		if err != nil {
 			t.Fatal(err)
 		}
-		for j, i := range idx {
-			cands[i].score = scores[j]
-		}
+		rescore(cands, q, idx, scores)
 	}
 	rerankedAll(cands)
 }
@@ -658,7 +666,7 @@ func TestEvalRerankScale(t *testing.T) {
 	reranker := rerankFunc(func(_ context.Context, query string, docs []string) ([]float64, model.RerankUsage, error) {
 		return []float64{map[string]float64{"q0": 0.1, "q1": 0.9}[query]}, model.RerankUsage{}, nil
 	})
-	evalRerank(t, reranker, []string{"q0", "q1"}, cands)
+	evalRerank(t, reranker, []string{"q0", "q1"}, cands, 1)
 	got := keepCandidates(cands, map[hitKey]int{}, 1)
 	if len(got) != 1 || got[0].Path != "b.go" {
 		t.Fatalf("kept %+v, want b.go, which the reranker scores higher", got)

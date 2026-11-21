@@ -1,0 +1,152 @@
+package gateway
+
+import (
+	"context"
+	"log/slog"
+	"maps"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/store"
+)
+
+// rerankDocument is what the reranker reads of a chunk: what the index
+// embeds of it, its path and declaration, then its text.
+func rerankDocument(c contextpack.Chunk) string {
+	head := c.Path
+	if c.Symbol != "" {
+		head += " " + c.Kind + " " + strings.TrimPrefix(c.Scope+"."+c.Symbol, ".")
+	}
+	return head + "\n" + c.Text
+}
+
+// rerankBatches is, for each query of cands, the indices of its n best
+// candidates by their fused order, the best first: what the reranker is
+// sent of it.
+func rerankBatches(cands []candidate, n int) map[int][]int {
+	order := make([]int, len(cands))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return candidateOrder(cands[a], cands[b]) })
+	batches := map[int][]int{}
+	for _, i := range order {
+		if q := cands[i].Query; len(batches[q]) < n {
+			batches[q] = append(batches[q], i)
+		}
+	}
+	return batches
+}
+
+// rescore gives the candidates of query q at idx the reranker's scores, in
+// their order, and puts the query's others, which the reranker was not sent,
+// past them.
+func rescore(cands []candidate, q int, idx []int, scores []float64) {
+	for i := range cands {
+		if cands[i].Query == q {
+			cands[i].past = true
+		}
+	}
+	for j, i := range idx {
+		cands[i].score, cands[i].past = scores[j], false
+	}
+}
+
+// rerank scores each query's candidates by the reranker, in place of their
+// fused score, one query at a time under one of the reranker's slots, all
+// within its deadline, the wait for the slot included. Each query's
+// rr.CandidateCount() best by the fused order are sent, and its others rank
+// after them, in that order. It fails open: a query that the reranker does
+// not answer, or that the deadline leaves out, keeps the fused order of all
+// of its candidates, and a failure is logged and counted as the reranker's
+// call. A request that reranked records a usage row of the review, with the
+// tokens that the provider reports, none for search units alone, which the
+// usage and its caps do not count.
+func (g *Server) rerank(
+	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
+	cands []candidate, logger *slog.Logger,
+) {
+	byQuery := rerankBatches(cands, rr.CandidateCount())
+	if len(byQuery) == 0 {
+		return
+	}
+	// The wait for a slot counts against the deadline, so a reranker whose
+	// slots are all held delays the answer no longer than its timeout.
+	dctx, cancel := context.WithTimeout(ctx, rr.Deadline())
+	defer cancel()
+	key := "rerank:" + rr.Model
+	waitStarted := time.Now()
+	lease, err := g.Store.AcquireLease(dctx, r.account.ID(), key, file.Slots(r.account, rr.Ref), r.jobID)
+	logger.Info("similar rerank slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
+	if err != nil {
+		logger.Warn("gateway: similar code not reranked: no slot", "error", err)
+		return
+	}
+	defer func() {
+		rctx, cancel := detach(ctx)
+		defer cancel()
+		if _, err := lease.Release(rctx); err != nil {
+			logger.Warn("lease not released", "key", key, "error", err)
+		}
+	}()
+	started := time.Now()
+	var spent model.RerankUsage
+	reranked := 0
+	for _, q := range slices.Sorted(maps.Keys(byQuery)) {
+		if dctx.Err() != nil {
+			break
+		}
+		idx := byQuery[q]
+		docs := make([]string, len(idx))
+		for j, i := range idx {
+			docs[j] = rerankDocument(cands[i].Chunk)
+		}
+		scores, used, err := reranker.Rerank(dctx, r.texts[q], docs)
+		spent.Tokens += used.Tokens
+		spent.SearchUnits += used.SearchUnits
+		g.Metrics.ModelCall(r.account.Key(), rr.Model, store.RoleRerank, adapter.Outcome(err), used.Tokens, 0, 0, 0, false)
+		if err != nil {
+			// The provider's error can carry its URL.
+			logger.Warn("gateway: similar code not reranked: the fused order stands", "query", q, "error", err)
+			continue
+		}
+		rescore(cands, q, idx, scores)
+		reranked++
+	}
+	if reranked == len(byQuery) {
+		rerankedAll(cands)
+	}
+	logger.Info("similar candidates reranked", "queries", len(byQuery), "reranked", reranked, "candidates", len(cands),
+		"elapsed", time.Since(started), "tokens", spent.Tokens, "search_units", spent.SearchUnits)
+	// A provider that bills by the call, as Cohere does by search unit, can
+	// report no tokens: the row still records that the request reranked.
+	if reranked == 0 && spent.Tokens == 0 {
+		return
+	}
+	uctx, ucancel := detach(ctx)
+	defer ucancel()
+	if err := g.Store.WithAccount(uctx, r.account.ID(), func(tx pgx.Tx) error {
+		return store.InsertUsage(uctx, tx, store.Usage{
+			AccountID: r.account.ID(), RepositoryID: r.repositoryID, ReviewID: r.reviewID,
+			Role: store.RoleRerank, Model: rr.Model, Input: spent.Tokens,
+		})
+	}); err != nil {
+		logger.Error("gateway: rerank usage not recorded", "error", err)
+	}
+}
+
+// rerankedAll compares the candidates of different queries by the
+// reranker's scores, once it scored every query of the request: they are
+// then on its one scale.
+func rerankedAll(cands []candidate) {
+	for i := range cands {
+		cands[i].shared = cands[i].score
+	}
+}

@@ -123,7 +123,8 @@ type Rerank struct {
 	API string `yaml:"api"`
 	// Candidates is how many of each query's candidates, the best fused
 	// first, are sent to be reranked, at most MaxRerankCandidates. The two
-	// searches each look for that many. Unset is DefaultRerankCandidates, or
+	// searches each look for that many, and no fewer than without a reranker.
+	// Unset is DefaultRerankCandidates, or
 	// DefaultTEIRerankCandidates for the tei API.
 	Candidates int `yaml:"candidates,omitempty"`
 	// Timeout bounds the reranking of one similar-code request, at most

@@ -287,3 +287,87 @@ func TestGateRanksTies(t *testing.T) {
 		t.Fatalf("scores = %v, want near.go first at %g", scores, want)
 	}
 }
+
+// TestKeepCandidatesTurns: a query whose next candidate a duplicate or the
+// file cap turns away competes with its next one for the same round's
+// places as the other queries' first, rather than losing its turn to
+// another query's second.
+func TestKeepCandidatesTurns(t *testing.T) {
+	cand := func(query int, path string, line int, score float64) candidate {
+		c := candidate{vector: true, close: true, score: score, shared: score}
+		c.Chunk, c.Similarity, c.Query = contextpack.Chunk{Path: path, StartLine: line}, 0.9, query
+		return c
+	}
+	for _, tt := range []struct {
+		name  string
+		cands []candidate
+		limit int
+		want  []string
+	}{
+		{
+			// Both queries' best is x.go, which query 0 keeps. Query 1's
+			// z.go then comes before query 0's second, y.go.
+			name: "a shared best", limit: 2,
+			cands: []candidate{
+				cand(0, "x.go", 1, 0.9), cand(0, "y.go", 1, 0.8),
+				cand(1, "x.go", 1, 0.85), cand(1, "z.go", 1, 0.5),
+			},
+			want: []string{"x.go", "z.go"},
+		},
+		{
+			// Queries 1 and 2 fill a.go, so query 2's best is capped, and its
+			// d.go comes before the others' second.
+			name: "a capped best", limit: 4,
+			cands: []candidate{
+				cand(1, "a.go", 1, 0.95), cand(1, "e.go", 1, 0.8),
+				cand(2, "a.go", 10, 0.94), cand(2, "f.go", 1, 0.7),
+				cand(0, "a.go", 20, 0.9), cand(0, "d.go", 1, 0.6),
+			},
+			want: []string{"a.go", "a.go", "d.go", "e.go"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			counts := map[hitKey]int{}
+			got := make([]string, 0, tt.limit)
+			for _, c := range keepCandidates(tt.cands, counts, tt.limit) {
+				got = append(got, c.Path)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("kept %q, want %q", got, tt.want)
+			}
+			if n := counts[hitKey{hitKept, sourceVector}] + counts[hitKey{hitDuplicate, sourceVector}] +
+				counts[hitKey{hitFileCap, sourceVector}] + counts[hitKey{hitLimit, sourceVector}]; n != len(tt.cands) {
+				t.Errorf("counts %v add up to %d, want every one of the %d candidates", counts, n, len(tt.cands))
+			}
+		})
+	}
+}
+
+// TestRerankBackfill: a reranked query's candidates past those sent to the
+// reranker rank after them, in their fused order. A query that the reranker
+// did not answer keeps all of its candidates in their fused order.
+func TestRerankBackfill(t *testing.T) {
+	cand := func(query int, path string, fused float64) candidate {
+		c := candidate{vector: true, close: true, score: fused, shared: fused}
+		c.Chunk, c.Similarity, c.Query = contextpack.Chunk{Path: path, StartLine: 1}, 0.9, query
+		return c
+	}
+	cands := []candidate{
+		cand(0, "a.go", 0.05), cand(0, "b.go", 0.04), cand(0, "c.go", 0.03), cand(0, "d.go", 0.02),
+		cand(1, "e.go", 0.05), cand(1, "f.go", 0.04), cand(1, "g.go", 0.03),
+	}
+	batches := rerankBatches(cands, 2)
+	if want := map[int][]int{0: {0, 1}, 1: {4, 5}}; !reflect.DeepEqual(batches, want) {
+		t.Fatalf("batches %v, want %v", batches, want)
+	}
+	// The reranker puts b.go first, and scores below the fused scale. As it
+	// left query 1 out, queries are still compared on the fused scale.
+	rescore(cands, 0, batches[0], []float64{-3, -2})
+	got := make([]string, 0, len(cands))
+	for _, c := range keepCandidates(cands, map[hitKey]int{}, similarMax) {
+		got = append(got, c.Path)
+	}
+	if want := []string{"e.go", "b.go", "a.go", "f.go", "g.go", "c.go", "d.go"}; !slices.Equal(got, want) {
+		t.Fatalf("kept %q, want %q", got, want)
+	}
+}

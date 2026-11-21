@@ -21,7 +21,6 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/lexical"
-	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
 )
@@ -297,11 +296,12 @@ func (g *Server) similar(
 		return nil, tokens, similarError, fmt.Errorf("gateway: %d vectors for %d queries", len(vectors), len(r.queries))
 	}
 	// A reranker sorts a pool of candidates for each query, which both
-	// searches look deeper to fill.
+	// searches look deeper to fill, and never shallower than without one:
+	// the candidates past those it is sent are what a query falls back on.
 	depth := similarDepth
 	reranker, rr := g.Rerankers.Reranker(file)
 	if reranker != nil {
-		depth = rr.CandidateCount()
+		depth = max(depth, rr.CandidateCount())
 	}
 	var hits, named []store.SimilarHit
 	started := time.Now()
@@ -326,7 +326,6 @@ func (g *Server) similar(
 		g.Metrics.SimilarBest(r.account.Key(), r.kind, s)
 	}
 	if reranker != nil {
-		kept = topPerQuery(kept, rr.CandidateCount(), counts)
 		g.rerank(ctx, file, r, reranker, rr, kept, logger)
 	}
 	chunks = keepCandidates(kept, counts, r.limit)
@@ -491,6 +490,10 @@ type candidate struct {
 	// place in their own: the fusion's score, which every query has on one
 	// scale, or the reranker's when it scored every query of the request.
 	shared float64
+	// past is a candidate of a query that the reranker scored, which was
+	// below the candidates sent to it in the fused order and so keeps its
+	// fused score: it ranks after every one of them.
+	past bool
 }
 
 func (c candidate) source() string {
@@ -593,71 +596,96 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 
 // keepCandidates keeps each chunk once, at most similarPerQuery of one
 // query, similarPerFile of one file and limit in all, and labels each with
-// its similarity or the names it shares with its query. It takes every query's best, by its score
-// among its query's and then by its shared score, before any query's
-// second, and so on. So neither one query whose neighbours all score
-// high nor one file's neighbouring declarations take every place. A query's
-// place is spent only on a chunk it keeps, so one that a duplicate or the
-// file cap turns away goes to the query's next candidate. It adds what it
-// drops to counts.
+// its similarity or the names it shares with its query. It takes every
+// query's best, by its order among its query's (candidateOrder) and then by
+// its shared score, before any query's second, and so on. So neither one
+// query whose neighbours all score high nor one file's neighbouring
+// declarations take every place. A query's turn is spent only on a chunk it
+// keeps: one that a duplicate or the file cap turns away gives the turn to
+// the query's next candidate, which competes for the same round's places as
+// the other queries' first. It adds what it drops to counts.
 func keepCandidates(cands []candidate, counts map[hitKey]int, limit int) []contextpack.Chunk {
-	cands = slices.Clone(cands)
-	slices.SortStableFunc(cands, func(a, b candidate) int {
-		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(b.Similarity, a.Similarity))
-	})
-	// A candidate's rank is its place among its own query's.
-	ranked := make([]rankedHit, len(cands))
-	next := map[int]int{}
-	for i, c := range cands {
-		ranked[i] = rankedHit{hit: c, rank: next[c.Query]}
-		next[c.Query]++
+	queues := map[int][]candidate{}
+	for _, c := range cands {
+		queues[c.Query] = append(queues[c.Query], c)
 	}
-	slices.SortStableFunc(ranked, func(a, b rankedHit) int {
-		return cmp.Or(cmp.Compare(a.rank, b.rank), cmp.Compare(b.hit.shared, a.hit.shared), cmp.Compare(b.hit.Similarity, a.hit.Similarity))
-	})
+	queries := slices.Sorted(maps.Keys(queues))
+	for _, q := range queries {
+		slices.SortStableFunc(queues[q], candidateOrder)
+	}
+	key := func(c candidate) string { return fmt.Sprintf("%s:%d", c.Chunk.Path, c.Chunk.StartLine) }
 	seen := map[string]bool{}
 	perFile, perQuery := map[string]int{}, map[int]int{}
 	chunks := make([]contextpack.Chunk, 0, min(len(cands), limit))
-	for _, r := range ranked {
-		c := r.hit
-		key := fmt.Sprintf("%s:%d", c.Chunk.Path, c.Chunk.StartLine)
-		switch {
-		case len(chunks) == limit || perQuery[c.Query] == similarPerQuery:
-			counts[hitKey{hitLimit, c.source()}]++
-			continue
-		case seen[key]:
-			counts[hitKey{hitDuplicate, c.source()}]++
-			continue
-		case perFile[c.Chunk.Path] == similarPerFile:
-			counts[hitKey{hitFileCap, c.source()}]++
-			continue
+	for len(chunks) < limit {
+		pick := -1
+		for _, q := range queries {
+			queue := queues[q]
+			for len(queue) > 0 && perQuery[q] < similarPerQuery {
+				c := queue[0]
+				if seen[key(c)] {
+					counts[hitKey{hitDuplicate, c.source()}]++
+				} else if perFile[c.Chunk.Path] == similarPerFile {
+					counts[hitKey{hitFileCap, c.source()}]++
+				} else {
+					break
+				}
+				queue = queue[1:]
+			}
+			queues[q] = queue
+			if len(queue) == 0 || perQuery[q] == similarPerQuery {
+				continue
+			}
+			if pick < 0 || nextTurn(perQuery[q], queue[0], perQuery[pick], queues[pick][0]) {
+				pick = q
+			}
 		}
-		seen[key] = true
+		if pick < 0 {
+			break
+		}
+		c := queues[pick][0]
+		queues[pick] = queues[pick][1:]
+		seen[key(c)] = true
 		perFile[c.Chunk.Path]++
-		perQuery[c.Query]++
+		perQuery[pick]++
 		c.Chunk.Ref = similarRef(c)
 		chunks = append(chunks, c.Chunk)
 		counts[hitKey{hitKept, c.source()}]++
 	}
+	for _, q := range queries {
+		for _, c := range queues[q] {
+			counts[hitKey{hitLimit, c.source()}]++
+		}
+	}
 	return chunks
 }
 
-// topPerQuery is the n candidates of each query that score highest, in
-// their order. It counts the others as past the limit.
-func topPerQuery(cands []candidate, n int, counts map[hitKey]int) []candidate {
-	cands = slices.Clone(cands)
-	slices.SortStableFunc(cands, func(a, b candidate) int {
-		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(b.Similarity, a.Similarity))
-	})
-	taken := map[int]int{}
-	return slices.DeleteFunc(cands, func(c candidate) bool {
-		if taken[c.Query] == n {
-			counts[hitKey{hitLimit, c.source()}]++
-			return true
-		}
-		taken[c.Query]++
-		return false
-	})
+// nextTurn reports whether a query that kept kept chunks, whose next
+// candidate is c, takes its turn before one that kept other and whose next
+// is o: the query that kept fewer, then the candidate the reranker scored
+// over one past its candidates, then the higher shared score, then the
+// nearer.
+func nextTurn(kept int, c candidate, other int, o candidate) bool {
+	return cmp.Or(cmp.Compare(kept, other), comparePast(c, o), cmp.Compare(o.shared, c.shared), cmp.Compare(o.Similarity, c.Similarity)) < 0
+}
+
+// candidateOrder orders the candidates of one query, the best first: by
+// score, then by similarity, and, when the reranker scored the query, the
+// candidates it scored before those past them.
+func candidateOrder(a, b candidate) int {
+	return cmp.Or(comparePast(a, b), cmp.Compare(b.score, a.score), cmp.Compare(b.Similarity, a.Similarity))
+}
+
+// comparePast orders a candidate that the reranker scored, or that it was
+// not asked about, before one past its candidates.
+func comparePast(a, b candidate) int {
+	switch {
+	case a.past == b.past:
+		return 0
+	case b.past:
+		return -1
+	}
+	return 1
 }
 
 // similarNames is how many of the names a chunk shares with its query its
@@ -677,116 +705,4 @@ func similarRef(c candidate) string {
 		parts = append(parts, "shares "+strings.Join(c.Matched[:min(len(c.Matched), similarNames)], ", "))
 	}
 	return strings.Join(parts, "; ")
-}
-
-// rankedHit is a candidate and its place among its query's candidates, 0
-// for the best.
-type rankedHit struct {
-	hit  candidate
-	rank int
-}
-
-// rerankDocument is what the reranker reads of a chunk: what the index
-// embeds of it, its path and declaration, then its text.
-func rerankDocument(c contextpack.Chunk) string {
-	head := c.Path
-	if c.Symbol != "" {
-		head += " " + c.Kind + " " + strings.TrimPrefix(c.Scope+"."+c.Symbol, ".")
-	}
-	return head + "\n" + c.Text
-}
-
-// rerank scores each query's candidates by the reranker, in place of their
-// fused score, one query at a time under one of the reranker's slots, all
-// within its deadline, the wait for the slot included. It fails open: a
-// query that the reranker does not answer, or that the deadline leaves out,
-// keeps the fused order, and a failure is logged and counted as the
-// reranker's call. A request that reranked records a usage row of the
-// review, with the tokens that the provider reports, none for search units
-// alone, which the usage and its caps do not count.
-func (g *Server) rerank(
-	ctx context.Context, file *configfile.File, r similarRequest, reranker model.Reranker, rr *configfile.Rerank,
-	cands []candidate, logger *slog.Logger,
-) {
-	byQuery := map[int][]int{}
-	for i, c := range cands {
-		byQuery[c.Query] = append(byQuery[c.Query], i)
-	}
-	if len(byQuery) == 0 {
-		return
-	}
-	// The wait for a slot counts against the deadline, so a reranker whose
-	// slots are all held delays the answer no longer than its timeout.
-	dctx, cancel := context.WithTimeout(ctx, rr.Deadline())
-	defer cancel()
-	key := "rerank:" + rr.Model
-	waitStarted := time.Now()
-	lease, err := g.Store.AcquireLease(dctx, r.account.ID(), key, file.Slots(r.account, rr.Ref), r.jobID)
-	logger.Info("similar rerank slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
-	if err != nil {
-		logger.Warn("gateway: similar code not reranked: no slot", "error", err)
-		return
-	}
-	defer func() {
-		rctx, cancel := detach(ctx)
-		defer cancel()
-		if _, err := lease.Release(rctx); err != nil {
-			logger.Warn("lease not released", "key", key, "error", err)
-		}
-	}()
-	started := time.Now()
-	var spent model.RerankUsage
-	reranked := 0
-	for _, q := range slices.Sorted(maps.Keys(byQuery)) {
-		if dctx.Err() != nil {
-			break
-		}
-		idx := byQuery[q]
-		docs := make([]string, len(idx))
-		for j, i := range idx {
-			docs[j] = rerankDocument(cands[i].Chunk)
-		}
-		scores, used, err := reranker.Rerank(dctx, r.texts[q], docs)
-		spent.Tokens += used.Tokens
-		spent.SearchUnits += used.SearchUnits
-		g.Metrics.ModelCall(r.account.Key(), rr.Model, store.RoleRerank, adapter.Outcome(err), used.Tokens, 0, 0, 0, false)
-		if err != nil {
-			// The provider's error can carry its URL.
-			logger.Warn("gateway: similar code not reranked: the fused order stands", "query", q, "error", err)
-			continue
-		}
-		for j, i := range idx {
-			cands[i].score = scores[j]
-		}
-		reranked++
-	}
-	if reranked == len(byQuery) {
-		rerankedAll(cands)
-	}
-	logger.Info("similar candidates reranked", "queries", len(byQuery), "reranked", reranked, "candidates", len(cands),
-		"elapsed", time.Since(started), "tokens", spent.Tokens, "search_units", spent.SearchUnits)
-	// A provider that bills by the call, as Cohere does by search unit, can
-	// report no tokens: the row still records that the request reranked.
-	if reranked == 0 && spent.Tokens == 0 {
-		return
-	}
-	uctx, ucancel := detach(ctx)
-	defer ucancel()
-	if err := g.Store.WithAccount(uctx, r.account.ID(), func(tx pgx.Tx) error {
-		return store.InsertUsage(uctx, tx, store.Usage{
-			AccountID: r.account.ID(), RepositoryID: r.repositoryID, ReviewID: r.reviewID,
-			Role: store.RoleRerank, Model: rr.Model, Input: spent.Tokens,
-		})
-	}); err != nil {
-		logger.Error("gateway: rerank usage not recorded", "error", err)
-	}
-}
-
-// rerankedAll compares the candidates of different queries by the
-// reranker's scores, once it scored every query of the request: they are
-// then on its one scale.
-func rerankedAll(cands []candidate) {
-	for i := range cands {
-		cands[i].shared = cands[i].score
-	}
 }
