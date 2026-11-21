@@ -39,7 +39,8 @@ const (
 // similarDepth is how many chunks each search finds for a query, without a
 // reranker, for the fusion to rank: twice what a query keeps, so that the
 // places of chunks that the file cap or a duplicate turns away go to the
-// query's next ones.
+// query's next ones. A query whose window the file cap leaves short is
+// searched again past the files that fill it (pastFullFiles).
 const similarDepth = 2 * similarPerQuery
 
 // maxSimilarBody bounds a similar-code request: its queries, each cut to
@@ -363,7 +364,11 @@ func (g *Server) similar(
 	// which a publication between them could give to two versions of a chunk.
 	err = g.Store.WithAccountSnapshot(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil || !emb.LexicalSearch() || !lexicalReady {
+		if hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, depth); err != nil {
+			return err
+		}
+		if hits, err = pastFullFiles(ctx, tx, runID, vectors, r.exclude, depth, hits, emb.Floor(), emb.Margin()); err != nil ||
+			!emb.LexicalSearch() || !lexicalReady {
 			return err
 		}
 		named, err = g.searchByName(ctx, tx, r, runID, vectors, depth, logger)
@@ -629,9 +634,7 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 	}
 	kept := make([]candidate, 0, len(cands))
 	for _, c := range cands {
-		// The tolerance keeps a hit right at the margin, which the
-		// subtraction's rounding can put a hair below it.
-		c.close = c.Similarity >= floor && c.Similarity >= best[c.Query]-margin-1e-9
+		c.close = closeTo(c.Similarity, best[c.Query], floor, margin)
 		c.named = c.lexical && c.Lexical >= lexicalShare*bestLexical[c.Query]
 		switch {
 		case c.close || c.named:

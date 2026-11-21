@@ -668,7 +668,9 @@ takes each query's best match before any query's second, at most two
 chunks of one file, four of one query, and ten in all, or sixteen for a
 review's prompt. A chunk that the file cap or a duplicate turns away gives
 its query's turn to the query's next, which then comes before any query's
-later match. The prompt leaves out a chunk more than half of whose lines another context
+later match. When the file cap would leave a query fewer than four of the
+chunks its vector search found, and the last of them still qualifies, the
+search looks again past the files that it found two or more chunks of. The prompt leaves out a chunk more than half of whose lines another context
 stage already shows, and shows the first ten of the rest.
 
 The index is of the default branch, which can be ahead of or behind the

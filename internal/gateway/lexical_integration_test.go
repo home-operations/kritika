@@ -305,6 +305,29 @@ func TestSimilarFileCapBackfills(t *testing.T) {
 	}
 }
 
+// TestSimilarFileCapLooksPastAFullWindow: when one file holds every chunk
+// that the vector search finds for a query, and the cap keeps only two of
+// them, the search looks again past that file for the query's other chunks
+// that qualify, and finds none that do not.
+func TestSimilarFileCapLooksPastAFullWindow(t *testing.T) {
+	at := func(similarity float64) []float32 {
+		return []float32{float32(similarity), float32(math.Sqrt(1 - similarity*similarity)), 0, 0, 0, 0, 0, 0}
+	}
+	chunks, vectors := map[string]string{}, map[string][]float32{}
+	for i := range similarDepth {
+		key := fmt.Sprintf("a.go@%d", 10*i+1)
+		chunks[key], vectors[key] = fmt.Sprintf("func a%d() {}", i), at(0.99-0.01*float64(i))
+	}
+	chunks["b.go@1"], vectors["b.go@1"] = "func b() {}", at(0.91)
+	chunks["c.go@1"], vectors["c.go@1"] = "func c() {}", at(0.4)
+	r := newLexicalRepo(t, "full-window", runspec.IndexFormat, chunks, vectors)
+	code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "zzyzx quux")
+	want := []string{"a.go:similarity 0.99", "a.go:similarity 0.98", "b.go:similarity 0.91"}
+	if code != http.StatusOK || !slices.Equal(got, want) {
+		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
+	}
+}
+
 // TestSimilarLexicalTies: of chunks that hold a query's names alike, the
 // search by name keeps the one nearest the query.
 func TestSimilarLexicalTies(t *testing.T) {
