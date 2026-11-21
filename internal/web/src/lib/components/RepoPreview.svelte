@@ -34,7 +34,7 @@
           <dt>Indexed commit</dt>
           <dd>
             <span class="mono" title={d.index.activeCommit ?? undefined}>{d.index.activeCommit ? shortSha(d.index.activeCommit) : 'Not indexed'}</span>
-            {#if d.index.truncated}<Pill tone="warn" label="partial" title="The build stopped at the indexer's limit on files, bytes or chunks: the files past it are not indexed." />{/if}
+            {#if d.index.truncated}<Pill tone="warn" label="partial" />{/if}
           </dd>
           {#if run}
             <dt>Latest run</dt><dd>{run.status} · {run.mode}</dd>
@@ -42,6 +42,7 @@
             <dt>Chunks</dt><dd>{wholeNumber(run.chunkCount)}</dd>
           {/if}
         </dl>
+        {#if d.index.truncated}<p class="text-muted mt-1">The build stopped at the indexer's limit on files, bytes or chunks, so some code is not indexed, which can include the end of the last file it reached.</p>{/if}
         {#if run?.error}<p class="text-danger line-clamp-2 wrap-anywhere mt-1">{run.error}</p>{/if}
       </div>
     </div>
