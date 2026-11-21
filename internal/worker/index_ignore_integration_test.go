@@ -315,3 +315,95 @@ func checkIndexRepoConfigOverlap(
 	}
 	indexCatchUpDone(ctx, t, st, activeIndexGeneration(ctx, t, st, account, repository))
 }
+
+// checkIndexOptOutFolded holds a push job while it reads a tip whose
+// .kritika.yaml turns the repository off. A push of the next tip, which
+// turns it on again, joins that running job. The job does not end on the
+// older opt-out: it reads the tip again, finds it moved, and indexes the
+// push's tip with the repository on.
+func checkIndexOptOutFolded(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository, head string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		lf.setBeforeFileAt(nil)
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	r, err := git.PlainOpen(lf.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(repoConfig string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(lf.dir, ".kritika.yaml"), []byte(repoConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(".kritika.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		c, err := wt.Commit(repoConfig, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.String()
+	}
+	off := commit("enabled: false\n# folded\n")
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	lf.setBeforeFileAt(func(ref, _ string) {
+		if ref == off {
+			once.Do(func() { close(held); <-release })
+		}
+	})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	lf.setTip(off)
+	first, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the push job never read the tip that turns the repository off")
+	}
+	on := commit("ignore: [folded.go]\n")
+	lf.setTip(on)
+	second, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.UniqueSkippedAsDuplicate || second.Job.ID != first.Job.ID {
+		t.Fatalf("the second push queued job %d, want it absorbed into the running job %d", second.Job.ID, first.Job.ID)
+	}
+	close(release)
+	indexJobDone(ctx, t, st, first.Job.ID)
+	var markedOff bool
+	var indexed string
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT r.repo_config_off, g.commit_sha FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.id = $1`, repository).Scan(&markedOff, &indexed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if markedOff || indexed != on {
+		t.Fatalf("after the absorbed push: marked off %v, index at %s; want on, at the push's tip %s", markedOff, indexed, on)
+	}
+}

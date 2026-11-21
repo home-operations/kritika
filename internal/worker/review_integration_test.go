@@ -1883,6 +1883,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkIndexRepoConfigOverlap(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head)
 	})
 
+	t.Run("a push absorbed while an opt-out was read indexes its tip", func(t *testing.T) {
+		checkIndexOptOutFolded(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head)
+	})
+
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})

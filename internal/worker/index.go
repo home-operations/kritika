@@ -114,8 +114,11 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	logger = logger.With("commit", review.ShortSHA(commit))
 
 	eff, off, err := w.repoConfig(ctx, job, account.Key(), client, repo, commit, configRead, settings, logger)
-	if err != nil || off {
+	if err != nil {
 		return err
+	}
+	if off {
+		return w.optedOut(ctx, job, account.Key(), client, repo, commit, logger)
 	}
 	ignoreHash := indexIgnoreHash(eff.Ignore)
 	active, err := w.activeGeneration(ctx, args.AccountID, repo.ActiveRun)
@@ -257,6 +260,27 @@ func (w *Index) repoConfig(
 		return eff, true, nil
 	}
 	return eff, false, nil
+}
+
+// optedOut ends a job that found the repository turned off by its
+// .kritika.yaml at commit, unless the branch moved since. A push that turns
+// it on again while the file was read was absorbed into this job, so the
+// job indexes again at once, as a snooze that is not an attempt, to read
+// the new tip's file.
+func (w *Index) optedOut(
+	ctx context.Context, job *river.Job[jobs.IndexArgs], account string, client forge.Client, repo store.IndexRepo, commit string,
+	logger *slog.Logger,
+) error {
+	owner, name, _ := strings.Cut(repo.Name, "/")
+	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
+	if err != nil {
+		return w.waitOutForge(ctx, job, account, logger, err)
+	}
+	if tip != commit {
+		logger.Info("index again: the branch moved while .kritika.yaml was read", "tip", review.ShortSHA(tip))
+		return river.JobSnooze(0)
+	}
+	return nil
 }
 
 // stageFailed ends the run that stage failed with err as failed, and returns
