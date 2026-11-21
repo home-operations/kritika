@@ -497,7 +497,8 @@ const scaleDefaultLayouts = "flat,exact,partitioned,drained"
 
 // scaleLayouts are the layouts the benchmark can compare, for a table of
 // rows, in the order they run. Each starts from the table that the one
-// before leaves. The ones before flat, which are alternatives that were not
+// before leaves, but partitioned and drained convert the loaded table
+// themselves when the layouts before them did not run. The ones before flat, which are alternatives that were not
 // taken, start from and leave the loaded table with no vector index.
 func scaleLayouts(rows int) []scaleLayout {
 	exec := func(stmts ...string) func(context.Context, *Store) error {
@@ -562,24 +563,41 @@ $$)`, lists)
 		teardown: exec(`DROP TABLE index_chunks`, `ALTER TABLE index_chunks_flat RENAME TO index_chunks`),
 	})
 
+	// partition converts the table, with its vector index as flat builds it
+	// when flat did not run, as when a filter leaves flat out: partitioned and
+	// drained measure the converted table whichever layouts run before them.
+	flatIndex := `CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`
+	partition := func(ctx context.Context, s *Store) error {
+		var plain bool
+		if err := s.owner.QueryRow(ctx, `SELECT relkind = 'r' FROM pg_class WHERE oid = 'index_chunks'::regclass`).Scan(&plain); err != nil {
+			return err
+		}
+		if plain {
+			if err := exec(flatIndex, analyze)(ctx, s); err != nil {
+				return err
+			}
+		}
+		if _, err := s.PartitionIndexChunks(ctx, "kritika_app"); err != nil {
+			return err
+		}
+		return scaleLayoutIs(ctx, s, true)
+	}
+
 	return append(layouts,
 		// The table as a build before partitioning made it, which the
 		// layouts after it convert.
 		scaleLayout{
 			name: "flat", query: similarChunksSQL,
-			setup: exec(`CREATE INDEX index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`, analyze),
+			setup: exec(flatIndex, analyze),
 		},
 		scaleLayout{name: "exact", query: similarChunksSQL, session: []string{`SET LOCAL vchordrq.enable_scan = off`}},
-		scaleLayout{
-			name: "partitioned", query: similarChunksSQL,
-			setup: func(ctx context.Context, s *Store) error {
-				_, err := s.PartitionIndexChunks(ctx, "kritika_app")
-				return err
-			},
-		},
+		scaleLayout{name: "partitioned", query: similarChunksSQL, setup: partition},
 		scaleLayout{
 			name: "drained", query: similarChunksSQL,
 			setup: func(ctx context.Context, s *Store) error {
+				if err := partition(ctx, s); err != nil {
+					return err
+				}
 				for {
 					moved, removed, err := s.DrainLegacyIndexChunks(ctx)
 					if err != nil {
@@ -590,6 +608,9 @@ $$)`, lists)
 					}
 				}
 				if _, err := s.DropLegacyIndexChunks(ctx); err != nil {
+					return err
+				}
+				if err := scaleLayoutIs(ctx, s, false); err != nil {
 					return err
 				}
 				// Autovacuum's work, once it catches up.
@@ -902,4 +923,20 @@ func BenchmarkLexicalScale(b *testing.B) {
 			b.ReportMetric(float64(chunkBytes)/1e6, "chunks-MB")
 		})
 	}
+}
+
+// scaleLayoutIs checks that index_chunks is partitioned, with the legacy
+// partition when legacy is set and without it otherwise, so that a layout
+// that converts the table never measures the flat one under its name.
+func scaleLayoutIs(ctx context.Context, s *Store, legacy bool) error {
+	var kind string
+	var hasLegacy bool
+	if err := s.owner.QueryRow(ctx, `SELECT relkind::text, to_regclass('index_chunks_legacy') IS NOT NULL
+		FROM pg_class WHERE oid = 'index_chunks'::regclass`).Scan(&kind, &hasLegacy); err != nil {
+		return err
+	}
+	if kind != "p" || hasLegacy != legacy {
+		return fmt.Errorf("index_chunks is of kind %q, with a legacy partition %t; want partitioned, with one %t", kind, hasLegacy, legacy)
+	}
+	return nil
 }
