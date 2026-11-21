@@ -448,6 +448,32 @@ func TestScanReadsDeclarationsFromTheirHead(t *testing.T) {
 	}
 }
 
+// TestUsersOfALongDecoratorLine: a decorator line of many identifiers and
+// many hits finds each hit's identifier among them in constant time, not by
+// a scan of the line's identifiers for each hit.
+func TestUsersOfALongDecoratorLine(t *testing.T) {
+	const n = 60000
+	names := make([]string, n)
+	for i := range names {
+		names[i] = fmt.Sprintf("i%05d", i)
+	}
+	pf := (&chunk.Parser{}).Parse("deco.py", []byte("@d("+strings.Join(names, ", ")+")\ndef f():\n    pass\n"))
+	defer pf.Close()
+	hits := make([]hit, n+1)
+	for i := range n {
+		hits[i] = hit{"wanted", 1}
+	}
+	hits[n] = hit{"i00007", 1}
+	start := time.Now()
+	decls := users(pf, hits, DefaultOptions.MaxDeclLines)
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("users took %s", took)
+	}
+	if decls[0] != nil || decls[n] == nil || decls[n].Symbol != "f" {
+		t.Fatalf("users = %v for a word the decorator does not name and %v for one it does, want nil and f", decls[0], decls[n])
+	}
+}
+
 // TestOverlayTakesADeclarationItsCommentsPushOver: a change in a declaration
 // that fits the line limit only without the comments above it is shown with
 // the declaration from its head line, not with a window.

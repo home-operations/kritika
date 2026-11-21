@@ -3,7 +3,6 @@ package contextpack
 import (
 	"bytes"
 	"context"
-	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -123,9 +122,16 @@ func users(pf *chunk.File, hits []hit, maxLines int) []*chunk.Decl {
 			above = append(above, h.line)
 		}
 	}
-	named := pf.LineIdentifiers(above)
+	// named holds each identifier on those lines with its line, so a hit is
+	// looked up once rather than among all of its line's identifiers.
+	named := map[hit]bool{}
+	for line, ids := range pf.LineIdentifiers(above) {
+		for _, id := range ids {
+			named[hit{id, line}] = true
+		}
+	}
 	for i, h := range hits {
-		if d := decls[i]; d != nil && h.line < d.HeadLine && !slices.Contains(named[h.line], h.word) {
+		if d := decls[i]; d != nil && h.line < d.HeadLine && !named[h] {
 			decls[i] = nil
 		}
 	}
