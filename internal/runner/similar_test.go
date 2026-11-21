@@ -493,3 +493,40 @@ func TestSearchToolAtHead(t *testing.T) {
 		})
 	}
 }
+
+// TestAtHeadLooksPastAnotherDeclaration: a window of a long body that moved
+// down, whose old lines the head now fills with the same text in another
+// function, is found farther away in its own function, rather than left
+// out for the nearer copy's name.
+func TestAtHeadLooksPastAnotherDeclaration(t *testing.T) {
+	var body strings.Builder
+	for i := range 200 {
+		fmt.Fprintf(&body, "\t_ = %d\n", i)
+	}
+	fn := func(name string) string { return "func " + name + "() {\n" + body.String() + "}\n" }
+	built, _, _, err := indexer.Build(t.Context(), tree(t, map[string]string{"lib.go": "package lib\n\n" + fn("A")}), nil, nil, indexer.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var window contextpack.Chunk
+	for _, c := range built {
+		if c.Symbol == "A" && c.StartLine > 10 {
+			window = contextpack.Chunk{
+				Stage: contextpack.StageSimilar, Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind,
+				StartLine: c.StartLine, EndLine: c.EndLine, Text: c.Text,
+			}
+			break
+		}
+	}
+	if window.Symbol == "" {
+		t.Fatalf("index %+v has no window of A's body", built)
+	}
+	// B, as long as A, now sits above it: the window's old lines are B's.
+	moved := len(strings.Split(fn("B"), "\n"))
+	got := atHead(tree(t, map[string]string{"lib.go": "package lib\n\n" + fn("B") + "\n" + fn("A")}), []contextpack.Chunk{window})
+	want := window
+	want.StartLine, want.EndLine = window.StartLine+moved, window.EndLine+moved
+	if !slices.Equal(got, []contextpack.Chunk{want}) {
+		t.Fatalf("atHead = %+v, want the window at lines %d-%d of A", got, want.StartLine, want.EndLine)
+	}
+}

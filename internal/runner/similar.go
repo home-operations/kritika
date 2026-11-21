@@ -198,7 +198,9 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // scope, as the indexer joins a short gap of an oversized declaration to the
 // nested one next to it: a window of a long declaration's body need not hold
 // the line that names it, which a rename changes, and the symbol is what the
-// chunk is shown under and what a match by name matched.
+// chunk is shown under and what a match by name matched. The nearest place
+// that gives the text and is declared so is the one shown, as a body that
+// moved down can leave the same lines in another function at its old place.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 	files := map[string]*headFile{}
 	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions.MaxFileBytes}}
@@ -209,14 +211,15 @@ func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
 			f = readHeadFile(head, c.Path)
 			files[c.Path] = f
 		}
-		start, end, ok := findText(f.lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1)
+		start, end, ok := findText(f.lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1, func(start, end int) bool {
+			at := c
+			at.StartLine, at.EndLine = start+1, end+1
+			return at.Symbol == "" || f.declares(parser, at)
+		})
 		if !ok {
 			continue
 		}
 		c.StartLine, c.EndLine = start+1, end+1
-		if c.Symbol != "" && !f.declares(parser, c) {
-			continue
-		}
 		out = append(out, c)
 	}
 	return out
@@ -289,8 +292,9 @@ func distinct(chunks []contextpack.Chunk) []contextpack.Chunk {
 // place it is the one nearest near, false when it is in none. The lines past
 // a cut need not be the index's, and the line after a cut that ends a line
 // is not shown. A whole text of exactly MaxChunkBytes is also what a cut of a
-// longer one gives, so the head can have more of its last line.
-func findText(lines []string, text string, near, n int) (int, int, bool) {
+// longer one gives, so the head can have more of its last line. A place
+// counts only when accept takes its first and last line.
+func findText(lines []string, text string, near, n int, accept func(first, last int) bool) (int, int, bool) {
 	if text == "" || n < 1 {
 		return 0, 0, false
 	}
@@ -332,10 +336,10 @@ func findText(lines []string, text string, near, n int) (int, int, bool) {
 		return 0, false
 	}
 	for d := 0; near-d >= 0 || near+d < len(lines); d++ {
-		if last, ok := at(near - d); ok {
+		if last, ok := at(near - d); ok && accept(near-d, last) {
 			return near - d, last, true
 		}
-		if last, ok := at(near + d); ok {
+		if last, ok := at(near + d); ok && accept(near+d, last) {
 			return near + d, last, true
 		}
 	}
