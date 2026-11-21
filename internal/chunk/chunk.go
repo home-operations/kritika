@@ -192,7 +192,8 @@ func (p *Parser) language(path string) *languageParser {
 func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Decl {
 	root := tree.RootNode()
 	starts := lineStarts(src)
-	lead := leadLines(root, lp.lang, src, starts)
+	text := lineTexts(src, starts)
+	lead := leadLines(root, lp.lang, src, text)
 	var out []Decl
 	seen := map[[2]int]bool{}
 	// A statement holding one outlined symbol over the same lines (a Go
@@ -208,7 +209,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 			return false
 		}
 		seen[key], named[lines] = true, true
-		d.HeadLine = headLine(d, lead, src, starts)
+		d.HeadLine = headLine(d, lead, text)
 		out = append(out, d)
 		return true
 	}
@@ -337,29 +338,35 @@ func Worded(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r
 
 // headLine is the first line of d that holds more than lead nodes and
 // white space, or d's first line when none does.
-func headLine(d Decl, lead []bool, src []byte, starts []int) int {
-	for l := d.StartLine; l <= d.EndLine && l <= len(starts); l++ {
-		if lo, hi := lineText(src, starts, l-1); !lead[l] && lo < hi {
+func headLine(d Decl, lead []bool, text [][2]int) int {
+	for l := d.StartLine; l <= d.EndLine && l <= len(text); l++ {
+		if !lead[l] && text[l-1][0] < text[l-1][1] {
 			return l
 		}
 	}
 	return d.StartLine
 }
 
-// lineText is the byte range of the text of 0-based row, without the white
-// space around it or the byte order mark that starts a file.
-func lineText(src []byte, starts []int, row int) (lo, hi int) {
-	lo, hi = starts[row], len(src)
-	if row+1 < len(starts) {
-		hi = starts[row+1]
+// lineTexts is, by 0-based row, the byte range of the row's text, without the
+// white space around it or the byte order mark that starts a file. It is
+// computed once for the file, as a row that white space pads can hold many
+// declarations.
+func lineTexts(src []byte, starts []int) [][2]int {
+	text := make([][2]int, len(starts))
+	for row, lo := range starts {
+		hi := len(src)
+		if row+1 < len(starts) {
+			hi = starts[row+1]
+		}
+		if row == 0 && bytes.HasPrefix(src, byteOrderMark) {
+			lo += len(byteOrderMark)
+		}
+		line := src[lo:hi]
+		trimmed := bytes.TrimLeftFunc(line, unicode.IsSpace)
+		lo += len(line) - len(trimmed)
+		text[row] = [2]int{lo, lo + len(bytes.TrimRightFunc(trimmed, unicode.IsSpace))}
 	}
-	if row == 0 && bytes.HasPrefix(src, byteOrderMark) {
-		lo += len(byteOrderMark)
-	}
-	line := src[lo:hi]
-	text := bytes.TrimLeftFunc(line, unicode.IsSpace)
-	lo += len(line) - len(text)
-	return lo, lo + len(bytes.TrimRightFunc(text, unicode.IsSpace))
+	return text
 }
 
 var byteOrderMark = []byte("\ufeff")
@@ -383,11 +390,11 @@ func comment(typ string) bool { return strings.HasSuffix(typ, "comment") }
 // leadLines marks, by 1-based line, the lines that lead nodes fill: every
 // character on the line that is not white space belongs to one such node,
 // and a node that continues onto the line began on a lead line.
-func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, starts []int) []bool {
+func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, text [][2]int) []bool {
 	// reach is, by 0-based row, the end of the row's text that lead nodes
 	// fill from its start, with only white space between them. from is the
 	// 1-based line where a lead node that continues onto the row began.
-	reach, from := make([]int, len(starts)), make([]int, len(starts))
+	reach, from := make([]int, len(text)), make([]int, len(text))
 	var walk func(n *gotreesitter.Node)
 	walk = func(n *gotreesitter.Node) {
 		if !leads(n.Type(lang)) {
@@ -400,8 +407,8 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 		if last > first && n.EndPoint().Column == 0 {
 			last-- // a line comment that holds its newline
 		}
-		for row := first; row <= last && row < len(starts); row++ {
-			lo, hi := lineText(src, starts, row)
+		for row := first; row <= last && row < len(text); row++ {
+			lo, hi := text[row][0], text[row][1]
 			if p := skipSpace(src, cmp.Or(reach[row], lo), hi); int(n.StartByte()) <= p {
 				reach[row] = max(p, int(n.EndByte()))
 			}
@@ -411,11 +418,11 @@ func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte,
 		}
 	}
 	walk(root)
-	lead := make([]bool, len(starts)+1)
-	for row := range starts {
+	lead := make([]bool, len(text)+1)
+	for row := range text {
 		// A blank line inside a block comment is the comment's, while one
 		// between two comments separates them.
-		lo, hi := lineText(src, starts, row)
+		lo, hi := text[row][0], text[row][1]
 		lead[row+1] = (lo < hi || from[row] != 0) && reach[row] > 0 && skipSpace(src, reach[row], hi) >= hi &&
 			(from[row] == 0 || lead[from[row]])
 	}

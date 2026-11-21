@@ -251,6 +251,22 @@ func TestParseBounds(t *testing.T) {
 	if len(f.Decls) != 0 {
 		t.Errorf("a deep parse found %d declarations", len(f.Decls))
 	}
+	// Many declarations on one line that white space pads: the padding is
+	// trimmed once, not once for each declaration.
+	var padded strings.Builder
+	padded.WriteString(strings.Repeat(" ", 400<<10))
+	for i := range 16000 {
+		fmt.Fprintf(&padded, "function a%d(){}", i)
+	}
+	padded.WriteString(strings.Repeat(" ", 100<<10) + "\n")
+	start = time.Now()
+	f = p.Parse("padded.js", []byte(padded.String()))
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a padded line of declarations took %s", took)
+	}
+	if len(f.Decls) != 16000 {
+		t.Errorf("a padded line of declarations found %d declarations, want 16000", len(f.Decls))
+	}
 }
 
 // TestDeclarationsTakeTheirLead: a declaration's range takes in the comments,
