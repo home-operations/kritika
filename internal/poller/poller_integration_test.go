@@ -509,13 +509,14 @@ func TestPollerLogsAMissingBranchOnce(t *testing.T) {
 }
 
 // TestPollerBacksOffAfterAnIndexJobThatPublishedNothing: an index job that
-// ended without bringing the index to its commit, failed or skipped because
+// ended without bringing the index to the tip, failed or skipped because
 // the repository's .kritika.yaml turns indexing off, will end so again. So
 // the poll leaves the branch alone for jobs.OnboardRetryAfter after it, as
 // the onboarding feeder does a repository whose first index failed. A job
 // that published and then failed or found indexing off at a newer tip ended
-// so too, as did a forced rebuild's catch-up that failed. The last job to
-// end is the one that counts.
+// so too, as did a forced rebuild's catch-up that failed. One that found the
+// index at the tip did not, whatever commit it was queued for. The last job
+// to end is the one that counts.
 func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	for _, tc := range []struct {
@@ -524,7 +525,12 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 		end      string
 		backsOff bool
 	}{
-		{name: "skipped", end: `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`, backsOff: true},
+		// A job that ends without a run, neither failed nor finding indexing
+		// off, found the index at the tip it read, whatever commit queued it,
+		// as a push webhook delivered late queues one for an older commit.
+		{name: "found the index at the tip", end: `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`},
+		{name: "found the index at the tip, queued for an older commit", end: `UPDATE river_job SET state = 'completed', finalized_at = now(),
+			args = jsonb_set(args, '{commit_sha}', '"older"') WHERE id = $1`},
 		{name: "failed", end: `UPDATE river_job SET state = 'discarded', finalized_at = now() WHERE id = $1`, backsOff: true},
 		{name: "cancelled", end: `UPDATE river_job SET state = 'cancelled', finalized_at = now() WHERE id = $1`, backsOff: true},
 		{name: "ended long ago", end: `UPDATE river_job SET state = 'discarded', finalized_at = now() - interval '61 minutes' WHERE id = $1`},

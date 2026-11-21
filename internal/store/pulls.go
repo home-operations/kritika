@@ -270,9 +270,9 @@ func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, reposit
 // queued or running. IndexUnmoved says that the last index job of it to end
 // did so lately, and did not leave the index at the tip it found: it failed
 // or was cancelled, even after it published a tip that the branch then
-// left, or it found the repository's .kritika.yaml turning indexing off. A
-// job queued for a commit, which neither published an index nor found the
-// index at that commit, counts too.
+// left, or it found the repository's .kritika.yaml turning indexing off.
+// One that completed otherwise published the tip it read, or found the index
+// there already, whatever commit it was queued for.
 type PollRepo struct {
 	Name, DefaultBranch, IndexedCommit    string
 	RepoConfigOff, Indexing, IndexUnmoved bool
@@ -286,9 +286,6 @@ func PollRepositories(ctx context.Context, tx pgx.Tx, unmovedFor time.Duration) 
 	rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.repo_config_off,
 		EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text),
 		coalesce((SELECT j.state IN ('discarded', 'cancelled') OR r.repo_config_off
-				OR coalesce(j.args->>'commit_sha', '') NOT IN ('', coalesce(g.commit_sha, ''))
-				AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
-					AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at)
 			FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
 				AND j.finalized_at > now() - make_interval(secs => $1)
 			ORDER BY j.finalized_at DESC LIMIT 1), false),
