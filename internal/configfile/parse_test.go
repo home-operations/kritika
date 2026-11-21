@@ -290,6 +290,7 @@ func TestParseRerankBaseURL(t *testing.T) {
 		{"a fragment", "https://api.cohere.com/v2#s3cr3t", false},
 		{"an empty fragment", "https://api.cohere.com/v2#", false},
 		{"another scheme", "ftp://api.cohere.com/v2", false},
+		{"a port alone", "http://:8080/", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Parse([]byte("providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +

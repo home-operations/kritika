@@ -220,12 +220,12 @@ func (f *File) resolveRerank() error {
 	return nil
 }
 
-// apiRoot reports whether raw is an http or https URL with a host that a
-// path can be appended to: one with no "?" or "#", after which the path
-// would land in the query or the fragment.
+// apiRoot reports whether raw is an http or https URL that names a host,
+// not a port alone, and that a path can be appended to: one with no "?" or
+// "#", after which the path would land in the query or the fragment.
 func apiRoot(raw string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(raw, "?#")
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && !strings.ContainsAny(raw, "?#")
 }
 
 // accountsOf gathers the accounts entries, in the order of their names. An
