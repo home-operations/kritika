@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/model"
@@ -190,24 +191,74 @@ func mostlyShown(c contextpack.Chunk, shown []contextpack.Chunk) bool {
 // chunk whose text the head no longer holds is left out rather than shown
 // by its old lines: those now hold code that its similarity was not measured
 // for. A chunk is found where the head's lines, cut as the indexer cuts a
-// chunk, give its text, and claims the lines its text shows.
+// chunk, give its text, and claims the lines its text shows. A chunk of a
+// declaration is also left out unless the head, parsed as the indexer parses
+// it, declares the chunk's symbol, kind and scope around those lines: a
+// window of a long declaration's body need not hold the line that names it,
+// which a rename changes, and the symbol is what the chunk is shown under and
+// what a match by name matched.
 func atHead(head *object.Tree, chunks []contextpack.Chunk) []contextpack.Chunk {
-	files := map[string][]string{}
+	files := map[string]*headFile{}
+	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions.MaxFileBytes}}
 	var out []contextpack.Chunk
 	for _, c := range chunks {
-		lines, ok := files[c.Path]
+		f, ok := files[c.Path]
 		if !ok {
-			lines = headLines(head, c.Path)
-			files[c.Path] = lines
+			f = readHeadFile(head, c.Path)
+			files[c.Path] = f
 		}
-		start, end, ok := findText(lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1)
+		start, end, ok := findText(f.lines, c.Text, c.StartLine-1, c.EndLine-c.StartLine+1)
 		if !ok {
 			continue
 		}
 		c.StartLine, c.EndLine = start+1, end+1
+		if c.Symbol != "" && !f.declares(parser, c) {
+			continue
+		}
 		out = append(out, c)
 	}
 	return out
+}
+
+// headFile is a file as the head has it. Its declarations are parsed once,
+// when a chunk of a declaration is found in it.
+type headFile struct {
+	path, src string
+	lines     []string
+	decls     []chunk.Decl
+	parsed    bool
+}
+
+// readHeadFile is path at head, empty when the head has no such file, it is
+// empty, or it is larger than any file the index holds. A final newline ends
+// the last line rather than starting an empty one, as the indexer counts
+// lines.
+func readHeadFile(head *object.Tree, path string) *headFile {
+	f := &headFile{path: path}
+	file, err := head.File(path)
+	if err != nil || file.Size > int64(indexer.DefaultOptions.MaxFileBytes) {
+		return f
+	}
+	src, err := file.Contents()
+	if err != nil || src == "" {
+		return f
+	}
+	f.src, f.lines = src, strings.Split(strings.TrimSuffix(src, "\n"), "\n")
+	return f
+}
+
+// declares reports whether the head declares c's symbol, with c's kind and
+// scope, around c's lines.
+func (f *headFile) declares(parser *chunk.Parser, c contextpack.Chunk) bool {
+	if !f.parsed {
+		f.parsed = true
+		pf := parser.Parse(f.path, []byte(f.src))
+		f.decls = pf.Decls
+		pf.Close()
+	}
+	return slices.ContainsFunc(f.decls, func(d chunk.Decl) bool {
+		return d.Symbol == c.Symbol && d.Kind == c.Kind && d.Scope == c.Scope && d.StartLine <= c.StartLine && c.EndLine <= d.EndLine
+	})
 }
 
 // distinct is chunks without those whose lines an earlier one mostly shows:
@@ -222,22 +273,6 @@ func distinct(chunks []contextpack.Chunk) []contextpack.Chunk {
 		}
 	}
 	return out
-}
-
-// headLines is the lines of path at head, none when the head has no such
-// file, it is empty, or it is larger than any file the index holds. A final
-// newline ends the last line rather than starting an empty one, as the
-// indexer counts lines.
-func headLines(head *object.Tree, path string) []string {
-	f, err := head.File(path)
-	if err != nil || f.Size > int64(indexer.DefaultOptions.MaxFileBytes) {
-		return nil
-	}
-	src, err := f.Contents()
-	if err != nil || src == "" {
-		return nil
-	}
-	return strings.Split(strings.TrimSuffix(src, "\n"), "\n")
 }
 
 // findText is the 0-based first and last of lines that text shows, where

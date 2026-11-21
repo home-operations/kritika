@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -381,6 +382,63 @@ func TestAtHead(t *testing.T) {
 			t.Fatalf("atHead = %+v, want %+v", got, want)
 		}
 	})
+}
+
+// TestAtHeadChecksDeclarations: a chunk of a declaration is shown only where
+// the head still declares it. Every chunk that the indexer cuts from a file
+// the head has unchanged is kept, while a window of a long declaration's body
+// that the head has under another name or receiver is left out, though its
+// text is unchanged.
+func TestAtHeadChecksDeclarations(t *testing.T) {
+	var body strings.Builder
+	for i := range 200 {
+		fmt.Fprintf(&body, "\t_ = %d\n", i)
+	}
+	long := func(head string) string {
+		return "package lib\n\n// Long is long.\n" + head + " {\n" + body.String() + "}\n"
+	}
+	base := map[string]string{
+		"long.go":   long("func Long()"),
+		"method.go": long("func (s *Server) handle()"),
+		"small.go":  "package lib\n\ntype Server struct{}\n\nfunc (s *Server) small() {\n\treturn\n}\n",
+		"lib.py":    "class C:\n    def m(self):\n        return 1\n\n\ndef f():\n    return 2\n",
+	}
+	built, _, _, err := indexer.Build(t.Context(), tree(t, base), nil, nil, indexer.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := make([]contextpack.Chunk, 0, len(built))
+	for _, c := range built {
+		index = append(index, contextpack.Chunk{
+			Stage: contextpack.StageSimilar, Path: c.Path, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope,
+			StartLine: c.StartLine, EndLine: c.EndLine, Text: c.Text,
+		})
+	}
+	// bodies is the windows of a long declaration's body that do not show
+	// the line that names it.
+	bodies := func(path string) []contextpack.Chunk {
+		var out []contextpack.Chunk
+		for _, c := range index {
+			if c.Path == path && c.Symbol != "" && c.StartLine > 4 {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	if len(bodies("long.go")) == 0 || len(bodies("method.go")) == 0 || bodies("method.go")[0].Scope != "Server" {
+		t.Fatalf("index %+v has no window of a long body under its declaration", index)
+	}
+	if got := atHead(tree(t, base), index); !slices.Equal(got, index) {
+		t.Fatalf("atHead of an unchanged tree = %+v, want the index %+v", got, index)
+	}
+	renamed := maps.Clone(base)
+	renamed["long.go"] = long("func Longer()")
+	renamed["method.go"] = long("func (c *Client) handle()")
+	for _, path := range []string{"long.go", "method.go"} {
+		if got := atHead(tree(t, renamed), bodies(path)); len(got) != 0 {
+			t.Errorf("atHead under another declaration = %+v, want none", got)
+		}
+	}
 }
 
 // TestSearchToolAtHead: search_code shows what it finds as the head has it,
