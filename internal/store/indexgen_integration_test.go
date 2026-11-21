@@ -347,6 +347,11 @@ apps:
 	if found := lookup(ours, one, built, "", shared); len(found) != 0 {
 		t.Fatalf("vectors/one found %v without the active generation, want none", found)
 	}
+	// A run of another repository of the account, named as the active
+	// generation, which row-level security does not hide.
+	if found := lookup(ours, one, built, twoRun, other); len(found) != 0 {
+		t.Fatalf("vectors/one found %v from vectors/two", found)
+	}
 	if found := lookup(ours, theirsOne, theirsRun, "", shared); len(found) != 0 {
 		t.Fatalf("vectors found %v of strangers'", found)
 	}
