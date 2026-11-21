@@ -331,11 +331,12 @@ func TestSimilarZeroEmbedded(t *testing.T) {
 						t.Errorf("zero.go: similarity %g, want one below any cosine", h.Similarity)
 					}
 				}
-				if len(got) == 0 || got[0] != "near.go" {
-					t.Errorf("hits = %q, want near.go first", got)
+				want := []string{"near.go", "far.go"}
+				if tt.zero {
+					want = append(want, "zero.go")
 				}
-				if tt.zero && !slices.Contains(got, "zero.go") {
-					t.Errorf("hits = %q, want zero.go among them", got)
+				if !slices.Equal(got, want) {
+					t.Errorf("hits = %q, want %q", got, want)
 				}
 				return nil
 			}); err != nil {
