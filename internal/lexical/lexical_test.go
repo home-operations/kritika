@@ -35,6 +35,7 @@ func TestWords(t *testing.T) {
 		{"a combining mark", "cafe\u0301Cache", []string{"cafe\u0301cache", "cafe\u0301", "cache"}},
 		{"a combining mark before a case change", "getE\u0301tat", []string{"gete\u0301tat", "get", "e\u0301tat"}},
 		{"a combining mark before a hyphen", "cafe\u0301-bar", []string{"cafe\u0301bar", "cafe\u0301", "bar"}},
+		{"an acronym before a marked capital", "HTTPA\u0301gent", []string{"httpa\u0301gent", "http", "a\u0301gent"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

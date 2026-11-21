@@ -220,10 +220,16 @@ func split(id string) []string {
 			j--
 		}
 		prev := runes[j]
+		// next is the letter after r's marks, whose case tells whether r
+		// starts a word after an acronym.
+		next := i + 1
+		for next < len(runes) && unicode.IsMark(runes[next]) {
+			next++
+		}
 		switch {
 		case unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)):
 			cut(i)
-		case unicode.IsUpper(prev) && unicode.IsUpper(r) && i+1 < len(runes) && unicode.IsLower(runes[i+1]) && !plural(runes[i+1:]):
+		case unicode.IsUpper(prev) && unicode.IsUpper(r) && next < len(runes) && unicode.IsLower(runes[next]) && !plural(runes[next:]):
 			cut(i)
 		case unicode.IsDigit(r) != unicode.IsDigit(prev):
 			cut(i)
