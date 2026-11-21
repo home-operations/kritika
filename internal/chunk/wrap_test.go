@@ -32,6 +32,27 @@ if feature.enabled:
 			want: []want{{"boot", 5, 6, 5, true}, {"", 3, 6, 3, true}, {"boot", 3, 6, 5, false}},
 		},
 		{
+			name: "python conditional around one function", path: "boot.py",
+			src: `if feature.enabled:
+    def boot():
+        return 1
+`,
+			want: []want{{"boot", 2, 3, 2, true}, {"", 1, 3, 1, true}, {"boot", 1, 3, 2, false}},
+		},
+		{
+			name: "python with around one function", path: "lock.py",
+			src: `with lock:
+    def boot():
+        return 1
+`,
+			want: []want{{"boot", 2, 3, 2, true}, {"", 1, 3, 1, true}, {"boot", 1, 3, 2, false}},
+		},
+		{
+			name: "javascript conditional around a function on its line", path: "boot.js",
+			src:  "if (enabled) function boot() {\n  return 1;\n}\n",
+			want: []want{{"", 1, 3, 1, true}, {"boot", 1, 3, 1, true}},
+		},
+		{
 			name: "python try with a handler that defines a function", path: "guard.py",
 			src: `try:
     import fast
@@ -58,6 +79,16 @@ int add(int a) {
 }
 `,
 			want: []want{{"add", 1, 4, 2, true}},
+		},
+		{
+			name: "c++ template still widens", path: "id.cpp",
+			src:  "template <typename T>\nT id(T a) {\n  return a;\n}\n",
+			want: []want{{"id", 1, 4, 2, true}},
+		},
+		{
+			name: "typescript export still widens", path: "box.ts",
+			src:  "export default function box() {\n  return 1;\n}\n",
+			want: []want{{"box", 1, 3, 1, true}},
 		},
 		{
 			name: "typescript exported ambient class still widens", path: "box.d.ts",

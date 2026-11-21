@@ -10,7 +10,8 @@ import (
 // wrapped returns the index in out of the one outlined top-level
 // declaration that d wraps, or -1. d wraps it when it holds no other one and
 // ends on its last line, and holds nothing above it but lead lines unless
-// bare holds it alone. bare is d's node when d is a statement with no name
+// bare holds it alone, and none at all when bare governs it, as a
+// conditional does. bare is d's node when d is a statement with no name
 // of its own, such as a C++ template, and nil otherwise. top indexes the
 // top-level declarations of out by StartByte.
 func wrapped(out []Decl, top []int, d Decl, lead []bool, bare *gotreesitter.Node, lang *gotreesitter.Language) int {
@@ -19,7 +20,7 @@ func wrapped(out []Decl, top []int, d Decl, lead []bool, bare *gotreesitter.Node
 		return -1
 	}
 	o := out[top[k]]
-	if o.EndByte > d.EndByte || o.EndLine != d.EndLine {
+	if o.EndByte > d.EndByte || o.EndLine != d.EndLine || bare != nil && governs(bare, lang, uint32(o.StartByte), uint32(o.EndByte)) {
 		return -1
 	}
 	if bare != nil && alone(bare, lang, uint32(o.StartByte), uint32(o.EndByte)) {
@@ -52,6 +53,48 @@ func alone(n *gotreesitter.Node, lang *gotreesitter.Language, start, end uint32)
 		}
 		if next != nil && next.StartByte() == start && next.EndByte() == end {
 			return true
+		}
+		n = next
+	}
+	return false
+}
+
+// governs reports whether n runs the declaration from start to end under a
+// condition or as one statement of a body, as a conditional, a loop, a with
+// or a try does, rather than wrapping it as an export, a decorator, a
+// template or a linkage specification does. Such a statement is a
+// declaration of its own however little it holds: its guard is not the
+// function's. A wrapper holds the declaration itself as its body, as a C++
+// linkage specification does, never a block of statements around it, which
+// in Python spans the same bytes as a lone definition in it.
+func governs(n *gotreesitter.Node, lang *gotreesitter.Language, start, end uint32) bool {
+	// spans reports whether c spans the declaration, and is reports whether
+	// c is the declaration: it spans it and no child of it does.
+	spans := func(c *gotreesitter.Node) bool { return c.StartByte() == start && c.EndByte() == end }
+	is := func(c *gotreesitter.Node) bool {
+		if !spans(c) {
+			return false
+		}
+		for i := range c.NamedChildCount() {
+			if spans(c.NamedChild(i)) {
+				return false
+			}
+		}
+		return true
+	}
+	for n != nil && !is(n) {
+		var next *gotreesitter.Node
+		for i := range n.ChildCount() {
+			c := n.Child(i)
+			switch field := n.FieldNameForChild(i, lang); {
+			case field == "condition":
+				return true
+			case next != nil || !c.IsNamed() || c.StartByte() > start || c.EndByte() < end:
+			case field == "consequence" || field == "alternative" || field == "body" && !is(c):
+				return true
+			default:
+				next = c
+			}
 		}
 		n = next
 	}
