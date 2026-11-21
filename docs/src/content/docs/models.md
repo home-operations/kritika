@@ -166,8 +166,8 @@ providers:
   - `X-Api-Key`, which will otherwise send a second key
   - `x-opencode-session` on a provider of type `opencode`, which sends
     its own
-- A `chatgpt` provider takes no `headers`, and the
-  [embedder](#the-embedder) sends none.
+- A `chatgpt` provider takes no `headers`, and neither the
+  [embedder](#the-embedder) nor the [reranker](#reranking) sends them.
 
 ### Floating model aliases
 
@@ -872,7 +872,10 @@ fusion's. The answer then takes each query's best four as before.
 
 The reranker's provider is of type `openai`, which stands for any
 endpoint that takes a bearer key, and it sets `baseUrl`: kritika posts to
-`{baseUrl}/rerank`. The four APIs differ in their requests and answers:
+`{baseUrl}/rerank`. Like the embedder, the reranker does not send the
+provider's `headers`: a proxy in front of it that needs one of its own,
+for a route or a key, fails every rerank, and the fused order stands. The
+four APIs differ in their requests and answers:
 
 | `api`    | Request                                                    | Answer                                     | Usage recorded                                                                                                |
 | -------- | ---------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
