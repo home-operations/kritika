@@ -24,7 +24,7 @@ func TestWords(t *testing.T) {
 		{"minus is not a joiner", "n-1 and a-b", nil},
 		{"short and numeric", "x 42 0x1f", nil},
 		{"non-ASCII letters", "naïveCache", []string{"naïvecache", "naïve", "cache"}},
-		{"one non-ASCII letter", "é ü", nil},
+		{"a part of one non-ASCII letter", "parseÉ", []string{"parseé", "parse"}},
 		{"repeated", "lease Lease LEASE", []string{"lease"}},
 		{"plural acronym", "IDs", []string{"ids"}},
 		{"plural acronym inside", "getURLs URLsByID", []string{"geturls", "get", "urls", "urlsbyid", "id"}},
