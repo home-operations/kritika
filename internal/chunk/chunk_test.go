@@ -253,6 +253,7 @@ func TestParseBounds(t *testing.T) {
 	if len(f.Decls) != 0 {
 		t.Errorf("a deep parse found %d declarations", len(f.Decls))
 	}
+	f.Close()
 	// Many declarations on one line that white space pads: the padding is
 	// trimmed once, not once for each declaration.
 	var padded strings.Builder
@@ -269,6 +270,7 @@ func TestParseBounds(t *testing.T) {
 	if len(f.Decls) != 16000 {
 		t.Errorf("a padded line of declarations found %d declarations, want 16000", len(f.Decls))
 	}
+	f.Close()
 	// Many declarations on one line below a long doc comment: the comment's
 	// lines are walked once, not once for each declaration.
 	var commented strings.Builder
@@ -288,6 +290,7 @@ func TestParseBounds(t *testing.T) {
 		t.Errorf("the first two declarations below a long comment start on lines %d and %d, want 1 and 100003",
 			f.Decls[0].StartLine, f.Decls[1].StartLine)
 	}
+	f.Close()
 }
 
 // TestDeclarationsTakeTheirLead: a declaration's range takes in the comments,
