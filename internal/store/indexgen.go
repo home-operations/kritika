@@ -24,22 +24,21 @@ const (
 
 // IndexRepo is a repository as an index job reads it: its name, default
 // branch, whether it runs, its active generation ("" for none) and its
-// traits. RepoConfigOff is whether the last index job found its
-// .kritika.yaml turning it off (see RecordRepoConfigOff).
+// traits.
 type IndexRepo struct {
-	Name, DefaultBranch    string
-	Enabled, RepoConfigOff bool
-	ActiveRun              string
-	Traits                 configfile.RepoTraits
+	Name, DefaultBranch string
+	Enabled             bool
+	ActiveRun           string
+	Traits              configfile.RepoTraits
 }
 
 // FindIndexRepo reads the repository an index job is for, or ErrNotFound.
 func FindIndexRepo(ctx context.Context, tx pgx.Tx, repositoryID string) (IndexRepo, error) {
 	var r IndexRepo
 	var active *string
-	err := tx.QueryRow(ctx, `SELECT name, default_branch, enabled, repo_config_off, active_index_run_id::text, archived, fork, turned_on
+	err := tx.QueryRow(ctx, `SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork, turned_on
 		FROM repositories WHERE id = $1`, repositoryID).
-		Scan(&r.Name, &r.DefaultBranch, &r.Enabled, &r.RepoConfigOff, &active, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn)
+		Scan(&r.Name, &r.DefaultBranch, &r.Enabled, &active, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -52,17 +51,33 @@ func FindIndexRepo(ctx context.Context, tx pgx.Tx, repositoryID string) (IndexRe
 	return r, nil
 }
 
-// RecordRepoConfigOff records whether the repository's .kritika.yaml, as of
-// the commit that an index job indexes, turns it off. SweepStoppedIndexes
-// counts a repository so recorded as not running. Turning it on again clears
-// the time when the sweep found it stopped, as TurnOn does.
-func RecordRepoConfigOff(ctx context.Context, tx pgx.Tx, repositoryID string, off bool) error {
-	if _, err := tx.Exec(ctx, `UPDATE repositories SET repo_config_off = $2,
-			stopped_at = CASE WHEN $2 THEN stopped_at END
-		WHERE id = $1 AND repo_config_off <> $2`, repositoryID, off); err != nil {
-		return fmt.Errorf("store: record repository config off: %w", err)
+// ReserveRepoConfigRead takes the next read of the repository's
+// .kritika.yaml, which an index job takes before it asks for the branch tip
+// whose file it reads, and returns it for RecordRepoConfigOff.
+func ReserveRepoConfigRead(ctx context.Context, tx pgx.Tx, repositoryID string) (int64, error) {
+	var rev int64
+	if err := tx.QueryRow(ctx, `UPDATE repositories SET repo_config_rev = repo_config_rev + 1 WHERE id = $1 RETURNING repo_config_rev`,
+		repositoryID).Scan(&rev); err != nil {
+		return 0, fmt.Errorf("store: reserve repository config read: %w", err)
 	}
-	return nil
+	return rev, nil
+}
+
+// RecordRepoConfigOff records whether the repository's .kritika.yaml, as
+// read rev, which ReserveRepoConfigRead reserved, turns it off.
+// SweepStoppedIndexes counts a repository so recorded as not running.
+// Turning it on again clears the time when the sweep found it stopped, as
+// TurnOn does. It records nothing, and reports false, when a later read was
+// reserved and what is recorded is not what rev read: the later read's tip
+// can be newer, so the job reads the tip and the file again.
+func RecordRepoConfigOff(ctx context.Context, tx pgx.Tx, repositoryID string, rev int64, off bool) (bool, error) {
+	tag, err := tx.Exec(ctx, `UPDATE repositories SET repo_config_off = $3,
+			stopped_at = CASE WHEN $3 OR NOT repo_config_off THEN stopped_at END
+		WHERE id = $1 AND (repo_config_rev = $2 OR repo_config_off = $3)`, repositoryID, rev, off)
+	if err != nil {
+		return false, fmt.Errorf("store: record repository config off: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // RecordDefaultBranch records the repository's default branch when none

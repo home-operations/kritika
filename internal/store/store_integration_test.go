@@ -893,7 +893,13 @@ func TestSweepStoppedIndexes(t *testing.T) {
 		t.Helper()
 		alpha := accountID(t, s, "alpha")
 		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-			return RecordRepoConfigOff(ctx, tx, configfile.RepositoryID(alpha, name), off)
+			id := configfile.RepositoryID(alpha, name)
+			rev, err := ReserveRepoConfigRead(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			_, err = RecordRepoConfigOff(ctx, tx, id, rev, off)
+			return err
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1394,5 +1400,82 @@ func TestSweepStoppedIndexesSeesARepositoryResume(t *testing.T) {
 	if !resumed || !active || clock || status != "completed" || chunks != 1 {
 		t.Fatalf("resumed=%v active=%v clock=%v status=%s chunks=%d; want the index kept and the clock cleared",
 			resumed, active, clock, status, chunks)
+	}
+}
+
+// TestRecordRepoConfigOffKeepsTheNewestRead: an index job records what it
+// read of .kritika.yaml only while no job that set out to read it later has
+// recorded otherwise. The later one can have read a newer tip, so the older
+// one is told to read again. One that read the same is recorded either way,
+// and turning the repository on again clears the sweep's clock.
+func TestRecordRepoConfigOffKeepsTheNewestRead(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/reads")
+	alpha := accountID(t, s, "alpha")
+	id := configfile.RepositoryID(alpha, "alpha/reads")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET repo_config_off = false, stopped_at = NULL WHERE id = $1`, id)
+	})
+	type record struct {
+		read int // which of the reserved reads, from 0
+		off  bool
+		want bool
+	}
+	for _, tt := range []struct {
+		name string
+		// from is what is recorded before.
+		from    bool
+		reads   int
+		records []record
+		wantOff bool
+	}{
+		{name: "one read", reads: 1, records: []record{{0, true, true}}, wantOff: true},
+		{name: "older off after newer on", reads: 2, records: []record{{1, false, true}, {0, true, false}}},
+		{name: "older on after newer off", reads: 2, records: []record{{1, true, true}, {0, false, false}}, wantOff: true},
+		{name: "newer after older was told to read again", reads: 2, records: []record{{0, true, false}, {1, true, true}}, wantOff: true},
+		{name: "on again", from: true, reads: 1, records: []record{{0, false, true}}},
+		{name: "older on again after newer off", from: true, reads: 2, records: []record{{1, true, true}, {0, false, false}}, wantOff: true},
+		{name: "older agreeing with newer", reads: 2, records: []record{{1, true, true}, {0, true, true}}, wantOff: true},
+		{name: "older while newer has not recorded", reads: 2, records: []record{{0, true, false}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := s.owner.Exec(ctx, `UPDATE repositories SET repo_config_off = $2, stopped_at = now() WHERE id = $1`, id, tt.from); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+				reads := make([]int64, tt.reads)
+				for i := range reads {
+					var err error
+					if reads[i], err = ReserveRepoConfigRead(ctx, tx, id); err != nil {
+						return err
+					}
+				}
+				for _, r := range tt.records {
+					got, err := RecordRepoConfigOff(ctx, tx, id, reads[r.read], r.off)
+					if err != nil {
+						return err
+					}
+					if got != r.want {
+						t.Errorf("read %d recording off %v: recorded %v, want %v", r.read, r.off, got, r.want)
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var off, stopped bool
+			if err := s.owner.QueryRow(ctx, `SELECT repo_config_off, stopped_at IS NOT NULL FROM repositories WHERE id = $1`, id).
+				Scan(&off, &stopped); err != nil {
+				t.Fatal(err)
+			}
+			// Only a turn from off to on clears the clock.
+			if wantStopped := !tt.from || tt.wantOff; off != tt.wantOff || stopped != wantStopped {
+				t.Fatalf("off %v, clock running %v; want %v and %v", off, stopped, tt.wantOff, wantStopped)
+			}
+		})
 	}
 }

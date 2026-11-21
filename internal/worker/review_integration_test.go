@@ -96,8 +96,10 @@ type localForge struct {
 	tipErr error
 	// tokenErr fails GitToken.
 	tokenErr error
-	comments map[int64]string
-	authors  map[int64]string
+	// beforeFileAt, if set, runs before FileAt reads path at ref.
+	beforeFileAt func(ref, path string)
+	comments     map[int64]string
+	authors      map[int64]string
 	// threads are the inline comments GetComment serves, by id.
 	threads        map[int64]forge.Comment
 	threadStates   map[int64]bool
@@ -177,6 +179,12 @@ func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, ba
 
 // FileAt reads path at ref from the test repository, as the forge's API does.
 func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, error) {
+	l.mu.Lock()
+	before := l.beforeFileAt
+	l.mu.Unlock()
+	if before != nil {
+		before(ref, path)
+	}
 	r, err := git.PlainOpen(l.dir)
 	if err != nil {
 		return nil, err
@@ -231,6 +239,13 @@ func (l *localForge) failTip(err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.tipErr = err
+}
+
+// setBeforeFileAt runs fn before each FileAt, nil for none.
+func (l *localForge) setBeforeFileAt(fn func(ref, path string)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.beforeFileAt = fn
 }
 
 // failToken makes GitToken fail with err, nil to answer again.
@@ -1862,6 +1877,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("a .kritika.yaml that turns the repository off retires its index after the grace", func(t *testing.T) {
 		checkIndexRepoConfigOff(ctx, t, appStore, insertOnly, lf, current, account.ID(), repoID, head)
+	})
+
+	t.Run("a forced rebuild that read an older opt-out does not mark the repository off", func(t *testing.T) {
+		checkIndexRepoConfigOverlap(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head)
 	})
 
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {

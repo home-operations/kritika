@@ -74,12 +74,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err != nil {
 		return err
 	}
-	var repo store.IndexRepo
-	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		var err error
-		repo, err = store.FindIndexRepo(ctx, tx, args.RepositoryID)
-		return err
-	})
+	repo, configRead, err := w.findRepo(ctx, args)
 	if errors.Is(err, store.ErrNotFound) {
 		return river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))
 	}
@@ -121,7 +116,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger = logger.With("commit", review.ShortSHA(commit))
 
-	eff, off, err := w.repoConfig(ctx, job, account.Key(), client, repo, commit, settings, logger)
+	eff, off, err := w.repoConfig(ctx, job, account.Key(), client, repo, commit, configRead, settings, logger)
 	if err != nil || off {
 		return err
 	}
@@ -216,6 +211,21 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	return nil
 }
 
+// findRepo reads the repository that the job is for, and reserves its read
+// of the repository's .kritika.yaml (see store.RecordRepoConfigOff), which
+// comes before the job reads the branch tip.
+func (w *Index) findRepo(ctx context.Context, args jobs.IndexArgs) (repo store.IndexRepo, configRead int64, err error) {
+	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		var err error
+		if repo, err = store.FindIndexRepo(ctx, tx, args.RepositoryID); err != nil {
+			return err
+		}
+		configRead, err = store.ReserveRepoConfigRead(ctx, tx, args.RepositoryID)
+		return err
+	})
+	return repo, configRead, err
+}
+
 // repoConfig reads the repository's own .kritika.yaml as of commit, which
 // can turn it off and add ignore globs, and returns what applies to the
 // index job. off says that the file turns the repository off, and the job
@@ -224,7 +234,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 // a repository off for longer than the grace.
 func (w *Index) repoConfig(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account string, client forge.Client, repo store.IndexRepo, commit string,
-	settings configfile.Settings, logger *slog.Logger,
+	read int64, settings configfile.Settings, logger *slog.Logger,
 ) (eff Effective, off bool, err error) {
 	owner, name, _ := strings.Cut(repo.Name, "/")
 	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
@@ -232,13 +242,18 @@ func (w *Index) repoConfig(
 		return eff, false, w.waitOutForge(ctx, job, account, logger, err)
 	}
 	eff, _ = effective(settings, doc)
-	if repo.RepoConfigOff == eff.Enabled {
-		err := w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
-			return store.RecordRepoConfigOff(ctx, tx, job.Args.RepositoryID, !eff.Enabled)
-		})
-		if err != nil {
-			return eff, false, err
-		}
+	var recorded bool
+	err = w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
+		var err error
+		recorded, err = store.RecordRepoConfigOff(ctx, tx, job.Args.RepositoryID, read, !eff.Enabled)
+		return err
+	})
+	if err != nil {
+		return eff, false, err
+	}
+	if !recorded {
+		logger.Info("index again: another job read .kritika.yaml since, at a tip that can be newer")
+		return eff, true, river.JobSnooze(0)
 	}
 	if !eff.Enabled {
 		logger.Info("index skipped, disabled in .kritika.yaml")

@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -222,4 +223,95 @@ func checkIndexRepoConfigOff(
 	current.Set(configfiletest.Load(t, configYAML+"\nenabled: false\n"))
 	push("ignore: [unset.go]\n", jobs.TriggerPush)
 	check("turned on in the dashboard under a default of off", false, false, true)
+}
+
+// checkIndexRepoConfigOverlap holds a forced rebuild that read a tip whose
+// .kritika.yaml turns the repository off, while a push reads the next tip,
+// which turns it on again, and publishes it. The rebuild's older read does
+// not leave the repository marked off: it reads the tip and the file again,
+// and rebuilds the index at the push's tip.
+func checkIndexRepoConfigOverlap(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository, head string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		lf.setBeforeFileAt(nil)
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	r, err := git.PlainOpen(lf.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(repoConfig string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(lf.dir, ".kritika.yaml"), []byte(repoConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(".kritika.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		c, err := wt.Commit(repoConfig, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.String()
+	}
+	off := commit("enabled: false\n# overlapped\n")
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	lf.setBeforeFileAt(func(ref, _ string) {
+		if ref == off {
+			once.Do(func() { close(held); <-release })
+		}
+	})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	lf.setTip(off)
+	forced, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the forced rebuild never read the tip that turns the repository off")
+	}
+	on := commit("ignore: [overlapped.go]\n")
+	lf.setTip(on)
+	push, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexJobDone(ctx, t, st, push.Job.ID)
+	close(release)
+	indexJobDone(ctx, t, st, forced.Job.ID)
+	var markedOff bool
+	var indexed string
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT r.repo_config_off, g.commit_sha FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.id = $1`, repository).Scan(&markedOff, &indexed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if markedOff || indexed != on {
+		t.Fatalf("after the overlap: marked off %v, index at %s; want on, at the push's tip %s", markedOff, indexed, on)
+	}
+	indexCatchUpDone(ctx, t, st, activeIndexGeneration(ctx, t, st, account, repository))
 }
