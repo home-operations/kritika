@@ -299,9 +299,10 @@ var legacyDrainSlice = 5000
 // resume them, deleted otherwise, as the next build's stray sweep would. It
 // returns how many chunks it moved and how many it deleted: none once the
 // legacy partition is empty, or when another holds the lock of every
-// repository or chunk left there. Each slice takes the repository's lock, as a
-// publication does, and reads the generation again under it, so no
-// publication changes the generation while a slice moves it. Leader only.
+// repository or chunk left there, or of the job of the build whose chunks
+// it would move. Each slice takes the repository's lock, as a publication
+// does, and reads the generation again under it, so no publication changes
+// the generation while a slice moves it. Leader only.
 func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int64, err error) {
 	if s.owner == nil {
 		return 0, 0, errors.New("store: DrainLegacyIndexChunks needs the owner connection")
@@ -364,8 +365,9 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int6
 // lockLegacyGeneration locks the repository of a generation that holds
 // chunks in index_chunks_legacy, an active one when there is one, and
 // returns it, "" for none. keep says that its chunks are moved rather than
-// deleted: it is active, or a build can still publish or resume it. Only a
-// publication makes a generation active, under the repository's lock.
+// deleted: it is active, or a build can still publish or resume it. One that
+// is kept but not active has its build jobs locked too. Only a publication
+// makes a generation active, under the repository's lock.
 func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool, err error) {
 	err = tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories r WHERE active_index_run_id IS NOT NULL
 		AND EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = r.active_index_run_id)
@@ -383,7 +385,24 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
-	return run, keep, err
+	if err != nil || !keep {
+		return run, keep, err
+	}
+	// The job of a build that lost its generation to another deletes the
+	// generation's chunks holding the job's lock, not the repository's, as
+	// does the sweep of a finished job's progress. A delete that reaches a
+	// chunk that this moves fails once the move commits (40001), so the move
+	// holds the generation's jobs too, and leaves it for later while another
+	// holds one.
+	var jobs, held int
+	err = tx.QueryRow(ctx, `WITH j AS (SELECT id FROM river_job
+			WHERE id IN (SELECT river_job_id FROM runner_runs WHERE index_run_id = $1)),
+		l AS (SELECT id FROM river_job WHERE id IN (SELECT id FROM j) FOR UPDATE SKIP LOCKED)
+		SELECT (SELECT count(*) FROM j), (SELECT count(*) FROM l)`, run).Scan(&jobs, &held)
+	if err != nil || held < jobs {
+		return "", false, err
+	}
+	return run, keep, nil
 }
 
 // DropLegacyIndexChunks drops index_chunks_legacy once DrainLegacyIndexChunks

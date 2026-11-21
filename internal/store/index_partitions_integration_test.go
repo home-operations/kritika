@@ -744,6 +744,82 @@ func TestDrainLegacyIndexChunksInSlices(t *testing.T) {
 	}
 }
 
+// TestDrainLegacyIndexChunksBesideADiscard: a build that lost its generation
+// to another discards the generation's chunks holding its job's lock, not
+// the repository's. The drain leaves a generation whose job another holds,
+// so the discard never deletes a chunk that the drain is moving, which fails
+// once the move commits. Once the job is free, the drain moves what is left.
+func TestDrainLegacyIndexChunksBesideADiscard(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-discard"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-discard", "index-discard/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+	account := accountID(t, s, "index-discard")
+	repo := configfile.RepositoryID(account, "index-discard/one")
+	lost := partitionRun(t, s, account, repo, false, "a.go")
+	kept := partitionRun(t, s, account, repo, false, "b.go")
+	runners := map[string]string{lost: "", kept: ""}
+	jobIDs := make([]int64, 0, len(runners))
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE id = ANY($1)`, jobIDs)
+	})
+	for run := range runners {
+		var job int64
+		if err := s.owner.QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, max_attempts, state, attempt)
+			VALUES ('index', 'index', '{}', 3, 'running', 1) RETURNING id`).Scan(&job); err != nil {
+			t.Fatal(err)
+		}
+		jobIDs = append(jobIDs, job)
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'running', resume_key = 'resume' WHERE id = $1`, run); err != nil {
+				return err
+			}
+			runner, err := InsertRunnerRun(ctx, tx, account, RunnerKindIndex, run, job)
+			runners[run] = runner
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	partitionLegacy(t, s)
+
+	// The losing build's job holds its lock, as its discard does.
+	discard, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = discard.Rollback(context.Background()) }()
+	if _, err := discard.Exec(ctx, `SELECT 1 FROM river_job WHERE id = (SELECT river_job_id FROM runner_runs WHERE id = $1) FOR UPDATE`,
+		runners[lost]); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, _, err := s.DrainLegacyIndexChunks(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if parts := chunkPartitions(t, s, lost); len(parts) != 1 || parts["index_chunks_legacy"] != 1 {
+		t.Fatalf("the drain moved a generation whose job a discard holds: it is in %v", parts)
+	}
+	if err := DiscardIndexProgress(ctx, discard, lost, runners[lost]); err != nil {
+		t.Fatalf("the discard beside the drain: %v", err)
+	}
+	if err := discard.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if parts := chunkPartitions(t, s, lost); len(parts) != 0 {
+		t.Fatalf("the discarded generation is left in %v", parts)
+	}
+	drainLegacy(t, s)
+	if parts := chunkPartitions(t, s, kept); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
+		t.Fatalf("the generation whose job is free is in %v after the drain, want a hash partition", parts)
+	}
+}
+
 // TestDrainLegacyIndexChunksBesidePublications: incremental steps and a full
 // build publish while the drain moves the generation a chunk at a time. No
 // chunk is lost or doubled. The first step and the full build each publish
