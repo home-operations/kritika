@@ -762,47 +762,12 @@ func TestDrainLegacyIndexChunksBesideADiscard(t *testing.T) {
 	repo := configfile.RepositoryID(account, "index-discard/one")
 	lost := partitionRun(t, s, account, repo, false, "a.go")
 	kept := partitionRun(t, s, account, repo, false, "b.go")
-	runners := map[string]string{lost: "", kept: ""}
-	jobIDs := make([]int64, 0, len(runners))
-	t.Cleanup(func() {
-		ctx := context.Background()
-		if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE account_id = $1`, account); err != nil {
-			t.Error(err)
-		}
-		if _, err := s.owner.Exec(ctx, `DELETE FROM river_job WHERE id = ANY($1)`, jobIDs); err != nil {
-			t.Error(err)
-		}
-	})
-	for run := range runners {
-		var job int64
-		if err := s.owner.QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, max_attempts, state, attempt)
-			VALUES ('index', 'index', '{}', 3, 'running', 1) RETURNING id`).Scan(&job); err != nil {
-			t.Fatal(err)
-		}
-		jobIDs = append(jobIDs, job)
-		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'running', resume_key = 'resume' WHERE id = $1`, run); err != nil {
-				return err
-			}
-			runner, err := InsertRunnerRun(ctx, tx, account, RunnerKindIndex, run, job)
-			runners[run] = runner
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	runners := legacyBuilds(t, s, account, lost, kept)
 	partitionLegacy(t, s)
 
 	// The losing build's job holds its lock, as its discard does.
-	discard, err := s.owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = discard.Rollback(context.Background()) }()
-	if _, err := discard.Exec(ctx, `SELECT 1 FROM river_job WHERE id = (SELECT river_job_id FROM runner_runs WHERE id = $1) FOR UPDATE`,
-		runners[lost]); err != nil {
-		t.Fatal(err)
-	}
+	discard := holdLegacy(t, s, `SELECT 1 FROM river_job WHERE id = (SELECT river_job_id FROM runner_runs WHERE id = $1) FOR UPDATE`,
+		runners[lost])
 	for range 2 {
 		if _, _, err := s.DrainLegacyIndexChunks(ctx); err != nil {
 			t.Fatal(err)
@@ -823,6 +788,114 @@ func TestDrainLegacyIndexChunksBesideADiscard(t *testing.T) {
 	drainLegacy(t, s)
 	if parts := chunkPartitions(t, s, kept); len(parts) != 1 || parts["index_chunks_legacy"] != 0 {
 		t.Fatalf("the generation whose job is free is in %v after the drain, want a hash partition", parts)
+	}
+}
+
+// legacyBuilds makes each of runs a build that a job still works and can
+// resume, and returns each run's runner run.
+func legacyBuilds(t *testing.T, s *Store, account string, runs ...string) map[string]string {
+	t.Helper()
+	ctx := t.Context()
+	runners := make(map[string]string, len(runs))
+	jobIDs := make([]int64, 0, len(runs))
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE account_id = $1`, account); err != nil {
+			t.Error(err)
+		}
+		if _, err := s.owner.Exec(ctx, `DELETE FROM river_job WHERE id = ANY($1)`, jobIDs); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, run := range runs {
+		var job int64
+		if err := s.owner.QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, max_attempts, state, attempt)
+			VALUES ('index', 'index', '{}', 3, 'running', 1) RETURNING id`).Scan(&job); err != nil {
+			t.Fatal(err)
+		}
+		jobIDs = append(jobIDs, job)
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'running', resume_key = 'resume' WHERE id = $1`, run); err != nil {
+				return err
+			}
+			runner, err := InsertRunnerRun(ctx, tx, account, RunnerKindIndex, run, job)
+			runners[run] = runner
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return runners
+}
+
+// holdLegacy begins a transaction of the owner that takes the row locks of
+// query, run with arg, and holds them until the test rolls it back or ends.
+func holdLegacy(t *testing.T, s *Store, query, arg string) pgx.Tx {
+	t.Helper()
+	tx, err := s.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	if _, err := tx.Exec(t.Context(), query, arg); err != nil {
+		t.Fatal(err)
+	}
+	return tx
+}
+
+// TestDrainLegacyIndexChunksPassesOverHeldGenerations: a generation whose
+// build job, or every chunk left in the legacy partition, another holds is
+// passed over for the next, in the same call. So one held generation does
+// not end the sweep's drain while others can move. Each generation is held
+// in turn, so whichever the drain reads first, it is held once.
+func TestDrainLegacyIndexChunksPassesOverHeldGenerations(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("index-held"))); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "index-held", "index-held/one")
+	dropIndexChunks(t, s)
+	createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+	account := accountID(t, s, "index-held")
+	repo := configfile.RepositoryID(account, "index-held/one")
+	first := partitionRun(t, s, account, repo, false, "a.go", "b.go", "c.go")
+	second := partitionRun(t, s, account, repo, false, "d.go", "e.go", "f.go")
+	runners := legacyBuilds(t, s, account, first, second)
+	partitionLegacy(t, s)
+	slice := legacyDrainSlice
+	legacyDrainSlice = 1
+	t.Cleanup(func() { legacyDrainSlice = slice })
+
+	const job = `SELECT 1 FROM river_job WHERE id = (SELECT river_job_id FROM runner_runs WHERE id = $1) FOR UPDATE`
+	const chunks = `SELECT 1 FROM index_chunks_legacy WHERE index_run_id = $1 FOR UPDATE`
+	left := map[string]int{first: 3, second: 3}
+	for _, tt := range []struct {
+		what, query, arg, free string
+	}{
+		{"the first generation's job", job, runners[first], second},
+		{"the second generation's job", job, runners[second], first},
+		{"the first generation's chunks", chunks, first, second},
+		{"the second generation's chunks", chunks, second, first},
+	} {
+		hold := holdLegacy(t, s, tt.query, tt.arg)
+		moved, removed, err := s.DrainLegacyIndexChunks(ctx)
+		if err != nil || moved != 1 || removed != 0 {
+			t.Fatalf("drain while another holds %s moved %d and deleted %d, %v; want the other's chunk moved", tt.what, moved, removed, err)
+		}
+		left[tt.free]--
+		for _, run := range []string{first, second} {
+			if got := chunkPartitions(t, s, run)["index_chunks_legacy"]; got != left[run] {
+				t.Fatalf("after the drain beside %s, %d of generation %s's chunks are in the legacy partition, want %d",
+					tt.what, got, run, left[run])
+			}
+		}
+		if err := hold.Rollback(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if moved, removed := drainLegacy(t, s); moved != 2 || removed != 0 {
+		t.Fatalf("the rest of the drain moved %d and deleted %d, want 2 moved", moved, removed)
 	}
 }
 

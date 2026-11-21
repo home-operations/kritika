@@ -300,9 +300,11 @@ var legacyDrainSlice = 5000
 // returns how many chunks it moved and how many it deleted: none once the
 // legacy partition is empty, or when another holds the lock of every
 // repository or chunk left there, or of the job of the build whose chunks
-// it would move. Each slice takes the repository's lock, as a publication
-// does, and reads the generation again under it, so no publication changes
-// the generation while a slice moves it. Leader only.
+// it would move. A generation that another holds so is passed over for the
+// next, each tried under a savepoint of its own, whose rollback lets go of
+// the locks the try took. Each slice takes the repository's lock, as a
+// publication does, and reads the generation again under it, so no
+// publication changes the generation while a slice moves it. Leader only.
 func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int64, err error) {
 	if s.owner == nil {
 		return 0, 0, errors.New("store: DrainLegacyIndexChunks needs the owner connection")
@@ -317,44 +319,27 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int6
 		if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_legacy') IS NOT NULL`).Scan(&legacy); err != nil || !legacy {
 			return err
 		}
-		run, keep, err := lockLegacyGeneration(ctx, tx)
-		if err != nil || run == "" {
-			return err
-		}
-		rows, err := tx.Query(ctx, `SELECT id FROM index_chunks_legacy WHERE index_run_id = $1 LIMIT $2 FOR UPDATE SKIP LOCKED`,
-			run, legacyDrainSlice)
-		if err != nil {
-			return err
-		}
-		ids, err := pgx.CollectRows(rows, pgx.RowTo[pgtype.UUID])
-		if err != nil || len(ids) == 0 {
-			return err
-		}
-		if !keep {
-			// No build will publish or resume the generation, so none of its
-			// postings is needed, wherever its chunks are.
-			if _, err := tx.Exec(ctx, `DELETE FROM index_postings WHERE index_run_id = $1`, run); err != nil {
+		// Not nil, which would be NULL and pass over every generation.
+		passed := []string{}
+		for {
+			var run string
+			err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
+				var keep bool
+				var err error
+				if run, keep, err = lockLegacyGeneration(ctx, sp, passed); err != nil || run == "" {
+					return err
+				}
+				moved, removed, err = drainLegacySlice(ctx, sp, run, keep)
+				if err == nil && moved+removed == 0 {
+					return errLegacyHeld
+				}
+				return err
+			})
+			if !errors.Is(err, errLegacyHeld) {
 				return err
 			}
-			tag, err := tx.Exec(ctx, `DELETE FROM index_chunks_legacy WHERE id = ANY($1)`, ids)
-			removed = tag.RowsAffected()
-			return err
+			passed = append(passed, run)
 		}
-		// A new created_at routes the chunks out of the legacy partition.
-		tag, err := tx.Exec(ctx, `UPDATE index_chunks SET created_at = statement_timestamp()
-			WHERE index_run_id = $1 AND id = ANY($2) AND tableoid = 'index_chunks_legacy'::regclass`, run, ids)
-		if err != nil {
-			return err
-		}
-		var left bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy WHERE id = ANY($1))`, ids).Scan(&left); err != nil {
-			return err
-		}
-		if left {
-			return errors.New("the database clock is behind the legacy partition's bound")
-		}
-		moved = tag.RowsAffected()
-		return nil
 	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("store: drain legacy index chunks: %w", err)
@@ -362,16 +347,61 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int6
 	return moved, removed, nil
 }
 
+// errLegacyHeld says that another holds what a slice of a generation's
+// legacy chunks needs: the build jobs of the generation, or every chunk of it
+// left in index_chunks_legacy.
+var errLegacyHeld = errors.New("store: the generation's legacy chunks are held")
+
+// drainLegacySlice moves, or deletes when keep does not hold, up to
+// legacyDrainSlice of run's chunks in index_chunks_legacy that another does
+// not hold, under the locks that lockLegacyGeneration took.
+func drainLegacySlice(ctx context.Context, tx pgx.Tx, run string, keep bool) (moved, removed int64, err error) {
+	rows, err := tx.Query(ctx, `SELECT id FROM index_chunks_legacy WHERE index_run_id = $1 LIMIT $2 FOR UPDATE SKIP LOCKED`,
+		run, legacyDrainSlice)
+	if err != nil {
+		return 0, 0, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[pgtype.UUID])
+	if err != nil || len(ids) == 0 {
+		return 0, 0, err
+	}
+	if !keep {
+		// No build will publish or resume the generation, so none of its
+		// postings is needed, wherever its chunks are.
+		if _, err := tx.Exec(ctx, `DELETE FROM index_postings WHERE index_run_id = $1`, run); err != nil {
+			return 0, 0, err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM index_chunks_legacy WHERE id = ANY($1)`, ids)
+		return 0, tag.RowsAffected(), err
+	}
+	// A new created_at routes the chunks out of the legacy partition.
+	tag, err := tx.Exec(ctx, `UPDATE index_chunks SET created_at = statement_timestamp()
+		WHERE index_run_id = $1 AND id = ANY($2) AND tableoid = 'index_chunks_legacy'::regclass`, run, ids)
+	if err != nil {
+		return 0, 0, err
+	}
+	var left bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM index_chunks_legacy WHERE id = ANY($1))`, ids).Scan(&left); err != nil {
+		return 0, 0, err
+	}
+	if left {
+		return 0, 0, errors.New("the database clock is behind the legacy partition's bound")
+	}
+	return tag.RowsAffected(), 0, nil
+}
+
 // lockLegacyGeneration locks the repository of a generation that holds
-// chunks in index_chunks_legacy, an active one when there is one, and
-// returns it, "" for none. keep says that its chunks are moved rather than
-// deleted: it is active, or a build can still publish or resume it. One that
-// is kept but not active has its build jobs locked too. Only a publication
-// makes a generation active, under the repository's lock.
-func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool, err error) {
+// chunks in index_chunks_legacy, other than those passed, an active one when
+// there is one, and returns it, "" for none. keep says that its chunks are
+// moved rather than deleted: it is active, or a build can still publish or
+// resume it. One that is kept but not active has its build jobs locked too,
+// or errLegacyHeld while another holds one. Only a publication makes a
+// generation active, under the repository's lock.
+func lockLegacyGeneration(ctx context.Context, tx pgx.Tx, passed []string) (run string, keep bool, err error) {
 	err = tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories r WHERE active_index_run_id IS NOT NULL
+		AND active_index_run_id <> ALL($1::uuid[])
 		AND EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = r.active_index_run_id)
-		LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&run)
+		LIMIT 1 FOR UPDATE SKIP LOCKED`, passed).Scan(&run)
 	if err == nil {
 		return run, true, nil
 	}
@@ -380,8 +410,8 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool
 	}
 	err = tx.QueryRow(ctx, `SELECT x.id::text, x.id IS NOT DISTINCT FROM r.active_index_run_id OR x.status = 'running' OR x.resume_key <> ''
 		FROM index_runs x JOIN repositories r ON r.id = x.repository_id
-		WHERE EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = x.id)
-		LIMIT 1 FOR UPDATE OF r SKIP LOCKED`).Scan(&run, &keep)
+		WHERE x.id <> ALL($1::uuid[]) AND EXISTS (SELECT 1 FROM index_chunks_legacy c WHERE c.index_run_id = x.id)
+		LIMIT 1 FOR UPDATE OF r SKIP LOCKED`, passed).Scan(&run, &keep)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
@@ -399,8 +429,11 @@ func lockLegacyGeneration(ctx context.Context, tx pgx.Tx) (run string, keep bool
 			WHERE id IN (SELECT river_job_id FROM runner_runs WHERE index_run_id = $1)),
 		l AS (SELECT id FROM river_job WHERE id IN (SELECT id FROM j) FOR UPDATE SKIP LOCKED)
 		SELECT (SELECT count(*) FROM j), (SELECT count(*) FROM l)`, run).Scan(&jobs, &held)
-	if err != nil || held < jobs {
+	if err != nil {
 		return "", false, err
+	}
+	if held < jobs {
+		return run, keep, errLegacyHeld
 	}
 	return run, keep, nil
 }
