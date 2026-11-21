@@ -774,3 +774,41 @@ func TestEnclosingBoundsTheWalkUpALongComment(t *testing.T) {
 		t.Errorf("Enclosing([%d], %d) = %+v, want F from its head line", lines+5, maxLines, d)
 	}
 }
+
+// TestEnclosingDoesNotStartAtACommentsClosingLine: a block comment that
+// closes on the line that names a function makes that head line part of the
+// comment too. A declaration over the limit starts where the comment opens
+// when that fits, and otherwise there is none, rather than one that starts
+// with the comment's unmatched close.
+func TestEnclosingDoesNotStartAtACommentsClosingLine(t *testing.T) {
+	src := "package demo\n\n" + strings.Repeat("// padding\n", 10) + "/*\n * F does things.\n */ func F() {\n\t_ = 1\n\t_ = 2\n}\n"
+	f := (&Parser{}).Parse("demo.go", []byte(src))
+	defer f.Close()
+	if !f.LeadContinues(15) {
+		t.Fatalf("line 15 does not continue the comment: the input no longer exercises the case")
+	}
+	for _, tt := range []struct {
+		name       string
+		line, max  int
+		start, end int
+	}{
+		{name: "the comment fits", line: 16, max: 6, start: 13, end: 18},
+		{name: "the comment does not fit", line: 16, max: 5},
+		{name: "the head line, the comment fits", line: 15, max: 6, start: 13, end: 18},
+		{name: "the head line, the comment does not fit", line: 15, max: 4},
+		{name: "the comment's middle", line: 14, max: 6, start: 13, end: 18},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := f.Enclosing([]int{tt.line}, tt.max)
+			if tt.start == 0 {
+				if d != nil {
+					t.Fatalf("Enclosing([%d], %d) = %+v, want nil", tt.line, tt.max, d)
+				}
+				return
+			}
+			if d == nil || d.Symbol != "F" || d.StartLine != tt.start || d.EndLine != tt.end || d.StartByte != f.offsets()[tt.start-1] {
+				t.Fatalf("Enclosing([%d], %d) = %+v, want F L%d-%d", tt.line, tt.max, d, tt.start, tt.end)
+			}
+		})
+	}
+}

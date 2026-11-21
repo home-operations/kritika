@@ -500,10 +500,11 @@ func kindFromType(typ string) string {
 // that the comments, decorators or attributes above it put over maxLines is
 // returned from the first of lines, when that is above its head line and
 // leaves it within maxLines, or else from its head line, and holds only the
-// lines from there. A first of lines inside a comment, decorator or
-// attribute that began above it counts from the line where that began, so
-// the declaration does not start inside one, such as at an argument of a
-// decorator that spans lines.
+// lines from there. A start inside a comment, decorator or attribute that
+// began above it counts from the line where that began, so the declaration
+// does not start inside one, such as at an argument of a decorator that
+// spans lines or at a head line that closes a block comment. When that line
+// does not fit, the declaration is passed over.
 func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 	first := math.MaxInt
 	for _, l := range lines {
@@ -525,16 +526,18 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 			start := head
 			earliest := max(d.StartLine, d.EndLine-maxLines+1)
 			if first >= earliest && first < head {
-				open := first
-				for open > earliest && f.LeadContinues(open) {
-					open--
-					if walked != nil {
-						*walked++
-					}
+				start = first
+			}
+			// The head line itself continues a block comment that closes on
+			// it, so it needs the same walk as a requested line above it.
+			for start > earliest && f.LeadContinues(start) {
+				start--
+				if walked != nil {
+					*walked++
 				}
-				if open == d.StartLine || !f.LeadContinues(open) {
-					start = open
-				}
+			}
+			if start != d.StartLine && f.LeadContinues(start) {
+				continue
 			}
 			d.StartLine, d.StartByte = start, f.offsets()[start-1]
 		}
