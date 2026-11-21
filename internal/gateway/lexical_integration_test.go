@@ -452,3 +452,48 @@ func TestSimilarPartialRerank(t *testing.T) {
 		t.Fatalf("answer = %d %q, want 200 %q", code, got, want)
 	}
 }
+
+// TestSearchByNameClaims: what the models docs' "Search by name" says of a
+// search through the gateway. An identifier is found whatever its
+// convention, a chunk found by name alone shows the names it shares rather
+// than a similarity, a rarer name weighs more than a common one, and a chunk
+// that both searches find comes before one that one search finds.
+func TestSearchByNameClaims(t *testing.T) {
+	r := newLexicalRepo(t, "claims", runspec.IndexFormat, map[string]string{
+		"near.go":  "func near() {}",
+		"snake.go": "def parse_http_request(): pass",
+		"both.go":  "func fuseName() {}",
+		"rare.go":  "func rareName() {}",
+		"c1.go":    "func commonName() {}", "c2.go": "var commonName = 2", "c3.go": "var commonName = 3",
+	}, map[string][]float32{
+		"near.go": e(0), "snake.go": e(3), "both.go": {0.95, 0.3122, 0, 0, 0, 0, 0, 0},
+		"rare.go": e(4), "c1.go": e(5), "c2.go": e(5), "c3.go": e(5),
+	})
+	t.Run("splitting and the label of a chunk found by name alone", func(t *testing.T) {
+		code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "req := parseHTTPRequest(r)")
+		if code != http.StatusOK || !slices.Contains(got, "snake.go:shares parseHTTPRequest") {
+			t.Fatalf("answer = %d %q, want snake.go found by its snake_case name, labelled by it alone", code, got)
+		}
+	})
+	t.Run("fusion order", func(t *testing.T) {
+		want := []string{"both.go:similarity 0.95; shares fuseName", "near.go:similarity 1.00"}
+		if code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "fuseName()"); code != http.StatusOK || !slices.Equal(got, want) {
+			t.Fatalf("answer = %d %q, want %q", code, got, want)
+		}
+	})
+	t.Run("rarity", func(t *testing.T) {
+		var got []string
+		if err := r.st.WithAccount(t.Context(), r.account.ID(), func(tx pgx.Tx) error {
+			hits, err := lexicalHits(t.Context(), tx, r.run, []string{"commonName(rareName)"}, [][]float32{e(0)}, nil, 4)
+			for _, h := range hits {
+				got = append(got, h.Chunk.Path)
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 4 || got[0] != "rare.go" {
+			t.Fatalf("search by name found %q, want rare.go, which holds the rarer name, first of four", got)
+		}
+	})
+}
