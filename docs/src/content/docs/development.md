@@ -318,9 +318,14 @@ history, with no model key. The evaluation indexes the tree a number of
 first-parent commits before the head, as an index run would, and asks for
 each of those commits what a review of it asks: its changed regions, with
 its changed paths left out. It reports the vector search alone, the search
-by name alone and the two fused, and with a reranker, each search reranked.
+by name alone and the two fused. With a reranker, it also reports the
+vector search and the fused search reranked.
+
+The cache folder must exist: the evaluation writes its vectors there as it
+ends, and fails if it cannot.
 
 ```sh
+mkdir -p /tmp/kritika-eval
 KRITIKA_RETRIEVAL_EVAL=1 \
 KRITIKA_EVAL_EMBED_URL=http://localhost:8080/v1 \
 KRITIKA_EVAL_EMBED_MODEL=jinaai/jina-embeddings-v2-base-code \
@@ -335,7 +340,7 @@ KRITIKA_EVAL_CACHE=/tmp/kritika-eval \
 | `KRITIKA_EVAL_COMMITS`            | 60                 | the commits asked about; the tree indexed is the one before them                             |
 | `KRITIKA_EVAL_EMBED_URL`          | hashed trigrams    | an OpenAI-compatible embeddings endpoint. Without it, a stand-in that measures plumbing only |
 | `KRITIKA_EVAL_EMBED_MODEL`/`DIMS` | `trigrams`, 256    | the model and its dimension                                                                  |
-| `KRITIKA_EVAL_CACHE`              | a temporary folder | where vectors are kept, by text, between runs                                                |
+| `KRITIKA_EVAL_CACHE`              | a temporary folder | an existing folder where vectors are kept, by text, between runs                             |
 | `KRITIKA_EVAL_FLOOR`              | 0.5                | `similarFloor`                                                                               |
 | `KRITIKA_EVAL_DEPTH`              | 4                  | how many chunks each search finds for a query without a reranker                             |
 | `KRITIKA_EVAL_RERANK_URL`         |                    | a Text Embeddings Inference reranker, which adds the reranked variants                       |
