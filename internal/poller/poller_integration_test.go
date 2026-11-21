@@ -321,11 +321,18 @@ type tipPoll struct {
 
 func newTipPoll(t *testing.T, repos ...string) *tipPoll {
 	t.Helper()
+	return newTipPollOf(t, configYAML, repos...)
+}
+
+// newTipPollOf is newTipPoll on the configuration of yaml, whose account
+// that owns each of repos indexes it.
+func newTipPollOf(t *testing.T, yaml string, repos ...string) *tipPoll {
+	t.Helper()
 	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
-	file := configfiletest.Load(t, configYAML)
+	file := configfiletest.Load(t, yaml)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
@@ -338,20 +345,22 @@ func newTipPoll(t *testing.T, repos ...string) *tipPoll {
 	s.account, _ = file.Account(configfile.ForgeGitHub, "onedr0p")
 	storetest.Repositories(t, st, file, repos...)
 	for _, name := range repos {
-		repoID := configfile.RepositoryID(s.account.ID(), name)
+		owner, _, _ := strings.Cut(name, "/")
+		account, _ := file.Account(configfile.ForgeGitHub, owner)
+		repoID := configfile.RepositoryID(account.ID(), name)
 		var runID string
-		if err := st.WithAccount(ctx, s.account.ID(), func(tx pgx.Tx) error {
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-				VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, s.account.ID(), repoID).Scan(&runID)
+				VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, account.ID(), repoID).Scan(&runID)
 		}); err != nil {
 			t.Fatal(err)
 		}
-		s.exec(`UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
+		s.execAs(account.ID(), `UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
 		// The worker's tests share the database and index these repositories
 		// from nothing.
 		t.Cleanup(func() {
-			s.exec(`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
-			s.exec(`DELETE FROM index_runs WHERE id = $1`, runID)
+			s.execAs(account.ID(), `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
+			s.execAs(account.ID(), `DELETE FROM index_runs WHERE id = $1`, runID)
 		})
 		s.repoIDs = append(s.repoIDs, repoID)
 	}
@@ -369,7 +378,12 @@ func newTipPoll(t *testing.T, repos ...string) *tipPoll {
 
 func (s *tipPoll) exec(sql string, args ...any) {
 	s.t.Helper()
-	if err := s.st.WithAccount(context.Background(), s.account.ID(), func(tx pgx.Tx) error {
+	s.execAs(s.account.ID(), sql, args...)
+}
+
+func (s *tipPoll) execAs(accountID, sql string, args ...any) {
+	s.t.Helper()
+	if err := s.st.WithAccount(context.Background(), accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(context.Background(), sql, args...)
 		return err
 	}); err != nil {
@@ -1362,4 +1376,68 @@ func TestPollerRunPollsOnStart(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// ownerStallForge looks up no branch of slow's repositories before its
+// context ends, and finds every other branch moved. It records the
+// repositories it was asked for.
+type ownerStallForge struct {
+	tipForge
+	slow  string
+	mu    sync.Mutex
+	asked []string
+}
+
+func (f *ownerStallForge) BranchTip(ctx context.Context, owner, name, _ string) (string, string, error) {
+	f.mu.Lock()
+	f.asked = append(f.asked, owner+"/"+name)
+	f.mu.Unlock()
+	if owner == f.slow {
+		<-ctx.Done()
+		return "", "", ctx.Err()
+	}
+	return "moved", "main", nil
+}
+
+func (f *ownerStallForge) askedFor(repo string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Contains(f.asked, repo)
+}
+
+// TestPollerGivesLaterAccountsATurnAfterALookRunsOut: an account whose
+// branch lookups take a look's whole interval, every time, does not keep the
+// accounts after it from their turn. The next look starts with them, and the
+// account that ran out resumes after.
+func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
+	s := newTipPollOf(t, strings.Replace(configYAML, "accounts: [onedr0p]", "accounts: [onedr0p, buroa]", 1),
+		"onedr0p/home-ops", "buroa/k8s-gitops")
+	f := &ownerStallForge{slow: "onedr0p"}
+	s.p.Forges = &forges{f: f}
+	look := func() {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		defer cancel()
+		s.p.pollTipsAll(ctx)
+	}
+	look()
+	if !f.askedFor("onedr0p/home-ops") || f.askedFor("buroa/k8s-gitops") {
+		t.Fatalf("the first look asked for %q, want onedr0p's branch alone, which ran it out", f.asked)
+	}
+	look()
+	if !f.askedFor("buroa/k8s-gitops") {
+		t.Fatalf("looks asked for %q, want buroa's branch at the second", f.asked)
+	}
+	var queued bool
+	if err := s.st.App().QueryRow(t.Context(), `SELECT EXISTS (SELECT 1 FROM river_job WHERE kind = 'index'
+		AND args->>'repository_id' = $1 AND args->>'commit_sha' = 'moved')`, s.repoIDs[1]).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if !queued {
+		t.Fatal("no index job queued for buroa's moved branch")
+	}
+	look()
+	if n := strings.Count(strings.Join(f.asked, " "), "onedr0p/home-ops"); n != 3 {
+		t.Fatalf("looks asked for %q, want onedr0p's branch at each of three", f.asked)
+	}
 }

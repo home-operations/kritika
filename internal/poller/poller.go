@@ -59,6 +59,9 @@ type Poller struct {
 	// tips is how far the polls got through each account's default
 	// branches, by account ID.
 	tips map[string]*tipScan
+	// tipsFirst is the account, by ID, that the next look at the default
+	// branches starts at, "" for the first.
+	tipsFirst string
 }
 
 // tipScan is how far the polls got through an account's default branches.
@@ -485,19 +488,44 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 }
 
 // pollTipsAll looks at the default branches of every account of the current
-// file through the connection serving it, with pollTips.
+// file through the connection serving it, with pollTips. It starts at the
+// account that the last look ran out of time before reaching, or after the
+// one it ran out of time in. So an account that takes a look's whole
+// interval, every time, does not keep the accounts after it from their
+// turn. Each account's own sweep resumes where it stopped, whatever the
+// order.
 func (p *Poller) pollTipsAll(ctx context.Context) {
 	file := p.Current.Get()
-	for i := range file.Accounts {
-		account := &file.Accounts[i]
+	n := len(file.Accounts)
+	p.mu.Lock()
+	first := max(slices.IndexFunc(file.Accounts, func(a configfile.Account) bool { return a.ID() == p.tipsFirst }), 0)
+	p.mu.Unlock()
+	for i := range n {
+		account := &file.Accounts[(first+i)%n]
 		in := file.ConnectionFor(account)
-		if in == nil || ctx.Err() != nil {
+		if in == nil {
 			continue
+		}
+		if ctx.Err() != nil {
+			p.setTipsFirst(account.ID())
+			return
 		}
 		if err := p.pollTips(ctx, file, account, in); err != nil {
 			p.Logger.Warn("default branches not polled", "connection", in.Name, "account", account.Key(), "error", err)
 		}
+		if ctx.Err() != nil {
+			p.setTipsFirst(file.Accounts[(first+i+1)%n].ID())
+			return
+		}
 	}
+}
+
+// setTipsFirst records the account that the next look at the default
+// branches starts at.
+func (p *Poller) setTipsFirst(accountID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tipsFirst = accountID
 }
 
 // pollTips looks at the default branch of each of the account's indexed
