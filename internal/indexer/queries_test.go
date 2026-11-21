@@ -256,6 +256,7 @@ func BenchmarkHunkQueriesManyDeclarations(b *testing.B) {
 	}{{"declarations first", true}, {"declarations last", false}} {
 		b.Run(bc.name, func(b *testing.B) {
 			diff := manyDeclarations(bc.first)
+			b.ReportAllocs()
 			for b.Loop() {
 				HunkQueries(diff, nil)
 			}

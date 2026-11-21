@@ -83,7 +83,7 @@ func (f *queryFile) next(parser *chunk.Parser) (string, bool) {
 		if len(f.regions) == 0 {
 			return "", false
 		}
-		f.pending = regionQueries(parser, f.path, f.regions[0])
+		f.pending = regionQueries(parser, f.path, f.regions[0], contextpack.SimilarQueries)
 		f.regions = f.regions[1:]
 	}
 	q := f.pending[0]
@@ -128,8 +128,9 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 // that they do not crowd them out. Without such a declaration, it is the
 // windows of the region's lines that hold an added line. Lines outside every
 // named declaration, as a license or imports are, are not asked about beside
-// one.
-func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []string {
+// one. It is at most limit queries, the first of them, as a request carries
+// no more, and a large added file can hold thousands of declarations.
+func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit int) []string {
 	var b strings.Builder
 	var added []int
 	for i, l := range region {
@@ -168,6 +169,9 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 	// lines below that line.
 	lastEnd, lastEndByte := 0, 0
 	for i, d := range f.Decls {
+		if len(out) == limit {
+			return out
+		}
 		if d.EndByte <= lastEndByte || !holds(d, lastEnd+1) {
 			continue
 		}
@@ -181,15 +185,15 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 			mark(gave, d)
 			continue
 		default:
-			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))])...)
+			out = append(out, regionWindows(region[d.StartLine-1:min(d.EndLine, len(region))], limit-len(out))...)
 		}
 		mark(asked, d)
 		lastEnd, lastEndByte = d.EndLine, d.EndByte
 	}
 	if len(out) == 0 {
-		return regionWindows(region)
+		return regionWindows(region, limit)
 	}
-	for start := 1; start <= len(region); start++ {
+	for start := 1; start <= len(region) && len(out) < limit; start++ {
 		if !gave[start] || asked[start] {
 			continue
 		}
@@ -197,15 +201,15 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line) []str
 		for end < len(region) && gave[end+1] && !asked[end+1] {
 			end++
 		}
-		out = append(out, regionWindows(region[start-1:end])...)
+		out = append(out, regionWindows(region[start-1:end], limit-len(out))...)
 		start = end
 	}
 	return out
 }
 
 // regionWindows cuts region into runs of whole lines within the gateway's
-// bound, and keeps the runs that hold an added line.
-func regionWindows(region []udiff.Line) []string {
+// bound, and keeps the first limit runs that hold an added line.
+func regionWindows(region []udiff.Line, limit int) []string {
 	var out []string
 	var b strings.Builder
 	adds := false
@@ -224,7 +228,9 @@ func regionWindows(region []udiff.Line) []string {
 	}
 	for _, l := range region {
 		if b.Len() > 0 && b.Len()+len(l.Text)+1 > contextpack.SimilarQueryChars {
-			flush()
+			if flush(); len(out) == limit {
+				return out
+			}
 		}
 		b.WriteString(l.Text)
 		b.WriteByte('\n')
