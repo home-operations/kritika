@@ -152,7 +152,7 @@ func TestPartPromptsReviewers(t *testing.T) {
 	plan := planReviewers(s, res, review.ScopeFull, nil)
 	var tools agentTools
 	files := repoconfig.Files{"docs/security.md": "Trace every input to a sink."}
-	parts, _, rules, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, files, nil, plan.shares, &tools,
+	parts, _, rules, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, files, nil, plan.shares, &tools, nil,
 		slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestDefaultReviewPriorOwnership(t *testing.T) {
 				var prompt agentPrompt
 				if split {
 					parts, _, _, err := partPrompts(t.Context(), s, runspec.Secrets{}, head, head, res, nil, nil,
-						splitShares([][]string{{"main.go"}}, scope), &tools, logger)
+						splitShares([][]string{{"main.go"}}, scope), &tools, nil, logger)
 					if err != nil {
 						t.Fatal(err)
 					}

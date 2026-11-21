@@ -25,6 +25,7 @@ import (
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -200,7 +201,7 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
 			notes = append(notes, prompt.notes()...)
 		} else if parts, chunks, ruleIDs, err = partPrompts(
-			ctx, p, secrets, headTree, baseTree, res, promptFiles, found, shares, &tools, logger,
+			ctx, p, secrets, headTree, baseTree, res, promptFiles, found, shares, &tools, locks.head, logger,
 		); err != nil {
 			return err
 		} else {
@@ -311,7 +312,7 @@ func wholePrompt(
 	})
 	p.Prompt = &promptSpec
 	var similar []contextpack.Chunk
-	similar, tools.search = similarContext(ctx, p, secrets, res, logger)
+	similar, tools.search = similarContext(ctx, p, secrets, head, res, chunks, logger)
 	chunks = append(chunks, similar...)
 	prompt := newAgentPrompt(p, in, packView{
 		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
@@ -324,31 +325,78 @@ func wholePrompt(
 
 // similarContext is context stage 4, best effort: the code elsewhere in
 // the repository that resembles the diff's hunks, and the search_code tool
-// over the same index. An instance without an embedder, a repository
-// without a completed index, or a refused or failed request leaves both
-// out and the run goes on.
+// over the same index. Each chunk is shown as head has it (atHead), and
+// none that others, the other stages' chunks, already show. An instance
+// without an embedder, a repository without a completed index, or a refused
+// or failed request leaves both out and the run goes on.
 func similarContext(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head *object.Tree, res *gitfetch.Result, others []contextpack.Chunk,
+	logger *slog.Logger,
 ) ([]contextpack.Chunk, *searchTool) {
-	out, ok := similarCodeFor(ctx, p, secrets, res.Diff, res.Changed, logger)
+	if !excludeFromSimilar(ctx, p, secrets, res, logger) {
+		return nil, nil
+	}
+	out, ok := similarCodeFor(ctx, p, secrets, res.Diff, indexer.Indexable(head, res.Changed), logger)
 	if !ok {
 		return nil, nil
 	}
-	return out.Chunks, newSearchTool(p, secrets, res.Changed)
+	return similarShown(ctx, head, p.Ignore, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
+}
+
+// similarReportWindow bounds what a run spends, before it searches, on
+// learning whether its repository has an index and reporting its exclusions.
+// Similar code is best effort, and the review waits for it. A variable for
+// the tests.
+var similarReportWindow = 20 * time.Second
+
+// excludeFromSimilar readies the run's similar-code searches. It asks the
+// gateway, with no queries, whether the repository has an index, which embeds
+// nothing. When it has one, it reports the paths the searches leave out:
+// every changed path, and the old name of each rename, whose copy in the
+// index otherwise matches its renamed self best of all. It reports false when
+// there is no index or either request failed within similarReportWindow, and
+// the run must then not search.
+func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger) bool {
+	ctx, cancel := context.WithTimeout(ctx, similarReportWindow)
+	defer cancel()
+	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Kind: contextpack.SimilarKindDiff})
+	if err != nil {
+		logger.Warn("similar-code retrieval skipped: whether there is an index is unknown", "error", err)
+		return false
+	}
+	if !out.Indexed {
+		logger.Info("similar-code retrieval skipped: the repository has no index")
+		return false
+	}
+	paths := slices.Compact(slices.Sorted(slices.Values(slices.Concat(res.Changed, res.RenamedFrom))))
+	if err := newReporter(p, secrets).similarExclude(ctx, paths); err != nil {
+		logger.Warn("similar-code retrieval skipped: its exclusions were not reported", "error", err)
+		return false
+	}
+	return true
 }
 
 // similarCodeFor is the code elsewhere in the repository that resembles
-// diff's hunks, best effort: false when diff has no hunk to ask about, the
-// repository has no index, or the request failed.
+// diff's hunks, best effort: false when the request failed. It is asked once
+// excludeFromSimilar has found an index, so a diff with nothing to search for
+// asks nothing. indexable is HunkQueries', such as indexer.Indexable, which
+// reads the sizes of the blobs that take a turn. Each query carries its
+// file's language, which the gateway splits its names by.
 func similarCodeFor(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, changed []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, indexable func(string) bool, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {
-	queries := hunkQueries(diff)
+	queries, paths := indexer.HunkQueries(diff, p.Ignore, indexable)
 	if len(queries) == 0 {
-		return contextpack.SimilarResponse{}, false
+		return contextpack.SimilarResponse{Indexed: true}, true
+	}
+	languages := make([]string, len(paths))
+	for i, path := range paths {
+		languages[i], _ = chunk.Language(path)
 	}
 	started := time.Now()
-	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: changed})
+	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{
+		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: contextpack.SimilarLimit, Languages: languages,
+	})
 	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
 		"elapsed", time.Since(started))
 	if err != nil {
@@ -359,10 +407,13 @@ func similarCodeFor(
 }
 
 // newSearchTool is search_code over the repository's index. It leaves out
-// the changed paths, which the prompt shows.
-func newSearchTool(p runspec.Spec, secrets runspec.Secrets, changed []string) *searchTool {
+// the paths that excludeFromSimilar reported, which the prompt shows, and
+// those that the run's ignore globs match. It
+// reads head holding headLock, nil for a review that is not split.
+func newSearchTool(p runspec.Spec, secrets runspec.Secrets, head *object.Tree, headLock chan struct{}) *searchTool {
 	return &searchTool{
-		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
+		gatewayURL: p.GatewayURL, token: secrets.GatewayToken, head: head, headLock: headLock, ignore: p.Ignore,
+		maxBytes: agentLimits(p.Agent).MaxToolOutputBytes,
 	}
 }
 

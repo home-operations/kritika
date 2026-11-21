@@ -23,14 +23,14 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 	c := cacheMetrics{
 		uploadSkips: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_upload_skips_total", Help: "S3 publications skipped before an upload, by bounded reason.",
-		}, []string{"reason"}),
+		}, []string{lblReason}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_requests_total",
 			Help: "Cache decisions for admitted HTTP requests, by outcome (local_hit, s3_hit, miss, bypass).",
 		}, []string{lblOutcome}),
 		bypasses: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_bypasses_total", Help: "Requests forwarded without the cache, by bounded reason.",
-		}, []string{"reason"}),
+		}, []string{lblReason}),
 		transfers: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_transfer_bytes_total", Help: "Actual body bytes read or written by cache operations; excludes uncached forwarding.",
 		}, []string{"operation"}),

@@ -65,11 +65,18 @@ keeps its own slot until it ends. A review also takes one of the replica's
 `reviewWorkers` ([how kritika runs](/configuration/#how-kritika-runs)) for
 as long as it runs, so a review cannot take a free slot while every one of
 them is busy.
-Index runs hold all but one of the embedder's slots while
-they embed, so a review's similar-code lookup has a slot unless
-`concurrency` is 1. `concurrency` is one value for the provider; an
-account that needs another on the same endpoint declares a provider of
-its own under [`accounts`](/configuration/#accounts).
+Index runs take no more than all but one of the embedder's slots, so a
+review's similar-code lookup has a slot unless `concurrency` is 1. An
+index run holds a slot for each batch it sends the embedder, not for its
+whole build, and an update of an indexed repository that waits for one
+gets the next that a first build or a rebuild lets go, once it has opened
+the database connection that it waits on
+([connections](/database/#connections)). Where it cannot open that
+connection, as when Postgres is at its connection limit, the update still
+waits for a slot through the application pool, but without priority over
+first builds and rebuilds, which can take the next slot first. `concurrency` is
+one value for the provider; an account that needs another on the same
+endpoint declares a provider of its own under [`accounts`](/configuration/#accounts).
 
 A [fallback](#fallback) on another provider has slots of its own: a step
 that goes to it takes one of the fallback model's for the step, and waits
@@ -166,8 +173,8 @@ providers:
   - `X-Api-Key`, which will otherwise send a second key
   - `x-opencode-session` on a provider of type `opencode`, which sends
     its own
-- A `chatgpt` provider takes no `headers`, and the
-  [embedder](#the-embedder) sends none.
+- A `chatgpt` provider takes no `headers`, and neither the
+  [embedder](#the-embedder) nor the [reranker](#reranking) sends them.
 
 ### Floating model aliases
 
@@ -644,17 +651,57 @@ documentation alone.
 | `maxBatch`       | 64      | inputs in one request                                                                                                                              |
 | `maxBatchChars`  | 200,000 | characters in one request                                                                                                                          |
 | `maxItemChars`   | 16,000  | characters in one input                                                                                                                            |
-| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs to be offered as similar code. Required with a [prompt](#prompts)                                        |
-| `similarMargin`  | 0.1     | how far below the best match of its query a chunk can score and still be offered                                                                   |
-| `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query                                                                                  |
+| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs for the vector search to keep it. Required with a [prompt](#prompts)                                     |
+| `similarMargin`  | 0.1     | how far below its query's best match a chunk can score for the vector search to keep it                                                            |
+| `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query of a review's diff                                                               |
+| `searchPrompt`   |         | text put, exactly as written, in front of each `search_code` query. Unset, `queryPrompt`                                                           |
 | `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                                                       |
+| `lexical`        | true    | also search the index by name, and fuse the two searches. See [search by name](#search-by-name)                                                    |
+| `rerank`         |         | a reranker that orders each query's candidates. See [reranking](#reranking)                                                                        |
 
 An embedder builds each repository's similar-code index. With an embedder,
 a review's prompt carries the index's chunks (pieces of files) nearest the
-change. The agent gets a `search_code` tool over the same index. Both
-keep a chunk only when it scores at least `similarFloor` and no more than
-`similarMargin` below the best match of its query. A query is either a
-hunk of the diff or a `search_code` query.
+change. The agent gets a `search_code` tool over the same index. A query
+is either a hunk of the diff or a `search_code` query. Its vector search
+finds its eight nearest chunks, or as many as the query keeps when that is
+more, and unless `lexical` is `false`, the
+[search by name](#search-by-name) finds more. A chunk either search found
+is kept when it scores at least `similarFloor` and no more than
+`similarMargin` below the best match of the query. A chunk that the search
+by name found is kept too when its weight by name is close enough to the
+query's best, whatever its similarity. Of the chunks kept, an answer
+takes each query's best match before any query's second, at most two
+chunks of one file, four of one query of a review's diff, and ten in all,
+or sixteen for a review's prompt. A `search_code` call sends its one query
+and asks for eight chunks, which that query keeps: the agent sees at most
+four of them, those that the pull request's head still has (below), so
+chunks that the head changed do not leave it short. A chunk that the file
+cap or a duplicate turns away gives its query's turn to the query's next,
+which then comes before any query's later match. When the file cap would
+leave a query fewer than it keeps of the chunks that one search found, and
+the last of them still qualifies, that search looks again past the files
+that it found two or more chunks of.
+Each of the vector search's looks past those files is a statement of its
+own, within what is left of 50 seconds after the request reached the
+gateway. One that fails, or that finds that time spent, ends the looking,
+and the request keeps the chunks found until then. The vector search's
+first look has only the request's own deadline, and when it fails, the
+request fails. The search by name's looks are bound as
+[its search](#search-by-name) is. The prompt leaves out a chunk more than
+half of whose lines another context stage already shows, and shows the
+first ten of the rest.
+
+The index is of the default branch, which can be ahead of or behind the
+pull request. Both show a chunk as the pull request's head has it: found
+by its text, at its lines in the head, which differ from the index's when
+code above it moved. A chunk whose text or file the head no longer has
+is left out, as is one found at lines that a chunk before it mostly
+shows. Both leave out the files the change touches, by both names of a
+rename, whose copies in the index are older or newer than the head's. The
+run reports them to the gateway once, which keeps them for the run, so
+however many files a change touches, a directory move of thousands among
+them, a search request does not grow with them. Each search still applies
+those exclusions in the database, so its work there does grow with them.
 
 How high matches score depends on the model and on the code a query is
 near. A repository of similar files scores nearly everything high, and
@@ -664,11 +711,58 @@ repositories where a floor cannot. Keep the floor low, under the weakest
 match worth showing anywhere, and narrow the margin to keep fewer.
 
 Indexing is off without an embedder, and reviews run without similar code.
-The index holds one model, dimension and document prompt. A configuration
-that changes any of them drops every repository's index. The leader then
-builds each index again, a few at a time, as `KRITIKA_ONBOARD_WINDOW`
-paces them. Removing the embedder keeps the index, and adding back the
-same model, dimension and document prompt uses it again.
+The index holds one model, by its id on the provider, one dimension and one
+document prompt. A configuration that changes any of them drops every
+repository's index. The leader then builds each index again, a few at a
+time, as `KRITIKA_ONBOARD_WINDOW` paces them. Removing the embedder keeps
+the index, and adding back the same model, dimension and document prompt
+uses it again.
+
+Any rebuild of a repository's index, and any update for a push, sends the
+embedder only the chunks whose text its index does not already hold for
+the same embedder. Each chunk stores a hash of the text it was embedded
+from, its document prompt included and cut to `maxItemChars`, and of the
+embedder's model id, dimension and document prompt. A chunk whose hash the
+index holds takes the vector already stored, so the provider is not paid
+twice for code that did not change. Chunks indexed by a release before
+these hashes have none and match nothing, so the first rebuild of each
+index after that upgrade, the rebuild in the new index format below, embeds
+those chunks again, once. A reindex from the dashboard is the exception to
+reuse: it takes no vector from the index it replaces, so every chunk gets a
+fresh one, though chunks of the same text within the new build still share
+one, which the embedder is sent once.
+
+Neither the hash nor the index records the provider or its `baseUrl`. So
+moving the embedder to another endpoint, or another provider, that serves
+a model under the same id, with the same dimension and document prompt,
+keeps every stored vector, as does a new model behind an unchanged endpoint
+and id. When the model now behind that id is not the one that embedded the
+index, reindex each repository from the dashboard to replace its vectors:
+otherwise searches compare the new model's query vectors with the old
+model's.
+
+A kritika release can also change how it chunks code or what it embeds
+for each chunk: the index format. A new format drops no index. Each
+repository's index keeps answering similar-code lookups, and pushes keep
+it current, while the leader rebuilds it in the new format, a few at a
+time as `KRITIKA_ONBOARD_WINDOW` paces them. During a rollout, index jobs
+wait for a replica of the release that the leader runs. A replica of a
+release from before index formats does not wait: it can update an index
+that the new release built with chunks of its own format. The leader then
+rebuilds that index too, as it does one of another format.
+
+A runner of the new release can also report to a replica of the release
+before it. That replica refuses a report with a field that only the new
+release sends, such as the signature of a declaration's window. The runner
+sends the report again, as it does one that a replica without the route
+refuses, within a three-minute retry window, by which time a rollout has
+usually replaced the old replicas. The window bounds the retries, not an
+upload: each attempt has its own timeout, and a refused attempt that itself
+lasted longer than the window starts a fresh one. A runner that still fails
+costs its index job one of three attempts. When a job spends them all, a
+later look at the default branch can queue the update again after a
+one-hour backoff, and the onboarding feeder can offer an index not yet
+built again after the same hour.
 
 ### Prompts
 
@@ -676,20 +770,24 @@ Many embedding models are trained with a task prompt in front of what
 they embed, and their documentation recommends sending it. The prompt
 goes on queries, and for some models on documents too.
 
-`queryPrompt` goes in front of every similar-code query, both the
-review's diff hunks and the agent's `search_code` queries.
-`documentPrompt` goes in front of every indexed chunk, ahead of the path
-and symbol the chunk starts with. Each is used exactly as written: quote
-it so YAML keeps a trailing space, and write a newline as `\n` inside
-double quotes. When a prompt is unset, its inputs go as they are. In
-Helm, both go under `config.embedding`.
+The two kinds of query ask different things. A review's query is code: the
+changed lines of a hunk with a few lines around them, without the file's
+path, matched against code like it. A `search_code` query is mostly a
+description of code. `queryPrompt` goes in front of every query of a
+review's diff, and `searchPrompt` in front of every `search_code` query.
+Unset, `searchPrompt` is `queryPrompt`. `documentPrompt` goes in front of
+every indexed chunk, ahead of the path and symbol the chunk starts with.
+Each is used exactly as written: quote it so YAML keeps a trailing space,
+and write a newline as `\n` inside double quotes. When a prompt is unset,
+its inputs go as they are. In Helm, all three go under
+`config.embedding`.
 
 The model's documentation gives its prompts. These suit a review, where
-both sides are code:
+the documents are code:
 
 ```yaml
-# Voyage models, such as voyageai/voyage-code-4: what Voyage itself adds
-# for an input_type of query and of document
+# Voyage code models, such as voyageai/voyage-code-4: what Voyage itself
+# adds for an input_type of query and of document, for either kind of query
 queryPrompt: "Represent the query for retrieving supporting documents: "
 documentPrompt: "Represent the document for retrieval: "
 
@@ -698,14 +796,27 @@ documentPrompt: "Represent the document for retrieval: "
 queryPrompt: "task: sentence similarity | query: "
 documentPrompt: "task: sentence similarity | query: "
 
-# Qwen3-Embedding: a one-sentence instruction, on queries only
+# Qwen3-Embedding: a one-sentence instruction for each task, on queries
+# only, as "Instruct: {task}\nQuery:"
 queryPrompt: "Instruct: Given a code change, retrieve code that implements similar logic\nQuery:"
+searchPrompt: "Instruct: Given a description of code, retrieve the code it describes\nQuery:"
+
+# jina-code-embeddings: its code-to-code task for a review's hunks and its
+# text-to-code task for search_code, whose documents take the same prefix
+queryPrompt: "Find an equivalent code snippet given the following code snippet:\n"
+searchPrompt: "Find the most relevant code snippet given the following query:\n"
+documentPrompt: "Candidate code snippet:\n"
+
+# nomic-embed-code: a prefix on a query that searches for code, and none
+# on code, so a review's hunks go as they are
+searchPrompt: "Represent this query for searching relevant code: "
 ```
 
 The similarity task fits how a review compares a change with code like
 it. The same models' code-search pair, `task: code retrieval | query: `
 with `title: none | text: `, is for searching code with a query. That is
-closer to what `search_code` does, but kritika sends one pair for both.
+closer to what `search_code` does, but the index holds chunks embedded
+with one `documentPrompt`, so the similarity pair serves both kinds.
 OpenAI's `text-embedding-3` models and Mistral's `codestral-embed` take
 no prompt.
 
@@ -714,15 +825,250 @@ floor tuned without them stops separating the same chunks, and the
 configuration refuses a prompt without `similarFloor`. Prompts can also
 widen or narrow the gaps between matches, which `similarMargin` measures.
 A review's **Run details** conversation lists each similar chunk with its
-score, as in `for similarity 0.42`. Set the floor under the weakest chunk
+score, as in `(similarity 0.42)`. Set the floor under the weakest chunk
 worth keeping, and set the margin to the gap that still holds the chunks
 worth keeping. A prompt counts toward `maxItemChars`, and at the defaults
 it leaves every query and chunk whole.
 
-A new `queryPrompt` applies once kritika restarts with it, as any
+A new `queryPrompt` or `searchPrompt` applies once kritika restarts with it, as any
 configuration change does, and needs no new index. `documentPrompt`
 shapes the stored vectors, so changing it rebuilds every repository's
 index, as a new model does.
+
+### Search by name
+
+A change's code is full of names: the functions it calls, the types and
+fields it uses, the settings it reads. An embedder can score low the code
+that shares those names but does something else with them, which is often
+the code a reviewer most needs to see. So, unless `lexical` is `false`,
+each similar-code query also searches the index by name, and the two
+searches' results are fused.
+
+When a chunk is indexed, its path, symbol and text are split into words
+the way code is written: each identifier whole, and its parts at case
+changes, underscores, hyphens and digits. `parseHTTPRequest` and
+`parse_http_request` both give `parsehttprequest`, `parse`, `http` and
+`request`. A hyphen is a minus in the code of a language whose names hold
+none, such as Go or JavaScript, so `end-start` there is `end` and `start`,
+while it joins `max-width` in CSS or YAML and the words of a path. Of those,
+only CSS, SCSS and Less put a minus apart from the names around it, so their
+hyphens always join, before a digit too: `.x-y` gives `xy` there, where
+elsewhere its two words of one letter give nothing, and `bg-blue-500` gives
+`bgblue500`, where elsewhere it gives the `bgblue` of every shade. Language
+keywords, names nearly every function uses (`err`, `ctx`, `self`), English
+stop words and numbers are left out. A review's query is split the same
+way, as code of its file's language, and a `search_code` query's words,
+whose hyphens join, match the parts of the identifiers they make up. The
+longest 32 words of a query are searched for. A word weighs what BM25
+gives a word in that many of
+the repository's chunks, so a name few chunks hold counts for more than one
+many do. A word is too common to search for at all when as many chunks
+hold it as a cutoff or more: a hundredth of the repository's chunks,
+rounded down, raised to 20 when it is less and lowered to 200 when it is
+more. In a repository of 2,000 chunks, a word that 20 of them hold is not
+searched for. Nor is a word that more than half of them hold: in a
+repository of a few chunks, a word that nearly all of them hold weighs
+next to nothing. Postgres's own
+full-text ranking is not used, as it knows nothing of the other chunks,
+and its parsers split code where it is not split.
+
+The search by name finds a chunk only when it holds two of its query's
+words, an identifier of several parts that the query writes whole, or a
+word that at most four of the repository's chunks hold, so a query's one
+common word does not find every chunk that holds it. Of chunks of equal
+lexical weight, the one nearest the query by vector comes first. The two
+searches' chunks are then gated together, whichever search found them. A
+chunk is kept when its similarity is at or above `similarFloor` and within
+`similarMargin` of the best similarity that either search found for its
+query. A chunk that the search by name found is kept too when it holds at
+least half the lexical weight of its query's best match by name, whatever
+its similarity. Each query's kept chunks are ordered by reciprocal rank
+fusion: a chunk's score is the sum of 1 / (60 + its rank) in the answer of
+each search that found it. A chunk that both find gains over one that
+only one finds, but need not come before it: one ranked low by both can
+score below one ranked first by only one. Of those, an answer takes four
+for each query of a review's diff, or the eight that a `search_code` query
+asks for, and the answer's other bounds hold as before.
+A chunk that the similarity gate keeps shows its similarity, as in
+`(similarity 0.81)`, and a chunk that holds names of the query shows them,
+as in `(shares AcquireLease, Lease)`. One kept by its lexical weight alone
+shows only the names: its similarity is under the floor, or more than the
+margin below its query's best, and is not shown.
+
+The search by name runs after the vector search within five seconds, or
+within what is left of 50 seconds after the request reached the gateway
+when that is less, so that a slow one does not keep the vector search's
+hits from the run. It reads the repository's count of chunks and its
+words' postings as one publication left them. If its first statement
+fails, the request is answered by the vector search alone, and
+`kritika_lexical_search_seconds` counts the failure. Each look past the
+files that fill a query's window is a statement of its own, within what is
+left of the same time. One that fails, or that finds the time spent, ends
+the looking, and the request keeps the chunks found until then. Once
+those 50 seconds have passed, the request is answered by the vector search
+alone without one, and logs
+`similar code searched by vector alone: the answer is due`.
+
+The words of a generation's chunks are stored as postings: a row of
+`index_postings` for each word, under the key generation and word, that
+counts the chunks holding it and lists them while fewer than 200 do. A
+request's queries are searched for together, and each of their words reads
+its chunks, and how many there are, from its row alone, so a search costs
+about the same however large the repository. See [the similar-code
+index](/database/#the-similar-code-index). No extension beyond VectorChord is
+needed. A generation built by a release before postings is searched by
+vector alone until the onboarding feeder rebuilds it, as it rebuilds every
+generation of an older index format.
+`kritika_similar_hits_total` counts each chunk by the search that found
+it: `vector`, `lexical` or `both`.
+
+### Reranking
+
+A reranker reads each query beside each of its candidates and scores how
+well the candidate answers it, which an embedding of each alone cannot.
+With `rerank` set, both searches look for `candidates` chunks for each
+query, or eight, or as many as the query keeps, when that is more. Of the candidates that the floor, the
+margin and the weight by name keep, each query's best `candidates` by the
+fused order are sent to the reranker, and its scores order them in place
+of the fusion's. Its others follow them in the fused order, and a query
+that the reranker does not answer keeps the fused order of all of its
+candidates, which a duplicate or the file cap leaves it to fall back on.
+A request that would send one candidate of one query is not reranked: no
+score can move it from first.
+With `candidates` above eight, those come from the deeper searches, so
+they need not be the chunks that the query would have without `rerank`.
+The answer then takes each query's best four, or a `search_code` query's
+eight, as before.
+
+| Key          | Default          | What                                                                                                                                                    |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`      |                  | a model of one of the instance's `openai` providers whose `baseUrl` is the reranker's API root. It uses that provider's key                             |
+| `api`        |                  | the API's shape: `cohere`, `jina`, `voyage` or `tei`                                                                                                    |
+| `candidates` | 50, 32 for `tei` | the candidates of each query sent to be reranked, at most 100. Text Embeddings Inference refuses more than its `--max-client-batch-size`, 32 unless set |
+| `timeout`    | 15s              | how long the reranking of one similar-code request, the wait for a slot and all its queries, can take, at most 30s                                      |
+
+The reranker's provider is of type `openai`, which stands for any
+endpoint that takes a bearer key, and it sets `baseUrl`, an `http` or
+`https` URL without a query or a fragment: kritika posts to
+`{baseUrl}/rerank`. Like the embedder, the reranker does not send the
+provider's `headers`: a proxy in front of it that needs one of its own,
+for a route or a key, fails every rerank, and the fused order stands. The
+four APIs differ in their requests and answers:
+
+| `api`    | Request                                                    | Answer                                     | Usage recorded                                                                                                             |
+| -------- | ---------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `cohere` | `model`, `query`, `documents`, `top_n`                     | `results` of `index` and `relevance_score` | the greater of `meta.billed_units.input_tokens` and `meta.tokens.input_tokens`; `meta.billed_units.search_units` is logged |
+| `jina`   | as `cohere`, and `return_documents: false`                 | as `cohere`                                | `usage.total_tokens`                                                                                                       |
+| `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`                                                                                                       |
+| `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header                                                                                              |
+
+Each similar-code request that reranked, or that the provider reported
+spending on, records one usage row of role `rerank`, with the tokens that the
+provider reported for its queries. Cohere bills a rerank by the search unit, a
+query of up to a hundred documents, and can report no tokens, even for an
+answer whose ranks kritika refuses: the row is recorded with none, and the
+search units are logged with the reranking (`search_units`), as usage and its
+caps count tokens alone.
+
+Kritika sends each candidate in full, but the provider can truncate what it
+scores: the `voyage` and `tei` requests above ask it to, rather than refuse a
+long candidate, so the end of one can count for nothing in its score. The
+tokens that the provider reports count against the account's
+`tokensPerMonth` as a review's do: the caps have no limit of their own for
+it. An account that the request's embedding brings to its
+`tokensPerMonth` keeps the fused order, as its next model call is refused.
+They count against the run's token budget too: the gateway
+reserves what it sends, at four characters a token, before it reranks, and
+settles at what the provider reports. It reranks only when that reservation
+leaves some of the budget, as the reranking is optional and the review's
+own steps are not, and a run at its budget takes no more of them: a run
+with less left keeps the fused order. A review's similar-code stage sends
+up to twelve queries, each with
+`candidates` chunks, and this repository's chunks average about 900
+characters, some 250 tokens. So one stage reranks about
+12 × 50 × 250 = 150,000 tokens of chunks at the default 50 candidates, and
+more when the provider counts the query, up to 3,000 characters, with each
+candidate. Each `search_code` call is one query: about 12,500 tokens, and a
+review makes ten at most. Lower `candidates`, or raise `tokensPerMonth`, before
+turning a reranker on for many repositories.
+
+The example below declares the four APIs as alternatives. Copy the provider
+of the one you choose and its `rerank` into your configuration, beside your
+own `embedding.model` and `dims`: the example's `openrouter` model stands for
+them, and it declares no `openrouter` provider. Leave the other providers
+out. kritika reads every provider declared under `providers` at startup,
+whether or not anything uses it, and fails to start when the environment
+variable that its `apiKey` names is not set.
+
+```yaml
+providers:
+  # Cohere's v2 API
+  cohere:
+    type: openai
+    baseUrl: https://api.cohere.com/v2
+    apiKey: { env: COHERE_API_KEY }
+  # Jina AI
+  jina:
+    type: openai
+    baseUrl: https://api.jina.ai/v1
+    apiKey: { env: JINA_API_KEY }
+  # Voyage AI
+  voyage:
+    type: openai
+    baseUrl: https://api.voyageai.com/v1
+    apiKey: { env: VOYAGE_API_KEY }
+  # Hugging Face Text Embeddings Inference serving a reranker, such as
+  # BAAI/bge-reranker-base, in the cluster
+  tei:
+    type: openai
+    baseUrl: http://reranker.ai.svc.cluster.local
+    apiKey: { env: UNUSED_KEY }
+embedding:
+  model: openrouter/voyageai/voyage-code-3
+  dims: 1024
+  rerank:
+    model: cohere/rerank-v3.5
+    api: cohere
+    # or: { model: jina/jina-reranker-v2-base-multilingual, api: jina }
+    # or: { model: voyage/rerank-2.5, api: voyage }
+    # or: { model: tei/bge-reranker-base, api: tei }
+```
+
+A reranker fails open: a query that it does not rerank keeps the fused
+order. A request reranks its queries one at a time, holding one of the
+reranker's slots, which the provider's `concurrency` sets, as the
+embedder's does, and `timeout` covers the wait for the slot and every
+call. Waiting for a slot and calling the reranker also stop no later than
+50 seconds after the request reached the gateway, sooner than `timeout`
+when the embedding and the searches were slow. That leaves time for the
+answer before the run stops waiting for it, a minute after it asked, but
+is not a promise that the answer arrives in time: recording the
+reranker's usage, letting its slot go and settling the run's budget still
+happen before the answer is sent, and a slow database can delay it past
+that minute. A query goes without reranking in three ways, and only the
+first is counted as a model call:
+
+- A call that fails, or that `timeout` cuts short, is logged as a warning,
+  `gateway: similar code not reranked: the fused order stands`, and
+  counted under `kritika_model_calls_total` with role `rerank` and
+  outcome `error`.
+- A request that gets no slot within `timeout` makes no call. It is logged
+  as a warning, `gateway: similar code not reranked: no slot`, and no
+  metric counts it.
+- Once `timeout` or those 50 seconds have passed, a request sends none of
+  its remaining queries. Its `similar candidates reranked` log line shows
+  how many of its `queries` were `reranked`. One whose 50 seconds passed
+  before it reranked sends none, and logs `similar code not reranked: the
+  answer is due`.
+
+The tokens that the provider reports are recorded as usage with role
+`rerank`, and count against both the account's `limits` and the run's token
+budget, as above. TEI takes no more texts in one request than its
+`--max-client-batch-size`, 32 unless it is raised, which is why
+`candidates` is 32 for `tei` unless set. Set it higher only for a server
+that raises that limit. The kritika pods call the reranker, so the chart's
+NetworkPolicies must let them reach its port, as for a
+[local model](#local-models).
 
 ## Local models
 

@@ -204,7 +204,7 @@ func serve(
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
 	for _, account := range file.Accounts {
-		m.InitVectorSearch(account.Key())
+		m.InitAccount(account.Key())
 	}
 	queueCollector := metrics.NewQueueCollector(ctx, func(ctx context.Context) ([]metrics.QueueStats, error) {
 		stats, err := st.QueueStats(ctx)
@@ -260,7 +260,7 @@ func serve(
 				m.Leading(true)
 				defer m.Leading(false)
 				events.PodEvent(ctx, false, "LeaderElected", "Lead", "this replica took the lead")
-				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, kube, events, m, configErrors, logger)
+				return lead(ctx, st, cfg, current, inserter, svc, apps.Reach, forges, kube, events, m, configErrors, logger)
 			})
 		})
 	} else {
@@ -378,7 +378,9 @@ func startWorker(
 	// that the current configuration names. It also has the model and
 	// similar-code endpoints that a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
-	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
+	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders,
+		Rerankers: &adapter.Rerankers{Build: adapter.BuildReranker},
+	}
 	gw.AquaRegistry = &gateway.AquaRegistry{
 		URL: cfg.AquaRegistryURL, Refresh: cfg.AquaRegistryRefresh, Client: http.DefaultClient, Logger: gatewayLogger,
 	}
@@ -536,12 +538,13 @@ func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivert
 
 func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
-		jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueuePrepare:  {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueuePublish:  {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
-		jobs.QueueThread:   {MaxWorkers: cfg.ThreadWorkers},
-		jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
+		jobs.QueueReview:      {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueuePrepare:     {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueuePublish:     {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueueFollowUp:    {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueueThread:      {MaxWorkers: cfg.ThreadWorkers},
+		jobs.QueueIndex:       {MaxWorkers: cfg.IndexWorkers},
+		jobs.QueueIndexUpdate: {MaxWorkers: cfg.IndexWorkers},
 	}
 }
 
@@ -644,8 +647,8 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 // replica's pod what became of the configuration.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	svc *ingest.Service, apps *worker.Forges, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
-	m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
+	svc *ingest.Service, reach func(context.Context, *configfile.Connection) (map[string]store.Listing, error), forges *worker.ForgeCache,
+	kube *executor.Kube, events *executor.Events, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole); err != nil {
 		return err
@@ -662,7 +665,7 @@ func lead(
 	// starts once the configuration is applied, below: it polls at once,
 	// and before then the store knows no account to poll.
 	poll := &poller.Poller{
-		Store: st, Current: current, Forges: forges, Reach: apps.Reach, Dispatcher: svc, Logger: logger, Metrics: m,
+		Store: st, Current: current, Forges: forges, Reach: reach, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
 	plans := &worker.ChatGPTRefresher{Store: st, Current: current, LeaderInterval: cfg.LeaderRetryInterval, Logger: logger}
 	duties.Go(func() { plans.Run(pollCtx) })
@@ -676,11 +679,11 @@ func lead(
 		rescuer.Runs = kube
 	}
 	duties.Go(func() { rescuer.Run(pollCtx) })
-	// And so is retention. It covers model-call transcripts past their
-	// configured window and the indexes of repositories stopped past their
-	// grace (owner pool, which bypasses row-level security). It also covers
-	// expired dashboard sessions (app pool).
-	retention := &worker.Retention{Store: st, Current: current, Logger: logger}
+	// And so is retention, at once. Its index work waits until the index schema, which can
+	// replace a legacy table that it partitions, is ensured or the configuration refused.
+	indexReady := make(chan struct{})
+	openIndex := sync.OnceFunc(func() { close(indexReady) })
+	retention := &worker.Retention{Store: st, Current: current, Logger: logger, AppRole: cfg.DatabaseAppRole, IndexReady: indexReady}
 	duties.Go(func() { retention.Run(pollCtx) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {
@@ -689,6 +692,7 @@ func lead(
 		if err := ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger); err != nil {
 			return err
 		}
+		openIndex()
 		// Once the accounts exist: a fresh instance, or a new connection,
 		// knows its repositories before any webhook names one.
 		poll.SyncRepositories(ctx)
@@ -696,6 +700,7 @@ func lead(
 	}, onboarder.Offer, configErrors, events, logger); err != nil {
 		return err
 	}
+	openIndex()
 	duties.Go(func() { poll.Run(pollCtx) })
 	<-ctx.Done()
 	return nil
@@ -706,6 +711,12 @@ func lead(
 // dimension, or document prompt changed. The dashboard asked the admin to
 // confirm that before saving it, and a configuration file edit makes the
 // change without asking. Without an embedder, the table is left as it is.
+//
+// lead calls it only once the store applied the configuration. A refused one
+// leaves the last applied state, the embedder and index format included, and
+// is likely to be edited again: rebuilding for it could embed every repository
+// twice. Index jobs wait for the applied embedder and format meanwhile, which
+// kritika_config_error and the index snooze count show.
 func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *configfile.Embedding, logger *slog.Logger) error {
 	if e == nil {
 		return nil

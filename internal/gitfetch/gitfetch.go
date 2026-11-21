@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
@@ -38,6 +39,32 @@ const (
 )
 
 const remoteName = "origin"
+
+// ErrCommitUnavailable is the remote not serving a commit asked for by SHA:
+// one unreachable after a force push, or older than the server will serve.
+// Trying again does not change that, unlike a fetch cut short. The fetch
+// returns it as an UnavailableError, which names the commit.
+var ErrCommitUnavailable = errors.New("gitfetch: the remote does not serve the commit")
+
+// UnavailableError is ErrCommitUnavailable for one commit. SHA is the commit
+// that the remote does not serve, empty when it refused one without naming
+// it, and Err is how the fetch failed.
+type UnavailableError struct {
+	SHA string
+	Err error
+}
+
+func (e *UnavailableError) Error() string {
+	if e.SHA == "" {
+		return fmt.Sprintf("%v: %v", ErrCommitUnavailable, e.Err)
+	}
+	return fmt.Sprintf("gitfetch: the remote does not serve commit %s: %v", e.SHA, e.Err)
+}
+
+// Is makes an UnavailableError ErrCommitUnavailable for errors.Is.
+func (e *UnavailableError) Is(target error) bool { return target == ErrCommitUnavailable }
+
+func (e *UnavailableError) Unwrap() error { return e.Err }
 
 // Fetch describes what to fetch.
 type Fetch struct {
@@ -162,11 +189,14 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
 			return nil, fmt.Errorf("gitfetch: fetch: the repository is missing or the token cannot see it: %w", err)
 		}
+		if sha, ok := refusedCommit(err, f.Head, f.Base); ok {
+			return nil, fmt.Errorf("gitfetch: fetch: %w", &UnavailableError{SHA: sha, Err: err})
+		}
 		return nil, fmt.Errorf("gitfetch: fetch: %w", err)
 	}
 	head, err := repo.CommitObject(plumbing.NewHash(f.Head))
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: head %s: %w", f.Head, err)
+		return nil, fmt.Errorf("gitfetch: head %s: %w", f.Head, unavailable(f.Head, err))
 	}
 	if f.Base == "" {
 		// Head only: no diff, the caller walks the tree.
@@ -174,7 +204,7 @@ func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, e
 	}
 	base, err := repo.CommitObject(plumbing.NewHash(f.Base))
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, err)
+		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, unavailable(f.Base, err))
 	}
 	if treesOnly {
 		return &Result{Head: head, Base: base, Dir: dir, repo: repo}, nil
@@ -334,6 +364,53 @@ func renderChanges(ctx context.Context, changes object.Changes, gained map[strin
 		changed = append(changed, cmp.Or(c.To.Name, c.From.Name))
 	}
 	return b.String(), changed, nil
+}
+
+// refusedCommit reports whether a fetch failed because the remote would not
+// serve a commit that it was asked for, one of wanted, and which: git's
+// upload-pack answers "not our ref" and the commit over the wire, and go-git's
+// own server, which a local path reaches, does not find the object and names
+// it. The commit is empty when a refusal names no object at all. A refusal
+// that names only some other object, or another object missing, is the
+// fetch's own trouble, not the commit's.
+func refusedCommit(err error, wanted ...string) (string, bool) {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		sha, _ := namedCommit(err.Error(), wanted)
+		return sha, sha != ""
+	}
+	var text string
+	if e, ok := errors.AsType[*pktline.ErrorLine](err); ok {
+		text = e.Text
+	} else if e, ok := errors.AsType[*transport.RemoteError](err); ok {
+		text = e.Reason
+	}
+	if _, after, ok := strings.Cut(text, "not our ref"); ok {
+		sha, named := namedCommit(after, wanted)
+		return sha, sha != "" || !named
+	}
+	return "", false
+}
+
+// namedCommit is the first of wanted that text names as a whole hex word, or
+// empty: a SHA within a longer one is not named. named reports whether text
+// names any full object id, SHA-1 or SHA-256, of wanted or not.
+func namedCommit(text string, wanted []string) (sha string, named bool) {
+	for _, w := range strings.FieldsFunc(text, func(r rune) bool { return (r < '0' || r > '9') && (r < 'a' || r > 'f') }) {
+		if slices.Contains(wanted, w) {
+			return w, true
+		}
+		named = named || len(w) == 40 || len(w) == 64
+	}
+	return "", named
+}
+
+// unavailable marks commit sha missing from the fetched repository as
+// unavailable: the remote answered the fetch without it.
+func unavailable(sha string, err error) error {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return &UnavailableError{SHA: sha, Err: err}
+	}
+	return err
 }
 
 func refSpecs(f Fetch) []config.RefSpec {

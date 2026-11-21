@@ -69,8 +69,10 @@ file before it is stored, or keeping the value out of it, is what closes it, so 
 the finding with that change.
 
 After the diff you may get a context section: whole declarations from the PR head that the diff touches, the
-definitions of identifiers used on changed lines, callers of changed declarations, and code elsewhere in the
-repository that resembles the change. Use it to judge the change.
+definitions of identifiers used on changed lines, callers of changed declarations, and snippets from elsewhere in
+the repository, as the PR head has them, that a search of the repository found similar to the change, each with its
+similarity, or with the names it shares with the change when its names alone found it. Use it to judge the change. A
+similar snippet can be unrelated to the change: rely on it only where it bears on what the change does.
 
 Answer with a summary and findings. ` + summarySpec + `
 Checked is where what you read goes, as the schema says; no comment shows it. Each finding has a severity and a
@@ -155,8 +157,10 @@ held to this.`
 // the repository has an index of its default branch to search.
 const agenticSearch = `
 
-You can also search the repository by meaning with search_code, for what grep cannot find by name. Its index is of
-the default branch and may lag the head commit, so confirm what it returns with read_file before relying on it.`
+You can also search the repository by meaning with search_code, for what grep cannot find by name. It searches an
+index of the default branch, so it can miss code newer than the index, and it returns only snippets the head still
+has, at their lines in the head. A match that shows a similarity is near your query by an embedding's measure, and
+one that says it shares names holds names your query uses; either can be unrelated to what you look for.`
 
 // agenticCommands follows the tools when the run tool is offered. %s is the
 // commands that it runs.

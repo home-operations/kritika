@@ -90,10 +90,11 @@ func (s *Store) applyMigration(ctx context.Context, name, version string) error 
 }
 
 // SchemaReady reports whether every embedded migration, River's and
-// kritika's, is applied and River's tables are granted. So a replica that is
-// not the leader knows when it can start working jobs. A release can bring a
-// River migration without one of kritika's. A fresh database has no
-// schema_migrations table at all, which is "not yet", not an error.
+// kritika's, is applied and the application role holds what grant gives it
+// on River's tables and kritika's. So a replica that is not the leader knows
+// when it can start working jobs. A release can bring a River migration
+// without one of kritika's. A fresh database has no schema_migrations table
+// at all, which is "not yet", not an error.
 func (s *Store) SchemaReady(ctx context.Context) (bool, error) {
 	names, err := fs.Glob(migrationFS, "migrations/*.sql")
 	if err != nil {
@@ -125,13 +126,23 @@ func (s *Store) SchemaReady(ctx context.Context) (bool, error) {
 	if !river.OK {
 		return false, nil
 	}
-	// River commits each migration before grant gives the application role
-	// the tables it made.
+	// River and kritika each commit a migration before grant gives the
+	// application role the tables it made.
+	var tables, privileges []string
+	for _, g := range appTableGrants {
+		for table := range strings.SplitSeq(g.tables, ", ") {
+			for p := range strings.SplitSeq(g.privileges, ", ") {
+				tables, privileges = append(tables, table), append(privileges, p)
+			}
+		}
+	}
 	var granted bool
 	if err := s.app.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM pg_tables
 		WHERE schemaname = current_schema() AND tablename LIKE 'river\_%'
-		AND NOT has_table_privilege(format('%I.%I', schemaname, tablename), 'SELECT'))`).Scan(&granted); err != nil {
-		return false, fmt.Errorf("store: check river grants: %w", err)
+		AND NOT has_table_privilege(format('%I.%I', schemaname, tablename), 'SELECT'))
+		AND NOT EXISTS (SELECT 1 FROM unnest($1::text[], $2::text[]) AS g (t, p)
+			WHERE to_regclass(g.t) IS NULL OR NOT has_table_privilege(g.t, g.p))`, tables, privileges).Scan(&granted); err != nil {
+		return false, fmt.Errorf("store: check grants: %w", err)
 	}
 	return granted, nil
 }
@@ -153,6 +164,30 @@ func (s *Store) WaitForSchema(ctx context.Context, every time.Duration) error {
 	}
 }
 
+// readWrite is every privilege of a table that the application role writes
+// as it reads.
+const readWrite = "SELECT, INSERT, UPDATE, DELETE"
+
+// appTableGrants are the application role's privileges on kritika's tables,
+// which grant gives and SchemaReady checks.
+var appTableGrants = []struct{ privileges, tables string }{
+	{"SELECT", "accounts, config_state, schema_migrations"},
+	{readWrite, "repositories, model_leases, pull_requests"},
+	{readWrite, "reviews, runner_runs, context_packs, findings, sticky_comments, usage"},
+	{readWrite, "index_runs, index_packs, index_staging, index_postings, followups, dismissals, poll_state"},
+	{"SELECT", "index_schema"},
+	{"SELECT, INSERT", "agent_runs, agent_conversations, similar_exclusions"},
+	{"SELECT, INSERT, DELETE", "review_part_checkpoints"},
+	{readWrite, "gateway_tokens, job_heartbeats"},
+	// The web dashboard's own tables: all instance-level (no RLS, access
+	// control lives in web code) except model_calls, which is account
+	// content gated by its own account_isolation policy.
+	{readWrite, "users, identities, sessions, login_states, api_tokens"},
+	{"SELECT, INSERT, UPDATE", "chatgpt_sessions"},
+	{"SELECT, INSERT", "audit_events"},
+	{readWrite, "model_calls, egress_refusals, model_invocations"},
+}
+
 // grant gives the application role what requests and jobs need. Its name
 // comes from configuration, so it is quoted as an identifier rather than
 // interpolated raw.
@@ -160,24 +195,12 @@ func (s *Store) grant(ctx context.Context, appRole string) error {
 	app := pgx.Identifier{appRole}.Sanitize()
 	stmts := []string{
 		`GRANT USAGE ON SCHEMA public TO ` + app,
-		`GRANT SELECT ON accounts, config_state, schema_migrations TO ` + app,
 		// Only the leader writes connections. A request stamps a delivery.
 		`GRANT SELECT, UPDATE (last_webhook_at, last_unsigned_webhook_at) ON connections TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON repositories, model_leases, pull_requests TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, dismissals, poll_state TO ` + app,
-		`GRANT SELECT ON index_schema TO ` + app,
-		`GRANT SELECT, INSERT ON agent_runs, agent_conversations TO ` + app,
-		`GRANT SELECT, INSERT, DELETE ON review_part_checkpoints TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON gateway_tokens, job_heartbeats TO ` + app,
-		// The web dashboard's own tables: all instance-level (no RLS,
-		// access control lives in web code) except model_calls, which is
-		// account content gated by its own account_isolation policy.
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON users, identities, sessions, login_states, api_tokens TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE ON chatgpt_sessions TO ` + app,
-		`GRANT SELECT, INSERT ON audit_events TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls, egress_refusals, model_invocations TO ` + app,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
+	}
+	for _, g := range appTableGrants {
+		stmts = append(stmts, `GRANT `+g.privileges+` ON `+g.tables+` TO `+app)
 	}
 	// River's tables are outside row-level security. The application role
 	// inserts and works jobs. Their set changes across River versions, so

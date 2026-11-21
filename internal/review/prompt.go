@@ -772,7 +772,13 @@ func writeContext(b *strings.Builder, chunks []contextpack.Chunk, budget int) in
 			}
 			section.WriteString(")")
 		}
-		if c.Ref != "" && c.Stage != contextpack.StageOverlay {
+		switch {
+		case c.Ref == "" || c.Stage == contextpack.StageOverlay:
+		case c.Stage == contextpack.StageSimilar:
+			// A similar chunk's Ref labels the match, its similarity or the
+			// names it shares, rather than a triggering identifier.
+			fmt.Fprintf(&section, " (%s)", c.Ref)
+		default:
 			fmt.Fprintf(&section, " for %s", c.Ref)
 		}
 		fmt.Fprintf(&section, "\n```%s\n%s\n```\n", c.Language, c.Text)

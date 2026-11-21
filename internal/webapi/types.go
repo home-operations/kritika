@@ -174,6 +174,9 @@ type IndexState struct {
 	// index. The feeder keeps only a few of these indexes queued or running
 	// at once. Backlog is 0 when the repository is not waiting.
 	Backlog int `json:"backlog,omitzero"`
+	// Truncated is true when the active generation's full build stopped at
+	// the indexer's budget and left out the files past it.
+	Truncated bool `json:"truncated,omitzero"`
 }
 
 // IndexJob is an index job queued or running.
@@ -201,6 +204,9 @@ type IndexContents struct {
 	// Current is false when another embedder than the applied one built
 	// the generation: similar-code lookups skip it until it is rebuilt.
 	Current bool `json:"current"`
+	// Truncated is true when the generation's full build stopped at the
+	// indexer's budget and left out the files past it.
+	Truncated bool `json:"truncated"`
 }
 
 // IndexFile is one file an index generation holds.
@@ -283,6 +289,10 @@ type RepoConfig struct {
 	// Found is false when there was no file there.
 	Found bool `json:"found"`
 	// Settings are the repository's configuration with the file applied.
+	// Their Enabled says whether the file, as the last review read it and
+	// not as the branch has it now, allows reviews. Repository.Enabled says
+	// whether the forge and the admin's settings do, and the repository runs
+	// only when both are true: combine them to include the file's opt-out.
 	Settings RepoSettings `json:"settings"`
 	// Filters are the file's own conditions, passed beside the admin's.
 	Filters configfile.Filters `json:"filters"`

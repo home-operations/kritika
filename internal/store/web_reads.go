@@ -297,9 +297,11 @@ type RepoRow struct {
 	DefaultBranch string
 	configfile.RepoTraits
 	// ActiveCommit and ActiveAt describe the active index generation, empty
-	// when there is none.
-	ActiveCommit string
-	ActiveAt     *time.Time
+	// when there is none. IndexTruncated is whether its full build stopped
+	// at the indexer's budget.
+	ActiveCommit   string
+	ActiveAt       *time.Time
+	IndexTruncated bool
 	// LastIndexStatus and LastIndexAt describe the newest index run.
 	LastIndexStatus IndexRunStatus
 	LastIndexAt     *time.Time
@@ -316,7 +318,7 @@ type ReviewRef struct {
 // The last review, lr, is the repository's newest that was not skipped, as
 // a pull request's is.
 const repoColumns = `r.id, r.name, r.enabled, r.default_branch, r.archived, r.fork, r.visibility, r.turned_on,
-	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
+	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at), coalesce(a.truncated, false),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
 	FROM repositories r
@@ -332,7 +334,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var lrID, lrStatus *string
 	var lrAt *time.Time
 	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.DefaultBranch, &r.Archived, &r.Fork, &r.Visibility, &r.TurnedOn,
-		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
+		&r.ActiveCommit, &r.ActiveAt, &r.IndexTruncated, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {
 		r.ActiveAt = nil

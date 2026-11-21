@@ -149,3 +149,41 @@ func TestPromptEstimate(t *testing.T) {
 		})
 	}
 }
+
+// TestDecodeReport: a report with a field this build does not know is
+// refused with encoding/json's "json: unknown field" in the answer. The
+// runner sends such a report again, since during a rollout an older gateway
+// replica refuses a newer runner's field and a newer replica takes it, so
+// the wording is what the two builds agree on. A report that is not JSON is
+// refused without it, and is not worth sending again; one cut short is
+// answered 408, which the runner sends again too.
+func TestDecodeReport(t *testing.T) {
+	type report struct {
+		Phase string `json:"phase"`
+	}
+	for _, tc := range []struct {
+		name       string
+		body       string
+		wantOK     bool
+		wantStatus int
+		wantRetry  bool
+	}{
+		{name: "known fields", body: `{"phase":"fetching"}`, wantOK: true, wantStatus: http.StatusOK},
+		{name: "a field of a newer build", body: `{"phase":"fetching","signature":"x"}`, wantStatus: http.StatusBadRequest, wantRetry: true},
+		{name: "not JSON", body: `phase=fetching`, wantStatus: http.StatusBadRequest},
+		{name: "cut short", body: `{"phase":`, wantStatus: http.StatusRequestTimeout},
+		{name: "the wrong type", body: `{"phase":1}`, wantStatus: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/v1/run/phase", strings.NewReader(tc.body))
+			got, ok := decodeReport[report](w, r, 1<<10)
+			if ok != tc.wantOK || w.Code != tc.wantStatus {
+				t.Fatalf("decodeReport = %+v, %v with status %d, want %v with %d", got, ok, w.Code, tc.wantOK, tc.wantStatus)
+			}
+			if retry := strings.Contains(w.Body.String(), "json: unknown field "); retry != tc.wantRetry {
+				t.Fatalf("answer %s names an unknown field = %v, want %v", w.Body.String(), retry, tc.wantRetry)
+			}
+		})
+	}
+}

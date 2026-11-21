@@ -15,14 +15,20 @@ import (
 // is GitHub's rate limit from REST or GraphQL. The wait lasts until the
 // primary limit resets, with the second of grace that rateLimitWait gives. Or
 // it lasts for the secondary limit's Retry-After, or rateLimitMaxWait when
-// that limit names none. A job retried sooner only spends an attempt. The
-// REST client also refuses requests locally until its limit resets.
+// that limit names none. A 403 or 429 that go-github does not know for a
+// limit, as one whose body names no secondary limit, is one still when it
+// names a Retry-After, and lasts for that. A job retried sooner only spends
+// an attempt. The REST client also refuses requests locally until its limit
+// resets.
 func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 	if e, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return max(e.Rate.Reset.Sub(now)+time.Second, time.Second), true
 	}
 	if e, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
 		return max(cmp.Or(e.GetRetryAfter(), rateLimitMaxWait), time.Second), true
+	}
+	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil && e.Response.Header.Get("Retry-After") != "" {
+		return rateLimitWait(e.Response, now)
 	}
 	return 0, false
 }
@@ -122,4 +128,15 @@ func rateLimitWait(resp *http.Response, now time.Time) (time.Duration, bool) {
 		}
 	}
 	return 0, false
+}
+
+// Status returns the HTTP status that go-github's generic ErrorResponse in
+// err carries, or 0: for no answer, and for GitHub's rate limits that
+// go-github returns as errors of their own. RetryAfter recognizes those, and
+// a refusal of this kind that names a Retry-After.
+func Status(err error) int {
+	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil {
+		return e.Response.StatusCode
+	}
+	return 0
 }

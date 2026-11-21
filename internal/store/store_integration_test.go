@@ -20,6 +20,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // The suite needs a VectorChord-enabled Postgres with three roles, as
@@ -149,6 +150,276 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	var n int
 	if err := s.owner.QueryRow(t.Context(), `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != len(names) {
 		t.Fatalf("schema_migrations rows = %d, err %v; want one per embedded migration (%d)", n, err, len(names))
+	}
+}
+
+// TestMigrationGivesWayToALock: a migration that changes a busy table gives
+// up its wait for the table's lock rather than hold up every query that
+// queues behind it, and applies once the lock is free, whatever of it the
+// table already has. A check it replaces is validated without that lock.
+func TestMigrationGivesWayToALock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	dropIndexChunks(t, s)
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	exists := func(query string) func() bool {
+		return func() bool {
+			t.Helper()
+			var ok bool
+			if err := s.owner.QueryRow(ctx, query).Scan(&ok); err != nil {
+				t.Fatal(err)
+			}
+			return ok
+		}
+	}
+	column := func(table, name string) func() bool {
+		return exists(`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = '` + table + `'::regclass AND attname = '` + name +
+			`' AND NOT attisdropped)`)
+	}
+	for _, tt := range []struct {
+		name string
+		// versions are the migrations applied again, each undone first by
+		// undo, "" for none. The first is the one that meets the lock.
+		versions []string
+		undo     string
+		// lock is what another transaction holds while they apply.
+		lock    string
+		applied func() bool
+	}{
+		{"a column of runner_runs", []string{"0061_similar_exclude"}, "",
+			`LOCK TABLE runner_runs IN ACCESS SHARE MODE`, column("runner_runs", "similar_exclude_reported_at")},
+		{"the index format's columns", []string{"0062_index_format"}, "",
+			`LOCK TABLE index_packs IN ACCESS SHARE MODE`, column("index_packs", "truncated")},
+		{"the chunks' content hash", []string{"0063_index_content_hash"}, `ALTER TABLE index_chunks DROP COLUMN content_hash`,
+			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, column("index_chunks", "content_hash")},
+		{"the chunks' lexemes", []string{"0064_index_lexemes"}, `ALTER TABLE index_chunks DROP COLUMN lexemes`,
+			`LOCK TABLE index_chunks IN ACCESS SHARE MODE`, column("index_chunks", "lexemes")},
+		{"the usage check", []string{"0065_usage_rerank", "0068_usage_rerank_validate"}, "",
+			`LOCK TABLE usage IN ACCESS SHARE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
+		{"the usage check's validation", []string{"0068_usage_rerank_validate"}, `ALTER TABLE usage DROP CONSTRAINT usage_role_check;
+			ALTER TABLE usage ADD CONSTRAINT usage_role_check
+				CHECK (role IN ('review', 'embedding', 'followup', 'confidence', 'rerank')) NOT VALID`,
+			`LOCK TABLE usage IN SHARE UPDATE EXCLUSIVE MODE`, exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)},
+		{"a column of index_staging", []string{"0066_index_staging_signature"}, "",
+			`LOCK TABLE index_staging IN ACCESS SHARE MODE`, column("index_staging", "signature")},
+		{"a column of repositories", []string{"0067_repository_config_off"}, "",
+			`LOCK TABLE repositories IN ACCESS SHARE MODE`, column("repositories", "repo_config_off")},
+		{"the postings and the generation's count", []string{"0069_index_postings"}, "",
+			`LOCK TABLE index_runs IN ACCESS SHARE MODE`, column("index_runs", "generation_chunks")},
+		{"the index of the steps' formats", []string{"0070_index_runs_stepped_idx"}, `DROP INDEX index_runs_stepped_idx`,
+			`LOCK TABLE index_runs IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_runs_stepped_idx') IS NOT NULL`)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.applied() {
+				t.Fatal("not applied after Migrate")
+			}
+			// What undo takes away is only there again once the migration
+			// applies past the lock.
+			undone := func(when string) {
+				t.Helper()
+				if tt.undo != "" && tt.applied() {
+					t.Fatalf("applied %s", when)
+				}
+			}
+			// The undo and the migrations' records go together, so that a
+			// Migrate in the cleanup restores whatever the case took away
+			// for the cases after it, if the case ends before it does.
+			if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+				if tt.undo != "" {
+					if _, err := tx.Exec(ctx, tt.undo); err != nil {
+						return err
+					}
+				}
+				_, err := tx.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.versions)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			restored := false
+			t.Cleanup(func() {
+				if restored {
+					return
+				}
+				if err := s.Migrate(context.Background(), "kritika_app"); err != nil {
+					t.Errorf("Migrate in the cleanup: %v", err)
+				}
+			})
+			undone("after undo")
+			holder, err := s.owner.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = holder.Rollback(context.Background()) }()
+			if _, err := holder.Exec(ctx, tt.lock); err != nil {
+				t.Fatal(err)
+			}
+			// A migration that waited for the lock for good is ended here.
+			waiting, cancel := context.WithTimeout(ctx, 20*time.Second)
+			err = s.Migrate(waiting, "kritika_app")
+			cancel()
+			_ = holder.Rollback(ctx)
+			if !lockNotAvailable(err) || !strings.Contains(fmt.Sprint(err), tt.versions[0]) {
+				t.Fatalf("Migrate while the table is locked = %v, want a lock timeout in %s", err, tt.versions[0])
+			}
+			undone("while the table was locked")
+			if err := s.Migrate(ctx, "kritika_app"); err != nil {
+				t.Fatalf("Migrate once the table is free: %v", err)
+			}
+			restored = true
+			if !tt.applied() {
+				t.Fatal("not applied after Migrate again")
+			}
+		})
+	}
+	t.Run("the usage check's validation beside a writer", func(t *testing.T) {
+		validated := exists(`SELECT convalidated FROM pg_constraint WHERE conname = 'usage_role_check'`)
+		if _, err := s.owner.Exec(ctx, `ALTER TABLE usage DROP CONSTRAINT usage_role_check;
+			ALTER TABLE usage ADD CONSTRAINT usage_role_check
+				CHECK (role IN ('review', 'embedding', 'followup', 'confidence', 'rerank')) NOT VALID;
+			DELETE FROM schema_migrations WHERE version = '0068_usage_rerank_validate'`); err != nil {
+			t.Fatal(err)
+		}
+		if validated() {
+			t.Fatal("validated after undo")
+		}
+		writer, err := s.owner.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = writer.Rollback(context.Background()) }()
+		if _, err := writer.Exec(ctx, `LOCK TABLE usage IN ROW EXCLUSIVE MODE`); err != nil {
+			t.Fatal(err)
+		}
+		// The writer holds its lock until the validation is checked, so a
+		// validation that waited for it would end here.
+		waiting, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err = s.Migrate(waiting, "kritika_app")
+		cancel()
+		if err != nil {
+			t.Fatalf("Migrate while a writer holds usage = %v, want the validation applied", err)
+		}
+		if !validated() {
+			t.Fatal("not validated while a writer holds usage")
+		}
+		if err := writer.Rollback(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestMigrationBesideAWriter: a migration that changes tables a transaction
+// of an older build reads and then writes, while it applies, ends neither
+// that transaction nor itself as a deadlock's victim. The transaction takes
+// a lock of one table, the migration starts, and once the migration waits
+// for a lock, or has ended, the transaction writes another or the same
+// table. The write succeeds, and the migration applies or gives up its wait,
+// to apply once the transaction is done.
+func TestMigrationBesideAWriter(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("migrate-writer"))); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "migrate-writer")
+	var runner string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		runner, err = InsertRunnerRun(ctx, tx, account, RunnerKindReview, "", 0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if err := s.Migrate(ctx, "kritika_app"); err != nil {
+			t.Error(err)
+		}
+		if _, err := s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id = $1`, runner); err != nil {
+			t.Error(err)
+		}
+	})
+	exists := func(query string) bool {
+		t.Helper()
+		var ok bool
+		if err := s.owner.QueryRow(ctx, query).Scan(&ok); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	for _, tt := range []struct {
+		name, version, undo string
+		// hold is what the transaction takes before the migration starts,
+		// and write what it does once the migration waits, each with the
+		// runner run's id. The migration waits for waitFor, which it
+		// changes.
+		hold, write, waitFor string
+		applied              string
+	}{
+		{"a runner's report beside similar_exclusions", "0061_similar_exclude",
+			`DROP TABLE similar_exclusions; ALTER TABLE runner_runs DROP COLUMN similar_exclude_reported_at`,
+			// As WithRunner reads the run's row, and its report then writes it.
+			`SELECT 1 FROM runner_runs WHERE id = $1 FOR NO KEY UPDATE`, `UPDATE runner_runs SET finished_at = now() WHERE id = $1`,
+			"runner_runs",
+			`SELECT to_regclass('similar_exclusions') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_attribute
+				WHERE attrelid = 'runner_runs'::regclass AND attname = 'similar_exclude_reported_at' AND NOT attisdropped)`},
+		{"an index pack's read beside the index format", "0062_index_format", "",
+			// As ReadIndexPack, before index formats, reads the pack and
+			// then records its mode on the run.
+			`SELECT count(*) FROM index_packs WHERE runner_run_id = $1`,
+			`UPDATE index_runs SET mode = 'full' WHERE id = (SELECT index_run_id FROM runner_runs WHERE id = $1)`,
+			"index_packs",
+			`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'index_packs'::regclass AND attname = 'truncated' AND NOT attisdropped)`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.undo != "" {
+				if _, err := s.owner.Exec(ctx, tt.undo); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = $1`, tt.version); err != nil {
+				t.Fatal(err)
+			}
+			var table uint32
+			if err := s.owner.QueryRow(ctx, `SELECT $1::regclass::oid`, tt.waitFor).Scan(&table); err != nil {
+				t.Fatal(err)
+			}
+			writer, err := s.owner.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = writer.Rollback(context.Background()) }()
+			if _, err := writer.Exec(ctx, tt.hold, runner); err != nil {
+				t.Fatal(err)
+			}
+			var migrateErr error
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				migrateErr = s.Migrate(ctx, "kritika_app")
+			}()
+			// A test that fails rolls the writer back, which ends the
+			// migration's wait, before it ends.
+			t.Cleanup(func() { <-done })
+			waitForLockWait(t, s, table, "AccessExclusiveLock", done)
+			if _, err := writer.Exec(ctx, tt.write, runner); err != nil {
+				t.Fatalf("the write beside the migration: %v", err)
+			}
+			if err := writer.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+			<-done
+			if migrateErr != nil && (!lockNotAvailable(migrateErr) || !strings.Contains(migrateErr.Error(), tt.version)) {
+				t.Fatalf("Migrate beside the writer = %v, want it applied or a lock wait in %s given up", migrateErr, tt.version)
+			}
+			if err := s.Migrate(ctx, "kritika_app"); err != nil {
+				t.Fatalf("Migrate once the writer is done: %v", err)
+			}
+			if !exists(tt.applied) {
+				t.Fatal("not applied after Migrate")
+			}
+		})
 	}
 }
 
@@ -498,6 +769,64 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	}
 }
 
+// TestIndexAddedColumns: index_chunks has each column that a migration
+// added, however it was made: created by the leader, migrated from a table
+// made before them, or made without them by the leader of a build before
+// them, as during a rollout, and then kept by a leader of this build. The
+// content hash's index of a table made before it is the partitioning
+// sweep's (TestContentHashIndexBuiltApart).
+func TestIndexAddedColumns(t *testing.T) {
+	for _, tt := range []struct {
+		column     string
+		migrations []string
+	}{
+		{"content_hash", []string{"0063_index_content_hash"}},
+		{"lexemes", []string{"0064_index_lexemes"}},
+	} {
+		t.Run(tt.column, func(t *testing.T) {
+			ctx := t.Context()
+			s := openStore(t)
+			t.Cleanup(func() {
+				_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+			})
+			check := func(how string) {
+				t.Helper()
+				var column bool
+				if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
+					WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped)`, tt.column).Scan(&column); err != nil {
+					t.Fatal(err)
+				}
+				if !column {
+					t.Fatalf("%s: no %s column", how, tt.column)
+				}
+			}
+			drop := func() {
+				t.Helper()
+				if _, err := s.owner.Exec(ctx, `ALTER TABLE index_chunks DROP COLUMN `+tt.column); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+				t.Fatalf("EnsureIndexSchema: %v", err)
+			}
+			check("created")
+			drop()
+			if _, err := s.owner.Exec(ctx, `DELETE FROM schema_migrations WHERE version = ANY($1)`, tt.migrations); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Migrate(ctx, "kritika_app"); err != nil {
+				t.Fatalf("Migrate: %v", err)
+			}
+			check("migrated")
+			drop()
+			if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+				t.Fatalf("EnsureIndexSchema: %v", err)
+			}
+			check("kept by a leader")
+		})
+	}
+}
+
 // TestEnsureIndexSchemaRebuildsForANewEmbedder: the same embedder leaves
 // the index alone. Another document prompt, model or dimension drops every
 // generation with the table and leaves each repository to onboard afresh.
@@ -567,6 +896,80 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 			typmod != fmt.Sprintf("halfvec(%d)", next.dims) {
 			t.Fatalf("embedding column = %s, %v", typmod, err)
 		}
+	}
+}
+
+// TestEnsureIndexSchemaAppliesTheIndexFormat: the leader records its build's
+// index format over another build's, and drops nothing for it. The
+// generations of the other format stay active, for searches, until the
+// onboarding feeder rebuilds them.
+func TestEnsureIndexSchemaAppliesTheIndexFormat(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/one")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	format := func() int {
+		t.Helper()
+		var f int
+		if err := s.owner.QueryRow(ctx, `SELECT index_format FROM index_schema`).Scan(&f); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	if f := format(); f != runspec.IndexFormat {
+		t.Fatalf("index format = %d, want %d", f, runspec.IndexFormat)
+	}
+	// Another build was leader, and built alpha/one in its format.
+	if _, err := s.owner.Exec(ctx, `UPDATE index_schema SET index_format = $1`, runspec.IndexFormat+1); err != nil {
+		t.Fatal(err)
+	}
+	var run string
+	if err := s.owner.QueryRow(ctx, `WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'abc', 'test-embed', 8, 'full', 'completed', $1 FROM repositories WHERE name = 'alpha/one'
+			RETURNING id, account_id, repository_id
+		), c AS (
+			INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			SELECT account_id, repository_id, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
+		)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`,
+		runspec.IndexFormat+1).Scan(&run); err != nil {
+		t.Fatalf("seed a generation: %v", err)
+	}
+	rebuilt, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, "")
+	if err != nil || rebuilt {
+		t.Fatalf("EnsureIndexSchema = %v, %v; want no rebuild for another format", rebuilt, err)
+	}
+	if f := format(); f != runspec.IndexFormat {
+		t.Fatalf("index format = %d, want this build's %d", f, runspec.IndexFormat)
+	}
+	var repo string
+	var active *string
+	var chunks int
+	if err := s.owner.QueryRow(ctx, `SELECT r.id, r.active_index_run_id::text, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1)
+		FROM repositories r WHERE r.name = 'alpha/one'`, run).Scan(&repo, &active, &chunks); err != nil {
+		t.Fatal(err)
+	}
+	if active == nil || *active != run || chunks != 1 {
+		t.Fatalf("after the new format: active = %v, chunks = %d; want %s kept with its chunk", active, chunks, run)
+	}
+	if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+		found, _, err := ActiveGenerationFor(ctx, tx, repo, "test-embed", 8, "")
+		if err != nil || found != run {
+			t.Errorf("ActiveGenerationFor = %q, %v; want the generation of the other format, %s, until it is rebuilt", found, err, run)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -664,9 +1067,24 @@ func TestSweepStoppedIndexes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	repoConfigOff := func(name string, off bool) {
+		t.Helper()
+		alpha := accountID(t, s, "alpha")
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			id := configfile.RepositoryID(alpha, name)
+			rev, err := ReserveRepoConfigRead(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			_, err = RecordRepoConfigOff(ctx, tx, id, rev, off)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET archived = false, turned_on = NULL, turned_at = NULL,
-			enabled = true, disabled_at = NULL WHERE name IN ('alpha/one', 'alpha/two')`)
+			enabled = true, disabled_at = NULL, repo_config_off = false WHERE name IN ('alpha/one', 'alpha/two')`)
 	})
 	one, two := index("alpha/one"), index("alpha/two")
 
@@ -701,6 +1119,22 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	backdate("alpha/one")
 	sweep(off, 1)
 	check("off in the configuration past the grace", "alpha/one", one, true, false)
+
+	// alpha/two is turned on, and its own .kritika.yaml turns it off.
+	repoConfigOff("alpha/two", true)
+	sweep(on, 0)
+	check("off in its .kritika.yaml, within the grace", "alpha/two", two, false, true)
+	repoConfigOff("alpha/two", false)
+	check("on again in its .kritika.yaml", "alpha/two", two, false, false)
+	sweep(on, 0)
+	check("on again in its .kritika.yaml, swept", "alpha/two", two, false, false)
+	repoConfigOff("alpha/two", true)
+	sweep(on, 0)
+	backdate("alpha/two")
+	sweep(on, 1)
+	check("off in its .kritika.yaml past the grace", "alpha/two", two, true, false)
+	repoConfigOff("alpha/two", false)
+	two = index("alpha/two")
 
 	exec(`UPDATE repositories SET enabled = false WHERE name = 'alpha/two'`)
 	sweep(on, 0)
@@ -1015,10 +1449,27 @@ func TestGatewayTokens(t *testing.T) {
 // checkReservations reserves against a token with 600 of its 1000 tokens
 // spent: a reservation succeeds while the run is under its budget, whatever
 // its size. It does not succeed once the run is at or over its budget. A
-// refund brings it back.
+// refund brings it back. A reservation within the budget succeeds only when
+// it fits in the 400 tokens left with one to spare.
 func checkReservations(t *testing.T, s *Store, token string) {
 	t.Helper()
 	ctx := t.Context()
+	for _, tt := range []struct {
+		tokens int64
+		ok     bool
+		spent  int64
+	}{{401, false, 600}, {400, false, 600}, {399, true, 999}} {
+		ok, err := s.ReserveGatewayTokensWithin(ctx, token, tt.tokens)
+		if err != nil || ok != tt.ok {
+			t.Fatalf("reserve %d within the budget = %v, %v; want %v", tt.tokens, ok, err, tt.ok)
+		}
+		if got, _ := s.LookupGatewayToken(ctx, token); got.Spent != tt.spent {
+			t.Fatalf("spent after reserving %d within the budget = %d, want %d", tt.tokens, got.Spent, tt.spent)
+		}
+	}
+	if err := s.ChargeGatewayToken(ctx, token, -399); err != nil {
+		t.Fatal(err)
+	}
 	for _, tt := range []struct {
 		tokens int64
 		ok     bool
@@ -1144,5 +1595,82 @@ func TestSweepStoppedIndexesSeesARepositoryResume(t *testing.T) {
 	if !resumed || !active || clock || status != "completed" || chunks != 1 {
 		t.Fatalf("resumed=%v active=%v clock=%v status=%s chunks=%d; want the index kept and the clock cleared",
 			resumed, active, clock, status, chunks)
+	}
+}
+
+// TestRecordRepoConfigOffKeepsTheNewestRead: an index job records what it
+// read of .kritika.yaml only while no job that set out to read it later has
+// recorded otherwise. The later one can have read a newer tip, so the older
+// one is told to read again. One that read the same is recorded either way,
+// and turning the repository on again clears the sweep's clock.
+func TestRecordRepoConfigOffKeepsTheNewestRead(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	listRepos(t, s, "alpha", "alpha/reads")
+	alpha := accountID(t, s, "alpha")
+	id := configfile.RepositoryID(alpha, "alpha/reads")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET repo_config_off = false, stopped_at = NULL WHERE id = $1`, id)
+	})
+	type record struct {
+		read int // which of the reserved reads, from 0
+		off  bool
+		want bool
+	}
+	for _, tt := range []struct {
+		name string
+		// from is what is recorded before.
+		from    bool
+		reads   int
+		records []record
+		wantOff bool
+	}{
+		{name: "one read", reads: 1, records: []record{{0, true, true}}, wantOff: true},
+		{name: "older off after newer on", reads: 2, records: []record{{1, false, true}, {0, true, false}}},
+		{name: "older on after newer off", reads: 2, records: []record{{1, true, true}, {0, false, false}}, wantOff: true},
+		{name: "newer after older was told to read again", reads: 2, records: []record{{0, true, false}, {1, true, true}}, wantOff: true},
+		{name: "on again", from: true, reads: 1, records: []record{{0, false, true}}},
+		{name: "older on again after newer off", from: true, reads: 2, records: []record{{1, true, true}, {0, false, false}}, wantOff: true},
+		{name: "older agreeing with newer", reads: 2, records: []record{{1, true, true}, {0, true, true}}, wantOff: true},
+		{name: "older while newer has not recorded", reads: 2, records: []record{{0, true, false}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := s.owner.Exec(ctx, `UPDATE repositories SET repo_config_off = $2, stopped_at = now() WHERE id = $1`, id, tt.from); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+				reads := make([]int64, tt.reads)
+				for i := range reads {
+					var err error
+					if reads[i], err = ReserveRepoConfigRead(ctx, tx, id); err != nil {
+						return err
+					}
+				}
+				for _, r := range tt.records {
+					got, err := RecordRepoConfigOff(ctx, tx, id, reads[r.read], r.off)
+					if err != nil {
+						return err
+					}
+					if got != r.want {
+						t.Errorf("read %d recording off %v: recorded %v, want %v", r.read, r.off, got, r.want)
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var off, stopped bool
+			if err := s.owner.QueryRow(ctx, `SELECT repo_config_off, stopped_at IS NOT NULL FROM repositories WHERE id = $1`, id).
+				Scan(&off, &stopped); err != nil {
+				t.Fatal(err)
+			}
+			// Only a turn from off to on clears the clock.
+			if wantStopped := !tt.from || tt.wantOff; off != tt.wantOff || stopped != wantStopped {
+				t.Fatalf("off %v, clock running %v; want %v and %v", off, stopped, tt.wantOff, wantStopped)
+			}
+		})
 	}
 }

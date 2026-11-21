@@ -543,7 +543,7 @@ func TestSimilarCode(t *testing.T) {
 			}))
 			defer srv.Close()
 			got, err := similarCode(t.Context(), srv.URL+"/", "krk_run", contextpack.SimilarRequest{Queries: []string{"main.go\nfunc b() {}"}, Exclude: []string{"main.go"}})
-			if path != "POST /v1/similar" || auth != "Bearer krk_run" || body != `{"queries":["main.go\nfunc b() {}"],"exclude":["main.go"]}` {
+			if path != "POST "+runspec.SimilarPath || auth != "Bearer krk_run" || body != `{"queries":["main.go\nfunc b() {}"],"exclude":["main.go"]}` {
 				t.Fatalf("request = %s with %q: %s", path, auth, body)
 			}
 			if tc.wantErr != "" {
@@ -559,25 +559,6 @@ func TestSimilarCode(t *testing.T) {
 	}
 }
 
-// TestHunkQueries: each hunk is led by its path, the removed lines are
-// left out, and the count and size are bounded.
-func TestHunkQueries(t *testing.T) {
-	got := hunkQueries(agentDiff)
-	if want := []string{"main.go\npackage main\n\nfunc b() {}\n"}; !slices.Equal(got, want) {
-		t.Fatalf("hunkQueries = %q, want %q", got, want)
-	}
-	var many strings.Builder
-	for range contextpack.SimilarQueries + 3 {
-		many.WriteString(agentDiff)
-	}
-	if got := hunkQueries(many.String()); len(got) != contextpack.SimilarQueries {
-		t.Fatalf("%d queries, want %d", len(got), contextpack.SimilarQueries)
-	}
-	if got := hunkQueries(""); len(got) != 0 {
-		t.Fatalf("queries of an empty diff = %q", got)
-	}
-}
-
 // TestSearchTool: search_code asks the gateway once per call, formats what
 // it gets back, and stops at its call limit.
 func TestSearchTool(t *testing.T) {
@@ -586,19 +567,19 @@ func TestSearchTool(t *testing.T) {
 		calls++
 		var req contextpack.SimilarRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		if len(req.Queries) != 1 || req.Queries[0] != "where is the retry" || !slices.Equal(req.Exclude, []string{"main.go"}) {
+		if len(req.Queries) != 1 || req.Queries[0] != "where is the retry" || req.Exclude != nil || req.Kind != contextpack.SimilarKindSearch {
 			t.Errorf("request = %+v", req)
 		}
-		_, _ = w.Write([]byte(`{"chunks":[{"stage":"similar","path":"retry.go","start_line":3,"end_line":9,"symbol":"retry","kind":"function",` +
+		_, _ = w.Write([]byte(`{"chunks":[{"stage":"similar","path":"retry.go","start_line":3,"end_line":3,"symbol":"retry","kind":"function",` +
 			`"ref":"similarity 0.81","text":"func retry() {}"}],"indexed":true}`))
 	}))
 	defer srv.Close()
-	tool := &searchTool{gatewayURL: srv.URL, token: "krk_run", exclude: []string{"main.go"}, maxBytes: 1 << 10}
+	tool := &searchTool{gatewayURL: srv.URL, token: "krk_run", head: tree(t, map[string]string{"retry.go": "package r\n\nfunc retry() {}\n"}), maxBytes: 1 << 10}
 	if def := tool.Def(); def.Name != "search_code" {
 		t.Fatalf("tool name = %q", def.Name)
 	}
 	out, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`))
-	if err != nil || out != "retry.go:3-9 (function retry) similarity 0.81\nfunc retry() {}" {
+	if err != nil || out != "retry.go:3-3 (function retry) similarity 0.81\nfunc retry() {}" {
 		t.Fatalf("Run = %q, %v", out, err)
 	}
 	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":" "}`)); err == nil {

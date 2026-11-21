@@ -1,8 +1,6 @@
 package contextpack
 
 import (
-	"strings"
-
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/udiff"
 )
@@ -24,21 +22,17 @@ type diffLine struct {
 	text             string
 	oldPath, newPath string
 	oldLine, newLine int
-	// hunk numbers the diff's hunks from 0.
-	hunk int
 }
 
 // walkDiff calls fn for each added, removed and context line of each hunk
 // of a unified diff.
 func walkDiff(diff string, fn func(diffLine)) {
-	hunk := -1
 	for _, f := range udiff.Parse(diff) {
 		for _, h := range f.Hunks {
-			hunk++
 			for _, l := range h.Lines {
 				switch l.Kind {
 				case '+', '-', ' ':
-					fn(diffLine{kind: l.Kind, text: l.Text, oldPath: f.OldPath, newPath: f.NewPath, oldLine: l.OldLine, newLine: l.NewLine, hunk: hunk})
+					fn(diffLine{kind: l.Kind, text: l.Text, oldPath: f.OldPath, newPath: f.NewPath, oldLine: l.OldLine, newLine: l.NewLine})
 				}
 			}
 		}
@@ -135,40 +129,4 @@ func runs(lines []int, gap int) [][2]int {
 		out = append(out, [2]int{l, l})
 	}
 	return out
-}
-
-// Hunks returns the head-side text of each hunk in a unified diff: added and
-// context lines, without the removed ones, so each string reads like the
-// region as it now is. Hunks are keyed by their head path. A deleted file's
-// have none and are left out.
-func Hunks(diff string) []Hunk {
-	var out []Hunk
-	last := -1
-	var cur Hunk
-	var text strings.Builder
-	flush := func() {
-		if cur.Path != "" && strings.TrimSpace(text.String()) != "" {
-			cur.Text = text.String()
-			out = append(out, cur)
-		}
-		text.Reset()
-	}
-	walkDiff(diff, func(l diffLine) {
-		if l.hunk != last {
-			flush()
-			last, cur = l.hunk, Hunk{Path: l.newPath}
-		}
-		if l.kind != '-' {
-			text.WriteString(l.text)
-			text.WriteByte('\n')
-		}
-	})
-	flush()
-	return out
-}
-
-// Hunk is one hunk's head-side text.
-type Hunk struct {
-	Path string
-	Text string
 }

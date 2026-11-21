@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -645,6 +651,80 @@ func TestRepositories(t *testing.T) {
 	}
 }
 
+// TestBranchTipRateLimit: BranchTip answers a 429 at once with the limit's
+// headers, under an ordinary deadline, both for the branch it is asked and
+// for the project it reads the default branch from. The SDK would sleep
+// until the Ratelimit-Reset, hours here. A server error is still retried.
+func TestBranchTipRateLimit(t *testing.T) {
+	f := newFake(t)
+	reset := time.Now().Add(2 * time.Hour).Unix()
+	limited := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Ratelimit-Reset", strconv.FormatInt(reset, 10))
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}
+	const otherAPI = "/api/v4/projects/acme%2Fgadgets"
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/limited", limited)
+	f.mux.HandleFunc("GET "+otherAPI, limited)
+	var flaky atomic.Int32
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/flaky", func(w http.ResponseWriter, _ *http.Request) {
+		if flaky.Add(1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"flaky","commit":{"id":"abc"}}`)
+	})
+	c := f.client(t)
+	// A hang guard: the SDK's sleep until the reset lasts hours.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for _, tc := range []struct{ name, repo, branch, path string }{
+		{"branch", "widgets", "limited", "GET " + repoAPI + "/repository/branches/limited"},
+		{"default branch", "gadgets", "", "GET " + otherAPI},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := c.BranchTip(ctx, "acme", tc.repo, tc.branch)
+			e, ok := errors.AsType[*gl.ErrorResponse](err)
+			if Status(err) != http.StatusTooManyRequests || !ok || e.Response.Header.Get("Ratelimit-Reset") == "" || f.called(tc.path) != 1 {
+				t.Fatalf("BranchTip past the rate limit = %v after %d requests, want its 429 with Ratelimit-Reset after one",
+					err, f.called(tc.path))
+			}
+		})
+	}
+	if sha, _, err := c.BranchTip(ctx, "acme", "widgets", "flaky"); err != nil || sha != "abc" || flaky.Load() != 2 {
+		t.Fatalf("BranchTip of a failing GitLab = %q, %v after %d requests, want abc after two", sha, err, flaky.Load())
+	}
+}
+
+// TestBranchTipRateLimitWithAStalledBody: a 429 whose headers arrive but
+// whose body never ends is answered on its headers, not once the caller's
+// deadline ends the body's read: a caller whose deadline has passed cannot
+// wait out the limit it was told of.
+func TestBranchTipRateLimitWithAStalledBody(t *testing.T) {
+	f := newFake(t)
+	release := make(chan struct{})
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/stalled", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"message":`)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	})
+	t.Cleanup(func() { close(release) })
+	c := f.client(t)
+	// A hang guard: without the fix, the body's read ends only with it.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	_, _, err := c.BranchTip(ctx, "acme", "widgets", "stalled")
+	if wait, ok := RetryAfter(err, time.Now()); !ok || wait != time.Minute || ctx.Err() != nil {
+		t.Fatalf("BranchTip past a stalled 429 = %v (wait %v, %v) with the deadline %v, want the 429's minute before it", err, wait, ok, ctx.Err())
+	}
+}
+
 func TestBranchAndCommit(t *testing.T) {
 	f := newFake(t)
 	f.json("GET", repoAPI, 200, map[string]any{"default_branch": "main"})
@@ -676,5 +756,72 @@ func TestReactOnACommentNamingItsMergeRequest(t *testing.T) {
 	id, err := f.client(t).React(context.Background(), "acme", "widgets", forge.Comment{ID: 23, Number: 9, Inline: true}, forge.ReactionEyes)
 	if err != nil || id != 5 || f.called("GET "+repoAPI+"/merge_requests") != 0 {
 		t.Fatalf("React = %d, %v", id, err)
+	}
+}
+
+// TestStatus: the status of GitLab's answer is read through the wrapping
+// that the client adds, the SDK's not found among them. An error that
+// carries no answer has none.
+func TestStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: fmt.Errorf("gitlab: branch main of o/r: %w", &gl.ErrorResponse{StatusCode: http.StatusBadGateway}),
+			want: http.StatusBadGateway},
+		{name: "not found", err: fmt.Errorf("gitlab: branch main of o/r: %w", gl.ErrNotFound), want: http.StatusNotFound},
+		{name: "no answer", err: errors.New("connection reset")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRetryAllButRateLimit: a read past a failed connection or a server
+// error is retried, but not a 429, which the caller waits out, nor a host
+// that does not resolve or an https URL that a plain HTTP listener answers,
+// which no retry can get past.
+func TestRetryAllButRateLimit(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(plain.Close)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, strings.Replace(plain.URL, "http://", "https://", 1), http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, mismatch := http.DefaultClient.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if !errors.Is(mismatch, http.ErrSchemeMismatch) {
+		t.Fatalf("https of a plain listener = %v, want http.ErrSchemeMismatch", mismatch)
+	}
+	unanswered := func(err error) error { return &url.Error{Op: "Get", URL: "https://gitlab.example", Err: err} }
+	for _, tc := range []struct {
+		name  string
+		resp  *http.Response
+		err   error
+		retry bool
+	}{
+		{name: "connection refused", err: unanswered(&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}), retry: true},
+		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), retry: true},
+		{name: "dns timeout", err: unanswered(&net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "i/o timeout", Name: "gitlab.example", IsTimeout: true}}), retry: true},
+		{name: "bad gateway", resp: &http.Response{StatusCode: http.StatusBadGateway, Status: "502 Bad Gateway"}, retry: true},
+		{name: "unknown host", err: unanswered(&net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "no such host", Name: "gitlab.example", IsNotFound: true}})},
+		{name: "plain http behind https", err: mismatch},
+		{name: "too many requests", resp: &http.Response{StatusCode: http.StatusTooManyRequests}},
+		{name: "not found", resp: &http.Response{StatusCode: http.StatusNotFound}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			retry, _ := retryAllButRateLimit(t.Context(), tc.resp, tc.err)
+			if retry != tc.retry {
+				t.Fatalf("retryAllButRateLimit(%v) = %v, want %v", tc.err, retry, tc.retry)
+			}
+		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,10 +20,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/memory"
+
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
@@ -126,34 +134,83 @@ func TestMergeParts(t *testing.T) {
 }
 
 // TestPartPrompts: each part is shown its own files' diff and told which part
-// it is. It is given the similar code of its own hunks and offered
-// search_code. It is given the rules of its own paths and refused a finding
-// on the other part's file. The first part looks at the earlier finding on a
-// file that no part reviews. A split with no rules reports an empty list, not
-// a nil one, which the pack's rule_ids column will refuse.
+// it is. It is given the similar code of its own hunks, searched for only
+// after a probe finds an index and the run has reported every changed path,
+// once for all its parts: a search sent before the report can find the
+// changed files' own copies. It is offered search_code. It is given the
+// rules of its own paths and refused a finding on the other part's file. The
+// first part looks at the earlier finding on a file that no part reviews. A
+// split with no rules reports an empty list, not a nil one, which the pack's
+// rule_ids column will refuse.
 func TestPartPrompts(t *testing.T) {
-	asked := 0
+	var (
+		mu       sync.Mutex
+		events   []string
+		reported [][]string
+	)
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		asked++
-		_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"lib/z.go","start_line":1,"end_line":1,"text":"func z() {}"}]}`))
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case runspec.ReportSimilarExcludePath:
+			var v runspec.SimilarExcludeReport
+			if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+				t.Error(err)
+			}
+			events, reported = append(events, "report"), append(reported, v.Paths)
+			w.WriteHeader(http.StatusNoContent)
+		case runspec.SimilarPath:
+			var req contextpack.SimilarRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			if len(req.Queries) == 0 {
+				events = append(events, "probe")
+				_, _ = w.Write([]byte(`{"indexed":true}`))
+				return
+			}
+			events = append(events, "search")
+			_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"lib/z.go","start_line":1,"end_line":1,"text":"func z() {}"}]}`))
+		default:
+			t.Errorf("unexpected request to %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	t.Cleanup(gw.Close)
+	// sequence is the requests the gateway has had since the last call, and
+	// forgets them.
+	sequence := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		got := events
+		events = nil
+		return got
+	}
+	want := []string{"probe", "report", "search", "search"}
 	s := reviewSpec()
 	s.GatewayURL, s.PriorHead = gw.URL, shaB
 	s.Prompt.Rules = []configfile.Rule{{ID: "a-rule", Rule: "Mind a.", Paths: []string{"a/**"}}, {ID: "b-rule", Rule: "Mind b.", Paths: []string{"b/**"}}}
-	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
+	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "func z() {}\n"})
 	diff := sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10)
 	res := &gitfetch.Result{Diff: diff, Changed: []string{"a/x.go", "b/y.go"}}
 	split := [][]string{{"a/x.go"}, {"b/y.go"}}
 	var tools agentTools
 	parts, chunks, rules, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
+		splitShares(split, review.ScopeFull), &tools, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parts) != 2 || asked != 2 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
-		t.Fatalf("%d parts, %d similar requests, search %v, %d chunks, rules %q; want each part's own", len(parts), asked,
-			tools.search != nil, len(chunks), rules)
+	if len(parts) != 2 || tools.search == nil || len(chunks) != 2 || !slices.Equal(rules, []string{"a-rule", "b-rule"}) {
+		t.Fatalf("%d parts, search %v, %d chunks, rules %q; want each part's own", len(parts), tools.search != nil, len(chunks), rules)
+	}
+	if got := sequence(); !slices.Equal(got, want) {
+		t.Fatalf("gateway requests %q, want %q: the exclusions reported before either search", got, want)
+	}
+	mu.Lock()
+	once := slices.EqualFunc(reported, [][]string{{"a/x.go", "b/y.go"}}, slices.Equal)
+	mu.Unlock()
+	if !once {
+		t.Fatalf("reported exclusions %q, want every changed path once for the run, not once a part", reported)
 	}
 	const earlier = "main.go:1 [p2] earlier finding"
 	if !strings.Contains(parts[0].prompt.user, earlier) || strings.Contains(parts[1].prompt.user, earlier) ||
@@ -175,11 +232,14 @@ func TestPartPrompts(t *testing.T) {
 	}
 	s.Prompt.Rules = nil
 	if _, _, rules, err = partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		splitShares(split, review.ScopeFull), &tools, slog.New(slog.DiscardHandler)); err != nil {
+		splitShares(split, review.ScopeFull), &tools, nil, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	if rules == nil || len(rules) != 0 {
 		t.Fatalf("rules of a split with none = %#v, want an empty list", rules)
+	}
+	if got := sequence(); !slices.Equal(got, want) {
+		t.Fatalf("gateway requests of a split with no rules %q, want %q", got, want)
 	}
 }
 
@@ -190,23 +250,29 @@ func TestPartPromptsContext(t *testing.T) {
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req contextpack.SimilarRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		text := "func z() {}"
-		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "b/y.go") {
-			text = strings.Repeat("x", 60_000)
+		path, text := "lib/z.go", "func z() {}"
+		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "yyyy") {
+			path, text = "lib/big.go", strings.Repeat("x", indexer.DefaultOptions.MaxChunkBytes)
 		}
 		_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
-			{Stage: contextpack.StageSimilar, Path: "lib/z.go", StartLine: 1, EndLine: 1, Text: text},
+			{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text},
 		}})
 	}))
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
-	s.Agent.MaxPromptTokens = 24_000
-	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
-	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
+	// The user budget is at its floor whatever the system prompt's size: room
+	// for a part's diff and a small chunk, not for one as large as the index
+	// holds.
+	s.Agent.MaxPromptTokens = 1
+	head := tree(t, map[string]string{
+		"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "func z() {}\n", "lib/big.go": strings.Repeat("x", 60_000) + "\n",
+	})
+	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 4<<10) + strings.ReplaceAll(sizedDiff("b/y.go", 4<<10), "xxxx", "yyyy"),
+		Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools
 	parts, chunks, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
-		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, slog.New(slog.DiscardHandler))
+		splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull), &tools, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +280,7 @@ func TestPartPromptsContext(t *testing.T) {
 		t.Fatalf("context = %d chunk(s), part 1's %d, part 2's %d; want part 1's similar code alone", len(chunks),
 			len(parts[0].prompt.context), len(parts[1].prompt.context))
 	}
-	if strings.Contains(parts[1].prompt.user, "### similar: lib/z.go") {
+	if strings.Contains(parts[1].prompt.user, "### similar: lib/big.go") {
 		t.Fatalf("part 2's prompt holds the similar code its budget left out:\n%.2000s", parts[1].prompt.user)
 	}
 	if notes := splitNotes(parts, splitShares([][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull)); !slices.Contains(notes, "1 context chunk(s) left out of the prompt to fit its budget") {
@@ -317,6 +383,187 @@ func TestRunPartLoops(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSearchToolHeadLock: search_code reads its answer at the head only
+// holding the head lock, which another part's read of the head can hold, and
+// gives up when its part ends first. Its own search lock does not stand in
+// for it.
+func TestSearchToolHeadLock(t *testing.T) {
+	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "a.go", StartLine: 1, EndLine: 1, Text: "package a"},
+	}}}
+	locks := newPartLocks()
+	tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "t", head: tree(t, map[string]string{"a.go": "package a\n"}),
+		headLock: locks.head, maxBytes: 1 << 10}
+	locked := lockTools([]agent.Tool{tool}, locks)[0]
+	held := errors.New("the head lock is held")
+	locks.head <- struct{}{}
+	ctx, cancel := context.WithTimeoutCause(t.Context(), 500*time.Millisecond, held)
+	defer cancel()
+	if out, err := locked.Run(ctx, json.RawMessage(`{"query":"package"}`)); !errors.Is(err, held) || out != "" {
+		t.Fatalf("Run with the head lock held = %q, %v; want it to wait until its part ends", out, err)
+	}
+	<-locks.head
+	if out, err := locked.Run(t.Context(), json.RawMessage(`{"query":"package"}`)); err != nil || !strings.HasPrefix(out, "a.go:1-1") ||
+		len(locks.head) != 0 || len(locks.search) != 0 {
+		t.Fatalf("Run = %q, %v; head lock held %d, search lock %d", out, err, len(locks.head), len(locks.search))
+	}
+}
+
+// TestSearchToolStopsReadingTheHeadWhenItsPartEnds: a part that ends while
+// search_code reads its answer at the head reads no further file, returns
+// why it ended, and lets the head lock go, which the other parts wait on.
+func TestSearchToolStopsReadingTheHeadWhenItsPartEnds(t *testing.T) {
+	head, reads, blobs := countedHead(t, map[string]string{"a.go": "package a\n", "b.go": "package b\n"})
+	a, b := blobs["a.go"], blobs["b.go"]
+	ended := errors.New("the part ended")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	reads.after = func(h plumbing.Hash) {
+		if h == a {
+			cancel(ended)
+		}
+	}
+	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "a.go", StartLine: 1, EndLine: 1, Text: "package a"},
+		{Stage: contextpack.StageSimilar, Path: "b.go", StartLine: 1, EndLine: 1, Text: "package b"},
+	}}}
+	locks := newPartLocks()
+	tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "t", head: head, headLock: locks.head, maxBytes: 1 << 10}
+	out, err := tool.Run(ctx, json.RawMessage(`{"query":"package"}`))
+	if !errors.Is(err, ended) || out != "" {
+		t.Errorf("Run = %q, %v; want it to stop with %v", out, err, ended)
+	}
+	if reads.reads(a) != 1 || reads.reads(b) != 0 {
+		t.Errorf("a.go read %d times and b.go %d, want a.go once and b.go not after the part ended", reads.reads(a), reads.reads(b))
+	}
+	if len(locks.head) != 0 {
+		t.Error("the head lock is still held")
+	}
+}
+
+// countedHead is a tree of files, flat, read through a countingStorer, and
+// the hash of each file's blob.
+func countedHead(t *testing.T, files map[string]string) (*object.Tree, *countingStorer, map[string]plumbing.Hash) {
+	t.Helper()
+	st := memory.NewStorage()
+	blobs := map[string]plumbing.Hash{}
+	entries := make([]object.TreeEntry, 0, len(files))
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		o := st.NewEncodedObject()
+		o.SetType(plumbing.BlobObject)
+		w, err := o.Writer()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(files[name]))
+		_ = w.Close()
+		if blobs[name], err = st.SetEncodedObject(o); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, object.TreeEntry{Name: name, Mode: filemode.Regular, Hash: blobs[name]})
+	}
+	o := st.NewEncodedObject()
+	if err := (&object.Tree{Entries: entries}).Encode(o); err != nil {
+		t.Fatal(err)
+	}
+	root, err := st.SetEncodedObject(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := &countingStorer{EncodedObjectStorer: st, read: map[plumbing.Hash]int{}, after: func(plumbing.Hash) {}}
+	head, err := object.GetTree(reads, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head, reads, blobs
+}
+
+// countingStorer counts the reads of each object, and calls after with each
+// one read. Reads that parts make at once are counted under mu.
+type countingStorer struct {
+	storer.EncodedObjectStorer
+	mu    sync.Mutex
+	read  map[plumbing.Hash]int
+	after func(plumbing.Hash)
+}
+
+func (s *countingStorer) EncodedObject(typ plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	o, err := s.EncodedObjectStorer.EncodedObject(typ, h)
+	s.mu.Lock()
+	s.read[h]++
+	after := s.after
+	s.mu.Unlock()
+	after(h)
+	return o, err
+}
+
+// reads is how many times h was read.
+func (s *countingStorer) reads(h plumbing.Hash) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.read[h]
+}
+
+// TestRunPartLoopsShareSearch: parts that run at once share one search_code,
+// and each searches through it, parsing what it found outside the head lock,
+// which the race detector checks.
+func TestRunPartLoopsShareSearch(t *testing.T) {
+	answer := func(name, input string) string {
+		return `{"id":"x","object":"chat.completion","created":1,"model":"acme/large","choices":[{"index":0,"message":` +
+			`{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"` + name +
+			`","arguments":` + strconv.Quote(input) + `}}]},"finish_reason":"tool_calls"}],` +
+			`"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150}}`
+	}
+	var mu sync.Mutex
+	asked := map[string]int{}
+	searched := 0
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == runspec.SimilarPath {
+			mu.Lock()
+			searched++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"indexed":true,"chunks":[{"stage":"similar","path":"a.go","symbol":"A","kind":"function",` +
+				`"start_line":3,"end_line":3,"text":"func A() {}"}]}`))
+			return
+		}
+		mu.Lock()
+		asked[r.Header.Get(model.PartHeader)]++
+		step := asked[r.Header.Get(model.PartHeader)]
+		mu.Unlock()
+		out := answer("search_code", `{"query":"package"}`)
+		if step > 1 {
+			out = answer(submitReview, `{"summary":{"take":"t","praise":[]},"findings":[]}`)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(out))
+	}))
+	t.Cleanup(gw.Close)
+	s := reviewSpec()
+	s.GatewayURL, s.Agent.Slots, s.Agent.TimeoutSeconds = gw.URL, defaultSlots(4), 60
+	secrets := runspec.Secrets{GatewayToken: "t"}
+	head := tree(t, map[string]string{"a.go": "package a\n\nfunc A() {}\n"})
+	locks := newPartLocks()
+	parts := make([]reviewPart, 4)
+	for i := range parts {
+		parts[i] = reviewPart{paths: []string{fmt.Sprintf("p%d.go", i+1)}, prompt: loopPrompt(s, false)}
+	}
+	tools := agentTools{search: newSearchTool(s, secrets, head, locks.head)}
+	results, _, err := runPartLoops(t.Context(), s, secrets, head, nil, tools, locks, parts, slog.New(slog.DiscardHandler), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, res := range results {
+		if res.Stop != agent.StopSubmitted || res.ToolCalls["search_code"] != 1 {
+			t.Fatalf("part %d stopped %s after %v: %s", i+1, res.Stop, res.ToolCalls, res.Err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if searched != len(parts) {
+		t.Fatalf("%d searches, want one a part", searched)
 	}
 }
 

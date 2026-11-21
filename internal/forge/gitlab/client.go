@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/forge"
@@ -150,6 +152,15 @@ func apiError(err error) error {
 	return err
 }
 
+// Status is the HTTP status of GitLab's answer that err carries, 0 when err
+// carries none, as when the request never got an answer.
+func Status(err error) int {
+	if e, ok := errors.AsType[*gl.ErrorResponse](err); ok {
+		return e.StatusCode
+	}
+	return 0
+}
+
 // list reads every page of a listing. Its page function is called with the
 // page to read and answers it with what GitLab says of the next.
 func list[T any](page func(gl.ListOptions) ([]T, *gl.Response, error)) ([]T, error) {
@@ -274,18 +285,66 @@ func (c *Client) GitToken(context.Context, string) (string, error) {
 	return c.runnerToken, nil
 }
 
+// noRateLimitWait marks a context whose caller waits out GitLab's rate limit
+// itself.
+type noRateLimitWait struct{}
+
+// WaitOwnRateLimit marks ctx as that of a caller that waits out GitLab's
+// rate limit itself, as RetryAfter reads it: the client's reads under it
+// answer a 429 at once (see readOptions).
+func WaitOwnRateLimit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noRateLimitWait{}, true)
+}
+
+// readOptions are the options of a request under ctx. Under WaitOwnRateLimit
+// a 429 is answered at once, with its headers, rather than slept on until
+// the limit's Ratelimit-Reset and asked again: a sleep that can outlast the
+// caller's deadline, which go-retryablehttp then returns alone.
+func readOptions(ctx context.Context) []gl.RequestOptionFunc {
+	opts := []gl.RequestOptionFunc{gl.WithContext(ctx)}
+	if ctx.Value(noRateLimitWait{}) != nil {
+		opts = append(opts, gl.WithRequestRetry(retryAllButRateLimit))
+	}
+	return opts
+}
+
+// retryAllButRateLimit retries what go-retryablehttp's default policy does,
+// but a 429. The SDK's own policy is not exported: the two differ in that
+// this one retries a read after any failed connection but those it cannot
+// recover from, as a certificate that does not verify. A host that does not
+// resolve and an https URL that a plain HTTP listener answers are among
+// those, as the SDK's policy has them, though go-retryablehttp's retries
+// them. A 429 is answered on its headers alone: its body is closed unread,
+// since the SDK reads an error's body whole and one that stalls would hold
+// the answer until the caller's deadline.
+func retryAllButRateLimit(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	if err == nil && resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+		if resp.Body != nil {
+			_ = resp.Body.Close() // the body is not read, so its close has nothing to report
+		}
+		resp.Body = http.NoBody
+		return false, nil
+	}
+	if dns, ok := errors.AsType[*net.DNSError](err); (ok && dns.IsNotFound) || errors.Is(err, http.ErrSchemeMismatch) {
+		return false, err
+	}
+	return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+}
+
 // defaultBranch is the project's default branch, which a merge request
 // does not carry.
 func (c *Client) defaultBranch(ctx context.Context, pid string) (string, error) {
-	p, _, err := c.api.Projects.GetProject(pid, nil, gl.WithContext(ctx))
+	p, _, err := c.api.Projects.GetProject(pid, nil, readOptions(ctx)...)
 	if err != nil {
 		return "", fmt.Errorf("gitlab: project %s: %w", pid, apiError(err))
 	}
 	return p.DefaultBranch, nil
 }
 
-// BranchTip implements forge.Client.
+// BranchTip implements forge.Client. Both its poller and its index jobs wait
+// out GitLab's rate limit themselves, so it answers a 429 at once.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
+	ctx = WaitOwnRateLimit(ctx)
 	pid := project(owner, repo)
 	if branch == "" {
 		var err error
@@ -293,7 +352,7 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 			return "", "", err
 		}
 	}
-	b, _, err := c.api.Branches.GetBranch(pid, branch, gl.WithContext(ctx))
+	b, _, err := c.api.Branches.GetBranch(pid, branch, readOptions(ctx)...)
 	if err != nil {
 		return "", "", fmt.Errorf("gitlab: branch %s of %s: %w", branch, pid, apiError(err))
 	}
@@ -330,12 +389,12 @@ func (b *boundedFile) Write(p []byte) (int, error) {
 }
 
 // FileAt implements forge.Client through the raw file endpoint, read up
-// to the size limit.
+// to the size limit. Under WaitOwnRateLimit it answers a 429 at once.
 func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error) {
 	apiPath := fmt.Sprintf("projects/%s/repository/files/%s/raw", gl.PathEscape(project(owner, repo)), gl.PathEscape(path))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	req, err := c.api.NewRequest(http.MethodGet, apiPath, &gl.GetRawFileOptions{Ref: new(ref)}, []gl.RequestOptionFunc{gl.WithContext(ctx)})
+	req, err := c.api.NewRequest(http.MethodGet, apiPath, &gl.GetRawFileOptions{Ref: new(ref)}, readOptions(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
 	}

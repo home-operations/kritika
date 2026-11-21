@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -188,7 +189,43 @@ func (f *File) resolveEmbedding() error {
 		return fmt.Errorf("configfile: embedding.model takes no floating alias, got %q", e.Ref)
 	}
 	e.Model, e.apiKey = e.Ref.Model(), p.apiKey
+	return f.resolveRerank()
+}
+
+// resolveRerank gives the reranker its provider's endpoint and key: an
+// openai provider of the instance that sets its baseUrl.
+func (f *File) resolveRerank() error {
+	r := f.Embedding.Rerank
+	if r == nil {
+		return nil
+	}
+	name := r.Ref.Provider()
+	if name == "" || r.Ref.Model() == "" {
+		return fmt.Errorf("configfile: embedding.rerank.model must be \"<provider>/<model>\", got %q", r.Ref)
+	}
+	p, ok := f.Providers[name]
+	switch {
+	case !ok:
+		return fmt.Errorf("configfile: embedding.rerank.model references provider %q, which is not declared under providers", name)
+	case p.Type != ProviderOpenAI:
+		return fmt.Errorf("configfile: embedding.rerank.model names a %s provider; a reranker needs an %s one, which stands for any "+
+			"endpoint that takes a bearer key", p.Type, ProviderOpenAI)
+	case p.BaseURL == "":
+		return fmt.Errorf("configfile: embedding.rerank.model names provider %q, which sets no baseUrl; a reranker needs its endpoint", name)
+	case !apiRoot(p.BaseURL):
+		return fmt.Errorf("configfile: embedding.rerank.model names provider %q, whose baseUrl is no http or https API root "+
+			"that /rerank can be appended to: it must name a host and hold no query or fragment", name)
+	}
+	r.BaseURL, r.Model, r.apiKey = p.BaseURL, r.Ref.Model(), p.apiKey
 	return nil
+}
+
+// apiRoot reports whether raw is an http or https URL that names a host,
+// not a port alone, and that a path can be appended to: one with no "?" or
+// "#", after which the path would land in the query or the fragment.
+func apiRoot(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && !strings.ContainsAny(raw, "?#")
 }
 
 // accountsOf gathers the accounts entries, in the order of their names. An
@@ -326,9 +363,19 @@ func (f *File) validateEmbedding() error {
 	}
 	// Prompts move every score, up or down depending on the model, so the
 	// default floor can keep everything or nothing without a sign of it.
-	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "") {
-		return errors.New("configfile: embedding.queryPrompt and documentPrompt need embedding.similarFloor set, " +
+	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "" || e.SearchPrompt != "") {
+		return errors.New("configfile: embedding.queryPrompt, searchPrompt and documentPrompt need embedding.similarFloor set, " +
 			"since prompts move the scores the floor compares")
+	}
+	if r := e.Rerank; r != nil {
+		switch {
+		case !slices.Contains(model.RerankAPIs, r.API):
+			return fmt.Errorf("configfile: embedding.rerank.api must be one of %s, got %q", strings.Join(model.RerankAPIs, ", "), r.API)
+		case r.Candidates < 0 || r.Candidates > MaxRerankCandidates:
+			return fmt.Errorf("configfile: embedding.rerank.candidates must be between 0 and %d, got %d", MaxRerankCandidates, r.Candidates)
+		case r.Timeout < 0 || r.Timeout > MaxRerankTimeout:
+			return fmt.Errorf("configfile: embedding.rerank.timeout must be between 0 and %s, got %s", MaxRerankTimeout, r.Timeout)
+		}
 	}
 	return nil
 }

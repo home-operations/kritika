@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures';
 import * as g from './golden';
 import AxeBuilder from '@axe-core/playwright';
+import type { Repository } from '../src/lib/types';
 
 const account = `/#/a/${g.SLUG}`;
 const dark = { ...g.me, settings: { ...g.me.settings, theme: 'dark' as const } };
@@ -90,7 +91,8 @@ test('unreviewed pulls expand without a review request', async ({ page }) => {
 });
 
 test('repository previews load effective settings on demand without changing selection', async ({ page }) => {
-  const seen = await g.mockApi(page, [[/\/api\/v1\/me$/, dark], ...g.defaultApi()]);
+  const detail = { ...g.repoDetail, index: g.golden<Repository>('truncated_repository').index };
+  const seen = await g.mockApi(page, [[/\/api\/v1\/me$/, dark], [/\/repos\/alpha\/one$/, detail], ...g.defaultApi()]);
   await page.goto(`${account}/repos`);
   const toggle = page.getByRole('button', { name: 'Preview alpha/one', exact: true });
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -100,6 +102,8 @@ test('repository previews load effective settings on demand without changing sel
   const preview = page.getByRole('region', { name: 'Preview of alpha/one', exact: true });
   await expect(preview).toContainText((g.repoDetail.repoConfig?.settings ?? g.repoDetail.settings).models.review);
   await expect(preview).toContainText(g.repoDetail.index.activeCommit!);
+  await expect(preview.locator('dt').filter({ hasText: 'Indexed commit' }).locator('+ dd')).toContainText('partial');
+  await expect(preview.getByText(/^The full build for this index hit the indexer's limit on files, bytes or chunks\. The index may still be missing files or portions of files\.$/)).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Select alpha/one', exact: true })).toBeChecked();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await preview.getByRole('link', { name: 'Open repository' }).click();

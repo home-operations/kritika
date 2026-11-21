@@ -221,6 +221,13 @@ func TestRetryAfter(t *testing.T) {
 		{"primary already reset", &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: now.Add(-time.Minute)}}}, time.Second, true},
 		{"secondary", fmt.Errorf("github: comment: %w", &gh.AbuseRateLimitError{RetryAfter: &twoMinutes}), 2 * time.Minute, true},
 		{"secondary with no wait", &gh.AbuseRateLimitError{}, rateLimitMaxWait, true},
+		{"refusal with a Retry-After", fmt.Errorf("github: branch: %w", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"120"}}}}), 2 * time.Minute, true},
+		{"refusal with a Retry-After of no seconds", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {"soon"}}}}, 0, false},
+		{"failure with a Retry-After", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Retry-After": {"120"}}}}, 0, false},
+		{"refusal", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusForbidden}}, 0, false},
 		{"other", errors.New("github: boom"), 0, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -253,5 +260,32 @@ func TestRetryAfterOfAClient(t *testing.T) {
 	}
 	if len(f.requests) != 1 {
 		t.Fatalf("requests = %v, want one: go-github refuses the second itself", f.requests)
+	}
+}
+
+// TestStatus: the status of GitHub's answer is read through the wrapping
+// that the client adds. An error that carries no answer has none, nor does a
+// rate limit, which RetryAfter recognizes.
+func TestStatus(t *testing.T) {
+	answer := func(status int) error {
+		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: answer(http.StatusBadGateway), want: http.StatusBadGateway},
+		{name: "not found", err: answer(http.StatusNotFound), want: http.StatusNotFound},
+		{name: "no response", err: &gh.ErrorResponse{}},
+		{name: "no answer", err: errors.New("connection reset")},
+		{name: "primary rate limit", err: &gh.RateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden}}},
+		{name: "secondary rate limit", err: &gh.AbuseRateLimitError{Response: &http.Response{StatusCode: http.StatusTooManyRequests}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

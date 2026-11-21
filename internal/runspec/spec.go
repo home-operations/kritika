@@ -29,7 +29,16 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 43
+const Version = 44
+
+// IndexFormat is the format of an embedding index: how the runner chunks a
+// tree (internal/indexer) and the text that the worker embeds for each
+// chunk. Raise it with any change to either that alters what is stored for
+// an unchanged tree. A generation of another format is then rebuilt, a few
+// at a time, once the leader runs the new build. Raise Version with it when
+// the runner's chunks change, so a runner of the other build refuses the job
+// rather than stage chunks of a format that the worker does not record.
+const IndexFormat = 2
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -546,3 +555,12 @@ const DigestHeader = "Kritika-Digest"
 // AquaRegistryPath is where a runner reads, with its run token, the aqua
 // registry the gateway keeps.
 const AquaRegistryPath = "/v1/aqua/registry.yaml"
+
+// SimilarPath is where a runner searches its repository's index, with its
+// run token. A gateway that serves it leaves out of every search the paths
+// that the run reported (ReportSimilarExcludePath). An older replica, met
+// mid-rollout, serves only /v1/similar, which takes the paths in the request
+// instead and would answer this run's searches with its changed files'
+// own copies: it answers this path 404, and the run goes without similar
+// code rather than with those.
+const SimilarPath = "/v2/similar"

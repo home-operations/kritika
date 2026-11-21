@@ -24,52 +24,59 @@ is logged at error level and counted in
 chart's `monitoring.serviceMonitor.enabled` creates a Prometheus Operator
 `ServiceMonitor` for it.
 
-| Series                                                                                                            | Labels                          | What it counts                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kritika_webhooks_total`                                                                                          | connection, outcome             | deliveries: enqueued, recorded, skipped, ignored, ping, unsigned (the App has no webhook secret), unauthorized, unparsable, too_large, unreadable, unknown_connection (with no connection), undeclared_account, error              |
-| `kritika_polls_total`                                                                                             | connection, outcome             | backstop polls: ok, error                                                                                                                                                                                                          |
-| `kritika_polled_pull_requests_total`                                                                              | connection                      | open pull requests the backstop polls handed to ingest                                                                                                                                                                             |
-| `kritika_reviews_total`                                                                                           | account, status                 | reviews by terminal status: completed, skipped, capped, superseded, canceled, failed                                                                                                                                               |
-| `kritika_review_duration_seconds`                                                                                 | account                         | a review's wall time, from its first job's pickup to its terminal status, across its stages                                                                                                                                        |
-| `kritika_review_stage_duration_seconds`                                                                           | account, stage                  | durations of preparation and publication operations, failed attempts included. Nested stages overlap                                                                                                                               |
-| `kritika_review_slot_wait_seconds`                                                                                | account, model                  | actual elapsed slot-snooze intervals observed at the next pickup, queue delay included                                                                                                                                             |
-| `kritika_findings_total`                                                                                          | account, severity, category     | findings posted                                                                                                                                                                                                                    |
-| `kritika_confidence_scores_total`                                                                                 | account, score, risk            | reviews the confidence model scored, by score (0 to 5) and risk: low, medium, high, critical                                                                                                                                       |
-| `kritika_confidence_held_total`                                                                                   | account, what                   | confidence answers kritika held to its own rule: `risk` given as no level and taken as critical, `step` raised to a moved version's step floor, `floor` raised to a path's floor ([confidence](/confidence/))                      |
-| `kritika_followups_total`                                                                                         | account, outcome                | mentions, and replies in finding threads that do not mention the bot, handled: answered, limited, ignored, failed                                                                                                                  |
-| `kritika_threads_total`                                                                                           | account, outcome                | finding threads a person resolved or unresolved: dismissed, addressed, restored, ignored, failed                                                                                                                                   |
-| `kritika_index_runs_total`                                                                                        | account, mode, status           | index runs                                                                                                                                                                                                                         |
-| `kritika_index_chunks_total`                                                                                      | account                         | chunks embedded into the index                                                                                                                                                                                                     |
-| `kritika_context_chunks_total`                                                                                    | account, stage                  | context chunks a review's prompt was given, by stage: overlay, definition, caller, similar (the index)                                                                                                                             |
-| `kritika_runner_runs_total`                                                                                       | account, kind, outcome          | runner Jobs: success, failed, deadline                                                                                                                                                                                             |
-| `kritika_runner_duration_seconds`                                                                                 | kind                            | a runner Job's time from start to finish                                                                                                                                                                                           |
-| `kritika_lease_wait_seconds`                                                                                      | account, model                  | time waiting for a model concurrency slot                                                                                                                                                                                          |
-| `kritika_review_snoozes_total`                                                                                    | account, model                  | reviews put back on the queue because every model slot was held                                                                                                                                                                    |
-| `kritika_jobs_rescued_total`                                                                                      | kind, state                     | jobs a replica died working, handed back to the queue by the leader: retryable, discarded (no attempts left), cancelled (a cancel was asked)                                                                                       |
-| `kritika_model_calls_total`                                                                                       | account, model, role, outcome   | model calls: ok, error. `model` is the one that answered, so OpenRouter's fallback shows under its own. `role` on this and the series below is review (a split review's summary merge included), followup, confidence or embedding |
-| `kritika_model_tokens_total`                                                                                      | account, model, role, direction | tokens: input, cached, output                                                                                                                                                                                                      |
-| `kritika_model_cost_usd_total`                                                                                    | account, model, role            | provider-reported cost                                                                                                                                                                                                             |
-| `kritika_model_unpriced_calls_total`                                                                              | account, model, role            | calls with no reported cost and no configured price, which `kritika_model_cost_usd_total` leaves out                                                                                                                               |
-| `kritika_forge_rate_limits_total`                                                                                 | connection, outcome             | responses GitHub refused for a rate limit. waited: the request waited the limit out and was sent again. refused: the wait was over a minute, or the request cannot be resent                                                       |
-| `kritika_egress_requests_total`                                                                                   | kind, outcome                   | requests runner pods made through the gateway. kind: connect or http. outcome: allowed, refused, error                                                                                                                             |
-| `kritika_transcript_writes_total`                                                                                 | kind, outcome                   | model calls recorded for the transcript view. kind: agent_step (reviews and follow-ups), confidence, or merge (a split review's summary). outcome: ok, error                                                                       |
-| `kritika_db_pool_connections`                                                                                     | pool, state                     | connections the app and owner pools hold, by state: idle, acquired, constructing                                                                                                                                                   |
-| `kritika_db_pool_max_connections`                                                                                 | pool                            | each pool's ceiling. A pool at its ceiling queues jobs and requests                                                                                                                                                                |
-| `kritika_db_pool_acquires_total`, `kritika_db_pool_empty_acquires_total`, `kritika_db_pool_acquire_seconds_total` | pool                            | connections taken from a pool, how many had to wait for one to free, and the time spent waiting                                                                                                                                    |
-| `kritika_config_drift`                                                                                            |                                 | 1 while this replica's file differs from the applied one                                                                                                                                                                           |
-| `kritika_config_error`                                                                                            |                                 | 1 while the leader's latest attempt to apply the configuration to the store was refused. The last applied configuration stays live meanwhile                                                                                       |
-| `kritika_leader`                                                                                                  |                                 | 1 while this replica holds the leader lock                                                                                                                                                                                         |
-| `kritika_build_info`                                                                                              | version, revision               | always 1, labelled with the running build's version and the commit it was built from                                                                                                                                               |
+| Series                                                                                                            | Labels                          | What it counts                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kritika_webhooks_total`                                                                                          | connection, outcome             | deliveries: enqueued, recorded, skipped, ignored, ping, unsigned (the App has no webhook secret), unauthorized, unparsable, too_large, unreadable, unknown_connection (with no connection), undeclared_account, error                                                                                       |
+| `kritika_polls_total`                                                                                             | connection, outcome             | backstop polls: ok, error                                                                                                                                                                                                                                                                                   |
+| `kritika_polled_pull_requests_total`                                                                              | connection                      | open pull requests the backstop polls handed to ingest                                                                                                                                                                                                                                                      |
+| `kritika_reviews_total`                                                                                           | account, status                 | reviews by terminal status: completed, skipped, capped, superseded, canceled, failed                                                                                                                                                                                                                        |
+| `kritika_review_duration_seconds`                                                                                 | account                         | a review's wall time, from its first job's pickup to its terminal status, across its stages                                                                                                                                                                                                                 |
+| `kritika_review_stage_duration_seconds`                                                                           | account, stage                  | durations of preparation and publication operations, failed attempts included. Nested stages overlap                                                                                                                                                                                                        |
+| `kritika_review_slot_wait_seconds`                                                                                | account, model                  | actual elapsed slot-snooze intervals observed at the next pickup, queue delay included                                                                                                                                                                                                                      |
+| `kritika_findings_total`                                                                                          | account, severity, category     | findings posted                                                                                                                                                                                                                                                                                             |
+| `kritika_confidence_scores_total`                                                                                 | account, score, risk            | reviews the confidence model scored, by score (0 to 5) and risk: low, medium, high, critical                                                                                                                                                                                                                |
+| `kritika_confidence_held_total`                                                                                   | account, what                   | confidence answers kritika held to its own rule: `risk` given as no level and taken as critical, `step` raised to a moved version's step floor, `floor` raised to a path's floor ([confidence](/confidence/))                                                                                               |
+| `kritika_followups_total`                                                                                         | account, outcome                | mentions, and replies in finding threads that do not mention the bot, handled: answered, limited, ignored, failed                                                                                                                                                                                           |
+| `kritika_threads_total`                                                                                           | account, outcome                | finding threads a person resolved or unresolved: dismissed, addressed, restored, ignored, failed                                                                                                                                                                                                            |
+| `kritika_index_runs_total`                                                                                        | account, mode, status           | index runs                                                                                                                                                                                                                                                                                                  |
+| `kritika_index_snoozes_total`                                                                                     | account, reason                 | index jobs put back on the queue to wait without spending an attempt: `forge`, a transient forge failure (5xx, timeout, reset); `build`, a pod on another embedder or index format than the leader applied                                                                                                  |
+| `kritika_index_chunks_total`                                                                                      | account                         | chunks written into the index by completed and superseded index runs, whether their vectors were embedded or reused. `kritika_index_vectors_total{outcome="embedded"}` counts the vectors newly embedded by embedder calls that answered for every text, not every text sent: a call that fails counts none |
+| `kritika_index_vectors_total`                                                                                     | account, outcome                | vectors of index chunks: `reused` from a chunk of the repository with the same text and embedder, or shared with a chunk of the same text in the same batch, or `embedded` by an embedder call that answered for every text                                                                                 |
+| `kritika_index_truncated_total`                                                                                   | account                         | full index builds published truncated: stopped at the indexer's limits, leaving out the files past them                                                                                                                                                                                                     |
+| `kritika_context_chunks_total`                                                                                    | account, stage                  | context chunks a review's prompt was given, by stage: overlay, definition, caller, similar (the index)                                                                                                                                                                                                      |
+| `kritika_runner_runs_total`                                                                                       | account, kind, outcome          | runner Jobs: success, failed, deadline                                                                                                                                                                                                                                                                      |
+| `kritika_runner_duration_seconds`                                                                                 | kind                            | a runner Job's time from start to finish                                                                                                                                                                                                                                                                    |
+| `kritika_lease_wait_seconds`                                                                                      | account, model                  | time waiting for a model concurrency slot                                                                                                                                                                                                                                                                   |
+| `kritika_review_snoozes_total`                                                                                    | account, model                  | reviews put back on the queue because every model slot was held                                                                                                                                                                                                                                             |
+| `kritika_jobs_rescued_total`                                                                                      | kind, state                     | jobs a replica died working, handed back to the queue by the leader: retryable, discarded (no attempts left), cancelled (a cancel was asked)                                                                                                                                                                |
+| `kritika_model_calls_total`                                                                                       | account, model, role, outcome   | model calls: ok, error. `model` is the one that answered, so OpenRouter's fallback shows under its own. `role` on this and the series below is review (a split review's summary merge included), followup, confidence, embedding or rerank                                                                  |
+| `kritika_model_tokens_total`                                                                                      | account, model, role, direction | tokens: input, cached, output                                                                                                                                                                                                                                                                               |
+| `kritika_model_cost_usd_total`                                                                                    | account, model, role            | provider-reported cost                                                                                                                                                                                                                                                                                      |
+| `kritika_model_unpriced_calls_total`                                                                              | account, model, role            | calls with no reported cost and no configured price, which `kritika_model_cost_usd_total` leaves out                                                                                                                                                                                                        |
+| `kritika_forge_rate_limits_total`                                                                                 | connection, outcome             | responses GitHub refused for a rate limit. waited: the request waited the limit out and was sent again. refused: the wait was over a minute, or the request cannot be resent                                                                                                                                |
+| `kritika_egress_requests_total`                                                                                   | kind, outcome                   | requests runner pods made through the gateway. kind: connect or http. outcome: allowed, refused, error                                                                                                                                                                                                      |
+| `kritika_transcript_writes_total`                                                                                 | kind, outcome                   | model calls recorded for the transcript view. kind: agent_step (reviews and follow-ups), confidence, or merge (a split review's summary). outcome: ok, error                                                                                                                                                |
+| `kritika_db_pool_connections`                                                                                     | pool, state                     | connections the app and owner pools hold, by state: idle, acquired, constructing                                                                                                                                                                                                                            |
+| `kritika_db_pool_max_connections`                                                                                 | pool                            | each pool's ceiling. A pool at its ceiling queues jobs and requests                                                                                                                                                                                                                                         |
+| `kritika_db_pool_acquires_total`, `kritika_db_pool_empty_acquires_total`, `kritika_db_pool_acquire_seconds_total` | pool                            | connections taken from a pool, how many had to wait for one to free, and the time spent waiting                                                                                                                                                                                                             |
+| `kritika_config_drift`                                                                                            |                                 | 1 while this replica's file differs from the applied one                                                                                                                                                                                                                                                    |
+| `kritika_config_error`                                                                                            |                                 | 1 while the leader's latest attempt to apply the configuration to the store was refused. The last applied configuration stays live meanwhile                                                                                                                                                                |
+| `kritika_leader`                                                                                                  |                                 | 1 while this replica holds the leader lock                                                                                                                                                                                                                                                                  |
+| `kritika_build_info`                                                                                              | version, revision               | always 1, labelled with the running build's version and the commit it was built from                                                                                                                                                                                                                        |
 
 ## Queue and vector-search measurements
 
-| Series                                  | Labels           | Meaning                                                                            |
-| --------------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
-| `kritika_queue_runnable_jobs`           | queue            | Due available, retryable and scheduled jobs in the shared database                 |
-| `kritika_queue_oldest_runnable_seconds` | queue            | Time since the oldest runnable job's `scheduled_at`. Zero when empty               |
-| `kritika_queue_stats_up`                |                  | Whether this replica read the queue snapshot successfully                          |
-| `kritika_queue_wait_seconds`            | queue            | Histogram from `scheduled_at` to worker start, recorded for every pickup           |
-| `kritika_vector_search_seconds`         | account, outcome | Histogram of database search transaction time, outcome `ok`, `error` or `canceled` |
+| Series                                  | Labels                   | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kritika_queue_runnable_jobs`           | queue                    | Due available, retryable and scheduled jobs in the shared database                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kritika_queue_oldest_runnable_seconds` | queue                    | Time since the oldest runnable job's `scheduled_at`. Zero when empty                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `kritika_queue_stats_up`                |                          | Whether this replica read the queue snapshot successfully                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `kritika_queue_wait_seconds`            | queue                    | Histogram from `scheduled_at` to worker start, recorded for every pickup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `kritika_vector_search_seconds`         | account, outcome         | Histogram of database search transaction time, outcome `ok`, `error` or `canceled`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kritika_lexical_search_seconds`        | account, outcome         | Histogram of the search by name's time within that transaction, outcome `ok`, `error` or `canceled` of its first statement. A first statement that fails, or runs past five seconds, leaves its request to the vector search alone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kritika_similar_requests_total`        | account, kind, outcome   | Similar-code requests. kind: `diff` (a review's stage 4), `search` (the agent's `search_code`), or `unknown` for a request too malformed to say. outcome: `ok`, `empty` (searched, nothing kept), `no_queries` (the run asked, before it searches, whether there is an index), `no_embedder`, `no_index`, `too_large` (a request over its bound), `invalid`, `refused` (the run's budget) or `error`. A configured account's series of each kind and outcome start at zero, so its first error shows in `rate()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `kritika_similar_best_similarity`       | account, kind            | Histogram of the best cosine similarity among the chunks that either search found for each query that found any. Read it against the embedder's `similarFloor`: below it, only the search by name can keep a chunk                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kritika_similar_hits_total`            | account, outcome, source | Index chunks the searches found: `kept` (sent to the run, whose prompt can still leave a chunk out: one the head no longer has, one other stages mostly show, or one past the ten it shows, four for `search_code`), or dropped by `floor` or `margin` (the vector search found it under `similarFloor`, or more than `similarMargin` below its query's best, and the search by name did not find it with the half of its query's best weight by name that would keep it), `lexical_floor` (found by name alone, under half the weight of its query's best by name), `duplicate`, `file_cap` (past two of one file) or `limit` (past the most its query keeps, four for a review's diff query, and for the one query of a `search_code` request the eight it asks for, which the runner checks against the head before it shows four; or past the most its request's answer keeps, ten unless it asks for up to sixteen, as a review's stage 4 does; a reranker's candidates bound what it is sent, not what can be kept). source: the search that found it, `vector`, `lexical` (by name) or `both`. Paths the run excluded never leave the database and are not counted |
 
 Each replica reads the same queue state on scrape with a two-second timeout.
 Use `max by (namespace, job, queue)` for backlog and oldest age, never a sum
@@ -77,10 +84,12 @@ across replicas. Keep the deployment's cluster label as well when querying
 multiple clusters. A failed read emits `kritika_queue_stats_up = 0` and omits
 the queue gauges. It does not report an empty queue or retain stale values.
 Known queues emit zero when empty. Queue labels are limited to `review`,
-`review_prepare`, `review_publish`, `followup`, `thread` and `index`.
-Preparation and publication each have their own worker capacity and retry
-attempts. Thread jobs already queued on `followup` remain attributed to that
-queue until they finish.
+`review_prepare`, `review_publish`, `followup`, `thread`, `index` and
+`index_update`. Preparation and publication each have their own worker
+capacity and retry attempts. Thread jobs already queued on `followup` remain
+attributed to that queue until they finish. `index` holds first indexes and
+forced rebuilds, and `index_update` the updates that keep indexes current.
+Updates already queued on `index` remain attributed to it until they finish.
 
 Runnable work includes overdue retries and scheduled jobs that wait for
 River's scheduler to promote them. It excludes future work, pending jobs,
@@ -104,8 +113,9 @@ histogram_quantile(0.95,
 
 Vector timing begins after embedding, lease release and usage recording. It
 includes pool acquisition, account transaction setup, all vectors in the
-request, result decoding and commit. It excludes embedding-provider latency,
-model-slot waits and result filtering. Requests without a compatible index or
+request, the search by name when it is on, result decoding and commit. It
+excludes embedding-provider latency, model-slot waits, reranking and result
+filtering. Requests without a compatible index or
 with an embedding failure produce no vector-search sample. The histogram's
 `_count` provides search volume and database error counts. Use the existing
 model-call counters for embedding failures. No repository, query text, job ID
@@ -215,16 +225,16 @@ The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
 (`monitoring.prometheusRule.*For`). `additionalRuleLabels` adds a routing
 label to every rule, and `additionalRuleAnnotations` adds an annotation.
 
-| Alert                          | Fires when                                                                                                                        | Severity | Wait |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
-| `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                      | critical | 5m   |
-| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`           | critical | 2m   |
-| `KritikaConfigError`           | `kritika_config_error == 1`: the leader failed to apply the file                                                                  | warning  | 5m   |
-| `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                        | warning  | 15m  |
-| `KritikaQueueDelayed`          | Oldest runnable review/followup/thread job exceeds 600 seconds. Uses the last successful sample within 5m and max across replicas | warning  | 15m  |
-| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m                                                                | warning  | 5m   |
-| `KritikaCacheStorageErrors`    | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m. Cold misses are not errors                    | warning  | 10m  |
-| `KritikaVectorSearchErrors`    | More than 10% database search errors, with at least 10 non-canceled requests in 15m                                               | warning  | 10m  |
+| Alert                          | Fires when                                                                                                                                               | Severity | Wait |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
+| `KritikaNoLeader`              | `sum(kritika_leader) == 0`: no replica holds the leader lock                                                                                             | critical | 5m   |
+| `KritikaMultipleLeaders`       | `sum(last_over_time(kritika_leader[1m])) > 1`: more than one replica reported holding it within `multipleLeadersWindow`                                  | critical | 2m   |
+| `KritikaConfigError`           | `kritika_config_error == 1`: the leader failed to apply the file                                                                                         | warning  | 5m   |
+| `KritikaConfigDrift`           | `kritika_config_drift == 1`: a replica's file differs from the applied one                                                                               | warning  | 15m  |
+| `KritikaQueueDelayed`          | Oldest runnable job outside the `index` and `index_update` queues exceeds 600 seconds. Uses the last successful sample within 5m and max across replicas | warning  | 15m  |
+| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m                                                                                       | warning  | 5m   |
+| `KritikaCacheStorageErrors`    | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m. Cold misses are not errors                                           | warning  | 10m  |
+| `KritikaVectorSearchErrors`    | More than 10% database search errors, with at least 10 non-canceled requests in 15m                                                                      | warning  | 10m  |
 
 Without a leader, nothing migrates, applies configuration, polls or rescues
 the jobs a dead replica left. A standby takes the lock within one leader
@@ -384,14 +394,203 @@ used a sequential scan and top-N sort. The filters included both the generation
 and the RLS account predicate. Plans reported shared-buffer hits for these warm
 queries. The command above emits the full buffer counts.
 
-The current index performed well on this fixture. The longer requests with
-large exclusion lists include their client-side encoding and transfer, so do not
-attribute all of that difference to the index. These small, synthetic samples
-are not evidence of production recall or an SLO. They do not justify a change
-to partitioning, search parameters, prewarming or worker concurrency. Before
-you tune that configuration, use the runtime histograms and repeat with
+The index, then one plain table, performed well on this fixture. The longer
+requests with large exclusion lists include their client-side encoding and
+transfer, so do not attribute all of that difference to the index. These
+small, synthetic samples are not evidence of production recall or an SLO. They
+do not justify a change to search parameters, prewarming or worker concurrency.
+Before you tune that configuration, use the runtime histograms and repeat with
 representative embeddings and traffic. No production database was measured for
-this baseline.
+this baseline. At 30,000 rows it did not show how search cost grows with the
+table. The [index scale benchmark](#reproducing-the-index-scale-benchmark)
+does, and led to partitioning the table.
+
+## Reproducing the index scale benchmark
+
+`BenchmarkIndexScale` measures similar-code search when the index table holds
+many repositories, as on an instance that indexes many of them. It is opt-in,
+because loading millions of vectors takes minutes and tens of gigabytes of
+disk:
+
+```sh
+KRITIKA_INDEX_SCALE_ROWS=3000000 mise run test-integration -- \
+  -run '^$' -bench BenchmarkIndexScale -benchtime 1x -timeout 6h -v
+```
+
+`KRITIKA_INDEX_SCALE_DIMS` (1,024 unless set) sets the dimension, and
+`KRITIKA_INDEX_SCALE_QUERIES` (50) the queries for each target repository.
+`KRITIKA_INDEX_SCALE_LAYOUTS` names the layouts to compare, comma-separated. By
+default it compares `flat`, `exact`, `partitioned` and `drained`:
+
+| Layout                                                | What it is                                                                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flat`                                                | The plain table of a build before partitioning, with its one `vchordrq` index and no index options                                              |
+| `exact`                                               | The same table with `vchordrq.enable_scan` off, which leaves the generation's B-tree and a sort                                                 |
+| `partitioned`                                         | The plain table just partitioned by `PartitionIndexChunks`, with every chunk still in the legacy partition                                      |
+| `drained`                                             | The partitioned table after `DrainLegacyIndexChunks` emptied the legacy partition, `DropLegacyIndexChunks` dropped it, and `VACUUM`             |
+| `ivf-probes1pct`, `ivf-probes5pct`, `ivf-probes20pct` | The plain table with VectorChord's own partitioning: `lists` as its documentation recommends for the row count, and `probes` that share of them |
+| `repo-hash`                                           | A copy of the table hash partitioned by repository, which the search then also filters on                                                       |
+
+The corpus is synthetic and clustered: 512 topic centroids, and repositories
+that each draw on 24 topics and add a style vector of their own. Repository
+sizes follow a log-normal distribution with a median of 3,000 chunks, clipped
+to between 100 and 100,000. Eight accounts own them. Three target repositories,
+of 1,000, 10,000 and 100,000 chunks, belong to one account. Each query is a new
+chunk drawn from its target's distribution.
+
+Recall@10 compares the application's ten results with an exact search of the
+same generation, made before any vector index exists. Every search runs the
+application's SQL as the application role, with row-level security,
+`vchordrq.prefilter` on and pgx's statement cache. After five executions,
+Postgres can therefore switch to a generic plan, as it does in production. The
+timed loop runs each query once, after an untimed pass that warms the cache and
+logs the first query's `EXPLAIN (ANALYZE, BUFFERS)`. This is a warm,
+single-client measurement under the integration task's race detector, on
+synthetic data. It is not evidence of production recall or an SLO.
+
+### Local measurement, 2026-11-20
+
+The measurements ran on Linux amd64, AMD Ryzen 9 9950X3D (16 cores), 60 GiB of
+RAM and NVMe storage, with PostgreSQL 18 in Docker. Postgres ran with
+`shared_buffers=8GB`, `maintenance_work_mem=4GB`,
+`max_parallel_maintenance_workers=8`, `max_wal_size=32GB` and
+`effective_cache_size=32GB`. The integration task's container keeps Postgres's
+defaults, with 128 MB of shared buffers, so its absolute numbers differ.
+VectorChord 1.1.1 ran in `ghcr.io/tensorchord/vchord-postgres:pg18-v1.1.1`.
+VectorChord 1.3.0 ran in `ghcr.io/cloudnative-pg/postgresql:18.6-standard-bookworm`
+with `ghcr.io/home-operations/vchord:1.3.0` mounted.
+
+The table held 3,000,000 chunks of 1,024 dimensions in 434 repositories. Each
+cell gives the p50 and p95 latency in milliseconds over 50 queries, then
+recall@10. Other workloads shared the host during the VectorChord 1.3.0 runs
+and the end of the 1.1.1 run, so compare layouts within one run. On 1.1.1:
+
+| Layout           | 1,000 chunks    | 10,000 chunks       | 100,000 chunks      |
+| ---------------- | --------------- | ------------------- | ------------------- |
+| `flat`           | 6.7 / 7.3, 1.00 | 28.5 / 29.3, 1.00   | 302.5 / 311.6, 1.00 |
+| `exact`          | 5.9 / 6.0, 1.00 | 28.6 / 29.8, 1.00   | 304.2 / 310.3, 1.00 |
+| `partitioned`    | 6.9 / 8.2, 1.00 | 109.0 / 117.8, 0.98 | 111.8 / 123.3, 0.98 |
+| `drained`        | 3.6 / 4.2, 1.00 | 4.1 / 5.8, 0.98     | 13.2 / 17.1, 0.98   |
+| `ivf-probes1pct` | 7.4 / 8.0, 1.00 | 34.2 / 35.0, 1.00   | 300.8 / 307.7, 1.00 |
+| `ivf-probes5pct` | 7.5 / 8.2, 1.00 | 34.3 / 36.7, 1.00   | 301.4 / 305.2, 1.00 |
+| `repo-hash`      | 3.1 / 3.7, 1.00 | 1.3 / 1.5, 0.98     | 13.4 / 22.2, 0.98   |
+
+On 1.3.0, in two runs. The second ran while the host's load average was near
+30, from work outside the benchmark:
+
+| Layout        | Run | 1,000 chunks      | 10,000 chunks      | 100,000 chunks      |
+| ------------- | --- | ----------------- | ------------------ | ------------------- |
+| `flat`        | 1   | 7.0 / 7.9, 1.00   | 34.5 / 36.1, 1.00  | 304.3 / 312.7, 1.00 |
+| `exact`       | 1   | 5.9 / 7.0, 1.00   | 30.7 / 33.7, 1.00  | 301.6 / 309.6, 1.00 |
+| `partitioned` | 1   | 7.3 / 7.7, 1.00   | 28.7 / 34.7, 1.00  | 113.3 / 138.9, 1.00 |
+| `drained`     | 1   | 6.9 / 8.8, 1.00   | 4.9 / 21.8, 1.00   | 28.1 / 83.2, 1.00   |
+| `repo-hash`   | 1   | 3.2 / 3.9, 1.00   | 2.0 / 3.1, 1.00    | 13.9 / 16.0, 1.00   |
+| `flat`        | 2   | 16.6 / 37.4, 1.00 | 77.2 / 125.4, 1.00 | 703.6 / 862.7, 1.00 |
+| `partitioned` | 2   | 15.9 / 23.2, 1.00 | 85.1 / 207.0, 1.00 | 271.9 / 359.4, 1.00 |
+| `drained`     | 2   | 2.9 / 3.0, 1.00   | 7.4 / 12.9, 1.00   | 6.2 / 16.1, 1.00    |
+
+`PartitionIndexChunks` took 1 to 2 seconds on the 3,000,000-chunk table, most
+of it attaching the legacy partition, which then read every chunk under the
+table's exclusive lock to check its bound. These runs predate the
+[legacy mark](/database/#partitioning-an-existing-index): the call now reads
+the chunks when it validates the mark, in a transaction of its own before the
+conversion, under a lock that lets searches read the table and builds write
+it, and attaching reads no chunk. The call's time, and how it divides between
+the validation and the attach, have not been measured since.
+`DrainLegacyIndexChunks`, called until it moved nothing, and the
+`VACUUM ANALYZE` after it took 4 minutes 58 seconds on 1.1.1, and 6 minutes 36
+seconds and 8 minutes 18 seconds in the two 1.3.0 runs. A smaller run of
+1,000,000 chunks in 138 repositories on 1.1.1 gave the plain table 4.8, 37.2
+and 40.4 ms at p50 for the three targets, and 64 hash partitions by generation
+0.6, 1.1 and 10.0 ms.
+These runs kept the emptied legacy partition attached. The sweep now drops
+it, which takes its empty vector index out of every search's plan.
+
+What the measurements show:
+
+- The plain table's search cost follows the table, not the repository. The
+  `vchordrq` index of the plain table reads every chunk's quantized vector.
+  The prefilter then checks each candidate against the generation. At
+  100,000 rows that took about 3 ms. At 3,000,000 rows it took about 110 ms,
+  so Postgres's generic plan read the generation through its B-tree and sorted
+  it instead: exact, but 300 ms for a repository of 100,000 chunks.
+- Partitioned by generation and drained, a search reads one of 64 partitions:
+  6 to 28 ms at p50 for the large repository, and under 8 ms for the others,
+  with the recall of the plain table's vector index.
+- Until the sweep drops the legacy partition, a search also reads its vector
+  index. While the partition holds the chunks, that costs about 110 ms at this
+  size, which is slower than the plain table's exact plan for the
+  10,000-chunk repository on 1.1.1. The sweep drains and drops it right after
+  it partitions, which took minutes in the benchmark, where nothing else held
+  a lock. A sweep that finds the repositories of every chunk left locked by
+  other transactions stops draining, and one whose drop of the emptied
+  partition runs out of lock retries leaves it attached. Searches then read
+  the legacy partition until a later hourly sweep drains and drops it.
+- VectorChord's own partitioning (`lists`) did not help the application's
+  query. Postgres's generic plan never chose the index and read the B-tree
+  instead, so the results equal `exact`. A custom plan did use it, at about
+  7 ms for the large repository. It would also need the vectors to exist when
+  the index is built, and a rebuild as they change, while kritika builds the
+  index on an empty table. With a filter this selective, the lists that a
+  search probes can also hold too few of the repository's chunks. This run did
+  not measure that, as no timed plan used the index.
+- Partitioning by repository performed like partitioning by generation. The
+  search must then also filter on the repository, and with that filter on the
+  plain table Postgres underestimated the rows that the correlated repository
+  and generation filters match. It chose the exact plan for the large
+  repository: 287 ms at 1,000,000 rows, against 44 ms without the filter.
+  Partitioning by generation needs no change to the query.
+- The first 1.3.0 run's `drained` p95 latencies are high. Its logged plans
+  read the partitions that the drain had just written from outside shared
+  buffers.
+
+### The search by name
+
+`BenchmarkLexicalScale` measures the [search by name](/models/#search-by-name)
+over one generation of each size in `KRITIKA_LEXICAL_SCALE_CHUNKS`, a
+comma-separated list of chunk counts. It is opt-in, because a hundred thousand
+chunks take minutes to load:
+
+```sh
+KRITIKA_LEXICAL_SCALE_CHUNKS=10000,100000 mise run test-integration -- \
+  -run '^$' -bench BenchmarkLexicalScale -benchtime 1x -timeout 1h -v
+```
+
+Its code is synthetic: thirty lines of five identifiers a chunk, each of one to
+three parts drawn by a Zipf law from 4,000 words, which gives about 250 words
+a chunk, five times what this repository's code gives, and far more distinct
+words than real code. With `KRITIKA_LEXICAL_SCALE_TREE` set to a repository's
+path, the chunks are those of its HEAD, as an index build makes them, repeated
+under a prefix of each copy until there are enough. Each of 30 requests holds
+twelve queries of the 32 longest words of eight lines, as a review's
+similar-code stage sends. It reports the p50 and p95 latency of a request, how
+long the chunks took to insert and the generation to publish, which writes its
+postings, the size of the postings and of the chunks with their indexes (with
+vectors of 16 dimensions), and the median time to publish five incremental
+steps of ten changed paths each.
+
+On 2026-11-20, on the machine above, with the integration task's images and
+Postgres run with `shared_buffers=1GB`, `work_mem=64MB` and
+`max_wal_size=4GB`, and the race detector off, for synthetic code and for this
+repository's tree:
+
+| Code       | Chunks  | p50 / p95 ms | Insert | Publish | Step  | Postings | Chunks |
+| ---------- | ------- | ------------ | ------ | ------- | ----- | -------- | ------ |
+| synthetic  | 10,000  | 5.1 / 8.3    | 1.9 s  | 1.7 s   | 25 ms | 116 MB   | 96 MB  |
+| synthetic  | 100,000 | 8.6 / 10.9   | 21 s   | 18 s    | 52 ms | 872 MB   | 716 MB |
+| repository | 10,000  | 3.6 / 5.3    | 0.6 s  | 0.2 s   | 31 ms | 7.4 MB   | 43 MB  |
+| repository | 100,000 | 4.1 / 5.4    | 5.5 s  | 1.0 s   | 65 ms | 15.9 MB  | 196 MB |
+
+With a row of postings for each word of each chunk, written as each batch of
+chunks was inserted, the same benchmark took 25.3 / 28.9 ms, 152 s to insert
+and 5.2 GB of postings at 100,000 synthetic chunks, and 30.5 / 40.7 ms, 23 s
+and 938 MB at 100,000 of this repository's. Before postings, the search read
+every word of the generation's chunks for each request, and took 2.9 s at
+100,000 synthetic chunks. A row of each word keeps a search to its words' rows,
+so its time follows the queries rather than the generation, and costs about
+what the generation's distinct words do. Of this repository's 4.9 million
+words of 100,000 chunks, 85% are of words in 200 chunks or more, which no
+search reads and whose rows count them alone.
 
 ## Review completion timings
 

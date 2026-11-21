@@ -696,6 +696,31 @@ func TestErrorsCarryTheStatus(t *testing.T) {
 	}
 }
 
+// TestErrorsCarryTheRetryAfter: a refusal's Retry-After is read through the
+// wrapping that the client adds, for a call that decodes JSON and for a raw
+// file's. An error that carries no answer has none.
+func TestErrorsCarryTheRetryAfter(t *testing.T) {
+	f := newFake(t)
+	f.mux.HandleFunc("GET "+repoAPI+"/branches/main", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "300")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	f.mux.HandleFunc("GET "+repoAPI+"/raw/README.md", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	c := f.client(t)
+	if _, _, err := c.BranchTip(t.Context(), "acme", "widgets", "main"); Status(err) != http.StatusTooManyRequests || RetryAfterHeader(err) != "300" {
+		t.Fatalf("BranchTip refused = %v, Retry-After %q; want 429 and 300", err, RetryAfterHeader(err))
+	}
+	if _, err := c.FileAt(t.Context(), "acme", "widgets", "main", "README.md"); Status(err) != http.StatusTooManyRequests || RetryAfterHeader(err) != "120" {
+		t.Fatalf("FileAt refused = %v, Retry-After %q; want 429 and 120", err, RetryAfterHeader(err))
+	}
+	if got := RetryAfterHeader(errors.New("connection reset")); got != "" {
+		t.Fatalf("RetryAfterHeader of no answer = %q, want none", got)
+	}
+}
+
 // TestPullRequestDiffCatchesAPush: a push between the read of the pull
 // request and of its diff leaves the diff the new head's, which the
 // second read catches.
@@ -741,5 +766,25 @@ func TestBearerIsReused(t *testing.T) {
 	}
 	if _, err := c.BotLogin(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestStatus: the status of the instance's answer is read through the
+// wrapping that the client adds. An error that carries no answer has none.
+func TestStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: fmt.Errorf("forgejo: branch main of o/r: %w", &apiError{status: http.StatusBadGateway}),
+			want: http.StatusBadGateway},
+		{name: "no answer", err: errors.New("connection reset")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

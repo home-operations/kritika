@@ -8,14 +8,19 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertest"
+	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -113,6 +118,48 @@ func TestIndexRetriesFailedTipCheck(t *testing.T) {
 	}
 	if exec.calls != 2 {
 		t.Fatalf("runner calls = %d, want 2", exec.calls)
+	}
+}
+
+// TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication: a forge's rate
+// limit on the tip check after publication names when to ask again, hours
+// away here: GitLab's 429 by its reset, and GitHub's secondary limit by its
+// Retry-After. The job snoozes until then rather than for tipCheckWait,
+// which would only ask again within the limit.
+func TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  func() error
+	}{
+		{"gitlab", func() error {
+			h := http.Header{}
+			h.Set("Ratelimit-Reset", strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10))
+			return fmt.Errorf("gitlab: branch main of acme/widgets: %w", &gl.ErrorResponse{
+				StatusCode: http.StatusTooManyRequests, Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: h},
+			})
+		}},
+		{"github", func() error {
+			wait := 2 * time.Hour
+			return fmt.Errorf("github: branch main of acme/widgets: %w", &gh.AbuseRateLimitError{
+				Response: &http.Response{StatusCode: http.StatusForbidden}, RetryAfter: &wait,
+			})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupIndexResume(t, "")
+			ctx := rivertest.WorkContext(t.Context(), env.queue)
+			job := env.claim(1)
+			f := &tipRetryForge{resumeForge: &resumeForge{tip: "head-1"}}
+			f.afterPublish = func(context.Context) error { return tc.err() }
+			w := &Index{
+				Store: env.st, Current: configfile.NewCurrent(env.file), Forges: &forges{f: f}, Logger: slog.New(slog.DiscardHandler),
+				Executor:  &resumeExecutor{st: env.st, account: env.account.ID()},
+				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return &fakeEmbedder{} }},
+			}
+			if snooze, ok := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job)); !ok || snooze.Duration < time.Hour {
+				t.Fatalf("Work error = %v, want a snooze until the limit two hours away", snooze)
+			}
+		})
 	}
 }
 
@@ -368,7 +415,11 @@ func setupIndexResume(t *testing.T, scenario string) *resumeSetup {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush, Full: scenario == "forced rebuild"}
+	trigger := jobs.TriggerPush
+	if scenario == "onboarding" {
+		trigger = jobs.TriggerOnboard
+	}
+	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: trigger, Full: scenario == "forced rebuild"}
 	inserted, err := queue.Insert(ctx, args, nil)
 	if err != nil {
 		t.Fatal(err)

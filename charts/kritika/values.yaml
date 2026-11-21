@@ -634,7 +634,7 @@ monitoring:
     configErrorFor: 5m
     # -- How long a replica's configuration file can differ from the applied one before KritikaConfigDrift fires. A rollout drifts briefly until the new leader applies its file.
     configDriftFor: 15m
-    # -- Age in seconds of the oldest runnable review/followup/thread job that triggers KritikaQueueDelayed. Index onboarding is excluded. Its age remains on the dashboard.
+    # -- Age in seconds of the oldest runnable review, review_prepare, review_publish, followup or thread job that triggers KritikaQueueDelayed. The index and index_update queues are excluded: an index job can wait behind other repositories' builds for the embedder. Their ages remain on the dashboard.
     queueAgeSeconds: 600
     # -- How long runnable work must exceed queueAgeSeconds before warning.
     queueDelayFor: 15m

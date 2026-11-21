@@ -182,7 +182,9 @@ type Client interface {
 	// content and runs commands an agent chose.
 	GitToken(ctx context.Context, repo string) (string, error)
 	// BranchTip returns the commit that a branch points at. An empty branch
-	// means the repository's default branch, whose name is also returned.
+	// means the repository's default branch, whose name is also returned. A
+	// branch or repository that the forge does not have is an error wrapping
+	// ErrNotFound.
 	BranchTip(ctx context.Context, owner, repo, branch string) (sha, resolvedBranch string, err error)
 	// CommitSubject returns the first line of commit sha's message.
 	CommitSubject(ctx context.Context, owner, repo, sha string) (string, error)

@@ -50,6 +50,7 @@ type apiError struct {
 	method, path string
 	status       int
 	body         string
+	retryAfter   string
 }
 
 func (e *apiError) Error() string {
@@ -62,6 +63,33 @@ func (e *apiError) Unwrap() error {
 		return forge.ErrNotFound
 	}
 	return nil
+}
+
+// Status is the HTTP status of the instance's answer that err carries, 0
+// when err carries none, as when the request never got an answer.
+func Status(err error) int {
+	if e, ok := errors.AsType[*apiError](err); ok {
+		return e.status
+	}
+	return 0
+}
+
+// RetryAfterHeader is the Retry-After header of the instance's answer that
+// err carries, "" when err carries no answer or the answer names no wait.
+func RetryAfterHeader(err error) string {
+	if e, ok := errors.AsType[*apiError](err); ok {
+		return e.retryAfter
+	}
+	return ""
+}
+
+// RetryAfter is how long to wait before asking the instance again after err,
+// when err is its 429 whose Retry-After names a wait.
+func RetryAfter(err error, now time.Time) (time.Duration, bool) {
+	if Status(err) != http.StatusTooManyRequests {
+		return 0, false
+	}
+	return forge.RetryAfter(RetryAfterHeader(err), now)
 }
 
 // Client is one authorized integration's access to a Forgejo instance,
@@ -101,7 +129,7 @@ type Client struct {
 // or a URL with its scheme, which tests point at a server of their own. The
 // Client calls the API as the integration of audience, with tokens that
 // issuer signs. Runners fetch as runnerAudience when it is set. A nil
-// httpClient is http.DefaultClient.
+// httpClient is defaultHTTP.
 func NewClient(host string, issuer *Issuer, audience, runnerAudience string, httpClient *http.Client) (*Client, error) {
 	if audience == "" {
 		return nil, errors.New("forgejo: audience is required: create the authorized integration on the instance and set its audience")
@@ -132,6 +160,21 @@ func NewGiteaClient(host, token, runnerToken string, httpClient *http.Client) (*
 	return c, nil
 }
 
+// ErrRedirectLoop is what the default HTTP client stops a request with past
+// its tenth redirect, as net/http's does. Go wraps it in a *url.Error, which
+// is no failed connection to retry: the instance answers, and sends the
+// request round again.
+var ErrRedirectLoop = errors.New("forgejo: stopped after 10 redirects")
+
+// defaultHTTP is http.DefaultClient but for the error it stops a redirect
+// loop with.
+var defaultHTTP = &http.Client{CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return ErrRedirectLoop
+	}
+	return nil
+}}
+
 func newClient(host string, httpClient *http.Client) (*Client, error) {
 	if host == "" {
 		return nil, errors.New("forgejo: host is required")
@@ -145,7 +188,7 @@ func newClient(host string, httpClient *http.Client) (*Client, error) {
 		return nil, fmt.Errorf("forgejo: invalid host %q", host)
 	}
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = defaultHTTP
 	}
 	return &Client{http: httpClient, api: web + "/api/v1", web: web, now: time.Now}, nil
 }
@@ -208,7 +251,8 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return resp.Header, &apiError{method: method, path: path, status: resp.StatusCode, body: string(raw)}
+		return resp.Header, &apiError{method: method, path: path, status: resp.StatusCode, body: string(raw),
+			retryAfter: resp.Header.Get("Retry-After")}
 	}
 	if out == nil {
 		return resp.Header, nil
@@ -415,7 +459,8 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref,
-			&apiError{method: http.MethodGet, path: path, status: resp.StatusCode, body: string(raw)})
+			&apiError{method: http.MethodGet, path: path, status: resp.StatusCode, body: string(raw),
+				retryAfter: resp.Header.Get("Retry-After")})
 	}
 	content, err := io.ReadAll(io.LimitReader(resp.Body, forge.MaxFileBytes+1))
 	if err != nil {

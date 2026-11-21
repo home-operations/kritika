@@ -54,10 +54,6 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 		}
 		stats.FilesScanned++
 		stats.BytesScanned += len(src)
-		type hit struct {
-			word string
-			line int
-		}
 		var hits []hit
 		line := 1
 		last := 0
@@ -87,8 +83,8 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 			return nil
 		}
 		seenDecl := map[string]bool{}
-		for _, h := range hits {
-			decl := pf.Enclosing([]int{h.line}, b.opts.MaxDeclLines)
+		for i, decl := range users(pf, hits, b.opts.MaxDeclLines) {
+			h := hits[i]
 			if decl == nil {
 				continue
 			}
@@ -99,10 +95,65 @@ func scanParts(ctx context.Context, builders []*builder, stats *Stats) error {
 			seenDecl[key] = true
 			for _, target := range wanted[h.word] {
 				if !target.builder.overlayDecls[f.Name+"\x00"+decl.Symbol] {
-					target.builder.addCandidate(pf, decl, h.word, target.changed)
+					target.builder.addCandidate(pf, decl, h.line, h.word, target.changed)
 				}
 			}
 		}
 		return nil
 	})
 }
+
+// hit is a wanted word that a file's text holds, and its line.
+type hit struct {
+	word string
+	line int
+}
+
+// users is, for each hit, the declaration that uses its word, or nil: the
+// smallest one around its line that fits maxLines. A word in the comments
+// above a declaration does not use it, as one in a decorator or an
+// attribute there does. The declaration around a line depends on the line
+// alone, so a line of many hits looks it up once.
+func users(pf *chunk.File, hits []hit, maxLines int) []*chunk.Decl {
+	decls := make([]*chunk.Decl, len(hits))
+	byLine := map[int]*chunk.Decl{}
+	var above []int
+	for i, h := range hits {
+		d, ok := byLine[h.line]
+		if !ok {
+			d = pf.Enclosing([]int{h.line}, maxLines)
+			byLine[h.line] = d
+			if d != nil && h.line < d.HeadLine {
+				above = append(above, h.line)
+			}
+		}
+		decls[i] = d
+	}
+	// named holds each identifier on those lines with its line, so a hit is
+	// looked up once rather than among all of its line's identifiers.
+	named := map[hit]bool{}
+	for line, ids := range pf.LineIdentifiers(above) {
+		for _, id := range ids {
+			named[hit{id, line}] = true
+		}
+	}
+	for i, h := range hits {
+		if d := decls[i]; d != nil && h.line < d.HeadLine {
+			if looked != nil {
+				*looked++
+			}
+			if !named[h] {
+				decls[i] = nil
+			}
+		}
+	}
+	return decls
+}
+
+// looked, when a test points it at a count, adds up the identifiers that
+// users looks at to tell whether a hit's line names its word. Looking among
+// all of a line's identifiers for each hit is quadratic in a long line's
+// hits, and the count shows that on any machine, where a bound on the
+// time users takes holds only on a known one. A test that sets it does not
+// run in parallel.
+var looked *int

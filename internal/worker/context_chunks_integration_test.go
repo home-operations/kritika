@@ -3,8 +3,10 @@
 package worker
 
 import (
+	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -35,8 +38,8 @@ func TestContextChunksGiven(t *testing.T) {
 		return f
 	}
 	// Similar code that fits the default budget, not one of 8,000 tokens.
-	seedIndex(t, h, configure(h.config).Embedding, configfile.RepositoryID(h.account.ID(), "acme/widgets"),
-		strings.Repeat("func b() { helper() }\n", 2000))
+	// The change adds a declaration like it, whose queries find it all.
+	seedHelperCalls(t, h, configure(h.config).Embedding)
 	reg := prometheus.NewRegistry()
 	h.setMetrics(metrics.New(reg))
 	counted := func() map[string]int {
@@ -100,17 +103,18 @@ func TestContextChunksGiven(t *testing.T) {
 		}
 		return rec, sections
 	}
-	const cutNote = "1 context chunk(s) left out of the prompt to fit its budget"
+	const cutNote = " context chunk(s) left out of the prompt to fit its budget"
 
 	// helper is on the base, so stage 2 has its definition to give.
 	h.lf.setBase(h.commit(t, "helper.go", "package main\n\nfunc helper() {}\n"))
-	head := h.commit(t, "main.go", "package main\n\nfunc b() { helper() }\n")
+	head := h.commit(t, "main.go", "package main\n\nfunc b() { helper() }\n\n"+helperCalls("b0"))
 	whole, given := reviewed("completed", func() (string, string) {
 		h.dispatch(t, head)
 		id, status, _ := h.waitReview(t, head)
 		return id, status
 	})
-	if given[contextpack.StageSimilar] != 1 || given[contextpack.StageDefinition] == 0 || slices.Contains(whole.Notes, cutNote) {
+	if given[contextpack.StageSimilar] == 0 || given[contextpack.StageDefinition] == 0 ||
+		slices.ContainsFunc(whole.Notes, func(n string) bool { return strings.HasSuffix(n, cutNote) }) {
 		t.Fatalf("a review within the default budget was given %v, notes %q; want the similar code and helper's definition", given, whole.Notes)
 	}
 	if got := counted(); !maps.Equal(got, given) {
@@ -129,11 +133,14 @@ func TestContextChunksGiven(t *testing.T) {
 		id, status, _ := h.waitReview(t, head)
 		return id, status
 	})
-	if cutGiven[contextpack.StageSimilar] != 0 || cutGiven[contextpack.StageDefinition] == 0 || !slices.Contains(cut.Notes, cutNote) {
-		t.Fatalf("a review within 8,000 tokens was given %v, notes %q; want helper's definition alone and the cut noted", cutGiven, cut.Notes)
+	left := given[contextpack.StageSimilar] - cutGiven[contextpack.StageSimilar]
+	if left < 1 || cutGiven[contextpack.StageDefinition] == 0 || !slices.Contains(cut.Notes, strconv.Itoa(left)+cutNote) {
+		t.Fatalf("a review within 8,000 tokens was given %v, notes %q; want helper's definition, fewer similar declarations than %d, and the cut noted",
+			cutGiven, cut.Notes, given[contextpack.StageSimilar])
 	}
 	want := maps.Clone(given)
 	want[contextpack.StageDefinition] += cutGiven[contextpack.StageDefinition]
+	want[contextpack.StageSimilar] += cutGiven[contextpack.StageSimilar]
 	if got := counted(); !maps.Equal(got, want) {
 		t.Fatalf("counted %v, want the prompts' %v", got, want)
 	}
@@ -150,4 +157,41 @@ func TestContextChunksGiven(t *testing.T) {
 	if got := counted(); !maps.Equal(got, want) {
 		t.Fatalf("counted %v after a skipped review, want the prompts' %v", got, want)
 	}
+}
+
+// seedHelperCalls indexes declarations near the index's byte cap, which it
+// stores whole: helperCalls, two in each of three files, as many of one file
+// as stage 4 shows.
+func seedHelperCalls(t *testing.T, h *agenticHarness, emb *configfile.Embedding) {
+	t.Helper()
+	files := map[string]string{}
+	for i, path := range []string{"other.go", "more.go", "most.go"} {
+		files[path] = "package main\n\n" + helperCalls(fmt.Sprintf("b%d", 2*i+1)) + "\n" + helperCalls(fmt.Sprintf("b%d", 2*i+2))
+	}
+	var large int
+	for _, c := range seedIndex(t, h, emb, configfile.RepositoryID(h.account.ID(), "acme/widgets"), files) {
+		if c.Kind == "function" && strings.HasPrefix(c.Symbol, "b") && len(c.Text) > indexer.DefaultOptions.MaxChunkBytes*9/10 {
+			large++
+		}
+	}
+	if large != 2*len(files) {
+		t.Fatalf("the index holds %d declarations near its byte cap whole, want %d", large, 2*len(files))
+	}
+}
+
+// helperCalls is a function named name that calls helper line after line,
+// as near the index's byte cap as whole lines take it and within the lines
+// that the index stores whole, so its chunk is the declaration itself.
+func helperCalls(name string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "func %s() {\n", name)
+	for i := 1; ; i++ {
+		line := fmt.Sprintf("\thelper() // step %d of %s, in the order the widgets need\n", i, name)
+		if b.Len()+len(line)+len("}") > indexer.DefaultOptions.MaxChunkBytes {
+			break
+		}
+		b.WriteString(line)
+	}
+	b.WriteString("}\n")
+	return b.String()
 }

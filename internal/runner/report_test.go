@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -26,27 +27,32 @@ func fastRetries(t *testing.T, window time.Duration) {
 }
 
 func TestReportRetries(t *testing.T) {
+	// What a gateway of a build before a field that the report carries
+	// answers.
+	unknownField := `{"error":{"message":"decoding the report: json: unknown field \"signature\"","type":"invalid_request"}}`
 	for _, tt := range []struct {
 		name  string
 		first int
+		body  string
 		sends int
 		ok    bool
 	}{
-		{"the gateway's trouble with its database", http.StatusInternalServerError, 2, true},
-		{"a replica going away", http.StatusBadGateway, 2, true},
-		{"a replica older than the run's image", http.StatusNotFound, 2, true},
-		{"another upload overtaking it", http.StatusConflict, 2, true},
-		{"a body cut short", http.StatusRequestTimeout, 2, true},
-		{"a token that is not valid", http.StatusUnauthorized, 1, false},
-		{"a report the database refuses", http.StatusBadRequest, 1, false},
-		{"a report too large", http.StatusRequestEntityTooLarge, 1, false},
+		{"the gateway's trouble with its database", http.StatusInternalServerError, "", 2, true},
+		{"a replica going away", http.StatusBadGateway, "", 2, true},
+		{"a replica older than the run's image", http.StatusNotFound, "", 2, true},
+		{"a replica older than a field of the report", http.StatusBadRequest, unknownField, 2, true},
+		{"another upload overtaking it", http.StatusConflict, "", 2, true},
+		{"a body cut short", http.StatusRequestTimeout, "", 2, true},
+		{"a token that is not valid", http.StatusUnauthorized, "", 1, false},
+		{"a report the database refuses", http.StatusBadRequest, "", 1, false},
+		{"a report too large", http.StatusRequestEntityTooLarge, "", 1, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			fastRetries(t, time.Minute)
 			var sends atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if sends.Add(1) == 1 {
-					http.Error(w, "refused", tt.first)
+					http.Error(w, cmp.Or(tt.body, "refused"), tt.first)
 					return
 				}
 				w.WriteHeader(http.StatusNoContent)

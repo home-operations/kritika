@@ -284,6 +284,9 @@ export interface IndexState {
   // repositories waiting for the onboarding feeder to queue their first
   // index. It is absent when it is not waiting.
   backlog?: number;
+  // truncated is true when the active index's full build stopped at the
+  // indexer's budget, leaving out the files past it. It is absent when not.
+  truncated?: boolean;
 }
 
 // An index job queued or running.
@@ -299,7 +302,8 @@ export interface IndexJob {
 
 // What a repository's active index generation holds. indexed is false,
 // with zero counts, when it has none. current is false when another
-// embedder than the applied one built it.
+// embedder than the applied one built it. truncated is true when its full
+// build stopped at the indexer's budget, leaving out the files past it.
 export interface IndexContents {
   indexed: boolean;
   commit: string;
@@ -310,6 +314,7 @@ export interface IndexContents {
   chunks: number;
   files: number;
   current: boolean;
+  truncated: boolean;
 }
 
 export interface IndexFile {

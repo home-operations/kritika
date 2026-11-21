@@ -62,6 +62,9 @@ type Server struct {
 	// Embedders resolves the instance's embedder for similar code. A nil
 	// value serves none.
 	Embedders *adapter.Embedders
+	// Rerankers resolves the instance's similar-code reranker. A nil value
+	// serves none.
+	Rerankers *adapter.Rerankers
 	// AquaRegistry is the aqua registry that runners read at
 	// runspec.AquaRegistryPath. A nil value serves none.
 	AquaRegistry *AquaRegistry
@@ -89,7 +92,9 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
 		g.chat(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/similar":
+	// /v1/similar serves a runner older than this build, which sends its
+	// exclusions in each request.
+	case r.Method == http.MethodPost && (r.URL.Path == runspec.SimilarPath || r.URL.Path == "/v1/similar"):
 		g.similarCode(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/conversation":
 		g.conversation(w, r)
@@ -336,26 +341,6 @@ func (g *Server) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
 		return runCall{}, false
 	}
 	return runCall{token: token, grant: grant, file: file, account: account, logger: logger}, true
-}
-
-// reserve reserves tokens against c's run budget before the call spends
-// them, or refuses the request and reports false. Each reservation is
-// visible to the next at once, so concurrent calls cannot all pass a
-// budget one of them spends.
-func (g *Server) reserve(ctx context.Context, w http.ResponseWriter, c runCall, tokens int64) bool {
-	ok, err := g.Store.ReserveGatewayTokens(ctx, c.token, tokens)
-	if err != nil {
-		c.logger.Error("gateway: call not reserved", "error", err)
-		refuse(w, http.StatusInternalServerError, "server_error", "the run's budget could not be checked")
-		return false
-	}
-	if !ok {
-		reason := fmt.Sprintf("the run's budget of %d tokens is spent", c.grant.Budget)
-		c.logger.Info("gateway: call refused", "reason", reason)
-		refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
-		return false
-	}
-	return true
 }
 
 func (g *Server) chat(w http.ResponseWriter, r *http.Request) {

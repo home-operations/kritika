@@ -170,10 +170,13 @@ what is queued or waiting.
 
 The leader, which is the elected replica, queues repositories' first indexes a
 few at a time. It keeps [`onboardWindow`](/configuration/#how-kritika-runs) of
-them queued or running at once. Index jobs run one at a time on each replica
+them queued or running at once. First indexes run one at a time on each replica
 unless `indexWorkers` says otherwise. So after you turn on many repositories,
 most of them wait. The **Index** column shows each one's place in line, such as
-**Waiting · #3**. The leader queues the next as each first index ends.
+**Waiting · #3**. The leader queues the next as each first index ends. It
+queues the rebuilds that a new embedder or a new release's index format
+needs the same way. Keeping indexed repositories current runs on a queue of
+its own, with workers that first indexes do not take.
 
 A reindex goes ahead of the first indexes still waiting.
 
@@ -182,7 +185,15 @@ current while there are any. The **Reindex** button reads **Reindex queued**
 while a reindex is queued. Expand **Repository settings** to inspect the
 effective configuration. Expand **Index runs** to investigate indexing
 failures. Expand **Index contents** to see what the similar-code index holds:
-the commit and embedder it was built at, and its files and their chunks.
+the commit and embedder it was built at, and its files and their chunks. A
+**partial** pill there, and in the repository's preview, marks an index whose
+own full build, not a later one that failed, stopped at the indexer's limits
+of 50,000 files, 500 MiB or 100,000 chunks, and a note below it says so.
+That build left out the files past them, and at the chunk limit the rest of
+the file it stopped in. The mark stays while pushes update the index, even
+a push that indexes some of that code, until a full rebuild fits within the
+limits, so the note says only that the index may still be missing files or
+portions of files.
 
 Only admins see a chunk's text. The paths that the indexer skipped, such as
 those an ignore rule matches, are not recorded, so they are not listed. See
@@ -226,6 +237,10 @@ request can be refused while one is already queued or running.
 
 A configuration that fails validation prevents startup. If the leader cannot
 apply it to the database, kritika keeps the last applied configuration and
-sets `kritika_config_error`. Fix the problem and restart to try again.
+sets `kritika_config_error`. The index keeps the last applied embedder and
+index format too, so when the new file changed the embedder, or the new
+release changed the index format, every index job waits for them, and
+`kritika_index_snoozes_total{reason="build"}` keeps rising. Fix the problem
+and restart to try again.
 
 See [monitoring](/metrics/) for alerts and [security](/security/) for access controls.

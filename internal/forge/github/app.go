@@ -14,10 +14,12 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
@@ -89,9 +91,82 @@ var baseTransport = func() *http.Transport {
 
 // limit puts the wait for a rate limit that resets soon above rt, a client's
 // authentication. So a request sent again after the wait is authorized again,
-// with a token refreshed while it waited.
+// with a token refreshed while it waited. Each answer's error body is bounded
+// below the wait, so a request sent again has a bound of its own.
 func (a *App) limit(rt http.RoundTripper) http.RoundTripper {
-	return &rateLimitTransport{base: rt, maxWait: rateLimitMaxWait, observe: a.rateLimited}
+	return &rateLimitTransport{base: &errorBodyTransport{base: rt}, maxWait: rateLimitMaxWait, observe: a.rateLimited}
+}
+
+// errorBodyWait bounds how long the body of an answer that is no success, or
+// is a 202, is read for once its headers arrive. go-github reads such a body
+// to its end to tell its errors apart, a 202's to build its AcceptedError,
+// and a body that stalls would hold the request until
+// its context ends: a worker's job hours on, the leader's poll never. An
+// error's body is a few hundred bytes. Cut off, it leaves the status and the
+// headers, by which a primary rate limit is still told apart; a secondary
+// limit that only its body names is then a plain refusal.
+const errorBodyWait = 10 * time.Second
+
+// errErrorBodyCut is what reading an error body fails with past
+// errorBodyWait.
+var errErrorBodyCut = fmt.Errorf("github: error body not read within %s", errorBodyWait)
+
+// errorBodyTransport cuts off the body of an answer that is no success, or is
+// a 202, errorBodyWait after its headers arrive, whatever the request's
+// context.
+type errorBodyTransport struct {
+	base http.RoundTripper
+	// after overrides time.AfterFunc in tests.
+	after func(d time.Duration, f func()) (stop func() bool)
+}
+
+func (t *errorBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Cancelling the request's own context is what stops a read in progress.
+	ctx, cancel := context.WithCancel(req.Context())
+	resp, err := t.base.RoundTrip(req.WithContext(ctx))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	body := &errorBody{ReadCloser: resp.Body, cancel: cancel}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 || resp.StatusCode == http.StatusAccepted {
+		after := t.after
+		if after == nil {
+			after = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
+		}
+		body.stop = after(errorBodyWait, func() {
+			body.cut.Store(true)
+			cancel()
+		})
+	}
+	resp.Body = body
+	return resp, nil
+}
+
+// errorBody is an answer's body whose request's context ends as it is
+// closed, or, with stop set, when its bound cuts it off first.
+type errorBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+	stop   func() bool
+	cut    atomic.Bool
+}
+
+func (b *errorBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && b.cut.Load() {
+		err = errErrorBodyCut
+	}
+	return n, err
+}
+
+func (b *errorBody) Close() error {
+	if b.stop != nil {
+		b.stop()
+	}
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
 }
 
 func (a *App) rateLimited(wait time.Duration, waited bool) {
@@ -246,8 +321,29 @@ func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
 	return newClient(a.limit(&installTransport{base: a.base, origin: a.origin, tokens: tokens}), a.apiBase)
 }
 
+// ErrRedirectRefused is what a GitHub client refuses to follow a redirect
+// with: one off the API's origin, or past the tenth. Go wraps it in a
+// *url.Error, which is no failed connection to retry.
+var ErrRedirectRefused = errors.New("github: redirect refused")
+
+// newClient answers a redirect off the API's origin with an error rather than
+// following it: the transports withhold credentials from such a hop, but its
+// answer would still be read as GitHub's.
 func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
-	opts := []gh.ClientOptionsFunc{gh.WithTransport(rt)}
+	origin, err := url.Parse(cmp.Or(apiBase, "https://api.github.com"))
+	if err != nil {
+		return nil, fmt.Errorf("github: parse API origin: %w", err)
+	}
+	redirects := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if !sameOrigin(req.URL, origin) {
+			return fmt.Errorf("%w: off %s to %s", ErrRedirectRefused, origin.Host, req.URL.Host)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("%w: stopped after 10 redirects", ErrRedirectRefused)
+		}
+		return nil
+	}}
+	opts := []gh.ClientOptionsFunc{gh.WithHTTPClient(redirects), gh.WithTransport(rt)}
 	if apiBase != "" {
 		opts = append(opts, gh.WithEnterpriseURLs(apiBase, apiBase))
 	}

@@ -1,13 +1,17 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -181,12 +185,283 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	if err != nil || tip != "tip456" || branch != "trunk" {
 		t.Fatalf("BranchTip = %q %q, %v", tip, branch, err)
 	}
+	// A slash in a branch's name is escaped within its one path segment:
+	// the pattern matches neither the slash left as it is nor escaped twice.
+	f.reply("GET /api/v3/repos/o/r/branches/release%2Fnext", 200, `{"name":"release/next","commit":{"sha":"tip789"}}`)
+	if tip, branch, err := c.BranchTip(t.Context(), "o", "r", "release/next"); err != nil || tip != "tip789" || branch != "release/next" {
+		t.Fatalf("BranchTip of release/next = %q %q, %v", tip, branch, err)
+	}
+	// An answer of 200 with no body, for the branch or the repository whose
+	// default branch is read, is cut short, io.EOF, as Forgejo's client
+	// reports one.
+	f.reply("GET /api/v3/repos/o/r/branches/blank", 200, "")
+	f.reply("GET /api/v3/repos/o/blank", 200, "")
+	for _, tc := range []struct{ repo, branch string }{{"r", "blank"}, {"blank", ""}} {
+		if _, _, err := c.BranchTip(t.Context(), "o", tc.repo, tc.branch); !errors.Is(err, io.EOF) {
+			t.Fatalf("BranchTip(%s, %q) of an empty answer = %v, want io.EOF", tc.repo, tc.branch, err)
+		}
+	}
+	// A branch or repository that is gone is forge.ErrNotFound, and still
+	// carries GitHub's status.
+	f.reply("GET /api/v3/repos/o/r/branches/gone", 404, `{"message":"Branch not found"}`)
+	f.reply("GET /api/v3/repos/o/deleted", 404, `{"message":"Not Found"}`)
+	for _, tc := range []struct{ repo, branch string }{{"r", "gone"}, {"deleted", ""}} {
+		_, _, err := c.BranchTip(t.Context(), "o", tc.repo, tc.branch)
+		if !errors.Is(err, forge.ErrNotFound) || Status(err) != http.StatusNotFound {
+			t.Fatalf("BranchTip(%s, %q) = %v, want forge.ErrNotFound with status 404", tc.repo, tc.branch, err)
+		}
+	}
+	// The branch read's other failures carry their status and rate limits as
+	// the rest of the client's.
+	f.reply("GET /api/v3/repos/o/r/branches/flaky", 502, `{"message":"Bad Gateway"}`)
+	if _, _, err := c.BranchTip(t.Context(), "o", "r", "flaky"); Status(err) != http.StatusBadGateway || errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("BranchTip of a failing forge = %v, want status 502", err)
+	}
+	reset := time.Now().Add(time.Hour).Unix()
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/limited", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		w.WriteHeader(http.StatusForbidden)
+	})
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "limited")
+	if _, limited := RetryAfter(err, time.Now()); !limited {
+		t.Fatalf("BranchTip over the rate limit = %v, want a rate limit", err)
+	}
+	// A secondary limit with primary quota left and no Retry-After is told
+	// apart from a refusal by its body alone, and waited out for
+	// rateLimitMaxWait. A client of its own: the primary limit above holds
+	// this one's requests back until its reset.
+	f, c = newFakeAPI(t)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/secondary", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "4321")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit",` +
+			`"documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
+	})
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != rateLimitMaxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, rateLimitMaxWait)
+	}
 	if c.CloneURL("o", "r") != "https://github.com/o/r.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
 	if _, err := c.MergeBase(t.Context(), "o", "r", 1, "main", "none"); err == nil {
 		t.Fatal("a compare without a merge base must error")
+	}
+}
+
+// TestBranchTipRefusedWithALongRetryAfter: a refusal that names a Retry-After
+// too long to wait out inline, with primary quota left and a body that names
+// no secondary limit, is one go-github returns as a plain refusal. Through an
+// App's transports, it is not waited out or sent again, and is still a limit
+// for as long as it names.
+func TestBranchTipRefusedWithALongRetryAfter(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "4321")
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Please wait a few minutes before you try again."}`))
+	}))
+	t.Cleanup(srv.Close)
+	rt := (&App{}).limit(http.DefaultTransport)
+	rt.(*rateLimitTransport).sleep = func(_ context.Context, d time.Duration) error {
+		t.Errorf("waited %s inline, want no wait", d)
+		return nil
+	}
+	api, err := newClient(rt, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != 2*time.Minute || requests.Load() != 1 {
+		t.Fatalf("BranchTip refused with a Retry-After of 120 = %v, retry after %v %t, in %d requests; want a rate limit of 2m0s in one",
+			err, wait, limited, requests.Load())
+	}
+}
+
+// TestBranchTipDoesNotWaitForTheBodyToEnd: the tip is read as soon as the
+// branch's JSON is whole, so an answer whose body stalls after it still
+// gives the tip rather than waiting out the request.
+func TestBranchTipDoesNotWaitForTheBodyToEnd(t *testing.T) {
+	f, c := newFakeAPI(t)
+	stalled := make(chan struct{})
+	t.Cleanup(func() { close(stalled) })
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"name":"main","commit":{"sha":"tip456"}}`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	})
+	// A hang guard: a read that waits for the body's end waits for it.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	tip, _, err := c.BranchTip(ctx, "o", "r", "main")
+	if err != nil || tip != "tip456" {
+		t.Fatalf("BranchTip of an answer whose body stalls after the branch = %q, %v; want tip456", tip, err)
+	}
+}
+
+// TestBranchTipBoundsTheWaitForAnErrorBody: an error's body is read for
+// errorBodyWait at most after its headers, through an App's transports,
+// whatever the caller's context. A primary rate limit whose reset is too far
+// to wait out inline, with a body that stalls, is still told apart by its
+// headers, and returned before the caller's context ends. A secondary limit
+// whose body comes whole is still told apart by its body. The test fires the
+// bound itself, so nothing waits for errorBodyWait to pass.
+func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
+	reset := time.Now().Add(time.Hour).Unix()
+	stalled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/secondary") {
+			w.Header().Set("X-RateLimit-Remaining", "4321")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit",` +
+				`"documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
+			return
+		}
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(stalled) })
+	armed := make(chan func(), 2)
+	rt := (&App{}).limit(http.DefaultTransport)
+	rt.(*rateLimitTransport).base.(*errorBodyTransport).after = func(d time.Duration, f func()) func() bool {
+		if d != errorBodyWait {
+			t.Errorf("error body bounded at %s, want %s", d, errorBodyWait)
+		}
+		armed <- f
+		return func() bool { return true }
+	}
+	api, err := newClient(rt, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
+
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != rateLimitMaxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, rateLimitMaxWait)
+	}
+	select {
+	case <-armed:
+	default:
+		t.Fatal("the secondary limit's body was read with no bound")
+	}
+
+	// A hang guard: a read with no bound of its own waits for this.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.BranchTip(ctx, "o", "r", "stalled")
+		done <- err
+	}()
+	select {
+	case fire := <-armed:
+		fire()
+		err = <-done
+	case err = <-done:
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("BranchTip of a stalled error body = %v, after the caller's context ended; want it bounded on its own", err)
+	}
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait <= rateLimitMaxWait {
+		t.Fatalf("BranchTip of a stalled error body = %v, retry after %v %t; want the primary limit until its reset", err, wait, limited)
+	}
+}
+
+// TestBranchTipBoundsTheWaitForAnAcceptedBody: go-github reads the body of a
+// 202 to build its AcceptedError, so a 202 whose body stalls is bounded as an
+// error's body is, and fails before the caller's context ends. The test fires
+// the bound itself, so nothing waits for errorBodyWait to pass.
+func TestBranchTipBoundsTheWaitForAnAcceptedBody(t *testing.T) {
+	stalled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"message":`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(stalled) })
+	armed := make(chan func(), 1)
+	rt := (&App{}).limit(http.DefaultTransport)
+	rt.(*rateLimitTransport).base.(*errorBodyTransport).after = func(_ time.Duration, f func()) func() bool {
+		armed <- f
+		return func() bool { return true }
+	}
+	api, err := newClient(rt, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
+
+	// A hang guard: a read with no bound of its own waits for this.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.BranchTip(ctx, "o", "r", "main")
+		done <- err
+	}()
+	select {
+	case fire := <-armed:
+		fire()
+		err = <-done
+	case err = <-done:
+	}
+	if ctx.Err() != nil || !errors.Is(err, errErrorBodyCut) {
+		t.Fatalf("BranchTip of a stalled 202 body = %v, context %v; want it cut off on its own bound", err, ctx.Err())
+	}
+}
+
+// TestBranchTipStaysOnTheAPIOrigin: a redirect within the API's origin is
+// followed, and one to another origin is refused before any request reaches
+// it, so nothing but GitHub answers for a branch.
+func TestBranchTipStaysOnTheAPIOrigin(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		elsewhere.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"main","commit":{"sha":"forged"}}`))
+	}))
+	t.Cleanup(other.Close)
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/branches/main", 200, `{"name":"main","commit":{"sha":"tip456"}}`)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/renamed", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/v3/repos/o/r/branches/main", http.StatusMovedPermanently)
+	})
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/moved", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/api/v3/repos/o/r/branches/main", http.StatusMovedPermanently)
+	})
+	if tip, _, err := c.BranchTip(t.Context(), "o", "r", "renamed"); err != nil || tip != "tip456" {
+		t.Fatalf("BranchTip redirected within the API = %q, %v; want tip456", tip, err)
+	}
+	if tip, _, err := c.BranchTip(t.Context(), "o", "r", "moved"); err == nil || elsewhere.Load() != 0 {
+		t.Fatalf("BranchTip redirected to another origin = %q, %v, with %d requests there; want an error and none", tip, err, elsewhere.Load())
 	}
 }
 

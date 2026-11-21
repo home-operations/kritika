@@ -70,6 +70,10 @@ func (r *reporter) context(ctx context.Context, pack runspec.ContextPack, phase 
 	return r.post(ctx, runspec.ReportContextPath, runspec.ContextReport{Pack: pack, Phase: phase}, nil)
 }
 
+func (r *reporter) similarExclude(ctx context.Context, paths []string) error {
+	return r.post(ctx, runspec.ReportSimilarExcludePath, runspec.SimilarExcludeReport{Paths: paths}, nil)
+}
+
 func (r *reporter) agent(ctx context.Context, rec runspec.AgentRecord, phase string) error {
 	return r.post(ctx, runspec.ReportAgentPath, runspec.AgentReport{Record: rec, Phase: phase}, nil)
 }
@@ -173,7 +177,7 @@ func (r *reporter) attempt(
 		return true, fmt.Errorf("runner: report %s: %w", path, err)
 	}
 	if resp.StatusCode >= http.StatusMultipleChoices {
-		return reportRetryable(resp.StatusCode), fmt.Errorf("runner: report %s: %s: %s", path, resp.Status, bytes.TrimSpace(answer))
+		return reportRetryable(resp.StatusCode, answer), fmt.Errorf("runner: report %s: %s: %s", path, resp.Status, bytes.TrimSpace(answer))
 	}
 	if out != nil {
 		if err := json.Unmarshal(answer, out); err != nil {
@@ -184,10 +188,13 @@ func (r *reporter) attempt(
 }
 
 // reportRetryable reports whether a report that the gateway answered with
-// status is worth sending again. It is, when the gateway's own trouble stopped
-// it, its body was cut short, or another upload of the run overtook it. A 404 is
-// a replica older than this run's image, which a rollout is about to replace.
-func reportRetryable(status int) bool {
+// status and answer is worth sending again. It is, when the gateway's own
+// trouble stopped it, its body was cut short, or another upload of the run
+// overtook it. A 404, or a 400 that names a field of the report as unknown,
+// is a replica older than this run's image, which a rollout is about to
+// replace: the older gateway decodes reports strictly, and has no route or
+// field that the run's build added.
+func reportRetryable(status int, answer []byte) bool {
 	return status >= http.StatusInternalServerError || status == http.StatusNotFound || status == http.StatusConflict ||
-		status == http.StatusRequestTimeout
+		status == http.StatusRequestTimeout || status == http.StatusBadRequest && bytes.Contains(answer, []byte("json: unknown field "))
 }

@@ -4,21 +4,32 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
+
+	gh "github.com/google/go-github/v93/github"
+	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 )
 
@@ -414,5 +425,163 @@ func TestForgeCachePullRequestAuthor(t *testing.T) {
 	login, bot, err := cache.PullRequestAuthor(t.Context(), gitlabConnection(t, ""), "acme/sub/widgets", 7)
 	if err != nil || login != "renovate" || !bot {
 		t.Fatalf("PullRequestAuthor = %q, %v, %v", login, bot, err)
+	}
+}
+
+// emptyBranchAnswer is what the Forgejo client returns for a branch whose
+// endpoint answers 200 and closes the answer with no body.
+func emptyBranchAnswer(t *testing.T) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+	}))
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("BranchTip of an empty answer = %v, want io.EOF", err)
+	}
+	return err
+}
+
+// gitHubBranchAnswer is what the GitHub client returns for a branch whose
+// endpoint answers as branch does.
+func gitHubBranchAnswer(t *testing.T, branch http.HandlerFunc) error {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v3/app/installations/42/access_tokens", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"token":"ghs_test","expires_at":"`+time.Now().Add(time.Hour).UTC().Format(time.RFC3339)+`"}`)
+	})
+	mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", branch)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	app, err := github.NewApp("Iv1.abc", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
+		srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := github.NewClient(app, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if err == nil {
+		t.Fatal("BranchTip succeeded")
+	}
+	return err
+}
+
+// plainBehindHTTPS is what a Forgejo client's branch lookup fails with when
+// its https URL reaches a plain HTTP listener.
+func plainBehindHTTPS(t *testing.T) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(strings.Replace(srv.URL, "http://", "https://", 1), "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if !errors.Is(err, http.ErrSchemeMismatch) {
+		t.Fatalf("BranchTip over https of a plain listener = %v, want http.ErrSchemeMismatch", err)
+	}
+	return err
+}
+
+// forgejoBranchAnswer is what a Gitea client's branch lookup fails with when
+// the instance answers it with handler.
+func forgejoBranchAnswer(t *testing.T, handler http.HandlerFunc) error {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if err == nil {
+		t.Fatal("BranchTip succeeded")
+	}
+	return err
+}
+
+// TestTransientForge: a forge that answers 5xx, 408 or 429, or does not
+// answer, may answer a later try, as may a lookup of its host that timed
+// out, and a forge that closed an answer with no body. A forge that refused
+// the request, a certificate that does not verify, a host that does not
+// resolve, an https URL that a plain HTTP listener answers, a redirect loop,
+// a missing file,
+// and GitHub's rate limit, which ForgeRateLimit waits out for as long as
+// the limit says, are not transient.
+func TestTransientForge(t *testing.T) {
+	answer := func(status int) error {
+		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
+	}
+	unanswered := func(err error) error {
+		return fmt.Errorf("forgejo: branch main of o/r: %w", &url.Error{Op: "Get", URL: "https://forgejo.example", Err: err})
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "bad gateway", err: answer(http.StatusBadGateway), want: true},
+		{name: "unavailable", err: fmt.Errorf("gitlab: branch main of o/r: %w", &gl.ErrorResponse{StatusCode: http.StatusServiceUnavailable}),
+			want: true},
+		{name: "request timeout", err: answer(http.StatusRequestTimeout), want: true},
+		{name: "too many requests", err: answer(http.StatusTooManyRequests), want: true},
+		{name: "connection refused", err: &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection refused")}, want: true},
+		{name: "cut short", err: fmt.Errorf("github: read: %w", io.ErrUnexpectedEOF), want: true},
+		{name: "empty answer", err: emptyBranchAnswer(t), want: true},
+		// go-github's Do decodes nothing from a 200 with no body and
+		// returns no error.
+		{name: "empty GitHub answer", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+		}), want: true},
+		{name: "GitHub redirect off its origin", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://elsewhere.example/repos/o/r/branches/main", http.StatusFound)
+		})},
+		{name: "GitHub redirect loop", err: gitHubBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+		})},
+		{name: "Forgejo redirect loop", err: forgejoBranchAnswer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+		})},
+		{name: "connection reset", err: unanswered(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}), want: true},
+		// An answer's body read after its headers fails with no *url.Error.
+		{name: "connection reset in the body", err: fmt.Errorf("forgejo: README.md of o/r at main: %w",
+			&net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)}), want: true},
+		{name: "dns timeout", err: unanswered(&net.DNSError{Err: "i/o timeout", Name: "forgejo.example", IsTimeout: true}), want: true},
+		{name: "dns server failure", err: unanswered(&net.DNSError{Err: "server misbehaving", Name: "forgejo.example", IsTemporary: true}),
+			want: true},
+		{name: "unknown host", err: unanswered(&net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "no such host", Name: "forgejo.example", IsNotFound: true}})},
+		{name: "unknown authority", err: unanswered(&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})},
+		{name: "wrong host", err: unanswered(&tls.CertificateVerificationError{Err: x509.HostnameError{Certificate: &x509.Certificate{}, Host: "forgejo.example"}})},
+		{name: "expired", err: unanswered(x509.CertificateInvalidError{Reason: x509.Expired})},
+		{name: "bare unknown authority", err: unanswered(x509.UnknownAuthorityError{})},
+		{name: "bare wrong host", err: unanswered(x509.HostnameError{Certificate: &x509.Certificate{}, Host: "forgejo.example"})},
+		{name: "plain http behind https", err: plainBehindHTTPS(t)},
+		{name: "not found", err: answer(http.StatusNotFound)},
+		{name: "forbidden", err: answer(http.StatusForbidden)},
+		{name: "no file", err: fmt.Errorf("github: .kritika.yaml: %w", fs.ErrNotExist)},
+		{name: "rate limit", err: &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Now().Add(time.Minute)}},
+			Response: &http.Response{StatusCode: http.StatusForbidden}}},
+		{name: "other", err: errors.New("worker: no connection serves account")},
+		{name: "none"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := transientForge(tc.err); got != tc.want {
+				t.Fatalf("transientForge(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

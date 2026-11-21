@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -104,7 +105,18 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"an embedder with a floor that is not a number", embeddingDoc("similarFloor: .nan"), "embedding.similarFloor must be between 0 and 1"},
 		{"a query prompt without a floor", embeddingDoc(`queryPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"a document prompt without a floor", embeddingDoc(`documentPrompt: "passage: "`), "need embedding.similarFloor set"},
+		{"a search prompt without a floor", embeddingDoc(`searchPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
+		{"a reranker without a provider", rerankDoc("{ model: rerank-v3.5, api: cohere }"), `embedding.rerank.model must be "<provider>/<model>"`},
+		{"a reranker of an undeclared provider", rerankDoc("{ model: other/rerank-v3.5, api: cohere }"), `references provider "other"`},
+		{"a reranker of an openrouter provider", rerankDoc("{ model: or/rerank-v3.5, api: cohere }"), "a reranker needs an openai one"},
+		{"a reranker without an endpoint", rerankDoc("{ model: bare/rerank-v3.5, api: cohere }"), `provider "bare", which sets no baseUrl`},
+		{"a reranker of no API", rerankDoc("{ model: rr/rerank-v3.5 }"), "embedding.rerank.api must be one of cohere, jina, voyage, tei"},
+		{"a reranker of another API", rerankDoc("{ model: rr/rerank-v3.5, api: openai }"), "embedding.rerank.api must be one of"},
+		{"too many rerank candidates", rerankDoc("{ model: rr/rerank-v3.5, api: cohere, candidates: 101 }"),
+			"embedding.rerank.candidates must be between 0 and 100"},
+		{"a rerank timeout too long", rerankDoc("{ model: rr/rerank-v3.5, api: cohere, timeout: 1m }"),
+			"embedding.rerank.timeout must be between 0 and 30s"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -123,6 +135,42 @@ func embeddingDoc(override string) string {
 	fields[key] = override
 	return "providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +
 		"embedding:\n  " + strings.Join(slices.Sorted(maps.Values(fields)), "\n  ") + "\n"
+}
+
+// rerankDoc is a file with an embedder and the reranker rerank, and three
+// providers: openrouter, an openai one with an endpoint, rr, and one
+// without, bare.
+func rerankDoc(rerank string) string {
+	return "providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +
+		"  rr: { type: openai, baseUrl: https://api.cohere.com/v2, apiKey: { env: TEST_KEY } }\n" +
+		"  bare: { type: openai, apiKey: { env: TEST_KEY } }\n" +
+		"embedding:\n  model: or/voyage-code-3\n  dims: 1024\n  rerank: " + rerank + "\n"
+}
+
+// TestParseRerank: the reranker takes its provider's endpoint and key, and
+// the defaults of what it leaves out. Lexical search is on unless turned
+// off.
+func TestParseRerank(t *testing.T) {
+	t.Setenv("TEST_KEY", "rk")
+	f, err := Parse([]byte(rerankDoc("{ model: rr/rerank-v3.5, api: cohere }")))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	r := f.Embedding.Rerank
+	if r.BaseURL != "https://api.cohere.com/v2" || r.Model != "rerank-v3.5" || r.APIKeyValue().Value() != "rk" ||
+		r.CandidateCount() != DefaultRerankCandidates || r.Deadline() != DefaultRerankTimeout {
+		t.Fatalf("rerank = %+v", r)
+	}
+	if !f.Embedding.LexicalSearch() {
+		t.Fatal("lexical search is off by default")
+	}
+	f, err = Parse([]byte(rerankDoc("{ model: rr/m, api: tei, candidates: 20, timeout: 5s }") + "  lexical: false\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if r := f.Embedding.Rerank; r.CandidateCount() != 20 || r.Deadline() != 5*time.Second || f.Embedding.LexicalSearch() {
+		t.Fatalf("embedding = %+v, rerank %+v", f.Embedding, r)
+	}
 }
 
 // TestParseEmbedding: the embedder takes its provider's endpoint, or the
@@ -155,13 +203,29 @@ func TestParseEmbedding(t *testing.T) {
 			t.Fatalf("Parse(similarMargin: %g) = %v, margin %v", margin, err, f)
 		}
 	}
-	if e.QueryPrompt != "" || e.DocumentPrompt != "" {
-		t.Fatalf("prompts = %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt)
+	if e.QueryPrompt != "" || e.DocumentPrompt != "" || e.SearchPrompt != "" {
+		t.Fatalf("prompts = %q, %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt, e.SearchPrompt)
 	}
 	f, err = Parse([]byte(strings.Replace(embeddingDoc("similarFloor: 0.3"), "embedding:\n",
 		"embedding:\n  queryPrompt: \"Instruct: find similar code\\nQuery:\"\n  documentPrompt: \"text: \"\n", 1)))
 	if err != nil || f.Embedding.QueryPrompt != "Instruct: find similar code\nQuery:" || f.Embedding.DocumentPrompt != "text: " {
 		t.Fatalf("prompts = %+v, %v; want them exactly as written", f.Embedding, err)
+	}
+	for _, tt := range []struct {
+		name, searchPrompt, diff, search string
+	}{
+		{name: "a search without a prompt of its own takes the query prompt", diff: "Instruct: find similar code\nQuery:",
+			search: "Instruct: find similar code\nQuery:"},
+		{name: "a search prompt of its own", searchPrompt: "Instruct: find the code described\nQuery:",
+			diff: "Instruct: find similar code\nQuery:", search: "Instruct: find the code described\nQuery:"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := *f.Embedding
+			e.SearchPrompt = tt.searchPrompt
+			if diff, search := e.PromptFor(false), e.PromptFor(true); diff != tt.diff || search != tt.search {
+				t.Fatalf("PromptFor = %q for a hunk, %q for a search; want %q, %q", diff, search, tt.diff, tt.search)
+			}
+		})
 	}
 	f, err = Parse([]byte("providers:\n  gw: { type: openai, baseUrl: https://gw.example/v1, apiKey: { env: TEST_KEY } }\n" +
 		"embedding: { model: gw/embed-large, dims: 8 }\n"))
@@ -183,5 +247,63 @@ func TestParseAccountProviders(t *testing.T) {
 	}
 	if p, ok := f.Provider(&f.Accounts[0], "own"); !ok || p.APIKeyValue().Value() != "sk-acme" {
 		t.Fatalf("Provider(acme, own) = %+v, %v", p, ok)
+	}
+}
+
+// TestRerankCandidates: a reranker of Text Embeddings Inference is sent no
+// more candidates than its default client batch takes, unless they are set.
+func TestRerankCandidates(t *testing.T) {
+	t.Setenv("TEST_KEY", "rk")
+	for _, tt := range []struct {
+		rerank string
+		want   int
+	}{
+		{"{ model: rr/m, api: tei }", 32},
+		{"{ model: rr/m, api: tei, candidates: 64 }", 64},
+		{"{ model: rr/m, api: cohere }", 50},
+	} {
+		t.Run(tt.rerank, func(t *testing.T) {
+			f, err := Parse([]byte(rerankDoc(tt.rerank)))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if got := f.Embedding.Rerank.CandidateCount(); got != tt.want {
+				t.Fatalf("CandidateCount = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseRerankBaseURL: a reranker's provider has an HTTP API root that
+// "/rerank" goes under, or the file is refused, without the URL in the error.
+// A query or a fragment would take the suffix out of the path.
+func TestParseRerankBaseURL(t *testing.T) {
+	t.Setenv("TEST_KEY", "rk")
+	for _, tt := range []struct {
+		name, url string
+		ok        bool
+	}{
+		{"a root", "https://api.cohere.com/v2", true},
+		{"a root with a slash", "http://tei.ai.svc:8080/", true},
+		{"a query", "https://api.cohere.com/v2?secret=s3cr3t", false},
+		{"an empty query", "https://api.cohere.com/v2?", false},
+		{"a fragment", "https://api.cohere.com/v2#s3cr3t", false},
+		{"an empty fragment", "https://api.cohere.com/v2#", false},
+		{"another scheme", "ftp://api.cohere.com/v2", false},
+		{"a port alone", "http://:8080/", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte("providers:\n  or: { type: openrouter, apiKey: { env: TEST_KEY } }\n" +
+				"  rr: { type: openai, baseUrl: \"" + tt.url + "\", apiKey: { env: TEST_KEY } }\n" +
+				"embedding:\n  model: or/voyage-code-3\n  dims: 1024\n  rerank: { model: rr/m, api: cohere }\n"))
+			switch {
+			case tt.ok && err != nil:
+				t.Fatalf("Parse = %v", err)
+			case !tt.ok && (err == nil || !strings.Contains(err.Error(), `embedding.rerank.model names provider "rr"`)):
+				t.Fatalf("Parse = %v, want the reranker's provider refused", err)
+			case !tt.ok && strings.Contains(err.Error(), "s3cr3t"):
+				t.Fatalf("Parse = %v, want the URL left out", err)
+			}
+		})
 	}
 }

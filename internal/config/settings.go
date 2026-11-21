@@ -110,11 +110,13 @@ type Settings struct {
 	// follow-up queues on one replica. Each job can hold a runner pod.
 	// A provider's concurrency bounds model calls separately.
 	ReviewWorkers int `env:"KRITIKA_REVIEW_WORKERS" envDefault:"2" yaml:"reviewWorkers,omitempty"`
-	// IndexWorkers is how many index jobs one worker replica runs at once.
-	// Indexing is rate-limited apart from reviews, so onboarding a large
-	// account cannot starve them. Each index job holds a runner pod too, so a
-	// replica runs at most 2*ReviewWorkers + IndexWorkers concurrent runner
-	// pods.
+	// IndexWorkers is how many index jobs one worker replica runs at once on
+	// each of its two index queues: one for first indexes and forced
+	// rebuilds, one for keeping indexed repositories current, so an
+	// onboarding wave cannot hold back updates. Index jobs are bounded apart
+	// from reviews too, so onboarding a large account cannot starve reviews.
+	// Each index job holds a runner pod, so a replica runs at most
+	// 2*ReviewWorkers + 2*IndexWorkers concurrent runner pods.
 	IndexWorkers int `env:"KRITIKA_INDEX_WORKERS" envDefault:"1" yaml:"indexWorkers,omitempty"`
 
 	// ThreadWorkers reserves capacity for finding resolution/restoration updates.

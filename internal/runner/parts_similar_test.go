@@ -15,7 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing"
+
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 )
 
@@ -35,8 +40,8 @@ func TestPartSimilarCode(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				if !slices.Equal(req.Exclude, []string{"changed.go"}) || r.Header.Get("Authorization") != "Bearer t" {
-					t.Errorf("request exclusions or token changed: %v", req.Exclude)
+				if req.Exclude != nil || r.Header.Get("Authorization") != "Bearer t" {
+					t.Errorf("request exclusions %v or token changed", req.Exclude)
 				}
 				mu.Lock()
 				running++
@@ -62,9 +67,9 @@ func TestPartSimilarCode(t *testing.T) {
 			s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(parallel)
 			diffs := make([]string, count)
 			for i := range diffs {
-				diffs[i] = sizedDiff(fmt.Sprintf("part%d.go", i), 80)
+				diffs[i] = fileDiff("", fmt.Sprintf("part%d.go", i), added(fmt.Sprintf("part%d.go", i)))
 			}
-			out, err := partSimilarCode(ctx, s, runspec.Secrets{GatewayToken: "t"}, diffs, []string{"changed.go"}, slog.New(slog.DiscardHandler))
+			out, err := partSimilarCode(ctx, s, runspec.Secrets{GatewayToken: "t"}, diffs, nil, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,6 +95,8 @@ func TestPartSimilarCodeOptionalFailure(t *testing.T) {
 			return
 		}
 		switch {
+		case len(req.Queries) == 0:
+			t.Error("a part with nothing to search for asked")
 		case strings.HasPrefix(req.Queries[0], "failed.go"):
 			http.Error(w, "unavailable", http.StatusBadGateway)
 		case strings.HasPrefix(req.Queries[0], "unindexed.go"):
@@ -101,9 +108,9 @@ func TestPartSimilarCodeOptionalFailure(t *testing.T) {
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
 	s.GatewayURL, s.Agent.Slots = gw.URL, defaultSlots(2)
-	diffs := []string{sizedDiff("failed.go", 80), sizedDiff("ok.go", 80), sizedDiff("unindexed.go", 80), ""}
+	diffs := []string{fileDiff("", "failed.go", added("failed.go")), fileDiff("", "ok.go", added("ok.go")), fileDiff("", "unindexed.go", added("unindexed.go")), ""}
 	out, err := partSimilarCode(t.Context(), s, runspec.Secrets{}, diffs, nil, slog.New(slog.DiscardHandler))
-	if err != nil || len(out) != len(diffs) || out[0].Indexed || !out[1].Indexed || out[2].Indexed || out[3].Indexed {
+	if err != nil || len(out) != len(diffs) || out[0].Indexed || !out[1].Indexed || out[2].Indexed || !out[3].Indexed {
 		t.Fatalf("optional retrieval = %+v, %v", out, err)
 	}
 }
@@ -153,4 +160,105 @@ func TestPartSimilarCodeCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("retrieval did not stop on cancellation")
 	}
+}
+
+// TestPartPromptsCheckSharedSimilarCodeAtTheHeadOnce: reviewers that review
+// the same files share one similar-code answer, which is checked at the head
+// once: the file of a hit under a declaration is read, and parsed, for both.
+func TestPartPromptsCheckSharedSimilarCodeAtTheHeadOnce(t *testing.T) {
+	const lib = "package lib\n\nfunc Z() {}\n"
+	head, reads, blobs := countedHead(t, map[string]string{"x.go": "package x\n", "z.go": lib})
+	gw := &fakeSimilarGateway{status: http.StatusNoContent, answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "z.go", Symbol: "Z", Kind: "function", StartLine: 3, EndLine: 3, Text: "func Z() {}"},
+	}}}
+	// The context stages read the head before the exclusions are reported,
+	// and the similar code is checked at it after.
+	gw.reported = func(int) {
+		reads.mu.Lock()
+		defer reads.mu.Unlock()
+		clear(reads.read)
+	}
+	s := reviewSpec()
+	s.GatewayURL, s.Agent.Slots = gw.serve(t).URL, defaultSlots(2)
+	paths := []string{"x.go"}
+	shares := []partShare{
+		{reviewer: &runspec.Reviewer{Name: review.DefaultReviewer}, scoped: paths, paths: paths, index: 1, count: 1, scope: review.ScopeFull},
+		{reviewer: &runspec.Reviewer{Name: "security"}, scoped: paths, paths: paths, index: 1, count: 1, scope: review.ScopeFull},
+	}
+	res := &gitfetch.Result{Diff: fileDiff("", "x.go", added("package x")), Changed: paths}
+	var tools agentTools
+	parts, _, _, err := partPrompts(t.Context(), s, runspec.Secrets{GatewayToken: "t", ReportToken: "report"}, head, head, res,
+		repoconfig.Files{}, nil, shares, &tools, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, part := range parts {
+		if !slices.ContainsFunc(part.prompt.context, func(c contextpack.Chunk) bool { return c.Path == "z.go" && c.Symbol == "Z" }) {
+			t.Fatalf("part %d's context %+v lacks the similar chunk", i+1, part.prompt.context)
+		}
+	}
+	if n := reads.reads(blobs["z.go"]); n != 1 {
+		t.Fatalf("the similar chunk's file was read %d times, want once for the reviewers that share its answer", n)
+	}
+}
+
+// TestSearchToolMatchesItsHitsWithoutTheHeadLock: search_code holds the
+// head lock only while it reads a hit's file. Another part can take it while
+// the hit's text is matched and its declarations parsed.
+func TestSearchToolMatchesItsHitsWithoutTheHeadLock(t *testing.T) {
+	head, reads, blobs := countedHead(t, map[string]string{"a.go": "package a\n\nfunc A() {}\n", "b.go": "package b\n"})
+	var armed atomic.Bool
+	reads.after = func(h plumbing.Hash) {
+		if h == blobs["a.go"] {
+			armed.Store(true)
+		}
+	}
+	matching, proceed := make(chan struct{}), make(chan struct{})
+	ctx := gatedContext{Context: t.Context(), gate: func() {
+		if armed.CompareAndSwap(true, false) {
+			matching <- struct{}{}
+			<-proceed
+		}
+	}}
+	gw := &fakeSimilarGateway{answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+		{Stage: contextpack.StageSimilar, Path: "a.go", Symbol: "A", Kind: "function", StartLine: 3, EndLine: 3, Text: "func A() {}"},
+		{Stage: contextpack.StageSimilar, Path: "b.go", StartLine: 1, EndLine: 1, Text: "package b"},
+	}}}
+	locks := newPartLocks()
+	tool := &searchTool{gatewayURL: gw.serve(t).URL, token: "t", head: head, headLock: locks.head, maxBytes: 1 << 10}
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := tool.Run(ctx, json.RawMessage(`{"query":"func"}`))
+		done <- result{out, err}
+	}()
+	<-matching
+	select {
+	case locks.head <- struct{}{}:
+		if _, err := head.File("b.go"); err != nil {
+			t.Error(err)
+		}
+		<-locks.head
+	default:
+		t.Error("search_code held the head lock while it matched a hit it had already read")
+	}
+	close(proceed)
+	got := <-done
+	if got.err != nil || !strings.HasPrefix(got.out, "a.go:3-3 (function A)") || !strings.Contains(got.out, "b.go:1-1") || len(locks.head) != 0 {
+		t.Fatalf("Run = %q, %v; head lock held %d", got.out, got.err, len(locks.head))
+	}
+}
+
+// gatedContext calls gate each time its Err is asked.
+type gatedContext struct {
+	context.Context
+	gate func()
+}
+
+func (c gatedContext) Err() error {
+	c.gate()
+	return c.Context.Err()
 }

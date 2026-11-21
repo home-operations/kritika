@@ -15,37 +15,44 @@ import (
 // (accounts, connections, models) or by fixed vocabularies (status, stage,
 // outcome). Nothing per PR or per commit is ever a label.
 type Metrics struct {
-	cache          cacheMetrics
-	webhooks       *prometheus.CounterVec
-	polls          *prometheus.CounterVec
-	polled         *prometheus.CounterVec
-	reviews        *prometheus.CounterVec
-	reviewDuration *prometheus.HistogramVec
-	reviewStage    *prometheus.HistogramVec
-	reviewSlotWait *prometheus.HistogramVec
-	followups      *prometheus.CounterVec
-	threads        *prometheus.CounterVec
-	findings       *prometheus.CounterVec
-	confidence     *prometheus.CounterVec
-	confidenceHeld *prometheus.CounterVec
-	indexRuns      *prometheus.CounterVec
-	indexChunks    *prometheus.CounterVec
-	contextChunks  *prometheus.CounterVec
-	runnerRuns     *prometheus.CounterVec
-	runnerDuration *prometheus.HistogramVec
-	leaseWait      *prometheus.HistogramVec
-	queueWait      *prometheus.HistogramVec
-	vectorSearch   *prometheus.HistogramVec
-	reviewSnoozes  *prometheus.CounterVec
-	jobsRescued    *prometheus.CounterVec
-	modelCalls     *prometheus.CounterVec
-	modelTokens    *prometheus.CounterVec
-	modelCost      *prometheus.CounterVec
-	modelUnpriced  *prometheus.CounterVec
-	egress         *prometheus.CounterVec
-	forgeLimits    *prometheus.CounterVec
-	transcripts    *prometheus.CounterVec
-	leader         prometheus.Gauge
+	cache           cacheMetrics
+	webhooks        *prometheus.CounterVec
+	polls           *prometheus.CounterVec
+	polled          *prometheus.CounterVec
+	reviews         *prometheus.CounterVec
+	reviewDuration  *prometheus.HistogramVec
+	reviewStage     *prometheus.HistogramVec
+	reviewSlotWait  *prometheus.HistogramVec
+	followups       *prometheus.CounterVec
+	threads         *prometheus.CounterVec
+	findings        *prometheus.CounterVec
+	confidence      *prometheus.CounterVec
+	confidenceHeld  *prometheus.CounterVec
+	indexRuns       *prometheus.CounterVec
+	indexChunks     *prometheus.CounterVec
+	indexVectors    *prometheus.CounterVec
+	indexTruncated  *prometheus.CounterVec
+	contextChunks   *prometheus.CounterVec
+	runnerRuns      *prometheus.CounterVec
+	runnerDuration  *prometheus.HistogramVec
+	leaseWait       *prometheus.HistogramVec
+	queueWait       *prometheus.HistogramVec
+	vectorSearch    *prometheus.HistogramVec
+	lexicalSearch   *prometheus.HistogramVec
+	similarRequests *prometheus.CounterVec
+	similarBest     *prometheus.HistogramVec
+	similarHits     *prometheus.CounterVec
+	reviewSnoozes   *prometheus.CounterVec
+	indexSnoozes    *prometheus.CounterVec
+	jobsRescued     *prometheus.CounterVec
+	modelCalls      *prometheus.CounterVec
+	modelTokens     *prometheus.CounterVec
+	modelCost       *prometheus.CounterVec
+	modelUnpriced   *prometheus.CounterVec
+	egress          *prometheus.CounterVec
+	forgeLimits     *prometheus.CounterVec
+	transcripts     *prometheus.CounterVec
+	leader          prometheus.Gauge
 }
 
 // Label names shared across series.
@@ -57,6 +64,7 @@ const (
 	lblConnection = "connection"
 	lblKind       = "kind"
 	lblQueue      = "queue"
+	lblReason     = "reason"
 )
 
 // New builds the collectors, each registered on reg as it is made.
@@ -129,7 +137,17 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
 		indexChunks: f.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritika_index_chunks_total", Help: "Chunks embedded into the index.",
+			Name: "kritika_index_chunks_total",
+			Help: "Chunks written into the index by completed and superseded index runs, whether their vectors were embedded or reused.",
+		}, []string{lblAccount}),
+		indexVectors: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_index_vectors_total",
+			Help: "Vectors of index chunks, by outcome: reused from a chunk of the same text already indexed or shared with one in the " +
+				"same batch, or embedded by an embedder call that answered for every text. A call that fails counts none.",
+		}, []string{lblAccount, lblOutcome}),
+		indexTruncated: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_index_truncated_total",
+			Help: "Full index builds published truncated: stopped at the indexer's budget, leaving out the files past it.",
 		}, []string{lblAccount}),
 		contextChunks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_context_chunks_total",
@@ -151,6 +169,27 @@ func New(reg prometheus.Registerer) *Metrics {
 			Help:    "Database vector-search transaction time per request, excluding embedding and model-slot waits.",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
 		}, []string{lblAccount, lblOutcome}),
+		lexicalSearch: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "kritika_lexical_search_seconds",
+			Help: "Search-by-name time per similar-code request, within its vector-search transaction. outcome is ok, error or " +
+				"canceled; an error leaves the request to the vector search alone.",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
+		}, []string{lblAccount, lblOutcome}),
+		similarRequests: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_similar_requests_total",
+			Help: "Similar-code requests, by query kind (diff, search, unknown) and outcome: ok, empty, no_queries, no_embedder, " +
+				"no_index, too_large, invalid, refused, error.",
+		}, []string{lblAccount, lblKind, lblOutcome}),
+		similarBest: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "kritika_similar_best_similarity",
+			Help:    "Best cosine similarity among the chunks found for each similar-code query that found any, by query kind (diff, search).",
+			Buckets: []float64{-1, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1},
+		}, []string{lblAccount, lblKind}),
+		similarHits: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_similar_hits_total",
+			Help: "Index chunks that similar-code searches found, by what became of them: kept, or dropped by floor, margin, " +
+				"lexical_floor, duplicate, file_cap or limit; and by the searches that found them: vector, lexical or both.",
+		}, []string{lblAccount, lblOutcome, "source"}),
 		leaseWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600},
@@ -158,6 +197,9 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviewSnoozes: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
 		}, []string{lblAccount, lblModel}),
+		indexSnoozes: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_index_snoozes_total", Help: "Index jobs put back on the queue to wait, by reason.",
+		}, []string{lblAccount, lblReason}),
 		jobsRescued: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_jobs_rescued_total", Help: "Jobs of a dead replica handed back to the queue by the leader, by kind and state.",
 		}, []string{lblKind, "state"}),
@@ -241,13 +283,37 @@ func (m *Metrics) ConfidenceHeld(account, what string) {
 	}
 }
 
-// IndexRun counts a finished index run and the chunks it embedded.
+// IndexRun counts a finished index run and the chunks it wrote into the
+// index, embedded or reused.
 func (m *Metrics) IndexRun(account, mode, status string, chunks int) {
 	if m != nil {
 		m.indexRuns.WithLabelValues(account, mode, status).Inc()
 		if chunks > 0 {
 			m.indexChunks.WithLabelValues(account).Add(float64(chunks))
 		}
+	}
+}
+
+// IndexVectors counts the vectors of a batch of index chunks: those reused
+// from chunks of the same text already indexed or shared by chunks of the
+// same text in the batch, and those embedded by a call that answered for
+// every text. A batch whose call fails is counted by none.
+func (m *Metrics) IndexVectors(account string, reused, embedded int) {
+	if m == nil {
+		return
+	}
+	if reused > 0 {
+		m.indexVectors.WithLabelValues(account, "reused").Add(float64(reused))
+	}
+	if embedded > 0 {
+		m.indexVectors.WithLabelValues(account, "embedded").Add(float64(embedded))
+	}
+}
+
+// IndexTruncated counts a full index build published truncated.
+func (m *Metrics) IndexTruncated(account string) {
+	if m != nil {
+		m.indexTruncated.WithLabelValues(account).Inc()
 	}
 }
 
@@ -281,6 +347,52 @@ func (m *Metrics) ReviewSnoozed(account, model string) {
 	if m != nil {
 		m.reviewSnoozes.WithLabelValues(account, model).Inc()
 	}
+}
+
+// IndexSnoozed counts an index job put back on the queue to wait for reason:
+// forge, a forge that failed transiently, or build, a pod on another
+// embedder or index format than the ones the leader applied.
+func (m *Metrics) IndexSnoozed(account, reason string) {
+	if m != nil {
+		m.indexSnoozes.WithLabelValues(account, reason).Inc()
+	}
+}
+
+// InitIndexSnoozes exposes zero counts of the account's index snoozes, of
+// each reason, before any job snoozes, so a first snooze following a scrape
+// is visible to rate/increase.
+func (m *Metrics) InitIndexSnoozes(account string) {
+	if m != nil {
+		for _, reason := range []string{"forge", "build"} {
+			m.indexSnoozes.WithLabelValues(account, reason)
+		}
+	}
+}
+
+// InitSimilarRequests exposes zero counts of the account's similar-code
+// requests, of each kind and outcome that the gateway counts, before any
+// request, so a first error following a scrape is visible to rate/increase.
+// A request too malformed to name its kind is unknown, and only too_large or
+// invalid.
+func (m *Metrics) InitSimilarRequests(account string) {
+	if m != nil {
+		for _, kind := range []string{"diff", "search"} {
+			for _, outcome := range []string{"ok", "empty", "no_queries", "no_embedder", "no_index", "invalid", "refused", outcomeError} {
+				m.similarRequests.WithLabelValues(account, kind, outcome)
+			}
+		}
+		for _, outcome := range []string{"too_large", "invalid"} {
+			m.similarRequests.WithLabelValues(account, "unknown", outcome)
+		}
+	}
+}
+
+// InitAccount exposes the account's zero series at startup: those of
+// InitVectorSearch, InitIndexSnoozes and InitSimilarRequests.
+func (m *Metrics) InitAccount(account string) {
+	m.InitVectorSearch(account)
+	m.InitIndexSnoozes(account)
+	m.InitSimilarRequests(account)
 }
 
 // JobRescued counts a job of a dead replica that the leader handed back to
@@ -369,12 +481,14 @@ func (m *Metrics) QueueWait(queue string, took time.Duration) {
 	}
 }
 
-// InitVectorSearch exposes zero counters before requests arrive so a first
-// error following a scrape is visible to rate/increase.
+// InitVectorSearch exposes zero counters of the vector search and the search
+// by name before requests arrive so a first error following a scrape is
+// visible to rate/increase.
 func (m *Metrics) InitVectorSearch(account string) {
 	if m != nil {
 		for _, outcome := range []string{"ok", outcomeError, outcomeCanceled} {
 			m.vectorSearch.WithLabelValues(account, outcome)
+			m.lexicalSearch.WithLabelValues(account, outcome)
 		}
 	}
 }
@@ -383,6 +497,36 @@ func (m *Metrics) InitVectorSearch(account string) {
 func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
 	if m != nil {
 		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
+	}
+}
+
+// LexicalSearch records the search by name. outcome is ok, error or canceled.
+func (m *Metrics) LexicalSearch(account, outcome string, took time.Duration) {
+	if m != nil {
+		m.lexicalSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
+	}
+}
+
+// SimilarRequest counts one similar-code request by its query kind and what
+// became of it.
+func (m *Metrics) SimilarRequest(account, kind, outcome string) {
+	if m != nil {
+		m.similarRequests.WithLabelValues(account, kind, outcome).Inc()
+	}
+}
+
+// SimilarBest observes the similarity of one query's best match.
+func (m *Metrics) SimilarBest(account, kind string, similarity float64) {
+	if m != nil {
+		m.similarBest.WithLabelValues(account, kind).Observe(similarity)
+	}
+}
+
+// SimilarHits counts n chunks that source, the searches that found them,
+// found and outcome kept or dropped.
+func (m *Metrics) SimilarHits(account, outcome, source string, n int) {
+	if m != nil && n > 0 {
+		m.similarHits.WithLabelValues(account, outcome, source).Add(float64(n))
 	}
 }
 
