@@ -851,9 +851,11 @@ chunk is kept when its similarity is at or above `similarFloor` and within
 query. A chunk that the search by name found is kept too when it holds at
 least half the lexical weight of its query's best match by name, whatever
 its similarity. Each query's kept chunks are ordered by reciprocal rank
-fusion: a chunk scores 1 / (60 + its rank) in the answer of each search
-that found it, so one that both find comes first. Of those, an answer
-takes four for each query, and the answer's other bounds hold as before.
+fusion: a chunk's score is the sum of 1 / (60 + its rank) in the answer of
+each search that found it. A chunk that both find gains over one that
+only one finds, but need not come before it: one ranked low by both can
+score below one ranked first by only one. Of those, an answer takes four
+for each query, and the answer's other bounds hold as before.
 A chunk that the similarity gate keeps shows its similarity, as in
 `(similarity 0.81)`, and a chunk that holds names of the query shows them,
 as in `(shares AcquireLease, Lease)`. One kept by its lexical weight alone
@@ -897,9 +899,10 @@ margin and the weight by name keep, each query's best `candidates` by the
 fused order are sent to the reranker, and its scores order them in place
 of the fusion's. Its others follow them in the fused order, and a query
 that the reranker does not answer keeps the fused order of all of its
-candidates, so a duplicate or the file cap leaves it the same chunks to
-fall back on as without a reranker. The answer then takes each query's
-best four as before.
+candidates, which a duplicate or the file cap leaves it to fall back on.
+With `candidates` above eight, those come from the deeper searches, so
+they need not be the chunks that the query would have without `rerank`.
+The answer then takes each query's best four as before.
 
 | Key          | Default          | What                                                                                                                                                    |
 | ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
