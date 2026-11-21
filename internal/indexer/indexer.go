@@ -12,6 +12,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -130,20 +131,36 @@ func Unindexed(path string) bool { return chunk.Matches(unindexed, path) }
 
 // Indexable is HunkQueries' indexable for a diff whose files head has: it
 // refuses each of paths whose blob at head is over
-// DefaultOptions.MaxFileBytes, which Build skips. It reads only the blobs'
-// sizes, and only here, so the predicate reads no git objects. A nil head
-// refuses none.
+// DefaultOptions.MaxFileBytes, which Build skips. It reads a blob's size the
+// first time it is asked about its path, and only then: HunkQueries asks at
+// a file's first turn, so a file that takes none costs no read, which in a
+// pack can mean rebuilding the blob from its deltas. The reads hold a lock,
+// so the predicate can be shared by HunkQueries calls that run at once, and
+// they never overlap. A nil head refuses none, and nor does a path outside
+// paths.
 func Indexable(head *object.Tree, paths []string) func(path string) bool {
-	over := map[string]bool{}
+	const unread, fits, over = 0, 1, 2
+	var mu sync.Mutex
+	state := make(map[string]int, len(paths))
 	for _, p := range paths {
-		if head == nil {
-			break
-		}
-		if f, err := head.File(p); err == nil && f.Size > int64(DefaultOptions.MaxFileBytes) {
-			over[p] = true
-		}
+		state[p] = unread
 	}
-	return func(path string) bool { return !over[path] }
+	return func(path string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		s, ok := state[path]
+		if head == nil || !ok {
+			return true
+		}
+		if s == unread {
+			s = fits
+			if size, err := head.Size(path); err == nil && size > int64(DefaultOptions.MaxFileBytes) {
+				s = over
+			}
+			state[path] = s
+		}
+		return s == fits
+	}
 }
 
 func (b *builder) ignored(path string) bool {

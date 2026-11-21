@@ -379,7 +379,8 @@ func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Sec
 // similarCodeFor is the code elsewhere in the repository that resembles
 // diff's hunks, best effort: false when the request failed. It is asked once
 // excludeFromSimilar has found an index, so a diff with nothing to search for
-// asks nothing. indexable is HunkQueries', which reads no git objects.
+// asks nothing. indexable is HunkQueries', such as indexer.Indexable, which
+// reads the sizes of the blobs that take a turn.
 func similarCodeFor(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diff string, indexable func(string) bool, logger *slog.Logger,
 ) (contextpack.SimilarResponse, bool) {

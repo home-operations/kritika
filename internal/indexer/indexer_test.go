@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -10,11 +11,15 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
@@ -410,5 +415,104 @@ func TestChunkText(t *testing.T) {
 				t.Errorf("ChunkText(%q, 4) = %q, want %q", tt.text, got, tt.want)
 			}
 		})
+	}
+}
+
+// sizeReads is a storer that records the objects whose content or size is
+// read.
+type sizeReads struct {
+	storer.EncodedObjectStorer
+	read map[plumbing.Hash]bool
+}
+
+func (s *sizeReads) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	s.read[h] = true
+	return s.EncodedObjectStorer.EncodedObject(t, h)
+}
+
+func (s *sizeReads) EncodedObjectSize(h plumbing.Hash) (int64, error) {
+	s.read[h] = true
+	return s.EncodedObjectStorer.EncodedObjectSize(h)
+}
+
+// TestIndexableReadsOnlyTheFilesThatTakeATurn: a file that HunkQueries
+// leaves out before the ranking, being ignored, Unindexed, of no language
+// or adding nothing, has its size read by nobody, and nor does one ranked
+// below the files that fill the request.
+func TestIndexableReadsOnlyTheFilesThatTakeATurn(t *testing.T) {
+	fs := memfs.New()
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
+	wt, _ := r.Worktree()
+	var diff strings.Builder
+	var paths, used []string
+	write := func(path string) {
+		f, _ := fs.Create(path)
+		_, _ = f.Write([]byte("// " + path + "\n"))
+		_ = f.Close()
+		_, _ = wt.Add(path)
+		paths = append(paths, path)
+	}
+	for _, p := range []string{"vendor/lib.go", "api_pb2.py", "notes.unknownext", "removed.go"} {
+		write(p)
+	}
+	diff.WriteString(fileDiff("", "vendor/lib.go", added("func lib() {}")))
+	diff.WriteString(fileDiff("", "api_pb2.py", added("def api(): pass")))
+	diff.WriteString(fileDiff("", "notes.unknownext", added("notes")))
+	diff.WriteString(fileDiff("removed.go", "removed.go", "@@ -1,1 +0,0 @@\n-func gone() {}\n"))
+	for i := range contextpack.SimilarQueries + 2 {
+		p := fmt.Sprintf("f%02d.go", i)
+		write(p)
+		lines := make([]string, 0, contextpack.SimilarQueries+2-i)
+		for j := range cap(lines) {
+			lines = append(lines, fmt.Sprintf("var v%d_%d = %d", i, j, j))
+		}
+		diff.WriteString(fileDiff("", p, added(lines...)))
+		if i < contextpack.SimilarQueries {
+			used = append(used, p)
+		}
+	}
+	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.CommitObject(hash)
+	plain, _ := c.Tree()
+	reads := &sizeReads{EncodedObjectStorer: r.Storer, read: map[plumbing.Hash]bool{}}
+	head, err := object.GetTree(reads, plain.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, got := HunkQueries(diff.String(), []string{"vendor/**"}, Indexable(head, paths))
+	if !slices.Equal(got, used) {
+		t.Fatalf("HunkQueries asked about %q, want %q", got, used)
+	}
+	for _, p := range paths {
+		e, err := plain.FindEntry(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if read := reads.read[e.Hash]; read != slices.Contains(used, p) {
+			t.Errorf("%s: read %t, want %t", p, read, !read)
+		}
+	}
+}
+
+// TestIndexableIsSharedSafely: split reviews share one predicate between
+// HunkQueries calls that run at once, and each gets the same answer.
+func TestIndexableIsSharedSafely(t *testing.T) {
+	head := oneFileTree(t, "big.go", strings.Repeat("x", DefaultOptions.MaxFileBytes+1))
+	indexable := Indexable(head, []string{"big.go", "gone.go"})
+	var g errgroup.Group
+	for range 8 {
+		g.Go(func() error {
+			if indexable("big.go") || !indexable("gone.go") {
+				return errors.New("Indexable refused gone.go or took big.go")
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		t.Fatal(err)
 	}
 }

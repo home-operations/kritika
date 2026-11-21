@@ -20,13 +20,15 @@ const queryContext = 3
 // and a little context, and the path of each. It leaves out the files that
 // the index holds no chunk of, ignored, Unindexed, of no language or, when
 // indexable is set, refused by it, as Indexable refuses one too large to
-// index, and the hunks that add nothing, whose text is only context. Those
-// files go before the ranking, so that they take no turn. The files take
-// turns, the most changed first, so a query of each of the most changed
-// files comes before a second of any. A region over the gateway's bound is
-// asked about by the declarations its changes are in, as the index cuts a
-// file, or else in windows of its lines, rather than by its start, which in
-// a new file is its license and imports.
+// index, and the hunks that add nothing, whose text is only context. The
+// files take turns, the most changed first, so a query of each of the most
+// changed files comes before a second of any. indexable is asked about a
+// file at its first turn, after the other tests and only if the request has
+// room, so a file that takes no turn costs it no read, and a file it refuses
+// gives up that turn. A region over the gateway's bound is asked about by
+// the declarations its changes are in, as the index cuts a file, or else in
+// windows of its lines, rather than by its start, which in a new file is its
+// license and imports.
 //
 // A query is the code alone. The index leads each chunk with its path, so a
 // query led by its own path scores the files beside it higher for their
@@ -35,7 +37,7 @@ const queryContext = 3
 func HunkQueries(diff string, ignore []string, indexable func(path string) bool) (queries, paths []string) {
 	var files []*queryFile
 	for _, f := range udiff.Parse(diff) {
-		if f.NewPath == "" || chunk.Matches(ignore, f.NewPath) || Unindexed(f.NewPath) || indexable != nil && !indexable(f.NewPath) {
+		if f.NewPath == "" || chunk.Matches(ignore, f.NewPath) || Unindexed(f.NewPath) {
 			continue
 		}
 		if lang, _ := chunk.Language(f.NewPath); lang == "" {
@@ -60,6 +62,12 @@ func HunkQueries(diff string, ignore []string, indexable func(path string) bool)
 			if len(queries) == contextpack.SimilarQueries {
 				break
 			}
+			if !f.turned {
+				f.turned = true
+				if indexable != nil && !indexable(f.path) {
+					continue
+				}
+			}
 			if q, ok := f.next(&parser); ok {
 				queries, paths = append(queries, q), append(paths, f.path)
 				left = append(left, f)
@@ -73,8 +81,10 @@ func HunkQueries(diff string, ignore []string, indexable func(path string) bool)
 // queryFile is one file's regions still to ask about, and the queries left
 // of the region in hand.
 type queryFile struct {
-	path    string
-	added   int
+	path  string
+	added int
+	// turned is whether the file has had a turn.
+	turned  bool
 	regions [][]udiff.Line
 	pending []string
 }

@@ -159,8 +159,8 @@ func partPrompts(
 }
 
 // partSimilarCode overlaps remote retrieval within the review's granted
-// parallelism. It reads no git objects. Those belong to the serial context
-// pass, which also gives indexable.
+// parallelism. Its only git reads are indexable's, which hold one lock, so
+// they never overlap one another, and nothing else reads head meanwhile.
 func partSimilarCode(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs []string, indexable func(string) bool, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
