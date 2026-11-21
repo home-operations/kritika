@@ -83,6 +83,15 @@ func RetryAfterHeader(err error) string {
 	return ""
 }
 
+// RetryAfter is how long to wait before asking the instance again after err,
+// when err is its 429 whose Retry-After names a wait.
+func RetryAfter(err error, now time.Time) (time.Duration, bool) {
+	if Status(err) != http.StatusTooManyRequests {
+		return 0, false
+	}
+	return forge.RetryAfter(RetryAfterHeader(err), now)
+}
+
 // Client is one authorized integration's access to a Forgejo instance,
 // or one bot user's to a Gitea instance.
 type Client struct {

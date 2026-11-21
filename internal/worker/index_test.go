@@ -25,6 +25,7 @@ import (
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -289,6 +290,51 @@ func TestWaitOutGitLabRateLimit(t *testing.T) {
 				"kritika_index_snoozes_total{account=\"acme\",reason=\"forge\"} 1\n"
 			if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_index_snoozes_total"); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// giteaRateLimited is the error of a Gitea client's BranchTip that the
+// instance refused with a 429 naming retryAfter.
+func giteaRateLimited(t *testing.T, retryAfter string) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", retryAfter)
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(srv.URL, "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "acme", "widgets", "main")
+	if forgejo.Status(err) != http.StatusTooManyRequests {
+		t.Fatalf("BranchTip = %v, want a 429", err)
+	}
+	return err
+}
+
+// TestIndexWaitsOutForgejoRateLimit: an index job that Forgejo or Gitea
+// refuses with a 429 whose Retry-After, in seconds or as a date, names a
+// wait two hours away snoozes until then, past the longest forge wait, and
+// spends no forge wait, as a GitLab one does. Its check of the branch tip
+// after publication asks again then too, not at tipCheckWait.
+func TestIndexWaitsOutForgejoRateLimit(t *testing.T) {
+	for _, retryAfter := range []string{"7200", time.Now().Add(2 * time.Hour).UTC().Format(http.TimeFormat)} {
+		t.Run(retryAfter, func(t *testing.T) {
+			limited := giteaRateLimited(t, retryAfter)
+			if d := tipCheckDelay(limited); d <= time.Hour || d > 2*time.Hour {
+				t.Fatalf("tipCheckDelay = %s, want the two hours that Retry-After names", d)
+			}
+			for _, metadata := range []string{`{}`, fmt.Sprintf(`{"forge_waits": %d}`, forgeWaits)} {
+				w := &Index{Metrics: metrics.New(prometheus.NewRegistry())}
+				job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(metadata)}}
+				err := w.waitOutForge(t.Context(), job, "acme", slog.New(slog.DiscardHandler), limited)
+				snooze, ok := errors.AsType[*river.JobSnoozeError](err)
+				if !ok || snooze.Duration <= forgeWaitMax || snooze.Duration > 2*time.Hour {
+					t.Fatalf("waitOutForge with %s = %v, want a snooze until Retry-After two hours away", metadata, err)
+				}
 			}
 		})
 	}

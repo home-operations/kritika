@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -197,7 +198,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// index again at once, as a snooze that is not an attempt. A tip that the
 	// forge did not give is asked for again the same way. The index is
 	// published, so the job must not fail over it and lose the push, nor
-	// spend an attempt on it. A rate limit, GitHub's or GitLab's, that names
+	// spend an attempt on it. A rate limit of any forge that names
 	// a later time to ask again is asked again then, not within its limit.
 	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
 	if err != nil {
@@ -327,17 +328,27 @@ const (
 
 // tipCheckDelay is how long an index job waits to ask for the branch tip
 // again after the forge did not give it, with err: tipCheckWait, or until
-// the later time that GitHub's rate limit or GitLab's 429 names. The snooze
-// replaces err, so ForgeRateLimit never sees GitHub's limit here.
+// the later time that GitHub's rate limit or another forge's 429 names
+// (forgeRetryAfter). The snooze replaces err, so ForgeRateLimit never sees
+// GitHub's limit here.
 func tipCheckDelay(err error) time.Duration {
 	now := time.Now()
 	if d, limited := github.RetryAfter(err, now); limited {
 		return max(tipCheckWait, d)
 	}
-	if d, limited := gitlab.RetryAfter(err, now); limited {
+	if d, limited := forgeRetryAfter(err, now); limited {
 		return max(tipCheckWait, d)
 	}
 	return tipCheckWait
+}
+
+// forgeRetryAfter is how long to wait before asking again after err, when
+// err is a 429 of GitLab, Forgejo or Gitea that names when to ask again.
+func forgeRetryAfter(err error, now time.Time) (time.Duration, bool) {
+	if d, limited := gitlab.RetryAfter(err, now); limited {
+		return d, true
+	}
+	return forgejo.RetryAfter(err, now)
 }
 
 // An index job waits out a forge that failed transiently before its run
@@ -387,15 +398,16 @@ func clearForgeWaits(ctx context.Context, metadata []byte, logger *slog.Logger) 
 }
 
 // waitOutForge snoozes the job, as its error, when forgeWait says that it
-// waits out err. Otherwise it returns err. GitLab's 429 that names when to
-// ask again snoozes the job until then instead, which can be past any
-// forge wait, and spends none: ForgeRateLimit does the same for GitHub's.
+// waits out err. Otherwise it returns err. A 429 of GitLab, Forgejo or Gitea
+// that names when to ask again snoozes the job until then instead, which can
+// be past any forge wait, and spends none: ForgeRateLimit does the same for
+// GitHub's.
 func (w *Index) waitOutForge(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger, err error) error {
 	if ctx.Err() != nil {
 		return err
 	}
-	if d, limited := gitlab.RetryAfter(err, time.Now()); limited {
-		logger.Warn("index waits out GitLab's rate limit", "for", d.Round(time.Second), "error", err)
+	if d, limited := forgeRetryAfter(err, time.Now()); limited {
+		logger.Warn("index waits out the forge's rate limit", "for", d.Round(time.Second), "error", err)
 		w.Metrics.IndexSnoozed(account, "forge")
 		return river.JobSnooze(d)
 	}

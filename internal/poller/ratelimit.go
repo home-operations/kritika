@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"strconv"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
@@ -39,25 +39,10 @@ func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil {
 		v = e.Response.Header.Get("Retry-After")
 	}
-	if wait, ok := retryAfter(v, now); ok {
+	if wait, ok := forge.RetryAfter(v, now); ok {
 		return wait, true
 	}
 	return forgeRateLimitWait, true
-}
-
-// retryAfter is the wait that a Retry-After header of v names, in seconds or
-// as a date, and at least a second.
-func retryAfter(v string, now time.Time) (time.Duration, bool) {
-	if v == "" {
-		return 0, false
-	}
-	if s, err := strconv.ParseInt(v, 10, 32); err == nil && s >= 0 {
-		return max(time.Duration(s)*time.Second, time.Second), true
-	}
-	if t, err := http.ParseTime(v); err == nil {
-		return max(t.Sub(now), time.Second), true
-	}
-	return 0, false
 }
 
 // forgeStatus is the HTTP status of the forge's answer that err carries, 0
