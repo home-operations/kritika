@@ -36,6 +36,8 @@ const (
 	// ReportPartsPath takes a POST of a PartsReport and answers with a
 	// PartSlots.
 	ReportPartsPath = ReportPrefix + "parts-remaining"
+	// ReportSimilarExcludePath takes a POST of a SimilarExcludeReport.
+	ReportSimilarExcludePath = ReportPrefix + "similar-exclude"
 )
 
 // ReportCheckpointInput names a part input hash on ReportCheckpointsPath.
@@ -100,6 +102,15 @@ type ContextPack struct {
 	RuleIDs      []string        `json:"ruleIds"`
 }
 
+// SimilarExcludeReport is what the run's similar-code searches leave out:
+// the paths the change touches, by both names of a rename. The prompt shows
+// them as they are at the head, and the index holds them as the default
+// branch has them. A run reports them once, before it first searches, so a
+// search does not carry them however many files the change touches.
+type SimilarExcludeReport struct {
+	Paths []string `json:"paths"`
+}
+
 // AgentReport commits an agent's result, its retained conversation and the
 // run's next phase together.
 type AgentReport struct {
@@ -148,20 +159,26 @@ type IndexReport struct {
 
 // IndexPack is what an index runner wrote: the mode it built in, which
 // can be full where an incremental step was asked for, and the paths that
-// changed since the base.
+// changed since the base. Truncated says that a full build stopped at the
+// indexer's budget and left out the files past it. It is omitted when
+// false, so a gateway of a build before it takes the pack.
 type IndexPack struct {
 	Mode         string   `json:"mode"`
 	Base         string   `json:"base"`
 	ChangedPaths []string `json:"changedPaths"`
+	Truncated    bool     `json:"truncated,omitempty"`
 }
 
 // IndexChunk is one chunk that an index runner staged, before embedding.
+// Signature is omitted when empty, as it is for every chunk but a window of
+// a declaration, so a gateway of a build before it takes the other chunks.
 type IndexChunk struct {
 	Path      string `json:"path"`
 	Language  string `json:"language"`
 	Symbol    string `json:"symbol"`
 	Kind      string `json:"kind"`
 	Scope     string `json:"scope"`
+	Signature string `json:"signature,omitempty"`
 	Text      string `json:"text"`
 	StartLine int    `json:"startLine"`
 	EndLine   int    `json:"endLine"`

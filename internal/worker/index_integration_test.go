@@ -4,7 +4,9 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
@@ -345,5 +348,186 @@ func checkRunStatus(ctx context.Context, t *testing.T, st *store.Store, account,
 	}
 	if status != string(want) {
 		t.Fatalf("run %s status = %s, want %s", run, status, want)
+	}
+}
+
+// checkIndexWaitsOutForge runs an update to newer while fail makes one of the
+// forge's calls go unanswered: the job is snoozed, its wait counted and no
+// attempt spent. Once the forge answers, the job runs, publishes and
+// completes on its first attempt. The publication clears the count, so a job
+// that indexes again after it has every wait again. The index is left at
+// head again.
+func checkIndexWaitsOutForge(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, fail func(error),
+	account, repository, head, newer string,
+) {
+	t.Helper()
+	lf.setTip(newer)
+	t.Cleanup(func() {
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	fail(&url.Error{Op: "Get", URL: "https://api.github.com/repos/onedr0p/home-ops", Err: errors.New("connection reset by peer")})
+	t.Cleanup(func() { fail(nil) })
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = queue.JobCancel(context.Background(), job.Job.ID) })
+	waitFor(t, 20*time.Second, "the index job to wait out the forge", func() bool {
+		var state string
+		var attempt, waits int
+		if err := st.App().QueryRow(ctx, `SELECT state, attempt, coalesce((metadata->>'forge_waits')::int, 0) FROM river_job WHERE id = $1`,
+			job.Job.ID).Scan(&state, &attempt, &waits); err != nil {
+			t.Fatal(err)
+		}
+		if state == "retryable" || state == "discarded" {
+			t.Fatalf("index job %s after attempt %d, want it snoozed", state, attempt)
+		}
+		return state == "scheduled" && attempt == 0 && waits == 1
+	})
+	fail(nil)
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET scheduled_at = now() WHERE id = $1`, job.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if attempt, snoozes := indexJobDone(ctx, t, st, job.Job.ID); attempt != 1 || snoozes != 1 {
+		t.Fatalf("index job attempt=%d snoozes=%d, want 1 and 1", attempt, snoozes)
+	}
+	var waits int
+	if err := st.App().QueryRow(ctx, `SELECT coalesce((metadata->>'forge_waits')::int, 0) FROM river_job WHERE id = $1`,
+		job.Job.ID).Scan(&waits); err != nil {
+		t.Fatal(err)
+	}
+	if waits != 0 {
+		t.Fatalf("forge waits = %d after publication, want 0", waits)
+	}
+	var indexed string
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT g.commit_sha FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.id = $1`, repository).Scan(&indexed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if indexed != newer {
+		t.Fatalf("index at %s after the wait, want %s", indexed, newer)
+	}
+}
+
+// TestIndexJobIsUniqueAcrossQueues: updates and first builds run on queues of
+// their own, but a repository has one live index job between them. A push
+// while its onboarding job is queued or running folds into that job, which
+// indexes the tip it finds, and an onboarding offer folds into a live update.
+// A forced rebuild and a rebuild's catch-up are keyed apart, so each queues
+// beside an update, and a job that finished holds nothing back.
+func TestIndexJobIsUniqueAcrossQueues(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	var lastJob int64
+	if err := st.App().QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM river_job`).Scan(&lastJob); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id > $1`, lastJob) })
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const account = "00000000-0000-0000-0000-0000000000aa"
+	push := jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerPush, CommitSHA: "pushed"}
+	onboard := jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerOnboard}
+	for i, tc := range []struct {
+		name string
+		live jobs.IndexArgs
+		// state is the first job's state when the second is queued.
+		state string
+		next  jobs.IndexArgs
+		// wantQueue is the queue the second job goes to, empty when it folds
+		// into the first.
+		wantQueue string
+	}{
+		{name: "push onto a queued onboarding", live: onboard, state: "available", next: push},
+		{name: "push onto a running onboarding", live: onboard, state: "running", next: push},
+		{name: "push onto a scheduled onboarding", live: onboard, state: "scheduled", next: push},
+		{name: "onboarding onto a queued update", live: push, state: "available", next: onboard},
+		{name: "push onto a finished onboarding", live: onboard, state: "completed", next: push, wantQueue: jobs.QueueIndexUpdate},
+		{name: "forced rebuild beside an update", live: push, state: "running",
+			next: jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerReindex, Full: true}, wantQueue: jobs.QueueIndex},
+		{name: "catch-up beside an update", live: push, state: "running",
+			next: jobs.IndexArgs{AccountID: account, Trigger: jobs.TriggerPush, CatchUp: "run"}, wantQueue: jobs.QueueIndexUpdate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repository := fmt.Sprintf("00000000-0000-0000-0000-%012d", 900+i)
+			tc.live.RepositoryID, tc.next.RepositoryID = repository, repository
+			first, err := queue.Insert(ctx, tc.live, nil)
+			if err != nil || first.UniqueSkippedAsDuplicate {
+				t.Fatalf("first Insert = %+v, %v", first, err)
+			}
+			if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = $2::text::river_job_state,
+				finalized_at = CASE WHEN $2::text = 'completed' THEN now() END WHERE id = $1`, first.Job.ID, tc.state); err != nil {
+				t.Fatal(err)
+			}
+			second, err := queue.Insert(ctx, tc.next, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if folded := tc.wantQueue == ""; second.UniqueSkippedAsDuplicate != folded {
+				t.Fatalf("second job folded = %v, want %v", second.UniqueSkippedAsDuplicate, folded)
+			}
+			if tc.wantQueue != "" && second.Job.Queue != tc.wantQueue {
+				t.Fatalf("second job on %s, want %s", second.Job.Queue, tc.wantQueue)
+			}
+		})
+	}
+}
+
+// checkForcedRebuildEmbedsAgain spoils the vectors of the active generation,
+// as a model replaced behind an unchanged endpoint leaves them, and forces a
+// rebuild at the same commit. The rebuild sends the embedder every chunk
+// again, rather than copy the vectors that the generation holds for the
+// same text, and publishes none of the spoiled ones.
+func checkForcedRebuildEmbedsAgain(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, account, repository string,
+) {
+	t.Helper()
+	const spoiled = "[9,9,9,9,9,9,9,9]"
+	active := activeIndexGeneration(ctx, t, st, account, repository)
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE index_chunks SET embedding = $2::halfvec WHERE index_run_id = $1`, active, spoiled)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fe.mu.Lock()
+	before := fe.calls
+	fe.mu.Unlock()
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexJobDone(ctx, t, st, job.Job.ID)
+	rebuilt := activeIndexGeneration(ctx, t, st, account, repository)
+	if rebuilt == active {
+		t.Fatalf("the forced rebuild left generation %s active", active)
+	}
+	indexCatchUpDone(ctx, t, st, rebuilt)
+	fe.mu.Lock()
+	embedded := fe.calls - before
+	fe.mu.Unlock()
+	var chunks, kept int
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE embedding = $2::halfvec) FROM index_chunks WHERE index_run_id = $1`,
+			rebuilt, spoiled).Scan(&chunks, &kept)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if chunks == 0 || kept != 0 || embedded == 0 {
+		t.Fatalf("forced rebuild: %d chunks, %d with the spoiled vector, %d embedder calls; want chunks, none spoiled, and calls",
+			chunks, kept, embedded)
 	}
 }

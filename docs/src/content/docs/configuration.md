@@ -409,14 +409,20 @@ with a few keys beside them:
 context, the index, and the agent's searches and checkout. These add to
 kritika's own: vendored trees, lockfiles, generated and minified code,
 source maps and logs. A pull request that changes nothing else is skipped.
+The index also leaves out files that SOPS encrypted (`*.sops.*`) and
+generated protobuf and Dart code, which a review still reads.
 The agent can still read an ignored path with `read_file`, or its diff
 with `read_diff`. `ignore` is not an access restriction.
 
 Changing the effective ignore rules triggers a full rebuild on the next
-index run. The rebuild includes files whose contents did not change.
+index run. The rebuild chunks every file again, but it sends the embedder
+only the chunks whose text the repository's index does not already hold,
+by the content hash that each chunk stores. A chunk indexed before kritika
+stored that hash is embedded again (see
+[the embedder](/models/#the-embedder)).
 Editing instance configuration does not queue index jobs by itself. To
 apply new ignore rules immediately, reindex an idle repository from the
-dashboard.
+dashboard. That reindex sends the embedder every chunk again.
 
 ```yaml
 review:
@@ -831,7 +837,9 @@ choice. A repository that is off, that its connection no longer reaches,
 or whose account no connection serves is neither reviewed, polled nor
 indexed. Its index is dropped after it is off for `KRITIKA_INDEX_GRACE`,
 counted from the leader's hourly sweep that first finds it off. A
-repository that runs again before then keeps its index.
+repository that runs again before then keeps its index. For this, a
+repository whose default branch's `.kritika.yaml` sets `enabled: false` is
+off from the index job that finds it so until one finds it on again.
 
 ## `accounts`
 
@@ -914,7 +922,7 @@ environment variables remain supported.
 | `diffRetention`                | `KRITIKA_DIFF_RETENTION`                    | how long a review keeps the diff that it was made from, the context that it read and the repository files that it named. At least 24h. 720h unless set                                                                                                                                                                                            |
 | `reviewWorkers`                | `KRITIKA_REVIEW_WORKERS`                    | jobs that one replica runs at once in each of the separate review and follow-up queues. 2 per queue unless set. A review holds one for as long as it runs, so a provider [`concurrency`](/models/#concurrency) above it needs this raised for more reviews to run at once                                                                         |
 | `threadWorkers`                | `KRITIKA_THREAD_WORKERS`                    | finding resolution/restoration jobs that one replica runs at once, independently of model follow-ups. 1 unless set                                                                                                                                                                                                                                |
-| `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs that one replica runs at once. 1 unless set                                                                                                                                                                                                                                                                                            |
+| `indexWorkers`                 | `KRITIKA_INDEX_WORKERS`                     | index jobs that one replica runs at once in each of the `index` (first indexes, forced rebuilds) and `index_update` queues. 1 per queue unless set                                                                                                                                                                                                |
 | `leaderRetryInterval`          | `KRITIKA_LEADER_RETRY_INTERVAL`             | how often a replica retries the leader lock, and the holder makes sure that it still has it. 15s unless set                                                                                                                                                                                                                                       |
 | `gatewayTokenTtl`              | `KRITIKA_GATEWAY_TOKEN_TTL`                 | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first. 1h unless set                                                                                                                                                                                                                          |
 | `gatewayCacheDir`              | `KRITIKA_GATEWAY_CACHE_DIR`                 | where the gateway keeps downloads, in a directory of its own. It keeps what a repository's lock pins, from any host the egress rules allow. Nothing is kept unless set. The chart's `gatewayCache.enabled` renders it ([the gateway's cache](/security/#the-gateways-download-cache))                                                             |
@@ -976,6 +984,35 @@ parallelism than two idle follow-up workers. If queue-delay metrics show
 that it is needed, increase `threadWorkers`. Database connections and
 forge API limits remain shared with reviews, so raising worker counts
 does not guarantee higher throughput.
+
+Index jobs that keep indexed repositories at their default branch use an
+`index_update` queue of their own. An onboarding wave holds an `index`
+worker for each repository's whole first build, so it can fill every
+`index` worker in the fleet without taking one that an update needs. Updates
+still share the embedder's slots with first builds, which hold one for a
+batch of chunks at a time and leave the next to an update that waits. An
+update that waits holds a database connection of its own until it gets the
+slot ([connections](/database/#connections)). Each
+replica runs up to `indexWorkers` jobs on each queue, each with a runner
+pod. Updates queued on `index` by an earlier version finish there. A push to a repository
+whose index is queued for a rebuild on `index`, as after an index format
+change, joins that job and waits behind the onboarding wave with it.
+
+A release without the `index_update` queue (0.0.122 and earlier) never works
+it, and its pushes join the repository's job there rather than queue their
+own, which leaves that repository's index where it is. Before starting
+an older release, restore its configuration, or remove `searchPrompt`,
+`lexical` and `rerank` from `embedding`: older releases reject these keys.
+Once no replica of the newer release is left, move those jobs to `index`
+as the database owner:
+
+```sql
+UPDATE river_job SET queue = 'index'
+WHERE kind = 'index' AND queue = 'index_update'
+  AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled');
+```
+
+A job moved while `running` is handed back once the leader finds it stuck.
 
 Other keys in the file are `webUrl` (required public URL), `addr`,
 `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `executor` and

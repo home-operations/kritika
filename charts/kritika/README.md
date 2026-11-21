@@ -11,7 +11,7 @@ Self-hosted AI pull request reviewer for GitHub, Forgejo, GitLab and Gitea, back
 ## Usage
 
 kritika ships as an OCI Helm chart. It needs a Postgres with
-[VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
+[VectorChord](https://github.com/pgsty/vchord) and pgvector, three
 roles, its public URL, a way to sign in, and its configuration file:
 
 ```sh
@@ -275,7 +275,7 @@ Kubernetes: `>=1.34.0-0`
 | monitoring.prometheusRule.multipleLeadersFor | string | `"2m"` | How long more than one replica can report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval. |
 | monitoring.prometheusRule.multipleLeadersWindow | string | `"1m"` | How far back KritikaMultipleLeaders looks for each replica's latest leader sample. Keep it longer than the ServiceMonitor interval and shorter than multipleLeadersFor, so a replaced leader drops out of the sum before the alert fires. |
 | monitoring.prometheusRule.noLeaderFor | string | `"5m"` | How long the leader lock can go without a holder before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering. Postgres drops a dead leader's session within about a minute. |
-| monitoring.prometheusRule.queueAgeSeconds | int | `600` | Age in seconds of the oldest runnable review/followup/thread job that triggers KritikaQueueDelayed. Index onboarding is excluded. Its age remains on the dashboard. |
+| monitoring.prometheusRule.queueAgeSeconds | int | `600` | Age in seconds of the oldest runnable review, review_prepare, review_publish, followup or thread job that triggers KritikaQueueDelayed. The index and index_update queues are excluded: an index job can wait behind other repositories' builds for the embedder. Their ages remain on the dashboard. |
 | monitoring.prometheusRule.queueDelayFor | string | `"15m"` | How long runnable work must exceed queueAgeSeconds before warning. |
 | monitoring.prometheusRule.queueStatsUnavailableFor | string | `"5m"` | How long every scraped replica can succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning. |
 | monitoring.prometheusRule.vectorSearchErrorsFor | string | `"10m"` | How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning. |

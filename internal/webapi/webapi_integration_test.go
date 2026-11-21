@@ -281,6 +281,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
 	t.Run("repository kinds", func(t *testing.T) { testRepoKinds(t, e) })
+	t.Run("a repository turned on under a default of off", func(t *testing.T) { testRepoConfigUnderDefaultOff(t, e) })
 	t.Run("index contents", func(t *testing.T) { testIndexContents(t, e) })
 	t.Run("index jobs", func(t *testing.T) { testIndexJobs(t, e) })
 	t.Run("pull requests by author", func(t *testing.T) { testPullsByAuthor(t, e) })

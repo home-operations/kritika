@@ -319,13 +319,22 @@ it, so it has no switch:
   token budget or the account's `tokensPerMonth` is spent, and it records
   the step's usage. Provider endpoints are therefore not in a runner's
   allowlist.
-- The runner also asks it for the review's similar code, once for each
-  part of a split review. The agent's `search_code` asks it at most 10
-  more times. The gateway embeds the diff or the query with the instance's
-  embedder, answers from the repository's index, and charges the embedding
-  to the run.
-- A run reports here what it found: its phase, its context, its agent's
-  result and its index. This takes the run's report token, not the token
+- The runner also asks it, with no query, whether the repository has an
+  index, and then for the review's similar code, once for each part of a
+  split review. The agent's `search_code` asks it at most 10 more times. The gateway embeds the diff or the query with the instance's
+  embedder, answers from the repository's index, and charges the embedding,
+  and any reranking, to the run. It searches only the index of the run's own repository,
+  whatever the request says. A search leaves out the files the change
+  touches, which the run reports once before it first searches.
+- With a [reranker](/models/#reranking) configured, the gateway also sends
+  it each query, the diff's hunk or the `search_code` text, beside the
+  path, declaration and source text of up to `candidates` of the index's
+  chunks for that query. It does so before it keeps each query's best four
+  and before the runner checks those against the pull request's head, so
+  the reranker reads code that the review never shows. Use only a reranker
+  that may receive the repository's code, as the embedder does.
+- A run reports here what it found: its phase, its context, its similar-code
+  exclusions, its agent's result and its index. This takes the run's report token, not the token
   that the model endpoint takes.
 
 ## Runner tools

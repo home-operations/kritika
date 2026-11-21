@@ -255,3 +255,30 @@ func TestRetryAfterOfAClient(t *testing.T) {
 		t.Fatalf("requests = %v, want one: go-github refuses the second itself", f.requests)
 	}
 }
+
+// TestStatus: the status of GitHub's answer is read through the wrapping
+// that the client adds. An error that carries no answer has none, nor does a
+// rate limit, which RetryAfter recognizes.
+func TestStatus(t *testing.T) {
+	answer := func(status int) error {
+		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: answer(http.StatusBadGateway), want: http.StatusBadGateway},
+		{name: "not found", err: answer(http.StatusNotFound), want: http.StatusNotFound},
+		{name: "no response", err: &gh.ErrorResponse{}},
+		{name: "no answer", err: errors.New("connection reset")},
+		{name: "primary rate limit", err: &gh.RateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden}}},
+		{name: "secondary rate limit", err: &gh.AbuseRateLimitError{Response: &http.Response{StatusCode: http.StatusTooManyRequests}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

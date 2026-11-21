@@ -288,15 +288,6 @@ func TestParseDiff(t *testing.T) {
 	}
 }
 
-func TestHunks(t *testing.T) {
-	diff := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -3,4 +3,5 @@\n a\n-b\n+B\n+C\n d\n@@ -20,2 +21,2 @@\n-x\n+y\n z\n" +
-		"diff --git a/gone b/gone\n--- a/gone\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n"
-	h := Hunks(diff)
-	if len(h) != 2 || h[0].Path != "x.go" || h[0].Text != "a\nB\nC\nd\n" || h[1].Text != "y\nz\n" {
-		t.Fatalf("hunks = %+v", h)
-	}
-}
-
 func TestPickPrefersDistinctFiles(t *testing.T) {
 	cs := []Chunk{{Path: "a", StartLine: 1}, {Path: "a", StartLine: 10}, {Path: "b", StartLine: 1}}
 	got := pick(cs, 2)
@@ -344,11 +335,6 @@ func TestDiffEdges(t *testing.T) {
 		"@@ -1,2 +1,2 @@\n a\n-b\n+B\n" + diff
 	if renames := Renames(moved); len(renames) != 1 || renames["old.go"] != "moved.go" {
 		t.Errorf("renames = %v", renames)
-	}
-	h := Hunks(diff)
-	if len(h) != 2 || h[0] != (Hunk{Path: "new.go", Text: "package x\nfunc F() {}\n"}) ||
-		h[1] != (Hunk{Path: "q.sql", Text: "SELECT 1;\n++ new comment\nSELECT 2;\n"}) {
-		t.Fatalf("hunks = %+v", h)
 	}
 }
 
@@ -413,5 +399,261 @@ func TestBuildStopsAtTheScanBudget(t *testing.T) {
 	_, stats, err := Build(t.Context(), Input{Head: head, Base: base, Diff: diff, Changed: []string{"widget.go"}}, opts)
 	if err != nil || !stats.ScanTruncated {
 		t.Fatalf("Build = %+v, %v; want a truncated scan and no error", stats, err)
+	}
+}
+
+// TestScanReadsDeclarationsFromTheirHead: a mention in the comments above a
+// declaration does not make it a caller, while a decorator does. A caller
+// whose comments would push its body past the byte budget loses comments
+// from the top until its body fits.
+func TestScanReadsDeclarationsFromTheirHead(t *testing.T) {
+	head := headTree(t, map[string]string{
+		"callers.go": "package demo\n\n// Doc is like Target, but louder.\nfunc Doc() {}\n\n" +
+			"// Long calls Target.\n" + strings.Repeat("// padding padding padding\n", 20) + "func Long() {\n\tTarget()\n}\n\n" +
+			"// Short is short.\nfunc Short() {\n\tTarget()\n}\n",
+		"deco.py": "# Plain mentions Target.\ndef plain():\n    pass\n\n\n@Target\ndef wrapped():\n    pass\n",
+	})
+	opts := DefaultOptions
+	opts.MaxChunkBytes = 200
+	b := &builder{in: Input{Head: head}, opts: opts, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
+	if err := scanParts(t.Context(), []*builder{b}, &b.stats); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Chunk{}
+	for _, c := range b.callers["Target"].chunks {
+		got[c.Symbol] = c
+	}
+	tests := []struct {
+		symbol, start, end string
+		line               int
+	}{
+		{symbol: "Long", start: "// padding", end: "}", line: 21},
+		{symbol: "Short", start: "// Short is short.", end: "}", line: 31},
+		{symbol: "wrapped", start: "@Target", end: "pass", line: 6},
+	}
+	for _, tt := range tests {
+		c, ok := got[tt.symbol]
+		if !ok {
+			t.Errorf("no caller %s in %+v", tt.symbol, got)
+			continue
+		}
+		if !strings.HasPrefix(c.Text, tt.start) || !strings.HasSuffix(c.Text, tt.end) || c.StartLine != tt.line ||
+			strings.Count(c.Text, "\n") != c.EndLine-c.StartLine {
+			t.Errorf("caller %s = L%d-%d %q, want it whole from line %d with %q", tt.symbol, c.StartLine, c.EndLine, c.Text, tt.line, tt.start)
+		}
+		delete(got, tt.symbol)
+	}
+	if len(got) > 0 {
+		t.Errorf("callers %+v are only mentioned in comments", got)
+	}
+}
+
+// TestUsersOfALongDecoratorLine: a decorator line of many identifiers and
+// many hits finds each hit's identifier among them with one look, not by a
+// scan of the line's identifiers for each hit.
+func TestUsersOfALongDecoratorLine(t *testing.T) {
+	const n = 60000
+	names := make([]string, n)
+	for i := range names {
+		names[i] = fmt.Sprintf("i%05d", i)
+	}
+	pf := (&chunk.Parser{}).Parse("deco.py", []byte("@d("+strings.Join(names, ", ")+")\ndef f():\n    pass\n"))
+	defer pf.Close()
+	hits := make([]hit, n+1)
+	for i := range n {
+		hits[i] = hit{"wanted", 1}
+	}
+	hits[n] = hit{"i00007", 1}
+	var lookedAt int
+	looked = &lookedAt
+	decls := users(pf, hits, DefaultOptions.MaxDeclLines)
+	looked = nil
+	if lookedAt > len(hits) {
+		t.Errorf("users looked at %d identifiers for %d hits, want one a hit at most", lookedAt, len(hits))
+	}
+	if decls[0] != nil || decls[n] == nil || decls[n].Symbol != "f" {
+		t.Fatalf("users = %v for a word the decorator does not name and %v for one it does, want nil and f", decls[0], decls[n])
+	}
+}
+
+// TestUsersResolveALineOnce: many hits on one line look the line's
+// declaration up once, rather than allocating a copy of it for every hit.
+func TestUsersResolveALineOnce(t *testing.T) {
+	const n = 1000
+	pf := (&chunk.Parser{}).Parse("calls.go", []byte("package p\n\nfunc f() {\n\tg("+strings.Repeat("a, ", n)+")\n}\n"))
+	defer pf.Close()
+	hits := make([]hit, n)
+	for i := range hits {
+		hits[i] = hit{"a", 4}
+	}
+	var decls []*chunk.Decl
+	allocs := testing.AllocsPerRun(10, func() { decls = users(pf, hits, DefaultOptions.MaxDeclLines) })
+	if decls[0] == nil || decls[0].Symbol != "f" || decls[n-1] == nil || *decls[n-1] != *decls[0] {
+		t.Fatalf("users = %v ... %v, want f for every hit", decls[0], decls[n-1])
+	}
+	if allocs > 10 {
+		t.Errorf("users of %d hits on one line made %.0f allocations, want a few for the line", n, allocs)
+	}
+}
+
+// TestOverlayTakesADeclarationItsCommentsPushOver: a change in a declaration
+// that fits the line limit only without the comments above it is shown with
+// the declaration from its head line, not with a window.
+func TestOverlayTakesADeclarationItsCommentsPushOver(t *testing.T) {
+	src := "package demo\n\n" + strings.Repeat("// F does things.\n", 15) + "func F() {\n" + strings.Repeat("\t_ = 0\n", 138) + "}\n"
+	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -100,1 +100,1 @@\n-\t_ = 1\n+\t_ = 0\n"
+	b := &builder{
+		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
+		opts: DefaultOptions, parser: &chunk.Parser{},
+	}
+	if err := b.overlay(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.overlayChunks) != 1 {
+		t.Fatalf("overlay = %+v, want one chunk", b.overlayChunks)
+	}
+	if c := b.overlayChunks[0]; c.Symbol != "F" || c.StartLine != 18 || c.EndLine != 157 || !strings.HasPrefix(c.Text, "func F() {") {
+		t.Fatalf("overlay = %+v, want F from its head line 18 to 157", c)
+	}
+}
+
+// headTree commits files to an in-memory repository and returns the tree.
+func headTree(t testing.TB, files map[string]string) *object.Tree {
+	t.Helper()
+	fs := memfs.New()
+	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gittest.Unsigned(t, r)
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range files {
+		f, err := fs.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte(src)); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h, err := wt.Commit("head", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := r.CommitObject(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := c.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head
+}
+
+// TestRejectedCandidatesCopyNoText: a match that the candidate cap turns
+// away costs no copy of its declaration's text.
+func TestRejectedCandidatesCopyNoText(t *testing.T) {
+	src := "package demo\n\n// Big calls Target.\nfunc Big() {\n\tTarget()\n" + strings.Repeat("\t_ = \"padding padding padding\"\n", 400) + "}\n"
+	f := (&chunk.Parser{}).Parse("big.go", []byte(src))
+	defer f.Close()
+	decl := f.Enclosing([]int{5}, DefaultOptions.MaxDeclLines+300)
+	if decl == nil {
+		t.Fatal("no declaration encloses line 5")
+	}
+	opts := DefaultOptions
+	opts.MaxChunkBytes = 200
+	b := &builder{opts: opts, callers: map[string]*candidates{}}
+	for range opts.CallersPerSymbol {
+		b.addCandidate(f, decl, 5, "Target", true)
+	}
+	kept := len(b.callers["Target"].chunks)
+	if allocs := testing.AllocsPerRun(100, func() { b.addCandidate(f, decl, 5, "Target", true) }); allocs > 0 {
+		t.Errorf("a rejected candidate allocates %.0f times", allocs)
+	}
+	if got := len(b.callers["Target"].chunks); got != kept {
+		t.Fatalf("kept %d candidates, then %d", kept, got)
+	}
+	if c := b.callers["Target"].chunks[0]; c.StartLine != 4 || !strings.HasPrefix(c.Text, "func Big() {\n\tTarget()") || !strings.HasSuffix(c.Text, "\n… (truncated)") {
+		t.Errorf("candidate = L%d %q", c.StartLine, c.Text)
+	}
+}
+
+// TestCandidateTrimsWholeLeadNodes: the comments and decorators above a
+// declaration over MaxChunkBytes go first whole, never a line of one, so the
+// candidate does not start inside a block comment or a decorator's arguments
+// even when the cut of one line would bring it under the bound.
+func TestCandidateTrimsWholeLeadNodes(t *testing.T) {
+	for _, tt := range []struct {
+		name, path, src string
+		line            int
+		want            string
+	}{
+		{
+			name: "block comment", path: "big.go", line: 7,
+			src:  "package demo\n\n/*\n * Big calls Target.\n */\nfunc Big() {\n\tTarget()\n}\n",
+			want: "func Big() {",
+		},
+		{
+			name: "decorator over lines", path: "big.py", line: 5,
+			src:  "@app.route(\n    \"/big\",\n)\ndef big():\n    target()\n",
+			want: "def big():",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := (&chunk.Parser{}).Parse(tt.path, []byte(tt.src))
+			defer f.Close()
+			decl := f.Enclosing([]int{tt.line}, DefaultOptions.MaxDeclLines)
+			if decl == nil {
+				t.Fatalf("no declaration encloses line %d", tt.line)
+			}
+			if decl.HeadLine <= decl.StartLine+1 {
+				t.Fatalf("declaration %+v has no lead lines to trim", decl)
+			}
+			opts := DefaultOptions
+			// One byte under the declaration: the cut of its first line alone
+			// would bring it under.
+			opts.MaxChunkBytes = len(f.Bytes(decl.StartLine, decl.EndLine)) - 1
+			b := &builder{opts: opts, callers: map[string]*candidates{}}
+			b.addCandidate(f, decl, tt.line, "Target", true)
+			c := b.callers["Target"].chunks[0]
+			if c.StartLine != decl.HeadLine || !strings.HasPrefix(c.Text, tt.want) {
+				t.Fatalf("candidate = L%d %q, want it from its head line %d", c.StartLine, c.Text, decl.HeadLine)
+			}
+		})
+	}
+}
+
+// BenchmarkScanDocMentions scans a file whose declarations' doc comments
+// name the wanted symbol, again and again, and never use it.
+func BenchmarkScanDocMentions(b *testing.B) {
+	for _, n := range []int{100, 1000} {
+		var src strings.Builder
+		src.WriteString("package demo\n")
+		for i := range n {
+			fmt.Fprintf(&src, "// F%d is like Target, Target and Target.\n// Target again.\nfunc F%d() {}\n", i, i)
+		}
+		head := headTree(b, map[string]string{"f.go": src.String()})
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				bd := &builder{in: Input{Head: head}, opts: DefaultOptions, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
+				if err := scanParts(b.Context(), []*builder{bd}, &bd.stats); err != nil {
+					b.Fatal(err)
+				}
+				if c := bd.callers["Target"]; c != nil {
+					b.Fatalf("callers = %+v", c.chunks)
+				}
+			}
+		})
 	}
 }

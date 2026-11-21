@@ -1775,14 +1775,27 @@
           "instant": false,
           "format": "time_series",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(kritika_index_snoozes_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "snoozed {{reason}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
         }
       ],
-      "description": "Index runs finished, by mode and status."
+      "description": "Index runs finished, by mode and status, and index jobs put back on the queue to wait, by reason."
     },
     {
       "id": 30,
       "type": "timeseries",
-      "title": "Chunks embedded",
+      "title": "Chunks indexed",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1842,7 +1855,7 @@
           "refId": "A"
         }
       ],
-      "description": "Chunks embedded into each account's similar-code index."
+      "description": "Chunks written into each account's similar-code index by completed and superseded index runs, whether their vectors were embedded or reused. kritika_index_vectors_total{outcome=\"embedded\"} counts the vectors newly embedded by embedder calls that answered for every text, not every text sent: a call that fails, and is tried again, counts none."
     },
     {
       "id": 31,
@@ -2354,9 +2367,22 @@
           "instant": false,
           "format": "time_series",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (namespace, job, outcome, le) (rate(kritika_lexical_search_seconds_bucket{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval])))",
+          "legendFormat": "{{namespace}}/{{job}} by name {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
         }
       ],
-      "description": "Database search transaction per request, including pool acquisition and all query vectors. Canceled requests are separate from errors. Excludes embedding, model-slot waits and usage recording."
+      "description": "Database search transaction per request, including pool acquisition, all query vectors and the search by name, which is also shown alone. Canceled requests are separate from errors. Excludes embedding, model-slot waits and usage recording."
     },
     {
       "id": 40,
@@ -2419,9 +2445,22 @@
           "instant": false,
           "format": "time_series",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, job, outcome) (rate(kritika_lexical_search_seconds_count{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} by name {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
         }
       ],
-      "description": "Search requests reaching the database, including errors. Embedding failures and missing indexes do not count as searches."
+      "description": "Search requests reaching the database, including errors, and their searches by name. A failed search by name leaves its request to the vector search alone. Embedding failures and missing indexes do not count as searches."
     },
     {
       "id": 41,
@@ -2489,6 +2528,215 @@
       "description": "1 when all scraped replicas can read the queue snapshot; 0 when any replica fails. Queue gauges are omitted on failure."
     },
     {
+      "id": 55,
+      "type": "timeseries",
+      "title": "Similar-code requests",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, job, kind, outcome) (rate(kritika_similar_requests_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} {{kind}} {{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "description": "Similar-code requests by query kind (diff: a review's stage 4, search: the agent's search_code) and outcome. ok and empty searched the index; no_queries only asked whether there is one; no_embedder and no_index skipped stage 4; too_large, invalid, refused (the run's budget) and error failed it."
+    },
+    {
+      "id": 56,
+      "type": "timeseries",
+      "title": "Similar-code best match",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": -1,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum by (namespace, job, kind, le) (rate(kritika_similar_best_similarity_bucket{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval])))",
+          "legendFormat": "{{namespace}}/{{job}} {{kind}} p50",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.1, sum by (namespace, job, kind, le) (rate(kritika_similar_best_similarity_bucket{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval])))",
+          "legendFormat": "{{namespace}}/{{job}} {{kind}} p10",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "B"
+        }
+      ],
+      "description": "Best cosine similarity among the chunks that either search found for each query, for the queries that found any. Compare it with the embedder's similarFloor: a p10 under the floor means many queries' nearest code by vector scores below it, so only what the search by name keeps, when lexical is on, is offered for them."
+    },
+    {
+      "id": 57,
+      "type": "timeseries",
+      "title": "Similar-code hits",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, job, outcome, source) (rate(kritika_similar_hits_total{namespace=~\"$namespace\", job=~\"$job\", account=~\"$account\"}[$__rate_interval]))",
+          "legendFormat": "{{namespace}}/{{job}} {{outcome}} {{source}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "description": "Index chunks the searches found, kept or dropped, and which search found them: the vector search, the lexical search by name, or both. A chunk qualifies through either gate: its similarity is at or above the floor and within the margin of its query's best, or the search by name found it with at least half its query's best weight by name. One that qualifies through neither is dropped as floor or margin, the first of the two it fails, when the vector search found it, and as lexical_floor when only the search by name did. One that qualifies is then dropped as a duplicate, past two of one file (file_cap), or past the four of its query or the most an answer keeps (limit). Kept is what the run is sent: its prompt can still leave out a chunk the head no longer has, one other stages mostly show, or one past the ten it shows. Paths the run excluded never leave the database and are not counted."
+    },
+    {
       "id": 42,
       "type": "row",
       "title": "Download cache",
@@ -2497,7 +2745,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 107
       },
       "panels": []
     },
@@ -2513,7 +2761,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 100
+        "y": 108
       },
       "fieldConfig": {
         "defaults": {
@@ -2579,7 +2827,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 100
+        "y": 108
       },
       "fieldConfig": {
         "defaults": {
@@ -2644,7 +2892,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 100
+        "y": 108
       },
       "fieldConfig": {
         "defaults": {
@@ -2709,7 +2957,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 108
+        "y": 116
       },
       "fieldConfig": {
         "defaults": {
@@ -2774,7 +3022,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 108
+        "y": 116
       },
       "fieldConfig": {
         "defaults": {
@@ -2839,7 +3087,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 108
+        "y": 116
       },
       "fieldConfig": {
         "defaults": {
@@ -2904,7 +3152,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 116
+        "y": 124
       },
       "fieldConfig": {
         "defaults": {
@@ -2969,7 +3217,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 116
+        "y": 124
       },
       "fieldConfig": {
         "defaults": {
@@ -3034,7 +3282,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 116
+        "y": 124
       },
       "fieldConfig": {
         "defaults": {
@@ -3099,7 +3347,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 124
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {
@@ -3164,7 +3412,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 124
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {
@@ -3242,7 +3490,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 124
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {

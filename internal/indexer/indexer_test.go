@@ -13,6 +13,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 
+	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
@@ -184,4 +186,229 @@ func TestBuildKeepsTextValidUTF8(t *testing.T) {
 
 func contains(ss []string, s string) bool {
 	return slices.Contains(ss, s)
+}
+
+// TestBuildSkipsUnindexedFiles: files that SOPS encrypted or a code generator
+// wrote are left out of the index without an ignore rule. The review's
+// default ignores leave them in, so a pull request that changes one is still
+// reviewed, and Unindexed says the same as Build.
+func TestBuildSkipsUnindexedFiles(t *testing.T) {
+	tests := []struct {
+		path    string
+		indexed bool
+	}{
+		{"kubernetes/apps/foo/secret.sops.yaml", false},
+		{"talos/talsecret.sops.yml", false},
+		{"secret.sops.json", false},
+		{"api/v1/service_pb2.py", false},
+		{"api/v1/service_pb2.pyi", false},
+		{"api/v1/service_pb2_grpc.py", false},
+		{"cpp/service.pb.cc", false},
+		{"cpp/service.pb.h", false},
+		{"lib/model.g.dart", false},
+		{"lib/model.freezed.dart", false},
+		{".sops.yaml", true},
+		{"lib/model.dart", true},
+		{"api/v1/service.py", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			fs := memfs.New()
+			r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+			gittest.Unsigned(t, r)
+			wt, _ := r.Worktree()
+			f, _ := fs.Create(tt.path)
+			_, _ = f.Write([]byte("value = 1\n"))
+			_ = f.Close()
+			_, _ = wt.Add(tt.path)
+			hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, _ := r.CommitObject(hash)
+			head, _ := c.Tree()
+			chunks, _, _, err := Build(t.Context(), head, nil, nil, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if indexed := len(chunks) > 0; indexed != tt.indexed {
+				t.Fatalf("indexed = %v, want %v: %+v", indexed, tt.indexed, chunks)
+			}
+			if Unindexed(tt.path) == tt.indexed {
+				t.Errorf("Unindexed(%q) = %v, want %v", tt.path, !tt.indexed, tt.indexed)
+			}
+			if chunk.Matches(configfile.DefaultIgnore, tt.path) {
+				t.Errorf("the review's default ignores leave out %s", tt.path)
+			}
+		})
+	}
+}
+
+// TestBuildSignatures: a window of a declaration that does not show the line
+// naming the declaration carries that line, cut to maxSignatureBytes, and its
+// text stays the source's lines. A piece that shows the line, a declaration
+// stored whole and a window of a file with no declarations carry none.
+func TestBuildSignatures(t *testing.T) {
+	type sig struct {
+		head      int
+		signature string
+	}
+	tests := []struct {
+		name, path, src string
+		// signatures gives, by symbol, the line that names the
+		// declaration and the signature of its windows that do not show it.
+		signatures map[string]sig
+	}{
+		{
+			name: "go function with a long body", path: "long.go",
+			src: "package demo\n\n// Long does things.\n// It is long.\nfunc Long(a int) int {\n\tt := a\n" + lines(200, "\tt += %d") +
+				"\treturn t\n}\n\nfunc Small() {}\n",
+			signatures: map[string]sig{"Long": {5, "func Long(a int) int {"}},
+		},
+		{
+			name: "go function of long lines within the line bound", path: "wide.go",
+			src:        "package demo\n\nfunc Wide() {\n" + lines(120, "\t_ = %03d // "+strings.Repeat("x", 90)) + "}\n",
+			signatures: map[string]sig{"Wide": {3, "func Wide() {"}},
+		},
+		{
+			name: "python class with a long method", path: "foo.py",
+			src: "class Foo:\n    \"\"\"Doc.\"\"\"\n\n    @staticmethod\n    def big(x):\n        total = 0\n" + lines(200, "        total += %d") +
+				"        return total\n\n    def small(self):\n        return 1\n",
+			signatures: map[string]sig{"big": {5, "def big(x):"}},
+		},
+		{
+			name: "typescript class with fields after its methods", path: "store.ts",
+			src: "export class Store {\n  get(): number { return 1; }\n  big(): number {\n    let t = 0;\n" + lines(160, "    t += %d;") +
+				"    return t;\n  }\n" + lines(70, "  private a%d = 0;") + "}\n",
+			signatures: map[string]sig{"Store": {1, "export class Store {"}, "big": {3, "big(): number {"}},
+		},
+		{
+			name: "javascript function with a long signature", path: "render.js",
+			src: "/** Renders. */\nfunction render(items, sep = \"-" + strings.Repeat("é", 150) + "\") {\n  const out = [];\n" +
+				lines(200, "  out.push(%d);") + "  return out.join(sep);\n}\n",
+			signatures: map[string]sig{"render": {2, "function render(items, sep = \"-" + strings.Repeat("é", 84)}},
+		},
+		{
+			name: "yaml", path: "values.yaml", src: strings.Repeat("key: value\n", 130),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks, _, _, err := Build(t.Context(), oneFileTree(t, tt.path, tt.src), nil, nil, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			src := strings.Split(tt.src, "\n")
+			carried := map[string]int{}
+			for _, c := range chunks {
+				want := ""
+				if s, ok := tt.signatures[c.Symbol]; ok && (s.head < c.StartLine || s.head > c.EndLine) {
+					want = s.signature
+					carried[c.Symbol]++
+				}
+				if c.Signature != want {
+					t.Errorf("chunk %s L%d-%d signature = %q, want %q", c.Symbol, c.StartLine, c.EndLine, c.Signature, want)
+				}
+				if len(c.Signature) > maxSignatureBytes || !utf8.ValidString(c.Signature) {
+					t.Errorf("chunk %s L%d-%d signature %q is over %d bytes or not UTF-8", c.Symbol, c.StartLine, c.EndLine, c.Signature, maxSignatureBytes)
+				}
+				if first, _, _ := strings.Cut(c.Text, "\n"); first != src[c.StartLine-1] {
+					t.Errorf("chunk %s L%d-%d starts %q, want the source's line %q", c.Symbol, c.StartLine, c.EndLine, first, src[c.StartLine-1])
+				}
+			}
+			for symbol := range tt.signatures {
+				if carried[symbol] == 0 {
+					t.Errorf("no window of %s carries its signature: %+v", symbol, chunks)
+				}
+			}
+		})
+	}
+}
+
+// oneFileTree is the tree of a commit that holds one file.
+func oneFileTree(t *testing.T, path, content string) *object.Tree {
+	t.Helper()
+	fs := memfs.New()
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
+	wt, _ := r.Worktree()
+	f, _ := fs.Create(path)
+	_, _ = f.Write([]byte(content))
+	_ = f.Close()
+	_, _ = wt.Add(path)
+	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.CommitObject(hash)
+	tree, _ := c.Tree()
+	return tree
+}
+
+// TestBuildSkipsWordlessWindows: a window of white space alone, as a line
+// too long to share a window with its neighbours makes, is not stored, and
+// does not count against MaxChunks.
+func TestBuildSkipsWordlessWindows(t *testing.T) {
+	fs := memfs.New()
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
+	wt, _ := r.Worktree()
+	f, _ := fs.Create("gap.md")
+	_, _ = f.Write([]byte("intro words\n" + strings.Repeat(" ", DefaultOptions.MaxChunkBytes) + "\nclosing words\n"))
+	_ = f.Close()
+	_, _ = wt.Add("gap.md")
+	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.CommitObject(hash)
+	head, _ := c.Tree()
+	opts := DefaultOptions
+	opts.MaxChunks = 2
+	chunks, _, stats, err := Build(t.Context(), head, nil, nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		texts = append(texts, c.Text)
+	}
+	if !slices.Equal(texts, []string{"intro words", "closing words"}) || stats.Truncated {
+		t.Fatalf("chunks %q, truncated %v; want the two worded lines alone, untruncated", texts, stats.Truncated)
+	}
+}
+
+// TestBuildKeepsALineIndentedPastTheBound: a line with more white space
+// before its first word than a chunk holds is stored from that word, so
+// the name on it is found, as a query of the same line asks about it.
+func TestBuildKeepsALineIndentedPastTheBound(t *testing.T) {
+	line := strings.Repeat(" ", DefaultOptions.MaxChunkBytes+10) + "callSomething()"
+	head := oneFileTree(t, "deep.go", "package lib\n\nfunc F() {\n"+line+"\n}\n")
+	chunks, _, _, err := Build(t.Context(), head, nil, nil, DefaultOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(chunks, func(c Chunk) bool {
+		return c.StartLine == 4 && c.EndLine == 4 && c.Symbol == "F" && c.Text == "callSomething()"
+	}) {
+		t.Fatalf("chunks %+v hold no chunk of line 4 from its first word", chunks)
+	}
+}
+
+// TestChunkText: a piece's text is cut to the bound, from its start unless
+// that leaves no word and the piece has one past the bound.
+func TestChunkText(t *testing.T) {
+	for _, tt := range []struct{ name, text, want string }{
+		{"within the bound", " a b", " a b"},
+		{"cut from the start", "abcdefgh", "abcd"},
+		{"a word within the bound", "  ab" + strings.Repeat(" ", 10) + "cd", "  ab"},
+		{"indented past the bound", strings.Repeat(" ", 10) + "(name)", "name"},
+		{"wordless", strings.Repeat(" ", 10) + "()", "    "},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ChunkText(tt.text, 4); got != tt.want {
+				t.Errorf("ChunkText(%q, 4) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
 }

@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"iter"
@@ -104,20 +105,53 @@ func (c *Client) GitToken(ctx context.Context, repo string) (string, error) {
 // BranchTip implements forge.Client.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
 	if branch == "" {
-		r, _, err := c.api.Repositories.Get(ctx, owner, repo)
+		var r gh.Repository
+		resp, err := c.getJSON(ctx, fmt.Sprintf("repos/%v/%v", owner, repo), &r)
 		if err != nil {
-			return "", "", fmt.Errorf("github: repository %s/%s: %w", owner, repo, err)
+			return "", "", fmt.Errorf("github: repository %s/%s: %w", owner, repo, notFound(resp, err))
 		}
 		branch = r.GetDefaultBranch()
 	}
-	b, _, err := c.api.Repositories.GetBranch(ctx, owner, repo, branch, 1)
+	// Not Repositories.GetBranch: it bypasses go-github's response checks
+	// and returns a generic status error, losing secondary rate limits that
+	// can be recognized only from the response body.
+	var b gh.Branch
+	resp, err := c.getJSON(ctx, fmt.Sprintf("repos/%v/%v/branches/%v", owner, repo, url.PathEscape(branch)), &b)
 	if err != nil {
-		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, err)
+		return "", "", fmt.Errorf("github: branch %s of %s/%s: %w", branch, owner, repo, notFound(resp, err))
 	}
 	if b.GetCommit().GetSHA() == "" {
 		return "", "", fmt.Errorf("github: branch %s of %s/%s has no commit", branch, owner, repo)
 	}
 	return b.GetCommit().GetSHA(), branch, nil
+}
+
+// getJSON reads the answer to a GET of path, under the API's base URL, into
+// v. go-github's BareDo checks its status and rate limits, and the body is
+// decoded here as it arrives: Do reads it to its end first, which a body that
+// stalls after its JSON holds up, and leaves v as it is for an empty body,
+// where this fails with io.EOF, an answer cut short that a later try can get
+// whole.
+func (c *Client) getJSON(ctx context.Context, path string, v any) (*gh.Response, error) {
+	req, err := c.api.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.api.BareDo(req)
+	if err != nil {
+		return resp, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp, json.NewDecoder(resp.Body).Decode(v)
+}
+
+// notFound wraps err, from a call that GitHub answered with resp, as
+// forge.ErrNotFound too when the answer was 404.
+func notFound(resp *gh.Response, err error) error {
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%w: %w", forge.ErrNotFound, err)
+	}
+	return err
 }
 
 // CommitSubject implements forge.Client.

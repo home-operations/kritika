@@ -4,9 +4,15 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"math/rand/v2"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/home-operations/kritika/internal/configfile"
 )
@@ -43,7 +49,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	}{{"empty", []string{}, 1}, {"omitted", nil, 1}, {"excluded", []string{"main.go"}, 0}} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-				hits, err := SimilarChunks(ctx, tx, run, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, tt.exclude, 4)
+				hits, err := SimilarChunks(ctx, tx, run, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, Exclusions{Paths: tt.exclude}, 4)
 				if err == nil && len(hits) != tt.want {
 					t.Errorf("got %d hits, want %d", len(hits), tt.want)
 				}
@@ -57,7 +63,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	// Each hit says which query it is near.
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		v := []float32{1, 0, 0, 0, 0, 0, 0, 0}
-		hits, err := SimilarChunks(ctx, tx, run, [][]float32{v, v}, nil, 4)
+		hits, err := SimilarChunks(ctx, tx, run, [][]float32{v, v}, Exclusions{}, 4)
 		if err == nil && (len(hits) != 2 || hits[0].Query != 0 || hits[1].Query != 1) {
 			t.Errorf("hits = %+v; want one near each query, in their order", hits)
 		}
@@ -65,4 +71,198 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestSimilarExclusions: a run's report of the paths its searches leave out
+// is written whole however many it holds, the first report holds, a search
+// leaves them out, another account can neither read nor write them nor
+// change what a search leaves out, and they go once the run has finished.
+func TestSimilarExclusions(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	gen, runs := similarExclusionsFixture(t, s, alpha, beta)
+	run, empty, foreign := runs[0], runs[1], runs[2]
+	report := func(account, runID string, paths []string) {
+		t.Helper()
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error { return SetSimilarExclude(ctx, tx, runID, paths) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reported := func(account, runID string) []string {
+		t.Helper()
+		var paths []string
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT coalesce(array_agg(path ORDER BY path), '{}') FROM similar_exclusions WHERE runner_run_id = $1`,
+				runID).Scan(&paths)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return paths
+	}
+	found := func(exclude Exclusions) []string {
+		t.Helper()
+		var paths []string
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			hits, err := SimilarChunks(ctx, tx, gen, [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, exclude, 10)
+			for _, h := range hits {
+				paths = append(paths, h.Chunk.Path)
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		slices.Sort(paths)
+		return paths
+	}
+
+	// More paths than a batch, one of them twice, are written whole, and so
+	// is a path longer than a B-tree entry can be, which compression leaves
+	// as long.
+	paths := make([]string, 0, 4+2*similarExcludeBatch)
+	paths = append(paths, "moved/a.go", "moved/b.go", "moved/a.go", longGitPath())
+	for i := range 2 * similarExcludeBatch {
+		paths = append(paths, fmt.Sprintf("vendor/f%04d.go", i))
+	}
+	report(alpha, run, paths)
+	want := slices.Compact(slices.Sorted(slices.Values(paths)))
+	if got := reported(alpha, run); !slices.Equal(got, want) {
+		t.Fatalf("reported %d paths, want %d", len(got), len(want))
+	}
+	// Beta claims no first report for alpha's run that has none yet.
+	report(beta, empty, []string{"kept.go"})
+	var claimed bool
+	if err := s.owner.QueryRow(ctx, `SELECT similar_exclude_reported_at IS NOT NULL FROM runner_runs WHERE id = $1`, empty).Scan(&claimed); err != nil {
+		t.Fatal(err)
+	}
+	if claimed {
+		t.Fatal("beta made the first report for alpha's run")
+	}
+	if got := reported(alpha, empty); len(got) != 0 {
+		t.Fatalf("beta's report for alpha's run = %q", got)
+	}
+	// The first report holds, even one of no path.
+	report(alpha, run, []string{"kept.go"})
+	report(alpha, empty, nil)
+	report(alpha, empty, []string{"kept.go"})
+	if got := reported(alpha, run); !slices.Equal(got, want) {
+		t.Fatalf("a second report changed the first: %d paths", len(got))
+	}
+	if got := reported(alpha, empty); len(got) != 0 {
+		t.Fatalf("a second report after one of no path = %q", got)
+	}
+	if got := found(Exclusions{Run: run}); !slices.Equal(got, []string{"kept.go"}) {
+		t.Fatalf("a search of the run = %q", got)
+	}
+	if got := found(Exclusions{Run: empty, Paths: []string{"moved/a.go"}}); !slices.Equal(got, []string{"kept.go", "moved/b.go"}) {
+		t.Fatalf("a search of the run that reported none, with a request's own = %q", got)
+	}
+
+	// Beta reads none of alpha's, and writes no row that names alpha's run,
+	// under either account.
+	if got := reported(beta, run); len(got) != 0 {
+		t.Fatalf("beta reads %d of alpha's exclusions", len(got))
+	}
+	for _, account := range []string{beta, alpha} {
+		err := s.WithAccount(ctx, beta, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path) VALUES ($1, $2, 'kept.go')`, empty, account)
+			return err
+		})
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
+			t.Fatalf("beta's row for alpha's run, in account %s: %v, want a refusal by row-level security", account, err)
+		}
+	}
+	// A row of beta's that names alpha's run, which only the owner can write,
+	// leaves alpha's search as it was.
+	if _, err := s.owner.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path) VALUES ($1, $2, 'kept.go')`,
+		empty, beta); err != nil {
+		t.Fatal(err)
+	}
+	if got := found(Exclusions{Run: empty}); !slices.Equal(got, []string{"kept.go", "moved/a.go", "moved/b.go"}) {
+		t.Fatalf("a search of alpha's run with beta's row = %q", got)
+	}
+	report(beta, foreign, []string{"kept.go"})
+
+	// The sweep takes the finished run's alone.
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error { return FailRunnerRun(ctx, tx, run, "test finished") }); err != nil {
+		t.Fatal(err)
+	}
+	// Other suites finish runs that reported paths too.
+	if n, err := s.SweepSimilarExclusions(ctx); err != nil || n < int64(len(want)) {
+		t.Fatalf("swept %d, %v; want at least the finished run's %d", n, err, len(want))
+	}
+	if got := reported(alpha, run); len(got) != 0 {
+		t.Fatalf("the finished run kept %d", len(got))
+	}
+	if got := reported(beta, foreign); !slices.Equal(got, []string{"kept.go"}) {
+		t.Fatalf("the sweep took a live run's: %q", got)
+	}
+}
+
+// similarExclusionsFixture is a generation of alpha's that holds kept.go,
+// moved/a.go and moved/b.go, and three runner runs, two of alpha's and one
+// of beta's, which go when the test ends.
+func similarExclusionsFixture(t *testing.T, s *Store, alpha, beta string) (gen string, runs [3]string) {
+	t.Helper()
+	ctx := t.Context()
+	repo := configfile.RepositoryID(alpha, "exclusions/repo")
+	t.Cleanup(func() {
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id::text = ANY($1)`, runs[:]); err != nil {
+			t.Error(err)
+		}
+		if _, err := s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL; DROP TABLE IF EXISTS index_chunks;
+			DELETE FROM index_schema`); err != nil {
+			t.Error(err)
+		}
+		for _, stmt := range []string{`DELETE FROM index_runs WHERE repository_id = $1`, `DELETE FROM repositories WHERE id = $1`} {
+			if _, err := s.owner.Exec(context.Background(), stmt, repo); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, 'exclusions/repo')`, repo, alpha); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+		VALUES ($1, $2, 'abc', 'test-embed', 8, 'full', 'completed') RETURNING id`, alpha, repo).Scan(&gen); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+		SELECT $1, $2, $3, p, 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM unnest($4::text[]) p`,
+		alpha, repo, gen, []string{"kept.go", "moved/a.go", "moved/b.go"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, account := range []string{alpha, alpha, beta} {
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var err error
+			runs[i], err = InsertRunnerRun(ctx, tx, account, RunnerKindReview, "", 0)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return gen, runs
+}
+
+// longGitPath is a nested path of about 4 KiB that compression cannot
+// shorten, longer than PostgreSQL's limit on a B-tree entry of a little
+// under 2.7 KiB on its default 8 KiB page. Git takes it as a path.
+func longGitPath() string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	r := rand.New(rand.NewPCG(1, 2))
+	parts := make([]string, 20)
+	for i := range parts {
+		b := make([]byte, 200)
+		for j := range b {
+			b[j] = letters[r.IntN(len(letters))]
+		}
+		parts[i] = string(b)
+	}
+	return strings.Join(parts, "/") + ".go"
 }

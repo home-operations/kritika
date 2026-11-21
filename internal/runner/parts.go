@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
@@ -70,11 +71,12 @@ type reviewPart struct {
 // rules, and skills, and the findings of the last review its reviewer
 // raised. Its submission can hold only the categories that its reviewer
 // reports. tools gets search_code when the repository has an index, and
-// load_skill offers every part's skills. It returns the parts, and the
-// context and the rules they were given together, which the pack keeps.
+// load_skill offers every part's skills. search_code reads the head holding
+// headLock, which the parts share. It returns the parts, and the context and
+// the rules they were given together, which the pack keeps.
 func partPrompts(
 	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, head, base *object.Tree, res *gitfetch.Result, files repoconfig.Files,
-	found []repoconfig.Skill, shares []partShare, tools *agentTools, logger *slog.Logger,
+	found []repoconfig.Skill, shares []partShare, tools *agentTools, headLock chan struct{}, logger *slog.Logger,
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
 	diffs := make([]string, len(shares))
 	inputs := make([]contextpack.Part, len(shares))
@@ -88,14 +90,16 @@ func partPrompts(
 	}
 	logger.Info("parts context built", "parts", len(shares), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
 		"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
-	similar, err := partSimilarCode(ctx, p, secrets, diffs, res.Changed, logger)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
-	}
-	for i, out := range similar {
-		if out.Indexed {
-			chunks[i] = append(chunks[i], out.Chunks...)
-			tools.search = newSearchTool(p, secrets, res.Changed)
+	if excludeFromSimilar(ctx, p, secrets, res, logger) {
+		similar, err := partSimilarCode(ctx, p, secrets, diffs, indexer.Indexable(head, res.Changed), logger)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
+		}
+		for i, out := range similar {
+			if out.Indexed {
+				chunks[i] = append(chunks[i], similarShown(head, p.Ignore, out.Chunks, chunks[i], logger.With("part", i+1))...)
+				tools.search = newSearchTool(p, secrets, head, headLock)
+			}
 		}
 	}
 	ins := make([]promptInputs, len(shares))
@@ -156,9 +160,9 @@ func partPrompts(
 
 // partSimilarCode overlaps remote retrieval within the review's granted
 // parallelism. It reads no git objects. Those belong to the serial context
-// pass.
+// pass, which also gives indexable.
 func partSimilarCode(
-	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs, changed []string, logger *slog.Logger,
+	ctx context.Context, p runspec.Spec, secrets runspec.Secrets, diffs []string, indexable func(string) bool, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
 	// Reviewers that review the same files have the same diffs, each of
 	// which is asked about once.
@@ -171,7 +175,7 @@ func partSimilarCode(
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			found[i], _ = similarCodeFor(gctx, p, secrets, diff, changed, logger.With("part", slices.Index(diffs, diff)+1))
+			found[i], _ = similarCodeFor(gctx, p, secrets, diff, indexable, logger.With("part", slices.Index(diffs, diff)+1))
 			return gctx.Err()
 		})
 	}
@@ -255,13 +259,15 @@ const minPartTime = 2 * time.Minute
 //
 // head serializes what reads the head or the base through the run's one
 // go-git repository, which is not safe for concurrent use: read_file, grep,
-// list_files, load_skill, and the checkout that the run tool writes on its
-// first command. writes serializes the run tool and fetch_repo, which share
-// the directory beside the checkout and its budget, and read_file when it
-// reads there. search and oci keep the counts those tools record. A holder of
-// more than one takes them in the order writes, head, oci: the run tool
-// holds writes while its checkout takes head, and a part's checkpoint
-// reads the run tool, fetch_repo, and fetch_oci.
+// list_files, load_skill, search_code as it reads its answer, and the
+// checkout that the run tool writes on its first command. writes serializes
+// the run tool and fetch_repo, which share the directory beside the checkout
+// and its budget, and read_file when it reads there. search and oci keep the
+// counts those tools record. A holder of more than one takes them in the
+// order writes, search, head, oci: the run tool holds writes while its
+// checkout takes head, search_code holds search while it reads its answer at
+// the head, and a part's checkpoint reads the run tool, fetch_repo, and
+// fetch_oci.
 type partLocks struct {
 	head, writes, search, oci chan struct{}
 }

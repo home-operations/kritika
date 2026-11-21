@@ -262,25 +262,64 @@ func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, reposit
 	return nil
 }
 
-// PollRepo is one enabled repository as a poll sees it. IndexedCommit is
+// PollRepo is one enabled repository as a poll sees it, the index state
+// left out by PollPullRepositories. IndexedCommit is
 // the commit its active index generation covers, "" when it has none.
+// RepoConfigOff says that its .kritika.yaml turned indexing off, as of the
+// last index job that read it. Indexing says that an index job of it is
+// queued or running. IndexUnmoved says that the last index job of it to end
+// did so lately, and did not leave the index at the tip it found: it failed
+// or was cancelled, even after it published a tip that the branch then
+// left, or it found the repository's .kritika.yaml turning indexing off.
+// One that completed otherwise published the tip it read, or found the index
+// there already, whatever commit it was queued for.
 type PollRepo struct {
-	Name, DefaultBranch, IndexedCommit string
-	Traits                             configfile.RepoTraits
-	TurnedAt                           *time.Time
+	Name, DefaultBranch, IndexedCommit    string
+	RepoConfigOff, Indexing, IndexUnmoved bool
+	Traits                                configfile.RepoTraits
+	TurnedAt                              *time.Time
 }
 
-// PollRepositories lists the account's enabled repositories, by name.
-func PollRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
-	rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork, r.turned_on, r.turned_at
+// PollRepositories lists the account's enabled repositories, by name. An
+// index job counts toward IndexUnmoved for unmovedFor after it ends.
+func PollRepositories(ctx context.Context, tx pgx.Tx, unmovedFor time.Duration) ([]PollRepo, error) {
+	rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.repo_config_off,
+		EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text),
+		coalesce((SELECT j.state IN ('discarded', 'cancelled') OR r.repo_config_off
+			FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
+				AND j.finalized_at > now() - make_interval(secs => $1)
+			ORDER BY j.finalized_at DESC LIMIT 1), false),
+		r.archived, r.fork, r.turned_on, r.turned_at
 		FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
-		WHERE r.enabled ORDER BY r.name`)
+		WHERE r.enabled ORDER BY r.name`, unmovedFor.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("store: list repositories to poll: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PollRepo, error) {
 		var r PollRepo
-		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn, &r.TurnedAt)
+		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.RepoConfigOff, &r.Indexing, &r.IndexUnmoved, &r.Traits.Archived,
+			&r.Traits.Fork, &r.Traits.TurnedOn, &r.TurnedAt)
+		return r, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: list repositories to poll: %w", err)
+	}
+	return out, nil
+}
+
+// PollPullRepositories lists the account's enabled repositories, by name,
+// as a poll of their pull requests reads them: without their index state,
+// which only PollRepositories reads. So a lock on River's jobs, which that
+// state is read from, holds back no pull request.
+func PollPullRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
+	rows, err := tx.Query(ctx, `SELECT name, default_branch, archived, fork, turned_on, turned_at
+		FROM repositories WHERE enabled ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list repositories to poll: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PollRepo, error) {
+		var r PollRepo
+		err := row.Scan(&r.Name, &r.DefaultBranch, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn, &r.TurnedAt)
 		return r, err
 	})
 	if err != nil {
@@ -290,14 +329,14 @@ func PollRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
 }
 
 // PollState is what a poll builds on: when the account became known, when
-// it was last polled, and when its App's webhook last delivered, nil for
-// never.
+// it was last polled, and when its connection's webhook last delivered, nil
+// for never.
 type PollState struct {
 	Known             time.Time
 	Polled, Delivered *time.Time
 }
 
-// ReadPollState reads the account's poll state against its App.
+// ReadPollState reads the account's poll state through its connection.
 func ReadPollState(ctx context.Context, tx pgx.Tx, accountID, connectionID string) (PollState, error) {
 	var s PollState
 	if err := tx.QueryRow(ctx, `SELECT a.created_at, s.last_polled_at, c.last_webhook_at FROM accounts a

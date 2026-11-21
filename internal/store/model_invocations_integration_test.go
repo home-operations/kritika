@@ -252,3 +252,37 @@ func TestSweepModelInvocations(t *testing.T) {
 		t.Fatalf("invocations left = %v, want the recent and the reserved", left)
 	}
 }
+
+// TestOptionalReservationLeavesModelCallsAdmitted: a reservation for a step
+// the run can do without, such as reranking, is declined when it would
+// bring the run exactly to its budget, so that while it is held the run
+// still admits the model calls it cannot do without.
+func TestOptionalReservationLeavesModelCallsAdmitted(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	account := accountID(t, s, "alpha")
+	u, token := invocationFixture(t, s, account)
+	for _, tt := range []struct {
+		tokens int64
+		ok     bool
+	}{{50, false}, {49, true}} {
+		if ok, err := s.ReserveGatewayTokensWithin(ctx, token, tt.tokens); err != nil || ok != tt.ok {
+			t.Fatalf("reserve %d of a budget of 50 within it = %v, %v; want %v", tt.tokens, ok, err, tt.ok)
+		}
+	}
+	id, err := s.BeginModelInvocation(ctx, u, token, 50, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("a model call while an optional reservation is held = %v, want it admitted", err)
+	}
+	u.Input, u.Output = 0, 0
+	if err := s.CompleteModelInvocation(ctx, id, u, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SettleModelInvocation(ctx, account, id); err != nil {
+		t.Fatal(err)
+	}
+}

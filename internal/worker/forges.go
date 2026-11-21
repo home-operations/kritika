@@ -1,9 +1,17 @@
 package worker
 
 import (
+	"cmp"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -295,4 +303,54 @@ func (c *ForgeCache) PullRequestAuthor(ctx context.Context, in *configfile.Conne
 		return "", false, err
 	}
 	return pr.Author, pr.AuthorIsBot, nil
+}
+
+// transientForge reports whether err, from a forge call, may not recur on a
+// later try: the forge answered 5xx, 408 or 429, or gave no answer, as when
+// its connection was refused, reset or cut short, or when it closed an answer
+// meant to hold JSON with no body at all, which the decoder reads as io.EOF.
+// GitHub's rate limit is left out: ForgeRateLimit waits it out for as long as
+// the limit says. An answer that refused the request, such as 401, 403 or
+// 404, is not transient. Nor is a forge whose certificate does not verify or
+// whose host does not resolve, or whose HTTPS URL reaches a plain HTTP
+// listener: that is a misconfiguration, which an hour of waits would only
+// hide. So is a GitHub redirect that its client refused to follow.
+func transientForge(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, limited := github.RetryAfter(err, time.Now()); limited {
+		return false
+	}
+	if status := cmp.Or(github.Status(err), gitlab.Status(err), forgejo.Status(err)); status != 0 {
+		return status >= http.StatusInternalServerError || status == http.StatusRequestTimeout || status == http.StatusTooManyRequests
+	}
+	if misconfigured(err) {
+		return false
+	}
+	_, unanswered := errors.AsType[*url.Error](err)
+	return unanswered || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// misconfigured reports whether err is a forge's certificate failing to
+// verify, its host name not resolving, its HTTPS URL answered in plain
+// HTTP, or a GitHub redirect refused.
+func misconfigured(err error) bool {
+	if errors.Is(err, http.ErrSchemeMismatch) || errors.Is(err, github.ErrRedirectRefused) {
+		return true
+	}
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.HostnameError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.CertificateInvalidError](err); ok {
+		return true
+	}
+	dns, ok := errors.AsType[*net.DNSError](err)
+	return ok && dns.IsNotFound
 }

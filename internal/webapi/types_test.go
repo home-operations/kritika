@@ -173,6 +173,11 @@ var goldens = map[string]any{
 		r.Index = IndexState{Backlog: 3}
 		return r
 	}(),
+	"truncated_repository": func() Repository {
+		r := goldenRepo
+		r.Index.Truncated = true
+		return r
+	}(),
 	"index_run": goldenIndexRun,
 	"index_contents": IndexContents{
 		Indexed: true, Commit: "def456", EmbedModel: "embed", EmbedDims: 1024, BuiltAt: &t0, FinishedAt: &t1,

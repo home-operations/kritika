@@ -368,7 +368,11 @@ func setupIndexResume(t *testing.T, scenario string) *resumeSetup {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush, Full: scenario == "forced rebuild"}
+	trigger := jobs.TriggerPush
+	if scenario == "onboarding" {
+		trigger = jobs.TriggerOnboard
+	}
+	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: trigger, Full: scenario == "forced rebuild"}
 	inserted, err := queue.Insert(ctx, args, nil)
 	if err != nil {
 		t.Fatal(err)

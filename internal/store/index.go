@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 // EnsureIndexSchema makes index_chunks match the instance's embedder. It
@@ -18,7 +19,13 @@ import (
 // every generation is dropped with the table and the table is rebuilt. So
 // the onboarding that follows indexes each repository afresh. rebuilt reports
 // that. The dashboard asks the admin to confirm such a change before it is
-// saved. Leader only.
+// saved.
+//
+// It also records this build's index format, runspec.IndexFormat. A new
+// format drops nothing: the generations of another format still answer
+// searches while the onboarding feeder rebuilds them, a few at a time. A
+// table that it keeps, it first brings up to this build's columns
+// (prepareIndexChunks). Leader only.
 func (s *Store) EnsureIndexSchema(
 	ctx context.Context, appRole, model string, dims int, documentPrompt string,
 ) (rebuilt bool, err error) {
@@ -28,25 +35,40 @@ func (s *Store) EnsureIndexSchema(
 	if dims <= 0 || dims > configfile.MaxEmbedDims {
 		return false, fmt.Errorf("store: embedding dimension %d is outside the index limit of %d", dims, configfile.MaxEmbedDims)
 	}
+	// Before the format is applied, which lets this build's index jobs
+	// write the columns.
+	if err := s.prepareIndexChunks(ctx, func(cur IndexSchema) bool {
+		return cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt
+	}); err != nil {
+		return false, err
+	}
 	err = pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
 			return fmt.Errorf("store: lock index schema: %w", err)
 		}
-		curModel, curDims, curPrompt, ok, err := IndexSchemaIn(ctx, tx)
+		cur, ok, err := IndexSchemaIn(ctx, tx)
 		switch {
 		case err != nil:
 			return err
 		case !ok:
 			return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
-		case curModel == model && curDims == dims && curPrompt == documentPrompt:
-			return nil
+		case cur.Model == model && cur.Dims == dims && cur.DocumentPrompt == documentPrompt:
+			return s.applyIndexFormat(ctx, tx, cur.Format)
 		}
 		// No generation is valid for a different embedder, so detach every
-		// repository and drop the vectors with the table.
+		// repository and drop the vectors with the table. The table goes
+		// before the postings, the order in which a search reads them and
+		// generationTables deletes from them, so the rebuild waits for a
+		// search between the two holding neither. The postings then go at
+		// once, rather than a generation at a time as each is superseded
+		// (migration 0069's trigger). By then the rebuild holds every
+		// repository, which a publication holds before it writes postings,
+		// so it waits for no publication.
 		stmts := []string{
 			`UPDATE repositories SET active_index_run_id = NULL`,
-			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE status IN ('running', 'completed')`,
 			`DROP TABLE IF EXISTS index_chunks`,
+			`TRUNCATE index_postings`,
+			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE status IN ('running', 'completed')`,
 			`DELETE FROM index_schema WHERE id = 1`,
 		}
 		for _, stmt := range stmts {
@@ -60,61 +82,152 @@ func (s *Store) EnsureIndexSchema(
 	return rebuilt && err == nil, err
 }
 
-// IndexSchemaIn is the embedding model, dimension and document prompt that
-// index_chunks was built for, read in tx. ok is false when it was never
-// built.
-func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (model string, dims int, documentPrompt string, ok bool, err error) {
-	err = tx.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt FROM index_schema WHERE id = 1`).
-		Scan(&model, &dims, &documentPrompt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", 0, "", false, nil
+// applyIndexFormat records this build's index format in index_schema when
+// another is recorded.
+func (s *Store) applyIndexFormat(ctx context.Context, tx pgx.Tx, current int) error {
+	if current == runspec.IndexFormat {
+		return nil
 	}
-	if err != nil {
-		return "", 0, "", false, fmt.Errorf("store: read index schema: %w", err)
+	if _, err := tx.Exec(ctx, `UPDATE index_schema SET index_format = $1 WHERE id = 1`, runspec.IndexFormat); err != nil {
+		return fmt.Errorf("store: record index format: %w", err)
 	}
-	return model, dims, documentPrompt, true, nil
+	s.logger.Info("index format applied: onboarding rebuilds the indexes of another format a few at a time",
+		"format", runspec.IndexFormat, "previous", current)
+	return nil
 }
 
-func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
-	app := pgx.Identifier{appRole}.Sanitize()
-	stmts := []string{
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks (
-			id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-			account_id     uuid        NOT NULL REFERENCES accounts (id),
-			repository_id uuid        NOT NULL REFERENCES repositories (id),
-			index_run_id  uuid        NOT NULL REFERENCES index_runs (id) ON DELETE CASCADE,
-			path          text        NOT NULL,
-			start_line    int         NOT NULL,
-			end_line      int         NOT NULL,
-			language      text        NOT NULL DEFAULT '',
-			symbol        text        NOT NULL DEFAULT '',
-			kind          text        NOT NULL DEFAULT '',
-			scope         text        NOT NULL DEFAULT '',
-			text          text        NOT NULL,
-			embedding     halfvec(%d) NOT NULL,
-			created_at    timestamptz NOT NULL DEFAULT now()
-		)`, dims),
-		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
-		`CREATE INDEX IF NOT EXISTS index_chunks_account_id_idx ON index_chunks (account_id)`,
-		// VectorChord's access method: it partitions and quantises rather
-		// than building a graph, so it builds fast and answers a filtered
-		// query in full. Unpartitioned, since the table stays far below the
-		// size at which VectorChord recommends lists.
-		`CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`,
-		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
-		`DROP POLICY IF EXISTS account_isolation ON index_chunks`,
-		`CREATE POLICY account_isolation ON index_chunks TO ` + app + `
-			USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
-			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO ` + app,
+// IndexSchema is what index_chunks was built for: the embedding model,
+// dimension and document prompt, and the index format that the leader's
+// build applied.
+type IndexSchema struct {
+	Model          string
+	Dims           int
+	DocumentPrompt string
+	Format         int
+}
+
+// IndexSchemaIn is the index schema, read in tx. ok is false when
+// index_chunks was never built.
+func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (IndexSchema, bool, error) {
+	var s IndexSchema
+	err := tx.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt, index_format FROM index_schema WHERE id = 1`).
+		Scan(&s.Model, &s.Dims, &s.DocumentPrompt, &s.Format)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return IndexSchema{}, false, nil
 	}
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("store: create index_chunks: %w", err)
+	if err != nil {
+		return IndexSchema{}, false, fmt.Errorf("store: read index schema: %w", err)
+	}
+	return s, true, nil
+}
+
+// contentHashIndex finds the chunks of a repository that hold a content
+// hash, as migration 0070 creates it.
+const contentHashIndex = `CREATE INDEX IF NOT EXISTS index_chunks_content_hash_idx ON index_chunks (repository_id, content_hash)
+	WHERE content_hash IS NOT NULL`
+
+// addedColumns are the columns of index_chunks that migrations added, with
+// their types. Of them, the content hash alone is indexed, by
+// contentHashIndex. The lexemes are not: a search reads index_postings,
+// which a publication writes from the lexemes of the chunks it adds and
+// replaces.
+var addedColumns = []struct{ name, typ string }{
+	{"content_hash", "bytea"},
+	{"lexemes", "tsvector"},
+}
+
+// addColumns adds each of addedColumns that index_chunks lacks. It looks
+// first, as ALTER TABLE takes the table's exclusive lock even when the
+// column exists.
+func addColumns(ctx context.Context, tx pgx.Tx) error {
+	for _, c := range addedColumns {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
+			WHERE attrelid = 'index_chunks'::regclass AND attname = $1 AND NOT attisdropped)`, c.name).Scan(&exists); err != nil {
+			return fmt.Errorf("store: read index_chunks columns: %w", err)
+		}
+		if exists {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `ALTER TABLE index_chunks ADD COLUMN `+c.name+` `+c.typ); err != nil {
+			return fmt.Errorf("store: add index_chunks.%s: %w", c.name, err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt) VALUES (1, $1, $2, $3)`,
-		model, dims, documentPrompt); err != nil {
+	return nil
+}
+
+// addContentHashIndex builds contentHashIndex unless it exists. It looks
+// first, as CREATE INDEX takes the table's lock even when the index exists.
+func addContentHashIndex(ctx context.Context, tx pgx.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks_content_hash_idx') IS NOT NULL`).Scan(&exists); err != nil {
+		return fmt.Errorf("store: read index_chunks indexes: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, contentHashIndex); err != nil {
+		return fmt.Errorf("store: index index_chunks.content_hash: %w", err)
+	}
+	return nil
+}
+
+// prepareIndexChunks brings an index_chunks that a build before
+// addedColumns created up to them and to contentHashIndex. During a rollout,
+// such a build can still be leader after the migrations ran and create the
+// table again for a new embedder. keep, nil for any, says whether the table
+// built for the recorded index schema stays: one that the caller drops
+// instead is left as it is.
+//
+// The columns are added, and committed, before the index is built in a
+// transaction of its own. Adding one takes the table's exclusive lock, which
+// every search queues behind, for a moment: it writes no row. Building the
+// index reads every chunk, under a lock that lets searches read the table
+// and holds up builds' writes until it is done. Each looks for what it adds
+// first, so a retry after the columns committed builds the index alone. As
+// the migrations do, each gives up its wait for a lock after a few seconds
+// rather than hold up what queues behind it, and the caller tries again
+// later.
+func (s *Store) prepareIndexChunks(ctx context.Context, keep func(IndexSchema) bool) error {
+	for _, step := range []func(context.Context, pgx.Tx) error{addColumns, addContentHashIndex} {
+		prepared := false
+		err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
+				return fmt.Errorf("store: lock index schema: %w", err)
+			}
+			schema, ok, err := IndexSchemaIn(ctx, tx)
+			if err != nil || !ok || keep != nil && !keep(schema) {
+				return err
+			}
+			var exists bool
+			if err := tx.QueryRow(ctx, `SELECT to_regclass('index_chunks') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+				return fmt.Errorf("store: prepare index_chunks: %w", err)
+			}
+			prepared = true
+			return step(ctx, tx)
+		})
+		if err != nil || !prepared {
+			return err
+		}
+	}
+	return nil
+}
+
+// createIndexChunks creates index_chunks for the embedder. A new table holds
+// no chunk, so no posting of one is left either: a rebuild for a new
+// embedder supersedes every generation, and drops its chunks with the table.
+func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
+	if err := createPartitionedIndexChunks(ctx, tx, appRole, dims); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `TRUNCATE index_postings`); err != nil {
+		return fmt.Errorf("store: drop index postings: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt, index_format)
+		VALUES (1, $1, $2, $3, $4)`, model, dims, documentPrompt, runspec.IndexFormat); err != nil {
 		return fmt.Errorf("store: record index schema: %w", err)
 	}
 	return nil
@@ -122,10 +235,11 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 
 // SweepStoppedIndexes drops the index of every repository that did not run
 // for longer than grace and returns how many it dropped. A repository runs
-// while it is enabled and while runs, given its account ID and traits, says
-// that it does. Its clock, stopped_at, starts at the first sweep that finds
-// it holding an index and not running. The first sweep that finds it running
-// or holding none clears the clock.
+// while it is enabled, while its .kritika.yaml was last found not turning it
+// off (see RecordRepoConfigOff), and while runs, given its account ID and
+// traits, says that it does. Its clock, stopped_at, starts at the first
+// sweep that finds it holding an index and not running. The first sweep that
+// finds it running or holding none clears the clock.
 //
 // The repository is left with no active generation, which is marked
 // superseded, so running it again onboards a fresh index. It runs on the
@@ -150,7 +264,7 @@ func (s *Store) SweepStoppedIndexes(
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on,
+		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, enabled AND NOT repo_config_off, archived, fork, turned_on,
 				active_index_run_id IS NOT NULL
 			FROM repositories WHERE active_index_run_id IS NOT NULL OR stopped_at IS NOT NULL`)
 		if err != nil {
@@ -178,8 +292,8 @@ func (s *Store) SweepStoppedIndexes(
 		// The stopped ones are locked and read again under the lock, so one
 		// turned on or reported running since the first read is seen so:
 		// its clock is cleared, not started, and its index kept.
-		rows, err = tx.Query(ctx, `SELECT id::text, account_id::text, enabled, archived, fork, turned_on, active_index_run_id::text,
-				stopped_at <= now() - make_interval(secs => $2)
+		rows, err = tx.Query(ctx, `SELECT id::text, account_id::text, enabled AND NOT repo_config_off, archived, fork, turned_on,
+				active_index_run_id::text, stopped_at <= now() - make_interval(secs => $2)
 			FROM repositories WHERE id = ANY($1::uuid[]) AND active_index_run_id IS NOT NULL FOR UPDATE`, stopped, grace.Seconds())
 		if err != nil {
 			return err
@@ -215,6 +329,7 @@ func (s *Store) SweepStoppedIndexes(
 		for _, stmt := range []string{
 			`UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,
 			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = ANY($1::uuid[])`,
+			`DELETE FROM index_postings WHERE index_run_id = ANY($1::uuid[])`,
 			`DELETE FROM index_chunks WHERE index_run_id = ANY($1::uuid[])`,
 		} {
 			if _, err := tx.Exec(ctx, stmt, dropped); err != nil {
@@ -251,13 +366,15 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 }
 
 // onboardCandidate holds for a repository, r, that OnboardCandidates can
-// offer, whatever enabled says of it. $1 is the retryAfter, in seconds.
+// offer, whatever enabled says of it: one without an active generation, or
+// whose generation another embedder or index format built, or a step of
+// another format advanced. $1 is the retryAfter, in seconds.
 // onboardActivity is when its pull requests last moved, which orders an
 // account's candidates.
 var onboardCandidate = `r.enabled AND r.turned_on IS DISTINCT FROM false
 	AND (r.active_index_run_id IS NULL OR EXISTS (SELECT 1 FROM index_runs g, index_schema s
-	    WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt)
-	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt)))
+	    WHERE g.id = r.active_index_run_id AND ((g.embed_model, g.embed_dims, g.document_prompt, g.index_format)
+	      IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt, s.index_format) OR ` + steppedInAnotherFormat + `)))
 	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE ` + liveIndexJob + ` AND j.args->>'repository_id' = r.id::text)
 	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
 	                AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)
@@ -298,10 +415,12 @@ func OnboardBacklog(ctx context.Context, tx pgx.Tx, retryAfter time.Duration) ([
 
 // OnboardCandidates lists up to limit enabled repositories, of those that
 // enabled also admits by account ID and traits. A listed repository's active
-// index generation is missing, or another embedder than index_schema records
-// built it. A listed repository has no index job queued or running. It also
-// has no onboarding job that finished within retryAfter without building an
-// index: one that failed or was skipped will fail or be skipped again.
+// index generation is missing, or another embedder or index format than
+// index_schema records built it, or a step of another index format advanced
+// it. A listed repository has no index job queued
+// or running. It also has no onboarding job that finished within retryAfter
+// without building an index: one that failed or was skipped will fail or be
+// skipped again.
 //
 // A pod still on the previous configuration during a rollout can publish a
 // generation of another embedder. The gateway never queries that generation,

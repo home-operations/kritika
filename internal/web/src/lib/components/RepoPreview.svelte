@@ -6,6 +6,7 @@
   import type { RepoDetail, Repository } from '../types';
   import StateView from './StateView.svelte';
   import Time from './Time.svelte';
+  import Pill from './Pill.svelte';
 
   let { slug, repo }: { slug: string; repo: Repository } = $props();
   const res = Resource.live<RepoDetail>(() => `${accountApi(slug)}/repos/${repoPath(repo.fullName)}`);
@@ -30,13 +31,18 @@
       <div class="min-w-0">
         <h2 class="preview-heading">Code index</h2>
         <dl class="preview-facts">
-          <dt>Indexed commit</dt><dd class="mono" title={d.index.activeCommit ?? undefined}>{d.index.activeCommit ? shortSha(d.index.activeCommit) : 'Not indexed'}</dd>
+          <dt>Indexed commit</dt>
+          <dd>
+            <span class="mono" title={d.index.activeCommit ?? undefined}>{d.index.activeCommit ? shortSha(d.index.activeCommit) : 'Not indexed'}</span>
+            {#if d.index.truncated}<Pill tone="warn" label="partial" />{/if}
+          </dd>
           {#if run}
             <dt>Latest run</dt><dd>{run.status} · {run.mode}</dd>
             <dt>Started</dt><dd><Time iso={run.createdAt} /></dd>
             <dt>Chunks</dt><dd>{wholeNumber(run.chunkCount)}</dd>
           {/if}
         </dl>
+        {#if d.index.truncated}<p class="text-muted mt-1">The last full build hit the indexer's limit on files, bytes or chunks. The index may still be missing files or portions of files.</p>{/if}
         {#if run?.error}<p class="text-danger line-clamp-2 wrap-anywhere mt-1">{run.error}</p>{/if}
       </div>
     </div>

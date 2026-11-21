@@ -64,6 +64,15 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
+// Status is the HTTP status of the instance's answer that err carries, 0
+// when err carries none, as when the request never got an answer.
+func Status(err error) int {
+	if e, ok := errors.AsType[*apiError](err); ok {
+		return e.status
+	}
+	return 0
+}
+
 // Client is one authorized integration's access to a Forgejo instance,
 // or one bot user's to a Gitea instance.
 type Client struct {

@@ -62,7 +62,7 @@ func runFollowUp(ctx context.Context, report *reporter, p runspec.Spec, secrets 
 	}
 	in := newPromptInputs(p, files, nil, res.Changed)
 	tools := agentTools{diff: newReadDiffTool(res.Diff, agentLimits(p.Agent).MaxToolOutputBytes)}
-	similar, search := similarContext(ctx, p, secrets, res, logger)
+	similar, search := similarContext(ctx, p, secrets, headTree, res, chunks, logger)
 	chunks, tools.search = append(chunks, similar...), search
 	var cleanup func()
 	tools.run, tools.fetch, tools.notes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), nil, secrets,

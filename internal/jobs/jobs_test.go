@@ -67,9 +67,13 @@ func TestJobArgs(t *testing.T) {
 		{name: "thread", args: ThreadArgs{AccountID: "t", RepositoryID: "r", Number: 1, CommentID: 7, Resolved: true, Sender: "devin"},
 			wantKind: "thread", wantQueue: QueueThread},
 		{name: "index", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush},
-			wantKind: "index", wantQueue: QueueIndex},
+			wantKind: "index", wantQueue: QueueIndexUpdate},
 		{name: "index catch-up", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush, CatchUp: "run"},
-			wantKind: "index", wantQueue: QueueIndex, wantCatchUp: true},
+			wantKind: "index", wantQueue: QueueIndexUpdate, wantCatchUp: true},
+		{name: "index onboarding", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerOnboard},
+			wantKind: "index", wantQueue: QueueIndex},
+		{name: "index forced rebuild", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerReindex, Full: true},
+			wantKind: "index", wantQueue: QueueIndex},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

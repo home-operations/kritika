@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -60,6 +61,36 @@ func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.
 		return fmt.Errorf("store: write runner context: %w", err)
 	}
 	return SetRunnerPhase(ctx, tx, runID, phase)
+}
+
+// similarExcludeBatch is the most paths that one statement of
+// SetSimilarExclude writes, so that a statement stays small however many
+// paths a report holds.
+const similarExcludeBatch = 1000
+
+// SetSimilarExclude records the paths the run's similar-code searches leave
+// out, in the run's account, a batch at a time within tx, each path once. The
+// first report holds: a later one, which can only be the same report sent
+// again, leaves it as it is.
+func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []string) error {
+	tag, err := tx.Exec(ctx, `UPDATE runner_runs SET similar_exclude_reported_at = now()
+		WHERE id = $1 AND similar_exclude_reported_at IS NULL`, runID)
+	if err != nil {
+		return fmt.Errorf("store: set similar exclusions: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	// The table's index is of the paths' digests, which two paths can share,
+	// so no key keeps a path from being written twice.
+	for batch := range slices.Chunk(slices.Compact(slices.Sorted(slices.Values(paths))), similarExcludeBatch) {
+		if _, err := tx.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path)
+			SELECT r.id, r.account_id, p.path FROM runner_runs r, unnest($2::text[]) AS p (path) WHERE r.id = $1`,
+			runID, batch); err != nil {
+			return fmt.Errorf("store: set similar exclusions: %w", err)
+		}
+	}
+	return nil
 }
 
 // WriteRunnerAgent commits the result, retained conversation, and phase
@@ -138,17 +169,19 @@ func StageRunnerChunks(ctx context.Context, tx pgx.Tx, runID, upload string, chu
 	n := len(chunks)
 	paths, langs, symbols := make([]string, n), make([]string, n), make([]string, n)
 	kinds, scopes, texts := make([]string, n), make([]string, n), make([]string, n)
+	signatures := make([]string, n)
 	starts, ends := make([]int32, n), make([]int32, n)
 	for i, c := range chunks {
 		paths[i], starts[i], ends[i] = c.Path, int32(c.StartLine), int32(c.EndLine)
 		langs[i], symbols[i], kinds[i], scopes[i], texts[i] = c.Language, c.Symbol, c.Kind, c.Scope, c.Text
+		signatures[i] = c.Signature
 	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO index_staging (runner_run_id, account_id, path, start_line, end_line, language, symbol, kind, scope, text)
-		SELECT r.id, r.account_id, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text
-		FROM runner_runs r, unnest($2::text[], $3::int[], $4::int[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text)
-		WHERE r.id = $1`, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts)
+		INSERT INTO index_staging (runner_run_id, account_id, path, start_line, end_line, language, symbol, kind, scope, signature, text)
+		SELECT r.id, r.account_id, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.signature, c.text
+		FROM runner_runs r, unnest($2::text[], $3::int[], $4::int[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[])
+			AS c (path, start_line, end_line, language, symbol, kind, scope, signature, text)
+		WHERE r.id = $1`, runID, paths, starts, ends, langs, symbols, kinds, scopes, signatures, texts)
 	if err != nil {
 		return fmt.Errorf("store: stage chunks: %w", err)
 	}
@@ -169,9 +202,9 @@ func FinishRunnerIndex(ctx context.Context, tx pgx.Tx, runID, upload string, p r
 		return fmt.Errorf("%w: %d chunks staged, %d uploaded", ErrIndexStaging, staged, count)
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count)
-		SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
-		runID, p.Base, p.Mode, p.ChangedPaths, count); err != nil {
+		INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count, truncated)
+		SELECT id, account_id, $2, $3, $4, $5, $6 FROM runner_runs WHERE id = $1`,
+		runID, p.Base, p.Mode, p.ChangedPaths, count, p.Truncated); err != nil {
 		return fmt.Errorf("store: write runner index: %w", err)
 	}
 	return SetRunnerPhase(ctx, tx, runID, "done")

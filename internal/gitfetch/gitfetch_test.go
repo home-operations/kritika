@@ -3,6 +3,8 @@ package gitfetch
 import (
 	"cmp"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,7 @@ import (
 
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
@@ -214,6 +217,106 @@ func TestRunNotFoundNamesTheToken(t *testing.T) {
 	_, err := Run(t.Context(), Fetch{CloneURL: srv.URL + "/acme/webapp.git", Token: "scoped", Head: strings.Repeat("a", 40)})
 	if !errors.Is(err, transport.ErrRepositoryNotFound) || !strings.Contains(err.Error(), "the token cannot see it") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestTreesCommitUnavailable: a commit that the remote does not serve fails
+// the fetch with an UnavailableError that names it, and a remote that fails
+// for any other reason does not.
+func TestTreesCommitUnavailable(t *testing.T) {
+	r := build(t)
+	missing := "0123456789abcdef0123456789abcdef01234567"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	refusing := refusingUploadPack(t, r.head, missing)
+	for _, tc := range []struct {
+		name    string
+		fetch   Fetch
+		refused string
+	}{
+		{name: "base the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: r.head, Base: missing}, refused: missing},
+		{name: "head the remote does not have", fetch: Fetch{CloneURL: r.dir, Head: missing, Base: r.base}, refused: missing},
+		{name: "base that smart HTTP refuses", fetch: Fetch{CloneURL: refusing + "/acme/webapp.git", Head: r.head, Base: missing}, refused: missing},
+		{name: "head that smart HTTP refuses", fetch: Fetch{CloneURL: refusing + "/acme/webapp.git", Head: missing, Base: r.head}, refused: missing},
+		{name: "remote unavailable", fetch: Fetch{CloneURL: srv.URL + "/acme/webapp.git", Head: r.head, Base: r.base}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Trees(t.Context(), tc.fetch)
+			e, ok := errors.AsType[*UnavailableError](err)
+			if err == nil || ok != (tc.refused != "") || errors.Is(err, ErrCommitUnavailable) != ok || ok && e.SHA != tc.refused {
+				t.Fatalf("err = %v, want the commit %q unavailable", err, tc.refused)
+			}
+		})
+	}
+}
+
+// refusingUploadPack serves smart HTTP as git's upload-pack does for a
+// repository whose branch is at tip: it advertises the branch, and answers a
+// fetch that wants refused with the error packet git sends, "not our ref". It
+// returns the server's URL.
+func refusingUploadPack(t *testing.T, tip, refused string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs") && r.URL.Query().Get("service") == "git-upload-pack":
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, err = pktline.Writeln(w, "# service=git-upload-pack")
+			err = errors.Join(err, pktline.WriteFlush(w))
+			_, werr := pktline.WriteString(w, tip+" HEAD\x00multi_ack_detailed side-band-64k thin-pack ofs-delta shallow no-progress "+
+				"allow-tip-sha1-in-want allow-reachable-sha1-in-want symref=HEAD:refs/heads/main\n")
+			err = errors.Join(err, werr)
+			_, werr = pktline.Writeln(w, tip+" refs/heads/main")
+			err = errors.Join(err, werr, pktline.WriteFlush(w))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack"):
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+			err = (&pktline.ErrorLine{Text: "upload-pack: not our ref " + refused}).Encode(w)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+		if err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// TestRefusedCommit: the server's refusal to serve a commit by SHA, as git's
+// upload-pack words it, counts as the commit being unavailable, and so does
+// go-git's own server not finding a commit that was asked for. Each names
+// the commit refused, as a whole SHA. Other errors that the server or the
+// transport send do not count, nor a refusal or a missing object that names
+// only a commit that was not asked for.
+func TestRefusedCommit(t *testing.T) {
+	head, base := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+		sha  string
+	}{
+		{name: "error line", err: fmt.Errorf("fetch: %w", &pktline.ErrorLine{Text: "upload-pack: not our ref " + head}), want: true, sha: head},
+		{name: "remote error", err: transport.NewRemoteError("fatal: git upload-pack: not our ref " + base), want: true, sha: base},
+		{name: "refusal of a commit not asked for", err: &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("c", 40)}},
+		{name: "refusal of a sha256 commit not asked for", err: &pktline.ErrorLine{Text: "upload-pack: not our ref " + strings.Repeat("c", 64)}},
+		{name: "refusal naming a short hex word", err: &pktline.ErrorLine{Text: "upload-pack: not our ref cafe"}, want: true},
+		{name: "refusal naming no commit", err: &pktline.ErrorLine{Text: "upload-pack: not our ref"}, want: true},
+		{name: "wanted object not found", err: fmt.Errorf("getting wanted object %s: %w", base, plumbing.ErrObjectNotFound), want: true, sha: base},
+		{name: "other object not found", err: fmt.Errorf("getting tree %s: %w", strings.Repeat("c", 40), plumbing.ErrObjectNotFound)},
+		{name: "object not found within a longer id", err: fmt.Errorf("getting tree %s0: %w", base, plumbing.ErrObjectNotFound)},
+		{name: "object not found unnamed", err: fmt.Errorf("decoding pack: %w", plumbing.ErrObjectNotFound)},
+		{name: "other error line", err: &pktline.ErrorLine{Text: "upload-pack: internal error"}},
+		{name: "repository not found", err: transport.ErrRepositoryNotFound},
+		{name: "cut short", err: io.ErrUnexpectedEOF},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if sha, got := refusedCommit(tc.err, head, base); got != tc.want || sha != tc.sha {
+				t.Fatalf("refusedCommit(%v) = %q, %v, want %q, %v", tc.err, sha, got, tc.sha, tc.want)
+			}
+		})
 	}
 }
 

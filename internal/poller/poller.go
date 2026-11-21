@@ -3,7 +3,9 @@
 // the last poll to the ingest dispatcher as if a webhook delivered them. It
 // also closes the ones that kritika holds open and that the forge no longer
 // lists. Review jobs are unique on the head SHA, so a head that the webhook
-// already enqueued is skipped as a duplicate, never reviewed twice.
+// already enqueued is skipped as a duplicate, never reviewed twice. It also
+// hands over a push for each indexed repository whose default branch moved
+// past its index.
 //
 // An account's first poll records the pull requests last updated before
 // kritika knew the account as a baseline instead of reviewing them. No
@@ -17,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +29,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/ingest"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/webhook"
@@ -45,11 +49,41 @@ type Poller struct {
 	Reach func(ctx context.Context, in *configfile.Connection) (map[string]store.Listing, error)
 
 	// unknown are the pull requests held open that the forge did not know
-	// when asked, by "owner/name#number". They are asked once per process, so
-	// they neither cost a request every poll nor use up the poll's checks.
+	// when asked, by "<connection id>:owner/name#number". They are asked once
+	// per process, so they neither cost a request every poll nor use up the
+	// poll's checks. It also holds the default branches, by
+	// "<connection id>:owner/name@branch", that the forge did not know, so
+	// each is logged once for each connection that serves it.
 	mu      sync.Mutex
 	unknown map[string]bool
+	// tips is how far the polls got through each account's default
+	// branches, by account ID.
+	tips map[string]*tipScan
+	// tipsFirst is the account, by ID, that the next look at the default
+	// branches starts at, "" for the first.
+	tipsFirst string
+	// now is the clock that schedules the looks at the default branches,
+	// time.Now when nil: a field for the tests.
+	now func() time.Time
 }
+
+// tipScan is how far the polls got through an account's default branches.
+type tipScan struct {
+	// swept is when a look last went through every repository.
+	swept time.Time
+	// next is the repository that a look cut short resumes at, "" for the
+	// first.
+	next string
+	// until is when the forge's rate limit lets a look ask again.
+	until time.Time
+}
+
+// tipCheckInterval is how often runTips looks at the default branches of an
+// account whose connection's webhooks arrive. A look costs one request per
+// indexed repository: at every interval, it would double what polling costs a
+// GitHub App installation, and a missed push webhook is rare while the rest
+// arrive.
+const tipCheckInterval = time.Hour
 
 // pollOffRecheck is how often Run looks again at a file that turns
 // polling off, so turning it back on takes effect without a restart.
@@ -69,8 +103,14 @@ const reachTimeout = time.Minute
 //
 // A poll is given the interval. A poll that outlasts it, on a forge that
 // answers slowly for every repository of a large account, is cut there. Its
-// accounts' poll state is left where it was for the next poll.
+// accounts' poll state is left where it was for the next poll. The looks at
+// the default branches run beside the polls, on a schedule of their own, so
+// that neither a slow branch lookup nor a slow listing delays the other's
+// next start. Run returns once both have stopped.
 func (p *Poller) Run(ctx context.Context) {
+	var tips sync.WaitGroup
+	defer tips.Wait()
+	tips.Go(func() { p.runTips(ctx) })
 	p.poll(ctx, p.pollAccounts)
 	for {
 		t := time.NewTimer(cmp.Or(p.Current.Get().PollInterval(), pollOffRecheck))
@@ -96,6 +136,37 @@ func (p *Poller) poll(ctx context.Context, poll func(context.Context)) {
 	poll(pctx)
 	if pctx.Err() != nil && ctx.Err() == nil {
 		p.Logger.Warn("poll cut at its interval", "interval", interval)
+	}
+}
+
+// runTips looks at the default branches until ctx ends: once as it starts,
+// then an interval after each look started, with the interval current at
+// the time. A look is cut at its interval, so one look ends before the
+// next starts. It looks at none while polling is off.
+func (p *Poller) runTips(ctx context.Context) {
+	for {
+		started := time.Now()
+		if interval := p.Current.Get().PollInterval(); interval > 0 {
+			p.sweepTips(ctx, interval)
+		}
+		t := time.NewTimer(cmp.Or(p.Current.Get().PollInterval(), pollOffRecheck) - time.Since(started))
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// sweepTips looks at the default branches once, cut at interval, and warns
+// when the cut stopped it.
+func (p *Poller) sweepTips(ctx context.Context, interval time.Duration) {
+	tctx, cancel := context.WithTimeout(ctx, interval)
+	defer cancel()
+	p.pollTipsAll(tctx)
+	if errors.Is(tctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		p.Logger.Warn("default branches not all looked at within the poll interval, the next look resumes", "interval", interval)
 	}
 }
 
@@ -186,10 +257,8 @@ func (p *Poller) pollAccounts(ctx context.Context) {
 }
 
 // Poll lists one account's repositories through the connection serving it
-// and returns how many pull requests were handed to the dispatcher. For a
-// connection that no webhook reached lately, it also looks at each indexed
-// repository's default branch. No push webhook will say that the branch
-// moved. A repository that the forge will not answer for is skipped, and the
+// and returns how many pull requests were handed to the dispatcher. A
+// repository whose pull requests the forge will not list is skipped, and the
 // rest are polled. The poll state is then left where it was, so the next poll
 // covers the skipped repository's window too. The error names each one.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
@@ -203,7 +272,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	var state store.PollState
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if repos, err = store.PollRepositories(ctx, tx); err != nil {
+		if repos, err = store.PollPullRepositories(ctx, tx); err != nil {
 			return err
 		}
 		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
@@ -216,7 +285,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	if state.Polled != nil && state.Polled.After(since) {
 		since = *state.Polled
 	}
-	checkTips := state.Delivered == nil || state.Delivered.Before(time.Now().Add(-file.PollLookback()))
 	handled := 0
 	runs := map[string]bool{}
 	var skipped []error
@@ -238,11 +306,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, err
 		}
 		owner, name, _ := strings.Cut(repo, "/")
-		if checkTips && r.IndexedCommit != "" {
-			if err := p.pollTip(ctx, file, account, in, client, r, started); err != nil {
-				skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
-			}
-		}
 		// Every open pull request is listed, not only those updated since
 		// the last poll. The ones that kritika holds open and that the forge
 		// no longer lists are the ones that closed.
@@ -321,7 +384,7 @@ func (p *Poller) closeMissed(
 	owner, name, _ := strings.Cut(r.Name, "/")
 	checks := 0
 	for _, number := range held {
-		key := fmt.Sprintf("%s#%d", r.Name, number)
+		key := fmt.Sprintf("%s:%s#%d", in.ID(), r.Name, number)
 		if open[number] || p.isUnknown(key) {
 			continue
 		}
@@ -351,6 +414,21 @@ func (p *Poller) closeMissed(
 		p.Logger.Info("pull request closed without its event", "connection", in.Name, "repository", r.Name, "pr", number, "merged", pr.Merged)
 	}
 	return nil
+}
+
+// branchUnknown logs, once per process, a default branch of r that the forge
+// does not have: r was deleted, or its default branch renamed, and no event
+// said so. The branch is asked for again at the next look at the account's
+// branches anyway, after the repository sync has recorded a renamed one or
+// disabled a deleted one.
+func (p *Poller) branchUnknown(in *configfile.Connection, r store.PollRepo, err error) {
+	key := in.ID() + ":" + r.Name + "@" + r.DefaultBranch
+	if p.isUnknown(key) {
+		return
+	}
+	p.markUnknown(key)
+	p.Logger.Warn("default branch unknown to the forge", "connection", in.Name, "repository", r.Name, "branch", r.DefaultBranch,
+		"error", err)
 }
 
 func (p *Poller) isUnknown(key string) bool {
@@ -418,6 +496,212 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 	return nil
 }
 
+// pollTipsAll looks at the default branches of every account of the current
+// file through the connection serving it, with pollTips. It starts at the
+// account that the last look ran out of time before reaching, or after the
+// one it ran out of time in. So an account that takes a look's whole
+// interval, every time, does not keep the accounts after it from their
+// turn. Each account's own sweep resumes where it stopped, whatever the
+// order. Without an embedder it looks at none: no index job runs, and the
+// one that a moved branch queued would only be cancelled, and queued again
+// at the next look past its backoff, while the indexes wait for an embedder.
+func (p *Poller) pollTipsAll(ctx context.Context) {
+	file := p.Current.Get()
+	if file.Embedding == nil {
+		return
+	}
+	n := len(file.Accounts)
+	p.mu.Lock()
+	first := max(slices.IndexFunc(file.Accounts, func(a configfile.Account) bool { return a.ID() == p.tipsFirst }), 0)
+	p.mu.Unlock()
+	for i := range n {
+		account := &file.Accounts[(first+i)%n]
+		in := file.ConnectionFor(account)
+		if in == nil {
+			continue
+		}
+		if ctx.Err() != nil {
+			p.setTipsFirst(account.ID())
+			return
+		}
+		if err := p.pollTips(ctx, file, account, in); err != nil {
+			p.Logger.Warn("default branches not polled", "connection", in.Name, "account", account.Key(), "error", err)
+		}
+		if ctx.Err() != nil {
+			p.setTipsFirst(file.Accounts[(first+i+1)%n].ID())
+			return
+		}
+	}
+}
+
+// setTipsFirst records the account that the next look at the default
+// branches starts at.
+func (p *Poller) setTipsFirst(accountID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tipsFirst = accountID
+}
+
+// pollTips looks at the default branch of each of the account's indexed
+// repositories with no index job queued or running, whatever webhooks
+// arrive: one push webhook missed, or one index job that failed, leaves the
+// index behind until the next push otherwise. It looks at every interval while
+// the connection's webhooks have been silent for the poll lookback, and every
+// tipCheckInterval while they arrive. A repository whose last index job
+// ended without moving its index waits jobs.OnboardRetryAfter for its next
+// look, as the onboarding feeder waits to offer a repository whose first
+// index failed again. A branch that the forge will not give is logged and
+// asked for again at the next look.
+//
+// A sweep looks at the repositories in name order, from the first to the
+// last. A look that ctx or the forge's rate limit cuts short leaves the
+// sweep at the repository it stopped at, and the next look past the limit's
+// wait goes on from there to the last name, not round again. A sweep that
+// ends, in one look or over several, counts toward tipCheckInterval. So looks
+// cut short every time still come round to each repository, and stop asking
+// once they have. A repository named before where a sweep was cut, added
+// meanwhile, waits for the next sweep.
+func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
+	// Whether the look is due needs only when the webhook last arrived, so a
+	// look that is not due lists no repository and reads no job.
+	var state store.PollState
+	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	next, due := p.tipsDue(account.ID(), state.Delivered, file.PollLookback())
+	if !due {
+		return nil
+	}
+	started, err := p.Store.Now(ctx)
+	if err != nil {
+		return err
+	}
+	var repos []store.PollRepo
+	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		repos, err = store.PollRepositories(ctx, tx, jobs.OnboardRetryAfter)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	// In Go's order, which the database's collation need not be.
+	slices.SortFunc(repos, func(a, b store.PollRepo) int { return strings.Compare(a.Name, b.Name) })
+	first, _ := slices.BinarySearchFunc(repos, next, func(r store.PollRepo, name string) int { return strings.Compare(r.Name, name) })
+	for _, r := range repos[first:] {
+		if ctx.Err() != nil {
+			p.tipsCut(account.ID(), r.Name, time.Time{})
+			return nil
+		}
+		// A queued or running index job reads the tip itself, and a push
+		// dedupes onto it: the forge is not asked again. An index job that
+		// ended lately without moving the index will end so again, as when
+		// it fails on the repository or its .kritika.yaml turns indexing
+		// off: one every poll would cost a job and its forge calls each
+		// time, and a runner pod for one that fails in its run.
+		if !file.Runs(account, r.Traits) || r.IndexedCommit == "" || r.Indexing || r.IndexUnmoved {
+			continue
+		}
+		// The client is the account's, not the repository's: without it
+		// no other branch can be looked at either.
+		client, err := p.Forges.For(ctx, in, r.Name)
+		if err != nil {
+			p.tipsCut(account.ID(), r.Name, time.Time{})
+			return err
+		}
+		err = p.pollTip(ctx, file, account, in, client, r, started)
+		// Past the rate limit, any forge's, every other branch would only be
+		// refused too.
+		if wait, limited := rateLimited(err, p.clock()); limited {
+			p.Logger.Warn("default branches not polled past the rate limit", "connection", in.Name, "account", account.Key(),
+				"repository", r.Name, "error", err)
+			p.tipsCut(account.ID(), r.Name, p.clock().Add(wait))
+			return nil
+		}
+		switch {
+		case ctx.Err() != nil:
+			p.tipsCut(account.ID(), r.Name, time.Time{})
+			return nil
+		case errors.Is(err, forge.ErrNotFound):
+			p.branchUnknown(in, r, err)
+		case err != nil:
+			p.Logger.Warn("default branch not polled", "connection", in.Name, "repository", r.Name, "error", err)
+		}
+	}
+	p.tipsSwept(account.ID())
+	return nil
+}
+
+// tipsDue reports whether this look asks for the account's default branches,
+// and the repository to start at, "" for the first. It looks when a look was
+// cut short, past any rate limit's wait. It also looks when the connection's
+// webhook, which last delivered at delivered, has been silent for lookback,
+// and otherwise when tipCheckInterval has passed since a look last went
+// through every repository in this process: a newly elected leader looks at
+// once.
+func (p *Poller) tipsDue(accountID string, delivered *time.Time, lookback time.Duration) (string, bool) {
+	now := p.clock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	s := p.tips[accountID]
+	if s == nil {
+		return "", true
+	}
+	if now.Before(s.until) {
+		return "", false
+	}
+	arriving := delivered != nil && delivered.After(now.Add(-lookback))
+	if s.next == "" && arriving && now.Sub(s.swept) < tipCheckInterval {
+		return "", false
+	}
+	return s.next, true
+}
+
+// tipsCut records that a look at the account's default branches stopped
+// before the repository next, which the next look starts at once until has
+// passed.
+func (p *Poller) tipsCut(accountID, next string, until time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	s := p.tipScan(accountID)
+	s.next, s.until = next, until
+}
+
+// tipsSwept records that a look went through every one of the account's
+// default branches.
+func (p *Poller) tipsSwept(accountID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	*p.tipScan(accountID) = tipScan{swept: p.clock()}
+}
+
+// clock is the time on the clock that schedules the looks at the default
+// branches.
+func (p *Poller) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
+}
+
+// tipScan returns the account's tipScan, which it creates. p.mu is held.
+func (p *Poller) tipScan(accountID string) *tipScan {
+	if p.tips == nil {
+		p.tips = map[string]*tipScan{}
+	}
+	s := p.tips[accountID]
+	if s == nil {
+		s = &tipScan{}
+		p.tips[accountID] = s
+	}
+	return s
+}
+
 // pollTip hands the dispatcher a push to r's default branch when its tip is
 // not the commit that r's index covers. So the index follows the branch as a
 // push webhook makes it do.
@@ -426,11 +710,15 @@ func (p *Poller) pollTip(
 	started time.Time,
 ) error {
 	owner, name, _ := strings.Cut(r.Name, "/")
+	// The look waits out a rate limit itself, past its deadline if need be.
 	tip, branch, err := client.BranchTip(ctx, owner, name, r.DefaultBranch)
 	if err != nil {
 		return err
 	}
-	if tip == r.IndexedCommit {
+	// A repository marked off in its .kritika.yaml is read again at the
+	// indexed commit too: a force push back to it, with no webhook, leaves
+	// the mark, and retention drops an index that the file turns on.
+	if tip == r.IndexedCommit && !r.RepoConfigOff {
 		return nil
 	}
 	ev := webhook.Event{

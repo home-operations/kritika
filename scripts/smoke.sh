@@ -23,8 +23,8 @@ cd "$REPO_ROOT"
 CNPG_VERSION=v1.30.2
 # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
 POSTGRES_TAG=18.6-standard-bookworm
-# renovate: datasource=docker depName=ghcr.io/tensorchord/vchord-scratch
-VCHORD_TAG=pg18-v1.1.1
+# renovate: datasource=docker depName=ghcr.io/home-operations/vchord
+VCHORD_TAG=1.3.0
 
 cluster="${KRITIKA_SMOKE_CLUSTER:-kritika-smoke}"
 image="${KRITIKA_SMOKE_IMAGE:-ghcr.io/home-operations/kritika:smoke}"
@@ -134,7 +134,7 @@ spec:
     extensions:
       - name: vchord
         image:
-          reference: ghcr.io/tensorchord/vchord-scratch:${VCHORD_TAG}
+          reference: ghcr.io/home-operations/vchord:${VCHORD_TAG}
         dynamic_library_path:
           - /usr/lib/postgresql/18/lib/
         extension_control_path:
@@ -163,7 +163,7 @@ spec:
     - name: vector
       ensure: present
     - name: vchord
-      version: "${VCHORD_TAG#pg18-v}"
+      version: "${VCHORD_TAG}"
       ensure: present
 ---
 apiVersion: postgresql.cnpg.io/v1

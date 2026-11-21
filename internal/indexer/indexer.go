@@ -1,6 +1,7 @@
 // Package indexer cuts a repository tree into the chunks that the embedding
 // index stores. It runs in the runner pod, which holds the fetched trees and
-// no model key. The worker embeds what it stages.
+// no model key. The worker embeds what it stages. HunkQueries is what a run
+// asks that index about a diff.
 package indexer
 
 import (
@@ -9,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -28,7 +31,15 @@ type Chunk struct {
 	StartLine int
 	EndLine   int
 	Text      string
+	// Signature is the line that names the chunk's declaration when the
+	// chunk is a window of it that does not show that line, so that the
+	// window's embedding is attributable. Text does not hold it.
+	Signature string
 }
+
+// maxSignatureBytes bounds a signature, which a minified or generated
+// declaration can make one long line.
+const maxSignatureBytes = 200
 
 // Options bound the work.
 type Options struct {
@@ -95,7 +106,49 @@ type builder struct {
 	stats  Stats
 }
 
-func (b *builder) ignored(path string) bool { return chunk.Matches(b.ignore, path) }
+// unindexed are the paths the index leaves out on top of the ignore rules:
+// files that SOPS encrypted, whose text a search has no use for, and code
+// that generators write. They are not review ignores, which add to every
+// repository's ignore hash: a change to those rebuilds each index at its next
+// push, where a change here raises runspec.IndexFormat and so rebuilds at the
+// onboarding feeder's pace. A pull request that changes one is still
+// reviewed. The ".sops.yaml" that configures SOPS is not encrypted.
+var unindexed = []string{
+	"**/?*.sops.*",
+	"**/*_pb2.py",
+	"**/*_pb2.pyi",
+	"**/*_pb2_grpc.py",
+	"**/*.pb.cc",
+	"**/*.pb.h",
+	"**/*.g.dart",
+	"**/*.freezed.dart",
+}
+
+// Unindexed reports whether the index leaves path out whatever the ignore
+// rules say: a file that SOPS encrypted, or generated code.
+func Unindexed(path string) bool { return chunk.Matches(unindexed, path) }
+
+// Indexable is HunkQueries' indexable for a diff whose files head has: it
+// refuses each of paths whose blob at head is over
+// DefaultOptions.MaxFileBytes, which Build skips. It reads only the blobs'
+// sizes, and only here, so the predicate reads no git objects. A nil head
+// refuses none.
+func Indexable(head *object.Tree, paths []string) func(path string) bool {
+	over := map[string]bool{}
+	for _, p := range paths {
+		if head == nil {
+			break
+		}
+		if f, err := head.File(p); err == nil && f.Size > int64(DefaultOptions.MaxFileBytes) {
+			over[p] = true
+		}
+	}
+	return func(path string) bool { return !over[path] }
+}
+
+func (b *builder) ignored(path string) bool {
+	return chunk.Matches(b.ignore, path) || Unindexed(path)
+}
 
 func (b *builder) walkAll(ctx context.Context, head *object.Tree) error {
 	iter := head.Files()
@@ -174,21 +227,44 @@ func (b *builder) file(f *object.File) error {
 	if len(pf.Decls) > 0 {
 		b.stats.Parsed++
 	}
-	for _, d := range pieces(pf, b.opts) {
+	for _, d := range Pieces(pf, b.opts) {
+		// A window of a file without declarations can be white space
+		// alone, a line too long to share a window with its neighbours, and
+		// a piece cut to MaxChunkBytes can keep only its white space.
+		text := ChunkText(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
+		if strings.IndexFunc(text, chunk.Worded) < 0 {
+			continue
+		}
 		if len(b.chunks) >= b.opts.MaxChunks {
 			b.stats.Truncated = true
 			return ErrBudgetReached
 		}
-		text := textcut.Prefix(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
-		if text == "" {
-			continue
+		var signature string
+		if d.HeadLine > 0 && !d.Contains(d.HeadLine) {
+			signature = textcut.Prefix(strings.TrimSpace(pf.Text(d.HeadLine, d.HeadLine)), maxSignatureBytes)
 		}
 		b.chunks = append(b.chunks, Chunk{
 			Path: f.Name, Language: pf.Language, Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
-			StartLine: d.StartLine, EndLine: d.EndLine, Text: text,
+			StartLine: d.StartLine, EndLine: d.EndLine, Text: text, Signature: signature,
 		})
 	}
 	return nil
+}
+
+// ChunkText is what the index stores of a piece's text: its first maxBytes
+// bytes, cut at a rune, or, when those hold no word and the text does, the
+// maxBytes from its first word. Only a piece of one line is over maxBytes,
+// and one indented past it would otherwise store its white space alone and
+// none of the names on it, which a query of the line asks about.
+func ChunkText(text string, maxBytes int) string {
+	cut := textcut.Prefix(text, maxBytes)
+	if len(cut) == len(text) || strings.IndexFunc(cut, chunk.Worded) >= 0 {
+		return cut
+	}
+	if i := strings.IndexFunc(text, chunk.Worded); i >= 0 {
+		return textcut.Prefix(text[i:], maxBytes)
+	}
+	return cut
 }
 
 // readBlob reads the file's contents in one pass.
@@ -201,43 +277,253 @@ func readBlob(f *object.File) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-// pieces picks the declarations to store: the outermost ones that fit
-// MaxDeclLines. It descends into an oversized declaration's nested ones. A
-// file with no declarations is cut into windows.
-func pieces(f *chunk.File, opts Options) []chunk.Decl {
+// Pieces picks the line ranges to store, which cover every line of the file
+// that holds a word, but for comments that lead into no declaration. A
+// declaration over MaxDeclLines, and one that holds named ones and is unnamed
+// (a C++ namespace, a Python if, an HCL body) or over MaxChunkBytes, is
+// covered by its nested declarations, each cut the same way, and by windows
+// of the lines between them, under its own symbol. Any other declaration is
+// one piece. Imports and unnamed statements at the top level (a package
+// clause, assignments) are merged into runs of up to WindowLines. Other named
+// declarations are not merged, so each keeps the symbol that a search result
+// reports. A file with no declarations is cut into windows. No piece's text
+// is over MaxChunkBytes unless it is one line.
+//
+// A piece is whole lines, and declarations can share one, so a line is
+// stored once where that loses nothing. Of the pieces that start on one
+// line, which a search, telling its hits apart by path and start line, would
+// see as one, only the longest is kept, as it holds the others' lines, and a
+// named one before an unnamed one of the same lines. An unnamed piece whose
+// lines a piece that starts on an earlier line holds is dropped, as a
+// statement after a declaration's closing bracket is. A named one is kept for
+// its symbol, as a function that starts on another's last line is, so that
+// line is stored twice. So is the line that two pieces meet on when each
+// holds lines of its own. The windows of a range overlap by WindowOverlap.
+func Pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
-		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap)
+		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, opts.MaxChunkBytes)
 	}
-	var out []chunk.Decl
-	var lastEnd int
-	for _, d := range f.Decls {
-		if d.StartLine <= lastEnd {
-			continue // nested inside a declaration already taken
+	c := cutter{f: f, opts: opts, kids: nesting(f.Decls)}
+	var out, run []chunk.Decl
+	flush := func() {
+		if len(run) > 0 {
+			out = append(out, merge(run))
+			run = run[:0]
 		}
-		if d.Lines() <= opts.MaxDeclLines {
-			out = append(out, d)
-			lastEnd = d.EndLine
+	}
+	for _, i := range c.kids[0] {
+		d := f.Decls[i]
+		if d.Symbol != "" && d.Kind != importKind || d.Lines() > opts.WindowLines || c.split(i) {
+			flush()
+			out = append(out, c.cover(i)...)
 			continue
 		}
-		// Too big: take its nested declarations that fit. Windows for the
-		// rest mostly repeat them, so the remainder is dropped.
-		nested := false
-		for _, n := range f.Decls {
-			if n.StartLine > d.StartLine && n.EndLine <= d.EndLine && n.Lines() <= opts.MaxDeclLines && n.StartLine > lastEnd {
-				out = append(out, n)
-				lastEnd = n.EndLine
-				nested = true
+		if len(run) > 0 && (d.EndLine-run[0].StartLine >= opts.WindowLines ||
+			len(f.Bytes(run[0].StartLine, d.EndLine)) > opts.MaxChunkBytes) {
+			flush()
+		}
+		run = append(run, d)
+	}
+	flush()
+	var fit []chunk.Decl
+	at := map[int]int{}
+	for _, p := range out {
+		for _, w := range c.windows(p, p.StartLine, p.EndLine, opts.MaxDeclLines) {
+			j, ok := at[w.StartLine]
+			switch {
+			case !ok:
+				at[w.StartLine] = len(fit)
+				fit = append(fit, w)
+			case w.EndLine > fit[j].EndLine || w.EndLine == fit[j].EndLine && fit[j].Symbol == "" && w.Symbol != "":
+				fit[j] = w
 			}
 		}
-		if !nested {
-			for _, w := range chunk.Windows([]byte(f.Text(d.StartLine, d.EndLine)), opts.WindowLines, opts.WindowOverlap) {
-				out = append(out, chunk.Decl{
-					Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
-					StartLine: d.StartLine + w.StartLine - 1, EndLine: d.StartLine + w.EndLine - 1,
-				})
+	}
+	// The pieces come in line order, so one that ends by the furthest end
+	// before it lies in an earlier piece.
+	kept, end := fit[:0], 0
+	for _, p := range fit {
+		if p.Symbol == "" && p.EndLine <= end {
+			continue
+		}
+		kept = append(kept, p)
+		end = max(end, p.EndLine)
+	}
+	return kept
+}
+
+// importKind is the kind that chunk gives a package clause or an import.
+const importKind = "import"
+
+// merge is one piece for a run of top-level statements.
+func merge(run []chunk.Decl) chunk.Decl {
+	if len(run) == 1 {
+		return run[0]
+	}
+	kind := importKind
+	if slices.ContainsFunc(run, func(d chunk.Decl) bool { return d.Kind != importKind }) {
+		kind = "other"
+	}
+	return chunk.Decl{Kind: kind, StartLine: run[0].StartLine, EndLine: run[len(run)-1].EndLine}
+}
+
+// nesting lists, for each declaration of ds (sorted outermost first, as
+// chunk.File.Decls is), the indexes of the declarations directly inside it:
+// kids[i+1] for ds[i], and kids[0] for the top level.
+func nesting(ds []chunk.Decl) [][]int {
+	kids := make([][]int, len(ds)+1)
+	var stack []int
+	for i, d := range ds {
+		for len(stack) > 0 {
+			p := ds[stack[len(stack)-1]]
+			if p.StartByte <= d.StartByte && d.EndByte <= p.EndByte {
+				break
 			}
-			lastEnd = d.EndLine
+			stack = stack[:len(stack)-1]
+		}
+		parent := 0
+		if len(stack) > 0 {
+			parent = stack[len(stack)-1] + 1
+		}
+		kids[parent] = append(kids[parent], i)
+		stack = append(stack, i)
+	}
+	return kids
+}
+
+// minGapLines is the fewest worded lines that a gap between an oversized
+// declaration's nested ones needs to be stored by itself. A smaller gap, such
+// as a field or a class's opening line, joins the nested declaration next to
+// it when the two fit one piece.
+const minGapLines = 3
+
+type cutter struct {
+	f    *chunk.File
+	opts Options
+	kids [][]int
+}
+
+// segment is a piece of an oversized declaration: a nested declaration
+// stored whole, or a part of it, or the lines between nested ones.
+type segment struct {
+	chunk.Decl
+	whole, gap bool
+}
+
+// split reports whether declaration i is stored as its nested declarations
+// and the lines between them rather than whole: it is over MaxDeclLines, or
+// it holds a declaration that has a symbol and either has none itself or is
+// over MaxChunkBytes. Stored whole, one over MaxChunkBytes is cut into
+// windows under its own symbol, which the declarations it holds lose.
+func (c *cutter) split(i int) bool {
+	d := c.f.Decls[i]
+	return d.Lines() > c.opts.MaxDeclLines ||
+		(d.Symbol == "" || len(c.f.Bytes(d.StartLine, d.EndLine)) > c.opts.MaxChunkBytes) && c.named(i)
+}
+
+// named reports whether a declaration nested in declaration i has a symbol.
+func (c *cutter) named(i int) bool {
+	for _, k := range c.kids[i+1] {
+		if c.f.Decls[k].Symbol != "" || c.named(k) {
+			return true
+		}
+	}
+	return false
+}
+
+// cover returns the pieces of declaration i.
+func (c *cutter) cover(i int) []chunk.Decl {
+	d := c.f.Decls[i]
+	if !c.split(i) {
+		return []chunk.Decl{d}
+	}
+	var segs []segment
+	gap := func(start, end int) {
+		for start <= end && !c.worded(start) {
+			start++
+		}
+		for end >= start && !c.worded(end) {
+			end--
+		}
+		if start <= end {
+			segs = append(segs, segment{
+				Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope, StartLine: start, EndLine: end, HeadLine: d.HeadLine, gap: true,
+			})
+		}
+	}
+	next := d.StartLine
+	for _, k := range c.kids[i+1] {
+		n := c.f.Decls[k]
+		gap(next, n.StartLine-1)
+		if !c.split(k) {
+			segs = append(segs, segment{Decl: n, whole: true})
+		} else {
+			for _, p := range c.cover(k) {
+				segs = append(segs, segment{Decl: p})
+			}
+		}
+		next = max(next, n.EndLine+1)
+	}
+	gap(next, d.EndLine)
+	// fits reports whether lines start to end can be one piece, so that a gap
+	// joined to a whole declaration does not have it cut into windows.
+	fits := func(start, end int) bool {
+		return end-start < c.opts.MaxDeclLines && len(c.f.Bytes(start, end)) <= c.opts.MaxChunkBytes
+	}
+	var out []chunk.Decl
+	for j, s := range segs {
+		if s.gap && c.words(s.StartLine, s.EndLine) < minGapLines {
+			if j+1 < len(segs) && segs[j+1].whole && fits(s.StartLine, segs[j+1].EndLine) {
+				segs[j+1].StartLine = s.StartLine
+				continue
+			}
+			if last := len(out) - 1; j > 0 && segs[j-1].whole && last >= 0 && fits(out[last].StartLine, s.EndLine) {
+				out[last].EndLine = s.EndLine
+				continue
+			}
+		}
+		if s.gap {
+			out = append(out, c.windows(s.Decl, s.StartLine, s.EndLine, c.opts.WindowLines)...)
+		} else {
+			out = append(out, s.Decl)
 		}
 	}
 	return out
+}
+
+// windows returns lines start to end as one piece attributed to d when they
+// are at most lines lines and MaxChunkBytes, or else cuts them into windows
+// of at most WindowLines and MaxChunkBytes, leaving out a window that holds
+// no word.
+func (c *cutter) windows(d chunk.Decl, start, end, lines int) []chunk.Decl {
+	text := c.f.Bytes(start, end)
+	if end-start < lines && len(text) <= c.opts.MaxChunkBytes || start == end {
+		d.StartLine, d.EndLine = start, end
+		return []chunk.Decl{d}
+	}
+	var out []chunk.Decl
+	for _, w := range chunk.Windows(text, c.opts.WindowLines, c.opts.WindowOverlap, c.opts.MaxChunkBytes) {
+		d.StartLine, d.EndLine = start+w.StartLine-1, start+w.EndLine-1
+		if c.words(d.StartLine, d.EndLine) > 0 {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// worded reports whether line holds a word, which a line of brackets and
+// punctuation alone does not.
+func (c *cutter) worded(line int) bool {
+	return bytes.IndexFunc(c.f.Bytes(line, line), chunk.Worded) >= 0
+}
+
+// words counts the worded lines from start to end.
+func (c *cutter) words(start, end int) int {
+	n := 0
+	for l := start; l <= end; l++ {
+		if c.worded(l) {
+			n++
+		}
+	}
+	return n
 }

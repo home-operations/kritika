@@ -308,17 +308,21 @@ func TestMergedCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, err := Merge([]byte(tt.doc), configfile.Settings{Enabled: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, by, err := m.Check(vars, tt.changed)
-			var filter string
-			if by != nil {
-				filter = by.Label()
-			}
-			if got != tt.want || (err != nil) != tt.wantErr || filter != tt.filter {
-				t.Fatalf("Check = %q, %q, %v; want %q, %q", got, filter, err, tt.want, tt.filter)
+			// The admin's default of off does not skip: the repository runs
+			// by then, as a dashboard choice can make it.
+			for _, adminOn := range []bool{true, false} {
+				m, err := Merge([]byte(tt.doc), configfile.Settings{Enabled: adminOn})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, by, err := m.Check(vars, tt.changed)
+				var filter string
+				if by != nil {
+					filter = by.Label()
+				}
+				if got != tt.want || (err != nil) != tt.wantErr || filter != tt.filter {
+					t.Fatalf("admin on %v: Check = %q, %q, %v; want %q, %q", adminOn, got, filter, err, tt.want, tt.filter)
+				}
 			}
 		})
 	}

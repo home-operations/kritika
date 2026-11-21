@@ -19,6 +19,13 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
+// runnerTokenError is stage's failure to have the forge mint the runner's git
+// token, which Work waits out as it does the forge's other calls.
+type runnerTokenError struct{ err error }
+
+func (e *runnerTokenError) Error() string { return "worker: runner git token: " + e.err.Error() }
+func (e *runnerTokenError) Unwrap() error { return e.err }
+
 func (w *Index) stage(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, repository string,
 	client forge.Client, runID string, spec runspec.Spec, logger *slog.Logger,
@@ -30,14 +37,18 @@ func (w *Index) stage(
 		}
 		dctx, cancel := detach(ctx)
 		defer cancel()
-		err = errors.Join(err, w.Store.WithAccount(dctx, account.ID(), func(tx pgx.Tx) error {
+		// Joined only on a failure, so that Work still finds a token error as
+		// stage returned it.
+		if ferr := w.Store.WithAccount(dctx, account.ID(), func(tx pgx.Tx) error {
 			return store.FailRunnerRun(dctx, tx, spec.RunID, err.Error())
-		}))
+		}); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
 	}()
 	_, name, _ := strings.Cut(repository, "/")
 	token, err := client.GitToken(ctx, name)
 	if err != nil {
-		return err
+		return &runnerTokenError{err}
 	}
 	reportToken, err := w.Store.MintIndexRunnerToken(ctx, account.ID(), spec.RunID, job.ID, job.Attempt)
 	if err != nil {

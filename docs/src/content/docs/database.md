@@ -10,7 +10,7 @@ cluster in the same Kubernetes cluster, which this page sets up.
 ## What kritika needs
 
 - kritika needs Postgres 18 with VectorChord. The `vchord`
-  ([VectorChord](https://github.com/tensorchord/VectorChord)) and `vector`
+  ([VectorChord](https://github.com/pgsty/vchord)) and `vector`
   (pgvector) extensions must exist before the first start. `vchord` builds
   on the types from pgvector, and it must be in `shared_preload_libraries`.
 - kritika needs two roles. The chart requires them, and at start kritika
@@ -34,10 +34,13 @@ cluster in the same Kubernetes cluster, which this page sets up.
 ## The cluster
 
 CNPG's own `standard` image ships pgvector. VectorChord mounts into it from
-TensorChord's
-[`vchord-scratch`](https://docs.vectorchord.ai/vectorchord/admin/kubernetes.html)
+the
+[`ghcr.io/home-operations/vchord`](https://github.com/home-operations/containers/tree/main/apps/vchord)
 image as an
 [image volume extension](https://cloudnative-pg.io/docs/1.30/imagevolume_extensions/).
+That image packages the releases of [pgsty/vchord](https://github.com/pgsty/vchord),
+a maintained fork of VectorChord under AGPL-3.0-only. TensorChord's own
+releases stop at 1.1.1.
 The two-instance example favors availability when its standby is unavailable.
 While synchronous replication is active and commits use
 `synchronous_commit=on`, acknowledgement waits for the standby to flush WAL
@@ -60,7 +63,7 @@ spec:
     extensions:
       - name: vchord
         image:
-          reference: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
+          reference: ghcr.io/home-operations/vchord:1.3.0
         # The image keeps Debian's paths rather than CNPG's default
         # /extensions/vchord/lib and /extensions/vchord/share.
         dynamic_library_path:
@@ -96,7 +99,9 @@ spec:
   them, use TensorChord's
   [`cloudnative-vectorchord`](https://github.com/tensorchord/cloudnative-vectorchord)
   image instead and leave out `extensions`. That image has VectorChord built
-  in and is tagged `<postgres>-<vchord>` (`18.6-1.1.1`).
+  in and is tagged `<postgres>-<vchord>` (`18.6-1.1.1`). It stays on
+  TensorChord's 1.1.1, without the fork's fixes, so set the `Database`'s
+  `vchord` version to `"1.1.1"` with it.
 - `dataDurability: preferred` relaxes the synchronous requirement while the
   standby is unavailable. `required` keeps the requested synchronous quorum
   and blocks commits without enough standbys. Neither replaces backups or
@@ -115,7 +120,7 @@ spec:
 A `Database` resource creates the extensions. The operator runs it as
 superuser, so the owner never needs that privilege. The `version` of
 `vchord` is the version CNPG installs. When that value changes, CNPG updates
-the extension to the new version, so move it with the `vchord-scratch` tag:
+the extension to the new version, so move it with the `vchord` image tag:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -131,8 +136,32 @@ spec:
     - name: vector
       ensure: present
     - name: vchord
-      version: "1.1.1"
+      version: "1.3.0"
       ensure: present
+```
+
+### Upgrading VectorChord
+
+Change the Cluster's image reference first, so that every instance restarts
+with the new library, and then the `Database`'s `version`, so that CNPG
+updates the extension. The new library works with the old extension in
+between. 1.3.0 upgrades in place from 1.1.1, TensorChord's last release, and
+keeps the on-disk index format. Outside CNPG, a superuser runs this in the
+`kritika` database after the restart:
+
+```sql
+ALTER EXTENSION vchord UPDATE;
+```
+
+The upgrade leaves existing index pages as they are. kritika's embedding
+index is a `halfvec` cosine index. One built before 1.2.0 on a CPU with fp16
+arithmetic (ARM with fp16, or x86 with AVX512-FP16) can have lost recall to
+an fp16 overflow. One built before 1.3.0 that holds a zero vector stores it
+wrongly. Rebuild the index after the upgrade when either can apply. The owner
+role can do it without blocking writes:
+
+```sql
+REINDEX INDEX CONCURRENTLY index_chunks_embedding_idx;
 ```
 
 The application role is a `DatabaseRole` resource, which CNPG
@@ -232,11 +261,16 @@ Connections open on demand, so an idle replica holds few:
 | the owner pool           | replica | 4                                                                                                                 | ten minutes, for a migration that builds an index                                        | `kritika-owner`       |
 | the `LISTEN` connection  | replica | 1                                                                                                                 | one minute, as the application pool's                                                    | `kritika-listen`      |
 | review publication locks | replica | 3 × `KRITIKA_REVIEW_WORKERS` (2 unless set) + `KRITIKA_THREAD_WORKERS` (1 unless set), and one more on the leader | one minute                                                                               | `kritika-publication` |
+| index update slot waits  | replica | `KRITIKA_INDEX_WORKERS` (1 unless set)                                                                            | one minute                                                                               | `kritika-index-wait`  |
 
 Each active review publication holds a separate application-role connection
 for its advisory lock, without an open transaction. This keeps slow forge
 calls from occupying the application pool used by heartbeats and requests.
-When you size `max_connections`, include these connections.
+An `index_update` job that has to wait for an embedding slot likewise holds a
+connection of its own for as long as it waits, one per job and so at most one
+per index worker. When you size `max_connections`, include these connections:
+they are outside both pools, so raising a pool's `pool_max_conns` makes no room
+for them.
 
 A `pool_max_conns` in a URI replaces that pool's ceiling. If jobs wait on the
 pool, raise the application pool's ceiling.
@@ -253,9 +287,10 @@ what runner Jobs report to the gateway. Runner Jobs open no connection of their
 own.
 
 The leader runs hourly retention sweeps of transcripts, egress refusals,
-settled model invocations, stored diffs and agent conversations. The sweeps
-work in batches, and each batch is its own statement. A backlog larger than
-what one statement can clear is worked off over the sweep rather than rolled
+settled model invocations, stored diffs, agent conversations, and the paths
+that finished runs' similar-code searches left out. The sweeps work in
+batches, and each batch is its own statement. A backlog larger than what one
+statement can clear is worked off over the sweep rather than rolled
 back.
 
 Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the
@@ -305,6 +340,17 @@ takes one retry interval at most. During that interval, the new leader can
 start its duties before the old one notices that it lost the lock. For that
 reason, `KritikaMultipleLeaders` in the chart's alerts waits longer than one
 interval.
+
+A migration that changes a table that searches, index builds or model calls
+use waits at most five seconds for that table's lock, so that the queries
+queued behind it wait no longer. The five seconds bound only the wait for
+the lock, not how long the migration then holds it. One that builds an index
+of such a table does so in a transaction of its own, which lets the table be
+read while it builds but holds up writes to it for as long as the build
+reads the table. When another transaction holds the lock longer, the
+migration fails and the leader logs it and releases the leader lock. A
+leader tries the migration again within one `KRITIKA_LEADER_RETRY_INTERVAL`.
+Replicas start working jobs once every migration is applied.
 
 CNPG's disruption budget for the primary allows no eviction, so draining the
 primary's node waits until the primary moves. Switch over first, with the
@@ -398,14 +444,147 @@ Before claiming recoverability:
 The inspection did not perform failover, restore, or replication-policy changes.
 Those are separate operational work after recovery objectives are agreed.
 
+## The similar-code index
+
+Every account's and repository's chunks share one table, `index_chunks`. A
+similar-code search names one index generation of one repository. So that its
+cost follows that generation's partition rather than the whole table, the
+table is partitioned:
+
+- `index_chunks` is list partitioned by a Boolean column, `legacy`, not by
+  `created_at`. A chunk is written with `legacy` false, whatever its date.
+- `index_chunks_current` is the partition of `legacy` false, so it holds
+  every chunk but those of a table partitioned on upgrade that have yet to
+  move (see below). It is hash partitioned by generation (`index_run_id`)
+  into 64 partitions, `index_chunks_00` to `index_chunks_63`.
+- Each leaf partition has its own VectorChord (`vchordrq`) index. A search
+  reads the hash partition of its generation and that partition's index,
+  and also the legacy partition and its index while that is attached. Once
+  the legacy partition is dropped, or on a table created partitioned, it
+  reads the hash partition alone, about 1/64 of the table if the chunks are
+  spread evenly.
+- The [search by name](/models/#search-by-name) reads `index_postings`, which
+  holds a row for each word of a generation's chunks under the key
+  generation and word: how many of the chunks hold the word and, while
+  fewer than 200 do, which. A word in 200 chunks or more is too common for
+  any search to read, so its row keeps the count alone. A search reads each
+  of its words' rows from that B-tree, and then reads from the generation's
+  partition only the chunks that those rows list, for their paths, to leave
+  out those of the excluded paths, and the chunks it ranks. A change that
+  excludes most of a repository adds no read for the chunks of its paths
+  that no word of the search lists.
+  Under row-level security a B-tree of text equality, which is leakproof,
+  serves the search, where no index of a full-text `tsvector` could:
+  Postgres applies the full-text match operator, `@@`, which is not
+  leakproof, only to the rows that the policy has let through.
+  `index_postings` is not partitioned: its key starts with the generation,
+  so a search and a generation's deletion already read that generation's
+  rows alone.
+- A full build's publication writes its generation's postings in one
+  statement, from the words that each chunk records (`index_chunks.lexemes`).
+  An incremental step's publication updates the rows of the words of the
+  chunks it replaces and adds, and lists a word's chunks again, from the
+  generation's chunks that hold it, when it falls back under 200. A run that
+  does not publish writes none, and every path that deletes a generation's
+  chunks deletes its postings. This repository's code holds about 50 words a
+  chunk, but about 23,000 words in all: 7.4 MB of postings for 10,000 of its
+  chunks, where a row for each word of each chunk took 95 MB. Its 9,605
+  chunks took 49 MB with vectors of 256 dimensions. Each publication records
+  how many chunks its generation holds (`index_runs.generation_chunks`),
+  which the search weighs words against.
+
+The application role is granted `index_chunks` alone, and its row-level
+security policy applies to every partition read through it. The role cannot
+read a partition directly. The
+[index scale benchmark](/metrics/#reproducing-the-index-scale-benchmark)
+measures the effect.
+
+### Partitioning an existing index
+
+A build before partitioning created `index_chunks` as a plain table. The
+leader's hourly retention sweep converts such a table, first once a new
+leader has applied the configuration and ensured the index schema, which its
+other sweeps do not wait for. The leader of such a build can also create the
+table again during a rollout, after the migrations ran, for a new embedder.
+That table lacks the
+columns that the migrations add, `content_hash` and `lexemes`, and the
+content hash's index. When it takes the lead with an embedder configured,
+and before it converts the table, the leader adds them in two transactions.
+The first adds the columns and holds the table's exclusive lock for a
+moment, as adding a column writes no row. The second builds the index, which
+reads every chunk under a lock that lets searches read the table but holds
+up index builds' writes. Each looks for what it adds first, so a retry after
+the first committed builds the index alone, and each gives up its wait for a
+lock after five seconds and is tried again later. The conversion then reuses
+the index, and copies and rebuilds nothing:
+
+1. It takes the table's exclusive lock, and then a lock on `accounts`,
+   `repositories` and `index_runs` that blocks writes to them. A publication
+   takes those locks in the other order, so the two can wait on each other.
+   Each of the sweep's waits is bounded to an eighth of PostgreSQL's
+   `deadlock_timeout`, so the sweep gives way before PostgreSQL would abort
+   the publication. While the sweep waits, searches and index builds queue
+   behind it. When a wait times out, the sweep changes nothing and tries
+   again a second later. After five tries it logs a warning and tries again
+   an hour later.
+2. It renames the table, with its indexes and constraints, to
+   `index_chunks_legacy`, and adds `legacy` to it with a default of `true`,
+   which writes no row. It creates the partitioned `index_chunks` and
+   attaches the old table as its partition for `legacy` true, so every chunk
+   it held is in the legacy partition. Its indexes and foreign keys become
+   those of the partitioned table. Attaching reads the old table once, under
+   the lock, to check that every chunk's `legacy` is true. That read takes
+   seconds for millions of chunks. Searches and index builds wait for it.
+3. That sweep, and each later one, empties `index_chunks_legacy`, up to
+   5,000 chunks of one generation per transaction. The active generations
+   go first, moved into the hash partitions. Then the chunks of the other
+   generations: those of a build that can still publish or resume are
+   moved, and the rest are deleted, as the next index build of their
+   repository would delete them. Each transaction holds that repository's
+   lock, as a publication does, for the few seconds its slice takes, and
+   skips a repository whose lock another transaction holds. A generation
+   whose move is under way is split between the two partitions, and a
+   search reads it whole. A move writes the generation's rows again, into
+   the hash partitions and their indexes. Autovacuum can mark the space of
+   the old rows free, but only for new rows of the legacy partition, which
+   gets none, so its files keep their size on the volume until the sweep
+   drops it. Before upgrading, leave room for the whole legacy partition
+   and its indexes, a copy of the chunks that move and their indexes, and
+   the WAL that the moves write.
+4. Once the legacy partition is empty, the sweep drops it. It first reads
+   the partition, under no lock, and leaves it if a chunk is left. It then
+   takes the exclusive lock on `index_chunks` at once or not at all, rather
+   than queue searches behind a waiting lock request, and drops
+   `index_chunks_legacy`, waiting for that partition with the same short
+   wait as the first step. When either lock is not to be had, it changes
+   nothing and tries again a second later, five times, and the next hourly
+   sweep tries again. The hash partitions stay attached throughout: no chunk
+   is moved and no index is built, and this step takes no lock on
+   `accounts`, `repositories` or `index_runs`.
+
+A search reads the legacy partition's vector index until it is dropped, so
+until then it costs what a search of the plain table did. A rebuild for a
+new embedder drops the whole table, legacy partition included, and creates
+it partitioned.
+
+The legacy partition keeps the original table's vector index. If its
+definition was changed by hand, attaching builds a new one, under the lock.
+
+VectorChord 1.1.1 records no rows for a table when a `vchordrq` index is built
+on it. 1.3.0, from the [pgsty fork](https://github.com/pgsty/vchord), records them.
+On 1.1.1, after a manual `CREATE INDEX` or `REINDEX`
+on a partition, run `ANALYZE` on that partition. Otherwise the planner
+estimates the partition to be empty and can choose an exact scan until
+autovacuum analyzes it.
+
 ## Interrupted embedding builds
 
 Index jobs retain completed staging and checkpoint each batch in the same
 transaction as its vectors. A retry of the same River job resumes at the last
 committed chunk and reuses its index and runner records. Compatibility includes
-the target commit, incremental base, ignore rules, dimensions, input limits and
-embedding endpoint/model. Changed inputs discard incompatible progress and
-build anew. A runner that did not finish staging is restarted.
+the target commit, incremental base, ignore rules, dimensions, input limits,
+embedding endpoint/model and index format. Changed inputs discard incompatible
+progress and build anew. A runner that did not finish staging is restarted.
 
 If the process stops after the provider handles an embedding request but
 before its vectors and checkpoint commit, the request can still be repeated.

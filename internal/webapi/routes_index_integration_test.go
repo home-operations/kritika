@@ -20,6 +20,7 @@ func testIndexContents(t *testing.T, e *apiEnv) {
 	seedIndexChunks(t, e)
 	get := indexGetter(t, e)
 	checkIndexSummary(t, get)
+	checkIndexTruncated(t, e, get)
 	checkIndexFiles(t, get)
 	checkIndexChunks(t, get)
 	for _, tc := range []struct {
@@ -177,5 +178,33 @@ func testIndexJobs(t *testing.T, e *apiEnv) {
 	status, body = e.getBody("member-b", "/api/v1/accounts/github/wb/repos")
 	if status != 200 || bytes.Contains(body, []byte(`"trigger":"reindex"`)) {
 		t.Fatalf("account B sees account A's index job: %d %s", status, body)
+	}
+}
+
+// checkIndexTruncated: an index whose full build stopped at the indexer's
+// budget says so in its contents, in the repository's page and in the
+// repository list, where the dashboard marks it partial. A whole one says
+// so in none of them.
+func checkIndexTruncated(t *testing.T, e *apiEnv, get func(who, path string, out any)) {
+	t.Helper()
+	run := e.scalar(`SELECT active_index_run_id::text FROM repositories WHERE id = $1`, e.a.repoID)
+	t.Cleanup(func() { e.exec(`UPDATE index_runs SET truncated = false WHERE id = $1`, run) })
+	for _, truncated := range []bool{false, true} {
+		e.exec(`UPDATE index_runs SET truncated = $2 WHERE id = $1`, run, truncated)
+		var c IndexContents
+		get("member-a", indexPath, &c)
+		var detail RepoDetail
+		get("member-a", "/api/v1/accounts/github/wa/repos/wa/one", &detail)
+		var list Page[Repository]
+		get("member-a", "/api/v1/accounts/github/wa/repos", &list)
+		listed := false
+		for _, r := range list.Items {
+			if r.FullName == "wa/one" {
+				listed = r.Index.Truncated
+			}
+		}
+		if c.Truncated != truncated || detail.Index.Truncated != truncated || listed != truncated {
+			t.Fatalf("truncated %v: contents say %v, the repository's page %v, the list %v", truncated, c.Truncated, detail.Index.Truncated, listed)
+		}
 	}
 }

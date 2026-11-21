@@ -36,13 +36,32 @@ const (
 	SimilarQueryChars = 3000
 )
 
+// SimilarLimit is the most chunks a request can ask the answer to hold. A
+// run asks for more than its prompt shows, as it drops those that the head no
+// longer has or that its other stages show.
+const SimilarLimit = 16
+
 // SimilarRequest is what a run sends the gateway to search its
-// repository's index: the texts to embed, and the paths to leave out of
-// the answer, which the prompt already carries.
+// repository's index: the texts to embed. The answer leaves out the paths
+// the run reported (runspec.SimilarExcludeReport), and Exclude besides,
+// which a runner of an earlier version sends in place of that report.
 type SimilarRequest struct {
 	Queries []string `json:"queries"`
 	Exclude []string `json:"exclude,omitempty"`
+	// Kind is what the queries are, which picks the embedder's prompt for
+	// them: SimilarKindDiff, as "" is, or SimilarKindSearch.
+	Kind string `json:"kind,omitempty"`
+	// Limit is the most chunks the answer holds, up to SimilarLimit. 0 leaves
+	// it to the gateway.
+	Limit int `json:"limit,omitempty"`
 }
+
+// Similar-code query kinds: the hunks of a review's diff, and the agent's
+// search_code queries.
+const (
+	SimilarKindDiff   = "diff"
+	SimilarKindSearch = "search"
+)
 
 // SimilarResponse is the gateway's answer: the nearest chunks, StageSimilar
 // each, and whether the repository has an index to search at all. So a run
@@ -259,9 +278,10 @@ func (b *builder) overlay(ctx context.Context) error {
 			}
 			var c Chunk
 			if decl := f.Enclosing([]int{run[0], run[1]}, b.opts.MaxDeclLines); decl != nil {
+				start, text := b.declText(f, decl, run[0])
 				c = Chunk{
 					Stage: StageOverlay, Path: path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-					StartLine: decl.StartLine, EndLine: decl.EndLine, Text: f.Text(decl.StartLine, decl.EndLine),
+					StartLine: start, EndLine: decl.EndLine, Text: string(text),
 				}
 			} else {
 				s, e, text := f.Window(run[0], run[1], b.opts.WindowRadius)
@@ -313,7 +333,7 @@ func subset(start, end int, shown map[int]string) bool {
 // wordStart reports whether c can start an identifier: [A-Za-z_].
 func wordStart(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' }
 
-func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, changed bool) {
+func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, line int, word string, changed bool) {
 	var stage string
 	var target map[string]*candidates
 	var limit int
@@ -325,9 +345,10 @@ func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, cha
 	default:
 		return
 	}
+	start, text := b.declText(f, decl, line)
 	c := Chunk{
 		Stage: stage, Path: f.Path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-		StartLine: decl.StartLine, EndLine: decl.EndLine, Ref: word,
+		StartLine: start, EndLine: decl.EndLine, Ref: word,
 	}
 	set := target[word]
 	if set == nil {
@@ -338,8 +359,33 @@ func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, cha
 	if !keepCandidate(set.chunks, c, limit) {
 		return
 	}
-	c.Text = b.cutText(f.Text(decl.StartLine, decl.EndLine))
+	// cutText keeps at most MaxChunkBytes bytes of the text, and needs one more
+	// to tell that it is over, so only those are copied.
+	c.Text = b.cutText(string(text[:min(len(text), b.opts.MaxChunkBytes+1)]))
 	set.chunks = append(set.chunks, c)
+}
+
+// declText is decl's text, a slice of f's source, and the line it starts on.
+// When the text is over MaxChunkBytes, the comments and decorators above
+// decl's head line go first, from the top and each whole, so the cut keeps
+// more of its body and does not start inside a block comment or a
+// decorator's arguments. Line line, which pulled decl in, stays, and so does
+// the rest of a comment that holds it.
+func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int, text []byte) {
+	start, text = decl.StartLine, f.Bytes(decl.StartLine, decl.EndLine)
+	for len(text) > b.opts.MaxChunkBytes {
+		next := start + 1
+		for next <= decl.EndLine && f.LeadContinues(next) {
+			next++
+		}
+		if next > min(decl.HeadLine, line) {
+			break
+		}
+		for ; start < next; start++ {
+			_, text, _ = bytes.Cut(text, []byte{'\n'})
+		}
+	}
+	return start, text
 }
 
 func (b *builder) cutText(text string) string {

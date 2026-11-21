@@ -27,7 +27,12 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.QueueWait("review", time.Second)
 	none.InitVectorSearch("account")
 	none.VectorSearch("account", "ok", time.Second)
+	none.LexicalSearch("account", "ok", time.Second)
 	none.CacheUploadSkipped("queue_full")
+	none.IndexSnoozed("t", "forge")
+	none.SimilarRequest("account", "diff", "ok")
+	none.SimilarBest("account", "diff", 0.8)
+	none.SimilarHits("account", "kept", "vector", 3)
 
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
@@ -53,11 +58,17 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	m.ContextChunks("onedr0p", "similar", 1)
 	m.QueueWait("review", time.Second)
 	m.VectorSearch("onedr0p", "ok", time.Second)
+	m.LexicalSearch("onedr0p", "ok", time.Second)
 	m.ReviewSnoozed("onedr0p", "openai/gpt-6-sol")
 	m.JobRescued("review", "running")
 	m.Review("onedr0p", "completed", 12*time.Second)
 	m.Findings("onedr0p", "p1", "correctness", 2)
 	m.IndexRun("onedr0p", "full", "completed", 565)
+	m.IndexSnoozed("onedr0p", "forge")
+	m.IndexSnoozed("onedr0p", "forge")
+	if v := testutil.ToFloat64(m.indexSnoozes.WithLabelValues("onedr0p", "forge")); v != 2 {
+		t.Fatalf("index snoozes = %v", v)
+	}
 	m.RunnerRun("onedr0p", "index", "success", 4*time.Second)
 	m.LeaseWait("onedr0p", "openai/gpt-6-sol", 5*time.Millisecond)
 	m.ModelCall("onedr0p", "openai/gpt-6-sol", "review", "ok", 1706, 1574, 83, 0.005029, false)
@@ -85,6 +96,16 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	}
 	if v := testutil.ToFloat64(m.indexChunks.WithLabelValues("onedr0p")); v != 565 {
 		t.Fatalf("index chunks = %v", v)
+	}
+	m.IndexVectors("onedr0p", 500, 65)
+	m.IndexVectors("onedr0p", 0, 3)
+	if r, e := testutil.ToFloat64(m.indexVectors.WithLabelValues("onedr0p", "reused")),
+		testutil.ToFloat64(m.indexVectors.WithLabelValues("onedr0p", "embedded")); r != 500 || e != 68 {
+		t.Fatalf("index vectors reused = %v, embedded = %v", r, e)
+	}
+	m.IndexTruncated("onedr0p")
+	if v := testutil.ToFloat64(m.indexTruncated.WithLabelValues("onedr0p")); v != 1 {
+		t.Fatalf("truncated index builds = %v", v)
 	}
 	if v := testutil.ToFloat64(m.modelCost.WithLabelValues("onedr0p", "openai/gpt-6-sol", "review")); v != 0.005029 {
 		t.Fatalf("cost = %v", v)
@@ -115,44 +136,68 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader after stepping down = %v", v)
 	}
+	m.SimilarRequest("onedr0p", "search", "empty")
+	m.SimilarRequest("onedr0p", "search", "empty")
+	if v := testutil.ToFloat64(m.similarRequests.WithLabelValues("onedr0p", "search", "empty")); v != 2 {
+		t.Fatalf("similar requests = %v", v)
+	}
+	m.SimilarBest("onedr0p", "diff", 0.83)
+	m.SimilarHits("onedr0p", "margin", "lexical", 4)
+	m.SimilarHits("onedr0p", "floor", "vector", 0)
+	if v := testutil.ToFloat64(m.similarHits.WithLabelValues("onedr0p", "margin", "lexical")); v != 4 {
+		t.Fatalf("similar hits = %v", v)
+	}
+	if n := testutil.CollectAndCount(m.similarHits); n != 1 {
+		t.Fatalf("similar hit series = %d, want none for a count of 0", n)
+	}
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 40 {
-		t.Fatalf("metric families = %d, want all 40", len(families))
+	if len(families) != 47 {
+		t.Fatalf("metric families = %d, want all 47", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)
 	}
 }
 
-// Startup initialization must expose zero counts without recording observations,
-// and must not reset a count when called again.
+// Startup initialization must expose zero counts of the vector search and of
+// the search by name without recording observations, and must not reset a
+// count when called again.
 func TestInitVectorSearch(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
 	m.InitVectorSearch("account")
-	if n, err := testutil.GatherAndCount(reg, "kritika_vector_search_seconds"); err != nil || n != 3 {
-		t.Fatalf("outcome series = %d, %v; want 3", n, err)
-	}
-	for _, outcome := range []string{"ok", "error", "canceled"} {
-		t.Run(outcome, func(t *testing.T) {
-			histogram := m.vectorSearch.WithLabelValues("account", outcome).(prometheus.Metric)
-			for _, count := range []uint64{0, 1} {
-				var metric dto.Metric
-				if err := histogram.Write(&metric); err != nil {
-					t.Fatal(err)
+	for _, family := range []struct {
+		name   string
+		vec    *prometheus.HistogramVec
+		record func(account, outcome string, took time.Duration)
+	}{
+		{"kritika_vector_search_seconds", m.vectorSearch, m.VectorSearch},
+		{"kritika_lexical_search_seconds", m.lexicalSearch, m.LexicalSearch},
+	} {
+		if n, err := testutil.GatherAndCount(reg, family.name); err != nil || n != 3 {
+			t.Fatalf("%s outcome series = %d, %v; want 3", family.name, n, err)
+		}
+		for _, outcome := range []string{"ok", "error", "canceled"} {
+			t.Run(family.name+"/"+outcome, func(t *testing.T) {
+				histogram := family.vec.WithLabelValues("account", outcome).(prometheus.Metric)
+				for _, count := range []uint64{0, 1} {
+					var metric dto.Metric
+					if err := histogram.Write(&metric); err != nil {
+						t.Fatal(err)
+					}
+					if got := metric.GetHistogram().GetSampleCount(); got != count {
+						t.Fatalf("sample count = %d, want %d", got, count)
+					}
+					if count == 0 {
+						family.record("account", outcome, time.Second)
+						m.InitVectorSearch("account")
+					}
 				}
-				if got := metric.GetHistogram().GetSampleCount(); got != count {
-					t.Fatalf("sample count = %d, want %d", got, count)
-				}
-				if count == 0 {
-					m.VectorSearch("account", outcome, time.Second)
-					m.InitVectorSearch("account")
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -186,4 +231,27 @@ func TestDurationBucketsReachTheirLongest(t *testing.T) {
 	if seen != 3 {
 		t.Fatalf("found %d of the 3 histograms", seen)
 	}
+}
+
+// TestSimilarBestNegative: a query whose best match points away from it has
+// a negative cosine similarity, which lands in a bucket at or below zero, so
+// that a quantile of the histogram reads it as negative and not as a small
+// positive similarity.
+func TestSimilarBestNegative(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := New(reg)
+	m.SimilarBest("account", "diff", -0.3)
+	var metric dto.Metric
+	if err := m.similarBest.WithLabelValues("account", "diff").(prometheus.Metric).Write(&metric); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range metric.GetHistogram().GetBucket() {
+		if b.GetCumulativeCount() == 1 {
+			if b.GetUpperBound() > 0 {
+				t.Fatalf("-0.3 first lands in the bucket up to %g, want one at or below 0", b.GetUpperBound())
+			}
+			return
+		}
+	}
+	t.Fatal("-0.3 lands in no bucket")
 }

@@ -123,3 +123,13 @@ func rateLimitWait(resp *http.Response, now time.Time) (time.Duration, bool) {
 	}
 	return 0, false
 }
+
+// Status returns the HTTP status that go-github's generic ErrorResponse in
+// err carries, or 0: for no answer, and for GitHub's rate limits, which
+// go-github returns as errors of their own. RetryAfter recognizes those.
+func Status(err error) int {
+	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil {
+		return e.Response.StatusCode
+	}
+	return 0
+}

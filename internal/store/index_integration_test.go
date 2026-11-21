@@ -6,12 +6,14 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/runspec"
 )
 
 const onboardAccounts = `
@@ -59,10 +61,108 @@ func checkBacklog(t *testing.T, s *Store, account string, names map[string]strin
 	}
 }
 
+// checkMixed checks whether FindGeneration says that a step of another
+// index format advanced the repository's active generation.
+func checkMixed(t *testing.T, s *Store, account, repository string, want bool) {
+	t.Helper()
+	ctx := t.Context()
+	var g Generation
+	if err := s.WithAccount(ctx, accountID(t, s, account), func(tx pgx.Tx) error {
+		var run string
+		if err := tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories WHERE id = $1`, repository).Scan(&run); err != nil {
+			return err
+		}
+		var err error
+		g, err = FindGeneration(ctx, tx, run)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if g.Mixed != want {
+		t.Fatalf("generation of %s mixed = %v, want %v", repository, g.Mixed, want)
+	}
+}
+
+// TestMixedWhateverTheClock: a generation is mixed once a step of another
+// index format completes on it, and not by one that completed on the
+// generation before it, whatever the database clock said when each run
+// started and the generation was published. A clock can step back, or a
+// failover land on a server whose clock is behind, while a rollout is part
+// done.
+func TestMixedWhateverTheClock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("mixed-clock"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "mixed-clock")
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.owner.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	for _, tt := range []struct {
+		name string
+		// before is a step of another format that completes before the
+		// generation is published, on the one before it, rather than after.
+		before bool
+		// started is when, by the clock, the step's run started, from when
+		// the generation is published.
+		started string
+		want    bool
+	}{
+		{"a step that started before the generation, by a clock that stepped back", false, "-1 hour", true},
+		{"a step that advanced the generation before, by a clock ahead", true, "1 hour", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			name := "mixed-clock/" + strings.ReplaceAll(tt.name, " ", "-")
+			listRepos(t, s, "mixed-clock", name)
+			var repo string
+			if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE name = $1`, name).Scan(&repo); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				ctx := context.Background()
+				_, _ = s.owner.Exec(ctx, `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repo)
+				_, _ = s.owner.Exec(ctx, `DELETE FROM index_runs WHERE repository_id = $1`, repo)
+			})
+			publish := func() {
+				t.Helper()
+				exec(`WITH g AS (INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format,
+						finished_at) VALUES ($1, $2, 'abc', 'm', 8, 'full', 'completed', $3, now()) RETURNING id, repository_id)
+				UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, account, repo, runspec.IndexFormat)
+			}
+			step := func() {
+				t.Helper()
+				var run string
+				if err := s.owner.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode,
+						status, index_format, created_at)
+					VALUES ($1, $2, 'def', 'm', 8, 'incremental', 'running', $3, now() + $4::interval) RETURNING id`,
+					account, repo, runspec.IndexFormat-1, tt.started).Scan(&run); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+					return FinishIndexRun(ctx, tx, run, IndexCompleted, 1, "")
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			publish()
+			step()
+			if tt.before {
+				publish()
+			}
+			checkMixed(t, s, "mixed-clock", repo, tt.want)
+		})
+	}
+}
+
 // TestOnboardCandidates makes sure that the onboarding feeder is offered the
 // correct repositories in the correct order: accounts take turns, and an
 // account's repositories whose pull requests moved last go first. A
-// repository whose index another embedder built is offered again.
+// repository whose index another embedder or index format built, or a step
+// of another index format advanced, is offered again.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -70,7 +170,7 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
-	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/off")
+	listRepos(t, s, "east", "east/busy", "east/quiet", "east/later", "east/rebuilt", "east/skipped", "east/failed", "east/queued", "east/indexed", "east/stale", "east/reformat", "east/mixed", "east/stepped", "east/off")
 	listRepos(t, s, "west", "west/one", "west/old-failure")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "m", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
@@ -92,7 +192,7 @@ func TestOnboardCandidates(t *testing.T) {
 		}
 		ids[name], names[id] = id, name
 	}
-	if rows.Err() != nil || len(ids) != 12 {
+	if rows.Err() != nil || len(ids) != 15 {
 		t.Fatalf("repositories = %v, %v", ids, rows.Err())
 	}
 	exec := func(sql string, args ...any) {
@@ -107,7 +207,8 @@ func TestOnboardCandidates(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE args->>'repository_id' = ANY($1)`, slices.Collect(maps.Values(ids)))
 	})
 	// One apply gives every repository the same created_at.
-	for name, age := range map[string]string{"east/quiet": "3 hours", "west/old-failure": "2 hours", "east/later": "1 hour", "east/rebuilt": "30 minutes"} {
+	for name, age := range map[string]string{"east/quiet": "3 hours", "west/old-failure": "2 hours", "east/later": "1 hour", "east/rebuilt": "30 minutes",
+		"east/reformat": "20 minutes", "east/mixed": "10 minutes", "east/stepped": "5 minutes"} {
 		exec(`UPDATE repositories SET created_at = now() - $2::interval WHERE id = $1`, ids[name], age)
 	}
 	for name, age := range map[string]string{"east/busy": "1 minute", "west/one": "1 day"} {
@@ -116,11 +217,36 @@ func TestOnboardCandidates(t *testing.T) {
 	}
 	// east/stale's index was built with another document prompt.
 	exec(`WITH g AS (
-			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, document_prompt, mode, status)
-			SELECT r.account_id, r.id, 'abc', 'm', 8, p.prompt, 'full', 'completed'
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, document_prompt, mode, status, index_format)
+			SELECT r.account_id, r.id, 'abc', 'm', 8, p.prompt, 'full', 'completed', $3
 			FROM repositories r JOIN (VALUES ($1::uuid, ''), ($2::uuid, 'passage: ')) p (id, prompt) ON p.id = r.id
 			RETURNING id, repository_id)
-		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"], ids["east/stale"])
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"], ids["east/stale"], runspec.IndexFormat)
+	// east/reformat's index was built by a build of another index format.
+	exec(`WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2 FROM repositories WHERE id = $1
+			RETURNING id, repository_id)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/reformat"], runspec.IndexFormat+1)
+	// east/mixed's index, of this format, was since stepped by a build of
+	// another format. east/stepped's was stepped by one of this format, and a
+	// step of another format completed before it was published.
+	step := func(name string, format int) {
+		t.Helper()
+		exec(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'def', 'm', 8, 'incremental', 'completed', $2 FROM repositories WHERE id = $1`, ids[name], format)
+	}
+	step("east/stepped", runspec.IndexFormat-1)
+	exec(`WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, index_format)
+			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed', $2 FROM repositories WHERE id = ANY($1)
+			RETURNING id, repository_id)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`,
+		[]string{ids["east/mixed"], ids["east/stepped"]}, runspec.IndexFormat)
+	step("east/mixed", runspec.IndexFormat-1)
+	step("east/stepped", runspec.IndexFormat)
+	checkMixed(t, s, "east", ids["east/mixed"], true)
+	checkMixed(t, s, "east", ids["east/stepped"], false)
 
 	before, err := s.OnboardingInFlight(ctx)
 	if err != nil {
@@ -165,7 +291,7 @@ func TestOnboardCandidates(t *testing.T) {
 			got = append(got, name)
 		}
 	}
-	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/stale"}
+	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/reformat", "east/mixed", "east/stale"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("candidates = %v, want %v", got, want)
 	}
@@ -174,7 +300,7 @@ func TestOnboardCandidates(t *testing.T) {
 	}
 	// The dashboard's backlog of one account is the feeder's order, less
 	// the other accounts' turns.
-	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/stale"})
+	checkBacklog(t, s, "east", names, []string{"east/busy", "east/quiet", "east/later", "east/rebuilt", "east/reformat", "east/mixed", "east/stale"})
 	// A repository that its configuration leaves off is passed over, and takes
 	// none of the limit: here, every one of east's.
 	west := accountID(t, s, "west")

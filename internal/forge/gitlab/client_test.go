@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -645,6 +648,52 @@ func TestRepositories(t *testing.T) {
 	}
 }
 
+// TestBranchTipRateLimit: BranchTip answers a 429 at once with the limit's
+// headers, under an ordinary deadline, both for the branch it is asked and
+// for the project it reads the default branch from. The SDK would sleep
+// until the Ratelimit-Reset, hours here. A server error is still retried.
+func TestBranchTipRateLimit(t *testing.T) {
+	f := newFake(t)
+	reset := time.Now().Add(2 * time.Hour).Unix()
+	limited := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Ratelimit-Reset", strconv.FormatInt(reset, 10))
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}
+	const otherAPI = "/api/v4/projects/acme%2Fgadgets"
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/limited", limited)
+	f.mux.HandleFunc("GET "+otherAPI, limited)
+	var flaky atomic.Int32
+	f.mux.HandleFunc("GET "+repoAPI+"/repository/branches/flaky", func(w http.ResponseWriter, _ *http.Request) {
+		if flaky.Add(1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"flaky","commit":{"id":"abc"}}`)
+	})
+	c := f.client(t)
+	// A hang guard: the SDK's sleep until the reset lasts hours.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for _, tc := range []struct{ name, repo, branch, path string }{
+		{"branch", "widgets", "limited", "GET " + repoAPI + "/repository/branches/limited"},
+		{"default branch", "gadgets", "", "GET " + otherAPI},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := c.BranchTip(ctx, "acme", tc.repo, tc.branch)
+			e, ok := errors.AsType[*gl.ErrorResponse](err)
+			if Status(err) != http.StatusTooManyRequests || !ok || e.Response.Header.Get("Ratelimit-Reset") == "" || f.called(tc.path) != 1 {
+				t.Fatalf("BranchTip past the rate limit = %v after %d requests, want its 429 with Ratelimit-Reset after one",
+					err, f.called(tc.path))
+			}
+		})
+	}
+	if sha, _, err := c.BranchTip(ctx, "acme", "widgets", "flaky"); err != nil || sha != "abc" || flaky.Load() != 2 {
+		t.Fatalf("BranchTip of a failing GitLab = %q, %v after %d requests, want abc after two", sha, err, flaky.Load())
+	}
+}
+
 func TestBranchAndCommit(t *testing.T) {
 	f := newFake(t)
 	f.json("GET", repoAPI, 200, map[string]any{"default_branch": "main"})
@@ -676,5 +725,27 @@ func TestReactOnACommentNamingItsMergeRequest(t *testing.T) {
 	id, err := f.client(t).React(context.Background(), "acme", "widgets", forge.Comment{ID: 23, Number: 9, Inline: true}, forge.ReactionEyes)
 	if err != nil || id != 5 || f.called("GET "+repoAPI+"/merge_requests") != 0 {
 		t.Fatalf("React = %d, %v", id, err)
+	}
+}
+
+// TestStatus: the status of GitLab's answer is read through the wrapping
+// that the client adds, the SDK's not found among them. An error that
+// carries no answer has none.
+func TestStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "bad gateway", err: fmt.Errorf("gitlab: branch main of o/r: %w", &gl.ErrorResponse{StatusCode: http.StatusBadGateway}),
+			want: http.StatusBadGateway},
+		{name: "not found", err: fmt.Errorf("gitlab: branch main of o/r: %w", gl.ErrNotFound), want: http.StatusNotFound},
+		{name: "no answer", err: errors.New("connection reset")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Status(tc.err); got != tc.want {
+				t.Fatalf("Status = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

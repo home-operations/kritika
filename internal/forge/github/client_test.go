@@ -1,13 +1,17 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -181,12 +185,123 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	if err != nil || tip != "tip456" || branch != "trunk" {
 		t.Fatalf("BranchTip = %q %q, %v", tip, branch, err)
 	}
+	// A slash in a branch's name is escaped within its one path segment:
+	// the pattern matches neither the slash left as it is nor escaped twice.
+	f.reply("GET /api/v3/repos/o/r/branches/release%2Fnext", 200, `{"name":"release/next","commit":{"sha":"tip789"}}`)
+	if tip, branch, err := c.BranchTip(t.Context(), "o", "r", "release/next"); err != nil || tip != "tip789" || branch != "release/next" {
+		t.Fatalf("BranchTip of release/next = %q %q, %v", tip, branch, err)
+	}
+	// An answer of 200 with no body, for the branch or the repository whose
+	// default branch is read, is cut short, io.EOF, as Forgejo's client
+	// reports one.
+	f.reply("GET /api/v3/repos/o/r/branches/blank", 200, "")
+	f.reply("GET /api/v3/repos/o/blank", 200, "")
+	for _, tc := range []struct{ repo, branch string }{{"r", "blank"}, {"blank", ""}} {
+		if _, _, err := c.BranchTip(t.Context(), "o", tc.repo, tc.branch); !errors.Is(err, io.EOF) {
+			t.Fatalf("BranchTip(%s, %q) of an empty answer = %v, want io.EOF", tc.repo, tc.branch, err)
+		}
+	}
+	// A branch or repository that is gone is forge.ErrNotFound, and still
+	// carries GitHub's status.
+	f.reply("GET /api/v3/repos/o/r/branches/gone", 404, `{"message":"Branch not found"}`)
+	f.reply("GET /api/v3/repos/o/deleted", 404, `{"message":"Not Found"}`)
+	for _, tc := range []struct{ repo, branch string }{{"r", "gone"}, {"deleted", ""}} {
+		_, _, err := c.BranchTip(t.Context(), "o", tc.repo, tc.branch)
+		if !errors.Is(err, forge.ErrNotFound) || Status(err) != http.StatusNotFound {
+			t.Fatalf("BranchTip(%s, %q) = %v, want forge.ErrNotFound with status 404", tc.repo, tc.branch, err)
+		}
+	}
+	// The branch read's other failures carry their status and rate limits as
+	// the rest of the client's.
+	f.reply("GET /api/v3/repos/o/r/branches/flaky", 502, `{"message":"Bad Gateway"}`)
+	if _, _, err := c.BranchTip(t.Context(), "o", "r", "flaky"); Status(err) != http.StatusBadGateway || errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("BranchTip of a failing forge = %v, want status 502", err)
+	}
+	reset := time.Now().Add(time.Hour).Unix()
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/limited", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		w.WriteHeader(http.StatusForbidden)
+	})
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "limited")
+	if _, limited := RetryAfter(err, time.Now()); !limited {
+		t.Fatalf("BranchTip over the rate limit = %v, want a rate limit", err)
+	}
+	// A secondary limit with primary quota left and no Retry-After is told
+	// apart from a refusal by its body alone, and waited out for
+	// rateLimitMaxWait. A client of its own: the primary limit above holds
+	// this one's requests back until its reset.
+	f, c = newFakeAPI(t)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/secondary", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "4321")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit",` +
+			`"documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
+	})
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != rateLimitMaxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, rateLimitMaxWait)
+	}
 	if c.CloneURL("o", "r") != "https://github.com/o/r.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
 	if _, err := c.MergeBase(t.Context(), "o", "r", 1, "main", "none"); err == nil {
 		t.Fatal("a compare without a merge base must error")
+	}
+}
+
+// TestBranchTipDoesNotWaitForTheBodyToEnd: the tip is read as soon as the
+// branch's JSON is whole, so an answer whose body stalls after it still
+// gives the tip rather than waiting out the request.
+func TestBranchTipDoesNotWaitForTheBodyToEnd(t *testing.T) {
+	f, c := newFakeAPI(t)
+	stalled := make(chan struct{})
+	t.Cleanup(func() { close(stalled) })
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/main", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"name":"main","commit":{"sha":"tip456"}}`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-stalled:
+		case <-r.Context().Done():
+		}
+	})
+	// A hang guard: a read that waits for the body's end waits for it.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	tip, _, err := c.BranchTip(ctx, "o", "r", "main")
+	if err != nil || tip != "tip456" {
+		t.Fatalf("BranchTip of an answer whose body stalls after the branch = %q, %v; want tip456", tip, err)
+	}
+}
+
+// TestBranchTipStaysOnTheAPIOrigin: a redirect within the API's origin is
+// followed, and one to another origin is refused before any request reaches
+// it, so nothing but GitHub answers for a branch.
+func TestBranchTipStaysOnTheAPIOrigin(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		elsewhere.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"main","commit":{"sha":"forged"}}`))
+	}))
+	t.Cleanup(other.Close)
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/branches/main", 200, `{"name":"main","commit":{"sha":"tip456"}}`)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/renamed", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/v3/repos/o/r/branches/main", http.StatusMovedPermanently)
+	})
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/moved", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/api/v3/repos/o/r/branches/main", http.StatusMovedPermanently)
+	})
+	if tip, _, err := c.BranchTip(t.Context(), "o", "r", "renamed"); err != nil || tip != "tip456" {
+		t.Fatalf("BranchTip redirected within the API = %q, %v; want tip456", tip, err)
+	}
+	if tip, _, err := c.BranchTip(t.Context(), "o", "r", "moved"); err == nil || elsewhere.Load() != 0 {
+		t.Fatalf("BranchTip redirected to another origin = %q, %v, with %d requests there; want an error and none", tip, err, elsewhere.Load())
 	}
 }
 

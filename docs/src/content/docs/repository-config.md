@@ -20,6 +20,12 @@ kritika reads this file from the merge base, the shared ancestor of the pull
 request and its target branch. A pull request cannot change its own review rules.
 Merge a configuration change before expecting it to apply to later reviews.
 Indexing uses the configuration at the commit being indexed.
+An index job that finds `enabled: false` there leaves the index as it is,
+and the index is dropped once the repository is off for
+[`KRITIKA_INDEX_GRACE`](/configuration/#which-repositories-run), as for a
+repository turned off in kritika. An index job that finds it on again
+before then keeps the index and brings it up to date. One after then
+builds it again.
 
 The file contains no credentials. Models must use a provider the admin configured.
 The [JSON Schema](https://kritika.home-operations.com/kritika.schema.json) provides editor completion and validation.

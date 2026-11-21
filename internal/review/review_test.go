@@ -443,10 +443,12 @@ func TestBuildAppendsContextWithinBudget(t *testing.T) {
 		// diff room, so the diff fit does not confound the context fit.
 		{Stage: "overlay", Path: "main.go", Language: "go", Symbol: "a", Kind: "function", StartLine: 9, EndLine: 15, Text: "func a() {\n" + strings.Repeat("\t// filler\n", 150) + "}"},
 		{Stage: "caller", Path: "b.go", Language: "go", Symbol: "b", Kind: "function", Scope: "T", Ref: "a", StartLine: 1, EndLine: 3, Text: "func (T) b() { a() }"},
+		{Stage: "similar", Path: "c.go", Language: "go", Symbol: "c", Kind: "function", Ref: "similarity 0.83", StartLine: 4, EndLine: 6, Text: "func c() {}"},
 	}}
 	msg, _, contextOmitted, _ := Build(in)
 	if contextOmitted != 0 || !strings.Contains(msg, "### overlay: main.go lines 9-15 (function a)") ||
-		!strings.Contains(msg, "### caller: b.go lines 1-3 (function b in T) for a") || !strings.Contains(msg, "```go\nfunc (T) b() { a() }\n```") {
+		!strings.Contains(msg, "### caller: b.go lines 1-3 (function b in T) for a") || !strings.Contains(msg, "```go\nfunc (T) b() { a() }\n```") ||
+		!strings.Contains(msg, "### similar: c.go lines 4-6 (function c) (similarity 0.83)\n") {
 		t.Fatalf("context omitted %d:\n%s", contextOmitted, msg)
 	}
 	if !strings.Contains(msg, "Context (not part of the diff") || strings.Index(msg, "Diff (unified") > strings.Index(msg, "Context (not part") {
@@ -455,7 +457,7 @@ func TestBuildAppendsContextWithinBudget(t *testing.T) {
 	// A budget that fits the diff and the first chunk only.
 	in.BudgetTokens = (strings.Index(msg, "### caller") + 4) / charsPerToken
 	msg, _, contextOmitted, _ = Build(in)
-	if contextOmitted != 1 || strings.Contains(msg, "### caller") || !strings.Contains(msg, "### overlay") {
+	if contextOmitted != 2 || strings.Contains(msg, "### caller") || !strings.Contains(msg, "### overlay") {
 		t.Fatalf("context omitted %d:\n%s", contextOmitted, msg)
 	}
 }

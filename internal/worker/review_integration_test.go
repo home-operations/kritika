@@ -90,11 +90,16 @@ apps:
 type localForge struct {
 	dir string
 
-	mu       sync.Mutex
-	base     string
-	tip      string
-	comments map[int64]string
-	authors  map[int64]string
+	mu     sync.Mutex
+	base   string
+	tip    string
+	tipErr error
+	// tokenErr fails GitToken.
+	tokenErr error
+	// beforeFileAt, if set, runs before FileAt reads path at ref.
+	beforeFileAt func(ref, path string)
+	comments     map[int64]string
+	authors      map[int64]string
 	// threads are the inline comments GetComment serves, by id.
 	threads        map[int64]forge.Comment
 	threadStates   map[int64]bool
@@ -174,6 +179,12 @@ func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, ba
 
 // FileAt reads path at ref from the test repository, as the forge's API does.
 func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, error) {
+	l.mu.Lock()
+	before := l.beforeFileAt
+	l.mu.Unlock()
+	if before != nil {
+		before(ref, path)
+	}
 	r, err := git.PlainOpen(l.dir)
 	if err != nil {
 		return nil, err
@@ -202,8 +213,13 @@ func (l *localForge) StackBelow(_ context.Context, _, _ string, number int) ([]f
 	defer l.mu.Unlock()
 	return l.below[number], nil
 }
-func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
-func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
+func (l *localForge) GitToken(context.Context, string) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return "", l.tokenErr
+}
+
+func (l *localForge) BotLogin(context.Context) (string, error) { return "kritika[bot]", nil }
 
 func (l *localForge) CommitSubject(context.Context, string, string, string) (string, error) {
 	return "feat(x): the head commit", nil
@@ -212,7 +228,31 @@ func (l *localForge) CommitSubject(context.Context, string, string, string) (str
 func (l *localForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.tipErr != nil {
+		return "", "", l.tipErr
+	}
 	return l.tip, "main", nil
+}
+
+// failTip makes BranchTip fail with err, nil to answer again.
+func (l *localForge) failTip(err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tipErr = err
+}
+
+// setBeforeFileAt runs fn before each FileAt, nil for none.
+func (l *localForge) setBeforeFileAt(fn func(ref, path string)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.beforeFileAt = fn
+}
+
+// failToken makes GitToken fail with err, nil to answer again.
+func (l *localForge) failToken(err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tokenErr = err
 }
 
 // fakeEmbedder maps text to an 8-dimensional vector of character-bigram
@@ -1068,6 +1108,14 @@ func checkIndexEmbedFailure(
 	t.Helper()
 	active := activeIndexGeneration(ctx, t, st, accountID, repoID)
 	live := runChunks(ctx, t, st, accountID, active)
+	// The rebuild must embed: chunks without a content hash, as an index
+	// built before hashes holds, do not lend their vectors.
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE index_chunks SET content_hash = NULL WHERE index_run_id = $1`, active)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	fe.passes.Store(1)
 	fe.fail.Store(true)
 	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
@@ -1716,7 +1764,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{
-			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueFollowUp: {MaxWorkers: 1},
+			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueIndexUpdate: {MaxWorkers: 1},
+			jobs.QueueFollowUp: {MaxWorkers: 1},
 		}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
 		Middleware: []rivertype.Middleware{river.WorkerMiddlewareFunc(deadline.wrap)},
@@ -1808,12 +1857,42 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkUpdateOverRebuild(ctx, t, appStore, insertOnly, exec, account.ID(), repoID, head)
 	})
 
+	t.Run("a forced rebuild embeds the unchanged tree again", func(t *testing.T) {
+		checkForcedRebuildEmbedsAgain(ctx, t, appStore, insertOnly, fe, account.ID(), repoID)
+	})
+
+	t.Run("an index job waits out a forge that fails transiently", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "tip after a forge wait", "package main\n\nfunc waited() {}\n")
+		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, lf.failTip, account.ID(), repoID, head, newer)
+	})
+
+	t.Run("an index job waits out a forge that does not mint the runner's git token", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "tip after a token wait", "package main\n\nfunc tokened() {}\n")
+		checkIndexWaitsOutForge(ctx, t, appStore, insertOnly, lf, lf.failToken, account.ID(), repoID, head, newer)
+	})
+
 	t.Run("ignore rules rebuild unchanged files", func(t *testing.T) {
 		checkIndexIgnoreChanges(ctx, t, appStore, insertOnly, lf, current, account.ID(), repoID, head)
 	})
 
+	t.Run("a .kritika.yaml that turns the repository off retires its index after the grace", func(t *testing.T) {
+		checkIndexRepoConfigOff(ctx, t, appStore, insertOnly, lf, current, account.ID(), repoID, head)
+	})
+
+	t.Run("a forced rebuild that read an older opt-out does not mark the repository off", func(t *testing.T) {
+		checkIndexRepoConfigOverlap(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head)
+	})
+
+	t.Run("a push absorbed while an opt-out was read indexes its tip", func(t *testing.T) {
+		checkIndexOptOutFolded(ctx, t, appStore, insertOnly, lf, account.ID(), repoID, head)
+	})
+
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
+	})
+
+	t.Run("a repository turned on in the dashboard is reviewed under a default of off", func(t *testing.T) {
+		checkTurnedOnUnderDefaultOff(ctx, t, svc, account, current, lf, waitReview, dir, base)
 	})
 
 	t.Run("the pull request's eyes stay on while another review of it runs", func(t *testing.T) {
@@ -2084,6 +2163,34 @@ func checkRepoConfigPrompt(t *testing.T, system, user string) {
 		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.") ||
 		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
+	}
+}
+
+// checkTurnedOnUnderDefaultOff reviews a pull request of a repository that
+// the dashboard turned on while the admin's default is off. The dashboard's
+// choice runs it, so the default does not skip its review as the
+// repository's own .kritika.yaml would.
+func checkTurnedOnUnderDefaultOff(
+	ctx context.Context, t *testing.T, svc *ingest.Service, account *configfile.Account, current *configfile.Current,
+	lf *localForge, waitReview func(string) (string, string, string), dir, base string,
+) {
+	t.Helper()
+	original := current.Get()
+	t.Cleanup(func() { current.Set(original) })
+	off := configfiletest.Load(t, configYAML+"\nenabled: false\n")
+	current.Set(off)
+	lf.setBase(base)
+	head := commitOnBase(t, dir, base, "turned on under a default of off", "package main\n\nfunc dashboard() {}\n")
+	out, err := svc.Dispatch(ctx, ingest.Request{File: off, Account: account, Event: webhook.Event{
+		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
+		Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
+		PullRequest: &webhook.PullRequest{Number: 41, Title: "t", Author: "a", State: "open", HeadRef: "f", HeadSHA: head, BaseRef: "main"},
+	}})
+	if err != nil || out.Status != ingest.Enqueued {
+		t.Fatalf("dispatch = %+v, %v; want the dashboard's choice to queue the review", out, err)
+	}
+	if status, _, _ := waitReview(head); status != "completed" {
+		t.Fatalf("status = %s, want completed: only the repository's own file turns its reviews off", status)
 	}
 }
 

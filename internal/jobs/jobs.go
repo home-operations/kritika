@@ -14,18 +14,21 @@ import (
 )
 
 // Queue names, one per job kind so the worker can bound each separately.
+// Index jobs have two: QueueIndex builds first indexes and forced rebuilds,
+// and QueueIndexUpdate keeps indexed repositories at their default branch.
 const (
-	QueueReview   = "review"
-	QueuePrepare  = "review_prepare"
-	QueuePublish  = "review_publish"
-	QueueFollowUp = "followup"
-	QueueThread   = "thread"
-	QueueIndex    = "index"
+	QueueReview      = "review"
+	QueuePrepare     = "review_prepare"
+	QueuePublish     = "review_publish"
+	QueueFollowUp    = "followup"
+	QueueThread      = "thread"
+	QueueIndex       = "index"
+	QueueIndexUpdate = "index_update"
 )
 
 // Queues lists the queues whose backlog and pickup delay are monitored.
 func Queues() []string {
-	return []string{QueueReview, QueuePrepare, QueuePublish, QueueFollowUp, QueueThread, QueueIndex}
+	return []string{QueueReview, QueuePrepare, QueuePublish, QueueFollowUp, QueueThread, QueueIndex, QueueIndexUpdate}
 }
 
 // ReviewKind reports whether a job owns a stage of a review.
@@ -60,13 +63,17 @@ const (
 
 // OnboardRetryAfter is how long a repository whose onboarding job ended
 // without building an index waits to be offered again: the feeder's pace,
-// and the dashboard's, which shows where a repository waits for it. River
-// keeps finished jobs longer than that.
+// and the dashboard's, which shows where a repository waits for it. The
+// poller waits as long to look again at the default branch of a repository
+// whose index job ended without moving its index. River keeps finished jobs
+// longer than that.
 const OnboardRetryAfter = time.Hour
 
-// Index job priorities, highest first: River always fetches a higher
-// priority first, so an onboarding wave never delays keeping an indexed
-// repository current.
+// Index job priorities, highest first. River fetches a higher priority first
+// only as a worker frees, and an onboarding job holds its worker for a whole
+// build. So updates have a queue of their own, QueueIndexUpdate, which an
+// onboarding wave cannot fill, and on QueueIndex a forced rebuild goes ahead
+// of the first indexes still waiting.
 const (
 	indexPriorityUpdate  = 1
 	indexPriorityReindex = 2
@@ -237,21 +244,21 @@ type IndexArgs struct {
 func (IndexArgs) Kind() string { return "index" }
 
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
-// repository while queued or running (River requires running in the set):
-// a push while the repository's job is running is absorbed by it, and the
-// worker indexes the tip again when it finds the branch moved. Full and
-// CatchUp key a forced rebuild and a rebuild's catch-up apart, so either
-// can run beside an update.
+// repository while queued or running (River requires running in the set),
+// on either queue: a push while the repository's job is running is absorbed
+// by it, and the worker indexes the tip again when it finds the branch moved.
+// Full and CatchUp key a forced rebuild and a rebuild's catch-up apart, so
+// either can run beside an update.
 func (a IndexArgs) InsertOpts() river.InsertOpts {
-	priority := indexPriorityUpdate
+	queue, priority := QueueIndexUpdate, indexPriorityUpdate
 	switch a.Trigger {
 	case TriggerReindex:
-		priority = indexPriorityReindex
+		queue, priority = QueueIndex, indexPriorityReindex
 	case TriggerOnboard:
-		priority = indexPriorityOnboard
+		queue, priority = QueueIndex, indexPriorityOnboard
 	}
 	return river.InsertOpts{
-		Queue: QueueIndex, Priority: priority, MaxAttempts: indexAttempts,
+		Queue: queue, Priority: priority, MaxAttempts: indexAttempts,
 		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
 	}
 }

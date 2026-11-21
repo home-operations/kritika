@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -105,5 +106,304 @@ func checkIndexIgnoreChanges(
 			}
 			active = next
 		})
+	}
+}
+
+// checkIndexRepoConfigOff checks that an index job that finds the
+// repository's .kritika.yaml turning it off keeps the index, and marks the
+// repository so that the retention sweep drops the index once it is off for
+// the grace. A later job that finds it on again clears the mark and the
+// sweep's clock, and builds the index again once it was dropped.
+func checkIndexRepoConfigOff(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge,
+	current *configfile.Current, account, repository, head string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	r, err := git.PlainOpen(lf.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	push := func(repoConfig, trigger string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(lf.dir, ".kritika.yaml"), []byte(repoConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(".kritika.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		commit, err := wt.Commit(repoConfig, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lf.setTip(commit.String())
+		job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: trigger}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		indexJobDone(ctx, t, st, job.Job.ID)
+	}
+	sweep := func() {
+		t.Helper()
+		f := current.Get()
+		if _, err := st.SweepStoppedIndexes(ctx, time.Hour, func(accountID string, traits configfile.RepoTraits) bool {
+			a, ok := f.AccountByID(accountID)
+			return ok && f.Runs(a, traits)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec := func(sql string) {
+		t.Helper()
+		if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, sql, repository)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(what string, wantOff, wantStopped, wantIndexed bool) string {
+		t.Helper()
+		var off, stopped bool
+		var active string
+		if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT repo_config_off, stopped_at IS NOT NULL, coalesce(active_index_run_id::text, '')
+				FROM repositories WHERE id = $1`, repository).Scan(&off, &stopped, &active)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if off != wantOff || stopped != wantStopped || (active != "") != wantIndexed {
+			t.Fatalf("%s: off %v, stopped %v, generation %q; want off %v, stopped %v, indexed %v",
+				what, off, stopped, active, wantOff, wantStopped, wantIndexed)
+		}
+		return active
+	}
+
+	active := check("before", false, false, true)
+	push("enabled: false\n", jobs.TriggerPush)
+	if got := check("off in .kritika.yaml", true, false, true); got != active {
+		t.Fatalf("the generation %s became %s while indexing is off", active, got)
+	}
+	sweep()
+	check("off in .kritika.yaml, swept within the grace", true, true, true)
+
+	push("ignore: []\n", jobs.TriggerPush)
+	check("on again within the grace", false, false, true)
+	sweep()
+	check("on again within the grace, swept", false, false, true)
+
+	push("enabled: false\n", jobs.TriggerPush)
+	sweep()
+	exec(`UPDATE repositories SET stopped_at = now() - interval '2 hours' WHERE id = $1`)
+	sweep()
+	check("off in .kritika.yaml past the grace", true, false, false)
+
+	push("ignore: []\n", jobs.TriggerOnboard)
+	rebuilt := check("on again after the drop", false, false, true)
+	checkRunStatus(ctx, t, st, account, rebuilt, store.IndexCompleted)
+
+	// An admin's default of off is not the file's word: the dashboard turned
+	// the repository on, and a file that leaves enabled unset keeps it on.
+	original := current.Get()
+	t.Cleanup(func() { current.Set(original) })
+	current.Set(configfiletest.Load(t, configYAML+"\nenabled: false\n"))
+	push("ignore: [unset.go]\n", jobs.TriggerPush)
+	check("turned on in the dashboard under a default of off", false, false, true)
+}
+
+// checkIndexRepoConfigOverlap holds a forced rebuild that read a tip whose
+// .kritika.yaml turns the repository off, while a push reads the next tip,
+// which turns it on again, and publishes it. The rebuild's older read does
+// not leave the repository marked off: it reads the tip and the file again,
+// and rebuilds the index at the push's tip.
+func checkIndexRepoConfigOverlap(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository, head string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		lf.setBeforeFileAt(nil)
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	r, err := git.PlainOpen(lf.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(repoConfig string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(lf.dir, ".kritika.yaml"), []byte(repoConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(".kritika.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		c, err := wt.Commit(repoConfig, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.String()
+	}
+	off := commit("enabled: false\n# overlapped\n")
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	lf.setBeforeFileAt(func(ref, _ string) {
+		if ref == off {
+			once.Do(func() { close(held); <-release })
+		}
+	})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	lf.setTip(off)
+	forced, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the forced rebuild never read the tip that turns the repository off")
+	}
+	on := commit("ignore: [overlapped.go]\n")
+	lf.setTip(on)
+	push, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexJobDone(ctx, t, st, push.Job.ID)
+	close(release)
+	indexJobDone(ctx, t, st, forced.Job.ID)
+	var markedOff bool
+	var indexed string
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT r.repo_config_off, g.commit_sha FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.id = $1`, repository).Scan(&markedOff, &indexed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if markedOff || indexed != on {
+		t.Fatalf("after the overlap: marked off %v, index at %s; want on, at the push's tip %s", markedOff, indexed, on)
+	}
+	indexCatchUpDone(ctx, t, st, activeIndexGeneration(ctx, t, st, account, repository))
+}
+
+// checkIndexOptOutFolded holds a push job while it reads a tip whose
+// .kritika.yaml turns the repository off. A push of the next tip, which
+// turns it on again, joins that running job. The job does not end on the
+// older opt-out: it reads the tip again, finds it moved, and indexes the
+// push's tip with the repository on.
+func checkIndexOptOutFolded(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, account, repository, head string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		lf.setBeforeFileAt(nil)
+		lf.setTip(head)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerOnboard}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
+	r, err := git.PlainOpen(lf.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(repoConfig string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(lf.dir, ".kritika.yaml"), []byte(repoConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(".kritika.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		c, err := wt.Commit(repoConfig, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.String()
+	}
+	off := commit("enabled: false\n# folded\n")
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	lf.setBeforeFileAt(func(ref, _ string) {
+		if ref == off {
+			once.Do(func() { close(held); <-release })
+		}
+	})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	lf.setTip(off)
+	first, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the push job never read the tip that turns the repository off")
+	}
+	on := commit("ignore: [folded.go]\n")
+	lf.setTip(on)
+	second, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.UniqueSkippedAsDuplicate || second.Job.ID != first.Job.ID {
+		t.Fatalf("the second push queued job %d, want it absorbed into the running job %d", second.Job.ID, first.Job.ID)
+	}
+	close(release)
+	indexJobDone(ctx, t, st, first.Job.ID)
+	var markedOff bool
+	var indexed string
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT r.repo_config_off, g.commit_sha FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.id = $1`, repository).Scan(&markedOff, &indexed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if markedOff || indexed != on {
+		t.Fatalf("after the absorbed push: marked off %v, index at %s; want on, at the push's tip %s", markedOff, indexed, on)
 	}
 }
