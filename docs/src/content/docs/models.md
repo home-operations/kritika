@@ -922,12 +922,12 @@ provider's `headers`: a proxy in front of it that needs one of its own,
 for a route or a key, fails every rerank, and the fused order stands. The
 four APIs differ in their requests and answers:
 
-| `api`    | Request                                                    | Answer                                     | Usage recorded                                                                                                |
-| -------- | ---------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `cohere` | `model`, `query`, `documents`, `top_n`                     | `results` of `index` and `relevance_score` | `meta.billed_units.input_tokens`, else `meta.tokens.input_tokens`; `meta.billed_units.search_units` is logged |
-| `jina`   | as `cohere`, and `return_documents: false`                 | as `cohere`                                | `usage.total_tokens`                                                                                          |
-| `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`                                                                                          |
-| `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header                                                                                 |
+| `api`    | Request                                                    | Answer                                     | Usage recorded                                                                                                             |
+| -------- | ---------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `cohere` | `model`, `query`, `documents`, `top_n`                     | `results` of `index` and `relevance_score` | the greater of `meta.billed_units.input_tokens` and `meta.tokens.input_tokens`; `meta.billed_units.search_units` is logged |
+| `jina`   | as `cohere`, and `return_documents: false`                 | as `cohere`                                | `usage.total_tokens`                                                                                                       |
+| `voyage` | `model`, `query`, `documents`, `top_k`, `truncation: true` | `data` of `index` and `relevance_score`    | `usage.total_tokens`                                                                                                       |
+| `tei`    | `query`, `texts`, `truncate: true`                         | a list of `index` and `score`              | the `x-compute-tokens` header                                                                                              |
 
 Each similar-code request that reranked records one usage row of role
 `rerank`, with the tokens that the provider reported for its queries. Cohere
