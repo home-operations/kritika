@@ -568,6 +568,8 @@ func TestEnclosingMeasuresFromTheHeadLine(t *testing.T) {
 		{name: "body of a declaration its doc pushes over", lines: []int{100}, max: 150, start: 18, end: 157},
 		{name: "head line", lines: []int{18}, max: 150, start: 18, end: 157},
 		{name: "doc of a declaration its doc pushes over", lines: []int{5}, max: 150},
+		{name: "doc line that fits with the declaration", lines: []int{10}, max: 150, start: 10, end: 157},
+		{name: "doc line that fits and the body", lines: []int{100, 10}, max: 150, start: 10, end: 157},
 		{name: "everything fits", lines: []int{5, 100}, max: 155, start: 3, end: 157},
 		{name: "body over the limit", lines: []int{100}, max: 139},
 		{name: "small declaration keeps its doc", lines: []int{160}, max: 150, start: 159, end: 160},
@@ -585,6 +587,13 @@ func TestEnclosingMeasuresFromTheHeadLine(t *testing.T) {
 				t.Fatalf("Enclosing(%v, %d) = %+v, want L%d-%d", tt.lines, tt.max, d, tt.start, tt.end)
 			}
 		})
+	}
+	// A decorator below comments that push its function over the limit
+	// still belongs to the function.
+	py := (&Parser{}).Parse("deco.py", []byte(strings.Repeat("# padding\n", 149)+"@Target\ndef wrapped():\n    pass\n"))
+	defer py.Close()
+	if d := py.Enclosing([]int{150}, 150); d == nil || d.Symbol != "wrapped" || d.StartLine != 150 || d.EndLine != 152 {
+		t.Fatalf("Enclosing of the decorator = %+v, want wrapped from line 150", d)
 	}
 }
 

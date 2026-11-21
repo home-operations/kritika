@@ -575,9 +575,15 @@ func kindFromType(typ string) string {
 // Enclosing returns the smallest declaration that contains every line in
 // lines and spans at most maxLines from its head line, or nil. Declarations
 // are nested, so "smallest" prefers a method over its class. A declaration
-// that the comments above it put over maxLines is returned from its head
-// line, and holds only the lines from there.
+// that the comments, decorators or attributes above it put over maxLines is
+// returned from the first of lines, when that is above its head line and
+// leaves it within maxLines, or else from its head line, and holds only the
+// lines from there.
 func (f *File) Enclosing(lines []int, maxLines int) *Decl {
+	first := math.MaxInt
+	for _, l := range lines {
+		first = min(first, l)
+	}
 	// best is the one copy that leaves the loop, so the others stay off the
 	// heap.
 	var best Decl
@@ -588,7 +594,11 @@ func (f *File) Enclosing(lines []int, maxLines int) *Decl {
 			continue
 		}
 		if d.Lines() > maxLines {
-			d.StartLine, d.StartByte = head, f.offsets()[head-1]
+			start := head
+			if first >= d.StartLine && first < head && d.EndLine-first+1 <= maxLines {
+				start = first
+			}
+			d.StartLine, d.StartByte = start, f.offsets()[start-1]
 		}
 		ok := true
 		for _, l := range lines {
