@@ -669,7 +669,7 @@ func TestHiddenNodeAtTheTopLevel(t *testing.T) {
 	//nolint:staticcheck // as above
 	root := gotreesitter.NewParentNode(unit, true, []*gotreesitter.Node{hidden, top.Child(2)}, nil, 0)
 	tree := gotreesitter.NewTree(root, src, lp.lang) //nolint:staticcheck // as above
-	decls := declarations(lp, tree, src)
+	decls, _ := declarations(lp, tree, src)
 	for line := 1; line <= 3; line++ {
 		if !slices.ContainsFunc(decls, func(d Decl) bool { return d.Contains(line) }) {
 			t.Errorf("line %d is in no declaration: %+v", line, decls)

@@ -588,6 +588,51 @@ func TestRejectedCandidatesCopyNoText(t *testing.T) {
 	}
 }
 
+// TestCandidateTrimsWholeLeadNodes: the comments and decorators above a
+// declaration over MaxChunkBytes go first whole, never a line of one, so the
+// candidate does not start inside a block comment or a decorator's arguments
+// even when the cut of one line would bring it under the bound.
+func TestCandidateTrimsWholeLeadNodes(t *testing.T) {
+	for _, tt := range []struct {
+		name, path, src string
+		line            int
+		want            string
+	}{
+		{
+			name: "block comment", path: "big.go", line: 7,
+			src:  "package demo\n\n/*\n * Big calls Target.\n */\nfunc Big() {\n\tTarget()\n}\n",
+			want: "func Big() {",
+		},
+		{
+			name: "decorator over lines", path: "big.py", line: 5,
+			src:  "@app.route(\n    \"/big\",\n)\ndef big():\n    target()\n",
+			want: "def big():",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := (&chunk.Parser{}).Parse(tt.path, []byte(tt.src))
+			defer f.Close()
+			decl := f.Enclosing([]int{tt.line}, DefaultOptions.MaxDeclLines)
+			if decl == nil {
+				t.Fatalf("no declaration encloses line %d", tt.line)
+			}
+			if decl.HeadLine <= decl.StartLine+1 {
+				t.Fatalf("declaration %+v has no lead lines to trim", decl)
+			}
+			opts := DefaultOptions
+			// One byte under the declaration: the cut of its first line alone
+			// would bring it under.
+			opts.MaxChunkBytes = len(f.Bytes(decl.StartLine, decl.EndLine)) - 1
+			b := &builder{opts: opts, callers: map[string]*candidates{}}
+			b.addCandidate(f, decl, tt.line, "Target", true)
+			c := b.callers["Target"].chunks[0]
+			if c.StartLine != decl.HeadLine || !strings.HasPrefix(c.Text, tt.want) {
+				t.Fatalf("candidate = L%d %q, want it from its head line %d", c.StartLine, c.Text, decl.HeadLine)
+			}
+		})
+	}
+}
+
 // BenchmarkScanDocMentions scans a file whose declarations' doc comments
 // name the wanted symbol, again and again, and never use it.
 func BenchmarkScanDocMentions(b *testing.B) {

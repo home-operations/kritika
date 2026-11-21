@@ -19,7 +19,6 @@ import (
 	"strings"
 	"sync"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/odvcencio/gotreesitter"
@@ -113,6 +112,9 @@ type File struct {
 	Source      []byte
 	Decls       []Decl
 	lineOffsets []int
+	// continued is the lines, in order, that a lead node which began on a
+	// line above continues onto.
+	continued []int
 
 	lang *gotreesitter.Language
 	tree *gotreesitter.Tree
@@ -148,7 +150,7 @@ func (p *Parser) Parse(path string, src []byte) *File {
 		return f
 	}
 	f.lang, f.tree = lp.lang, tree
-	f.Decls = declarations(lp, tree, src)
+	f.Decls, f.continued = declarations(lp, tree, src)
 	return f
 }
 
@@ -193,12 +195,13 @@ func (p *Parser) language(path string) *languageParser {
 // symbols from the grammar's tags query, nested where the language nests
 // them. The other is the root's children: every top-level statement, so a
 // type or constant block that the tags query does not cover still becomes a
-// chunk.
-func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Decl {
+// chunk. It also returns the lines that a lead node continues onto, as
+// leadLines does.
+func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) (decls []Decl, continued []int) {
 	root := tree.RootNode()
 	starts := lineStarts(src)
 	text := lineTexts(src, starts)
-	lead := leadLines(root, lp.lang, src, text)
+	lead, continued := leadLines(root, lp.lang, src, text)
 	var out []Decl
 	seen := map[[2]int]bool{}
 	// A statement holding one outlined symbol over the same lines (a Go
@@ -291,7 +294,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	slices.SortFunc(out, func(a, b Decl) int {
 		return cmp.Or(cmp.Compare(a.StartByte, b.StartByte), cmp.Compare(b.EndByte, a.EndByte))
 	})
-	return out
+	return out, continued
 }
 
 // takeLeads widens each declaration of out over the lead lines directly
@@ -403,88 +406,6 @@ func lineTexts(src []byte, starts []int) [][2]int {
 }
 
 var byteOrderMark = []byte("\ufeff")
-
-// leads reports whether a node of type typ leads into the declaration
-// below it rather than standing alone: a comment, a decorator, or an
-// attribute or annotation. A Rust inner attribute (inner_attribute_item)
-// applies to what encloses it, so it does not lead.
-func leads(typ string) bool {
-	switch typ {
-	case "attribute_item", "attribute_list", "annotation", "marker_annotation":
-		return true
-	}
-	return comment(typ) || strings.Contains(typ, "decorator")
-}
-
-// comment reports whether a node of type typ is a comment. A SQL
-// comment_statement (COMMENT ON) is a statement.
-func comment(typ string) bool { return strings.HasSuffix(typ, "comment") }
-
-// leadLines marks, by 1-based line, the lines that lead nodes fill: every
-// character on the line that is not white space belongs to one such node,
-// and a node that continues onto the line began on a lead line.
-func leadLines(root *gotreesitter.Node, lang *gotreesitter.Language, src []byte, text [][2]int) []bool {
-	// reach is, by 0-based row, the end of the row's text that lead nodes
-	// fill from its start, with only white space between them, or, once
-	// something else stops them, where that thing starts, so that the white
-	// space before it is walked once. from is the 1-based line where a lead
-	// node that continues onto the row began.
-	reach, from := make([]int, len(text)), make([]int, len(text))
-	var walk func(n *gotreesitter.Node)
-	walk = func(n *gotreesitter.Node) {
-		if !leads(n.Type(lang)) {
-			for i := range n.ChildCount() {
-				walk(n.Child(i))
-			}
-			return
-		}
-		first, last := int(n.StartPoint().Row), int(n.EndPoint().Row)
-		if last > first && n.EndPoint().Column == 0 {
-			last-- // a line comment that holds its newline
-		}
-		for row := first; row <= last && row < len(text); row++ {
-			lo, hi := text[row][0], text[row][1]
-			p := skipSpace(src, cmp.Or(reach[row], lo), hi)
-			reach[row] = p
-			if int(n.StartByte()) <= p {
-				reach[row] = max(p, int(n.EndByte()))
-			}
-			if row > first {
-				from[row] = first + 1
-			}
-		}
-	}
-	walk(root)
-	lead := make([]bool, len(text)+1)
-	for row := range text {
-		// A blank line inside a block comment is the comment's, while one
-		// between two comments separates them.
-		lo, hi := text[row][0], text[row][1]
-		lead[row+1] = (lo < hi || from[row] != 0) && reach[row] > 0 && skipSpace(src, reach[row], hi) >= hi &&
-			(from[row] == 0 || lead[from[row]])
-	}
-	return lead
-}
-
-// skipSpace is the offset of the first byte from i to hi that is not white
-// space, or hi. White space is what lineTexts trims from a line's ends.
-func skipSpace(src []byte, i, hi int) int {
-	from := i
-	for i < hi {
-		r, size := rune(src[i]), 1
-		if r >= utf8.RuneSelf {
-			r, size = utf8.DecodeRune(src[i:hi])
-		}
-		if !unicode.IsSpace(r) {
-			break
-		}
-		i += size
-	}
-	if walked != nil {
-		*walked += i - from
-	}
-	return i
-}
 
 // walked, when a test points it at a count, adds up the white space that
 // lineTexts and skipSpace walk and the lines that takeLeads does. Walking
@@ -728,6 +649,14 @@ func (f *File) offsets() []int {
 func (f *File) Text(startLine, endLine int) string {
 	_, _, text := f.Window(startLine, endLine, 0)
 	return text
+}
+
+// LeadContinues reports whether a comment, decorator or attribute that began
+// on a line above line continues onto it, so that text from line would start
+// inside one. It holds after Close.
+func (f *File) LeadContinues(line int) bool {
+	_, ok := slices.BinarySearch(f.continued, line)
+	return ok
 }
 
 // Windows cuts a file with no declarations into pieces for the index. Each

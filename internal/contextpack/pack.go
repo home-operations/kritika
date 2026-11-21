@@ -366,14 +366,24 @@ func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, line int, word s
 }
 
 // declText is decl's text, a slice of f's source, and the line it starts on.
-// When the text is over MaxChunkBytes, the comments above decl's head line go
-// first, from the top, so the cut keeps more of its body. Line line, which
-// pulled decl in, stays.
+// When the text is over MaxChunkBytes, the comments and decorators above
+// decl's head line go first, from the top and each whole, so the cut keeps
+// more of its body and does not start inside a block comment or a
+// decorator's arguments. Line line, which pulled decl in, stays, and so does
+// the rest of a comment that holds it.
 func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int, text []byte) {
 	start, text = decl.StartLine, f.Bytes(decl.StartLine, decl.EndLine)
-	for len(text) > b.opts.MaxChunkBytes && start < min(decl.HeadLine, line) {
-		_, text, _ = bytes.Cut(text, []byte{'\n'})
-		start++
+	for len(text) > b.opts.MaxChunkBytes {
+		next := start + 1
+		for next <= decl.EndLine && f.LeadContinues(next) {
+			next++
+		}
+		if next > min(decl.HeadLine, line) {
+			break
+		}
+		for ; start < next; start++ {
+			_, text, _ = bytes.Cut(text, []byte{'\n'})
+		}
 	}
 	return start, text
 }
