@@ -303,13 +303,58 @@ func TestIndexChunksPartitioned(t *testing.T) {
 	}
 }
 
+// groupDefaultGrants makes the owner's default privileges grant every
+// table it creates to a role that the application role is a member of, until
+// the test ends.
+func groupDefaultGrants(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := t.Context()
+	super, err := pgxpool.New(ctx, testEnv(t, "KRITIKA_TEST_SUPER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(super.Close)
+	const group = "kritika_chunk_group"
+	for _, stmt := range []string{`CREATE ROLE ` + group + ` NOLOGIN`, `GRANT ` + group + ` TO kritika_app`} {
+		if _, err := super.Exec(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if _, err := s.owner.Exec(ctx, `ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM `+group); err != nil {
+			t.Error(err)
+		}
+		if _, err := super.Exec(ctx, `DROP OWNED BY `+group+`; DROP ROLE `+group); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := s.owner.Exec(ctx, `ALTER DEFAULT PRIVILEGES GRANT ALL ON TABLES TO `+group); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// appTruncates returns the tables of index_chunks' tree, its legacy
+// partition among them, that the application role may truncate, by any
+// grant: row-level security does not apply to TRUNCATE.
+func appTruncates(t *testing.T, s *Store) []string {
+	t.Helper()
+	var tables []string
+	if err := s.owner.QueryRow(t.Context(), `SELECT coalesce(array_agg(c.relname::text ORDER BY c.relname), '{}') FROM pg_class c
+		WHERE c.oid IN (SELECT relid FROM pg_partition_tree('index_chunks'))
+			AND has_table_privilege('kritika_app', c.oid, 'TRUNCATE')`).Scan(&tables); err != nil {
+		t.Fatal(err)
+	}
+	return tables
+}
+
 // TestIndexChunksPartitionsUnderDefaultGrants: where the owner's default
 // privileges grant what it creates to the application role, or to every
 // role, index_chunks' partitions are still read through index_chunks alone,
 // whose policy keeps each account to its own chunks. The application role
 // holds no privilege of a partition, and each has row-level security, with
 // no policy, so a grant through a role that it is a member of reads no row
-// of one either.
+// of one either. Nor may it truncate any table of the tree.
 func TestIndexChunksPartitionsUnderDefaultGrants(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -342,10 +387,16 @@ func TestIndexChunksPartitionsUnderDefaultGrants(t *testing.T) {
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
+	if open := appTruncates(t, s); len(open) != 0 {
+		t.Fatalf("the application role may truncate %v", open)
+	}
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	run := partitionRun(t, s, beta, repo, true, "a.go")
-	for _, relation := range []string{"index_chunks_current", onlyPartition(t, s, run)} {
+	leaf := onlyPartition(t, s, run)
+	for _, relation := range []string{"index_chunks_current", leaf} {
 		appDenied(t, s, alpha, relation)
+	}
+	for _, relation := range []string{"index_chunks", "index_chunks_current", leaf} {
 		err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `TRUNCATE `+relation)
 			return err
@@ -368,6 +419,38 @@ func TestIndexChunksPartitionsUnderDefaultGrants(t *testing.T) {
 	}
 	if got := similarPaths(t, s, beta, run); strings.Join(got, ",") != "a.go" {
 		t.Fatalf("beta's search of its generation found %v, want a.go", got)
+	}
+}
+
+// TestIndexChunksUnderGroupDefaultGrants: row-level security does not
+// apply to TRUNCATE, so where the owner's default privileges grant what it
+// creates to a role that the application role is a member of, no table of
+// index_chunks' tree keeps that grant of TRUNCATE: neither a new one nor
+// one partitioned from a plain table, its legacy partition among them.
+func TestIndexChunksUnderGroupDefaultGrants(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		create func(t *testing.T, s *Store)
+	}{
+		{"new", func(t *testing.T, s *Store) {
+			if _, err := s.EnsureIndexSchema(t.Context(), "kritika_app", "test-embed", 8, ""); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"partitioned from legacy", func(t *testing.T, s *Store) {
+			createUnpartitionedIndexChunks(t, s, "test-embed", 8, true, true)
+			partitionLegacy(t, s)
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := openStore(t)
+			dropIndexChunks(t, s)
+			groupDefaultGrants(t, s)
+			tt.create(t, s)
+			if open := appTruncates(t, s); len(open) != 0 {
+				t.Fatalf("the application role may truncate %v", open)
+			}
+		})
 	}
 }
 

@@ -46,7 +46,9 @@ const indexChunkPartitions = 64
 // application role, nor of every role, which the owner's default privileges
 // can grant to a table as it is created. Each has row-level security too,
 // with no policy, so a role that holds a partition's privileges through a
-// role it is a member of still reads no row of it.
+// role it is a member of still reads no row of it. Row-level security does
+// not apply to TRUNCATE, though, so no table of the tree keeps a grant of it
+// to any role but its owner (revokeChunksTruncate).
 func createPartitionedIndexChunks(ctx context.Context, tx pgx.Tx, appRole string, dims int) error {
 	if _, err := tx.Exec(ctx, strings.Join(partitionedIndexChunksDDL(appRole, dims), ";\n")); err != nil {
 		return fmt.Errorf("store: create index_chunks: %w", err)
@@ -109,9 +111,29 @@ func partitionedIndexChunksDDL(appRole string, dims int) []string {
 			USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
 			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO `+app,
+		revokeChunksTruncate,
 	)
 	return stmts
 }
+
+// revokeChunksTruncate revokes TRUNCATE on every table of index_chunks' tree,
+// and on index_chunks_legacy before it is attached, from every role but the
+// table's owner. The owner's default privileges can grant it to a role that
+// the application role is a member of, which a revoke from the application
+// role leaves in place, and a truncate would empty every account's chunks.
+const revokeChunksTruncate = `DO $$
+DECLARE
+	r record;
+BEGIN
+	FOR r IN SELECT DISTINCT c.oid::regclass AS rel, a.grantee FROM pg_class c, aclexplode(c.relacl) a
+		WHERE c.oid IN (SELECT relid FROM pg_partition_tree('index_chunks') UNION ALL SELECT to_regclass('index_chunks_legacy'))
+			AND a.privilege_type = 'TRUNCATE' AND a.grantee <> c.relowner
+	LOOP
+		EXECUTE format('REVOKE TRUNCATE ON %s FROM %s', r.rel,
+			CASE WHEN r.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(r.grantee)) END);
+	END LOOP;
+END
+$$`
 
 // legacyIndexChunksIndexes are the indexes of an index_chunks that a build
 // before partitioning created, by the suffix of their names.

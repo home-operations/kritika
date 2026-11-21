@@ -500,7 +500,10 @@ security policy applies to every partition read through it. The role cannot
 read a partition directly: each is created without privileges for the
 application role or `PUBLIC`, even where the owner's default privileges
 would grant them, and with row-level security but no policy, so a role
-granted a partition through a role it is a member of reads no row of it. The
+granted a partition through a role it is a member of reads no row of it.
+Row-level security does not apply to `TRUNCATE`, so no table of the tree,
+`index_chunks` and `index_chunks_legacy` among them, keeps a grant of
+`TRUNCATE` to any role but its owner. The
 [index scale benchmark](/metrics/#reproducing-the-index-scale-benchmark)
 measures the effect.
 
