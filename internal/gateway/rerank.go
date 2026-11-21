@@ -17,8 +17,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// rerankDocument is what the reranker reads of a chunk: what the index
-// embeds of it, its path and declaration, then its text.
+// rerankDocument gives the reranker a chunk's path and qualified symbol,
+// followed by its stored text, without the embedding prompt or signature.
 func rerankDocument(c contextpack.Chunk) string {
 	head := c.Path
 	if c.Symbol != "" {
