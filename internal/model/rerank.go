@@ -190,9 +190,11 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 			return nil, used, decodeError(err)
 		}
 	} else {
+		// The ranks are decoded apart, so that the usage beside ranks of the
+		// wrong type is still reported.
 		var out struct {
-			Results []ranked `json:"results"`
-			Data    []ranked `json:"data"`
+			Results json.RawMessage `json:"results"`
+			Data    json.RawMessage `json:"data"`
 			Usage   struct {
 				TotalTokens json.Number `json:"total_tokens"`
 			} `json:"usage"`
@@ -209,14 +211,20 @@ func (r *HTTPReranker) decode(answer []byte) ([]rerankRank, RerankUsage, error) 
 		if err := json.Unmarshal(answer, &out); err != nil {
 			return nil, used, decodeError(err)
 		}
-		ranks = out.Results
-		if r.api == RerankVoyage {
-			ranks = out.Data
-		}
 		used = RerankUsage{
 			Tokens: max(usageCount(out.Usage.TotalTokens), usageCount(out.Meta.BilledUnits.InputTokens),
 				usageCount(out.Meta.Tokens.InputTokens)),
 			SearchUnits: usageCount(out.Meta.BilledUnits.SearchUnits),
+		}
+		field := out.Results
+		if r.api == RerankVoyage {
+			field = out.Data
+		}
+		// Absent, field is empty, and so are the ranks. The answer parsed, so
+		// a failure is a value of the wrong type, at an offset into field
+		// rather than the answer: none is given.
+		if len(field) > 0 && json.Unmarshal(field, &ranks) != nil {
+			return nil, used, errors.New("the answer's ranks have a value of the wrong type")
 		}
 	}
 	if len(ranks) == 0 {
