@@ -1011,7 +1011,13 @@ func TestRebuildBesideHybridSearch(t *testing.T) {
 				return err
 			}
 			close(vectored)
-			<-resume
+			// A failure cancels ctx before the cleanup drops index_chunks
+			// and closes the store, which wait for this transaction.
+			select {
+			case <-resume:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			q := LexicalQuery{Terms: []LexicalTerm{{Lexeme: "renewlease"}}, Vector: v}
 			_, err := LexicalChunks(ctx, tx, run, []LexicalQuery{q}, Exclusions{}, 10, LexicalBar{Least: 100}, 100)
 			return err
@@ -1055,7 +1061,11 @@ func TestRebuildBesideGenerationDelete(t *testing.T) {
 				}
 				if i == 0 {
 					close(first)
-					<-resume
+					select {
+					case <-resume:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
 			}
 			return nil
