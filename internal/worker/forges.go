@@ -312,8 +312,9 @@ func (c *ForgeCache) PullRequestAuthor(ctx context.Context, in *configfile.Conne
 // GitHub's rate limit is left out: ForgeRateLimit waits it out for as long as
 // the limit says. An answer that refused the request, such as 401, 403 or
 // 404, is not transient. Nor is a forge whose certificate does not verify or
-// whose host does not resolve: that is a misconfiguration, which an hour of
-// waits would only hide.
+// whose host does not resolve, or whose HTTPS URL reaches a plain HTTP
+// listener: that is a misconfiguration, which an hour of waits would only
+// hide.
 func transientForge(err error) bool {
 	if err == nil {
 		return false
@@ -332,8 +333,12 @@ func transientForge(err error) bool {
 }
 
 // misconfigured reports whether err is a forge's certificate failing to
-// verify or its host name not resolving.
+// verify, its host name not resolving, or its HTTPS URL answered in plain
+// HTTP.
 func misconfigured(err error) bool {
+	if errors.Is(err, http.ErrSchemeMismatch) {
+		return true
+	}
 	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
 		return true
 	}

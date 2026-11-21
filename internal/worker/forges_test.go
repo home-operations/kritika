@@ -445,12 +445,30 @@ func emptyBranchAnswer(t *testing.T) error {
 	return err
 }
 
+// plainBehindHTTPS is what a Forgejo client's branch lookup fails with when
+// its https URL reaches a plain HTTP listener.
+func plainBehindHTTPS(t *testing.T) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(srv.Close)
+	c, err := forgejo.NewGiteaClient(strings.Replace(srv.URL, "http://", "https://", 1), "gitea-api", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.BranchTip(t.Context(), "o", "r", "main")
+	if !errors.Is(err, http.ErrSchemeMismatch) {
+		t.Fatalf("BranchTip over https of a plain listener = %v, want http.ErrSchemeMismatch", err)
+	}
+	return err
+}
+
 // TestTransientForge: a forge that answers 5xx, 408 or 429, or does not
 // answer, may answer a later try, as may a lookup of its host that timed
 // out, and a forge that closed an answer with no body. A forge that refused
 // the request, a certificate that does not verify, a host that does not
-// resolve, a missing file, and GitHub's rate limit, which ForgeRateLimit
-// waits out for as long as the limit says, are not transient.
+// resolve, an https URL that a plain HTTP listener answers, a missing file,
+// and GitHub's rate limit, which ForgeRateLimit waits out for as long as
+// the limit says, are not transient.
 func TestTransientForge(t *testing.T) {
 	answer := func(status int) error {
 		return fmt.Errorf("github: branch main of o/r: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: status}})
@@ -482,6 +500,7 @@ func TestTransientForge(t *testing.T) {
 		{name: "expired", err: unanswered(x509.CertificateInvalidError{Reason: x509.Expired})},
 		{name: "bare unknown authority", err: unanswered(x509.UnknownAuthorityError{})},
 		{name: "bare wrong host", err: unanswered(x509.HostnameError{Certificate: &x509.Certificate{}, Host: "forgejo.example"})},
+		{name: "plain http behind https", err: plainBehindHTTPS(t)},
 		{name: "not found", err: answer(http.StatusNotFound)},
 		{name: "forbidden", err: answer(http.StatusForbidden)},
 		{name: "no file", err: fmt.Errorf("github: .kritika.yaml: %w", fs.ErrNotExist)},
