@@ -20,8 +20,9 @@ import (
 // with one closure, an oversized method before a small one, an oversized
 // nested declaration), exported, decorated and templated declarations, doc
 // comments and attributes, long lines, a line over the byte cap, unnamed
-// top-level statements, and a parse that error recovery leaves short, along
-// with the shapes that gave a window of repeated lines or of no word at all.
+// top-level statements, a parse that error recovery leaves short,
+// declarations and statements that start on another's last line, along with
+// the shapes that gave a window of repeated lines or of no word at all.
 // symbols names, by a line's text,
 // the symbol of the smallest chunk that stores it.
 var corpus = []struct {
@@ -109,6 +110,18 @@ var corpus = []struct {
 	{path: "run.sh", src: "f() { echo hi; }\nf\n"},
 	{path: "schema.sql", src: "CREATE TABLE t (a int);\nCOMMENT ON COLUMN t.a IS 'the a column';\nCREATE INDEX i ON t (a);\n"},
 	{path: "short.hpp", src: "struct a : b<c>\n#endif\nint x;\n"},
+	{
+		path: "shared.js",
+		src:  "function a() {\n  return 1;\n} function b() { return 2; }\nfunction c() {\n  return 3;\n} run();\n",
+		symbols: map[string]string{
+			"  return 1;": "a", "} function b() { return 2; }": "b", "  return 3;": "c", "} run();": "c",
+		},
+	},
+	{
+		path:    "error.hpp",
+		src:     "public:\n#if !defined(DOCS)\n  ::x; f();\nint run() { return 1; }\n",
+		symbols: map[string]string{"  ::x; f();": "public", "int run() { return 1; }": "run"},
+	},
 }
 
 // corpusTree is the tree of a commit that holds the corpus.
@@ -225,10 +238,14 @@ func checkChunks(t *testing.T, chunks []Chunk, src []string) map[int]Chunk {
 		if strings.IndexFunc(c.Text, isWord) < 0 {
 			t.Errorf("chunk %s L%d-%d holds no word: %q", c.Symbol, c.StartLine, c.EndLine, c.Text)
 		}
-		if seen[c.Text] || slices.ContainsFunc(chunks, func(o Chunk) bool {
-			return o != c && o.StartLine <= c.StartLine && c.EndLine <= o.EndLine
-		}) {
-			t.Errorf("chunk %s L%d-%d repeats lines that another chunk stores", c.Symbol, c.StartLine, c.EndLine)
+		if seen[c.Text] {
+			t.Errorf("chunk %s L%d-%d repeats the text of another chunk", c.Symbol, c.StartLine, c.EndLine)
+		}
+		for _, o := range chunks {
+			if o != c && o.StartLine <= c.StartLine && c.StartLine <= o.EndLine && !mayShare(o, c) {
+				t.Errorf("chunk %s L%d-%d stores line %d, which chunk %s L%d-%d stores", c.Symbol, c.StartLine, c.EndLine,
+					c.StartLine, o.Symbol, o.StartLine, o.EndLine)
+			}
 		}
 		seen[c.Text] = true
 		for l := c.StartLine; l <= c.EndLine; l++ {
@@ -238,4 +255,16 @@ func checkChunks(t *testing.T, chunks []Chunk, src []string) map[int]Chunk {
 		}
 	}
 	return stored
+}
+
+// mayShare reports whether chunk c, which starts on a line that chunk o, which
+// starts no later, stores, may store that line too: c is the next of the
+// overlapping windows that one range is cut into, or o ends on the line that
+// c starts on, and c either holds lines of its own or has a symbol.
+func mayShare(o, c Chunk) bool {
+	if o.StartLine == c.StartLine {
+		return false
+	}
+	window := o.Symbol == c.Symbol && o.Kind == c.Kind && o.Scope == c.Scope && c.EndLine > o.EndLine
+	return window || c.StartLine == o.EndLine && (c.EndLine > o.EndLine || c.Symbol != "")
 }

@@ -250,6 +250,17 @@ func readBlob(f *object.File) ([]byte, error) {
 // declarations are not merged, so each keeps the symbol that a search result
 // reports. A file with no declarations is cut into windows. No piece's text
 // is over MaxChunkBytes unless it is one line.
+//
+// A piece is whole lines, and declarations can share one, so a line is
+// stored once where that loses nothing. Of the pieces that start on one
+// line, which a search, telling its hits apart by path and start line, would
+// see as one, only the longest is kept, as it holds the others' lines, and a
+// named one before an unnamed one of the same lines. An unnamed piece whose
+// lines a piece that starts on an earlier line holds is dropped, as a
+// statement after a declaration's closing bracket is. A named one is kept for
+// its symbol, as a function that starts on another's last line is, so that
+// line is stored twice. So is the line that two pieces meet on when each
+// holds lines of its own. The windows of a range overlap by WindowOverlap.
 func pieces(f *chunk.File, opts Options) []chunk.Decl {
 	if len(f.Decls) == 0 {
 		return chunk.Windows(f.Source, opts.WindowLines, opts.WindowOverlap, opts.MaxChunkBytes)
@@ -276,10 +287,6 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 		run = append(run, d)
 	}
 	flush()
-	// Declarations that share a line give pieces that start on it, which
-	// store its text twice, and a search tells its hits apart by path and
-	// start line. Of those, the longest is kept, as it holds the others'
-	// lines, and a named one before an unnamed one of the same lines.
 	var fit []chunk.Decl
 	at := map[int]int{}
 	for _, p := range out {
@@ -294,7 +301,17 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 			}
 		}
 	}
-	return fit
+	// The pieces come in line order, so one that ends by the furthest end
+	// before it lies in an earlier piece.
+	kept, end := fit[:0], 0
+	for _, p := range fit {
+		if p.Symbol == "" && p.EndLine <= end {
+			continue
+		}
+		kept = append(kept, p)
+		end = max(end, p.EndLine)
+	}
+	return kept
 }
 
 // importKind is the kind that chunk gives a package clause or an import.

@@ -236,6 +236,26 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 				"output \"id\" {\n  value = aws_s3_bucket.b.id\n}\n",
 			want: []span{{"b", "", 1, 3}, {"region", "", 5, 7}, {"id", "", 9, 11}},
 		},
+		{
+			name: "a declaration that starts on the last line of another", path: "shared.js",
+			src:  "function a() {\n  return 1;\n} function b() { return 2; }\n",
+			want: []span{{"a", "function", 1, 3}, {"b", "function", 3, 3}},
+		},
+		{
+			name: "a statement on the last line of a declaration", path: "tail.js",
+			src:  "function a() {\n  return 1;\n} run();\n",
+			want: []span{{"a", "function", 1, 3}},
+		},
+		{
+			name: "a statement on the last line of a parse error", path: "error.hpp",
+			src:  "public:\n#if !defined(DOCS)\n  ::x; f();\nint run() { return 1; }\n",
+			want: []span{{"public", "other", 1, 3}, {"run", "function", 4, 4}},
+		},
+		{
+			name: "a named statement on the last line of a parse error", path: "access.hpp",
+			src:  "public:\n#if !defined(DOCS)\n  typedef int type;\n#endif\n\nint run() { return 1; }\n",
+			want: []span{{"public", "other", 1, 3}, {"type", "other", 3, 3}, {"", "other", 4, 4}, {"run", "function", 6, 6}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
