@@ -10,7 +10,9 @@ func TestSystemPrompt(t *testing.T) {
 	bare := SystemPrompt(nil, nil, nil, false, false, false, false)
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "anchor only to lines of the pull request's diff",
 		"A file the prompt leaves out is as\nmuch a part of that diff", "read_diff numbers each line as a finding anchors to it",
-		"marks new is an added line", systemReport + systemRules} {
+		"marks new is an added line", systemReport + systemRules,
+		"as the PR head has them, that a search of the repository found similar to the change",
+		"similar snippet can be unrelated to the change"} {
 		if !strings.Contains(bare, want) {
 			t.Fatalf("missing %q in:\n%s", want, bare)
 		}
