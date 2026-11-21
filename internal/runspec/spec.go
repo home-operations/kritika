@@ -555,3 +555,12 @@ const DigestHeader = "Kritika-Digest"
 // AquaRegistryPath is where a runner reads, with its run token, the aqua
 // registry the gateway keeps.
 const AquaRegistryPath = "/v1/aqua/registry.yaml"
+
+// SimilarPath is where a runner searches its repository's index, with its
+// run token. A gateway that serves it leaves out of every search the paths
+// that the run reported (ReportSimilarExcludePath). An older replica, met
+// mid-rollout, serves only /v1/similar, which takes the paths in the request
+// instead and would answer this run's searches with its changed files'
+// own copies: it answers this path 404, and the run goes without similar
+// code rather than with those.
+const SimilarPath = "/v2/similar"

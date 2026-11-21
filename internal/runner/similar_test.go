@@ -51,7 +51,7 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 			}
 			f.excluded = append(f.excluded, v.Paths)
 			w.WriteHeader(f.status)
-		case "/v1/similar":
+		case runspec.SimilarPath:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Error(err)

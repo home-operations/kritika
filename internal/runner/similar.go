@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
@@ -33,7 +34,8 @@ const maxSimilarBody = 1 << 20
 const searchCalls = 10
 
 // similarCode asks the gateway for the chunks of the repository's index
-// nearest each query, outside the paths that the run reported.
+// nearest each query, outside the paths that the run reported. It asks on
+// runspec.SimilarPath, which only a gateway that leaves them out serves.
 func similarCode(ctx context.Context, gatewayURL, token string, req contextpack.SimilarRequest) (contextpack.SimilarResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, similarTimeout)
 	defer cancel()
@@ -41,7 +43,8 @@ func similarCode(ctx context.Context, gatewayURL, token string, req contextpack.
 	if err != nil {
 		return contextpack.SimilarResponse{}, fmt.Errorf("runner: similar code: %w", err)
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(gatewayURL, "/")+"/v1/similar", bytes.NewReader(body))
+	url := strings.TrimSuffix(gatewayURL, "/") + runspec.SimilarPath
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return contextpack.SimilarResponse{}, fmt.Errorf("runner: similar code: %w", err)
 	}

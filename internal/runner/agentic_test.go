@@ -543,7 +543,7 @@ func TestSimilarCode(t *testing.T) {
 			}))
 			defer srv.Close()
 			got, err := similarCode(t.Context(), srv.URL+"/", "krk_run", contextpack.SimilarRequest{Queries: []string{"main.go\nfunc b() {}"}, Exclude: []string{"main.go"}})
-			if path != "POST /v1/similar" || auth != "Bearer krk_run" || body != `{"queries":["main.go\nfunc b() {}"],"exclude":["main.go"]}` {
+			if path != "POST "+runspec.SimilarPath || auth != "Bearer krk_run" || body != `{"queries":["main.go\nfunc b() {}"],"exclude":["main.go"]}` {
 				t.Fatalf("request = %s with %q: %s", path, auth, body)
 			}
 			if tc.wantErr != "" {

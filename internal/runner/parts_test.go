@@ -381,7 +381,7 @@ func TestRunPartLoopsShareSearch(t *testing.T) {
 	asked := map[string]int{}
 	searched := 0
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/similar" {
+		if r.URL.Path == runspec.SimilarPath {
 			mu.Lock()
 			searched++
 			mu.Unlock()

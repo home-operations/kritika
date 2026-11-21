@@ -92,7 +92,9 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
 		g.chat(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/similar":
+	// /v1/similar serves a runner older than this build, which sends its
+	// exclusions in each request.
+	case r.Method == http.MethodPost && (r.URL.Path == runspec.SimilarPath || r.URL.Path == "/v1/similar"):
 		g.similarCode(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/conversation":
 		g.conversation(w, r)

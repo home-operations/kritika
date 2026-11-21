@@ -166,7 +166,7 @@ func (r lexicalRepo) askRequest(
 	if err != nil {
 		t.Fatal(err)
 	}
-	hreq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/similar", strings.NewReader(string(body)))
+	hreq := httptest.NewRequestWithContext(ctx, http.MethodPost, runspec.SimilarPath, strings.NewReader(string(body)))
 	hreq.Header.Set("Authorization", "Bearer "+token)
 	out := httptest.NewRecorder()
 	g.ServeHTTP(out, hreq)
