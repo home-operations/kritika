@@ -30,6 +30,7 @@ func TestWords(t *testing.T) {
 		{"plural acronym inside", "getURLs URLsByID", []string{"geturls", "get", "urls", "urlsbyid", "id"}},
 		{"acronym before a word", "HTTPSConnection", []string{"httpsconnection", "https", "connection"}},
 		{"letters around digits", "k8s i18n v2 x", []string{"k8s", "i18n", "v2"}},
+		{"a letter and digits", "S3 X509", []string{"s3", "x509"}},
 		{"a hyphen in a query joins", "rate-limit", []string{"ratelimit", "rate", "limit"}},
 		{"a combining mark", "cafe\u0301Cache", []string{"cafe\u0301cache", "cafe\u0301", "cache"}},
 		{"a combining mark before a case change", "getE\u0301tat", []string{"gete\u0301tat", "get", "e\u0301tat"}},
