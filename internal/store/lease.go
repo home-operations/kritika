@@ -71,6 +71,11 @@ func (s *Store) AcquireLease(ctx context.Context, accountID, modelKey string, sl
 // index update holds, shared, while it waits for a slot (AcquireIndexLease).
 const indexWaitLock = `hashtextextended('kritika-index-wait ' || $1::text || ' ' || $2::text, 0)`
 
+// indexBuildClaimLock is the advisory lock of account $1 and model key $2
+// that an index build's claim of a slot holds until it commits, so that the
+// builds' claims take indexWaitLock one at a time.
+const indexBuildClaimLock = `hashtextextended('kritika-index-build-claim ' || $1::text || ' ' || $2::text, 0)`
+
 // AcquireIndexLease is AcquireLease for one embedding call of an index job,
 // which holds the slot for that call alone. An update, of a repository
 // already indexed, comes before every build, onboarding or forced: while one
@@ -273,8 +278,13 @@ func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots
 		}
 		if claim == claimIndexBuild {
 			// An update that waits holds the lock shared, so a build cannot
-			// take it. Nor can two builds at once, the second of which tries
-			// again later, as it would for a slot that the first took.
+			// take it. A build that holds it while its claim commits would
+			// also keep another from it, which would then back off as if
+			// every slot were held, so the builds' claims queue for it in
+			// turn. Each holds it for a claim alone, never for a wait.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(`+indexBuildClaimLock+`)`, accountID, modelKey); err != nil {
+				return fmt.Errorf("store: lock index build claims: %w", err)
+			}
 			var free bool
 			if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(`+indexWaitLock+`)`, accountID, modelKey).Scan(&free); err != nil {
 				return fmt.Errorf("store: look for index updates waiting: %w", err)
