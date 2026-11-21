@@ -31,7 +31,7 @@ func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	if wait, limited := gitlab.RetryAfter(err, now); limited {
 		return wait, true
 	}
-	if cmp.Or(github.Status(err), gitlab.Status(err), forgejo.Status(err)) != http.StatusTooManyRequests {
+	if forgeStatus(err) != http.StatusTooManyRequests {
 		return 0, false
 	}
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil {
@@ -55,4 +55,10 @@ func retryAfter(v string, now time.Time) (time.Duration, bool) {
 		return max(t.Sub(now), time.Second), true
 	}
 	return 0, false
+}
+
+// forgeStatus is the HTTP status of the forge's answer that err carries, 0
+// when it carries none.
+func forgeStatus(err error) int {
+	return cmp.Or(github.Status(err), gitlab.Status(err), forgejo.Status(err))
 }

@@ -536,6 +536,40 @@ func TestPollerLogsAMissingBranchOnce(t *testing.T) {
 	}
 }
 
+// discoverForges builds no client for gone, whose App installation GitHub
+// does not find, and f for every other repository, as worker.Forges does
+// with a cold cache.
+type discoverForges struct {
+	f    forge.Client
+	gone string
+}
+
+func (d *discoverForges) For(_ context.Context, _ *configfile.Connection, repo string) (forge.Client, error) {
+	if repo == d.gone {
+		return nil, fmt.Errorf("github: find App installation for %s: %w", repo,
+			&gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}, Message: "Not Found"})
+	}
+	return d.f, nil
+}
+
+// TestPollerLooksPastARepositoryTheAppDoesNotFind: a repository that the
+// App no longer reaches, before the repository sync disables it, has no
+// installation for its client to be built with. It is logged as a missing
+// branch is, and the look goes on to the repositories after it.
+func TestPollerLooksPastARepositoryTheAppDoesNotFind(t *testing.T) {
+	s := newTipPoll(t, "onedr0p/home-ops", "onedr0p/flux")
+	s.p.Forges = &discoverForges{f: s.tf, gone: "onedr0p/flux"}
+	if err := s.p.pollTips(t.Context(), s.file, s.account, s.in); err != nil {
+		t.Fatalf("a look past a repository the App does not find = %v, want none", err)
+	}
+	if got := s.indexJobs(); len(got) != 1 || got[0] != "moved" {
+		t.Fatalf("index jobs of home-ops = %v, want one at the moved tip", got)
+	}
+	if logs := s.logs.String(); !strings.Contains(logs, "default branch unknown to the forge") || !strings.Contains(logs, "onedr0p/flux") {
+		t.Fatalf("logs:\n%s\nwant flux logged as unknown to the forge", logs)
+	}
+}
+
 // TestPollerBacksOffAfterAnIndexJobThatPublishedNothing: an index job that
 // ended without bringing the index to the tip, failed or skipped because
 // the repository's .kritika.yaml turns indexing off, will end so again. So

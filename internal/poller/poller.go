@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -608,8 +609,16 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 			continue
 		}
 		// The client is the account's, not the repository's: without it
-		// no other branch can be looked at either.
+		// no other branch can be looked at either. But a GitHub client is
+		// built for the installation that it finds by the repository, and a
+		// repository that the App no longer reaches has none until the
+		// repository sync disables it, as it has no branch for a client
+		// already built.
 		client, err := p.Forges.For(ctx, in, r.Name)
+		if forgeStatus(err) == http.StatusNotFound {
+			p.branchUnknown(in, r, err)
+			continue
+		}
 		if err != nil {
 			p.tipsCut(account.ID(), r.Name, time.Time{})
 			return err
