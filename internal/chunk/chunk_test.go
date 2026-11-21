@@ -269,6 +269,25 @@ func TestParseBounds(t *testing.T) {
 	if len(f.Decls) != 16000 {
 		t.Errorf("a padded line of declarations found %d declarations, want 16000", len(f.Decls))
 	}
+	// Many declarations on one line below a long doc comment: the comment's
+	// lines are walked once, not once for each declaration.
+	var commented strings.Builder
+	commented.WriteString("/**\n" + strings.Repeat(" * doc\n", 100000) + " */\n")
+	for i := range 16000 {
+		fmt.Fprintf(&commented, "function c%d(){}", i)
+	}
+	commented.WriteString("\n")
+	start = time.Now()
+	f = p.Parse("commented.js", []byte(commented.String()))
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a line of declarations below a long comment took %s", took)
+	}
+	if len(f.Decls) != 16000 {
+		t.Errorf("a line of declarations below a long comment found %d declarations, want 16000", len(f.Decls))
+	} else if f.Decls[0].StartLine != 1 || f.Decls[1].StartLine != 100003 {
+		t.Errorf("the first two declarations below a long comment start on lines %d and %d, want 1 and 100003",
+			f.Decls[0].StartLine, f.Decls[1].StartLine)
+	}
 }
 
 // TestDeclarationsTakeTheirLead: a declaration's range takes in the comments,
@@ -448,6 +467,15 @@ int f(void) { return x; }
 				{"", "other", "", 1, 1, 1}, {"add", "function", "", 2, 3, 3},
 				{"x", "", "", 4, 4, 4}, {"f", "function", "", 6, 6, 6},
 			},
+		},
+		{
+			name: "declarations that share a line after a doc comment", path: "demo.js",
+			src: `/** First. */
+function first() {} function second() {
+  return 2;
+}
+`,
+			want: []want{{"first", "function", "", 1, 2, 2}, {"second", "function", "", 2, 4, 2}},
 		},
 		{
 			name: "c++ templates", path: "demo.cpp",

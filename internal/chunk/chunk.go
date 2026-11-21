@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"cmp"
 	"maps"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -278,20 +279,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		}
 		add(d)
 	}
-	// A lead line that ends another declaration is that declaration's.
-	ends := map[int]bool{}
-	for _, d := range out {
-		ends[d.EndLine] = true
-	}
-	for i := range out {
-		line := out[i].StartLine
-		for line > 1 && lead[line-1] && !ends[line-1] {
-			line--
-		}
-		if line < out[i].StartLine {
-			out[i].StartLine, out[i].StartByte = line, starts[line-1]
-		}
-	}
+	takeLeads(out, lead, starts)
 	for _, d := range unheld(out, loose, len(starts)) {
 		add(d)
 	}
@@ -299,6 +287,35 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 		return cmp.Or(cmp.Compare(a.StartByte, b.StartByte), cmp.Compare(b.EndByte, a.EndByte))
 	})
 	return out
+}
+
+// takeLeads widens each declaration of out over the lead lines directly
+// above it, starting at lines starts. A lead line that ends another
+// declaration is that declaration's. The lead lines above a line are the
+// first declaration's on it: another that starts later on the line would
+// otherwise start at the same byte and, being longer, read as the first
+// one's parent.
+func takeLeads(out []Decl, lead []bool, starts []int) {
+	ends, first := make([]bool, len(lead)), slices.Repeat([]int{math.MaxInt}, len(lead))
+	for _, d := range out {
+		ends[d.EndLine] = true
+		first[d.StartLine] = min(first[d.StartLine], d.StartByte)
+	}
+	// above is, by line, the first of the lead lines that run up to it, in
+	// one pass rather than a walk up from each declaration, as one line can
+	// start many.
+	above := make([]int, len(lead))
+	for l := 1; l < len(above); l++ {
+		above[l] = l
+		if l > 1 && lead[l-1] && !ends[l-1] {
+			above[l] = above[l-1]
+		}
+	}
+	for i, d := range out {
+		if line := above[d.StartLine]; line < d.StartLine && d.StartByte == first[d.StartLine] {
+			out[i].StartLine, out[i].StartByte = line, starts[line-1]
+		}
+	}
 }
 
 // unheld returns the declarations of loose that hold a line which no
