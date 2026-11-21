@@ -132,6 +132,9 @@ func retryLocks(ctx context.Context, fn func() error) error {
 		if !lockNotAvailable(err) || try == partitionTries {
 			return err
 		}
+		if gaveWay != nil {
+			gaveWay()
+		}
 		select {
 		case <-ctx.Done():
 			return err
@@ -139,6 +142,11 @@ func retryLocks(ctx context.Context, fn func() error) error {
 		}
 	}
 }
+
+// gaveWay, when a test sets it, is called each time retryLocks gives a lock
+// wait up, before it pauses: a variable for the tests, which can then end
+// what holds the lock at that point rather than after a guessed time.
+var gaveWay func()
 
 // PartitionIndexChunks makes an index_chunks that a build before
 // partitioning created, a plain table, the legacy partition of a partitioned

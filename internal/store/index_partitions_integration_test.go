@@ -1105,7 +1105,7 @@ func TestSimilarSearchReadsOnePartition(t *testing.T) {
 // TestPartitionIndexChunksRetriesLockWaits: a lock that a writer holds for
 // longer than one short wait does not cost the sweep its turn. The
 // partitioner gives way, tries again, and partitions the table once the
-// writer lets go.
+// writer lets go, which it does when the partitioner has given way.
 func TestPartitionIndexChunksRetriesLockWaits(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -1122,26 +1122,25 @@ func TestPartitionIndexChunksRetriesLockWaits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A failure lets the writer go too, so the cleanup's DROP TABLE does not
+	// queue behind it.
+	defer func() { _ = writer.Rollback(context.Background()) }()
 	if _, err := writer.Exec(ctx, `LOCK TABLE index_chunks IN ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
-	// Past one wait and one pause, within the tries.
-	hold := partitionRetryPause + partitionRetryPause/2
-	released := make(chan struct{})
-	time.AfterFunc(hold, func() {
-		_ = writer.Rollback(context.Background())
-		close(released)
-	})
-	// A failure waits for the writer to let go, so the cleanup's DROP TABLE
-	// does not queue behind it.
-	defer func() { <-released }()
-	start := time.Now()
-	got, err := s.PartitionIndexChunks(ctx, "kritika_app")
-	if err != nil || !got {
-		t.Fatalf("PartitionIndexChunks behind a writer that lets go after %s = %v, %v; want it partitioned", hold, got, err)
+	gaveUp := 0
+	gaveWay = func() {
+		if gaveUp++; gaveUp == 1 {
+			if err := writer.Rollback(context.Background()); err != nil {
+				t.Error(err)
+			}
+		}
 	}
-	if took := time.Since(start); took < hold {
-		t.Fatalf("PartitionIndexChunks returned after %s, before the writer let go at %s", took, hold)
+	t.Cleanup(func() { gaveWay = nil })
+	got, err := s.PartitionIndexChunks(ctx, "kritika_app")
+	if err != nil || !got || gaveUp != 1 {
+		t.Fatalf("PartitionIndexChunks behind a writer that lets go once it gives way = %v, %v after giving way %d times; "+
+			"want it partitioned at the next try", got, err, gaveUp)
 	}
 }
 
