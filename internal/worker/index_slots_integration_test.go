@@ -133,8 +133,13 @@ func TestIndexUpdateEmbedsBetweenOnboardingBatches(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	if len(calls) != 6 || calls[0] != "onboarding" {
+		t.Fatalf("embedding calls %q, want six starting with onboarding", calls)
+	}
+	// Index is -1 for a call that is missing, so both are checked present.
 	next := slices.Index(calls[1:], "onboarding") + 1
-	if len(calls) != 6 || calls[0] != "onboarding" || slices.Index(calls, "update") > next {
+	firstUpdate := slices.Index(calls, "update")
+	if next < 1 || firstUpdate < 1 || firstUpdate >= next {
 		t.Fatalf("embedding calls %q, want the update's first before the onboarding build's second", calls)
 	}
 }
