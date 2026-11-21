@@ -142,7 +142,8 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount}),
 		indexVectors: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_vectors_total",
-			Help: "Vectors of index chunks, by outcome: reused from a chunk of the same text already indexed, or embedded.",
+			Help: "Vectors of index chunks, by outcome: reused from a chunk of the same text already indexed or shared with one in the " +
+				"same batch, or embedded by an embedder call that answered for every text. A call that fails counts none.",
 		}, []string{lblAccount, lblOutcome}),
 		indexTruncated: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_truncated_total",
@@ -294,7 +295,9 @@ func (m *Metrics) IndexRun(account, mode, status string, chunks int) {
 }
 
 // IndexVectors counts the vectors of a batch of index chunks: those reused
-// from chunks of the same text already indexed, and those embedded.
+// from chunks of the same text already indexed or shared by chunks of the
+// same text in the batch, and those embedded by a call that answered for
+// every text. A batch whose call fails is counted by none.
 func (m *Metrics) IndexVectors(account string, reused, embedded int) {
 	if m == nil {
 		return

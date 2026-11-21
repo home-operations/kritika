@@ -1855,7 +1855,7 @@
           "refId": "A"
         }
       ],
-      "description": "Chunks written into each account's similar-code index by completed and superseded index runs, whether their vectors were embedded or reused. kritika_index_vectors_total{outcome=\"embedded\"} counts the vectors sent to the embedder."
+      "description": "Chunks written into each account's similar-code index by completed and superseded index runs, whether their vectors were embedded or reused. kritika_index_vectors_total{outcome=\"embedded\"} counts the vectors newly embedded by embedder calls that answered for every text, not every text sent: a call that fails, and is tried again, counts none."
     },
     {
       "id": 31,
