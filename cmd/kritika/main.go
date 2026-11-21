@@ -260,7 +260,7 @@ func serve(
 				m.Leading(true)
 				defer m.Leading(false)
 				events.PodEvent(ctx, false, "LeaderElected", "Lead", "this replica took the lead")
-				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, kube, events, m, configErrors, logger)
+				return lead(ctx, st, cfg, current, inserter, svc, apps.Reach, forges, kube, events, m, configErrors, logger)
 			})
 		})
 	} else {
@@ -647,8 +647,8 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 // replica's pod what became of the configuration.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	svc *ingest.Service, apps *worker.Forges, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
-	m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
+	svc *ingest.Service, reach func(context.Context, *configfile.Connection) (map[string]store.Listing, error), forges *worker.ForgeCache,
+	kube *executor.Kube, events *executor.Events, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole); err != nil {
 		return err
@@ -665,7 +665,7 @@ func lead(
 	// starts once the configuration is applied, below: it polls at once,
 	// and before then the store knows no account to poll.
 	poll := &poller.Poller{
-		Store: st, Current: current, Forges: forges, Reach: apps.Reach, Dispatcher: svc, Logger: logger, Metrics: m,
+		Store: st, Current: current, Forges: forges, Reach: reach, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
 	plans := &worker.ChatGPTRefresher{Store: st, Current: current, LeaderInterval: cfg.LeaderRetryInterval, Logger: logger}
 	duties.Go(func() { plans.Run(pollCtx) })
@@ -679,6 +679,12 @@ func lead(
 		rescuer.Runs = kube
 	}
 	duties.Go(func() { rescuer.Run(pollCtx) })
+	// And so is retention: transcripts and stopped indexes past their windows
+	// (owner pool), expired dashboard sessions (app pool), and partitioning a
+	// legacy index table. It starts once the index schema, which can replace
+	// that table, is ensured or the configuration refused: ahead of the listing.
+	retention := &worker.Retention{Store: st, Current: current, Logger: logger, AppRole: cfg.DatabaseAppRole}
+	startRetention := sync.OnceFunc(func() { duties.Go(func() { retention.Run(pollCtx) }) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err
@@ -686,6 +692,7 @@ func lead(
 		if err := ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger); err != nil {
 			return err
 		}
+		startRetention()
 		// Once the accounts exist: a fresh instance, or a new connection,
 		// knows its repositories before any webhook names one.
 		poll.SyncRepositories(ctx)
@@ -693,14 +700,7 @@ func lead(
 	}, onboarder.Offer, configErrors, events, logger); err != nil {
 		return err
 	}
-	// And so is retention. It covers model-call transcripts past their
-	// configured window and the indexes of repositories stopped past their
-	// grace (owner pool, which bypasses row-level security). It also covers
-	// expired dashboard sessions (app pool), and partitions an index table
-	// that a build before partitioning created: only once an embedder that
-	// the configuration changes has replaced that table.
-	retention := &worker.Retention{Store: st, Current: current, Logger: logger, AppRole: cfg.DatabaseAppRole}
-	duties.Go(func() { retention.Run(pollCtx) })
+	startRetention()
 	duties.Go(func() { poll.Run(pollCtx) })
 	<-ctx.Done()
 	return nil

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/server"
+	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 	"github.com/home-operations/kritika/internal/worker"
 )
@@ -86,7 +88,7 @@ func TestLeadSweepsOnceTheConfigurationIsApplied(t *testing.T) {
 	leadCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() {
-		done <- lead(leadCtx, st, cfg, current, queue, ingest.NewService(st, queue), apps, &worker.ForgeCache{Build: apps.Build}, nil, nil,
+		done <- lead(leadCtx, st, cfg, current, queue, ingest.NewService(st, queue), apps.Reach, &worker.ForgeCache{Build: apps.Build}, nil, nil,
 			metrics.New(reg), server.NewConfigErrorGauge(reg), logger)
 	}()
 	t.Cleanup(func() {
@@ -192,7 +194,7 @@ embedding: { model: test/fake-embed, dims: 8 }
 	leadCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() {
-		done <- lead(leadCtx, st, cfg, configfile.NewCurrent(file), queue, ingest.NewService(st, queue), apps, &worker.ForgeCache{Build: apps.Build},
+		done <- lead(leadCtx, st, cfg, configfile.NewCurrent(file), queue, ingest.NewService(st, queue), apps.Reach, &worker.ForgeCache{Build: apps.Build},
 			nil, nil, metrics.New(reg), server.NewConfigErrorGauge(reg), slog.New(slog.DiscardHandler))
 	}()
 	t.Cleanup(func() {
@@ -217,4 +219,83 @@ embedding: { model: test/fake-embed, dims: 8 }
 	}
 	release()
 	waitLead(t, "retention to sweep once the index schema is ensured", swept)
+}
+
+// TestLeadSweepsWhileRepositoriesAreListed: a new leader's retention sweep
+// does not wait for the repositories of its connections to be listed,
+// which a forge that does not answer holds up for a minute per connection.
+// The listing here waits for the sweep, so it ends only once its own
+// timeout does when retention waits for it.
+func TestLeadSweepsWhileRepositoriesAreListed(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	t.Setenv("TEST_GT_TOKEN", "gitea-api")
+	t.Setenv("TEST_GT_HOOK", "gitea-hook")
+	file := configfiletest.Load(t, `
+gitea:
+  acme-tea:
+    host: gitea.example.com
+    accounts: [acme]
+    token: { env: TEST_GT_TOKEN }
+    webhookSecret: { env: TEST_GT_HOOK }
+`)
+	if _, err := st.App().Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
+		VALUES ('\x6c69737473', 'test', 'n', 'v', now() - interval '1 hour', '\x00')`); err != nil {
+		t.Fatal(err)
+	}
+	swept := func(ctx context.Context) bool {
+		var left bool
+		if err := st.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM login_states WHERE state_hash = '\x6c69737473')`).Scan(&left); err != nil {
+			if ctx.Err() == nil {
+				t.Error(err)
+			}
+			return false
+		}
+		return !left
+	}
+	// The first listing's outcome: the backstop poll lists again later.
+	listed := make(chan bool, 1)
+	report := func(ok bool) {
+		select {
+		case listed <- ok:
+		default:
+		}
+	}
+	reach := func(ctx context.Context, _ *configfile.Connection) (map[string]store.Listing, error) {
+		tick := time.NewTicker(50 * time.Millisecond)
+		defer tick.Stop()
+		for !swept(ctx) {
+			select {
+			case <-ctx.Done():
+				report(false)
+				return nil, ctx.Err()
+			case <-tick.C:
+			}
+		}
+		report(true)
+		return nil, errors.New("not listed")
+	}
+
+	cfg := &config.Config{DatabaseAppRole: "kritika_app", LeaderRetryInterval: time.Second}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	apps := &worker.Forges{}
+	reg := prometheus.NewRegistry()
+	leadCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- lead(leadCtx, st, cfg, configfile.NewCurrent(file), queue, ingest.NewService(st, queue), reach, &worker.ForgeCache{Build: apps.Build},
+			nil, nil, metrics.New(reg), server.NewConfigErrorGauge(reg), slog.New(slog.DiscardHandler))
+	}()
+	t.Cleanup(func() {
+		stop()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	if !<-listed {
+		t.Fatal("retention waited for the repositories to be listed")
+	}
 }
