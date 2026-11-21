@@ -62,6 +62,10 @@ const (
 	scaleMinRepoSize  = 100
 	scaleMedianRepo   = 3_000
 	scaleRepoSizeSkew = 1.2
+	// scaleMinTarget is the smallest target repository. Each target fits in a
+	// quarter of the table, so a table of fewer than four times as many rows
+	// has none to search.
+	scaleMinTarget = 1_000
 )
 
 func scaleEnvInt(b *testing.B, key string, def int) int {
@@ -107,7 +111,7 @@ func newScaleCorpus(dims, rows int, accounts []string) *scaleCorpus {
 		return r
 	}
 	total := 0
-	for _, size := range []int{1_000, 10_000, 100_000} {
+	for _, size := range []int{scaleMinTarget, 10_000, 100_000} {
 		if total+size > rows/4 {
 			break
 		}
@@ -324,8 +328,9 @@ func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 // each candidate layout of index_chunks. It reports p50 and p95 latency and
 // recall@10 against an exact search of the same repository.
 //
-// It is opt-in: KRITIKA_INDEX_SCALE_ROWS is the table's row count. Loading
-// a million rows takes minutes and gigabytes of disk.
+// It is opt-in: KRITIKA_INDEX_SCALE_ROWS is the table's row count, at least
+// 4*scaleMinTarget so that it holds a target. Loading a million rows takes
+// minutes and gigabytes of disk.
 // KRITIKA_INDEX_SCALE_DIMS (1024), KRITIKA_INDEX_SCALE_QUERIES (50) and
 // KRITIKA_INDEX_SCALE_LAYOUTS (scaleDefaultLayouts, comma-separated names
 // from scaleLayouts) vary it.
@@ -334,6 +339,9 @@ func BenchmarkIndexScale(b *testing.B) {
 		b.Skip("KRITIKA_INDEX_SCALE_ROWS not set")
 	}
 	rows := scaleEnvInt(b, "KRITIKA_INDEX_SCALE_ROWS", 0)
+	if rows < 4*scaleMinTarget {
+		b.Fatalf("KRITIKA_INDEX_SCALE_ROWS=%d holds no target repository to search: it must be at least %d", rows, 4*scaleMinTarget)
+	}
 	s, corpus := loadIndexScale(b, rows, scaleEnvInt(b, "KRITIKA_INDEX_SCALE_DIMS", 1024))
 	ctx := b.Context()
 	qs, truth := scaleTruth(b, s, corpus, scaleEnvInt(b, "KRITIKA_INDEX_SCALE_QUERIES", 50))
