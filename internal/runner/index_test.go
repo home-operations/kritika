@@ -5,8 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -127,6 +132,76 @@ func TestFetchForIndex(t *testing.T) {
 			if (err != nil) != tc.wantErr || mode != tc.wantMode || len(fetches) != tc.fetches {
 				t.Fatalf("fetchForIndex = %q, %v after %d fetches, want %q, error %v after %d", mode, err, len(fetches),
 					tc.wantMode, tc.wantErr, tc.fetches)
+			}
+		})
+	}
+}
+
+// TestFetchForIndexFromARemote: through the real fetch, a base that the
+// remote does not have falls back to a full build of the head. A remote that
+// fails for any other reason, as a forge that answers 503 does, fails the run
+// after the one fetch, rather than fetching the repository again to embed it
+// all anew.
+func TestFetchForIndexFromARemote(t *testing.T) {
+	dir := t.TempDir()
+	r, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gittest.Unsigned(t, r)
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("main.go"); err != nil {
+		t.Fatal(err)
+	}
+	h, err := wt.Commit("main", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, missing := h.String(), strings.Repeat("0", 40)
+
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	unavailable := srv.URL + "/acme/webapp.git"
+	// What one fetch asks of the failing remote.
+	if _, err := gitfetch.Trees(t.Context(), gitfetch.Fetch{CloneURL: unavailable, Head: head}); err == nil {
+		t.Fatal("a fetch from a remote that answers 503 succeeded")
+	}
+	perFetch := requests.Swap(0)
+	if perFetch == 0 {
+		t.Fatal("a fetch asked nothing of the remote")
+	}
+
+	for _, tc := range []struct {
+		name     string
+		cloneURL string
+		wantMode string
+		wantErr  bool
+		// wantRequests is what the failing remote is asked, 0 for the local one.
+		wantRequests int32
+	}{
+		{name: "base the remote does not have", cloneURL: dir, wantMode: store.IndexModeFull},
+		{name: "remote unavailable", cloneURL: unavailable, wantErr: true, wantRequests: perFetch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests.Store(0)
+			res, mode, err := fetchForIndex(t.Context(), runspec.Spec{CloneURL: tc.cloneURL, Head: head, Base: missing}, "",
+				gitfetch.Trees, slog.New(slog.DiscardHandler))
+			if res != nil {
+				t.Cleanup(func() { _ = res.Close() })
+			}
+			if (err != nil) != tc.wantErr || mode != tc.wantMode || requests.Load() != tc.wantRequests {
+				t.Fatalf("fetchForIndex = %q, %v after %d requests to the remote, want %q, error %v after %d",
+					mode, err, requests.Load(), tc.wantMode, tc.wantErr, tc.wantRequests)
 			}
 		})
 	}
