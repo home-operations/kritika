@@ -449,8 +449,8 @@ func TestScanReadsDeclarationsFromTheirHead(t *testing.T) {
 }
 
 // TestUsersOfALongDecoratorLine: a decorator line of many identifiers and
-// many hits finds each hit's identifier among them in constant time, not by
-// a scan of the line's identifiers for each hit.
+// many hits finds each hit's identifier among them with one look, not by a
+// scan of the line's identifiers for each hit.
 func TestUsersOfALongDecoratorLine(t *testing.T) {
 	const n = 60000
 	names := make([]string, n)
@@ -464,10 +464,12 @@ func TestUsersOfALongDecoratorLine(t *testing.T) {
 		hits[i] = hit{"wanted", 1}
 	}
 	hits[n] = hit{"i00007", 1}
-	start := time.Now()
+	var lookedAt int
+	looked = &lookedAt
 	decls := users(pf, hits, DefaultOptions.MaxDeclLines)
-	if took := time.Since(start); took > 5*time.Second {
-		t.Errorf("users took %s", took)
+	looked = nil
+	if lookedAt > len(hits) {
+		t.Errorf("users looked at %d identifiers for %d hits, want one a hit at most", lookedAt, len(hits))
 	}
 	if decls[0] != nil || decls[n] == nil || decls[n].Symbol != "f" {
 		t.Fatalf("users = %v for a word the decorator does not name and %v for one it does, want nil and f", decls[0], decls[n])

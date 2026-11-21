@@ -138,9 +138,22 @@ func users(pf *chunk.File, hits []hit, maxLines int) []*chunk.Decl {
 		}
 	}
 	for i, h := range hits {
-		if d := decls[i]; d != nil && h.line < d.HeadLine && !named[h] {
-			decls[i] = nil
+		if d := decls[i]; d != nil && h.line < d.HeadLine {
+			if looked != nil {
+				*looked++
+			}
+			if !named[h] {
+				decls[i] = nil
+			}
 		}
 	}
 	return decls
 }
+
+// looked, when a test points it at a count, adds up the identifiers that
+// users looks at to tell whether a hit's line names its word. Looking among
+// all of a line's identifiers for each hit is quadratic in a long line's
+// hits, and the count shows that on any machine, where a bound on the
+// time users takes holds only on a known one. A test that sets it does not
+// run in parallel.
+var looked *int
