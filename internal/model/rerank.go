@@ -95,10 +95,11 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// A refusal's body can echo the query, a document or the key, and the
-	// gateway logs the error, so it says the status alone, as the embedder's
-	// does.
+	// gateway logs the error, so it says the status code alone. resp.Status
+	// is not that: it keeps the reason phrase that an HTTP/1.x server sent,
+	// which can echo them as well.
 	if resp.StatusCode != http.StatusOK {
-		return nil, RerankUsage{}, fmt.Errorf("model: rerank: %s", resp.Status)
+		return nil, RerankUsage{}, fmt.Errorf("model: rerank: HTTP status %d", resp.StatusCode)
 	}
 	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer))
 	if err != nil {

@@ -133,18 +133,38 @@ func TestRerankerRefusals(t *testing.T) {
 	}
 }
 
-// TestRerankerErrorBody: a refusal's error carries its status, not what the
-// provider answered, which can echo the query, a document or a key.
+// TestRerankerErrorBody: a refusal's error carries its status code, not what
+// the provider answered, in its body or in its status line's reason phrase,
+// either of which can echo the query, a document or a key.
 func TestRerankerErrorBody(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = io.WriteString(w, `{"message":"rejected query: func secretSnippet() with key sk-echoed"}`)
-	}))
-	defer srv.Close()
-	_, _, err := NewReranker(RerankCohere, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
-	if err == nil || !strings.Contains(err.Error(), "400") || strings.Contains(err.Error(), "secretSnippet") ||
-		strings.Contains(err.Error(), "sk-echoed") {
-		t.Fatalf("err = %v, want the status alone", err)
+	for _, tt := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"body", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"message":"rejected query: func secretSnippet() with key sk-echoed"}`)
+		}},
+		{"reason phrase", func(w http.ResponseWriter, r *http.Request) {
+			conn, buf, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			_, _ = buf.WriteString("HTTP/1.1 400 rejected func secretSnippet() with key sk-echoed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+			_ = buf.Flush()
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.handler)
+			defer srv.Close()
+			_, _, err := NewReranker(RerankCohere, srv.URL, "key", "m", time.Minute).Rerank(t.Context(), "q", []string{"a"})
+			if err == nil || !strings.Contains(err.Error(), "400") || strings.Contains(err.Error(), "secretSnippet") ||
+				strings.Contains(err.Error(), "sk-echoed") {
+				t.Fatalf("err = %v, want the status code alone", err)
+			}
+		})
 	}
 }
 
