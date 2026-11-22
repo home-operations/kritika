@@ -26,7 +26,7 @@
     "@tailwindcss/vite": "^4.3.5",
     "@tanstack/svelte-query-devtools": "^6.4.5",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "bits-ui": "^2.21.0",
+    "bits-ui": "^2.22.0",
     "layerchart": "^2.11.0",
     "marked": "^18.2.1",
     "oxlint": "^1.94.0",
