@@ -35,6 +35,9 @@ func TestParse_Invalid(t *testing.T) {
 		{"rule with neither", "rules: [{ id: a, paths: [\"**\"] }]\n"},
 		{"file rule with a bad glob", "rules: [{ id: a, file: x.md, paths: [\"[\"] }]\n"},
 		{"a feedback level", "review:\n  feedback: detailed\n"},
+		{"a Linear team key with a dash", "linear: { teams: [ENG-1] }\n"},
+		{"an empty Linear team key", "linear: { teams: [\"\"] }\n"},
+		{"a Linear key is the admin's", "linear: { apiKey: { env: X } }\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

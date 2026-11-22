@@ -10,14 +10,19 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// Issue is an issue the pull request description says the change closes,
+// Issue is an issue the pull request says the change closes or works on,
 // as the prompt shows it: what the change is meant to do, in its author's
 // words.
 type Issue struct {
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	Body   string `json:"body,omitempty"`
+	// ID names the issue: #12 for one of the forge's, ENG-123 for one of
+	// Linear's.
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Body  string `json:"body,omitempty"`
 }
+
+// ForgeIssueID is the ID of the forge's issue numbered number.
+func ForgeIssueID(number int) string { return "#" + strconv.Itoa(number) }
 
 // MaxLinkedIssues bounds the issues a review reads: a description that
 // closes more is a batch, and the first few say what it is for.
@@ -70,10 +75,10 @@ func writeIssues(b *strings.Builder, issues []Issue, limit int) {
 		body := strings.TrimSpace(is.Body)
 		if len(body) > each {
 			kept := textcut.Prefix(body, each)
-			body = kept + fmt.Sprintf("\n[Issue #%d was cut here to fit the prompt budget: %d more bytes.]", is.Number, len(body)-len(kept))
+			body = kept + fmt.Sprintf("\n[Issue %s was cut here to fit the prompt budget: %d more bytes.]", is.ID, len(body)-len(kept))
 		}
 		body = closingIssue.ReplaceAllString(body, "&lt;/issue&gt;")
 		title := closingIssue.ReplaceAllString(strings.Join(strings.Fields(is.Title), " "), "&lt;/issue&gt;")
-		fmt.Fprintf(b, "<issue number=\"%d\" title=\"%s\">\n%s\n</issue>\n", is.Number, strings.ReplaceAll(title, `"`, "&quot;"), body)
+		fmt.Fprintf(b, "<issue id=\"%s\" title=\"%s\">\n%s\n</issue>\n", is.ID, strings.ReplaceAll(title, `"`, "&quot;"), body)
 	}
 }

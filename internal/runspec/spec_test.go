@@ -198,7 +198,7 @@ func TestPromptTrim(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Prompt{PullRequest: repoconfig.PullRequest{Body: tt.body}, Prior: tt.prior,
-				Issues: []review.Issue{{Number: 1, Body: strings.Repeat("a", MaxIssueBytes+5)}}}
+				Issues: []review.Issue{{ID: "#1", Body: strings.Repeat("a", MaxIssueBytes+5)}}}
 			p.Trim()
 			if len(p.PullRequest.Body) != tt.wantBody || len(p.Prior) != tt.wantPrior || !utf8.ValidString(p.PullRequest.Body) {
 				t.Fatalf("body = %d bytes, prior = %d; want %d, %d", len(p.PullRequest.Body), len(p.Prior), tt.wantBody, tt.wantPrior)
@@ -215,7 +215,7 @@ func TestEncodeWorstCaseFits(t *testing.T) {
 	// Every '<' encodes as six bytes.
 	s.Prompt.PullRequest.Body = strings.Repeat("<", 1<<20)
 	for range review.MaxLinkedIssues {
-		s.Prompt.Issues = append(s.Prompt.Issues, review.Issue{Number: 1, Title: "t", Body: strings.Repeat("<", 1<<20)})
+		s.Prompt.Issues = append(s.Prompt.Issues, review.Issue{ID: "#1", Title: "t", Body: strings.Repeat("<", 1<<20)})
 	}
 	s.Prompt.Prior = make([]review.Finding, 1000)
 	for i := range s.Prompt.Prior {

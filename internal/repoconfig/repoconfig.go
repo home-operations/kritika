@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -136,6 +137,41 @@ type File struct {
 	// Tools are the tools the repository's reviews can run, over the
 	// image's.
 	Tools Tools `yaml:"tools,omitempty"`
+	// Linear is which Linear issues the repository's reviews read.
+	Linear Linear `yaml:"linear,omitempty"`
+}
+
+// Linear lists the keys of the Linear teams whose issues a pull request can
+// link for its review to read, with the account's Linear key. It is the
+// repository's alone: the file is read from the merge base, so a pull
+// request cannot add a team, and a repository with none reads no Linear
+// issues. Its account's key bounds which teams Linear gives.
+type Linear struct {
+	Teams []string `yaml:"teams,omitempty"`
+}
+
+// teamKey is a Linear team's key, the prefix of its issue IDs.
+var teamKey = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+
+// check makes sure that each team is a team's key.
+func (l Linear) check() error {
+	for i, t := range l.Teams {
+		if !teamKey.MatchString(t) {
+			return fmt.Errorf("linear.teams[%d] %q is not a team key: it must be letters and digits", i, t)
+		}
+	}
+	return nil
+}
+
+// teams are the keys in upper case, each once.
+func (l Linear) teams() []string {
+	var out []string
+	for _, t := range l.Teams {
+		if t = strings.ToUpper(t); !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Parse decodes data as .kritika.yaml. It rejects a second document, unknown
@@ -192,6 +228,9 @@ func Parse(data []byte) (File, error) {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	if err := f.Tools.check(); err != nil {
+		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
+	if err := f.Linear.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	if err := configfile.CheckAgents(f.Review.ownAgents()); err != nil {

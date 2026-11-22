@@ -263,9 +263,9 @@ func agentLimits(a *runspec.AgentLimits) agent.Limits {
 func offeredTools(p runspec.Spec, head *object.Tree, ignore []string, extra []agent.Tool) []agent.Tool {
 	limit := agentLimits(p.Agent).MaxToolOutputBytes
 	tree := agent.NewTree(head, ignore)
-	issues := make(map[int]string, len(p.Prompt.Issues))
+	issues := make(map[string]string, len(p.Prompt.Issues))
 	for _, is := range p.Prompt.Issues {
-		issues[is.Number] = is.Body
+		issues[is.ID] = is.Body
 	}
 	read := agent.ReadFileTool(tree, limit)
 	var written string

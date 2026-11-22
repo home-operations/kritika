@@ -259,13 +259,14 @@ func ruleFiles(rules []configfile.Rule) *runspec.RuleFiles {
 // agentPrompt reads what the runner needs to write the prompt and to
 // recognize a review that the worker will skip. The runner needs the pull
 // request as the repository filter sees it: that is pull, read once for the
-// whole job. It also needs the issues that the pull request's description
-// says it closes. For a bot author, it also needs the patch id of the pull
-// request's last prepared review, which afterRun skips as unchanged. The notes
-// say which issues agentPrompt failed to read.
+// whole job. It also needs the issues that the pull request says it closes or
+// works on, the forge's and those of the Linear teams that the repository
+// reads. For a bot author, it also needs the patch id of the pull request's
+// last prepared review, which afterRun skips as unchanged. The notes say which
+// issues agentPrompt failed to read.
 func (w *Review) agentPrompt(
-	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, pull repoconfig.PullRequest, eff Effective,
-	prior priorReview, client forge.Client, logger *slog.Logger,
+	ctx context.Context, account *configfile.Account, reviewID, trigger string, pr *pullRequest, pull repoconfig.PullRequest,
+	eff Effective, prior priorReview, client forge.Client, logger *slog.Logger,
 ) (*runspec.Prompt, []string, error) {
 	p := &runspec.Prompt{
 		Repository: pr.repository, Context: eff.Review.Context, PullRequest: pull,
@@ -291,7 +292,7 @@ func (w *Review) agentPrompt(
 		}
 		p.Prior, shown = withAnswers(p.Prior, prior.findings, answers)
 	}
-	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+	err := w.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		// What the review is shown is what publication holds an answer it
 		// accepts to.
 		if err := store.RecordAnswers(ctx, tx, reviewID, shown); err != nil {
@@ -347,6 +348,15 @@ func (w *Review) agentPrompt(
 	owner, repo := pr.ownerRepo()
 	var notes []string
 	p.Issues, notes = linkedIssues(ctx, client, owner, repo, p.PullRequest.Body, logger)
+	switch teams := eff.LinearTeams; {
+	case len(teams) == 0:
+	case account.Linear == nil:
+		notes = append(notes, repoconfig.FileName+" lists linear.teams, but its account has no Linear key: no Linear issue was read")
+	default:
+		issues, more := linearIssues(ctx, &w.Linear, account.Linear.APIKeyValue().Value(), teams, p.PullRequest,
+			review.MaxLinkedIssues-len(p.Issues), logger)
+		p.Issues, notes = append(p.Issues, issues...), append(notes, more...)
+	}
 	p.Below = stackBelow(ctx, client, pr, logger)
 	p.Trim()
 	return p, notes, nil
@@ -485,20 +495,20 @@ func pinModels(
 // runner Job's deadline, which the agent's timeout can lengthen, and the
 // prompt's notes.
 func (w *Review) agentSpec(
-	ctx context.Context, accountID, reviewID, runID, trigger, focus string, pr *pullRequest, eff Effective, models configfile.Models,
-	prior priorReview, cont *runspec.Continuation, admitted admission, size sizing, spec *runspec.Spec, secrets *runspec.Secrets,
-	deadline time.Duration, client forge.Client, logger *slog.Logger, pull repoconfig.PullRequest, chosen reviewers,
-	grants map[string]store.ReviewerGrant,
+	ctx context.Context, account *configfile.Account, reviewID, runID, trigger, focus string, pr *pullRequest, eff Effective,
+	models configfile.Models, prior priorReview, cont *runspec.Continuation, admitted admission, size sizing, spec *runspec.Spec,
+	secrets *runspec.Secrets, deadline time.Duration, client forge.Client, logger *slog.Logger, pull repoconfig.PullRequest,
+	chosen reviewers, grants map[string]store.ReviewerGrant,
 ) (time.Duration, []string, error) {
 	settings := eff.Settings
-	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, pull, eff, prior, client, logger)
+	prompt, notes, err := w.agentPrompt(ctx, account, reviewID, trigger, pr, pull, eff, prior, client, logger)
 	if err != nil {
 		return deadline, nil, err
 	}
 	prompt.Reviewers, prompt.Focus = chosen.specs, focus
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
-		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
+		RunID: runID, AccountID: account.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(models.Review), Fallback: string(models.Fallback), FallbackKey: string(settings.Models.Fallback),
 		Effort: string(models.Effort), Budget: admitted.budget(size.total()), Reviewers: grants,
 	}

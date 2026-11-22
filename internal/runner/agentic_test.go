@@ -473,11 +473,11 @@ func TestReviewAgentOffersTheDescription(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{call("1", "read_description", `{}`)}},
-		{ToolCalls: []model.ToolCall{call("2", "read_description", `{"issue":12}`)}},
+		{ToolCalls: []model.ToolCall{call("2", "read_description", `{"issue":"#12"}`)}},
 		{ToolCalls: []model.ToolCall{call("3", "submit_review", `{"summary":{"take":"ok","praise":[]},"findings":[]}`)}},
 	}}
 	s := agentPromptSpec()
-	s.Prompt.Issues = []review.Issue{{Number: 12, Title: "Add b", Body: "b is missing."}}
+	s.Prompt.Issues = []review.Issue{{ID: "#12", Title: "Add b", Body: "b is missing."}}
 	logger := slog.New(slog.DiscardHandler)
 	res, _ := agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), loopPrompt(s, false), time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.ToolCalls["read_description"] != 2 {

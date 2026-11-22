@@ -27,6 +27,10 @@ type Merged struct {
 	// Tools are the file's tools, nil when it declares none. They have no
 	// admin counterpart: the image's commands are the admin's.
 	Tools Tools
+	// LinearTeams are the keys of the Linear teams whose linked issues the
+	// review reads, in upper case. They have no admin counterpart: the
+	// account's Linear key is the admin's bound.
+	LinearTeams []string
 }
 
 // Merge applies doc over the admin's configuration op. doc is the merge-base
@@ -64,6 +68,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		return m, err
 	}
 	m.Tools = maps.Clone(f.Tools)
+	m.LinearTeams = f.Linear.teams()
 	if f.Enabled != nil && !*f.Enabled {
 		m.Enabled = false
 	}

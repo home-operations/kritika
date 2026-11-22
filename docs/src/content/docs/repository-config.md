@@ -53,6 +53,7 @@ key interacts with the admin's policy. Detailed examples follow the table.
 | [`context`](#context)                                        | files that explain the code                                                            | added after                                                                                                  |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered                     | `paths` replaces, and `scope` adds up                                                                        |
 | [`tools`](#repository-tools)                                 | the tools the reviews can run, beside the image's commands                             | added, and one providing an image command replaces it                                                        |
+| [`linear.teams`](#linear-issues)                             | the Linear teams whose linked issues the review reads                                  | no admin value: the account's Linear key limits what Linear gives                                            |
 | [`review.agents`](#agents)                                   | agents that review beside the default pass (kritika's own instructions), or replace it | specialists added, and one under an admin's name takes only rules and skills. The others replace the admin's |
 
 kritika drops a value that the file cannot take, such as a model of an
@@ -605,6 +606,52 @@ beside it:
 | `.Quote`, `.BlockQuote`      | the passage of a cited rule it enforces, "" when it cites none, and that passage as a Markdown block quote                                                                                     |
 | `.URL`                       | a link to the lines at the head commit                                                                                                                                                         |
 | `.ThreadURL`                 | a link to its inline comment thread, once one is posted                                                                                                                                        |
+
+### Linear issues
+
+A review reads the issues that a pull request closes, and judges the change
+against them. The forge's issues come from a closing keyword in the
+description, such as `Fixes #12`. A repository can also read the issues of
+Linear teams. List the keys of the teams under `linear.teams`:
+
+```yaml
+linear:
+  teams: [ENG, OPS]
+```
+
+A pull request links a Linear issue as Linear's GitHub integration links
+one:
+
+- The title holds the issue ID, such as `ENG-123: add widgets`.
+- The branch name holds the issue ID, such as `devin/eng-123-add-widgets`.
+- The description has a magic word before the issue ID or its URL, such
+  as `Fixes ENG-123` or `Part of ENG-123, OPS-7`. Linear's closing words
+  count, and so do its non-closing words, such as `ref`, `part of` and
+  `towards`. The relation words `relates to` and `related to` do not
+  count.
+
+kritika does not read an ID after `skip` or `ignore`, such as
+`Ignore ENG-123`, because Linear does not link it. A review reads at most
+three linked issues. The forge's issues come first, then the Linear issues
+from the title, the branch name and the description, in that order.
+
+kritika reads the issues with the Linear key of the repository's account,
+which the admin sets under [`accounts`](/configuration/#accounts). The
+runner gets the text of the issues, never the key. If the account has no
+key, the review reads no Linear issue, and its summary says so.
+
+A review reads only the teams that the list names. kritika reads
+`.kritika.yaml` from the merge base, so a pull request cannot add a team.
+If Linear does not give an issue, the review leaves it out with no note.
+This includes an issue that does not exist, an issue that the key cannot
+read, and an issue that moved to a team that the list does not name. It
+also includes an issue whose link names a Linear workspace other than the
+key's. So a review does not tell the author of a pull request that such an
+issue exists. If Linear fails for another reason, the summary names the issue
+that kritika could not read.
+
+A review can quote what it reads in its comments. On a public repository,
+list only the teams whose issues can be public.
 
 ## Repository tools
 

@@ -537,6 +537,45 @@ func TestAccountProviders(t *testing.T) {
 	}
 }
 
+// TestAccountLinear: an account's Linear key is read from its reference,
+// and a reference that gives no key refuses the file.
+func TestAccountLinear(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	t.Setenv("TEST_LINEAR_KEY", "lin_api_x\n")
+	t.Setenv("TEST_EMPTY", "")
+	f, err := loadBytes(t, []byte(acmeAccount("    linear: { apiKey: { env: TEST_LINEAR_KEY } }\n")))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if l := f.Accounts[0].Linear; l == nil || l.APIKeyValue().Value() != "lin_api_x" {
+		t.Fatalf("Linear = %+v, want the key from TEST_LINEAR_KEY", l)
+	}
+	if !slices.Contains(f.SecretEnv(), "TEST_LINEAR_KEY") {
+		t.Fatalf("SecretEnv = %v, want TEST_LINEAR_KEY", f.SecretEnv())
+	}
+	f, err = loadBytes(t, []byte(acmeAccount("    limits: { reviewsPerDay: 1 }\n")))
+	if err != nil {
+		t.Fatalf("Parse with no linear: %v", err)
+	}
+	if f.Accounts[0].Linear != nil {
+		t.Fatalf("Parse with no linear: Linear = %+v; want none", f.Accounts[0].Linear)
+	}
+	refused := []struct{ name, entry, want string }{
+		{"an unset variable", "    linear: { apiKey: { env: TEST_UNSET_LINEAR } }\n", "accounts.acme.linear.apiKey: environment variable TEST_UNSET_LINEAR is not set"},
+		{"an empty key", "    linear: { apiKey: { env: TEST_EMPTY } }\n", "accounts.acme.linear.apiKey: resolved to an empty value"},
+		{"no key", "    linear: {}\n", "accounts.acme.linear.apiKey: reference must set env"},
+		{"an unknown key", "    linear: { apiKey: { env: TEST_LINEAR_KEY }, teams: [ENG] }\n", "field teams not found"},
+	}
+	for _, tt := range refused {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := loadBytes(t, []byte(acmeAccount(tt.entry))); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Parse = %v, want an error containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

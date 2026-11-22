@@ -598,8 +598,8 @@ func (r Review) Referenced() []string {
 
 // Account is a forge account, github/<name>, and the unit of isolation. It
 // exists because a connection serves it. Its entry under the
-// configuration's accounts holds what is its alone, its limits and
-// providers. An account without one inherits the defaults.
+// configuration's accounts holds what is its alone, its limits, providers
+// and Linear key. An account without one inherits the defaults.
 type Account struct {
 	Forge Forge  `yaml:"-"`
 	Name  string `yaml:"-"`
@@ -609,11 +609,27 @@ type Account struct {
 	// of the instance's, and a name cannot be both.
 	Limits    LimitsSpec          `yaml:"limits"`
 	Providers map[string]Provider `yaml:"-"`
+	// Linear is the key that the reviews of its repositories read Linear
+	// issues with, nil when it has none. A repository reads only the teams
+	// that its .kritika.yaml lists.
+	Linear *Linear `yaml:"-"`
 
 	// entry names its accounts entry in errors, "" for one it does not
 	// have.
 	entry string
 }
+
+// Linear is an account's Linear API key. A personal API key limited to the
+// Read permission and to the teams that the account's repositories may read
+// is enough: the key is what keeps the others out.
+type Linear struct {
+	APIKey SecretRef `yaml:"apiKey"`
+
+	apiKey Secret
+}
+
+// APIKeyValue is the resolved key.
+func (l *Linear) APIKeyValue() Secret { return l.apiKey }
 
 // Egress is what runner pods can reach through the worker's gateway beyond
 // the forges the connections talk to, which are always allowed. Allow and

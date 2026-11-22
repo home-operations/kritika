@@ -855,6 +855,8 @@ accounts:
     limits: { reviewsPerDay: 50, tokensPerMonth: 20000000 }
     providers:
       org-1-key: { type: openrouter, apiKey: { env: ORG_1_OPENROUTER_API_KEY } }
+    linear:
+      apiKey: { env: ORG_1_LINEAR_API_KEY }
 ```
 
 `limits` caps the account. The root's `limits` sets every account's
@@ -870,6 +872,19 @@ How many calls run at once on a model is its provider's
 
 `providers` are its own model keys, which its repositories' models can
 name ([an account's own keys](/models/#an-accounts-own-keys)).
+
+`linear.apiKey` is a Linear personal API key. The reviews of the account's
+repositories read the Linear issues that a pull request links with it
+([Linear issues](/repository-config/#linear-issues)). A repository reads
+no Linear issue until its `.kritika.yaml` lists the teams that it reads.
+Create the key with the Read permission alone, and limit it to the teams
+that the account's repositories can read. The key is the limit that a
+repository cannot change. Several accounts can use the same key.
+
+A person who can change `.kritika.yaml` on a branch of a repository can
+list any team that the key reaches. If a team's issues must stay out of the
+account's public repositories, leave that team out of the key. The
+account's private repositories then cannot read that team either.
 
 An account runs while a connection serves it. An entry for an account no
 connection serves is kept, but not run, and the Accounts page lists

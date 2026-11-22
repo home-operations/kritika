@@ -36,7 +36,7 @@ func TestToolsTakeZeroValuesAsLeftOut(t *testing.T) {
 		{"grep", map[string]any{"pattern": "package"}, func() agent.Tool { return agent.GrepTool(agent.NewTree(head, nil), limit) }},
 		{"list_files", map[string]any{}, func() agent.Tool { return agent.ListFilesTool(agent.NewTree(head, nil), limit) }},
 		{"read_description", map[string]any{}, func() agent.Tool {
-			return agent.ReadDescriptionTool("The description.", map[int]string{7: "The issue."}, limit)
+			return agent.ReadDescriptionTool("The description.", map[string]string{"#7": "The issue."}, limit)
 		}},
 		{"read_diff", map[string]any{"path": "main.go"}, func() agent.Tool { return newReadDiffTool(readDiffSample, limit) }},
 		{"run", map[string]any{"command": "true"}, func() agent.Tool {

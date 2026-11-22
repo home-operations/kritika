@@ -53,6 +53,7 @@ type fileDoc struct {
 type accountDoc struct {
 	Limits    LimitsSpec          `yaml:"limits,omitempty"`
 	Providers map[string]Provider `yaml:"providers,omitempty"`
+	Linear    *Linear             `yaml:"linear,omitempty"`
 }
 
 // configHash identifies the file and the names of referenced secrets.
@@ -252,7 +253,8 @@ func accountsOf(entries map[string]accountDoc, forges map[string][]Forge) ([]Acc
 		if a, ok := byKey[key]; ok {
 			return nil, fmt.Errorf("configfile: %s duplicates %s", where, a.entry)
 		}
-		byKey[key] = &Account{Forge: forge, Name: name, entry: where, Limits: entries[name].Limits, Providers: entries[name].Providers}
+		e := entries[name]
+		byKey[key] = &Account{Forge: forge, Name: name, entry: where, Limits: e.Limits, Providers: e.Providers, Linear: e.Linear}
 	}
 	out := make([]Account, 0, len(byKey))
 	for _, key := range slices.Sorted(maps.Keys(byKey)) {
@@ -269,6 +271,16 @@ func (a *Account) resolve(s *secrets) error {
 			return err
 		}
 		a.Providers[name] = p
+	}
+	if l := a.Linear; l != nil {
+		v, err := s.read(l.APIKey)
+		if err == nil && v.Value() == "" {
+			err = errors.New("resolved to an empty value")
+		}
+		if err != nil {
+			return fmt.Errorf("configfile: %s.linear.apiKey: %w", a.entry, err)
+		}
+		l.apiKey = v
 	}
 	return nil
 }

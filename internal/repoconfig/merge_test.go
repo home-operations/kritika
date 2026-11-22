@@ -415,6 +415,21 @@ func TestMergeContextCollision(t *testing.T) {
 	}
 }
 
+// TestMergeLinearTeams: the file's Linear teams are kept in upper case, each
+// once, and a repository without the file reads no team.
+func TestMergeLinearTeams(t *testing.T) {
+	got, err := Merge([]byte("linear: { teams: [eng, OPS, Eng] }\n"), adminSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"ENG", "OPS"}; !slices.Equal(got.LinearTeams, want) {
+		t.Fatalf("LinearTeams = %v, want %v", got.LinearTeams, want)
+	}
+	if got, err := Merge(nil, adminSettings()); err != nil || got.LinearTeams != nil {
+		t.Fatalf("Merge(nil) LinearTeams = %v, %v; want none", got.LinearTeams, err)
+	}
+}
+
 // TestPullRequestVarsMatchSample: the stored pull request's variables are
 // the keys that the sample conditions are tested against, but pr.lines.
 func TestPullRequestVarsMatchSample(t *testing.T) {

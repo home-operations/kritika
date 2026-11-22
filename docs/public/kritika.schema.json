@@ -361,6 +361,18 @@
         "pattern": "^aqua:[A-Za-z0-9][A-Za-z0-9._~-]*(/[A-Za-z0-9~][A-Za-z0-9._~-]*)+$"
       },
       "additionalProperties": { "$ref": "#/$defs/toolVersion" }
+    },
+    "linear": {
+      "type": "object",
+      "description": "Which Linear issues the repository's reviews read, with the Linear key of the repository's account. A repository that lists no team reads none.",
+      "additionalProperties": false,
+      "properties": {
+        "teams": {
+          "type": "array",
+          "description": "The keys of the Linear teams, such as ENG, whose issues a pull request can link: with the issue ID in its title or branch name, or after a magic word such as Fixes in its description. A review reads at most three linked issues, the forge's first.",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9]+$" }
+        }
+      }
     }
   },
   "$defs": {

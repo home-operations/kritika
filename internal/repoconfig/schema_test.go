@@ -40,6 +40,7 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"rules", []string{"properties", "rules", "items"}, yamlKeys[configfile.Rule]()},
 		{"rule when", []string{"properties", "rules", "items", "properties", "when", "items"}, yamlKeys[configfile.When]()},
 		{"skills", []string{"properties", "skills"}, yamlKeys[configfile.SkillsSpec]()},
+		{"linear", []string{"properties", "linear"}, yamlKeys[Linear]()},
 		{"skill scope", []string{"properties", "skills", "properties", "scope", "additionalProperties"}, yamlKeys[configfile.SkillScope]()},
 		{"skill scope when", []string{"properties", "skills", "properties", "scope", "additionalProperties", "properties", "when", "items"},
 			yamlKeys[configfile.When]()},
@@ -82,8 +83,9 @@ func yamlKeys[T any]() []string { return leafKeys(reflect.TypeFor[T](), "", fals
 func TestFileKeysAreSettings(t *testing.T) {
 	keys := configfile.Policies
 	for _, key := range leafKeys(reflect.TypeFor[File](), "", true) {
-		// tools has no admin counterpart: the image's tools are the admin's.
-		if key == "tools" {
+		// tools and linear.teams have no admin counterpart: the image's
+		// tools and the account's Linear key are the admin's.
+		if key == "tools" || key == "linear.teams" {
 			continue
 		}
 		if !slices.ContainsFunc(keys, func(k string) bool { return key == k || strings.HasPrefix(key, k+".") }) {

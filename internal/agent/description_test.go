@@ -8,16 +8,19 @@ import (
 
 func TestReadDescriptionTool(t *testing.T) {
 	body := "### Release Notes\n" + strings.Repeat("- a fix\n", 10) + "### v0.12.17"
-	tool := ReadDescriptionTool(body, map[int]string{12: "Steps to reproduce.", 13: "  "}, 1<<20)
+	tool := ReadDescriptionTool(body, map[string]string{"#12": "Steps to reproduce.", "#13": "  ", "ENG-7": "Add widgets."}, 1<<20)
 	tests := []struct {
 		name, input, want, wantErr string
 	}{
 		{name: "the description", input: `{}`, want: body},
 		{name: "no input", input: ``, want: body},
-		{name: "a linked issue", input: `{"issue":12}`, want: "Steps to reproduce."},
-		{name: "an empty issue", input: `{"issue":13}`, want: "(empty)"},
-		{name: "an issue the prompt does not list", input: `{"issue":99}`, wantErr: "issue #99 is not one the prompt lists"},
-		{name: "a malformed input", input: `{"issue":"12"}`, wantErr: "read_description"},
+		{name: "an empty ID", input: `{"issue":""}`, want: body},
+		{name: "a linked issue", input: `{"issue":"#12"}`, want: "Steps to reproduce."},
+		{name: "a linked issue by its number alone", input: `{"issue":"12"}`, want: "Steps to reproduce."},
+		{name: "a Linear issue in any case", input: `{"issue":"eng-7"}`, want: "Add widgets."},
+		{name: "an empty issue", input: `{"issue":"#13"}`, want: "(empty)"},
+		{name: "an issue the prompt does not list", input: `{"issue":"99"}`, wantErr: "issue #99 is not one the prompt lists"},
+		{name: "a malformed input", input: `{"issue":12}`, wantErr: "read_description"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
