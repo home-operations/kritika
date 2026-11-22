@@ -97,6 +97,13 @@ type Settings struct {
 	// once into an unexported *url.URL, read back with [Config.WebURLParsed].
 	WebURL string `env:"KRITIKA_WEB_URL" yaml:"webUrl,omitempty"`
 
+	// BadgeURL is the origin that a review comment's badge images load from,
+	// at <BadgeURL>/badges/, in WebURL's form. A forge's image proxy fetches
+	// them from the internet, so a dashboard that is not public cannot serve
+	// them itself. It has no default: unset, the images load from WebURL.
+	// It is parsed once, read back with [Config.BadgeURLParsed].
+	BadgeURL string `env:"KRITIKA_BADGE_URL" yaml:"badgeUrl,omitempty"`
+
 	// DatabaseAppRole is the Postgres role name the owner grants privileges to
 	// during migrations. It defaults to what deploy/dev and the chart's
 	// CloudNativePG example declare.

@@ -45,6 +45,9 @@ type Review struct {
 	// WebURL is the dashboard's origin, which the summary comment links back
 	// to for a re-run. nil leaves the link out.
 	WebURL *url.URL
+	// BadgeURL is the origin that a comment's badge images load from. nil
+	// loads them from WebURL.
+	BadgeURL *url.URL
 	// Linear reads the Linear issues that a pull request links. Its zero
 	// value calls Linear's API.
 	Linear linear.Client

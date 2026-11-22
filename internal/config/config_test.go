@@ -140,6 +140,7 @@ func TestWebURL(t *testing.T) {
 		{name: "missing host", url: "https:///path", wantErr: true},
 		{name: "port without host", url: "http://:8080", wantErr: true},
 		{name: "with query", url: "https://dash.example.com?x=1", wantErr: true},
+		{name: "with a bare query delimiter", url: "https://dash.example.com?", wantErr: true},
 		{name: "with fragment", url: "https://dash.example.com#frag", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -172,6 +173,46 @@ func TestWebURL(t *testing.T) {
 			u := cfg.WebURLParsed()
 			if u == nil || u.String() == "" {
 				t.Fatalf("WebURLParsed() = %v", u)
+			}
+		})
+	}
+}
+
+func TestBadgeURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+		want    string
+	}{
+		{name: "unset", url: ""},
+		{name: "another host", url: "https://hooks.example.com", want: "https://hooks.example.com"},
+		{name: "trailing slash trimmed", url: "https://hooks.example.com/kritika/", want: "https://hooks.example.com/kritika"},
+		{name: "missing scheme", url: "hooks.example.com", wantErr: true},
+		{name: "with query", url: "https://hooks.example.com?x=1", wantErr: true},
+		{name: "with a bare query delimiter", url: "https://hooks.example.com?", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
+			t.Setenv("KRITIKA_WEB_URL", "https://dash.example.com")
+			t.Setenv("KRITIKA_BADGE_URL", tt.url)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "badgeUrl: KRITIKA_BADGE_URL") {
+					t.Fatalf("Load = %v, want an error naming the setting", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			got := ""
+			if u := cfg.BadgeURLParsed(); u != nil {
+				got = u.String()
+			}
+			if cfg.BadgeURL != tt.want || got != tt.want || cfg.WebURL != "https://dash.example.com" {
+				t.Fatalf("BadgeURL = %q, parsed %q, WebURL %q; want %q", cfg.BadgeURL, got, cfg.WebURL, tt.want)
 			}
 		})
 	}

@@ -64,6 +64,7 @@ strategy:
 #   aquaRegistryUrl: { type: string, minLength: 1 }
 #   aquaRegistryRefresh: { type: string, minLength: 1 }
 #   webUrl: { type: string }
+#   badgeUrl: { type: string }
 #   databaseAppRole: { type: string }
 #   leaderRetryInterval: { type: string, minLength: 1 }
 #   reviewWorkers: { type: integer }

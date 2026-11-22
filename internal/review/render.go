@@ -102,9 +102,11 @@ type RenderData struct {
 	Approval *Approval
 	// WebURL is the dashboard's origin, without a trailing slash. PullURL is
 	// the pull request's page on it, where an admin can re-run the review.
-	// Both are "" when the dashboard has no public URL. The default template
-	// then leaves the re-run badge out.
-	WebURL, PullURL string
+	// BadgeURL is the origin that the badge images load from, which is
+	// WebURL unless the admin names another. All are "" when the dashboard
+	// has no public URL. The default template then leaves the re-run badge
+	// out.
+	WebURL, BadgeURL, PullURL string
 	// Overlaps are the repository's other open pull requests that change a
 	// path that this change does, most shared paths first. The default
 	// template lists them in the review context.
@@ -370,26 +372,27 @@ func (s Severity) Label() string {
 	return strings.ToUpper(string(s))
 }
 
-// Badge renders the severity for a comment: its badge image, which the
-// dashboard serves under webURL, with the label as the image's text. Where
-// the dashboard has no public URL, it renders the label alone in bold.
-func (s Severity) Badge(webURL string) string {
+// Badge renders the severity for a comment: its badge image, which loads
+// from origin's /badges/, with the label as the image's text. Where origin
+// is "", it renders the label alone in bold.
+func (s Severity) Badge(origin string) string {
 	label := s.Label()
 	switch {
 	case label == "":
 		return ""
-	case webURL == "":
+	case origin == "":
 		return "**[" + label + "]**"
 	}
-	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, webURL, s)
+	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, origin, s)
 }
 
 // InlineData is what an inline comment's template renders: the finding,
-// and the dashboard's origin its severity badge is served from, "" when
-// the dashboard has no public URL, as RenderData.WebURL.
+// the dashboard's origin, and the origin its severity badge loads from.
+// Both origins are "" when the dashboard has no public URL, as
+// RenderData.WebURL and RenderData.BadgeURL.
 type InlineData struct {
 	Finding
-	WebURL string
+	WebURL, BadgeURL string
 }
 
 // RenderInline renders one finding as an inline review comment, led by its
@@ -407,7 +410,7 @@ func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []str
 	}
 	out, err := render(context.WithoutCancel(ctx), defaultInline, d, limit)
 	if err != nil {
-		out = textcut.Prefix(fmt.Sprintf("%s **%s**\n\n%s\n", d.Severity.Badge(d.WebURL), d.Title, d.Explanation), limit)
+		out = textcut.Prefix(fmt.Sprintf("%s **%s**\n\n%s\n", d.Severity.Badge(d.BadgeURL), d.Title, d.Explanation), limit)
 	}
 	return marker + out, notes
 }

@@ -414,11 +414,11 @@ func startWorker(
 	})
 	reviewer := &worker.Review{
 		Base: base, Executor: exec, Steppers: steppers,
-		GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL, WebURL: cfg.WebURLParsed(),
+		GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL, WebURL: cfg.WebURLParsed(), BadgeURL: cfg.BadgeURLParsed(),
 	}
 	river.AddWorker(workers, reviewer)
-	river.AddWorker(workers, &worker.Prepare{Base: reviewer.Base, Steppers: reviewer.Steppers, WebURL: reviewer.WebURL})
-	river.AddWorker(workers, &worker.Publish{Base: reviewer.Base, WebURL: reviewer.WebURL})
+	river.AddWorker(workers, &worker.Prepare{Base: base, Steppers: steppers, WebURL: reviewer.WebURL, BadgeURL: reviewer.BadgeURL})
+	river.AddWorker(workers, &worker.Publish{Base: base, WebURL: reviewer.WebURL, BadgeURL: reviewer.BadgeURL})
 	river.AddWorker(workers, &worker.FollowUp{
 		Base: base, Executor: exec, Steppers: steppers, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})

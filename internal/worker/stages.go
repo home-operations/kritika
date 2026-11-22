@@ -20,10 +20,20 @@ type publicationWorker struct {
 	Base
 	Steppers *adapter.Steppers
 	WebURL   *url.URL
+	BadgeURL *url.URL
+}
+
+// badgeURL is the origin that the comments' badge images load from: the
+// dashboard's own unless the worker was given another.
+func (w *publicationWorker) badgeURL() *url.URL {
+	if w.BadgeURL != nil {
+		return w.BadgeURL
+	}
+	return w.WebURL
 }
 
 func (w *Review) publication() *publicationWorker {
-	return &publicationWorker{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL}
+	return &publicationWorker{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL, BadgeURL: w.BadgeURL}
 }
 
 // Prepare consumes saved runner answers independently of runner admission.
@@ -32,10 +42,11 @@ type Prepare struct {
 	Base
 	Steppers *adapter.Steppers
 	WebURL   *url.URL
+	BadgeURL *url.URL
 }
 
 func (w *Prepare) Work(ctx context.Context, job *river.Job[jobs.PrepareArgs]) error {
-	worker := &publicationWorker{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL}
+	worker := &publicationWorker{Base: w.Base, Steppers: w.Steppers, WebURL: w.WebURL, BadgeURL: w.BadgeURL}
 	_, err := worker.resumePublication(ctx, &river.Job[jobs.ReviewArgs]{JobRow: job.JobRow, Args: job.Args.ReviewArgs},
 		w.Current.Get(), w.Logger)
 	return err
@@ -49,11 +60,12 @@ func (*Prepare) Timeout(*river.Job[jobs.PrepareArgs]) time.Duration {
 type Publish struct {
 	river.WorkerDefaults[jobs.PublishArgs]
 	Base
-	WebURL *url.URL
+	WebURL   *url.URL
+	BadgeURL *url.URL
 }
 
 func (w *Publish) Work(ctx context.Context, job *river.Job[jobs.PublishArgs]) error {
-	worker := &publicationWorker{Base: w.Base, WebURL: w.WebURL}
+	worker := &publicationWorker{Base: w.Base, WebURL: w.WebURL, BadgeURL: w.BadgeURL}
 	_, err := worker.resumePublication(ctx, &river.Job[jobs.ReviewArgs]{JobRow: job.JobRow, Args: job.Args.ReviewArgs},
 		w.Current.Get(), w.Logger)
 	return err

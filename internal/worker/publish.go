@@ -336,12 +336,12 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 			return err
 		}
 		owner, repo := p.pr.ownerRepo()
-		web, pull := p.dashboard(owner, repo)
+		web, badge, pull := p.dashboard(owner, repo)
 		body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
 			Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 			Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
 			HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
-			Incomplete: reason, Notes: slices.Concat(p.repoNotes, p.agent.CommandErrors), WebURL: web, PullURL: pull,
+			Incomplete: reason, Notes: slices.Concat(p.repoNotes, p.agent.CommandErrors), WebURL: web, BadgeURL: badge, PullURL: pull,
 		})
 		commentID, err := p.upsertSticky(ctx, body)
 		if err != nil {
@@ -459,7 +459,7 @@ func (p *publishPhase) writeBack(
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
 	// template that times out costs one deadline, not one per finding.
-	web, pull := p.dashboard(owner, repo)
+	web, badge, pull := p.dashboard(owner, repo)
 	templates := p.templates
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
@@ -469,7 +469,7 @@ func (p *publishPhase) writeBack(
 		if onForge[i].Posted || f.CarriedFrom != "" || !p.settings.Review.InlineComments {
 			continue
 		}
-		body, inlineNotes := review.RenderInline(ctx, templates, review.InlineData{Finding: f, WebURL: web})
+		body, inlineNotes := review.RenderInline(ctx, templates, review.InlineData{Finding: f, WebURL: web, BadgeURL: badge})
 		if len(inlineNotes) > 0 {
 			templates.Inline = ""
 			notes = append(notes, inlineNotes...)
@@ -496,7 +496,7 @@ func (p *publishPhase) writeBack(
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
 		Agents:      p.reviewers,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
-		WebURL: web, PullURL: pull, Confidence: p.confidence, Overlaps: p.overlaps(ctx),
+		WebURL: web, BadgeURL: badge, PullURL: pull, Confidence: p.confidence, Overlaps: p.overlaps(ctx),
 	}
 	if p.prior.id != "" {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
@@ -788,13 +788,13 @@ func (p *publishPhase) cost(ctx context.Context) string {
 	return review.FormatCost(cost, unpriced)
 }
 
-// dashboard is the dashboard's origin and the pull request's page on it. Both
-// are "" when the worker was given no web URL or the admin keeps the
-// dashboard out of the repository's comments. Repository templates get the
-// same values, so none can print the URL either.
-func (p *publishPhase) dashboard(owner, repo string) (web, pull string) {
-	if p.w.WebURL == nil || !p.settings.Review.Dashboard {
-		return "", ""
+// dashboard is the dashboard's origin, the origin that the comments' badge
+// images load from, and the pull request's page on the dashboard. All are ""
+// when the worker was given no web URL or the admin keeps the dashboard out
+// of the repository's comments. Repository templates get the same values.
+func (p *publishPhase) dashboard(owner, repo string) (web, badge, pull string) {
+	if w := p.w.WebURL; w != nil && p.settings.Review.Dashboard {
+		return w.String(), p.w.badgeURL().String(), review.PullPageURL(w, string(p.account.Forge), p.account.Name, owner, repo, p.pr.number)
 	}
-	return p.w.WebURL.String(), review.PullPageURL(p.w.WebURL, string(p.account.Forge), p.account.Name, owner, repo, p.pr.number)
+	return "", "", ""
 }
