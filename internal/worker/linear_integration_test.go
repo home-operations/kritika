@@ -50,7 +50,10 @@ func TestLinkedLinearIssues(t *testing.T) {
 	h.sm.mu.Lock()
 	first := len(h.sm.bodies)
 	h.sm.mu.Unlock()
-	head := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc widgets() {}\n")
+	// The pull request adds SEC to its own .kritika.yaml, which the review
+	// must not read.
+	h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc widgets() {}\n")
+	head := h.commit(t, ".kritika.yaml", "linear: { teams: [eng, sec] }\n")
 	h.dispatchBody(t, head, "Fixes ENG-12 and SEC-1")
 	if _, status, errText := h.waitReview(t, head); status != "completed" {
 		t.Fatalf("status = %s (%s), want completed", status, errText)

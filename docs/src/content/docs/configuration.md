@@ -881,6 +881,11 @@ Create the key with the Read permission alone, and limit it to the teams
 that the account's repositories can read. The key is the limit that a
 repository cannot change. Several accounts can use the same key.
 
+A person who can change `.kritika.yaml` on a branch of a repository can
+list any team that the key reaches. If a team's issues must stay out of the
+account's public repositories, leave that team out of the key. The
+account's private repositories then cannot read that team either.
+
 An account runs while a connection serves it. An entry for an account no
 connection serves is kept, but not run, and the Accounts page lists
 it as not served.

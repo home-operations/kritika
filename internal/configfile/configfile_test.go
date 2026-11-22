@@ -554,8 +554,12 @@ func TestAccountLinear(t *testing.T) {
 	if !slices.Contains(f.SecretEnv(), "TEST_LINEAR_KEY") {
 		t.Fatalf("SecretEnv = %v, want TEST_LINEAR_KEY", f.SecretEnv())
 	}
-	if f, err := loadBytes(t, []byte(acmeAccount("    limits: { reviewsPerDay: 1 }\n"))); err != nil || f.Accounts[0].Linear != nil {
-		t.Fatalf("Parse with no linear = %v, Linear %+v; want none", err, f.Accounts[0].Linear)
+	f, err = loadBytes(t, []byte(acmeAccount("    limits: { reviewsPerDay: 1 }\n")))
+	if err != nil {
+		t.Fatalf("Parse with no linear: %v", err)
+	}
+	if f.Accounts[0].Linear != nil {
+		t.Fatalf("Parse with no linear: Linear = %+v; want none", f.Accounts[0].Linear)
 	}
 	refused := []struct{ name, entry, want string }{
 		{"an unset variable", "    linear: { apiKey: { env: TEST_UNSET_LINEAR } }\n", "accounts.acme.linear.apiKey: environment variable TEST_UNSET_LINEAR is not set"},

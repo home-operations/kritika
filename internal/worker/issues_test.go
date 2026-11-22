@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/forge"
@@ -62,21 +63,32 @@ func TestLinkedIssues(t *testing.T) {
 }
 
 // TestLinearIssues: the linked issues of the repository's teams are read
-// with the account's key. One that Linear does not give, or that moved to a
-// team the repository does not read, is left out without a note. One that
-// Linear fails to give is left out with one.
+// with the account's key. One that Linear does not give, that moved to a
+// team the repository does not read, or that a link names another workspace
+// for, is left out without a note. One that Linear fails to give is left out
+// with one.
 func TestLinearIssues(t *testing.T) {
+	var mu sync.Mutex
 	var asked []string
+	takeAsked := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := asked
+		asked = nil
+		return out
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Variables map[string]string }
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || r.Header.Get("Authorization") != "lin_key" {
 			t.Errorf("request = %+v, %v with Authorization %q", req, err, r.Header.Get("Authorization"))
 		}
 		id := req.Variables["id"]
+		mu.Lock()
 		asked = append(asked, id)
+		mu.Unlock()
 		issue := func(identifier, team string) string {
-			return fmt.Sprintf(`{"data":{"issue":{"identifier":%q,"title":"Title of %s","description":"Body of %s","team":{"key":%q}}}}`,
-				identifier, id, id, team)
+			return fmt.Sprintf(`{"data":{"issue":{"identifier":%q,"title":"Title of %s","description":"Body of %s",`+
+				`"team":{"key":%q,"organization":{"urlKey":"acme"}}}}}`, identifier, id, id, team)
 		}
 		switch id {
 		case "ENG-1":
@@ -95,22 +107,26 @@ func TestLinearIssues(t *testing.T) {
 	}))
 	defer srv.Close()
 	client := &linear.Client{URL: srv.URL}
-	pull := repoconfig.PullRequest{Title: "ENG-1: add widgets", HeadRef: "eng-2-widgets", Body: "Fixes ENG-3, OPS-4, OPS-5 and ENG-6"}
+	pull := repoconfig.PullRequest{Title: "ENG-1: add widgets", HeadRef: "eng-2-widgets", Body: "Fixes ENG-3, OPS-4, OPS-5, " +
+		"https://linear.app/other/issue/OPS-7/x, https://linear.app/Acme/issue/OPS-8/y and ENG-6"}
 	teams := []string{"ENG", "OPS"}
-	issues, notes := linearIssues(t.Context(), client, "lin_key", teams, pull, 6, slog.New(slog.DiscardHandler))
-	want := []review.Issue{{ID: "ENG-1", Title: "Title of ENG-1", Body: "Body of ENG-1"}, {ID: "ENG-6", Title: "Title of ENG-6", Body: "Body of ENG-6"}}
+	issues, notes := linearIssues(t.Context(), client, "lin_key", teams, pull, 8, slog.New(slog.DiscardHandler))
+	want := []review.Issue{
+		{ID: "ENG-1", Title: "Title of ENG-1", Body: "Body of ENG-1"},
+		{ID: "OPS-8", Title: "Title of OPS-8", Body: "Body of OPS-8"},
+		{ID: "ENG-6", Title: "Title of ENG-6", Body: "Body of ENG-6"},
+	}
 	if !slices.Equal(issues, want) {
 		t.Fatalf("issues = %+v, want %+v", issues, want)
 	}
 	if want := []string{"Linear issue OPS-4, which the pull request links, could not be read"}; !slices.Equal(notes, want) {
 		t.Fatalf("notes = %q, want %q", notes, want)
 	}
-	if want := []string{"ENG-1", "ENG-2", "ENG-3", "OPS-4", "OPS-5", "ENG-6"}; !slices.Equal(asked, want) {
-		t.Fatalf("asked Linear for %v, want %v", asked, want)
+	if got, want := takeAsked(), []string{"ENG-1", "ENG-2", "ENG-3", "OPS-4", "OPS-5", "OPS-7", "OPS-8", "ENG-6"}; !slices.Equal(got, want) {
+		t.Fatalf("asked Linear for %v, want %v", got, want)
 	}
-	asked = nil
-	if issues, _ := linearIssues(t.Context(), client, "lin_key", teams, pull, 1, slog.New(slog.DiscardHandler)); len(issues) != 1 ||
-		!slices.Equal(asked, []string{"ENG-1"}) {
-		t.Fatalf("with room for one, issues = %+v and asked %v; want ENG-1 alone", issues, asked)
+	issues, _ = linearIssues(t.Context(), client, "lin_key", teams, pull, 1, slog.New(slog.DiscardHandler))
+	if got := takeAsked(); len(issues) != 1 || !slices.Equal(got, []string{"ENG-1"}) {
+		t.Fatalf("with room for one, issues = %+v and asked %v; want ENG-1 alone", issues, got)
 	}
 }

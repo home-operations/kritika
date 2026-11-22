@@ -644,9 +644,10 @@ A review reads only the teams that the list names. kritika reads
 `.kritika.yaml` from the merge base, so a pull request cannot add a team.
 If Linear does not give an issue, the review leaves it out with no note.
 This includes an issue that does not exist, an issue that the key cannot
-read, and an issue that moved to a team that the list does not name. So a
-review does not tell the author of a pull request that such an issue
-exists. If Linear fails for another reason, the summary names the issue
+read, and an issue that moved to a team that the list does not name. It
+also includes an issue whose link names a Linear workspace other than the
+key's. So a review does not tell the author of a pull request that such an
+issue exists. If Linear fails for another reason, the summary names the issue
 that kritika could not read.
 
 A review can quote what it reads in its comments. On a public repository,

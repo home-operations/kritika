@@ -24,7 +24,7 @@ var ErrNotFound = errors.New("linear: issue not found")
 const maxResponseBytes = 1 << 20
 
 // issueQuery reads an issue by its UUID or its ID, such as ENG-123.
-const issueQuery = `query Issue($id: String!) { issue(id: $id) { identifier title description team { key } } }`
+const issueQuery = `query Issue($id: String!) { issue(id: $id) { identifier title description team { key organization { urlKey } } } }`
 
 // Issue is a Linear issue as the prompt shows it.
 type Issue struct {
@@ -35,6 +35,9 @@ type Issue struct {
 	Description string
 	// Team is the key of the issue's team.
 	Team string
+	// Workspace is the URL key of the team's workspace, which the issue's
+	// URL names.
+	Workspace string
 }
 
 // Client reads issues through Linear's GraphQL API. Its zero value calls
@@ -70,13 +73,10 @@ func (c *Client) Issue(ctx context.Context, key, id string) (Issue, error) {
 		return Issue{}, fmt.Errorf("linear: issue %s: %s", id, resp.Status)
 	}
 	var out struct {
-		Data struct {
-			Issue *struct {
-				Identifier  string
-				Title       string
-				Description *string
-				Team        struct{ Key string }
-			}
+		Data *struct {
+			// Issue is raw, so that an issue given as null differs from an
+			// answer that holds no issue at all.
+			Issue json.RawMessage
 		}
 		Errors []struct {
 			Message    string
@@ -95,13 +95,29 @@ func (c *Client) Issue(ctx context.Context, key, id string) (Issue, error) {
 		}
 		return Issue{}, fmt.Errorf("linear: issue %s: %s (%s)", id, e.Message, e.Extensions.Type)
 	}
-	is := out.Data.Issue
-	if is == nil {
+	if resp.StatusCode != http.StatusOK || out.Data == nil || len(out.Data.Issue) == 0 {
+		return Issue{}, fmt.Errorf("linear: issue %s: %s: the answer holds no issue", id, resp.Status)
+	}
+	if string(out.Data.Issue) == "null" {
 		return Issue{}, fmt.Errorf("linear: issue %s: %w", id, ErrNotFound)
+	}
+	var is struct {
+		Identifier  string
+		Title       string
+		Description *string
+		Team        struct {
+			Key          string
+			Organization struct{ URLKey string }
+		}
+	}
+	if err := json.Unmarshal(out.Data.Issue, &is); err != nil {
+		return Issue{}, fmt.Errorf("linear: issue %s: %w", id, err)
 	}
 	var description string
 	if is.Description != nil {
 		description = *is.Description
 	}
-	return Issue{ID: is.Identifier, Title: is.Title, Description: description, Team: is.Team.Key}, nil
+	return Issue{
+		ID: is.Identifier, Title: is.Title, Description: description, Team: is.Team.Key, Workspace: is.Team.Organization.URLKey,
+	}, nil
 }

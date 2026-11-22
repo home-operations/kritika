@@ -19,8 +19,8 @@ func TestClientIssue(t *testing.T) {
 		wantErr  string
 	}{
 		{name: "an issue", status: http.StatusOK,
-			answer: `{"data":{"issue":{"identifier":"ENG-12","title":"Widgets leak","description":"Steps.","team":{"key":"ENG"}}}}`,
-			want:   Issue{ID: "ENG-12", Title: "Widgets leak", Description: "Steps.", Team: "ENG"}},
+			answer: `{"data":{"issue":{"identifier":"ENG-12","title":"Widgets leak","description":"Steps.","team":{"key":"ENG","organization":{"urlKey":"acme"}}}}}`,
+			want:   Issue{ID: "ENG-12", Title: "Widgets leak", Description: "Steps.", Team: "ENG", Workspace: "acme"}},
 		{name: "an issue with no description", status: http.StatusOK,
 			answer: `{"data":{"issue":{"identifier":"ENG-12","title":"Widgets leak","description":null,"team":{"key":"ENG"}}}}`,
 			want:   Issue{ID: "ENG-12", Title: "Widgets leak", Team: "ENG"}},
@@ -30,7 +30,10 @@ func TestClientIssue(t *testing.T) {
 		{name: "not found under a 400", status: http.StatusBadRequest,
 			answer:   `{"errors":[{"message":"Entity not found: Issue","extensions":{"type":"invalid input"}}]}`,
 			notFound: true},
-		{name: "no issue and no error", status: http.StatusOK, answer: `{"data":{"issue":null}}`, notFound: true},
+		{name: "an issue given as null", status: http.StatusOK, answer: `{"data":{"issue":null}}`, notFound: true},
+		{name: "a 400 with no errors", status: http.StatusBadRequest, answer: `{}`, wantErr: "the answer holds no issue"},
+		{name: "no issue in the data", status: http.StatusOK, answer: `{"data":{}}`, wantErr: "the answer holds no issue"},
+		{name: "a 400 with an issue", status: http.StatusBadRequest, answer: `{"data":{"issue":null}}`, wantErr: "the answer holds no issue"},
 		{name: "a key Linear refuses", status: http.StatusBadRequest,
 			answer:  `{"errors":[{"message":"Authentication required, not authenticated","extensions":{"type":"authentication error"}}]}`,
 			wantErr: "Authentication required, not authenticated (authentication error)"},
