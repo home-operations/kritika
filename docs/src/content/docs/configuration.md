@@ -478,6 +478,30 @@ badge. It also shows each severity as its label in text rather than an
 image that the dashboard serves. `@<app slug> review` still re-runs a
 review ([commands](/reviews/#commands)).
 
+### Badge images
+
+GitHub fetches the images in a comment through its own proxy, from the
+internet. As a result, the badges render only where `webUrl` is public.
+For a dashboard that is not public, set `badgeUrl` at the file's root to a
+public address that serves the images:
+
+```yaml
+webUrl: https://kritika.internal.example.com
+badgeUrl: https://kritika-hooks.example.com
+```
+
+The comments then load their images from `<badgeUrl>/badges/`. The View
+and Re-run links still go to `webUrl`, and sign-in still uses `webUrl`.
+
+kritika serves the images on the listener that receives the webhooks, at
+`/badges/` after `webUrl`'s path. On the public hostname, route the GET
+requests whose path starts with `<badgeUrl path>/badges/` to the public
+Service, for example as one more rule beside the one for `/hooks/`. If the
+two paths differ, rewrite the prefix to `<webUrl path>/badges/`. For
+example, with a `webUrl` that ends in `/kritika` and a `badgeUrl` with no
+path, forward `/badges/view.svg` to `/kritika/badges/view.svg`. The images
+are the same for everyone and need no sign-in.
+
 `trigger.limit` stops a long-lived pull request from spending on every
 push. The summary of the last automatic review says that reviews are
 paused. `@<app slug> review` and `resume` still work
@@ -952,6 +976,7 @@ environment variables remain supported.
 | `gatewayCacheS3ForcePathStyle` | `KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE` | use path-style bucket addressing. True by default                                                                                                                                                                                                                                                                                                 |
 | `aquaRegistryUrl`              | `KRITIKA_AQUA_REGISTRY_URL`                 | the aqua registry that the gateway keeps for runners to resolve a repository's `tools` against. aqua-registry's `registry.yaml` on its main branch unless set. A release's tag, such as `https://raw.githubusercontent.com/aquaproj/aqua-registry/v4.578.0/registry.yaml`, holds it still, and a mirror serves a cluster that cannot reach GitHub |
 | `aquaRegistryRefresh`          | `KRITIKA_AQUA_REGISTRY_REFRESH`             | how often the gateway asks for the registry again, conditionally. When a fetch fails, the gateway keeps the last one that parsed. 1h unless set                                                                                                                                                                                                   |
+| `badgeUrl`                     | `KRITIKA_BADGE_URL`                         | the public address that a review comment's badge images load from, for a dashboard that is not public ([badge images](#badge-images)). `webUrl` unless set                                                                                                                                                                                        |
 | `logLevel`                     | `KRITIKA_LOG_LEVEL`                         | `debug`, `info`, `warn` or `error`. `info` unless set                                                                                                                                                                                                                                                                                             |
 | `logFormat`                    | `KRITIKA_LOG_FORMAT`                        | `json` or `text`. `json` unless set                                                                                                                                                                                                                                                                                                               |
 | `runner.jobTemplate`           | `KRITIKA_RUNNER_JOB_TEMPLATE`               | what kritika sets on every runner Job, as a Job template spells it                                                                                                                                                                                                                                                                                |

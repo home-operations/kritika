@@ -440,36 +440,47 @@ func TestWriteSticky(t *testing.T) {
 
 var errForge = errors.New("forge: forbidden")
 
-// TestDashboard: the comments get the dashboard's origin and the pull
-// request's page on it only from a worker with a web URL. They get them only
-// where the admin leaves the dashboard in the repository's comments.
+// TestDashboard: the comments get the dashboard's origin, the origin of
+// their badge images and the pull request's page on the dashboard only from a
+// worker with a web URL. They get them only where the admin leaves the
+// dashboard in the repository's comments. The images load from the
+// dashboard unless the worker was given a badge URL.
 func TestDashboard(t *testing.T) {
 	t.Parallel()
 	web, err := url.Parse("https://kritika.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
+	badge, err := url.Parse("https://hooks.example.com/k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pull = "https://kritika.example.com/#/a/github/acme/pulls/acme/x/7"
 	tests := []struct {
-		name              string
-		web               *url.URL
-		dashboard         bool
-		wantWeb, wantPull string
+		name                         string
+		web, badge                   *url.URL
+		dashboard                    bool
+		wantWeb, wantBadge, wantPull string
 	}{
 		{name: "on", web: web, dashboard: true,
-			wantWeb: "https://kritika.example.com", wantPull: "https://kritika.example.com/#/a/github/acme/pulls/acme/x/7"},
-		{name: "off", web: web},
-		{name: "no web URL", dashboard: true},
+			wantWeb: "https://kritika.example.com", wantBadge: "https://kritika.example.com", wantPull: pull},
+		{name: "badge URL", web: web, badge: badge, dashboard: true,
+			wantWeb: "https://kritika.example.com", wantBadge: "https://hooks.example.com/k", wantPull: pull},
+		{name: "off", web: web, badge: badge},
+		{name: "no web URL", badge: badge, dashboard: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &publishPhase{
-				w: &publicationWorker{WebURL: tt.web}, account: &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme"},
-				pr: &pullRequest{repository: "acme/x", number: 7},
+				w:       &publicationWorker{WebURL: tt.web, BadgeURL: tt.badge},
+				account: &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme"},
+				pr:      &pullRequest{repository: "acme/x", number: 7},
 			}
 			p.settings.Review.Dashboard = tt.dashboard
-			if gotWeb, gotPull := p.dashboard("acme", "x"); gotWeb != tt.wantWeb || gotPull != tt.wantPull {
-				t.Fatalf("dashboard = %q, %q; want %q, %q", gotWeb, gotPull, tt.wantWeb, tt.wantPull)
+			gotWeb, gotBadge, gotPull := p.dashboard("acme", "x")
+			if gotWeb != tt.wantWeb || gotBadge != tt.wantBadge || gotPull != tt.wantPull {
+				t.Fatalf("dashboard = %q, %q, %q; want %q, %q, %q", gotWeb, gotBadge, gotPull, tt.wantWeb, tt.wantBadge, tt.wantPull)
 			}
 		})
 	}

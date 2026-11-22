@@ -48,21 +48,36 @@ func TestRenderSummaryRerunBadge(t *testing.T) {
 	if strings.Contains(body, "badges/") || !strings.Contains(body, "\n## Kritika Review\n") {
 		t.Fatalf("without a dashboard the heading is bare:\n%s", body)
 	}
+	// The links go to the dashboard, and the images load from the badge
+	// origin, which can be another host.
 	d.WebURL, d.PullURL = "https://kritika.example/k", "https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42"
+	d.BadgeURL = "https://hooks.example/b"
 	body, _ = RenderSummary(t.Context(), Templates{}, d)
 	want := "\n## <a href=\"https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42\"><picture>" +
-		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://kritika.example/k/badges/rerun-dark.svg\">" +
-		"<img alt=\"Re-run\" src=\"https://kritika.example/k/badges/rerun.svg\" align=\"right\"></picture></a>" +
+		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://hooks.example/b/badges/rerun-dark.svg\">" +
+		"<img alt=\"Re-run\" src=\"https://hooks.example/b/badges/rerun.svg\" align=\"right\"></picture></a>" +
 		"<a href=\"https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42\"><picture>" +
-		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://kritika.example/k/badges/view-dark.svg\">" +
-		"<img alt=\"View\" src=\"https://kritika.example/k/badges/view.svg\" align=\"right\"></picture></a>Kritika Review\n"
+		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://hooks.example/b/badges/view-dark.svg\">" +
+		"<img alt=\"View\" src=\"https://hooks.example/b/badges/view.svg\" align=\"right\"></picture></a>Kritika Review\n"
 	if !strings.Contains(body, want) {
 		t.Fatalf("missing %q in:\n%s", want, body)
 	}
 	// With a dashboard each listed finding leads with its severity badge.
-	if !strings.Contains(body, "\n- <img alt=\"P0\" src=\"https://kritika.example/k/badges/p0.svg\"> [`main.go:11`]") ||
-		!strings.Contains(body, "\n- <img alt=\"P2\" src=\"https://kritika.example/k/badges/p2.svg\"> `README.md:2` typo\n") {
+	if !strings.Contains(body, "\n- <img alt=\"P0\" src=\"https://hooks.example/b/badges/p0.svg\"> [`main.go:11`]") ||
+		!strings.Contains(body, "\n- <img alt=\"P2\" src=\"https://hooks.example/b/badges/p2.svg\"> `README.md:2` typo\n") {
 		t.Fatalf("findings without their badges:\n%s", body)
+	}
+	if strings.Contains(body, "https://kritika.example/k/badges/") {
+		t.Fatalf("an image loads from the dashboard's origin:\n%s", body)
+	}
+	// A badge URL is escaped for the attribute that holds it.
+	d.BadgeURL = "https://hooks.example/a&amp;b"
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	for _, want := range []string{`srcset="https://hooks.example/a&amp;amp;b/badges/view-dark.svg"`,
+		`src="https://hooks.example/a&amp;amp;b/badges/rerun.svg"`, `src="https://hooks.example/a&amp;amp;b/badges/p0.svg"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
 	}
 }
 
@@ -682,9 +697,9 @@ func TestRenderInline(t *testing.T) {
 		}
 	}
 	badged := f
-	badged.WebURL = "https://kritika.example/k"
+	badged.WebURL, badged.BadgeURL = "https://kritika.example/k", "https://hooks.example/b"
 	if body, _ := RenderInline(t.Context(), Templates{}, badged); !strings.Contains(body,
-		"\n<img alt=\"P0\" src=\"https://kritika.example/k/badges/p0.svg\"> **nil map write** · correctness\n") {
+		"\n<img alt=\"P0\" src=\"https://hooks.example/b/badges/p0.svg\"> **nil map write** · correctness\n") {
 		t.Fatalf("with a dashboard the severity is its badge image:\n%s", body)
 	}
 	quoted := f

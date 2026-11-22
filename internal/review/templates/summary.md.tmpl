@@ -1,4 +1,4 @@
-## {{ if .PullURL }}<a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ .WebURL }}/badges/rerun-dark.svg"><img alt="Re-run" src="{{ .WebURL }}/badges/rerun.svg" align="right"></picture></a><a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ .WebURL }}/badges/view-dark.svg"><img alt="View" src="{{ .WebURL }}/badges/view.svg" align="right"></picture></a>{{ end }}{{ if .Confidence }}Confidence Score: {{ .Confidence.Score }}/5{{ else }}Kritika Review{{ end }}
+## {{ if .PullURL }}<a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ html .BadgeURL }}/badges/rerun-dark.svg"><img alt="Re-run" src="{{ html .BadgeURL }}/badges/rerun.svg" align="right"></picture></a><a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ html .BadgeURL }}/badges/view-dark.svg"><img alt="View" src="{{ html .BadgeURL }}/badges/view.svg" align="right"></picture></a>{{ end }}{{ if .Confidence }}Confidence Score: {{ .Confidence.Score }}/5{{ else }}Kritika Review{{ end }}
 
 {{ if .Incomplete -}}
 **Review incomplete for {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
@@ -23,14 +23,14 @@
 
 {{ if .Result.Findings -}}
 {{ range .Result.Findings -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .CarriedFrom }} · not rechecked since `{{ trunc 7 .CarriedFrom }}`{{ end }}
+- {{ .Severity.Badge $.BadgeURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .CarriedFrom }} · not rechecked since `{{ trunc 7 .CarriedFrom }}`{{ end }}
 {{ end }}
 {{ end -}}
 {{ if .Unanchored -}}
 **Outside the diff**
 
 {{ range .Unanchored -}}
-- {{ .Severity.Badge $.WebURL }} `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
+- {{ .Severity.Badge $.BadgeURL }} `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
 
 {{ .Explanation | indent 2 }}
 {{ end }}
@@ -40,7 +40,7 @@
 <summary>Held back ({{ len .HeldBack }}): not on lines changed since the last review</summary>
 
 {{ range .HeldBack -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
+- {{ .Severity.Badge $.BadgeURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
 {{ end }}
 </details>
 
@@ -50,7 +50,7 @@
 <summary>Fixed since the last review ({{ len . }})</summary>
 
 {{ range . -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .ThreadResolved }} · thread resolved{{ else if .ThreadOpen }} · thread open{{ end }}
+- {{ .Severity.Badge $.BadgeURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .ThreadResolved }} · thread resolved{{ else if .ThreadOpen }} · thread open{{ end }}
 {{ end }}
 </details>
 

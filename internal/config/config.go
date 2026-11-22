@@ -113,6 +113,7 @@ type Config struct {
 	// commands that the run starts never see it.
 	ReportToken string `env:"KRITIKA_REPORT_TOKEN,unset"`
 	webURL      *url.URL
+	badgeURL    *url.URL
 	logLevel    slog.Level
 	// document is the startup snapshot shared with the policy loader.
 	document Document
@@ -143,27 +144,45 @@ func (c *Config) WebBasePath() string {
 	return c.webURL.Path
 }
 
-// parseWebURL trims a trailing slash from WebURL. It rejects anything that
-// is not an absolute http(s) URL with a host and no query or fragment. It
-// caches the result for WebURLParsed. It is a no-op when WebURL is unset.
-func (c *Config) parseWebURL() error {
-	if c.WebURL == "" {
-		return nil
+// BadgeURLParsed returns BadgeURL parsed into a *url.URL, or nil when
+// BadgeURL is unset.
+func (c *Config) BadgeURLParsed() *url.URL { return c.badgeURL }
+
+// parseURLs parses WebURL and BadgeURL, caching the results for WebURLParsed
+// and BadgeURLParsed.
+func (c *Config) parseURLs() error {
+	var err error
+	if c.WebURL, c.webURL, err = parsePublicURL("webUrl: KRITIKA_WEB_URL", c.WebURL); err != nil {
+		return err
 	}
-	trimmed := strings.TrimSuffix(c.WebURL, "/")
+	c.BadgeURL, c.badgeURL, err = parsePublicURL("badgeUrl: KRITIKA_BADGE_URL", c.BadgeURL)
+	return err
+}
+
+// parsePublicURL trims a trailing slash from raw, the value of the setting
+// that name spells. It rejects anything that is not an absolute http(s) URL
+// with a host and no credentials, query or fragment. Review comments print
+// the URL, so the error for credentials does not repeat it. It is a no-op
+// when raw is empty.
+func parsePublicURL(name, raw string) (string, *url.URL, error) {
+	if raw == "" {
+		return "", nil, nil
+	}
+	trimmed := strings.TrimSuffix(raw, "/")
 	u, err := url.Parse(trimmed)
 	if err != nil {
-		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
+		return "", nil, fmt.Errorf("config: %s: %w", name, err)
+	}
+	if u.User != nil {
+		return "", nil, fmt.Errorf("config: %s must not have credentials", name)
 	}
 	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Hostname() == "" {
-		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
+		return "", nil, fmt.Errorf("config: %s must be an absolute http(s) URL, got %q", name, raw)
 	}
-	if u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must not have a query or fragment, got %q", c.WebURL)
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", nil, fmt.Errorf("config: %s must not have a query or fragment, got %q", name, raw)
 	}
-	c.WebURL = trimmed
-	c.webURL = u
-	return nil
+	return trimmed, u, nil
 }
 
 // Load reads the environment and configuration file, then makes sure that
@@ -244,7 +263,7 @@ func (c *Config) validate() error {
 			return fmt.Errorf("config: gatewayUrl: KRITIKA_GATEWAY_URL: %w", err)
 		}
 	}
-	if err := c.parseWebURL(); err != nil {
+	if err := c.parseURLs(); err != nil {
 		return err
 	}
 	c.logLevel = logLevels[strings.ToLower(c.LogLevel)]
