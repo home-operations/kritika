@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.0.124](https://github.com/home-operations/kritika/compare/0.0.123...0.0.124) (2026-11-22)
+
+
+### Features
+
+* **review:** read linked Linear issues as review context ([#1526](https://github.com/home-operations/kritika/issues/1526)) ([7bf863f](https://github.com/home-operations/kritika/commit/7bf863f0c4bb9d83d3042ab921a407d7c7c85807))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update github-actions ([#1520](https://github.com/home-operations/kritika/issues/1520)) ([61f1d1b](https://github.com/home-operations/kritika/commit/61f1d1beb9d540cc42c3293d16c3e3c114ab4b8a))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.54.1 → v3.55.0) ([#1523](https://github.com/home-operations/kritika/issues/1523)) ([3db5642](https://github.com/home-operations/kritika/commit/3db564230045c48072caf29866f15f4d97be8dcc))
+* **npm:** update dependency svelte (5.58.1 → 5.59.1) ([#1521](https://github.com/home-operations/kritika/issues/1521)) ([4759e94](https://github.com/home-operations/kritika/commit/4759e94f0031fc3da89ce9584aa54c75e0c9fc25))
+* **npm:** update tanstack-query monorepo (6.4.4 → 6.4.5) ([#1519](https://github.com/home-operations/kritika/issues/1519)) ([322eab1](https://github.com/home-operations/kritika/commit/322eab121386d555c9cd1c096488278e549b03f0))
+
 ## [0.0.123](https://github.com/home-operations/kritika/compare/0.0.122...0.0.123) (2026-11-21)
 
 
