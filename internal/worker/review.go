@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/linear"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
@@ -44,6 +45,9 @@ type Review struct {
 	// WebURL is the dashboard's origin, which the summary comment links back
 	// to for a re-run. nil leaves the link out.
 	WebURL *url.URL
+	// Linear reads the Linear issues that a pull request links. Its zero
+	// value calls Linear's API.
+	Linear linear.Client
 
 	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
 	superviseEvery time.Duration
@@ -168,7 +172,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	logger.Info("review model slots granted", "estimated_parts", slots.parts(), "slots", slots.published)
 	grants := w.reviewerGrants(ctx, logger, file, account, settings, chosen.specs)
-	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, args.Focus, pr, eff, granted, prior,
+	deadline, promptNotes, err := w.agentSpec(ctx, account, reviewID, runID, args.Trigger, args.Focus, pr, eff, granted, prior,
 		cont, admitted, sizing{parts: slots.parts(), slots: slots.published, pools: slots.poolOf()}, &spec, &secrets, deadline, client, logger,
 		pull, chosen, grants)
 	if err != nil {

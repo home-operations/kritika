@@ -160,7 +160,7 @@ func TestBuildContinuation(t *testing.T) {
 // changed files and the diff can move after it opens.
 func TestSameBrief(t *testing.T) {
 	then := incrementalInput()
-	then.Body, then.Issues, then.Incremental = "Adds z.", []Issue{{Number: 4, Title: "Add z", Body: "We need z."}}, nil
+	then.Body, then.Issues, then.Incremental = "Adds z.", []Issue{{ID: "#4", Title: "Add z", Body: "We need z."}}, nil
 	opening, _, _, _ := Build(then)
 	edit := func(f func(*Input)) Input {
 		in := then
@@ -177,7 +177,7 @@ func TestSameBrief(t *testing.T) {
 		{"a new title", edit(func(in *Input) { in.Title = "t2" }), false},
 		{"a new description", edit(func(in *Input) { in.Body = "Adds z and w." }), false},
 		{"no description now", edit(func(in *Input) { in.Body = "" }), false},
-		{"an issue edited", edit(func(in *Input) { in.Issues = []Issue{{Number: 4, Title: "Add z", Body: "We need z soon."}} }), false},
+		{"an issue edited", edit(func(in *Input) { in.Issues = []Issue{{ID: "#4", Title: "Add z", Body: "We need z soon."}} }), false},
 		{"no issues now", edit(func(in *Input) { in.Issues = nil }), false},
 		{"another base", edit(func(in *Input) { in.BaseRef = "release-1.x" }), false},
 		{"a parent opened on the base", edit(func(in *Input) { in.BaseRef, in.DefaultBranch, in.BaseOf = "main", "trunk", 3 }), false},

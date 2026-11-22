@@ -29,7 +29,7 @@ import (
 // understands. A worker and runner on different images must agree on it,
 // so a runner refuses any other version instead of guessing at its
 // meaning.
-const Version = 44
+const Version = 45
 
 // IndexFormat is the format of an embedding index: how the runner chunks a
 // tree (internal/indexer) and the text that the worker embeds for each
@@ -161,8 +161,8 @@ type Prompt struct {
 	// Below are the pull requests under the pull request in its stack on
 	// the forge, lowest first, as the worker read them.
 	Below []review.StackEntry `json:"below,omitempty"`
-	// Issues are the issues the pull request's description says it
-	// closes, as the worker read them from the forge.
+	// Issues are the issues the pull request says it closes or works on,
+	// as the worker read them from the forge and from Linear.
 	Issues []review.Issue `json:"issues,omitempty"`
 	// Context names the files that explain the code, which the agent is
 	// pointed at to read for itself.
