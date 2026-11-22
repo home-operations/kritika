@@ -494,9 +494,13 @@ The comments then load their images from `<badgeUrl>/badges/`. The View
 and Re-run links still go to `webUrl`, and sign-in still uses `webUrl`.
 
 kritika serves the images on the listener that receives the webhooks, at
-`/badges/` after `webUrl`'s path. Route `GET <badgeUrl>/badges/` to that
-path on the public Service, for example as one more rule beside the one
-for `/hooks/`. The images are the same for everyone and need no sign-in.
+`/badges/` after `webUrl`'s path. On the public hostname, route the GET
+requests whose path starts with `<badgeUrl path>/badges/` to the public
+Service, for example as one more rule beside the one for `/hooks/`. If the
+two paths differ, rewrite the prefix to `<webUrl path>/badges/`. For
+example, with a `webUrl` that ends in `/kritika` and a `badgeUrl` with no
+path, forward `/badges/view.svg` to `/kritika/badges/view.svg`. The images
+are the same for everyone and need no sign-in.
 
 `trigger.limit` stops a long-lived pull request from spending on every
 push. The summary of the last automatic review says that reviews are

@@ -141,6 +141,7 @@ func TestWebURL(t *testing.T) {
 		{name: "port without host", url: "http://:8080", wantErr: true},
 		{name: "with query", url: "https://dash.example.com?x=1", wantErr: true},
 		{name: "with a bare query delimiter", url: "https://dash.example.com?", wantErr: true},
+		{name: "with credentials", url: "https://user:hunter2@dash.example.com", wantErr: true},
 		{name: "with fragment", url: "https://dash.example.com#frag", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -191,6 +192,7 @@ func TestBadgeURL(t *testing.T) {
 		{name: "missing scheme", url: "hooks.example.com", wantErr: true},
 		{name: "with query", url: "https://hooks.example.com?x=1", wantErr: true},
 		{name: "with a bare query delimiter", url: "https://hooks.example.com?", wantErr: true},
+		{name: "with credentials", url: "https://user:hunter2@hooks.example.com", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -199,8 +201,8 @@ func TestBadgeURL(t *testing.T) {
 			t.Setenv("KRITIKA_BADGE_URL", tt.url)
 			cfg, err := Load()
 			if tt.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "badgeUrl: KRITIKA_BADGE_URL") {
-					t.Fatalf("Load = %v, want an error naming the setting", err)
+				if err == nil || !strings.Contains(err.Error(), "badgeUrl: KRITIKA_BADGE_URL") || strings.Contains(err.Error(), "hunter2") {
+					t.Fatalf("Load = %v, want an error naming the setting without a password", err)
 				}
 				return
 			}

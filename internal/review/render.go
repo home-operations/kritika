@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"html"
 	"net/url"
 	"slices"
 	"strconv"
@@ -383,7 +384,7 @@ func (s Severity) Badge(origin string) string {
 	case origin == "":
 		return "**[" + label + "]**"
 	}
-	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, origin, s)
+	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, html.EscapeString(origin), s)
 }
 
 // InlineData is what an inline comment's template renders: the finding,

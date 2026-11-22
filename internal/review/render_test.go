@@ -70,6 +70,15 @@ func TestRenderSummaryRerunBadge(t *testing.T) {
 	if strings.Contains(body, "https://kritika.example/k/badges/") {
 		t.Fatalf("an image loads from the dashboard's origin:\n%s", body)
 	}
+	// A badge URL is escaped for the attribute that holds it.
+	d.BadgeURL = "https://hooks.example/a&amp;b"
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	for _, want := range []string{`srcset="https://hooks.example/a&amp;amp;b/badges/view-dark.svg"`,
+		`src="https://hooks.example/a&amp;amp;b/badges/rerun.svg"`, `src="https://hooks.example/a&amp;amp;b/badges/p0.svg"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
+	}
 }
 
 func TestPullPageURL(t *testing.T) {

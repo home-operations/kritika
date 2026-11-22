@@ -161,7 +161,9 @@ func (c *Config) parseURLs() error {
 
 // parsePublicURL trims a trailing slash from raw, the value of the setting
 // that name spells. It rejects anything that is not an absolute http(s) URL
-// with a host and no query or fragment. It is a no-op when raw is empty.
+// with a host and no credentials, query or fragment. Review comments print
+// the URL, so the error for credentials does not repeat it. It is a no-op
+// when raw is empty.
 func parsePublicURL(name, raw string) (string, *url.URL, error) {
 	if raw == "" {
 		return "", nil, nil
@@ -170,6 +172,9 @@ func parsePublicURL(name, raw string) (string, *url.URL, error) {
 	u, err := url.Parse(trimmed)
 	if err != nil {
 		return "", nil, fmt.Errorf("config: %s: %w", name, err)
+	}
+	if u.User != nil {
+		return "", nil, fmt.Errorf("config: %s must not have credentials", name)
 	}
 	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Hostname() == "" {
 		return "", nil, fmt.Errorf("config: %s must be an absolute http(s) URL, got %q", name, raw)

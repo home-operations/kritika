@@ -24,7 +24,8 @@ func TestHelmConfiguration(t *testing.T) {
 		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.34.0",
 		"--set", "runner.podTemplate.spec.runtimeClassName=gvisor", "--set", "runner.jobTemplate.spec.activeDeadlineSeconds=1200",
 		"--set", "config.pollInterval=0s", "--set", "gatewayCache.enabled=true", "--set", "gatewayCache.storage.maxSize=512Mi",
-		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com")
+		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com",
+		"--set-string", "config.badgeUrl=https://hooks.example.com/kritika/")
 	rendered, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, rendered)
@@ -83,7 +84,8 @@ func TestHelmConfiguration(t *testing.T) {
 	if err := c.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}
-	if c.RunnerDeadline() != 20*time.Minute || c.RunnerServiceAccount != "kritika-runner" || c.WebURL != "https://kritika.example.com" {
+	if c.RunnerDeadline() != 20*time.Minute || c.RunnerServiceAccount != "kritika-runner" || c.WebURL != "https://kritika.example.com" ||
+		c.BadgeURLParsed() == nil || c.BadgeURLParsed().String() != "https://hooks.example.com/kritika" {
 		t.Fatalf("rendered process settings = %+v", c.Settings)
 	}
 }
