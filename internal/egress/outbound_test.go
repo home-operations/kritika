@@ -119,10 +119,9 @@ func newOutboundProxy(
 	return srv, out, outcomes, dialed
 }
 
-// TestOutboundProxy: where the rules send destinations through the outbound
-// proxy, a destination that the environment names one for is reached through
-// it by name, signed in with the proxy's user, and neither resolved nor
-// dialed by the gateway.
+// TestOutboundProxy: a destination that the environment names a forward
+// proxy for is reached through it by name, signed in with the proxy's user,
+// and neither resolved nor dialed by the gateway.
 func TestOutboundProxy(t *testing.T) {
 	const auth = " Basic Z2F0ZXdheTpzM2NyZXQ="
 	for _, secure := range []bool{false, true} {
@@ -130,7 +129,7 @@ func TestOutboundProxy(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rules := egresspolicy.Rules{
 				Allow:       egresspolicy.List{Hosts: []string{"api.github.com", "direct.example"}, Prefixes: prefixes("198.51.100.0/24")},
-				Credentials: bearer("api.github.com", "secret"), OutboundProxy: true,
+				Credentials: bearer("api.github.com", "secret"),
 			}
 			proxy, out, outcomes, dialed := newOutboundProxy(t, rules, secure, "direct.example")
 			client := viaProxy(proxy)
@@ -201,7 +200,7 @@ func TestOutboundProxy(t *testing.T) {
 // TestOutboundProxyRefusal: what the outbound proxy answers a CONNECT with
 // reaches the runner, and the proxy's password does not.
 func TestOutboundProxyRefusal(t *testing.T) {
-	proxy, out, outcomes, _ := newOutboundProxy(t, egresspolicy.Rules{Allow: hosts("api.github.com"), OutboundProxy: true}, false)
+	proxy, out, outcomes, _ := newOutboundProxy(t, egresspolicy.Rules{Allow: hosts("api.github.com")}, false)
 	out.refuse = http.StatusForbidden
 	client := viaProxy(proxy)
 	defer client.CloseIdleConnections()
@@ -221,36 +220,6 @@ func TestOutboundProxyRefusal(t *testing.T) {
 		t.Fatalf("CONNECT: err = %v, want a Bad Gateway from the proxy", err)
 	}
 	if got := outcomes(); got["http/error"] != 1 || got["connect/error"] != 1 {
-		t.Fatalf("outcomes = %v", got)
-	}
-}
-
-// TestOutboundProxyIsOptIn: a forward proxy in the environment changes
-// nothing until the rules send destinations through it.
-func TestOutboundProxyIsOptIn(t *testing.T) {
-	proxy, out, outcomes, dialed := newOutboundProxy(t, egresspolicy.Rules{Allow: hosts("*")}, false)
-	client := viaProxy(proxy)
-	defer client.CloseIdleConnections()
-	for _, u := range []string{"https://direct.example/x", "http://direct.example/x"} {
-		resp, err := client.Get(u)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			t.Fatalf("%s: %v %v", u, resp, err)
-		}
-		_ = resp.Body.Close()
-	}
-	// A name that the gateway cannot resolve is not handed to the proxy.
-	resp, err := client.Get("http://api.github.com/x")
-	if err != nil || resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("unresolved name: %v %v, want 502", resp, err)
-	}
-	_ = resp.Body.Close()
-	if asked := out.seen(); len(asked) != 0 {
-		t.Fatalf("the outbound proxy was asked %q", asked)
-	}
-	if !slices.Equal(*dialed, []string{"203.0.113.20:443", "203.0.113.20:443"}) {
-		t.Fatalf("dialed %v", *dialed)
-	}
-	if got := outcomes(); got["connect/allowed"] != 1 || got["http/allowed"] != 1 || got["http/error"] != 1 {
 		t.Fatalf("outcomes = %v", got)
 	}
 }

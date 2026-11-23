@@ -38,12 +38,6 @@ func TestEgressRules(t *testing.T) {
 	if rules.Allows("ghcr.io") {
 		t.Fatal("ghcr.io must not be allowed until configured")
 	}
-	if rules.OutboundProxy {
-		t.Fatal("runner egress must not go through the pod's proxy until configured")
-	}
-	if via, err := loadBytes(t, []byte("egress:\n  outboundProxy: true\n"+minimal)); err != nil || !via.EgressRules().OutboundProxy {
-		t.Fatalf("egress.outboundProxy: %v, %v", via, err)
-	}
 
 	raw := "egress:\n  allow: [ghcr.io, \"*.githubusercontent.com\", api.github.com]\n" +
 		"  credentials:\n    api.github.com: { token: { env: TEST_GH_TOKEN }, accounts: [\"*\"] }\n"
