@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -321,6 +322,9 @@ func (c *Client) CreateReview(
 // approving the head stands as it is. So does one of an older head while
 // GitHub counts it (see approvalCounts). Where the base branch dismisses
 // stale approvals none stands after a push, so the head gets a new approval.
+// A head also gets one when approvalCounts fails, since the older approval
+// may no longer count: the caller does not try again, and a base branch that
+// wants the last push approved would stay blocked.
 func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error) {
 	approvals, err := c.approvals(ctx, owner, repo, number)
 	if err != nil {
@@ -329,15 +333,20 @@ func (c *Client) Approve(ctx context.Context, owner, repo string, number int, he
 	if slices.ContainsFunc(approvals, func(r *gh.PullRequestReview) bool { return r.GetCommitID() == headSHA }) {
 		return false, nil
 	}
+	var unknown error
 	if len(approvals) > 0 {
-		counts, err := c.approvalCounts(ctx, owner, repo, number)
-		if err != nil || counts {
-			return false, err
+		var counts bool
+		if counts, unknown = c.approvalCounts(ctx, owner, repo, number); counts {
+			return false, nil
 		}
 	}
 	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("APPROVE")}
 	if _, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req); err != nil {
-		return false, fmt.Errorf("github: approve #%d: %w", number, err)
+		return false, errors.Join(fmt.Errorf("github: approve #%d: %w", number, err), unknown)
+	}
+	if unknown != nil {
+		slog.WarnContext(ctx, "head approved without knowing whether an older approval counts",
+			"repository", owner+"/"+repo, "pull_request", number, "error", unknown)
 	}
 	return true, nil
 }

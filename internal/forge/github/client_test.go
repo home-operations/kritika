@@ -694,10 +694,12 @@ func TestApprove(t *testing.T) {
 		decision    string
 		rules       string
 		rulesStatus int
+		postStatus  int
 		asked       bool
 		listed      bool
 		posted      bool
-		wantErr     bool
+		// wantErr is the two parts of the error, in order, around a "*".
+		wantErr string
 	}{
 		// A human's approval of the head, and the bot's dismissed and
 		// comment reviews, are not approvals of the bot's that stand.
@@ -709,8 +711,11 @@ func TestApprove(t *testing.T) {
 			decision: decision(`"REVIEW_REQUIRED"`), asked: true, posted: true},
 		{name: "a pull request with no decision is approved again", reviews: standing, head: "abc",
 			decision: decision(`null`), asked: true, posted: true},
-		{name: "a decision that cannot be read approves nothing", reviews: standing, head: "abc",
-			decision: `{"errors":[{"message":"forbidden"}]}`, asked: true, wantErr: true},
+		{name: "a decision that cannot be read approves the head", reviews: standing, head: "abc",
+			decision: `{"errors":[{"message":"forbidden"}]}`, asked: true, posted: true},
+		{name: "a decision that cannot be read and an approval that fails are both reported", reviews: standing, head: "abc",
+			decision: `{"errors":[{"message":"forbidden"}]}`, postStatus: http.StatusInternalServerError, asked: true,
+			wantErr: "github: approve #7:*github: read the review decision of #7:"},
 		{name: "a ruleset that wants the last push approved renews an approval the decision counts", reviews: standing, head: "abc",
 			decision: decision(approved), rules: lastPush(0), asked: true, listed: true, posted: true},
 		{name: "a ruleset with other pull request rules lets the approval stand", reviews: standing, head: "abc",
@@ -719,24 +724,28 @@ func TestApprove(t *testing.T) {
 		{name: "a plan without rulesets has none", reviews: standing, head: "abc", decision: decision(approved),
 			rules: `{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}`, rulesStatus: http.StatusForbidden,
 			asked: true, listed: true},
-		{name: "another refusal of the rules approves nothing", reviews: standing, head: "abc", decision: decision(approved),
+		{name: "another refusal of the rules approves the head", reviews: standing, head: "abc", decision: decision(approved),
 			rules: `{"message":"Resource not accessible by integration"}`, rulesStatus: http.StatusForbidden,
-			asked: true, listed: true, wantErr: true},
-		{name: "rules that cannot be read approve nothing", reviews: standing, head: "abc", decision: decision(approved),
-			rules: `{"message":"boom"}`, rulesStatus: http.StatusInternalServerError, asked: true, listed: true, wantErr: true},
+			asked: true, listed: true, posted: true},
+		{name: "rules that cannot be read approve the head", reviews: standing, head: "abc", decision: decision(approved),
+			rules: `{"message":"boom"}`, rulesStatus: http.StatusInternalServerError, asked: true, listed: true, posted: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f, c := newFakeAPI(t)
 			c.login = "kritika[bot]"
 			f.reply("GET /api/v3/repos/o/r/pulls/7/reviews", 200, "["+tt.reviews+"]")
-			f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", 200, `{"id":5}`)
+			f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", cmp.Or(tt.postStatus, http.StatusOK), `{"id":5}`)
 			f.reply("POST /api/graphql", 200, tt.decision)
 			f.reply("GET /api/v3/repos/o/r/rules/branches/main", cmp.Or(tt.rulesStatus, http.StatusOK), tt.rules)
 
 			posted, err := c.Approve(t.Context(), "o", "r", 7, tt.head)
-			if posted != tt.posted || (err != nil) != tt.wantErr {
-				t.Fatalf("Approve = %v, %v; want %v, error %v", posted, err, tt.posted, tt.wantErr)
+			if posted != tt.posted || (err != nil) != (tt.wantErr != "") {
+				t.Fatalf("Approve = %v, %v; want %v, error %q", posted, err, tt.posted, tt.wantErr)
+			}
+			if first, second, _ := strings.Cut(tt.wantErr, "*"); err != nil &&
+				(!strings.Contains(err.Error(), first) || !strings.Contains(err.Error(), second)) {
+				t.Fatalf("Approve error = %v, want %q", err, tt.wantErr)
 			}
 			if asked := f.saw("POST /api/graphql"); asked != tt.asked {
 				t.Fatalf("review decision read = %v, want %v", asked, tt.asked)
@@ -745,8 +754,8 @@ func TestApprove(t *testing.T) {
 				t.Fatalf("rules listed = %v, want %v", listed, tt.listed)
 			}
 			review, sent := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"].(map[string]any)
-			if sent != tt.posted {
-				t.Fatalf("review sent = %v, want %v", sent, tt.posted)
+			if sent != (tt.posted || tt.postStatus != 0) {
+				t.Fatalf("review sent = %v, want %v", sent, tt.posted || tt.postStatus != 0)
 			}
 			if !sent {
 				return
