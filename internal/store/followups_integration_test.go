@@ -56,16 +56,19 @@ func TestFollowupsMigrationDropsLimited(t *testing.T) {
 		}
 		return id
 	}
-	alphaPR, betaPR := pullRequest(alpha, alphaRepo), pullRequest(beta, betaRepo)
+	alphaPR := pullRequest(alpha, alphaRepo)
 	t.Cleanup(func() {
 		ctx := context.Background()
 		if err := s.Migrate(ctx, "kritika_app"); err != nil {
 			t.Errorf("Migrate in the cleanup: %v", err)
 		}
-		if _, err := s.owner.Exec(ctx, `DELETE FROM followups WHERE pull_request_id = $1`, alphaPR); err != nil {
-			t.Error(err)
+		for _, stmt := range []string{`DELETE FROM followups WHERE pull_request_id = $1`, `DELETE FROM pull_requests WHERE id = $1`} {
+			if _, err := s.owner.Exec(ctx, stmt, alphaPR); err != nil {
+				t.Error(err)
+			}
 		}
 	})
+	betaPR := pullRequest(beta, betaRepo)
 	if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, followupsWithLimited+`;
 			DELETE FROM schema_migrations WHERE version = '0072_followups_unlimited'`); err != nil {
