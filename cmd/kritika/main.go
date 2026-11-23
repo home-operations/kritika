@@ -385,7 +385,8 @@ func startWorker(
 		URL: cfg.AquaRegistryURL, Refresh: cfg.AquaRegistryRefresh, Client: http.DefaultClient, Logger: gatewayLogger,
 	}
 	g.Go(func() error { return gw.AquaRegistry.Run(ctx) })
-	proxy := &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
+	proxy := &egress.Proxy{Rules: current.Get().EgressRules, Outbound: egress.EnvOutbound,
+		Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
 	if cfg.GatewayCacheDir != "" {
 		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize))
 		if err != nil {
@@ -396,9 +397,8 @@ func startWorker(
 		if cfg.GatewayCacheStorage == "s3" {
 			if err := cache.UseS3(egress.S3Options{
 				Endpoint: cfg.GatewayCacheS3Endpoint, Region: cfg.GatewayCacheS3Region,
-				Bucket: cfg.GatewayCacheS3Bucket, Prefix: cfg.GatewayCacheS3Prefix,
-				ForcePathStyle: cfg.GatewayCacheS3ForcePathStyle,
-				AccessKey:      cfg.GatewayCacheS3AccessKey, SecretKey: cfg.GatewayCacheS3SecretKey,
+				Bucket: cfg.GatewayCacheS3Bucket, Prefix: cfg.GatewayCacheS3Prefix, ForcePathStyle: cfg.GatewayCacheS3ForcePathStyle,
+				AccessKey: cfg.GatewayCacheS3AccessKey, SecretKey: cfg.GatewayCacheS3SecretKey,
 			}); err != nil {
 				return err
 			}

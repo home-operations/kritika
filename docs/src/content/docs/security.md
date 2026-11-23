@@ -233,6 +233,8 @@ With `oci`, the gateway answers the registry's challenge itself:
 The gateway makes sure that a host's name passes the egress rules, then
 resolves the name once. The gateway connects to an address that passed
 those rules rather than resolving the name again.
+[Behind an outbound proxy](#behind-an-outbound-proxy), the proxy resolves
+the name instead.
 
 The gateway refuses an address that is not on the public internet unless
 an `allow` address covers it. Such addresses include RFC 1918 and other
@@ -260,6 +262,56 @@ deletes them with the run's transcripts.
 | `address denied`                                      | a `deny` address covers it                                  |
 | `resolves to a private address no allow entry covers` | the name resolves only to addresses off the public internet |
 | `resolves to a denied address`                        | every address the name resolves to is denied                |
+
+### Behind an outbound proxy
+
+Some clusters reach the internet only through a forward proxy. On such a
+cluster, set `HTTPS_PROXY` and `NO_PROXY` on the kritika serve pods with
+the chart's `env`, and add the proxy's port to `networkPolicy.egressPorts`:
+
+```yaml
+env:
+  HTTPS_PROXY: http://proxy.example.com:8080
+  NO_PROXY: .svc,.cluster.local,10.0.0.0/8
+networkPolicy:
+  egressPorts: [443, 8080]
+```
+
+The gateway reads these variables as kritika's other HTTP clients do.
+Those are the clients of the forges, the model endpoints and the
+Kubernetes API, among others. So `NO_PROXY` must cover what the kritika
+serve pods reach inside the cluster. An address or CIDR in `NO_PROXY`
+matches a destination that is written as an address. It does not match a
+name that resolves to that address, so list the names or domain suffixes
+of internal hosts too.
+
+The gateway sends a runner's connection through the proxy unless
+`NO_PROXY` covers the destination. That hands a part of the egress rules
+to the proxy:
+
+- The gateway judges the name by `allow` and `deny` before it asks the
+  proxy for the destination.
+- The proxy resolves the name, and the gateway does not. So no rule
+  judges the address that a name resolves to. That includes a `deny`
+  address and the refusal of private addresses.
+- The connection leaves from the proxy. So `"*"` opens every name that
+  the proxy reaches, and that can include the LAN behind it. Make sure
+  that the proxy refuses what runners must not reach.
+- A destination given as an address still needs an `allow` address that
+  covers it.
+- A destination that `NO_PROXY` covers is resolved, judged and reached as
+  it is without a proxy.
+
+To keep the address rules for a destination, list it in `NO_PROXY`.
+kritika's other clients then reach it without the proxy too.
+
+The proxy's URL starts with `http://` or `https://`. A user and password
+in the URL sign the gateway in to the proxy. The runner holds neither.
+Keep a URL with a password in a Secret, and set the variable with
+`valueFrom.secretKeyRef`.
+
+When the proxy refuses a destination, the runner's command gets a 502
+with the proxy's answer.
 
 ### Name lookups
 
