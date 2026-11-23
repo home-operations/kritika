@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.126](https://github.com/home-operations/kritika/compare/0.0.125...0.0.126) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **egress:** send gateway connections through the pod's outbound proxy ([#1542](https://github.com/home-operations/kritika/issues/1542))
+
+### Features
+
+* **egress:** send gateway connections through the pod's outbound proxy ([#1542](https://github.com/home-operations/kritika/issues/1542)) ([18f1819](https://github.com/home-operations/kritika/commit/18f18193bdc675df227aabd3d26dc9b76decdc97))
+
+
+### Bug Fixes
+
+* **review:** approve once on GitHub, without a body ([#1537](https://github.com/home-operations/kritika/issues/1537)) ([4270c09](https://github.com/home-operations/kritika/commit/4270c099a37fd3445509123304390c8c9675358c))
+
+
+### Miscellaneous Chores
+
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.13.0 → v2.14.0) ([#1540](https://github.com/home-operations/kritika/issues/1540)) ([1186010](https://github.com/home-operations/kritika/commit/1186010e57dbb705755f4ba0027c2361765ed54b))
+* **go:** update module github.com/openai/openai-go/v3 (v3.105.0 → v3.106.0) ([#1541](https://github.com/home-operations/kritika/issues/1541)) ([19e5826](https://github.com/home-operations/kritika/commit/19e5826ba928cc026a51e45d564211fa1c0c614b))
+* **npm:** update tanstack-query monorepo (6.4.5 → 6.4.6) ([#1539](https://github.com/home-operations/kritika/issues/1539)) ([b12348a](https://github.com/home-operations/kritika/commit/b12348a95c8f7f1bb84dd50d9a0f199463fbc13c))
+
 ## [0.0.125](https://github.com/home-operations/kritika/compare/0.0.124...0.0.125) (2026-11-23)
 
 
