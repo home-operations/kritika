@@ -192,18 +192,12 @@ func (c *Client) approved(ctx context.Context, pid string, number int) (bool, er
 
 // Approve implements forge.Client. An approval names the head it is of, so a
 // push after it is not approved. One standing is left as it is, since GitLab
-// withdraws approvals on push unless the project keeps them. GitLab's
-// approval carries no body, so one is posted as a note first.
-func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
+// withdraws approvals on push unless the project keeps them.
+func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error) {
 	pid := project(owner, repo)
 	standing, err := c.approved(ctx, pid, number)
 	if err != nil || standing {
 		return false, err
-	}
-	if body != "" {
-		if _, err := c.CreateComment(ctx, owner, repo, number, body); err != nil {
-			return false, err
-		}
 	}
 	_, _, err = c.api.MergeRequestApprovals.ApproveMergeRequest(pid, int64(number),
 		&gl.ApproveMergeRequestOptions{SHA: new(headSHA)}, gl.WithContext(ctx))

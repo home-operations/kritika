@@ -483,14 +483,15 @@ func TestApprovals(t *testing.T) {
 		t.Fatalf("ChangesRequested = %v, %v", requested, err)
 	}
 	// The bot's approval of head1 was dismissed, so a new one is posted.
-	posted, err := c.Approve(t.Context(), "acme", "widgets", 7, "head1", "LGTM")
+	posted, err := c.Approve(t.Context(), "acme", "widgets", 7, "head1")
 	if err != nil || !posted {
 		t.Fatalf("Approve = %v, %v", posted, err)
 	}
-	if body := f.body("POST " + repoAPI + "/pulls/7/reviews"); body["event"] != "APPROVED" || body["body"] != "LGTM" || body["commit_id"] != "head1" {
+	body := f.body("POST " + repoAPI + "/pulls/7/reviews")
+	if _, has := body["body"]; has || body["event"] != "APPROVED" || body["commit_id"] != "head1" {
 		t.Fatalf("approval request = %v", body)
 	}
-	if posted, _ := c.Approve(t.Context(), "acme", "widgets", 7, "old", "LGTM"); posted {
+	if posted, _ := c.Approve(t.Context(), "acme", "widgets", 7, "old"); posted {
 		t.Fatal("an approval of the head that stands must not be repeated")
 	}
 	// The one standing approval, of old, is dismissed. The dismissed one is

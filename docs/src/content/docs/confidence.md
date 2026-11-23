@@ -131,6 +131,20 @@ its one line. A
 repository's `.kritika.yaml` can turn approvals on or off, and add
 conditions of its own.
 
+The approval on the forge has no text of its own. A withdrawal gives its
+reason on the forge. After kritika approves a pull request, what a later
+head that qualifies gets depends on the forge:
+
+| Forge             | A head that qualifies after an earlier approval                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GitHub            | The earlier approval stays while GitHub counts the pull request as approved. If the base branch dismisses stale approvals or requires approval of the most recent push, kritika approves the new head. |
+| GitLab            | The earlier approval stays if the project keeps approvals after a push. Otherwise kritika approves the new head.                                                                                       |
+| Forgejo and Gitea | kritika approves each head.                                                                                                                                                                            |
+
+An approval that stays names an older commit. The commit status is on the
+head that kritika last judged, and the summary names the last reviewed
+commit.
+
 ### Only some pull requests
 
 These configuration keys narrow scoring, the gate and approval to the pull

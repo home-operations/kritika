@@ -218,10 +218,12 @@ type Client interface {
 	// posted but CreateReview failed to read its comments back, it returns
 	// ids, all 0, and the error.
 	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) (ids []int64, err error)
-	// Approve posts an approving review of headSHA with body, unless the
-	// bot's approval of that head already stands, and reports whether one
-	// was posted.
-	Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error)
+	// Approve posts an approving review of headSHA and reports whether it
+	// posted one. It posts none where the bot's approval of that head
+	// stands, nor where one of an older head stands and the forge still
+	// counts it. The review has no body: the summary comment gives the
+	// verdict behind it.
+	Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error)
 	// ChangesRequested reports whether a reviewer other than the bot
 	// stands as requesting changes on the pull request.
 	ChangesRequested(ctx context.Context, owner, repo string, number int) (bool, error)

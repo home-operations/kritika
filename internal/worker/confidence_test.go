@@ -81,6 +81,10 @@ func TestSkipVerdict(t *testing.T) {
 			wantState: forge.StatusFailure, wantDesc: "confidence 2/5, below 5, skipped (why)"},
 		{name: "a carried score that does not, not gated", carried: &review.Confidence{Score: 2, Threshold: 5},
 			wantState: forge.StatusSuccess, wantDesc: "confidence 2/5, skipped (why)"},
+		{name: "a carried risk is given with a score that passes", carried: &review.Confidence{Score: 5, Threshold: 5, Risk: review.RiskMedium},
+			gate: true, wantState: forge.StatusSuccess, wantDesc: "confidence 5/5, medium risk, skipped (why)"},
+		{name: "a carried risk is given with a score that does not", carried: &review.Confidence{Score: 2, Threshold: 5, Risk: review.RiskHigh},
+			gate: true, wantState: forge.StatusFailure, wantDesc: "confidence 2/5, below 5, high risk, skipped (why)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -114,7 +118,7 @@ func TestCarryApproval(t *testing.T) {
 		{name: "nothing carried", settings: settings(true, 4)},
 		{name: "approvals off", settings: settings(false, 4), carried: carried(4)},
 		{name: "a score that still passes approves the new head", settings: settings(true, 4), carried: carried(4),
-			approved: "o/r#7@abcdef1234: kritika: confidence 4/5 with low risk at abcdef1."},
+			approved: "o/r#7@abcdef1234"},
 		{name: "a threshold raised since withdraws", settings: settings(true, 5), carried: carried(5),
 			dismissed: "o/r#7: kritika: confidence 4/5 is below the threshold of 5 at abcdef1."},
 		{name: "nothing carried for a pull request the repository left unscored withdraws",

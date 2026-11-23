@@ -100,13 +100,12 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 			ok, why = false, "a reviewer has requested changes"
 		}
 	}
-	at := fmt.Sprintf("kritika: %s at %s.", why, review.ShortSHA(p.pr.headSHA))
 	switch {
 	case ok && !current:
 		p.logger.Info("pull request not approved: its head moved during the review")
 		return &review.Approval{Reason: "the head moved during the review"}
 	case ok:
-		posted, err := p.client.Approve(ctx, owner, repo, p.pr.number, p.pr.headSHA, at)
+		posted, err := p.client.Approve(ctx, owner, repo, p.pr.number, p.pr.headSHA)
 		if err != nil {
 			p.logger.Warn("pull request not approved", "error", err)
 			return &review.Approval{Reason: "the approval could not be posted"}
@@ -119,6 +118,7 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 		}
 		return &review.Approval{Approved: true, Reason: why}
 	default:
+		at := fmt.Sprintf("kritika: %s at %s.", why, review.ShortSHA(p.pr.headSHA))
 		n, err := p.client.DismissApprovals(ctx, owner, repo, p.pr.number, at)
 		if err != nil {
 			p.logger.Warn("approval not dismissed", "error", err)

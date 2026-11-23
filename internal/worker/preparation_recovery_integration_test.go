@@ -164,7 +164,7 @@ func TestPreparationUnchangedPatchConfidence(t *testing.T) {
 		name, confidence string
 		fails            bool
 	}{
-		{"timeout after commit still reports carried score", `{"score":4,"threshold":3}`, false},
+		{"timeout after commit still reports carried score and risk", `{"score":4,"threshold":3,"risk":"medium"}`, false},
 		{"confidence read failure rolls back skip", `{"score":"invalid"}`, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -199,7 +199,7 @@ func TestPreparationUnchangedPatchConfidence(t *testing.T) {
 					t.Fatalf("failed confidence read committed %s", status)
 				}
 			} else {
-				if status != store.ReviewSkipped || h.lf.lastStatus() != "failure: kritika: confidence 4/5, below 5, skipped (patch unchanged since the last review)" {
+				if status != store.ReviewSkipped || h.lf.lastStatus() != "failure: kritika: confidence 4/5, below 5, medium risk, skipped (patch unchanged since the last review)" {
 					t.Fatalf("review=%s commit=%s", status, h.lf.lastStatus())
 				}
 			}
