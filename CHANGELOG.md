@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.125](https://github.com/home-operations/kritika/compare/0.0.124...0.0.125) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **followup:** drop the hourly follow-up limit ([#1536](https://github.com/home-operations/kritika/issues/1536))
+* **providers:** share an instance provider's concurrency across accounts ([#1533](https://github.com/home-operations/kritika/issues/1533))
+
+### Features
+
+* **followup:** drop the hourly follow-up limit ([#1536](https://github.com/home-operations/kritika/issues/1536)) ([57bbf99](https://github.com/home-operations/kritika/commit/57bbf993a5a3e7d4053d14a39384b6897f9d26db))
+* **providers:** share an instance provider's concurrency across accounts ([#1533](https://github.com/home-operations/kritika/issues/1533)) ([402fa65](https://github.com/home-operations/kritika/commit/402fa6583e6e4d0b38301247aa842309fd831181))
+* **review:** load comment badge images from a separate public URL ([#1528](https://github.com/home-operations/kritika/issues/1528)) ([6a085c5](https://github.com/home-operations/kritika/commit/6a085c5003a9e15018653e2a984e786db87fb6b3))
+
+
+### Miscellaneous Chores
+
+* **go:** update module github.com/bmatcuk/doublestar/v4 (v4.10.4 → v4.10.6) ([#1525](https://github.com/home-operations/kritika/issues/1525)) ([06c43d3](https://github.com/home-operations/kritika/commit/06c43d34477e58c3e82353f50d2ef936cce42acc))
+* **go:** update module github.com/bmatcuk/doublestar/v4 (v4.10.6 → v4.10.7) ([#1529](https://github.com/home-operations/kritika/issues/1529)) ([3cd2259](https://github.com/home-operations/kritika/commit/3cd2259a0c56fc0681702a44e00041c9720d3b3b))
+* **go:** update module github.com/sigstore/sigstore-go (v1.4.0 → v1.4.1) ([#1531](https://github.com/home-operations/kritika/issues/1531)) ([1e26e5c](https://github.com/home-operations/kritika/commit/1e26e5c878b3ab1ec25dea0eac3e7093b23e3e20))
+* **mise:** update tool pnpm (12.21.0 → 12.22.0) ([#1535](https://github.com/home-operations/kritika/issues/1535)) ([f66f257](https://github.com/home-operations/kritika/commit/f66f257e8e2817f45e9bbcce3f7bd9fcfeb3c21b))
+* **npm:** update dependency bits-ui (2.21.0 → 2.22.0) ([#1532](https://github.com/home-operations/kritika/issues/1532)) ([6cf0abb](https://github.com/home-operations/kritika/commit/6cf0abb16cb50f80e732e10ccad45ffff99434e5))
+
 ## [0.0.124](https://github.com/home-operations/kritika/compare/0.0.123...0.0.124) (2026-11-22)
 
 
