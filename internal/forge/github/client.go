@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"iter"
@@ -315,9 +316,11 @@ func (c *Client) CreateReview(
 }
 
 // Approve implements forge.Client. GitHub keeps every review that a user
-// submits, so a re-run on the same head will otherwise stack a second
-// approval. The bot's reviews are listed first, and one already approving the
-// head stands as it is.
+// submits, so an approval of each head stacks up on a pull request that is
+// pushed to often. The bot's reviews are listed first, and one already
+// approving the head stands as it is. So does one of an older head while
+// GitHub counts it (see approvalCounts). Where the base branch dismisses
+// stale approvals none stands after a push, so the head gets a new approval.
 func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error) {
 	approvals, err := c.approvals(ctx, owner, repo, number)
 	if err != nil {
@@ -326,11 +329,73 @@ func (c *Client) Approve(ctx context.Context, owner, repo string, number int, he
 	if slices.ContainsFunc(approvals, func(r *gh.PullRequestReview) bool { return r.GetCommitID() == headSHA }) {
 		return false, nil
 	}
+	if len(approvals) > 0 {
+		counts, err := c.approvalCounts(ctx, owner, repo, number)
+		if err != nil || counts {
+			return false, err
+		}
+	}
 	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("APPROVE")}
 	if _, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req); err != nil {
 		return false, fmt.Errorf("github: approve #%d: %w", number, err)
 	}
 	return true, nil
+}
+
+// stateApproved is how GitHub names an approving review, and a pull request
+// that its reviews approve.
+const stateApproved = "APPROVED"
+
+const reviewDecisionQuery = `query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewDecision baseRefName } }
+}`
+
+// approvalCounts is whether GitHub still counts an approval of an older head
+// of the pull request. Its review decision must say approved: where a
+// required approval must be of the last push, an older one leaves the
+// decision at a review required. With no approval required the decision does
+// not reflect that rule, so a ruleset of the base branch that wants the last
+// push approved also means that the older approval does not count. GitHub
+// refuses the rules of a private repository whose plan has no rulesets, and
+// such a repository has none.
+func (c *Client) approvalCounts(ctx context.Context, owner, repo string, number int) (bool, error) {
+	var out struct {
+		Repository struct {
+			PullRequest struct {
+				ReviewDecision string `json:"reviewDecision"`
+				BaseRefName    string `json:"baseRefName"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	}
+	vars := map[string]any{"owner": owner, "repo": repo, "number": number}
+	if err := c.graphql(ctx, reviewDecisionQuery, vars, &out); err != nil {
+		return false, fmt.Errorf("github: read the review decision of #%d: %w", number, err)
+	}
+	pr := out.Repository.PullRequest
+	if pr.ReviewDecision != stateApproved {
+		return false, nil
+	}
+	for rule, err := range c.api.Repositories.ListRulesForBranchIter(ctx, owner, repo, pr.BaseRefName, &gh.ListOptions{PerPage: 100}) {
+		if noRulesets(err) {
+			break
+		}
+		if err != nil {
+			return false, fmt.Errorf("github: list the rules of %s for #%d: %w", pr.BaseRefName, number, err)
+		}
+		if r, ok := rule.(*gh.PullRequestBranchRule); ok && r.Parameters.RequireLastPushApproval {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// noRulesets is whether err is GitHub's refusal to list rules for a
+// repository whose plan has none: a 403 that tells the owner to upgrade, as
+// in "Upgrade to GitHub Pro or make this repository public to enable this
+// feature."
+func noRulesets(err error) bool {
+	e, ok := errors.AsType[*gh.ErrorResponse](err)
+	return ok && e.Response != nil && e.Response.StatusCode == http.StatusForbidden && strings.HasPrefix(e.Message, "Upgrade to GitHub ")
 }
 
 // DismissApprovals implements forge.Client.
@@ -363,7 +428,7 @@ func (c *Client) ChangesRequested(ctx context.Context, owner, repo string, numbe
 			return false, fmt.Errorf("github: list reviews on #%d: %w", number, err)
 		}
 		switch state := r.GetState(); state {
-		case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
+		case stateApproved, "CHANGES_REQUESTED", "DISMISSED":
 			stands[r.GetUser().GetLogin()] = state
 		}
 	}
@@ -388,7 +453,7 @@ func (c *Client) approvals(ctx context.Context, owner, repo string, number int) 
 		if err != nil {
 			return nil, fmt.Errorf("github: list reviews on #%d: %w", number, err)
 		}
-		if r.GetUser().GetLogin() == login && r.GetState() == "APPROVED" {
+		if r.GetUser().GetLogin() == login && r.GetState() == stateApproved {
 			out = append(out, r)
 		}
 	}

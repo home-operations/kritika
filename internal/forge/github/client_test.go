@@ -1,9 +1,11 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -671,34 +673,100 @@ func TestChangesRequested(t *testing.T) {
 	}
 }
 
-func TestApproveAndDismissApprovals(t *testing.T) {
+// TestApprove: the bot approves a head once, and no head again while an
+// approval of its own stands that GitHub still counts.
+func TestApprove(t *testing.T) {
+	const others = `{"id":1,"user":{"login":"kritika[bot]"},"state":"COMMENTED","commit_id":"abc"},
+		{"id":2,"user":{"login":"human"},"state":"APPROVED","commit_id":"abc"},
+		{"id":3,"user":{"login":"kritika[bot]"},"state":"DISMISSED","commit_id":"old"}`
+	const standing = others + `,{"id":4,"user":{"login":"kritika[bot]"},"state":"APPROVED","commit_id":"old"}`
+	decision := func(d string) string {
+		return `{"data":{"repository":{"pullRequest":{"reviewDecision":` + d + `,"baseRefName":"main"}}}}`
+	}
+	const approved, noRules = `"APPROVED"`, `[]`
+	lastPush := func(count int) string {
+		return fmt.Sprintf(`[{"type":"deletion"},{"type":"pull_request","parameters":{"required_approving_review_count":%d,"require_last_push_approval":true}}]`, count)
+	}
+	tests := []struct {
+		name        string
+		reviews     string
+		head        string
+		decision    string
+		rules       string
+		rulesStatus int
+		asked       bool
+		listed      bool
+		posted      bool
+		wantErr     bool
+	}{
+		// A human's approval of the head, and the bot's dismissed and
+		// comment reviews, are not approvals of the bot's that stand.
+		{name: "no approval of the bot's stands", reviews: others, head: "abc", posted: true},
+		{name: "the head is approved already", reviews: standing, head: "old"},
+		{name: "an older approval that GitHub counts stands for the head", reviews: standing, head: "abc",
+			decision: decision(approved), rules: noRules, asked: true, listed: true},
+		{name: "an older approval that GitHub no longer counts is renewed", reviews: standing, head: "abc",
+			decision: decision(`"REVIEW_REQUIRED"`), asked: true, posted: true},
+		{name: "a pull request with no decision is approved again", reviews: standing, head: "abc",
+			decision: decision(`null`), asked: true, posted: true},
+		{name: "a decision that cannot be read approves nothing", reviews: standing, head: "abc",
+			decision: `{"errors":[{"message":"forbidden"}]}`, asked: true, wantErr: true},
+		{name: "a ruleset that wants the last push approved renews an approval the decision counts", reviews: standing, head: "abc",
+			decision: decision(approved), rules: lastPush(0), asked: true, listed: true, posted: true},
+		{name: "a ruleset with other pull request rules lets the approval stand", reviews: standing, head: "abc",
+			decision: decision(approved), rules: `[{"type":"pull_request","parameters":{"required_approving_review_count":1}}]`,
+			asked: true, listed: true},
+		{name: "a plan without rulesets has none", reviews: standing, head: "abc", decision: decision(approved),
+			rules: `{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}`, rulesStatus: http.StatusForbidden,
+			asked: true, listed: true},
+		{name: "another refusal of the rules approves nothing", reviews: standing, head: "abc", decision: decision(approved),
+			rules: `{"message":"Resource not accessible by integration"}`, rulesStatus: http.StatusForbidden,
+			asked: true, listed: true, wantErr: true},
+		{name: "rules that cannot be read approve nothing", reviews: standing, head: "abc", decision: decision(approved),
+			rules: `{"message":"boom"}`, rulesStatus: http.StatusInternalServerError, asked: true, listed: true, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			c.login = "kritika[bot]"
+			f.reply("GET /api/v3/repos/o/r/pulls/7/reviews", 200, "["+tt.reviews+"]")
+			f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", 200, `{"id":5}`)
+			f.reply("POST /api/graphql", 200, tt.decision)
+			f.reply("GET /api/v3/repos/o/r/rules/branches/main", cmp.Or(tt.rulesStatus, http.StatusOK), tt.rules)
+
+			posted, err := c.Approve(t.Context(), "o", "r", 7, tt.head)
+			if posted != tt.posted || (err != nil) != tt.wantErr {
+				t.Fatalf("Approve = %v, %v; want %v, error %v", posted, err, tt.posted, tt.wantErr)
+			}
+			if asked := f.saw("POST /api/graphql"); asked != tt.asked {
+				t.Fatalf("review decision read = %v, want %v", asked, tt.asked)
+			}
+			if listed := f.saw("GET /api/v3/repos/o/r/rules/branches/main"); listed != tt.listed {
+				t.Fatalf("rules listed = %v, want %v", listed, tt.listed)
+			}
+			review, sent := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"].(map[string]any)
+			if sent != tt.posted {
+				t.Fatalf("review sent = %v, want %v", sent, tt.posted)
+			}
+			if !sent {
+				return
+			}
+			if _, has := review["body"]; has || review["event"] != "APPROVE" || review["commit_id"] != tt.head {
+				t.Fatalf("review = %v; must be an APPROVE review pinned to the head, with no body", review)
+			}
+		})
+	}
+}
+
+func TestDismissApprovals(t *testing.T) {
 	f, c := newFakeAPI(t)
 	c.login = "kritika[bot]"
 	f.reply("GET /api/v3/repos/o/r/pulls/7/reviews", 200, `[
-		{"id":1,"user":{"login":"kritika[bot]"},"state":"COMMENTED","commit_id":"abc"},
 		{"id":2,"user":{"login":"human"},"state":"APPROVED","commit_id":"abc"},
 		{"id":3,"user":{"login":"kritika[bot]"},"state":"DISMISSED","commit_id":"old"},
 		{"id":4,"user":{"login":"kritika[bot]"},"state":"APPROVED","commit_id":"old"}]`)
-	f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", 200, `{"id":5}`)
 	f.reply("PUT /api/v3/repos/o/r/pulls/7/reviews/4/dismissals", 200, `{"id":4,"state":"DISMISSED"}`)
 
-	posted, err := c.Approve(t.Context(), "o", "r", 7, "abc")
-	if err != nil || !posted {
-		t.Fatalf("Approve = %v, %v; want an approval of a head the bot has not approved", posted, err)
-	}
-	review := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"].(map[string]any)
-	if _, has := review["body"]; has || review["event"] != "APPROVE" || review["commit_id"] != "abc" {
-		t.Fatalf("review = %v; must be an APPROVE review pinned to the head, with no body", review)
-	}
-	delete(f.bodies, "POST /api/v3/repos/o/r/pulls/7/reviews")
-	// The bot's approval of old stands. A human's of abc, and the bot's
-	// dismissed and comment reviews, do not count.
-	if posted, err := c.Approve(t.Context(), "o", "r", 7, "old"); err != nil || posted {
-		t.Fatalf("Approve = %v, %v; want the standing approval left as it is", posted, err)
-	}
-	if _, ok := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"]; ok {
-		t.Fatal("a head the bot already approved was approved again")
-	}
 	n, err := c.DismissApprovals(t.Context(), "o", "r", 7, "stale")
 	if err != nil || n != 1 {
 		t.Fatalf("DismissApprovals = %d, %v; want the bot's one standing approval dismissed", n, err)
