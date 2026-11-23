@@ -114,7 +114,7 @@ func TestCarryApproval(t *testing.T) {
 		{name: "nothing carried", settings: settings(true, 4)},
 		{name: "approvals off", settings: settings(false, 4), carried: carried(4)},
 		{name: "a score that still passes approves the new head", settings: settings(true, 4), carried: carried(4),
-			approved: "o/r#7@abcdef1234: kritika: confidence 4/5 with low risk at abcdef1."},
+			approved: "o/r#7@abcdef1234"},
 		{name: "a threshold raised since withdraws", settings: settings(true, 5), carried: carried(5),
 			dismissed: "o/r#7: kritika: confidence 4/5 is below the threshold of 5 at abcdef1."},
 		{name: "nothing carried for a pull request the repository left unscored withdraws",

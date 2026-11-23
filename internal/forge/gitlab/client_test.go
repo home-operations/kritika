@@ -462,14 +462,14 @@ func TestApprovals(t *testing.T) {
 	f.json("POST", repoAPI+"/merge_requests/4/notes", 201, map[string]any{"id": 30})
 	c := f.client(t)
 	ctx := context.Background()
-	if posted, err := c.Approve(ctx, "acme", "widgets", 4, "head1", "Looks good."); err != nil || !posted {
+	if posted, err := c.Approve(ctx, "acme", "widgets", 4, "head1"); err != nil || !posted {
 		t.Fatalf("Approve = %v, %v", posted, err)
 	}
-	if f.body("POST "+repoAPI+"/merge_requests/4/approve", 0)["sha"] != "head1" || f.body("POST "+repoAPI+"/merge_requests/4/notes", 0)["body"] != "Looks good." {
-		t.Error("the approval names the head and the body is a note")
+	if f.body("POST "+repoAPI+"/merge_requests/4/approve", 0)["sha"] != "head1" || f.called("POST "+repoAPI+"/merge_requests/4/notes") != 0 {
+		t.Error("the approval names the head and posts no note")
 	}
 	approved = []map[string]any{{"user": map[string]any{"username": "kritika"}}}
-	if posted, err := c.Approve(ctx, "acme", "widgets", 4, "head1", ""); err != nil || posted {
+	if posted, err := c.Approve(ctx, "acme", "widgets", 4, "head1"); err != nil || posted {
 		t.Fatalf("a standing approval is kept: %v, %v", posted, err)
 	}
 	if n, err := c.DismissApprovals(ctx, "acme", "widgets", 4, "Stale."); err != nil || n != 1 || f.called("POST "+repoAPI+"/merge_requests/4/unapprove") != 1 {

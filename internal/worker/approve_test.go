@@ -22,8 +22,8 @@ type approvalForge struct {
 	err, reviewsErr error
 }
 
-func (f *approvalForge) Approve(_ context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
-	f.approved = owner + "/" + repo + "#" + string(rune('0'+number)) + "@" + headSHA + ": " + body
+func (f *approvalForge) Approve(_ context.Context, owner, repo string, number int, headSHA string) (bool, error) {
+	f.approved = owner + "/" + repo + "#" + string(rune('0'+number)) + "@" + headSHA
 	return f.err == nil, f.err
 }
 
@@ -42,7 +42,7 @@ func (f *approvalForge) DismissApprovals(_ context.Context, owner, repo string, 
 func TestApprove(t *testing.T) {
 	t.Parallel()
 	scored := configfile.Confidence{Model: "p/judge", Threshold: 4, Risk: review.RiskMedium}
-	const approves, withdraws = "o/r#7@abcdef1234: kritika: ", "o/r#7: kritika: "
+	const approves, withdraws = "o/r#7@abcdef1234", "o/r#7: kritika: "
 	tests := []struct {
 		name                string
 		counts              review.Counts
@@ -56,20 +56,20 @@ func TestApprove(t *testing.T) {
 		approved, dismissed string
 		outcome             review.Approval
 	}{
-		{name: "nothing found approves", approved: approves + "nothing at P0 or P1 found at abcdef1.",
+		{name: "nothing found approves", approved: approves,
 			outcome: review.Approval{Approved: true, Reason: "nothing at P0 or P1 found"}},
-		{name: "nits alone approve", counts: review.Counts{P2: 3}, approved: approves + "nothing at P0 or P1 found at abcdef1.",
+		{name: "nits alone approve", counts: review.Counts{P2: 3}, approved: approves,
 			outcome: review.Approval{Approved: true, Reason: "nothing at P0 or P1 found"}},
 		{name: "an important finding withdraws", counts: review.Counts{P1: 1, P2: 1},
 			dismissed: withdraws + "0 P0 and 1 P1 finding(s) at abcdef1.", outcome: review.Approval{Reason: "0 P0 and 1 P1 finding(s)"}},
 		{name: "a blocking finding withdraws", counts: review.Counts{P0: 2},
 			dismissed: withdraws + "2 P0 and 0 P1 finding(s) at abcdef1.", outcome: review.Approval{Reason: "2 P0 and 0 P1 finding(s)"}},
 		{name: "a forge error is logged, not raised, and the summary says so", err: errors.New("forbidden"),
-			approved: approves + "nothing at P0 or P1 found at abcdef1.", outcome: review.Approval{Reason: "the approval could not be posted"}},
+			approved: approves, outcome: review.Approval{Reason: "the approval could not be posted"}},
 		{name: "a score and a risk within bounds approve", want: scored,
 			confidence: &review.Confidence{Score: 4, Threshold: 4, Risk: review.RiskMedium},
 			// The confidence line states the score and the risk already.
-			approved: approves + "confidence 4/5 with medium risk at abcdef1.", outcome: review.Approval{Approved: true}},
+			approved: approves, outcome: review.Approval{Approved: true}},
 		{name: "a score under the threshold withdraws, whatever was found", want: scored,
 			confidence: &review.Confidence{Score: 3, Threshold: 4, Risk: review.RiskLow},
 			dismissed:  withdraws + "confidence 3/5 is below the threshold of 4 at abcdef1.", outcome: review.Approval{Reason: "confidence 3/5 is below the threshold of 4"}},

@@ -682,18 +682,18 @@ func TestApproveAndDismissApprovals(t *testing.T) {
 	f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", 200, `{"id":5}`)
 	f.reply("PUT /api/v3/repos/o/r/pulls/7/reviews/4/dismissals", 200, `{"id":4,"state":"DISMISSED"}`)
 
-	posted, err := c.Approve(t.Context(), "o", "r", 7, "abc", "clean")
+	posted, err := c.Approve(t.Context(), "o", "r", 7, "abc")
 	if err != nil || !posted {
 		t.Fatalf("Approve = %v, %v; want an approval of a head the bot has not approved", posted, err)
 	}
 	review := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"].(map[string]any)
-	if review["event"] != "APPROVE" || review["commit_id"] != "abc" || review["body"] != "clean" {
-		t.Fatalf("review body = %v; must be an APPROVE review pinned to the head", review)
+	if _, has := review["body"]; has || review["event"] != "APPROVE" || review["commit_id"] != "abc" {
+		t.Fatalf("review = %v; must be an APPROVE review pinned to the head, with no body", review)
 	}
 	delete(f.bodies, "POST /api/v3/repos/o/r/pulls/7/reviews")
 	// The bot's approval of old stands. A human's of abc, and the bot's
 	// dismissed and comment reviews, do not count.
-	if posted, err := c.Approve(t.Context(), "o", "r", 7, "old", "clean"); err != nil || posted {
+	if posted, err := c.Approve(t.Context(), "o", "r", 7, "old"); err != nil || posted {
 		t.Fatalf("Approve = %v, %v; want the standing approval left as it is", posted, err)
 	}
 	if _, ok := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"]; ok {

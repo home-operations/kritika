@@ -534,7 +534,7 @@ func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ strin
 }
 
 // Approve records the approved head. A head approved once stands.
-func (l *localForge) Approve(_ context.Context, _, _ string, _ int, headSHA, _ string) (bool, error) {
+func (l *localForge) Approve(_ context.Context, _, _ string, _ int, headSHA string) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if slices.Contains(l.approvals, headSHA) {

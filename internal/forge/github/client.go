@@ -318,7 +318,7 @@ func (c *Client) CreateReview(
 // submits, so a re-run on the same head will otherwise stack a second
 // approval. The bot's reviews are listed first, and one already approving the
 // head stands as it is.
-func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
+func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error) {
 	approvals, err := c.approvals(ctx, owner, repo, number)
 	if err != nil {
 		return false, err
@@ -326,7 +326,7 @@ func (c *Client) Approve(ctx context.Context, owner, repo string, number int, he
 	if slices.ContainsFunc(approvals, func(r *gh.PullRequestReview) bool { return r.GetCommitID() == headSHA }) {
 		return false, nil
 	}
-	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("APPROVE"), Body: new(body)}
+	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("APPROVE")}
 	if _, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req); err != nil {
 		return false, fmt.Errorf("github: approve #%d: %w", number, err)
 	}

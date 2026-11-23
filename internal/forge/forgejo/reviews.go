@@ -59,7 +59,7 @@ func (c *Client) CreateReview(
 
 // Approve implements forge.Client. Forgejo keeps every review submitted,
 // so one of the bot's already approving the head stands as it is.
-func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
+func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error) {
 	approvals, err := c.approvals(ctx, owner, repo, number)
 	if err != nil {
 		return false, err
@@ -67,7 +67,7 @@ func (c *Client) Approve(ctx context.Context, owner, repo string, number int, he
 	if slices.ContainsFunc(approvals, func(r pullReview) bool { return r.CommitID == headSHA }) {
 		return false, nil
 	}
-	req := createReview{CommitID: headSHA, Event: stateApproved, Body: body}
+	req := createReview{CommitID: headSHA, Event: stateApproved}
 	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(owner, repo), number), req, nil); err != nil {
 		return false, fmt.Errorf("forgejo: approve #%d: %w", number, err)
 	}

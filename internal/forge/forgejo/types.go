@@ -143,7 +143,6 @@ type createReviewComment struct {
 type createReview struct {
 	CommitID string                `json:"commit_id,omitempty"`
 	Event    string                `json:"event"`
-	Body     string                `json:"body,omitempty"`
 	Comments []createReviewComment `json:"comments,omitempty"`
 }
 
