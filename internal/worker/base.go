@@ -117,11 +117,11 @@ func detachUnlessFenced(ctx context.Context) (context.Context, context.CancelFun
 	}
 }
 
-// withLease runs fn while it holds one of the account's slots on key, and
+// withLease runs fn while it holds one of the slots on key for the account, and
 // records the wait. It releases the slot afterward, even when the job's
 // context is canceled.
 func (b *Base) withLease(
-	ctx context.Context, account *configfile.Account, key string, slots int, jobID int64, fn func(ctx context.Context) error,
+	ctx context.Context, account *configfile.Account, key string, slots configfile.Slots, jobID int64, fn func(ctx context.Context) error,
 ) error {
 	waited := time.Now()
 	l, err := b.Store.AcquireLease(ctx, account.ID(), key, slots, jobID)

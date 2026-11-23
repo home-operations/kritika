@@ -175,7 +175,7 @@ func TestExecutionFallbackWaitsForSlot(t *testing.T) {
 	st, file, account, repoID := executionFixture(t)
 	ctx := t.Context()
 	runID := newRunnerRun(t, st, account.ID())
-	holder, err := st.TakeLease(ctx, account.ID(), string(fallbackRef), 1, 99)
+	holder, err := st.TakeLease(ctx, account.ID(), string(fallbackRef), file.Slots(account, fallbackRef), 99)
 	if err != nil || holder == nil {
 		t.Fatalf("TakeLease = %v, %v", holder, err)
 	}

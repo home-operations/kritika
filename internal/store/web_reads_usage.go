@@ -275,19 +275,43 @@ func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 	return out, nil
 }
 
-// ReadHeldSlots counts, for each model the account has ever leased a slot
-// of, the slots a live lease holds now.
-func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[string]int, error) {
-	rows, err := tx.Query(ctx, `SELECT model_key, count(*) FILTER (WHERE job_id IS NOT NULL AND expires_at >= now())
-		FROM model_leases GROUP BY model_key`)
+// SlotPool names the slots of a model: those that every account shares, or
+// the account's own.
+type SlotPool struct {
+	Model  string
+	Shared bool
+}
+
+// HeldSlots are the slots of a pool that a live lease holds now: Held by
+// any account, and Own of them by the account that reads. Waits is whether
+// a review of that account waits for a slot of the model.
+type HeldSlots struct {
+	Held, Own int
+	Waits     bool
+}
+
+// ReadHeldSlots counts the slots that a live lease holds now, for each pool
+// that the account can take a slot of and that a slot was ever leased of.
+// The shared slots of a model and the account's own are counted apart: a
+// model has both while its provider moves between the instance and the
+// account.
+func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[SlotPool]HeldSlots, error) {
+	rows, err := tx.Query(ctx, `SELECT l.model_key, l.scope = '`+sharedScope+`',
+			count(*) FILTER (WHERE l.job_id IS NOT NULL AND l.expires_at >= now()),
+			count(*) FILTER (WHERE l.job_id IS NOT NULL AND l.expires_at >= now()
+				AND l.account_id = NULLIF(current_setting('app.account_id', true), '')::uuid),
+			EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'review' AND j.state IN ('available', 'scheduled', 'running')
+				AND j.args->>'account_id' = NULLIF(current_setting('app.account_id', true), '')
+				AND j.metadata->>'`+SlotWaitKey+`' = l.model_key)
+		FROM model_leases l GROUP BY l.model_key, l.scope = '`+sharedScope+`'`)
 	if err != nil {
 		return nil, fmt.Errorf("store: read held slots: %w", err)
 	}
-	out := map[string]int{}
-	var key string
-	var held int
-	if _, err := pgx.ForEachRow(rows, []any{&key, &held}, func() error {
-		out[key] = held
+	out := map[SlotPool]HeldSlots{}
+	var pool SlotPool
+	var held HeldSlots
+	if _, err := pgx.ForEachRow(rows, []any{&pool.Model, &pool.Shared, &held.Held, &held.Own, &held.Waits}, func() error {
+		out[pool] = held
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("store: read held slots: %w", err)

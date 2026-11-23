@@ -66,7 +66,7 @@ func TestNewReviewSlots(t *testing.T) {
 			limits := map[string]int{}
 			models := make([]string, 0, len(s.pools))
 			for _, pool := range s.pools {
-				pools[pool.model], limits[pool.model] = pool.reviewers, pool.limit
+				pools[pool.model], limits[pool.model] = pool.reviewers, pool.slots.Limit
 				models = append(models, pool.model)
 			}
 			if !maps.EqualFunc(pools, tt.pools, slices.Equal) || !maps.Equal(limits, tt.limits) {

@@ -94,15 +94,15 @@ func TestProviderConcurrency(t *testing.T) {
 	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != DefaultConcurrency {
 		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, DefaultConcurrency)
 	}
-	withConcurrency := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, concurrency: 8 }", 1)
+	withConcurrency := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, concurrency: 5 }", 1)
 	f, err = Parse([]byte(withConcurrency))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != 8 {
-		t.Fatalf("concurrency = %d, want 8", p.Concurrency)
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != 5 {
+		t.Fatalf("concurrency = %d, want 5", p.Concurrency)
 	}
-	if _, err := Parse([]byte(strings.Replace(withConcurrency, "concurrency: 8", "concurrency: -1", 1))); err == nil ||
+	if _, err := Parse([]byte(strings.Replace(withConcurrency, "concurrency: 5", "concurrency: -1", 1))); err == nil ||
 		!strings.Contains(err.Error(), "providers.openrouter.concurrency must be positive") {
 		t.Fatalf("Parse with negative concurrency = %v", err)
 	}

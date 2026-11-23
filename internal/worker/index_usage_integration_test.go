@@ -132,7 +132,7 @@ func TestIndexBatchUsage(t *testing.T) {
 			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler), Metrics: metrics.New(reg)}
 			w := Index{Base: base, batch: 1}
 			_, _, err = w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
-				file.Embedding, "abc", run, runner, nil, 1)
+				file.Embedding, "abc", run, runner, nil, configfile.Slots{Limit: 1})
 			if (err != nil) != tt.wantError {
 				t.Fatalf("embed error = %v, want error %v", err, tt.wantError)
 			}
@@ -285,7 +285,7 @@ func TestIndexReusesVectors(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, active, 1); err != nil {
+		if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, active, configfile.Slots{Limit: 1}); err != nil {
 			t.Fatalf("embed: %v", err)
 		}
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -451,7 +451,7 @@ func TestIndexFullBuildYieldsToAForcedRebuild(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, "one", old, oldRunner, nil, 1); err != nil {
+	if _, _, err := w.embed(ctx, job, account, embed, file.Embedding, "one", old, oldRunner, nil, configfile.Slots{Limit: 1}); err != nil {
 		t.Fatalf("first build: %v", err)
 	}
 	var run, runner string
@@ -486,7 +486,7 @@ func TestIndexFullBuildYieldsToAForcedRebuild(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	_, _, err = w.embed(ctx, job, account, embed, file.Embedding, "two", run, runner, &store.Generation{ID: old}, 1)
+	_, _, err = w.embed(ctx, job, account, embed, file.Embedding, "two", run, runner, &store.Generation{ID: old}, configfile.Slots{Limit: 1})
 	if !errors.Is(err, store.ErrGenerationChanged) {
 		t.Fatalf("embed over a forced rebuild = %v, want store.ErrGenerationChanged", err)
 	}

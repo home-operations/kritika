@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -477,6 +478,11 @@ func listRepos(t *testing.T, s *Store, account string, names ...string) {
 	}
 }
 
+// own is n slots of an account's own, and shared n that every account takes
+// from.
+func own(n int) configfile.Slots    { return configfile.Slots{Limit: n} }
+func shared(n int) configfile.Slots { return configfile.Slots{Limit: n, Shared: true} }
+
 func accountID(t *testing.T, s *Store, name string) string {
 	t.Helper()
 	var id string
@@ -547,11 +553,11 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 
 	t.Run("application role cannot insert into another account", func(t *testing.T) {
 		err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot) VALUES ($1, 'p/m', 0)`, beta)
+			_, err := tx.Exec(ctx, `INSERT INTO model_leases (scope, model_key, slot) VALUES ($1::uuid::text, 'p/m', 0)`, beta)
 			return err
 		})
-		if err == nil {
-			t.Fatal("insert with a foreign account_id must fail the WITH CHECK policy")
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
+			t.Fatalf("insert of another account's slot: err = %v, want the WITH CHECK policy's refusal", err)
 		}
 	})
 

@@ -180,7 +180,7 @@ func (e *Execution) admitFallback(ctx context.Context, fallback Route) (func(), 
 	}
 	key := cmp.Or(e.FallbackKey, string(fallback.Ref))
 	waited := time.Now()
-	lease, err := e.Recorder.Store.AcquireLease(ctx, e.account.ID(), key, fallback.Provider.Concurrency, jobID)
+	lease, err := e.Recorder.Store.AcquireLease(ctx, e.account.ID(), key, e.file.Slots(e.account, fallback.Ref), jobID)
 	if err != nil {
 		return nil, fmt.Errorf("adapter: fallback slot: %w", err)
 	}

@@ -892,7 +892,9 @@ limits, and an account's entry replaces them key by key:
 | `tokensPerMonth` | unlimited | input and output tokens in a calendar month |
 
 How many calls run at once on a model is its provider's
-[`concurrency`](/models/#providers), counted per account.
+[`concurrency`](/models/#concurrency). The accounts share the slots of a
+root provider, and an account's own provider has slots for that account
+alone.
 
 `providers` are its own model keys, which its repositories' models can
 name ([an account's own keys](/models/#an-accounts-own-keys)).

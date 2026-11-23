@@ -35,11 +35,11 @@ type reviewSlots struct {
 	published map[string]int
 }
 
-// slotPool is one model's slots: its limit, the reviewers on it, sorted, and
-// the extra leases held beyond admission's one.
+// slotPool is one model's slots, the reviewers on it, sorted, and the extra
+// leases held beyond admission's one.
 type slotPool struct {
 	model     string
-	limit     int
+	slots     configfile.Slots
 	reviewers []string
 	leases    []*store.Lease
 }
@@ -60,7 +60,7 @@ func newReviewSlots(
 		}
 		pool, ok := byModel[string(model)]
 		if !ok {
-			pool = &slotPool{model: string(model), limit: file.Slots(account, model)}
+			pool = &slotPool{model: string(model), slots: file.Slots(account, model)}
 			byModel[string(model)] = pool
 			s.pools = append(s.pools, pool)
 		}
@@ -110,9 +110,9 @@ func (s *reviewSlots) resize(ctx context.Context, progress store.PartProgress) e
 	}
 	grant := map[string]int{}
 	for _, pool := range s.pools {
-		want := min(max(1, remaining[pool.model]), pool.limit)
+		want := min(max(1, remaining[pool.model]), pool.slots.Limit)
 		if held := len(pool.leases) + 1; held > 1 {
-			owed, err := s.worker.Store.SlotsOwed(ctx, s.accountID, pool.model, pool.limit, s.jobID)
+			owed, err := s.worker.Store.SlotsOwed(ctx, s.accountID, pool.model, pool.slots, s.jobID)
 			if err != nil {
 				s.logger.Warn("waiting reviews not counted; the review keeps its slots", "model", pool.model, "error", err)
 			}
@@ -121,7 +121,7 @@ func (s *reviewSlots) resize(ctx context.Context, progress store.PartProgress) e
 			}
 		}
 		for len(pool.leases)+1 < want {
-			lease, err := s.worker.Store.TakeExtraLease(ctx, s.accountID, pool.model, pool.limit, s.jobID)
+			lease, err := s.worker.Store.TakeExtraLease(ctx, s.accountID, pool.model, pool.slots, s.jobID)
 			if err != nil {
 				s.logger.Warn("extra model slot not taken", "model", pool.model, "error", err)
 				break

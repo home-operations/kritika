@@ -96,9 +96,13 @@ func TestLoadFull(t *testing.T) {
 
 	t.Run("a model's slots are its provider's concurrency", func(t *testing.T) {
 		ho, _ := f.Account(ForgeGitHub, "home-operations")
-		for ref, want := range map[ModelRef]int{"openrouter/openai/gpt-6-sol": 3, "local/claude-sonnet-5": DefaultConcurrency, "nowhere/model": DefaultConcurrency} {
+		for ref, want := range map[ModelRef]Slots{
+			"openrouter/openai/gpt-6-sol": {Limit: 3, Shared: true},
+			"local/claude-sonnet-5":       {Limit: DefaultConcurrency, Shared: true},
+			"nowhere/model":               {Limit: DefaultAccountConcurrency},
+		} {
 			if got := f.Slots(ho, ref); got != want {
-				t.Errorf("Slots(%s) = %d, want %d", ref, got, want)
+				t.Errorf("Slots(%s) = %+v, want %+v", ref, got, want)
 			}
 		}
 		if p, ok := f.Provider(ho, "local"); !ok || p.Concurrency != DefaultConcurrency {

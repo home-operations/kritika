@@ -276,6 +276,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("the MCP endpoint reads through a token", func(t *testing.T) { testMCP(t, e) })
 	t.Run("account B's ids under account A", func(t *testing.T) { testCrossAccountIDs(t, e) })
 	t.Run("me and account lists", func(t *testing.T) { testMeAndAccountLists(t, e) })
+	t.Run("the queue's model slots", func(t *testing.T) { testModelSlots(t, e) })
 	t.Run("a user's settings are their own", func(t *testing.T) { testUserSettings(t, e) })
 	t.Run("account detail shows each connection's last webhook", func(t *testing.T) { testLastWebhook(t, e) })
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })

@@ -19,7 +19,7 @@ import (
 )
 
 // TestIndexUpdateEmbedsBetweenOnboardingBatches: an onboarding build holds
-// the account's indexing slot for one batch's embedding call at a time, and
+// the embedder's indexing slot for one batch's embedding call at a time, and
 // an update of another of the account's repositories that waits for the
 // slot gets it before the build's next batch, not once the build is done.
 func TestIndexUpdateEmbedsBetweenOnboardingBatches(t *testing.T) {
@@ -94,7 +94,9 @@ func TestIndexUpdateEmbedsBetweenOnboardingBatches(t *testing.T) {
 	workers.Go(func() {
 		updated <- worker(embedder("update", nil)).Work(rivertest.WorkContext(ctx, update.queue), updateJob)
 	})
-	// The update waits for the slot that the onboarding build holds.
+	// The update waits for the slot that the onboarding build holds. The
+	// embedder is a provider of the instance, so the wait is of the shared
+	// scope, the empty one.
 	poll := time.NewTicker(10 * time.Millisecond)
 	defer poll.Stop()
 	for {
@@ -103,7 +105,7 @@ func TestIndexUpdateEmbedsBetweenOnboardingBatches(t *testing.T) {
 				(SELECT hashtextextended('kritika-index-wait ' || $1::text || ' ' || $2::text, 0) AS k) w
 			WHERE l.locktype = 'advisory' AND l.mode = 'ShareLock' AND l.granted AND l.objsubid = 1
 				AND l.classid::bigint = (w.k >> 32) & 4294967295 AND l.objid::bigint = w.k & 4294967295)`,
-			onboarding.account.ID(), "embed:"+onboarding.file.Embedding.Model).Scan(&waiting); err != nil {
+			"", "embed:"+onboarding.file.Embedding.Model).Scan(&waiting); err != nil {
 			t.Fatalf("the update's wait for the indexing slot not seen: %v", err)
 		}
 		if waiting {

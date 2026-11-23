@@ -34,11 +34,14 @@ import (
 // embedBatch is how many staged chunks are embedded and inserted at once.
 const embedBatch = 128
 
-// indexSlots is how many of an account's embed slots index runs can hold at
+// indexSlots is how many of the embedder's slots index runs can hold at
 // once: all but one. So a review's similar-code lookup, which takes a slot
 // for one short call, always has one to take, however many index jobs wait
-// for theirs. An account with one slot has none to spare.
-func indexSlots(concurrency int) int { return max(1, concurrency-1) }
+// for theirs. An embedder with one slot has none to spare.
+func indexSlots(slots configfile.Slots) configfile.Slots {
+	slots.Limit = max(1, slots.Limit-1)
+	return slots
+}
 
 // Index works the index queue: one job builds or advances a repository's
 // embedding index to a commit. The runner Job chunks the tree. This worker
@@ -562,7 +565,7 @@ func (w *Index) finish(
 // completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
-	commit, runID, runnerRunID string, active *store.Generation, slots int,
+	commit, runID, runnerRunID string, active *store.Generation, slots configfile.Slots,
 ) (int, store.IndexPack, error) {
 	args := job.Args
 	var pack store.IndexPack

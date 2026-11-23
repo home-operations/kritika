@@ -72,7 +72,7 @@ func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.held {
 				// The provider's concurrency is 1, so one lease holds every slot.
-				l, err := appStore.TakeLease(ctx, account.ID(), model, 1, -1)
+				l, err := appStore.TakeLease(ctx, account.ID(), model, file.Slots(account, model), -1)
 				if err != nil || l == nil {
 					t.Fatalf("TakeLease = %v, %v", l, err)
 				}
@@ -145,7 +145,7 @@ func TestAdmissionWakesNextWaiter(t *testing.T) {
 	review := job("running", staleModel)
 	take := func(model string, jobID int64) *store.Lease {
 		t.Helper()
-		l, err := st.TakeReviewLease(ctx, account.ID(), model, 2, jobID)
+		l, err := st.TakeReviewLease(ctx, account.ID(), model, file.Slots(account, configfile.ModelRef(model)), jobID)
 		if err != nil || l == nil {
 			t.Fatalf("TakeReviewLease = %v, %v", l, err)
 		}

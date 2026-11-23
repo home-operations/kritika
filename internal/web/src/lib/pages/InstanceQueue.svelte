@@ -4,7 +4,8 @@
   import PageHeader from '../components/PageHeader.svelte';
   import QueueHelp from '../components/QueueHelp.svelte';
   // The queue of every account the viewer can read, and the model slots
-  // each account's running reviews hold. Those slots are why a job of it waits.
+  // that running reviews hold: each account's own, and those that every
+  // account shares. Those slots are why a job waits.
   import { href } from '../router.svelte';
   import { Resource, pollJobs } from '../resource.svelte';
   import type { InstanceQueue } from '../types';
@@ -44,11 +45,11 @@
                 <tbody>
                   {#each q.slots as s (`${s.account}\u0000${s.model}`)}
                     <tr>
-                      <td class="mono"><a href={href({ name: 'queue', slug: s.account })}>{s.account}</a></td>
+                      <td class="mono">{#if s.account}<a href={href({ name: 'queue', slug: s.account })}>{s.account}</a>{:else}<span class="muted">Every account</span>{/if}</td>
                       <td class="mono small text-ui-sm">{s.model}</td>
                       <td>
                         <span class="small text-ui-sm">{s.slots ? `${s.held} of ${s.slots}` : `${s.held}, no limit`}</span>
-                        {#if s.slots}<Meter value={s.held} max={s.slots} label={`Slots of ${s.model} busy for ${s.account}`} />{/if}
+                        {#if s.slots}<Meter value={s.held} max={s.slots} label={`Slots of ${s.model} busy for ${s.account || 'every account'}`} />{/if}
                       </td>
                     </tr>
                   {/each}

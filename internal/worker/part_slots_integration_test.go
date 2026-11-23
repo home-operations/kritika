@@ -18,19 +18,40 @@ import (
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
+// TestReviewSlotsResizeAndCancel: a split review takes the slots that are
+// free, gives them back to a review that waits for its first, and keeps
+// admission's one when it is canceled. The waiter is of the review's own
+// account where the slots are the account's, and of another account where
+// every account shares them.
 func TestReviewSlotsResizeAndCancel(t *testing.T) {
+	t.Run("an account's own slots", func(t *testing.T) {
+		reviewSlotsResizeAndCancel(t, "test/adaptive-slots", configfile.Slots{Limit: 3}, "onedr0p")
+	})
+	t.Run("shared slots", func(t *testing.T) {
+		reviewSlotsResizeAndCancel(t, "test/adaptive-slots-shared", configfile.Slots{Limit: 3, Shared: true}, "globex")
+	})
+}
+
+// reviewSlotsResizeAndCancel runs the split review of account onedr0p on
+// slots of model, with the review that waits for a slot in account waiting.
+func reviewSlotsResizeAndCancel(t *testing.T, model string, modelSlots configfile.Slots, waiting string) {
 	st := storetest.Open(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
-	file := configfiletest.Load(t, configYAML)
+	file := configfiletest.Load(t, configYAML+`  bot-globex:
+    accounts: [globex]
+    clientId: Iv1.globex
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
+`)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
 	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
-	const model = "test/adaptive-slots"
+	waiter, _ := file.Account(configfile.ForgeGitHub, waiting)
 	var runID string
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, account.ID()).Scan(&runID)
@@ -50,7 +71,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	})
 	take := func(job int64) *store.Lease {
 		t.Helper()
-		lease, err := st.TakeLease(ctx, account.ID(), model, 3, job)
+		lease, err := st.TakeLease(ctx, account.ID(), model, modelSlots, job)
 		if err != nil || lease == nil {
 			t.Fatalf("take lease = %v, %v", lease, err)
 		}
@@ -66,7 +87,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	}()
 	logger := slog.New(slog.DiscardHandler)
 	w := &Review{Store: st, Logger: logger}
-	pool := &slotPool{model: model, limit: 3, reviewers: []string{review.DefaultReviewer}}
+	pool := &slotPool{model: model, slots: modelSlots, reviewers: []string{review.DefaultReviewer}}
 	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID, jobID: -1,
 		pools: []*slotPool{pool}, estimate: map[string]int{review.DefaultReviewer: 4}}
 	defer slots.close(context.Background())
@@ -148,11 +169,18 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	resize(report(4, 1))
 	check(3, 3)
 
-	yieldToWaiter(t, st, account.ID(), model, func(remaining, active, grant, held int) {
+	yieldToWaiter(t, st, waiter.ID(), model, func(remaining, active, grant, held int) {
 		t.Helper()
 		resize(report(remaining, active))
 		check(grant, held)
-	}, take)
+	}, func(job int64) *store.Lease {
+		t.Helper()
+		lease, err := st.TakeLease(ctx, waiter.ID(), model, modelSlots, job)
+		if err != nil || lease == nil {
+			t.Fatalf("the waiting review's lease = %v, %v", lease, err)
+		}
+		return lease
+	})
 
 	report(1, 1)
 	stop := slots.watch(ctx)
