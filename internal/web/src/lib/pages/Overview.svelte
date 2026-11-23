@@ -112,7 +112,7 @@
             {/each}
           {/each}
           {#each fullSlots as slot (`${slot.account}/${slot.model}`)}
-            <a class="attention-item" href={href({ name: 'queue', slug: slot.account })}><Pill tone="warn" label="At capacity" /><span><strong>{slot.account}</strong><span class="small muted text-ui-sm wrap-anywhere">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span><span class="attention-action text-accent text-ui-sm">Open queue →</span></a>
+            <a class="attention-item" href={href(slot.account ? { name: 'queue', slug: slot.account } : { name: 'instanceQueue' })}><Pill tone="warn" label="At capacity" /><span><strong>{slot.account || 'Every account'}</strong><span class="small muted text-ui-sm wrap-anywhere">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span><span class="attention-action text-accent text-ui-sm">Open queue →</span></a>
           {/each}
           {#each queueIssues.slice(0, 5) as job (job.id)}
             <a class="attention-item" href={href({ name: 'queue', slug: job.account, filter: { state: 'attention' } })}><Pill tone={job.recentFailure ? 'danger' : 'warn'} label={overdue(job) ? 'Heartbeat overdue' : job.recentFailure ? 'Failed job' : 'Retrying'} /><span><strong>{job.args.repository || job.account}</strong><span class="small muted text-ui-sm">{job.kind} #{job.id}</span></span><span class="attention-action text-accent text-ui-sm">Inspect job →</span></a>

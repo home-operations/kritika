@@ -68,7 +68,7 @@ func TestReleaseWakesSnoozedReview(t *testing.T) {
 	}
 	release := func() int64 {
 		t.Helper()
-		l, err := s.TakeLease(ctx, alpha, model, 1, 7)
+		l, err := s.TakeLease(ctx, alpha, model, own(1), 7)
 		if err != nil || l == nil {
 			t.Fatalf("TakeLease = %v, %v", l, err)
 		}
@@ -149,7 +149,7 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	}
 	release := func() int64 {
 		t.Helper()
-		l, err := s.TakeLease(ctx, alpha, model, 1, 7)
+		l, err := s.TakeLease(ctx, alpha, model, own(1), 7)
 		if err != nil || l == nil {
 			t.Fatalf("TakeLease = %v, %v", l, err)
 		}
@@ -168,7 +168,7 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 	pull(firstPull+1, false)
 	claim := func(job int64) *Lease {
 		t.Helper()
-		l, err := s.TakeReviewLease(ctx, alpha, model, 1, job)
+		l, err := s.TakeReviewLease(ctx, alpha, model, own(1), job)
 		if err != nil {
 			t.Fatalf("TakeReviewLease: %v", err)
 		}
@@ -186,7 +186,7 @@ func TestReleaseWakesReadyBeforeDraft(t *testing.T) {
 			t.Fatalf("release %d woke job %d, want %d", i+1, got, want)
 		}
 	}
-	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 1, draft); err != nil || woken {
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, own(1), draft); err != nil || woken {
 		t.Fatalf("WakeIfSlotFree of a draft's review behind ready ones = %v, %v, want false", woken, err)
 	}
 	held := claim(marked)
@@ -230,7 +230,7 @@ func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft,
 	// The slots are there before the claims, which then race for the two
 	// that are free. One is left to the review that waits, so only one of
 	// the claims made at once takes a slot.
-	wide, err := s.TakeLease(ctx, alpha, model, 3, 7)
+	wide, err := s.TakeLease(ctx, alpha, model, own(3), 7)
 	if err != nil || wide == nil {
 		t.Fatalf("TakeLease = %v, %v", wide, err)
 	}
@@ -239,13 +239,13 @@ func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft,
 	}
 	// Two slots are free and one review waits, but that review has no
 	// worker yet: the draft's review would hold one for as long as it runs.
-	if l, err := s.TakeReviewLease(ctx, alpha, model, 3, draft); err != nil || l != nil {
+	if l, err := s.TakeReviewLease(ctx, alpha, model, own(3), draft); err != nil || l != nil {
 		if l != nil {
 			_, _ = l.Release(ctx)
 		}
 		t.Fatalf("a draft's review took a slot ahead of a ready one that is not running: %v", err)
 	}
-	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 3, draft); err != nil || woken {
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, own(3), draft); err != nil || woken {
 		t.Fatalf("WakeIfSlotFree of a draft's review ahead of a ready one that is not running = %v, %v", woken, err)
 	}
 	if _, err := s.owner.Exec(ctx, `UPDATE river_job SET state = 'running' WHERE id = $1`, ready); err != nil {
@@ -255,7 +255,7 @@ func draftTakesOnlySpareSlot(t *testing.T, s *Store, alpha, model string, draft,
 	// connection prepares its statements. Those of the later rounds
 	// overlap.
 	for round := range 5 {
-		count, err := claimAtOnce(ctx, 8, func() (*Lease, error) { return s.TakeReviewLease(ctx, alpha, model, 3, draft) })
+		count, err := claimAtOnce(ctx, 8, func() (*Lease, error) { return s.TakeReviewLease(ctx, alpha, model, own(3), draft) })
 		if err != nil || count != 1 {
 			t.Fatalf("round %d: drafts' reviews took %d slots, %v, want the 1 that the waiting review leaves", round+1, count, err)
 		}
@@ -323,19 +323,19 @@ func TestWakeIfSlotFree(t *testing.T) {
 	}
 	waiting := `{"snoozes": 1, "slot_wait": "` + model + `"}`
 	older, waiter, settling := insert(waiting), insert(waiting), insert(`{"snoozes": 1}`)
-	l, err := s.TakeLease(ctx, alpha, model, 1, 7)
+	l, err := s.TakeLease(ctx, alpha, model, own(1), 7)
 	if err != nil || l == nil {
 		t.Fatalf("TakeLease = %v, %v", l, err)
 	}
 	// The only slot is held.
-	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 1, waiter); err != nil || woken {
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, own(1), waiter); err != nil || woken {
 		t.Fatalf("WakeIfSlotFree with every slot held = %v, %v, want false", woken, err)
 	}
 	// One of two slots is free, but the job named is not waiting for one.
-	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 2, settling); err != nil || woken {
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, own(2), settling); err != nil || woken {
 		t.Fatalf("WakeIfSlotFree of a review not snoozed for a slot = %v, %v, want false", woken, err)
 	}
-	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 2, waiter); err != nil || !woken {
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, own(2), waiter); err != nil || !woken {
 		t.Fatalf("WakeIfSlotFree with a slot free = %v, %v, want true", woken, err)
 	}
 	if state, due := jobState(waiter); state != "available" || !due {
@@ -347,7 +347,7 @@ func TestWakeIfSlotFree(t *testing.T) {
 		}
 	}
 	// Waking the same job again finds it awake already.
-	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, 2, waiter); err != nil || woken {
+	if woken, err := s.WakeIfSlotFree(ctx, alpha, model, own(2), waiter); err != nil || woken {
 		t.Fatalf("WakeIfSlotFree of a woken review = %v, %v, want false", woken, err)
 	}
 	if woken, err := l.Release(ctx); err != nil || woken != older {
@@ -376,7 +376,7 @@ func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	})
 	take := func(account string, slots int, job int64) *Lease {
 		t.Helper()
-		l, err := s.TakeIndexBuildLease(ctx, account, model, slots, job)
+		l, err := s.TakeIndexBuildLease(ctx, account, model, own(slots), job)
 		if err != nil {
 			t.Fatalf("TakeIndexBuildLease: %v", err)
 		}
@@ -390,7 +390,7 @@ func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	}
 	// The update can take only the first slot, which this lease holds, so
 	// the second is free for the builds but for the update's wait.
-	held, err := s.TakeLease(ctx, alpha, model, 1, 1)
+	held, err := s.TakeLease(ctx, alpha, model, own(1), 1)
 	if err != nil || held == nil {
 		t.Fatalf("TakeLease = %v, %v", held, err)
 	}
@@ -402,7 +402,7 @@ func TestIndexUpdateComesBeforeBuilds(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		updated, updateErr = s.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
+		updated, updateErr = s.AcquireIndexLease(ctx, alpha, model, own(1), 2, true)
 	}()
 	// A test that fails ends the update's wait and lets go what it took.
 	t.Cleanup(func() {
@@ -507,7 +507,7 @@ func TestIndexUpdateTakesAFreeSlotOnThePool(t *testing.T) {
 	}
 	counted := &Store{app: pool, owner: s.owner, logger: s.logger}
 	before := dials.Load()
-	l, err := counted.AcquireIndexLease(ctx, alpha, model, 1, 1, true)
+	l, err := counted.AcquireIndexLease(ctx, alpha, model, own(1), 1, true)
 	if err != nil || l == nil {
 		t.Fatalf("AcquireIndexLease = %v, %v; want the free slot", l, err)
 	}
@@ -616,7 +616,7 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 		t.Fatal(err)
 	}
 	full.Store(true)
-	held, err := s.TakeLease(ctx, alpha, model, 1, 1)
+	held, err := s.TakeLease(ctx, alpha, model, own(1), 1)
 	if err != nil || held == nil {
 		t.Fatalf("TakeLease = %v, %v", held, err)
 	}
@@ -640,7 +640,7 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		updated, updateErr = limited.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
+		updated, updateErr = limited.AcquireIndexLease(ctx, alpha, model, own(1), 2, true)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -762,7 +762,7 @@ func indexUpdateWaitsOnSession(t *testing.T, lost bool) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	held, err := s.TakeLease(ctx, alpha, model, 1, 1)
+	held, err := s.TakeLease(ctx, alpha, model, own(1), 1)
 	if err != nil || held == nil {
 		t.Fatalf("TakeLease = %v, %v", held, err)
 	}
@@ -774,7 +774,7 @@ func indexUpdateWaitsOnSession(t *testing.T, lost bool) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		updated, updateErr = limited.AcquireIndexLease(ctx, alpha, model, 1, 2, true)
+		updated, updateErr = limited.AcquireIndexLease(ctx, alpha, model, own(1), 2, true)
 	}()
 	t.Cleanup(func() {
 		cancel()

@@ -1135,8 +1135,9 @@ export interface InstanceJob extends Job {
   account: string;
 }
 
-// How many of an account's slots for a model a running review
-// holds. slots is the account's limit, 0 for none.
+// How many of a model's slots a running review holds. account is the
+// account whose slots they are, or empty where the model's provider is the
+// instance's and every account shares them. slots is the limit, 0 for none.
 export interface ModelSlots {
   account: string;
   model: string;

@@ -601,8 +601,8 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 // does not wait for it.
 func checkAgentRouted(t *testing.T, h *agenticHarness) {
 	holder := int64(-1)
-	holdModelSlot(t, h, "gateway/agent-model", &holder)
-	t.Cleanup(func() { holdModelSlot(t, h, "gateway/agent-model", nil) })
+	holdModelSlot(t, h, h.account, "gateway/agent-model", &holder)
+	t.Cleanup(func() { holdModelSlot(t, h, h.account, "gateway/agent-model", nil) })
 	agents := []configfile.Reviewer{{
 		Name: "deep", Model: "gateway/agent-deep", When: []configfile.Filter{{Name: "schema", Paths: []string{"*.sql"}}},
 	}}
@@ -1306,13 +1306,14 @@ func checkParallelSteps(t *testing.T, h *agenticHarness, grant store.GatewayGran
 	}
 }
 
-// checkAgentSnoozes holds the account's one model slot and dispatches a new
-// head: the agentic review is snoozed without a review row, a lease or a
-// runner until the slot is let go, and then runs to completion.
+// checkAgentSnoozes holds the model's one slot for another account, which
+// shares the slots of the instance's provider, and dispatches a new head:
+// the agentic review is snoozed without a review row, a lease or a runner
+// until the slot is let go, and then runs to completion.
 func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc snoozed() {}\n")
-	hold := func(jobID *int64) { holdModelSlot(t, h, "gateway/agent-model", jobID) }
+	hold := func(jobID *int64) { holdModelSlot(t, h, h.other, "gateway/agent-model", jobID) }
 	holder := int64(-1)
 	hold(&holder)
 	h.dispatch(t, next)
@@ -1336,15 +1337,17 @@ func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// holdModelSlot gives the account's one slot on ref to jobID, or lets it
-// go with nil.
-func holdModelSlot(t *testing.T, h *agenticHarness, ref string, jobID *int64) {
+// holdModelSlot gives the one slot on ref, a model of a provider of the
+// instance, to jobID of account, or lets it go with nil.
+func holdModelSlot(t *testing.T, h *agenticHarness, account *configfile.Account, ref string, jobID *int64) {
 	t.Helper()
-	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (account_id, model_key, slot, job_id, expires_at)
-			VALUES ($1, $2, 1, $3, CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
-			ON CONFLICT (account_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
-			h.account.ID(), ref, jobID)
+	if err := h.st.WithAccount(h.ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (scope, model_key, slot, account_id, job_id, expires_at)
+			VALUES ('', $2, 1, CASE WHEN $3::bigint IS NULL THEN NULL ELSE $1::uuid END, $3,
+				CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
+			ON CONFLICT (scope, model_key, slot) DO UPDATE
+				SET account_id = excluded.account_id, job_id = excluded.job_id, expires_at = excluded.expires_at`,
+			account.ID(), ref, jobID)
 		return err
 	}); err != nil {
 		t.Fatal(err)

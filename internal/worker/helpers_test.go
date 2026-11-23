@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 )
 
@@ -68,8 +69,11 @@ func TestMentioned(t *testing.T) {
 // unless the account has only one.
 func TestIndexSlots(t *testing.T) {
 	for _, tt := range []struct{ concurrency, want int }{{1, 1}, {2, 1}, {3, 2}, {8, 7}} {
-		if got := indexSlots(tt.concurrency); got != tt.want {
-			t.Errorf("indexSlots(%d) = %d, want %d", tt.concurrency, got, tt.want)
+		for _, shared := range []bool{false, true} {
+			want := configfile.Slots{Limit: tt.want, Shared: shared}
+			if got := indexSlots(configfile.Slots{Limit: tt.concurrency, Shared: shared}); got != want {
+				t.Errorf("indexSlots(%d, shared %v) = %+v, want %+v", tt.concurrency, shared, got, want)
+			}
 		}
 	}
 }

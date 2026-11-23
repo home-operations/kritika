@@ -132,13 +132,13 @@ func TestSlotsOwed(t *testing.T) {
 	const holder = -10
 	owed := func(want int) {
 		t.Helper()
-		if got, err := s.SlotsOwed(ctx, alpha, model, 3, holder); err != nil || got != want {
+		if got, err := s.SlotsOwed(ctx, alpha, model, own(3), holder); err != nil || got != want {
 			t.Fatalf("SlotsOwed = %d, %v, want %d", got, err, want)
 		}
 	}
 	var leases []*Lease
 	for range 3 {
-		lease, err := s.TakeLease(ctx, alpha, model, 3, holder)
+		lease, err := s.TakeLease(ctx, alpha, model, own(3), holder)
 		if err != nil || lease == nil {
 			t.Fatalf("take lease = %v, %v", lease, err)
 		}
@@ -155,7 +155,7 @@ func TestSlotsOwed(t *testing.T) {
 	owed(0)
 	first, second := waiter(alpha, model), waiter(alpha, model)
 	owed(2)
-	if got, err := s.SlotsOwed(ctx, alpha, model, 3, first); err != nil || got != 1 {
+	if got, err := s.SlotsOwed(ctx, alpha, model, own(3), first); err != nil || got != 1 {
 		t.Fatalf("SlotsOwed to the others of a waiter = %d, %v, want 1", got, err)
 	}
 	// A slot let go is one of the two that the waiters are short of.
@@ -164,7 +164,7 @@ func TestSlotsOwed(t *testing.T) {
 	}
 	leases = leases[:2]
 	owed(1)
-	admitted, err := s.TakeLease(ctx, alpha, model, 3, first)
+	admitted, err := s.TakeLease(ctx, alpha, model, own(3), first)
 	if err != nil || admitted == nil {
 		t.Fatalf("waiter admission = %v, %v", admitted, err)
 	}
@@ -188,7 +188,7 @@ func TestExtraLeaseConcurrentLimit(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
 	})
-	base, err := s.TakeLease(ctx, account, model, 3, -100)
+	base, err := s.TakeLease(ctx, account, model, own(3), -100)
 	if err != nil || base == nil {
 		t.Fatalf("admission = %v, %v", base, err)
 	}
@@ -197,7 +197,7 @@ func TestExtraLeaseConcurrentLimit(t *testing.T) {
 	var g errgroup.Group
 	for i := range 12 {
 		g.Go(func() error {
-			lease, err := s.TakeExtraLease(ctx, account, model, 3, int64(-200-i))
+			lease, err := s.TakeExtraLease(ctx, account, model, own(3), int64(-200-i))
 			if lease != nil {
 				leases <- lease
 			}
@@ -248,7 +248,7 @@ func TestExtraLeaseWaiterPriority(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE id = $1`, id) })
-			lease, err := s.TakeExtraLease(ctx, alpha, model, 2, -10)
+			lease, err := s.TakeExtraLease(ctx, alpha, model, own(2), -10)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -261,17 +261,17 @@ func TestExtraLeaseWaiterPriority(t *testing.T) {
 			if !tt.blocked {
 				return
 			}
-			first, err := s.TakeLease(ctx, alpha, model, 2, id)
+			first, err := s.TakeLease(ctx, alpha, model, own(2), id)
 			if err != nil || first == nil {
 				t.Fatalf("waiter admission = %v, %v", first, err)
 			}
 			defer func() { _, _ = first.Release(ctx) }()
-			extra, err := s.TakeExtraLease(ctx, alpha, model, 2, -10)
+			extra, err := s.TakeExtraLease(ctx, alpha, model, own(2), -10)
 			if err != nil || extra == nil {
 				t.Fatalf("extra after waiter admission = %v, %v", extra, err)
 			}
 			defer func() { _, _ = extra.Release(ctx) }()
-			over, err := s.TakeExtraLease(ctx, alpha, model, 2, -10)
+			over, err := s.TakeExtraLease(ctx, alpha, model, own(2), -10)
 			if over != nil {
 				defer func() { _, _ = over.Release(ctx) }()
 			}

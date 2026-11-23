@@ -29,7 +29,7 @@ func TestIndexBuildClaimsQueue(t *testing.T) {
 	})
 	// The slots exist, as after an earlier claim: rows that the first claim
 	// inserted would hold the second up before it reached the claims' locks.
-	if _, err := s.owner.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot)
+	if _, err := s.owner.Exec(ctx, `INSERT INTO model_leases (scope, model_key, slot)
 		SELECT $1, $2, s FROM generate_series(1, $3::int) AS s`, alpha, model, slots); err != nil {
 		t.Fatalf("insert slots: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestIndexBuildClaimsQueue(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		second, secondErr = s.TakeIndexBuildLease(ctx, alpha, model, slots, 2)
+		second, secondErr = s.TakeIndexBuildLease(ctx, alpha, model, own(slots), 2)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -86,8 +86,8 @@ func TestIndexBuildClaimsQueue(t *testing.T) {
 		case <-poll.C:
 		}
 	}
-	if _, err := first.Exec(ctx, `UPDATE model_leases SET job_id = 1, expires_at = now() + interval '2 minutes'
-		WHERE account_id = $1 AND model_key = $2 AND slot = 1`, alpha, model); err != nil {
+	if _, err := first.Exec(ctx, `UPDATE model_leases SET job_id = 1, account_id = $1::uuid, expires_at = now() + interval '2 minutes'
+		WHERE scope = $1::uuid::text AND model_key = $2 AND slot = 1`, alpha, model); err != nil {
 		t.Fatalf("first claim: %v", err)
 	}
 	if err := first.Commit(ctx); err != nil {

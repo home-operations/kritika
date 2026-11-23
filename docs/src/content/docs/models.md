@@ -39,7 +39,7 @@ Everything else is optional:
 | `baseUrl`     | its API's URL, the type's default unless set                                                                                                  |
 | `pricing`     | the prices of a provider that reports no cost, keyed by model id or [floating alias](#floating-model-aliases) ([local models](#local-models)) |
 | `retries`     | how many more times a failed model step is tried, from 0 to 5, and 0 unless set ([retries](#retries))                                         |
-| `concurrency` | how many calls run at once on each of its models, per account, and 2 unless set ([concurrency](#concurrency))                                 |
+| `concurrency` | how many calls run at once on each of its models, across every account, and 8 unless set ([concurrency](#concurrency))                        |
 | `timeout`     | how long one request to it can take, up to 30m, and 5m unless set ([timeouts](#timeouts))                                                     |
 | `headers`     | headers sent with every request, keyed by name. Each value is inline or a reference like `apiKey` ([headers](#headers))                       |
 
@@ -49,22 +49,40 @@ through kritika's gateway ([the model endpoint](/security/#the-model-endpoint)).
 ### Concurrency
 
 `concurrency` is how many calls can run at once on each model of the
-provider, for each account. A review holds one of the review model's slots
-from the time it is admitted to the time it ends, and one on the model of
-each [agent](#agents-that-replace-the-default-pass) it runs. A follow-up,
-the scorer's call and a split review's summary call hold one of their
-model's for the call. A review that finds every slot held waits on the
-queue for one. A slot that comes free wakes the oldest waiting review of a
-pull request that is ready. The review of a draft takes a slot only when
-the model has more slots free than reviews of ready pull requests that
-wait for one, and each of those reviews has started. A review
-that is split into parts ([large reviews](/configuration/#the-agent)) also
-takes the slots that no other review holds. While another review waits for
-its first slot, it gives those extra slots back as its parts end, and it
-keeps its own slot until it ends. A review also takes one of the replica's
-`reviewWorkers` ([how kritika runs](/configuration/#how-kritika-runs)) for
-as long as it runs, so a review cannot take a free slot while every one of
-them is busy.
+provider. Each of those calls holds one of the model's slots. Where the
+provider is declared decides who shares the slots:
+
+- A provider under the root `providers` has its slots once for the whole
+  instance. Every account takes from them, so the number is what the
+  provider serves at once, however many accounts there are. It is 8 unless
+  set.
+- A provider under an account ([an account's own
+  keys](#an-accounts-own-keys)) has its slots for that account alone. It is
+  2 unless set.
+
+A review holds one of the review model's slots from the time it is
+admitted to the time it ends, and one on the model of each
+[agent](#agents-that-replace-the-default-pass) it runs. A follow-up, the
+scorer's call and a split review's summary call hold one of their model's
+for the call.
+
+A review that finds every slot held waits on the queue for one. A slot that
+comes free wakes the oldest waiting review of a pull request that is ready.
+Where accounts share the slots, it wakes a review of the account that holds
+the fewest of them, so one account's backlog cannot keep the others from
+the model. The review of a draft takes a slot only when the model has more
+slots free than reviews of its account's ready pull requests that wait for
+one, and each of those reviews has started.
+
+A review that is split into parts
+([large reviews](/configuration/#the-agent)) also takes the slots that no
+other review holds. While another review waits for its first slot, of any
+account that shares the slots, it gives those extra slots back as its parts
+end, and it keeps its own slot until it ends. A review also takes one of
+the replica's `reviewWorkers`
+([how kritika runs](/configuration/#how-kritika-runs)) for as long as it
+runs, so a review cannot take a free slot while every one of them is busy.
+
 Index runs take no more than all but one of the embedder's slots, so a
 review's similar-code lookup has a slot unless `concurrency` is 1. An
 index run holds a slot for each batch it sends the embedder, not for its
@@ -75,8 +93,21 @@ the database connection that it waits on
 connection, as when Postgres is at its connection limit, the update still
 waits for a slot through the application pool, but without priority over
 first builds and rebuilds, which can take the next slot first. `concurrency` is
-one value for the provider; an account that needs another on the same
-endpoint declares a provider of its own under [`accounts`](/configuration/#accounts).
+one value for the provider. An account that needs slots of its own on the
+same endpoint declares a provider of its own under
+[`accounts`](/configuration/#accounts).
+
+A self-hosted server that runs a fixed number of requests at once sets
+`concurrency` to that number on its root provider:
+
+```yaml
+providers:
+  local:
+    type: openai
+    baseUrl: http://llm.ai.svc.cluster.local:8080/v1
+    apiKey: { env: LOCAL_API_KEY }
+    concurrency: 6
+```
 
 A [fallback](#fallback) on another provider has slots of its own: a step
 that goes to it takes one of the fallback model's for the step, and waits

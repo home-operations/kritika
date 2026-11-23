@@ -275,18 +275,25 @@ func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 	return out, nil
 }
 
-// ReadHeldSlots counts, for each model the account has ever leased a slot
-// of, the slots a live lease holds now.
-func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[string]int, error) {
-	rows, err := tx.Query(ctx, `SELECT model_key, count(*) FILTER (WHERE job_id IS NOT NULL AND expires_at >= now())
+// HeldSlots are the slots of a model that a live lease holds now: Held by
+// any account, where the model's slots are shared, and Own of them by the
+// account that reads.
+type HeldSlots struct{ Held, Own int }
+
+// ReadHeldSlots counts the slots that a live lease holds now, for each model
+// that the account can take a slot of and that a slot was ever leased of.
+func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[string]HeldSlots, error) {
+	rows, err := tx.Query(ctx, `SELECT model_key, count(*) FILTER (WHERE job_id IS NOT NULL AND expires_at >= now()),
+			count(*) FILTER (WHERE job_id IS NOT NULL AND expires_at >= now()
+				AND account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
 		FROM model_leases GROUP BY model_key`)
 	if err != nil {
 		return nil, fmt.Errorf("store: read held slots: %w", err)
 	}
-	out := map[string]int{}
+	out := map[string]HeldSlots{}
 	var key string
-	var held int
-	if _, err := pgx.ForEachRow(rows, []any{&key, &held}, func() error {
+	var held HeldSlots
+	if _, err := pgx.ForEachRow(rows, []any{&key, &held.Held, &held.Own}, func() error {
 		out[key] = held
 		return nil
 	}); err != nil {

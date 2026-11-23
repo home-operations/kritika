@@ -92,7 +92,7 @@ func TestIndexTruncation(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		_, pack, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, active, 1)
+		_, pack, err := w.embed(ctx, job, account, embed, file.Embedding, commit, run, runner, active, configfile.Slots{Limit: 1})
 		if err != nil {
 			t.Fatalf("embed: %v", err)
 		}

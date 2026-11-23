@@ -1923,7 +1923,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a review snoozes while every model slot is held", func(t *testing.T) {
-		checkSnoozeWhileSlotsHeld(ctx, t, appStore, dir, base, lf, dispatchPR, account.ID(), "test/reviewer")
+		checkSnoozeWhileSlotsHeld(ctx, t, appStore, dir, base, lf, dispatchPR, account.ID(), "test/reviewer", file.Slots(account, "test/reviewer"))
 	})
 
 	t.Run("the merge-base .kritika.yaml skips, instructs and templates", func(t *testing.T) {
@@ -2049,7 +2049,7 @@ func checkBotPatchIDSkip(
 // then completes.
 func checkSnoozeWhileSlotsHeld(
 	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
-	dispatchPR func(int, string, bool, ...string), accountID, modelKey string,
+	dispatchPR func(int, string, bool, ...string), accountID, modelKey string, slots configfile.Slots,
 ) {
 	t.Helper()
 	r, _ := git.PlainOpen(dir)
@@ -2067,7 +2067,7 @@ func checkSnoozeWhileSlotsHeld(
 	}
 	head := commit.String()
 	lf.setBase(base)
-	lease, err := appStore.TakeLease(ctx, accountID, modelKey, 1, -1)
+	lease, err := appStore.TakeLease(ctx, accountID, modelKey, slots, -1)
 	if err != nil || lease == nil {
 		t.Fatalf("TakeLease = %v, %v", lease, err)
 	}

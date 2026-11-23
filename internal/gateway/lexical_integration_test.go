@@ -571,8 +571,9 @@ func lexicalFailures(t *testing.T, reg *prometheus.Registry) float64 {
 func TestSimilarRerankSlotWait(t *testing.T) {
 	r := newLexicalRepo(t, "rerank-wait", runspec.IndexFormat, widgets, widgetVectors())
 	file := lexicalConfig(t, `{ model: test/embed, dims: 8, rerank: { model: test/rerank, api: tei, timeout: 1s } }`)
-	for job := range int64(configfile.DefaultConcurrency) {
-		lease, err := r.st.AcquireLease(t.Context(), r.account.ID(), "rerank:rerank", configfile.DefaultConcurrency, 424242+job)
+	slots := file.Slots(r.account, file.Embedding.Rerank.Ref)
+	for job := range int64(slots.Limit) {
+		lease, err := r.st.AcquireLease(t.Context(), r.account.ID(), "rerank:rerank", slots, 424242+job)
 		if err != nil || lease == nil {
 			t.Fatalf("hold a rerank slot: %v, %v", lease, err)
 		}

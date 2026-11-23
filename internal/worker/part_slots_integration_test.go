@@ -50,7 +50,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	})
 	take := func(job int64) *store.Lease {
 		t.Helper()
-		lease, err := st.TakeLease(ctx, account.ID(), model, 3, job)
+		lease, err := st.TakeLease(ctx, account.ID(), model, configfile.Slots{Limit: 3}, job)
 		if err != nil || lease == nil {
 			t.Fatalf("take lease = %v, %v", lease, err)
 		}
@@ -66,7 +66,7 @@ func TestReviewSlotsResizeAndCancel(t *testing.T) {
 	}()
 	logger := slog.New(slog.DiscardHandler)
 	w := &Review{Store: st, Logger: logger}
-	pool := &slotPool{model: model, limit: 3, reviewers: []string{review.DefaultReviewer}}
+	pool := &slotPool{model: model, slots: configfile.Slots{Limit: 3}, reviewers: []string{review.DefaultReviewer}}
 	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID, jobID: -1,
 		pools: []*slotPool{pool}, estimate: map[string]int{review.DefaultReviewer: 4}}
 	defer slots.close(context.Background())

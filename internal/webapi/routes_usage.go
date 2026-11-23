@@ -136,9 +136,10 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 	ctx := r.Context()
 	file := s.current.Get()
 	out := InstanceQueue{Jobs: []InstanceJob{}, Slots: []ModelSlots{}}
+	shared := map[string]bool{}
 	for _, t := range readable(file, auth.PrincipalFrom(ctx)) {
 		var rows []store.JobRow
-		var held map[string]int
+		var held map[string]store.HeldSlots
 		if err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 			var err error
 			if rows, err = store.ListQueue(ctx, tx); err != nil {
@@ -153,20 +154,37 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 			out.Jobs = append(out.Jobs, InstanceJob{Job: jobItem(j), Account: t.Slug()})
 		}
 		// The account's own review model always shows, busy or not. Another
-		// model, a repository's choice, shows only while it holds a slot.
+		// model, a repository's choice, shows only while the account holds a
+		// slot of it: a model that only other accounts review with is none
+		// of its business. The count is of every holder, since the slots of
+		// an instance's provider are shared, and a job waits for all of them.
 		settings := file.Settings(t)
 		own := string(settings.Models.Review)
 		if _, ok := held[own]; !ok && own != "" {
-			held[own] = 0
+			held[own] = store.HeldSlots{}
 		}
 		for _, model := range slices.Sorted(maps.Keys(held)) {
-			if held[model] > 0 || model == own {
+			if held[model].Own > 0 || model == own {
 				slots := file.Slots(t, configfile.ModelRef(model))
-				if strings.HasPrefix(model, "embed:") && file.Embedding != nil {
-					// The embedder's key names its model without its provider.
+				// The embedder's key and the reranker's name their models
+				// without their providers.
+				switch {
+				case file.Embedding == nil:
+				case strings.HasPrefix(model, "embed:"):
 					slots = file.Slots(t, file.Embedding.Ref)
+				case strings.HasPrefix(model, "rerank:") && file.Embedding.Rerank != nil:
+					slots = file.Slots(t, file.Embedding.Rerank.Ref)
 				}
-				out.Slots = append(out.Slots, ModelSlots{Account: t.Slug(), Model: model, Held: held[model], Slots: slots})
+				account := t.Slug()
+				if slots.Shared {
+					// Every account reads the same count of shared slots,
+					// which shows once.
+					if shared[model] {
+						continue
+					}
+					shared[model], account = true, ""
+				}
+				out.Slots = append(out.Slots, ModelSlots{Account: account, Model: model, Held: held[model].Held, Slots: slots.Limit})
 			}
 		}
 	}

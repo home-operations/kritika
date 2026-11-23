@@ -27,7 +27,7 @@ import (
 // alone. Only their tokens count as usage.
 func (w *Index) vectorsFor(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
-	runID, runnerRunID, activeRun string, batch []store.StagedChunk, slots int,
+	runID, runnerRunID, activeRun string, batch []store.StagedChunk, slots configfile.Slots,
 ) ([][]float32, error) {
 	args := job.Args
 	texts := make([]string, len(batch))
@@ -99,13 +99,13 @@ func (w *Index) vectorsFor(
 }
 
 // withEmbedLease runs fn, one call to the embedder, while job holds one of
-// the account's first slots on key, and records the wait, as withLease does.
+// the first slots on key for the account, and records the wait, as withLease does.
 // A job of QueueIndexUpdate comes before the builds that wait for a slot, so
 // that an onboarding wave, which takes a slot again for each batch, does not
 // keep an indexed repository's update from its turn
 // (store.AcquireIndexLease).
 func (w *Index) withEmbedLease(
-	ctx context.Context, account *configfile.Account, key string, slots int, job *river.Job[jobs.IndexArgs],
+	ctx context.Context, account *configfile.Account, key string, slots configfile.Slots, job *river.Job[jobs.IndexArgs],
 	fn func(ctx context.Context) error,
 ) error {
 	waited := time.Now()

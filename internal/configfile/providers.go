@@ -38,12 +38,15 @@ type Provider struct {
 	// The embedder does not use it.
 	Retries int `yaml:"retries,omitempty"`
 	// Concurrency is how many calls can run at once on each of the
-	// provider's models, per account: the slots of (account, model) that a
-	// review, a follow-up, the scorer, an index run or a fallback step
-	// takes one of. Unset, it is DefaultConcurrency. A self-hosted server
-	// sets it to what it serves at once; a fallback with less capacity
-	// than the review model sets its own, so an outage of the review
-	// model's provider cannot move every slot's load onto it.
+	// provider's models: the slots of the model that a review, a follow-up,
+	// the scorer, an index run or a fallback step takes one of. A provider
+	// of the instance has those slots once, and every account shares them.
+	// A provider that an account declares has them for that account alone.
+	// Unset, it is DefaultConcurrency, or DefaultAccountConcurrency for an
+	// account's own. A self-hosted server sets it to what it serves at
+	// once; a fallback with less capacity than the review model sets its
+	// own, so an outage of the review model's provider cannot move every
+	// slot's load onto it.
 	Concurrency int `yaml:"concurrency,omitempty"`
 	// Timeout bounds one request to the provider for a step, the scorer's
 	// call or a split review's summary call: a request it has not answered
@@ -71,8 +74,13 @@ type Provider struct {
 // attempts span about a minute, which a runner's deadline absorbs.
 const MaxProviderRetries = 5
 
-// DefaultConcurrency is a provider's Concurrency when it sets none.
-const DefaultConcurrency = 2
+// DefaultConcurrency is the Concurrency of a provider of the instance that
+// sets none, which every account shares. DefaultAccountConcurrency is that
+// of an account's own provider.
+const (
+	DefaultConcurrency        = 8
+	DefaultAccountConcurrency = 2
+)
 
 // MaxProviderTimeout bounds Provider.Timeout. A step's budget is two of
 // them, which the runner's request to the gateway and a run's deadline must
@@ -115,7 +123,7 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
 		if p, ok := t.Providers[name]; ok {
 			p.sessionKey = chatGPTSessionKey(t, name)
-			p.Concurrency = cmp.Or(p.Concurrency, DefaultConcurrency)
+			p.Concurrency = cmp.Or(p.Concurrency, DefaultAccountConcurrency)
 			p.Timeout = cmp.Or(p.Timeout, model.DefaultStepTimeout)
 			return p, true
 		}
@@ -129,15 +137,30 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	return p, ok
 }
 
-// Slots is how many calls can run at once on ref for account t: the
-// concurrency of ref's provider. A ref of a provider that t cannot reach
-// gets DefaultConcurrency, so a lease on it is still possible; the call
-// itself fails on the missing adapter.
-func (f *File) Slots(t *Account, ref ModelRef) int {
-	if p, ok := f.Provider(t, ref.Provider()); ok {
-		return p.Concurrency
+// Slots are the slots of a model: how many calls can run at once on it.
+// Shared slots are a model's of a provider of the instance, which every
+// account takes from. The others are one account's alone.
+type Slots struct {
+	Limit  int
+	Shared bool
+}
+
+// Slots are the slots of ref for account t: as many as the concurrency of
+// ref's provider, shared unless the provider is the account's own. A ref of
+// a provider that t cannot reach gets DefaultAccountConcurrency of the
+// account's own, so a lease on it is still possible; the call itself fails
+// on the missing adapter.
+func (f *File) Slots(t *Account, ref ModelRef) Slots {
+	p, ok := f.Provider(t, ref.Provider())
+	if !ok {
+		return Slots{Limit: DefaultAccountConcurrency}
 	}
-	return DefaultConcurrency
+	if t != nil {
+		if _, own := t.Providers[ref.Provider()]; own {
+			return Slots{Limit: p.Concurrency}
+		}
+	}
+	return Slots{Limit: p.Concurrency, Shared: true}
 }
 
 // StepBudget is what a step on ref with fallback gets at most for account t
