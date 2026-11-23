@@ -127,9 +127,11 @@ or closed pull requests neither approve nor withdraw an approval.
 The summary says **Approved** or **Not approved**. **Not approved** gives a
 reason, and so does **Approved** when no confidence score decided it. A
 [clean review](/reviews/#the-summary-comment) says "Approved" at the end of
-its one line. The approval on the forge has no text of its own, because a
-pull request gets one approval for each head that qualifies. A withdrawal
-gives its reason on the forge. A
+its one line. The approval on the forge has no text of its own. On GitHub,
+Forgejo and Gitea, a pull request gets one approval for each head that
+qualifies, and the text would add a comment for each. On GitLab, an approval
+that still stands after a push is left as it is. A withdrawal gives its
+reason on the forge. A
 repository's `.kritika.yaml` can turn approvals on or off, and add
 conditions of its own.
 

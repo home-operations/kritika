@@ -287,7 +287,8 @@ check required on the forge.
 
 Skipped reviews normally pass, as do reviews an account's limits capped. If a
 skipped review carries an earlier score, that score still determines whether
-it passes the gate.
+it passes the gate. The status of a skipped review also gives the risk that
+it carries, because a skip does not rewrite the summary.
 
 ## When a review runs
 

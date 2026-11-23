@@ -81,6 +81,10 @@ func TestSkipVerdict(t *testing.T) {
 			wantState: forge.StatusFailure, wantDesc: "confidence 2/5, below 5, skipped (why)"},
 		{name: "a carried score that does not, not gated", carried: &review.Confidence{Score: 2, Threshold: 5},
 			wantState: forge.StatusSuccess, wantDesc: "confidence 2/5, skipped (why)"},
+		{name: "a carried risk is given with a score that passes", carried: &review.Confidence{Score: 5, Threshold: 5, Risk: review.RiskMedium},
+			gate: true, wantState: forge.StatusSuccess, wantDesc: "confidence 5/5, medium risk, skipped (why)"},
+		{name: "a carried risk is given with a score that does not", carried: &review.Confidence{Score: 2, Threshold: 5, Risk: review.RiskHigh},
+			gate: true, wantState: forge.StatusFailure, wantDesc: "confidence 2/5, below 5, high risk, skipped (why)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

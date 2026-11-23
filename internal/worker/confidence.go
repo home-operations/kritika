@@ -324,9 +324,15 @@ func carriedConfidence(
 
 // skipVerdict is the commit status of a review skipped for reason: a
 // success saying so, with the score its unchanged patch carries, which
-// decides as it did where the repository gates on it.
+// decides as it did where the repository gates on it. It gives the carried
+// risk too, where one was rated. A skip writes no summary, and the floors
+// asked for now can hold the risk above what the last summary says, so the
+// status is the head's one word on it.
 func skipVerdict(carried *review.Confidence, gate bool, reason string) (forge.StatusState, string) {
 	desc := "skipped (" + reason + ")"
+	if carried != nil && carried.Risk != "" {
+		desc = string(carried.Risk) + " risk, " + desc
+	}
 	switch {
 	case carried == nil:
 		return forge.StatusSuccess, desc

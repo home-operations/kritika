@@ -221,7 +221,8 @@ type Client interface {
 	// Approve posts an approving review of headSHA, unless the bot's
 	// approval of that head already stands, and reports whether one was
 	// posted. The review has no body: the summary comment gives the verdict
-	// behind it, and a pull request gathers an approval for each head.
+	// behind it, and a forge that keeps every review shows one approval for
+	// each head.
 	Approve(ctx context.Context, owner, repo string, number int, headSHA string) (bool, error)
 	// ChangesRequested reports whether a reviewer other than the bot
 	// stands as requesting changes on the pull request.
