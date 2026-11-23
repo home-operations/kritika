@@ -87,8 +87,8 @@ them:
   fared. An agent can then compare its change with the rules before it opens
   the pull request.
 - "Why did the bot not answer my mention?" `list_followups` reports each
-  follow-up's `status`, one of `answered`, `limited`, `ignored` or `failed`,
-  and its `reason`.
+  follow-up's `status`, one of `answered`, `ignored` or `failed`, and its
+  `reason`.
 
 ## Compared with reading the comments
 

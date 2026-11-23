@@ -102,16 +102,8 @@ func requestsDismiss(body, slug string) (string, bool) {
 // dismiss records the finding the comment replies to as dismissed, with
 // reason, resolves its thread and says so: later reviews of the pull request
 // are told not to raise it again. Only a reply in one of the bot's finding
-// threads names a finding. Anywhere else, the reply says how to use it. It
-// counts against the hourly follow-up limit.
+// threads names a finding. Anywhere else, the reply says how to use it.
 func (f *followUp) dismiss(ctx context.Context, reason string) (store.FollowupStatus, error) {
-	limited, err := f.rateLimited(ctx)
-	if err != nil {
-		return store.FollowupFailed, err
-	}
-	if limited {
-		return store.FollowupLimited, nil
-	}
 	fingerprint, err := f.dismissedFinding(ctx)
 	if err != nil {
 		return store.FollowupFailed, err
@@ -222,17 +214,9 @@ func requestsPause(body, slug string) (paused, ok bool) {
 }
 
 // pause pauses or resumes the pull request's automatic reviews, as someone
-// with write access asked, and says so. It counts against the hourly
-// follow-up limit.
+// with write access asked, and says so.
 func (f *followUp) pause(ctx context.Context, slug string, paused bool) (store.FollowupStatus, error) {
-	limited, err := f.rateLimited(ctx)
-	if err != nil {
-		return store.FollowupFailed, err
-	}
-	if limited {
-		return store.FollowupLimited, nil
-	}
-	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
+	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		return store.PausePullRequest(ctx, tx, f.pr.id, paused)
 	})
 	if err != nil {
@@ -261,16 +245,8 @@ const reviewRequested = "review requested"
 // The request is answered with the bot's marks rather than a reply: its eyes
 // now, and its job then waits to end them as the review ends (awaitReview).
 // Like every mark, the eyes are best effort: a forge that refuses them costs
-// the request its marks and nothing else. The request counts against the
-// hourly follow-up limit.
+// the request its marks and nothing else.
 func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, error) {
-	limited, err := f.rateLimited(ctx)
-	if err != nil {
-		return store.FollowupFailed, err
-	}
-	if limited {
-		return store.FollowupLimited, nil
-	}
 	if f.pr.closed != "" {
 		base, err := reviewBase(ctx, f.w.Store, f.client, f.account.ID(), f.pr)
 		if err != nil {

@@ -45,8 +45,7 @@ func (f *followUp) replyDisqualified(ctx context.Context) string {
 // the second count leaves the window that the posts themselves take.
 //
 // The agent can post nothing, which is recorded as answered all the same,
-// with why. The model was paid, so it counts against the hour and is not
-// asked again on a retry. Or the agent can concede the finding, which
+// with why. The model was paid, so it is not asked again on a retry. Or the agent can concede the finding, which
 // dismisses it as "@<bot> dismiss" does. A concession that the store refuses
 // fails the job, with the reply up and marked answered. That leaves the reply
 // for a retry to find on the forge and record.
@@ -67,13 +66,6 @@ func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err er
 		reason := fmt.Sprintf("kritika has replied %d times in this thread; mention it to go on", replied)
 		f.logger.Info("reply ignored", "reason", reason)
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
-	}
-	limited, err := f.rateLimited(ctx)
-	if err != nil {
-		return store.FollowupFailed, err
-	}
-	if limited {
-		return store.FollowupLimited, nil
 	}
 	rec, err := f.reviewRecord(ctx)
 	if err != nil {

@@ -45,8 +45,8 @@ func (f *postHookForge) FileAt(context.Context, string, string, string, string) 
 	return nil, fs.ErrNotExist
 }
 
-// mentions is a pull request on which onedr0p, who can write, made each of
-// comments. answered of its follow-ups were answered in the last hour.
+// mentions is a pull request on which onedr0p, who can write, made one
+// comment that mentions the bot.
 type mentions struct {
 	t       *testing.T
 	st      *store.Store
@@ -57,7 +57,7 @@ type mentions struct {
 	args    jobs.FollowUpArgs
 }
 
-func newMentions(t *testing.T, number, answered int, comments ...string) *mentions {
+func newMentions(t *testing.T, number int, body string) *mentions {
 	t.Helper()
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -72,13 +72,8 @@ func newMentions(t *testing.T, number, answered int, comments ...string) *mentio
 	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	m := &mentions{t: t, st: st, account: account, args: jobs.FollowUpArgs{AccountID: account.ID(), RepositoryID: repoID, Number: number}}
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
-			VALUES ($1, $2, $3, 'head') RETURNING id`, account.ID(), repoID, number).Scan(&m.prID); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `INSERT INTO followups (account_id, pull_request_id, comment_id, status)
-			SELECT $1, $2, s, 'answered' FROM generate_series(1, $3) AS s`, account.ID(), m.prID, answered)
-		return err
+		return tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
+			VALUES ($1, $2, $3, 'head') RETURNING id`, account.ID(), repoID, number).Scan(&m.prID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -98,21 +93,18 @@ func newMentions(t *testing.T, number, answered int, comments ...string) *mentio
 		}
 	})
 	lf := &localForge{permissions: map[string]forge.Permission{"onedr0p": forge.PermissionWrite}}
-	for _, body := range comments {
-		lf.addComment("onedr0p", body)
-	}
+	lf.addComment("onedr0p", body)
 	m.forge = &postHookForge{localForge: lf}
 	m.w = &FollowUp{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: m.forge}, Logger: slog.New(slog.DiscardHandler)}
 	return m
 }
 
-// work handles the mention made by the comment-th comment, as its job's
-// attempt.
-func (m *mentions) work(ctx context.Context, comment, attempt int) error {
+// work handles the mention as its job's first attempt.
+func (m *mentions) work(ctx context.Context) error {
 	args := m.args
-	args.CommentID = commentBase + int64(comment)
+	args.CommentID = commentBase + 1
 	job := &river.Job[jobs.FollowUpArgs]{
-		JobRow: &rivertype.JobRow{ID: args.CommentID, Attempt: attempt, MaxAttempts: 8, CreatedAt: time.Now()}, Args: args,
+		JobRow: &rivertype.JobRow{ID: args.CommentID, Attempt: 1, MaxAttempts: 8, CreatedAt: time.Now()}, Args: args,
 	}
 	return m.w.Work(ctx, job)
 }
@@ -130,13 +122,13 @@ func (m *mentions) posted(s string) int {
 	return n
 }
 
-// status is the recorded outcome of the comment-th comment's mention.
-func (m *mentions) status(comment int) (store.FollowupStatus, string) {
+// status is the recorded outcome of the mention.
+func (m *mentions) status() (store.FollowupStatus, string) {
 	m.t.Helper()
 	var state store.FollowupState
 	if err := m.st.WithAccount(m.t.Context(), m.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		state, err = store.FindFollowup(m.t.Context(), tx, m.prID, commentBase+int64(comment), false)
+		state, err = store.FindFollowup(m.t.Context(), tx, m.prID, commentBase+1, false)
 		return err
 	}); err != nil && !errors.Is(err, store.ErrNotFound) {
 		m.t.Fatal(err)
@@ -144,61 +136,18 @@ func (m *mentions) status(comment int) (store.FollowupStatus, string) {
 	return state.Status, state.Reason
 }
 
-// TestFollowUpLimitNoticeOnce: once a pull request got its answers for the
-// hour, the limit notice is posted once. That holds whether a second mention
-// is handled while the first posts it or the first is retried after posting.
-func TestFollowUpLimitNoticeOnce(t *testing.T) {
-	t.Run("a second mention while the first posts", func(t *testing.T) {
-		m := newMentions(t, 4401, followUpsPerHour, "@kritika why?", "@kritika and this?")
-		var second error
-		m.forge.onPost = func(context.Context) error {
-			second = m.work(t.Context(), 2, 1)
-			return nil
-		}
-		if err := m.work(t.Context(), 1, 1); err != nil {
-			t.Fatal(err)
-		}
-		if second != nil {
-			t.Fatal(second)
-		}
-		if n := m.posted("limit of follow-ups"); n != 1 {
-			t.Fatalf("limit notices = %d, want 1", n)
-		}
-		for comment := 1; comment <= 2; comment++ {
-			if status, _ := m.status(comment); status != store.FollowupLimited {
-				t.Fatalf("mention %d = %s, want limited", comment, status)
-			}
-		}
-	})
-	t.Run("a retry after the post was cut", func(t *testing.T) {
-		m := newMentions(t, 4402, followUpsPerHour, "@kritika why?")
-		ctx, cancel := context.WithCancel(t.Context())
-		m.forge.onPost = func(context.Context) error {
-			cancel()
-			return nil
-		}
-		_ = m.work(ctx, 1, 1)
-		if err := m.work(t.Context(), 1, 2); err != nil {
-			t.Fatal(err)
-		}
-		if n := m.posted("limit of follow-ups"); n != 1 {
-			t.Fatalf("limit notices = %d, want 1", n)
-		}
-	})
-}
-
 // TestFollowUpCommandReplyOnce: a command's reply cut after the forge created
 // it, as a stopping worker cuts it, is still recorded. So the job's rerun,
 // its attempt refunded, does not post it again.
 func TestFollowUpCommandReplyOnce(t *testing.T) {
-	m := newMentions(t, 4403, 0, "@kritika pause")
+	m := newMentions(t, 4403, "@kritika pause")
 	ctx, cancel := context.WithCancel(t.Context())
 	m.forge.onPost = func(post context.Context) error {
 		cancel()
 		return post.Err()
 	}
-	_ = m.work(ctx, 1, 1)
-	if err := m.work(t.Context(), 1, 1); err != nil {
+	_ = m.work(ctx)
+	if err := m.work(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if n := m.posted(review.FollowUpMarker(commentBase + 1)); n != 1 {
@@ -209,16 +158,16 @@ func TestFollowUpCommandReplyOnce(t *testing.T) {
 // TestFollowUpFailureRecordedPastTheJob: a mention whose job ended as it
 // failed is recorded failed all the same.
 func TestFollowUpFailureRecordedPastTheJob(t *testing.T) {
-	m := newMentions(t, 4404, 0, "@kritika pause")
+	m := newMentions(t, 4404, "@kritika pause")
 	ctx, cancel := context.WithCancel(t.Context())
 	m.forge.onPost = func(context.Context) error {
 		cancel()
 		return errors.New("forge refused the reply")
 	}
-	if err := m.work(ctx, 1, 1); err == nil {
+	if err := m.work(ctx); err == nil {
 		t.Fatal("the refused reply did not fail the follow-up")
 	}
-	if status, reason := m.status(1); status != store.FollowupFailed || !strings.Contains(reason, "forge refused") {
+	if status, reason := m.status(); status != store.FollowupFailed || !strings.Contains(reason, "forge refused") {
 		t.Fatalf("mention = %s (%s), want failed", status, reason)
 	}
 }
@@ -228,7 +177,7 @@ func TestFollowUpFailureRecordedPastTheJob(t *testing.T) {
 // River will otherwise take the cancellation for its stop and refund the
 // attempt for it.
 func TestFollowUpReplyCutByAFence(t *testing.T) {
-	m := newMentions(t, 4405, 0, "@kritika pause")
+	m := newMentions(t, 4405, "@kritika pause")
 	fenced, fence := context.WithCancelCause(context.Background())
 	defer fence(nil)
 	ctx, stop := context.WithCancel(context.WithValue(t.Context(), jobFenceKey{}, fenced))
@@ -239,7 +188,7 @@ func TestFollowUpReplyCutByAFence(t *testing.T) {
 		<-post.Done()
 		return post.Err()
 	}
-	if err := m.work(ctx, 1, 1); !errors.Is(err, errJobFenced) || errors.Is(err, context.Canceled) {
+	if err := m.work(ctx); !errors.Is(err, errJobFenced) || errors.Is(err, context.Canceled) {
 		t.Fatalf("Work = %v, want the fence and no cancellation", err)
 	}
 }

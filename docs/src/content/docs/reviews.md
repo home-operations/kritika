@@ -59,9 +59,6 @@ same job can leave a pending status on the commit. While that status is still
 the job's to set, the status then says that kritika skipped the review. A
 manual request still runs.
 
-kritika handles at most five mentions per pull request per hour. Commands
-count toward this limit.
-
 ## What it posts
 
 | Item          | What to expect                                                          |
@@ -162,10 +159,9 @@ it publishes the review. If a reply in the thread is added or edited before
 then, the finding stays open for the next review to weigh. This makes no
 model call of its own.
 
-Such replies count against the five follow-ups per pull request per hour,
-whether or not kritika posts a reply. After kritika replies three times in
-a thread, it answers in that thread only when a reply mentions the bot. A
-reply that mentions the bot is a mention wherever someone posts it.
+After kritika replies three times in a thread, it answers in that thread
+only when a reply mentions the bot. A reply that mentions the bot is a
+mention wherever someone posts it.
 
 ### Dependency bumps
 

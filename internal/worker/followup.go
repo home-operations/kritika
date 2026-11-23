@@ -27,13 +27,10 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Follow-up bounds: mentions answered per pull request per hour before a
-// single "limit reached" reply, and thread messages kept in the prompt. The
-// last bound is replies that the bot makes in one of its finding threads to
-// replies that did not address it. Past that bound, it leaves the thread to a
-// mention.
+// Follow-up bounds: thread messages kept in the prompt, and replies that the
+// bot makes in one of its finding threads to replies that did not address
+// it. Past the last bound, it leaves the thread to a mention.
 const (
-	followUpsPerHour = 5
 	threadMessages   = 20
 	repliesPerThread = 3
 )
@@ -184,7 +181,7 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("worker: read follow-up: %w", err)
 	}
 	status, replyID := state.Status, state.ReplyCommentID
-	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
+	if status == store.FollowupAnswered || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
 		if replyID != nil {
 			f.unmark(ctx)
@@ -285,13 +282,6 @@ func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) 
 	if reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
-	}
-	limited, err := f.rateLimited(ctx)
-	if err != nil {
-		return store.FollowupFailed, err
-	}
-	if limited {
-		return store.FollowupLimited, nil
 	}
 	thread, _, err := f.thread(ctx)
 	if err != nil {
@@ -538,41 +528,6 @@ func (f *followUp) disqualified(ctx context.Context) string {
 		return f.replyDisqualified(ctx)
 	}
 	return ""
-}
-
-// rateLimited records the mention as limited once the pull request got its
-// share of answers this hour. The first mention that it limits posts the
-// limit notice. The record is made before the post, in the transaction that
-// counts: a mention handled at the same time counts it, and a retry finds it.
-// So the notice, which carries no marker to find it by on the forge, is
-// posted at most once.
-func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
-	var answered, notices int
-	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		var err error
-		if answered, notices, err = store.RecentFollowupCounts(ctx, tx, f.pr.id); err != nil || answered < followUpsPerHour {
-			return err
-		}
-		return f.recordTx(ctx, tx, store.FollowupLimited, "", 0, "")
-	})
-	if err != nil {
-		return false, fmt.Errorf("worker: limit follow-ups: %w", err)
-	}
-	if answered < followUpsPerHour {
-		return false, nil
-	}
-	var replyID int64
-	if notices == 0 {
-		pctx, cancel := detach(ctx)
-		defer cancel()
-		if replyID, err = f.client.CreateComment(pctx, f.owner, f.repo, f.pr.number, review.LimitBody); err != nil {
-			f.logger.Warn("limit notice not posted", "error", err)
-		} else if err := f.record(pctx, store.FollowupLimited, "", replyID, ""); err != nil {
-			f.logger.Error("limit notice not recorded", "error", err, "reply", replyID)
-		}
-	}
-	f.logger.Info("follow-up rate limited", "answered_last_hour", answered, "notice_posted", replyID != 0)
-	return true, nil
 }
 
 // thread returns the messages the model sees, the asking comment always last,
