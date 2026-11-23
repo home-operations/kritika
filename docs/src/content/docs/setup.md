@@ -123,7 +123,8 @@ port 443. If yours differ, set
 [`networkPolicy.dns`](/security/#name-lookups) and
 `networkPolicy.egressPorts`. In `networkPolicy.extraEgress`, allow what
 kritika serve reaches in the cluster, such as an S3 bucket or a model
-server.
+server. If the cluster reaches the internet only through a forward proxy,
+see [Behind an outbound proxy](/security/#behind-an-outbound-proxy).
 
 `networkPolicy.type: auto` renders Cilium's or Calico's own policies where
 the cluster serves their API, and standard NetworkPolicies otherwise. Argo CD

@@ -12,6 +12,7 @@ package egress
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -46,6 +48,13 @@ type Proxy struct {
 	// Dial opens the upstream connection to an address the rules admit.
 	// nil means a net.Dialer with connectTimeout.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Outbound returns the forward proxy that a destination, a host:port,
+	// is reached through, or nil for a connection of the proxy's own. nil
+	// reaches every destination with one.
+	Outbound func(addr string) (*url.URL, error)
+	// outboundRoots are the roots that an https:// outbound proxy is
+	// verified against, the system's when nil.
+	outboundRoots *x509.CertPool
 	// Transport sends upgraded requests. nil dials through the rules.
 	Transport http.RoundTripper
 	// Cache, when set, keeps the downloads it admits and answers the same
@@ -86,8 +95,9 @@ func (r *refusal) Error() string { return "egress: " + r.host + ": " + r.reason 
 // the host rules and is resolved once. The addresses that pass the address
 // rules are tried in turn. The address that connects is one that passed
 // those rules, so a name cannot be re-resolved to somewhere else in between.
-// dialContext is the transport dialer of upgraded requests and the dial of
-// a CONNECT.
+// A destination that Outbound names a forward proxy for is tunneled through
+// it instead (see dialThrough). dialContext is the transport dialer of
+// upgraded requests and the dial of a CONNECT.
 func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -96,6 +106,15 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 	rules := p.Rules()
 	if reason := rules.Refuses(host); reason != "" {
 		return nil, &refusal{host, reason}
+	}
+	if p.Outbound != nil {
+		via, err := p.Outbound(addr)
+		if err != nil {
+			return nil, fmt.Errorf("egress: outbound proxy: %w", err)
+		}
+		if via != nil {
+			return p.dialThrough(ctx, via, addr)
+		}
 	}
 	addrs := []netip.Addr{}
 	if a, err := netip.ParseAddr(host); err == nil {
