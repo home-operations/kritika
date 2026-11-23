@@ -479,9 +479,11 @@ func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 // and returns its id, or 0 when none waits. Where the account's slots are
 // its own, that is its oldest waiter that wakeWaiter can wake. Where every
 // account shares them, it is such a waiter of the account that holds the
-// fewest of them, and of the one that waited longest among equals: each
-// account's waiters are read in a transaction of that account, which alone
-// can tell its drafts. With ifFree, it wakes none while every slot is held.
+// fewest of them. Among accounts that hold as many, the account whose
+// oldest waiter is the oldest comes first, whether that waiter is the one
+// woken or a draft's that stays asleep: each account's waiters are read in
+// a transaction of that account, which alone can tell its drafts. With
+// ifFree, it wakes none while every slot is held.
 func (s *Store) wakeNext(ctx context.Context, accountID, modelKey string, slots configfile.Slots, ifFree bool) (int64, error) {
 	var woken int64
 	if !slots.Shared {

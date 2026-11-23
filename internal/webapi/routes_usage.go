@@ -130,6 +130,53 @@ func (s *Server) listQueue(w http.ResponseWriter, r *http.Request, t *accountSco
 	return nil
 }
 
+// modelSlots are the slot rows that account t shows, from what it read of
+// the slots held. Its own review model always shows, busy or not. Another
+// model, a repository's choice, shows only while the account holds a slot of
+// it or a review of the account waits for one: a model that only other
+// accounts review with is none of its business. The count is of every
+// holder, since the slots of an instance's provider are shared, and a job
+// waits for all of them. Such slots show once, with no account, which shared
+// records.
+func modelSlots(
+	file *configfile.File, t *configfile.Account, held map[store.SlotPool]store.HeldSlots, shared map[string]bool,
+) []ModelSlots {
+	own := string(file.Settings(t).Models.Review)
+	models := map[string]bool{}
+	if own != "" {
+		models[own] = true
+	}
+	for pool := range held {
+		models[pool.Model] = true
+	}
+	var out []ModelSlots
+	for _, model := range slices.Sorted(maps.Keys(models)) {
+		slots := file.Slots(t, configfile.ModelRef(model))
+		// The embedder's key and the reranker's name their models without
+		// their providers.
+		switch {
+		case file.Embedding == nil:
+		case strings.HasPrefix(model, "embed:"):
+			slots = file.Slots(t, file.Embedding.Ref)
+		case strings.HasPrefix(model, "rerank:") && file.Embedding.Rerank != nil:
+			slots = file.Slots(t, file.Embedding.Rerank.Ref)
+		}
+		h := held[store.SlotPool{Model: model, Shared: slots.Shared}]
+		if h.Own == 0 && !h.Waits && model != own {
+			continue
+		}
+		account := t.Slug()
+		if slots.Shared {
+			if shared[model] {
+				continue
+			}
+			shared[model], account = true, ""
+		}
+		out = append(out, ModelSlots{Account: account, Model: model, Held: h.Held, Slots: slots.Limit})
+	}
+	return out
+}
+
 // listInstanceQueue merges the queues of the accounts the viewer can read,
 // each read under its own account's row-level security.
 func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error {
@@ -139,7 +186,7 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 	shared := map[string]bool{}
 	for _, t := range readable(file, auth.PrincipalFrom(ctx)) {
 		var rows []store.JobRow
-		var held map[string]store.HeldSlots
+		var held map[store.SlotPool]store.HeldSlots
 		if err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 			var err error
 			if rows, err = store.ListQueue(ctx, tx); err != nil {
@@ -153,40 +200,7 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 		for _, j := range rows {
 			out.Jobs = append(out.Jobs, InstanceJob{Job: jobItem(j), Account: t.Slug()})
 		}
-		// The account's own review model always shows, busy or not. Another
-		// model, a repository's choice, shows only while the account holds a
-		// slot of it: a model that only other accounts review with is none
-		// of its business. The count is of every holder, since the slots of
-		// an instance's provider are shared, and a job waits for all of them.
-		settings := file.Settings(t)
-		own := string(settings.Models.Review)
-		if _, ok := held[own]; !ok && own != "" {
-			held[own] = store.HeldSlots{}
-		}
-		for _, model := range slices.Sorted(maps.Keys(held)) {
-			if held[model].Own > 0 || model == own {
-				slots := file.Slots(t, configfile.ModelRef(model))
-				// The embedder's key and the reranker's name their models
-				// without their providers.
-				switch {
-				case file.Embedding == nil:
-				case strings.HasPrefix(model, "embed:"):
-					slots = file.Slots(t, file.Embedding.Ref)
-				case strings.HasPrefix(model, "rerank:") && file.Embedding.Rerank != nil:
-					slots = file.Slots(t, file.Embedding.Rerank.Ref)
-				}
-				account := t.Slug()
-				if slots.Shared {
-					// Every account reads the same count of shared slots,
-					// which shows once.
-					if shared[model] {
-						continue
-					}
-					shared[model], account = true, ""
-				}
-				out.Slots = append(out.Slots, ModelSlots{Account: account, Model: model, Held: held[model].Held, Slots: slots.Limit})
-			}
-		}
+		out.Slots = append(out.Slots, modelSlots(file, t, held, shared)...)
 	}
 	// Unfinished jobs lead, the longest scheduled first, then the finished,
 	// the latest first: each account's own order, kept across them.

@@ -97,8 +97,8 @@ one value for the provider. An account that needs slots of its own on the
 same endpoint declares a provider of its own under
 [`accounts`](/configuration/#accounts).
 
-A self-hosted server that runs a fixed number of requests at once sets
-`concurrency` to that number on its root provider:
+A self-hosted server that serves one model and runs a fixed number of
+requests at once sets `concurrency` to that number on its root provider:
 
 ```yaml
 providers:
@@ -108,6 +108,10 @@ providers:
     apiKey: { env: LOCAL_API_KEY }
     concurrency: 6
 ```
+
+Each model of the provider has slots of its own. A server that shares its
+limit between several models can get `concurrency` calls on each of them
+at once, so the server itself must hold the limit across models.
 
 A [fallback](#fallback) on another provider has slots of its own: a step
 that goes to it takes one of the fallback model's for the step, and waits
