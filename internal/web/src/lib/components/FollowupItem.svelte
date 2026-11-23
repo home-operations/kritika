@@ -15,10 +15,9 @@
   let open = $state(false);
   const id = $derived(`fu-${f.id}`);
   // The question is where it was asked, in a thread or on the conversation,
-  // and so is its answer. The notice that a limit was reached always goes on
-  // the conversation.
+  // and so is its answer.
   const asked = $derived(f.inline ? threadUrl(slug, f.pullUrl, f.commentId) : commentUrl(slug, f.pullUrl, f.commentId));
-  const answered = $derived(f.inline && f.status !== 'limited' ? threadUrl(slug, f.pullUrl, f.replyCommentId) : commentUrl(slug, f.pullUrl, f.replyCommentId));
+  const answered = $derived(f.inline ? threadUrl(slug, f.pullUrl, f.replyCommentId) : commentUrl(slug, f.pullUrl, f.replyCommentId));
 </script>
 
 <!-- The chevron is the keyboard's toggle. The card's whitespace is the pointer's, as in the tables. -->

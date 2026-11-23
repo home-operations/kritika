@@ -1167,7 +1167,7 @@
           "refId": "A"
         }
       ],
-      "description": "Mentions handled: answered, limited, ignored, failed."
+      "description": "Mentions handled: answered, ignored, failed."
     },
     {
       "id": 19,

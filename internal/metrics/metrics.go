@@ -115,7 +115,7 @@ func New(reg prometheus.Registerer) *Metrics {
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
 		}, []string{lblAccount}),
 		followups: f.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
+			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
 		threads: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_threads_total",

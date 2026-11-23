@@ -262,9 +262,6 @@ func FollowUpBody(reply, model, effort string, notes []string) string {
 	return b.String()
 }
 
-// LimitBody is posted once when a thread hits its follow-up rate limit.
-const LimitBody = "kritika has answered the limit of follow-ups for this pull request in the past hour and will pick up again later.\n"
-
 // DismissedBody is the reply to a dismissal of the finding a comment
 // replies to.
 const DismissedBody = "Dismissed: later reviews of this pull request will not raise this finding again.\n"

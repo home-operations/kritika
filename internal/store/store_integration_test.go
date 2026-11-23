@@ -211,6 +211,9 @@ func TestMigrationGivesWayToALock(t *testing.T) {
 			`LOCK TABLE index_runs IN ACCESS SHARE MODE`, column("index_runs", "generation_chunks")},
 		{"the index of the steps' formats", []string{"0070_index_runs_stepped_idx"}, `DROP INDEX index_runs_stepped_idx`,
 			`LOCK TABLE index_runs IN ROW EXCLUSIVE MODE`, exists(`SELECT to_regclass('index_runs_stepped_idx') IS NOT NULL`)},
+		{"the follow-ups' statuses", []string{"0072_followups_unlimited"}, followupsWithLimited,
+			`LOCK TABLE followups IN ACCESS SHARE MODE`,
+			exists(`SELECT pg_get_constraintdef(oid) NOT LIKE '%limited%' FROM pg_constraint WHERE conname = 'followups_status_check'`)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if !tt.applied() {

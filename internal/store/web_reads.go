@@ -57,7 +57,6 @@ type FollowupStatus string
 // Follow-up statuses.
 const (
 	FollowupAnswered FollowupStatus = "answered"
-	FollowupLimited  FollowupStatus = "limited"
 	FollowupIgnored  FollowupStatus = "ignored"
 	FollowupFailed   FollowupStatus = "failed"
 )

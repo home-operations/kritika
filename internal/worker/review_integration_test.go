@@ -1322,14 +1322,6 @@ func checkReplies(
 ) {
 	t.Helper()
 	_, waitFollowUp, _ := followUpHelpers(ctx, t, st, svc, lf, req, accountID)
-	// The mentions answered before this spent the pull request's hour.
-	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE followups SET created_at = now() - interval '2 hours'
-			WHERE pull_request_id IN (SELECT id FROM pull_requests WHERE account_id = $1 AND number = 1)`, accountID)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
 	lf.mu.Lock()
 	if len(lf.inline) == 0 {
 		lf.mu.Unlock()
@@ -1461,8 +1453,7 @@ func checkReplyBounds(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 }
 
 // checkFollowUps posts mentions as the forge delivers them and makes sure
-// that qualification, the reply, the thread in the prompt, and the rate limit
-// are correct.
+// that qualification, the reply, and the thread in the prompt are correct.
 func checkFollowUps(
 	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
 ) {
@@ -1526,11 +1517,11 @@ func checkFollowUps(
 		t.Fatalf("no mention: status = %s (%s)", status, reason)
 	}
 
-	// Four more answers exhaust the hourly allowance. The next mention gets
-	// one notice, the one after that nothing new.
+	// A pull request answers every mention, however many it answered in the
+	// hour.
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO followups (account_id, pull_request_id, comment_id, status)
-			SELECT $1, f.pull_request_id, f.comment_id + 1000 + s, 'answered' FROM followups f, generate_series(1, 4) AS s WHERE f.comment_id = $2`,
+			SELECT $1, f.pull_request_id, f.comment_id + 1000 + s, 'answered' FROM followups f, generate_series(1, 9) AS s WHERE f.comment_id = $2`,
 			accountID, id)
 		return err
 	})
@@ -1538,19 +1529,8 @@ func checkFollowUps(
 		t.Fatal(err)
 	}
 	id = mention("onedr0p", "@kritika again?")
-	if status, _ := waitFollowUp(id); status != "limited" {
-		t.Fatalf("status = %s, want limited", status)
-	}
-	before, body := lastComment()
-	if !strings.Contains(body, "limit of follow-ups") {
-		t.Fatalf("limit notice not posted, last comment = %q", body)
-	}
-	id = mention("onedr0p", "@kritika and again?")
-	status, _ := waitFollowUp(id)
-	after, _ := lastComment()
-	// The mention itself is one comment. No notice follows it.
-	if status != "limited" || after != before+1 {
-		t.Fatalf("second limited mention: status = %s, comments %d -> %d", status, before, after)
+	if status, reason := waitFollowUp(id); status != "answered" {
+		t.Fatalf("mention after ten answers in the hour: status = %s (%s), want answered", status, reason)
 	}
 }
 
@@ -1593,8 +1573,7 @@ func checkFollowUpRun(ctx context.Context, t *testing.T, st *store.Store, accoun
 // someone with write access. It answers with the bot's marks as the review
 // ends rather than a reply. Anyone else is ignored as for a question. It runs
 // last, because the review it queues changes pull request 1's last review. It
-// first clears the thread's follow-ups, so the hourly limit that earlier
-// checks spent does not apply, and it reopens the pull request.
+// reopens the pull request.
 func checkReviewRequest(
 	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, req ingest.Request, accountID string,
 ) {
@@ -1624,9 +1603,6 @@ func checkReviewRequest(
 	// nothing is left to diff, and the request says so instead of queueing.
 	var head string
 	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM followups`); err != nil {
-			return err
-		}
 		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = 1 AND merged`).Scan(&head)
 	}); err != nil {
 		t.Fatal(err)
@@ -1899,7 +1875,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkOtherReviewRunning(ctx, t, &wb, account.ID())
 	})
 
-	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
+	t.Run("follow-up answers a qualifying mention", func(t *testing.T) {
 		followConfig := configfiletest.Load(t, configYAML+"\ncontext:\n  - { path: AGENTS.md, description: Follow-up conventions }\n")
 		if err := appStore.ApplyConfig(ctx, followConfig); err != nil {
 			t.Fatal(err)

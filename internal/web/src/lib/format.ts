@@ -144,7 +144,6 @@ export function indexJobText(j: IndexJob): string {
 
 export const followupTone: Record<FollowupStatus, Tone> = {
   answered: 'ok',
-  limited: 'warn',
   ignored: 'muted',
   failed: 'danger',
 };
