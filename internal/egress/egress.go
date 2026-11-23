@@ -49,8 +49,9 @@ type Proxy struct {
 	// nil means a net.Dialer with connectTimeout.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Outbound returns the forward proxy that a destination, a host:port,
-	// is reached through, or nil for a connection of the proxy's own. nil
-	// reaches every destination with one.
+	// is reached through where the rules send destinations through one, or
+	// nil for a connection of the proxy's own. nil reaches every
+	// destination with one.
 	Outbound func(addr string) (*url.URL, error)
 	// outboundRoots are the roots that an https:// outbound proxy is
 	// verified against, the system's when nil.
@@ -95,9 +96,9 @@ func (r *refusal) Error() string { return "egress: " + r.host + ": " + r.reason 
 // the host rules and is resolved once. The addresses that pass the address
 // rules are tried in turn. The address that connects is one that passed
 // those rules, so a name cannot be re-resolved to somewhere else in between.
-// A destination that Outbound names a forward proxy for is tunneled through
-// it instead (see dialThrough). dialContext is the transport dialer of
-// upgraded requests and the dial of a CONNECT.
+// Where the rules say so, a destination that Outbound names a forward proxy
+// for is tunneled through it instead (see dialThrough). dialContext is the
+// transport dialer of upgraded requests and the dial of a CONNECT.
 func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -107,7 +108,7 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 	if reason := rules.Refuses(host); reason != "" {
 		return nil, &refusal{host, reason}
 	}
-	if p.Outbound != nil {
+	if rules.OutboundProxy && p.Outbound != nil {
 		via, err := p.Outbound(addr)
 		if err != nil {
 			return nil, fmt.Errorf("egress: outbound proxy: %w", err)

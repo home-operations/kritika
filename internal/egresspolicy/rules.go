@@ -23,6 +23,10 @@ type Rules struct {
 	// Uncached are the exact hosts the cache keeps nothing from, when it
 	// has a cache: a locked install's downloads from them stay its own.
 	Uncached []string
+	// OutboundProxy is whether a destination that the gateway's environment
+	// names a forward proxy for is reached through that proxy. The proxy
+	// then resolves a name, so no address rule judges where the name leads.
+	OutboundProxy bool
 }
 
 // The schemes a credential is applied by.

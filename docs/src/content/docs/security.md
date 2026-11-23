@@ -126,11 +126,12 @@ egress:
     api.github.com: { token: { env: GITHUB_TOKEN }, accounts: ["*"] }
 ```
 
-| Key           | What                                                                                                                                                                                   |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow`       | the destinations a runner can reach: a host, exact or `*.`-prefixed for every host under a domain, `"*"` for every host, or an IP address or CIDR (an address range)                   |
-| `deny`        | destinations refused however `allow` matches them, in the same forms                                                                                                                   |
-| `credentials` | the credential that the gateway signs a plain `http://` request to that host in with, for the runs of the accounts that it lists. The runner never holds it. The host must be allowed. |
+| Key             | What                                                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow`         | the destinations a runner can reach: a host, exact or `*.`-prefixed for every host under a domain, `"*"` for every host, or an IP address or CIDR (an address range)                   |
+| `deny`          | destinations refused however `allow` matches them, in the same forms                                                                                                                   |
+| `credentials`   | the credential that the gateway signs a plain `http://` request to that host in with, for the runs of the accounts that it lists. The runner never holds it. The host must be allowed. |
+| `outboundProxy` | `true` sends runner connections through the forward proxy of the serve pods' `HTTPS_PROXY`, for a cluster [behind an outbound proxy](#behind-an-outbound-proxy). Off unless set        |
 
 At startup, kritika makes sure that no `deny` host pattern cuts off a host
 that a connection's forge needs. It rejects a pattern that does. A `deny`
@@ -233,8 +234,8 @@ With `oci`, the gateway answers the registry's challenge itself:
 The gateway makes sure that a host's name passes the egress rules, then
 resolves the name once. The gateway connects to an address that passed
 those rules rather than resolving the name again.
-[Behind an outbound proxy](#behind-an-outbound-proxy), the proxy resolves
-the name instead.
+With [`egress.outboundProxy`](#behind-an-outbound-proxy), the proxy
+resolves the name instead.
 
 The gateway refuses an address that is not on the public internet unless
 an `allow` address covers it. Such addresses include RFC 1918 and other
@@ -267,9 +268,14 @@ deletes them with the run's transcripts.
 
 Some clusters reach the internet only through a forward proxy. On such a
 cluster, set `HTTPS_PROXY` and `NO_PROXY` on the kritika serve pods with
-the chart's `env`, and add the proxy's port to `networkPolicy.egressPorts`:
+the chart's `env`, and add the proxy's port to `networkPolicy.egressPorts`.
+Then set `egress.outboundProxy`, which sends what runners reach through
+that proxy:
 
 ```yaml
+config:
+  egress:
+    outboundProxy: true
 env:
   HTTPS_PROXY: http://proxy.example.com:8080
   NO_PROXY: .svc,.cluster.local,10.0.0.0/8
@@ -277,29 +283,36 @@ networkPolicy:
   egressPorts: [443, 8080]
 ```
 
-The gateway reads these variables as kritika's other HTTP clients do, the
-clients of the forges, the model endpoints and the Kubernetes API among
-them. So `NO_PROXY` must cover what the kritika serve pods reach inside
-the cluster.
+kritika's other HTTP clients read the two variables without
+`egress.outboundProxy`. Those are the clients of the forges, the model
+endpoints and the Kubernetes API, among others. So `NO_PROXY` must cover
+what the kritika serve pods reach inside the cluster. An address or CIDR
+in `NO_PROXY` matches a destination that is written as an address. It
+does not match a name that resolves to that address, so list the names
+or domain suffixes of internal hosts too.
 
-The gateway sends a runner's connection through the proxy unless
-`NO_PROXY` covers the destination. The proxy's URL starts with `http://`
-or `https://`. A user and password in the URL sign the gateway in to the
-proxy. The runner holds neither. Keep a URL with a password in a Secret,
-and set the variable with `valueFrom.secretKeyRef`.
-
-Through the proxy, the egress rules apply as follows:
+`egress.outboundProxy` is off unless set, because it hands a part of the
+egress rules to the proxy. With it, the gateway sends a runner's
+connection through the proxy unless `NO_PROXY` covers the destination,
+and the rules apply as follows:
 
 - The gateway judges the name by `allow` and `deny` before it asks the
   proxy for the destination.
 - The proxy resolves the name, and the gateway does not. So no rule
   judges the address that a name resolves to. That includes a `deny`
-  address and the refusal of private addresses. The connection leaves
-  from the proxy, so the proxy's own rules decide where a name leads.
+  address and the refusal of private addresses.
+- The connection leaves from the proxy. So `"*"` opens every name that
+  the proxy reaches, and that can include the LAN behind it. Make sure
+  that the proxy refuses what runners must not reach.
 - A destination given as an address still needs an `allow` address that
   covers it.
 - A destination that `NO_PROXY` covers is resolved, judged and reached as
   it is without a proxy.
+
+The proxy's URL starts with `http://` or `https://`. A user and password
+in the URL sign the gateway in to the proxy. The runner holds neither.
+Keep a URL with a password in a Secret, and set the variable with
+`valueFrom.secretKeyRef`.
 
 When the proxy refuses a destination, the runner's command gets a 502
 with the proxy's answer.

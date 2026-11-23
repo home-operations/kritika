@@ -83,7 +83,8 @@ func (p *Proxy) connectThrough(ctx context.Context, conn net.Conn, via *url.URL,
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
+	// Any 2xx answer to a CONNECT opens the tunnel (RFC 9110, section 9.3.6).
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("CONNECT %s: %s", addr, resp.Status)
 	}
 	return &tunnelConn{Conn: conn, r: br}, nil

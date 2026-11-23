@@ -924,7 +924,10 @@ forward proxy, beyond the connections' forges. Those forges are
 for a Forgejo, GitLab or Gitea connection. `allow` and `deny` list
 hosts, IP addresses and CIDRs, and `credentials` names hosts that the
 gateway signs requests in to, for the runs of the accounts that each
-one lists. Once `gatewayCacheDir` is set, the gateway
+one lists. `outboundProxy: true` sends what runners reach through the
+forward proxy that the serve pods' `HTTPS_PROXY` names, for a cluster
+[behind an outbound proxy](/security/#behind-an-outbound-proxy). Once
+`gatewayCacheDir` is set, the gateway
 keeps the downloads that a repository's lock pins there.
 [Security](/security/#the-egress-gateway) describes them with the
 gateway, and the cache with [runner

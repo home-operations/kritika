@@ -62,14 +62,17 @@ func (o *outbound) seen() []string {
 	return slices.Clone(o.asked)
 }
 
-// newOutboundProxy is a proxy whose destinations go through an outbound
-// forward proxy, all but those of direct, which it dials itself. secure
-// serves the outbound proxy over TLS. No name resolves, so a destination
-// that goes through the outbound proxy is one the proxy did not resolve.
-func newOutboundProxy(t *testing.T, rules egresspolicy.Rules, secure bool, direct ...string) (*httptest.Server, *outbound, map[string]int, *[]string) {
+// newOutboundProxy is a proxy whose environment names an outbound forward
+// proxy for every destination but those of direct. secure serves the
+// outbound proxy over TLS. Only direct.example resolves, so another name
+// that is reached is one the proxy did not resolve. outcomes counts the
+// requests by kind and outcome so far.
+func newOutboundProxy(
+	t *testing.T, rules egresspolicy.Rules, secure bool, direct ...string,
+) (srv *httptest.Server, out *outbound, outcomes func() map[string]int, dialed *[]string) {
 	t.Helper()
 	target, dial, dialed := upstream(t)
-	out := &outbound{}
+	out = &outbound{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out.serve(w, r, target.Listener.Addr().String())
 	})
@@ -85,10 +88,20 @@ func newOutboundProxy(t *testing.T, rules egresspolicy.Rules, secure bool, direc
 		t.Fatal(err)
 	}
 	via.User = url.UserPassword("gateway", "s3cret")
-	outcomes := map[string]int{}
+	var mu sync.Mutex
+	counts := map[string]int{}
+	outcomes = func() map[string]int {
+		mu.Lock()
+		defer mu.Unlock()
+		return maps.Clone(counts)
+	}
 	p := &Proxy{
 		Rules: func() egresspolicy.Rules { return rules }, Resolver: names{"direct.example": {"203.0.113.20"}}, Dial: dial, Logger: slog.Default(),
-		Observe: func(kind, outcome string) { outcomes[kind+"/"+outcome]++ },
+		Observe: func(kind, outcome string) {
+			mu.Lock()
+			defer mu.Unlock()
+			counts[kind+"/"+outcome]++
+		},
 		Outbound: func(addr string) (*url.URL, error) {
 			host, _, _ := net.SplitHostPort(addr)
 			if slices.Contains(direct, host) {
@@ -101,14 +114,15 @@ func newOutboundProxy(t *testing.T, rules egresspolicy.Rules, secure bool, direc
 		p.outboundRoots = forward.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
 	}
 	p.Transport = &http.Transport{DialContext: p.dialContext, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test upstream
-	srv := httptest.NewServer(p)
+	srv = httptest.NewServer(p)
 	t.Cleanup(srv.Close)
 	return srv, out, outcomes, dialed
 }
 
-// TestOutboundProxy: a destination that the environment names a forward
-// proxy for is reached through it by name, signed in with the proxy's user,
-// and neither resolved nor dialed by the gateway.
+// TestOutboundProxy: where the rules send destinations through the outbound
+// proxy, a destination that the environment names one for is reached through
+// it by name, signed in with the proxy's user, and neither resolved nor
+// dialed by the gateway.
 func TestOutboundProxy(t *testing.T) {
 	const auth = " Basic Z2F0ZXdheTpzM2NyZXQ="
 	for _, secure := range []bool{false, true} {
@@ -116,7 +130,7 @@ func TestOutboundProxy(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rules := egresspolicy.Rules{
 				Allow:       egresspolicy.List{Hosts: []string{"api.github.com", "direct.example"}, Prefixes: prefixes("198.51.100.0/24")},
-				Credentials: bearer("api.github.com", "secret"),
+				Credentials: bearer("api.github.com", "secret"), OutboundProxy: true,
 			}
 			proxy, out, outcomes, dialed := newOutboundProxy(t, rules, secure, "direct.example")
 			client := viaProxy(proxy)
@@ -177,8 +191,8 @@ func TestOutboundProxy(t *testing.T) {
 			if len(out.seen()) != len(want) {
 				t.Fatalf("refused destinations reached the outbound proxy: %q", out.seen())
 			}
-			if outcomes["connect/allowed"] != 3 || outcomes["http/allowed"] != 1 || outcomes["http/refused"] != 2 || outcomes["connect/refused"] != 2 {
-				t.Fatalf("outcomes = %v", outcomes)
+			if got := outcomes(); got["connect/allowed"] != 3 || got["http/allowed"] != 1 || got["http/refused"] != 2 || got["connect/refused"] != 2 {
+				t.Fatalf("outcomes = %v", got)
 			}
 		})
 	}
@@ -187,7 +201,7 @@ func TestOutboundProxy(t *testing.T) {
 // TestOutboundProxyRefusal: what the outbound proxy answers a CONNECT with
 // reaches the runner, and the proxy's password does not.
 func TestOutboundProxyRefusal(t *testing.T) {
-	proxy, out, outcomes, _ := newOutboundProxy(t, egresspolicy.Rules{Allow: hosts("api.github.com")}, false)
+	proxy, out, outcomes, _ := newOutboundProxy(t, egresspolicy.Rules{Allow: hosts("api.github.com"), OutboundProxy: true}, false)
 	out.refuse = http.StatusForbidden
 	client := viaProxy(proxy)
 	defer client.CloseIdleConnections()
@@ -206,8 +220,38 @@ func TestOutboundProxyRefusal(t *testing.T) {
 	if _, err := client.Get("https://api.github.com/x"); err == nil || !strings.Contains(err.Error(), "Bad Gateway") {
 		t.Fatalf("CONNECT: err = %v, want a Bad Gateway from the proxy", err)
 	}
-	if outcomes["http/error"] != 1 || outcomes["connect/error"] != 1 {
-		t.Fatalf("outcomes = %v", outcomes)
+	if got := outcomes(); got["http/error"] != 1 || got["connect/error"] != 1 {
+		t.Fatalf("outcomes = %v", got)
+	}
+}
+
+// TestOutboundProxyIsOptIn: a forward proxy in the environment changes
+// nothing until the rules send destinations through it.
+func TestOutboundProxyIsOptIn(t *testing.T) {
+	proxy, out, outcomes, dialed := newOutboundProxy(t, egresspolicy.Rules{Allow: hosts("*")}, false)
+	client := viaProxy(proxy)
+	defer client.CloseIdleConnections()
+	for _, u := range []string{"https://direct.example/x", "http://direct.example/x"} {
+		resp, err := client.Get(u)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %v %v", u, resp, err)
+		}
+		_ = resp.Body.Close()
+	}
+	// A name that the gateway cannot resolve is not handed to the proxy.
+	resp, err := client.Get("http://api.github.com/x")
+	if err != nil || resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("unresolved name: %v %v, want 502", resp, err)
+	}
+	_ = resp.Body.Close()
+	if asked := out.seen(); len(asked) != 0 {
+		t.Fatalf("the outbound proxy was asked %q", asked)
+	}
+	if !slices.Equal(*dialed, []string{"203.0.113.20:443", "203.0.113.20:443"}) {
+		t.Fatalf("dialed %v", *dialed)
+	}
+	if got := outcomes(); got["connect/allowed"] != 1 || got["http/allowed"] != 1 || got["http/error"] != 1 {
+		t.Fatalf("outcomes = %v", got)
 	}
 }
 
@@ -244,15 +288,24 @@ func TestDialThrough(t *testing.T) {
 	}
 	p := &Proxy{}
 
-	t.Run("bytes that follow the proxy's answer are the tunnel's", func(t *testing.T) {
-		conn, err := p.dialThrough(t.Context(), serve(t, "HTTP/1.1 200 Connection established\r\n\r\nhello"), "example.com:443")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = conn.Close() }()
-		got := make([]byte, 5)
-		if _, err := io.ReadFull(conn, got); err != nil || string(got) != "hello" {
-			t.Fatalf("read %q, %v", got, err)
+	// Any 2xx answer opens the tunnel.
+	for _, status := range []string{"200 Connection established", "204 No Content"} {
+		t.Run("bytes that follow the proxy's "+status+" are the tunnel's", func(t *testing.T) {
+			conn, err := p.dialThrough(t.Context(), serve(t, "HTTP/1.1 "+status+"\r\n\r\nhello"), "example.com:443")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = conn.Close() }()
+			got := make([]byte, 5)
+			if _, err := io.ReadFull(conn, got); err != nil || string(got) != "hello" {
+				t.Fatalf("read %q, %v", got, err)
+			}
+		})
+	}
+	t.Run("an answer that is not a 2xx fails the dial", func(t *testing.T) {
+		_, err := p.dialThrough(t.Context(), serve(t, "HTTP/1.1 302 Found\r\nLocation: http://login.example/\r\n\r\n"), "example.com:443")
+		if err == nil || !strings.Contains(err.Error(), "CONNECT example.com:443: 302 Found") {
+			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("a proxy that does not answer is given up at the request's end", func(t *testing.T) {
@@ -298,7 +351,10 @@ func TestEnvOutbound(t *testing.T) {
 		want map[string]string
 	}{
 		{"a proxy for all but what NO_PROXY covers",
-			[]string{"HTTPS_PROXY=http://user:pw@proxy.example:8080", "HTTP_PROXY=http://plain.example:3128", "NO_PROXY=direct.example,10.0.0.0/8,.svc"},
+			// The upper-case names win over the lower-case ones, as for
+			// the server's other clients.
+			[]string{"HTTPS_PROXY=http://user:pw@proxy.example:8080", "https_proxy=http://lower.example:3128",
+				"HTTP_PROXY=http://plain.example:3128", "NO_PROXY=direct.example,10.0.0.0/8,.svc", "no_proxy=gitlab.example.com"},
 			map[string]string{"gitlab.example.com:443": "proxy.example:8080", "direct.example:443": "direct", "10.1.2.3:443": "direct",
 				"minio.storage.svc:443": "direct", "203.0.113.9:443": "proxy.example:8080", "[2001:db8::1]:443": "proxy.example:8080"}},
 		{"no proxy", nil, map[string]string{"gitlab.example.com:443": "direct", "direct.example:443": "direct", "10.1.2.3:443": "direct",

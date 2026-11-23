@@ -647,6 +647,10 @@ type Egress struct {
 	Allow       []string                    `yaml:"allow,omitempty"`
 	Deny        []string                    `yaml:"deny,omitempty"`
 	Credentials map[string]EgressCredential `yaml:"credentials,omitempty"`
+	// OutboundProxy sends what runners reach through the forward proxy of
+	// the serve pods' HTTPS_PROXY. It is off unless set: the proxy then
+	// decides where a name leads, in place of the address rules.
+	OutboundProxy bool `yaml:"outboundProxy,omitempty"`
 
 	allow, deny egresspolicy.List
 	// tokens are read by resolve. validateEgress makes credentials of them,

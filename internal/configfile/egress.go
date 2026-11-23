@@ -217,6 +217,7 @@ func (f *File) EgressRules() egresspolicy.Rules {
 	}
 	return egresspolicy.Rules{
 		Allow: allow, Deny: f.Egress.deny, Credentials: creds, Uncached: []string{GitHubAPIHost},
+		OutboundProxy: f.Egress.OutboundProxy,
 	}
 }
 
