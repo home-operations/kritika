@@ -27,7 +27,7 @@
     "@tanstack/svelte-query-devtools": "^6.4.7",
     "@typescript/native": "npm:typescript@^7.0.2",
     "bits-ui": "^2.22.0",
-    "layerchart": "^2.11.0",
+    "layerchart": "^2.12.0",
     "marked": "^18.3.0",
     "oxlint": "^1.95.0",
     "shiki": "^4.6.0",
