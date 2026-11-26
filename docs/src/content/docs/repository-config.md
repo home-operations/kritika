@@ -167,6 +167,10 @@ rating, so the file cannot lower or remove a floor that the admin set. A
 level that is not `low`, `medium`, `high` or `critical`, or a glob that is
 not valid, stops the file from parsing.
 
+A floor holds only the rating of a scored review. It does nothing where no
+confidence model is set, or for a pull request that `confidence.when` leaves
+unscored.
+
 `confidence.instructions` are the admin's alone
 ([confidence and approvals](/confidence/)).
 

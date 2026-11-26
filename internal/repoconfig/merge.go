@@ -153,23 +153,21 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 }
 
 // withFloors is the admin's risk floors with the file's added: each level
-// lists the admin's globs, then the file's that it lacks. The highest level
-// that a path matches holds (see configfile.RiskFloors.Floor), so the file
-// can raise a path's floor and never lower or remove one. The admin's floors
-// are not changed.
+// lists the admin's globs, then the file's. The highest level that a path
+// matches holds (see configfile.RiskFloors.Floor), so the file can raise a
+// path's floor and never lower or remove one. The admin's floors are not
+// changed.
 func withFloors(admin, file configfile.RiskFloors) configfile.RiskFloors {
 	if len(file) == 0 {
 		return admin
 	}
-	out := make(configfile.RiskFloors, len(admin)+len(file))
-	for level, globs := range admin {
-		out[level] = slices.Clone(globs)
+	out := maps.Clone(admin)
+	if out == nil {
+		out = configfile.RiskFloors{}
 	}
 	for level, globs := range file {
-		for _, g := range globs {
-			if !slices.Contains(out[level], g) {
-				out[level] = append(out[level], g)
-			}
+		if len(globs) > 0 {
+			out[level] = slices.Concat(admin[level], globs)
 		}
 	}
 	return out

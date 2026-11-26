@@ -439,13 +439,14 @@ func TestMergeFloors(t *testing.T) {
 		want    configfile.RiskFloors
 		changed string
 		floor   review.Risk
+		wantErr bool
 	}{
 		{name: "no floors of its own keeps the admin's", doc: "ignore: [gen/**]\n", want: adminFloors(),
 			changed: "charts/x/values.yaml", floor: review.RiskHigh},
 		{name: "a level the admin does not set", doc: "confidence: { floors: { medium: ['docs/**'] } }\n",
 			want:    configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}, review.RiskHigh: {"charts/**"}, review.RiskMedium: {"docs/**"}},
 			changed: "docs/a.md", floor: review.RiskMedium},
-		{name: "globs follow the admin's at a level, each once", doc: "confidence: { floors: { high: ['infra/**', 'charts/**', 'infra/**'] } }\n",
+		{name: "globs follow the admin's at a level", doc: "confidence: { floors: { high: ['infra/**'] } }\n",
 			want:    configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}, review.RiskHigh: {"charts/**", "infra/**"}},
 			changed: "infra/cilium/values.yaml", floor: review.RiskHigh},
 		{name: "a higher level for an admin's path holds", doc: "confidence: { floors: { critical: ['charts/**'] } }\n",
@@ -457,14 +458,16 @@ func TestMergeFloors(t *testing.T) {
 		{name: "an empty level removes none of the admin's", doc: "confidence: { floors: { critical: [], medium: [] } }\n", want: adminFloors(),
 			changed: "db/migrations/1.sql", floor: review.RiskCritical},
 		{name: "a file that does not parse leaves the admin's", doc: "confidence: { floors: { none: ['**'] } }\n", want: adminFloors(),
-			changed: "db/migrations/1.sql", floor: review.RiskCritical},
+			changed: "db/migrations/1.sql", floor: review.RiskCritical, wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			op := adminSettings()
 			op.Confidence.Floors = adminFloors()
-			// A parse error is the last case's, and leaves the admin's settings.
-			m, _ := Merge([]byte(tt.doc), op)
+			m, err := Merge([]byte(tt.doc), op)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, want one: %t", err, tt.wantErr)
+			}
 			if !reflect.DeepEqual(m.Confidence.Floors, tt.want) {
 				t.Fatalf("floors = %v, want %v", m.Confidence.Floors, tt.want)
 			}
