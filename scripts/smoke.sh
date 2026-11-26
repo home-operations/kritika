@@ -22,9 +22,9 @@ cd "$REPO_ROOT"
 # renovate: datasource=github-releases depName=cloudnative-pg/cloudnative-pg
 CNPG_VERSION=v1.30.2
 # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
-POSTGRES_TAG=18.6-standard-bookworm
+POSTGRES_TAG=19.0-standard-bookworm
 # renovate: datasource=docker depName=ghcr.io/home-operations/vchord
-VCHORD_TAG=1.3.0
+VCHORD_TAG=1.5.0
 
 cluster="${KRITIKA_SMOKE_CLUSTER:-kritika-smoke}"
 image="${KRITIKA_SMOKE_IMAGE:-ghcr.io/home-operations/kritika:smoke}"
@@ -136,9 +136,9 @@ spec:
         image:
           reference: ghcr.io/home-operations/vchord:${VCHORD_TAG}
         dynamic_library_path:
-          - /usr/lib/postgresql/18/lib/
+          - /usr/lib/postgresql/${POSTGRES_TAG%%.*}/lib/
         extension_control_path:
-          - /usr/share/postgresql/18/
+          - /usr/share/postgresql/${POSTGRES_TAG%%.*}/
     shared_preload_libraries:
       - vchord
   storage:

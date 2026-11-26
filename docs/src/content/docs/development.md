@@ -17,6 +17,9 @@ mise run ui-mock            # the dashboard at http://localhost:5544/ on mocked 
 `mise watch` runs under watchexec, which `mise install` does not install.
 `mise use -g watchexec` installs it.
 
+`mise run test-integration` uses Postgres 19. Set `KRITIKA_TEST_POSTGRES=18`
+to use Postgres 18. CI's Go Integration job runs the suites on both.
+
 `mise run smoke` is what CI's Serve Smoke job runs. It:
 
 1. Builds the image.

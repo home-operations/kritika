@@ -86,19 +86,28 @@ set -e
 # The smoke test's Postgres and VectorChord images. VectorChord mounts the way
 # CNPG mounts it, as an image (Docker 28+, which does not pull it itself). The
 # Postgres image has no entrypoint, so the container runs initdb, with CNPG's
-# default UTF8 encoding and C locale.
+# default UTF8 encoding and C locale. KRITIKA_TEST_POSTGRES picks the Postgres
+# major, 19 (the smoke test's) by default. CI runs the suite on each major.
 # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
-postgres_tag=18.6-standard-bookworm
+postgres18_tag=18.7-standard-bookworm
+# renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
+postgres19_tag=19.0-standard-bookworm
+pg=${KRITIKA_TEST_POSTGRES:-19}
+case "$pg" in
+  18) postgres_tag=$postgres18_tag ;;
+  19) postgres_tag=$postgres19_tag ;;
+  *) echo "test-integration: KRITIKA_TEST_POSTGRES is $pg, not 18 or 19" >&2; exit 1 ;;
+esac
 # renovate: datasource=docker depName=ghcr.io/home-operations/vchord
-vchord_tag=1.3.0
+vchord_tag=1.5.0
 docker pull -q "ghcr.io/home-operations/vchord:${vchord_tag}" >/dev/null
 cid=$(docker create -p 127.0.0.1::5432 \
   --mount "type=image,source=ghcr.io/home-operations/vchord:${vchord_tag},target=/ext" \
   "ghcr.io/cloudnative-pg/postgresql:${postgres_tag}" \
   bash -c 'echo super >/tmp/pwfile && initdb -D /tmp/pgdata -U postgres --encoding=UTF8 --locale=C --pwfile=/tmp/pwfile --auth-local=trust --auth-host=scram-sha-256 >/dev/null && echo "host all all all scram-sha-256" >>/tmp/pgdata/pg_hba.conf && exec postgres -D /tmp/pgdata "$@"' postgres \
   -c listen_addresses='*' -c shared_preload_libraries=vchord \
-  -c dynamic_library_path=/usr/lib/postgresql/18/lib:/ext/usr/lib/postgresql/18/lib \
-  -c extension_control_path=/usr/share/postgresql/18:/ext/usr/share/postgresql/18)
+  -c dynamic_library_path=/usr/lib/postgresql/${pg}/lib:/ext/usr/lib/postgresql/${pg}/lib \
+  -c extension_control_path=/usr/share/postgresql/${pg}:/ext/usr/share/postgresql/${pg})
 # The container is created, its cleanup set, and only then started, so one
 # that Docker cannot start is removed too. It is kept until the task ends, so
 # that when Postgres does not come up, from initdb to loading VectorChord, its
