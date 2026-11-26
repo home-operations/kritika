@@ -178,7 +178,7 @@ func TestRenderSummaryConfidence(t *testing.T) {
 		{
 			name:       "a risk a floor held",
 			confidence: &Confidence{Score: 5, Threshold: 5, Risk: RiskCritical, Rated: RiskLow, Held: "db/migrations/1.sql", Reason: "Docs only."},
-			want: "## Confidence Score: 5/5\n\n**[Critical risk]** Docs only. Held to critical risk by the instance's floor for " +
+			want: "## Confidence Score: 5/5\n\n**[Critical risk]** Docs only. Held to critical risk by the floor for " +
 				"db/migrations/1.sql.\n\n## Findings\n",
 		},
 		{
@@ -240,7 +240,7 @@ func TestRenderSummaryClean(t *testing.T) {
 				d.Confidence.Risk, d.Confidence.Rated, d.Confidence.Held = RiskHigh, RiskLow, "charts/x.yaml"
 			},
 			want: []string{"**[High risk]** No findings.\n\n",
-				"- **Risk:** Docs only. Held to high risk by the instance's floor for charts/x.yaml.\n"},
+				"- **Risk:** Docs only. Held to high risk by the floor for charts/x.yaml.\n"},
 		},
 		{
 			name: "no reason", edit: func(d *RenderData) { d.Confidence.Reason = "" },

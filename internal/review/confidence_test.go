@@ -300,11 +300,11 @@ func TestConfidenceHoldStep(t *testing.T) {
 			}
 		})
 	}
-	// The instance's floor holds the risk the step held, and a carry that
+	// A path's floor holds the risk the step held, and a carry that
 	// lets the floor go keeps the step's hold.
 	c := Confidence{Risk: RiskMedium, Stepped: RiskLow, Step: at, Reason: "r"}
 	if !c.Hold(RiskCritical, "db/x.sql") || c.Rated != RiskMedium || c.Stepped != RiskLow {
-		t.Fatalf("after the instance's floor: %+v", c)
+		t.Fatalf("after the path's floor: %+v", c)
 	}
 	if c.Hold(RiskLow, "") || c.Risk != RiskMedium || c.Step != at {
 		t.Fatalf("after the floor is lowered: %+v", c)
@@ -319,13 +319,13 @@ func TestConfidenceExplanation(t *testing.T) {
 	}{
 		{name: "the reason alone", c: Confidence{Risk: RiskLow, Reason: "Docs only."}, want: "Docs only."},
 		{name: "how a floor held the risk", c: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: "db/migrations/1.sql", Reason: "Docs only."},
-			want: "Docs only. Held to critical risk by the instance's floor for db/migrations/1.sql."},
+			want: "Docs only. Held to critical risk by the floor for db/migrations/1.sql."},
 		{name: "no reason to follow", c: Confidence{Risk: RiskHigh, Rated: RiskLow, Held: "charts/x.yaml"},
-			want: "Held to high risk by the instance's floor for charts/x.yaml."},
+			want: "Held to high risk by the floor for charts/x.yaml."},
 		{name: "how a step held the risk", c: Confidence{Risk: RiskMedium, Stepped: RiskLow, Step: "minor step at charts/app/Chart.yaml:4", Reason: "Docs only."},
 			want: "Docs only. Held to medium risk by the minor step at charts/app/Chart.yaml:4."},
-		{name: "the instance's floor over a step", c: Confidence{Risk: RiskCritical, Rated: RiskMedium, Held: "db/x.sql", Stepped: RiskLow, Step: "minor step at a:1", Reason: "r"},
-			want: "r Held to critical risk by the instance's floor for db/x.sql."},
+		{name: "a path's floor over a step", c: Confidence{Risk: RiskCritical, Rated: RiskMedium, Held: "db/x.sql", Stepped: RiskLow, Step: "minor step at a:1", Reason: "r"},
+			want: "r Held to critical risk by the floor for db/x.sql."},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.c.Explanation(); got != tt.want {

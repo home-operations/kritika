@@ -215,6 +215,17 @@
           "enum": ["low", "medium", "high", "critical"],
           "description": "The highest risk that a change can be rated and still be approved. It can only lower the admin's value."
         },
+        "floors": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Globs by risk level, added to the admin's. A change that touches a matching path is rated at least that level, whatever the scorer says. Where two levels match a path, the higher one holds. A floor only raises a rating, so it cannot lower or remove one of the admin's.",
+          "properties": {
+            "low": { "$ref": "#/$defs/floor" },
+            "medium": { "$ref": "#/$defs/floor" },
+            "high": { "$ref": "#/$defs/floor" },
+            "critical": { "$ref": "#/$defs/floor" }
+          }
+        },
         "when": {
           "type": "array",
           "description": "Conditions, as a rule's, beside the admin's. One of them must hold for a pull request to be scored. A pull request that they leave unscored is reviewed without a score and, where the admin asks for a score, not approved.",
@@ -437,6 +448,11 @@
       "type": "string",
       "minLength": 1,
       "description": "A doublestar glob, such as docs/** or **/*.sql."
+    },
+    "floor": {
+      "type": "array",
+      "description": "The globs of the paths that are rated at least this level.",
+      "items": { "$ref": "#/$defs/glob" }
     }
   }
 }

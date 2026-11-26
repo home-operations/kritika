@@ -314,7 +314,10 @@ type ContextPackChanges struct {
 	// that the diff shows no line of included. DeltaPaths is the ones that the
 	// delta touches.
 	Changed, DeltaPaths []string
-	Swept               bool
+	// RenamedFrom is the base-side names of the change's renames, which
+	// Changed names by their head-side names.
+	RenamedFrom []string
+	Swept       bool
 }
 
 // ContextPackDiffs returns the diffs and paths of the context pack that a
@@ -322,8 +325,9 @@ type ContextPackChanges struct {
 // or ErrNotFound.
 func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackChanges, error) {
 	var changes ContextPackChanges
-	err := tx.QueryRow(ctx, `SELECT diff, delta_diff, changed_paths, delta_paths, swept_at IS NOT NULL FROM context_packs
-		WHERE runner_run_id = $1`, runnerRunID).Scan(&changes.Diff, &changes.Delta, &changes.Changed, &changes.DeltaPaths, &changes.Swept)
+	err := tx.QueryRow(ctx, `SELECT diff, delta_diff, changed_paths, delta_paths, renamed_from, swept_at IS NOT NULL FROM context_packs
+		WHERE runner_run_id = $1`, runnerRunID).Scan(
+		&changes.Diff, &changes.Delta, &changes.Changed, &changes.DeltaPaths, &changes.RenamedFrom, &changes.Swept)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ContextPackChanges{}, ErrNotFound
 	}

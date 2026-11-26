@@ -457,15 +457,8 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if risk := r.Confidence.Risk; risk != nil && !risk.Valid() {
 		return fmt.Errorf("configfile: %s must be %s, got %q", keyRisk, review.RiskLevels, *risk)
 	}
-	for _, level := range slices.Sorted(maps.Keys(r.Confidence.Floors)) {
-		if !level.Valid() {
-			return fmt.Errorf("configfile: %s keys must be %s, got %q", keyFloors, review.RiskLevels, level)
-		}
-		for gi, g := range r.Confidence.Floors[level] {
-			if !ValidGlob(g) {
-				return fmt.Errorf("configfile: %s.%s[%d] %q is not a valid glob", keyFloors, level, gi, g)
-			}
-		}
+	if err := r.Confidence.Floors.Check(); err != nil {
+		return fmt.Errorf("configfile: %w", err)
 	}
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: trigger.limit must not be negative")

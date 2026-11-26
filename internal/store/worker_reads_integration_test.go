@@ -79,12 +79,12 @@ func TestWorkerReadContracts(t *testing.T) {
 			if age != 90*time.Second || !seen || phase != "done" {
 				t.Fatalf("run = %v, %v, %s", age, seen, phase)
 			}
-			_, err = tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, delta_paths) VALUES ($1, $2, 'abc', 'base', 'patch', '', '{delta.go}')`, runID, account)
+			_, err = tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, delta_paths, renamed_from) VALUES ($1, $2, 'abc', 'base', 'patch', '', '{delta.go}', '{old.go}')`, runID, account)
 			must(t, err)
 			changes, err := ContextPackDiffs(ctx, tx, runID)
 			must(t, err)
-			if !slices.Equal(changes.DeltaPaths, []string{"delta.go"}) {
-				t.Fatal(changes.DeltaPaths)
+			if !slices.Equal(changes.DeltaPaths, []string{"delta.go"}) || !slices.Equal(changes.RenamedFrom, []string{"old.go"}) {
+				t.Fatal(changes.DeltaPaths, changes.RenamedFrom)
 			}
 			return nil
 		}))
