@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.0.127](https://github.com/home-operations/kritika/compare/0.0.126...0.0.127) (2026-11-26)
+
+
+### Features
+
+* **confidence:** allow confidence.floors in a repository's .kritika.yaml ([#1564](https://github.com/home-operations/kritika/issues/1564)) ([560c365](https://github.com/home-operations/kritika/commit/560c3650c7ef944a87079dd60ef2268f7f196c71))
+
+
+### Continuous Integration
+
+* **release:** compress image layers with zstd ([06b6604](https://github.com/home-operations/kritika/commit/06b66045bc04914abbd70de1904285595c335709))
+
+
+### Miscellaneous Chores
+
+* **container:** update image ghcr.io/home-operations/vchord (1.3.0 → 1.5) ([#1547](https://github.com/home-operations/kritika/issues/1547)) ([0958afc](https://github.com/home-operations/kritika/commit/0958afca92298882ff62ca80cca54b8e5af1b89e))
+* **github-action:** update action jdx/mise-action (v5.2.10 → v5.3.0) ([#1550](https://github.com/home-operations/kritika/issues/1550)) ([7b5c673](https://github.com/home-operations/kritika/commit/7b5c6734ead65b34b2c3c6d2d4ea94e423b33606))
+* **github-action:** update action zizmorcore/zizmor-action (v0.8.1 → v0.9.1) ([#1558](https://github.com/home-operations/kritika/issues/1558)) ([1fc2d77](https://github.com/home-operations/kritika/commit/1fc2d77e1dcb9412134f2d8da7ac298326548d46))
+* **github-release:** update release cli/cli (v2.105.0 → v2.106.0) ([#1561](https://github.com/home-operations/kritika/issues/1561)) ([5fba30a](https://github.com/home-operations/kritika/commit/5fba30a66b7d130bcf0af8645b7df283306c557f))
+* **go:** update kubernetes monorepo (v0.37.2 → v0.37.3) ([#1556](https://github.com/home-operations/kritika/issues/1556)) ([e8c8a41](https://github.com/home-operations/kritika/commit/e8c8a41760736012eb3f8c0e471194dcd98ca80f))
+* **go:** update module github.com/anthropics/anthropic-sdk-go/v2 (v2.14.0 → v2.15.0) ([#1551](https://github.com/home-operations/kritika/issues/1551)) ([ef38f58](https://github.com/home-operations/kritika/commit/ef38f589550c22c0d499ccb1dd96b7b9ae57334c))
+* **go:** update module github.com/openai/openai-go/v3 (v3.106.0 → v3.107.0) ([#1552](https://github.com/home-operations/kritika/issues/1552)) ([720a677](https://github.com/home-operations/kritika/commit/720a6776f4520ff1f00c79e16ae398e98eca3aad))
+* **go:** update module github.com/openai/openai-go/v3 (v3.107.0 → v3.108.0) ([#1563](https://github.com/home-operations/kritika/issues/1563)) ([6218a4b](https://github.com/home-operations/kritika/commit/6218a4b5d4a0fe7858bdaa29b8114e9767f31b44))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.55.0 → v3.56.0) ([#1543](https://github.com/home-operations/kritika/issues/1543)) ([0103633](https://github.com/home-operations/kritika/commit/01036339c6d314a8907935ef74a4206226667c30))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.56.0 → v3.56.1) ([#1545](https://github.com/home-operations/kritika/issues/1545)) ([0165f75](https://github.com/home-operations/kritika/commit/0165f7557376f6599f8107c11bdd59cf7cca9f79))
+* **go:** update module gitlab.com/gitlab-org/api/client-go/v3 (v3.56.1 → v3.57.0) ([#1553](https://github.com/home-operations/kritika/issues/1553)) ([796d5ae](https://github.com/home-operations/kritika/commit/796d5aecb1d1a287338361b1956ac4455b8269c1))
+* **mise:** update mise tools ([#1559](https://github.com/home-operations/kritika/issues/1559)) ([c4e4879](https://github.com/home-operations/kritika/commit/c4e48795f8bf103786fc91a145c1f76f4bac4389))
+* **mise:** update tool zizmor (1.33.0 → 1.33.1) ([#1562](https://github.com/home-operations/kritika/issues/1562)) ([5a22cbd](https://github.com/home-operations/kritika/commit/5a22cbdd4181edbb88784cd6268853a9a2981002))
+* **npm:** update dependency @axe-core/playwright (4.14.0 → 4.14.1) ([#1557](https://github.com/home-operations/kritika/issues/1557)) ([39a9d32](https://github.com/home-operations/kritika/commit/39a9d32c0426c488b8467c66afd4baae11b8df23))
+* **npm:** update dependency @sveltejs/vite-plugin-svelte (7.3.1 → 7.3.2) ([#1548](https://github.com/home-operations/kritika/issues/1548)) ([a92ff40](https://github.com/home-operations/kritika/commit/a92ff40b83b83c3c4867b118e87ba878ae8417c6))
+* **npm:** update dependency layerchart (2.11.0 → 2.12.0) ([#1560](https://github.com/home-operations/kritika/issues/1560)) ([40f1303](https://github.com/home-operations/kritika/commit/40f130381abe4c5a377a3db4eb2b129050a7bc8e))
+* **npm:** update dependency marked (18.2.1 → 18.3.0) ([#1555](https://github.com/home-operations/kritika/issues/1555)) ([94fd3b9](https://github.com/home-operations/kritika/commit/94fd3b9e9d823e667987363488087066c4269ec0))
+* **npm:** update dependency oxlint (1.94.0 → 1.95.0) ([#1554](https://github.com/home-operations/kritika/issues/1554)) ([deb1fb3](https://github.com/home-operations/kritika/commit/deb1fb3b6460f52f4b02085d2888f1bae13346a8))
+* **npm:** update tanstack-query monorepo (6.4.6 → 6.4.7) ([#1549](https://github.com/home-operations/kritika/issues/1549)) ([f020f69](https://github.com/home-operations/kritika/commit/f020f6964a0a0bdbbeacb0f504dd058b76db1438))
+
 ## [0.0.126](https://github.com/home-operations/kritika/compare/0.0.125...0.0.126) (2026-11-23)
 
 
