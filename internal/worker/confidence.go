@@ -50,9 +50,11 @@ const unscoredNote = "The confidence model did not answer, so this review has no
 
 // judge scores the review within the finalization context. changed is every
 // path that the change touches, and the diff can show no line of such a path.
-// unfinished is the summary's notes on the parts that went unreviewed. judge
-// returns the note the summary states when the scorer gave no answer.
-func (p *publishPhase) judge(job context.Context, res review.Result, diff string, changed, unfinished []string) string {
+// renamed is the base-side names of its renames, which a risk floor holds as
+// it does the paths of changed. unfinished is the summary's notes on the
+// parts that went unreviewed. judge returns the note the summary states when
+// the scorer gave no answer.
+func (p *publishPhase) judge(job context.Context, res review.Result, diff string, changed, renamed, unfinished []string) string {
 	ref := p.settings.Confidence.Model
 	if ref == "" {
 		return ""
@@ -66,7 +68,7 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	if p.lease != nil {
 		p.w.releaseLease(ctx, p.logger, p.lease, string(p.settings.Models.Review))
 	}
-	c, err := p.score(ctx, ref, res, diff, changed, unfinished)
+	c, err := p.score(ctx, ref, res, diff, changed, renamed, unfinished)
 	if err != nil {
 		p.logger.Warn("confidence not scored", "model", ref, "error", err)
 		p.unscored = true
@@ -98,7 +100,7 @@ func (p *publishPhase) checkMonthCap(ctx context.Context) error {
 // score asks ref for the score. It records the call against the review and
 // charges it to the account.
 func (p *publishPhase) score(
-	ctx context.Context, ref configfile.ModelRef, res review.Result, diff string, changed, unfinished []string,
+	ctx context.Context, ref configfile.ModelRef, res review.Result, diff string, changed, renamed, unfinished []string,
 ) (review.Confidence, error) {
 	if err := p.checkMonthCap(ctx); err != nil {
 		return review.Confidence{}, err
@@ -194,7 +196,7 @@ func (p *publishPhase) score(
 	// included, and not on a path's floor: a floor set or cleared
 	// since moves a carried rating, never a carried score.
 	c.Score = review.Score(res.Counts(), c.Risk, parsed.Concern, parsed.Reject)
-	if floor, at := p.settings.Confidence.Floors.Floor(changed); c.Hold(floor, at) {
+	if floor, at := p.settings.Confidence.Floors.Floor(slices.Concat(changed, renamed)); c.Hold(floor, at) {
 		p.logger.Info("risk held to the floor", "rated", parsed.Risk, "floor", floor, "path", at)
 		p.w.Metrics.ConfidenceHeld(p.account.Key(), "floor")
 	}

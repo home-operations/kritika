@@ -254,7 +254,7 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	// A finding on a line that the diff does not show has no inline comment.
 	// But it weighs on the score, the counts, and the approval all the same.
 	judged := review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}
-	if note := p.judge(ctx, judged, diff, changes.Changed, partNotes); note != "" {
+	if note := p.judge(ctx, judged, diff, changes.Changed, changes.RenamedFrom, partNotes); note != "" {
 		notes = append(notes, note)
 	}
 	notes = append(notes, run.CommandErrors...)

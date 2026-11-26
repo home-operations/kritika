@@ -290,8 +290,9 @@ confidence:
 
 A floor never lowers a rating, and a change rated higher than its floor keeps
 that rating. Floors apply to every path the change touches, deleted files
-included. They apply again to the score an unchanged patch carries, so a
-floor set after a review holds on the next rebase.
+included, and to a renamed file by both of its names. They apply again to
+the score an unchanged patch carries, so a floor set after a review holds
+on the next rebase.
 
 A repository's `.kritika.yaml` can list floors of its own, for the paths
 that matter in its layout. They add to the admin's, and the higher level

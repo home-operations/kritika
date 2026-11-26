@@ -175,8 +175,9 @@ func LastReviewMergeBase(ctx context.Context, tx pgx.Tx, prID, head string) (str
 type ReviewBaseline struct {
 	PatchID    string
 	Confidence *review.Confidence
-	// Changed is every path that the baseline's change touched, as its context
-	// pack records. It is nil when none was written.
+	// Changed is every path that the baseline's change touched, a rename by
+	// both of its names, as its context pack records. It is nil when none
+	// was written.
 	Changed []string
 }
 
@@ -200,7 +201,7 @@ func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (
 			return ReviewBaseline{}, fmt.Errorf("store: decode last review confidence: %w", err)
 		}
 	}
-	err = tx.QueryRow(ctx, `SELECT c.changed_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+	err = tx.QueryRow(ctx, `SELECT c.changed_paths || c.renamed_from FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
 		WHERE rr.review_id = $1 ORDER BY c.created_at DESC LIMIT 1`, id).Scan(&baseline.Changed)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return ReviewBaseline{}, fmt.Errorf("store: read last review baseline's paths: %w", err)

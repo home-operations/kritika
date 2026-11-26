@@ -58,9 +58,11 @@ func TestCarriedConfidence(t *testing.T) {
 		name string
 		// rows are the pull request's reviews, oldest first. The last one's
 		// id is excluded when exclude is set. changed is the paths that its
-		// context pack records.
+		// context pack records, and renamed the base-side names of its
+		// renames.
 		rows          []row
 		changed       []string
+		renamed       []string
 		exclude       bool
 		want          configfile.Confidence
 		wantScore     int
@@ -85,6 +87,9 @@ func TestCarriedConfidence(t *testing.T) {
 			rows: []row{{"completed", `{"score":4,"threshold":5}`}, {"prepared", ""}}},
 		{name: "a floor set since holds the risk", want: floored, wantScore: 4, wantRisk: review.RiskCritical, wantHeld: "db/migrations/1.sql", wantSkippable: true,
 			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"low","reason":"Docs only."}`}}, changed: []string{"db/migrations/1.sql", "README.md"}},
+		{name: "a floor holds a file renamed from under it", want: floored, wantScore: 4, wantRisk: review.RiskCritical, wantHeld: "db/migrations/1.sql",
+			wantSkippable: true, rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"low"}`}},
+			changed: []string{"archive/1.sql"}, renamed: []string{"db/migrations/1.sql"}},
 		{name: "a floor the change is not under", want: floored, wantScore: 4, wantRisk: review.RiskLow, wantSkippable: true,
 			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"low"}`}}, changed: []string{"README.md"}},
 		{name: "a floor with no paths recorded", want: floored, wantScore: 4, wantRisk: review.RiskLow, wantSkippable: true,
@@ -122,8 +127,8 @@ func TestCarriedConfidence(t *testing.T) {
 						account.ID(), last).Scan(&runID); err != nil {
 						return err
 					}
-					if _, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
-						VALUES ($1, $2, 'abc4243', 'base', 'p', '', $3, '[]', '{}')`, runID, account.ID(), tt.changed); err != nil {
+					if _, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, renamed_from, stages, repo_files)
+						VALUES ($1, $2, 'abc4243', 'base', 'p', '', $3, coalesce($4::text[], '{}'), '[]', '{}')`, runID, account.ID(), tt.changed, tt.renamed); err != nil {
 						return err
 					}
 				}
