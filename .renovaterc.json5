@@ -10,5 +10,11 @@
       groupSlug: "image-tools",
       automerge: false,
     },
+    {
+      description: "Each Postgres pin tests one major, so a major update would drop a major from CI. A new major is a new pin and CI leg",
+      matchDepNames: ["ghcr.io/cloudnative-pg/postgresql"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
+    },
   ],
 }

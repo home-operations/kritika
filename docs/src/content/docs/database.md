@@ -9,7 +9,7 @@ cluster in the same Kubernetes cluster, which this page sets up.
 
 ## What kritika needs
 
-- kritika needs Postgres 18 with VectorChord. The `vchord`
+- kritika needs Postgres 18 or 19 with VectorChord. The `vchord`
   ([VectorChord](https://github.com/pgsty/vchord)) and `vector`
   (pgvector) extensions must exist before the first start. `vchord` builds
   on the types from pgvector, and it must be in `shared_preload_libraries`.
@@ -57,19 +57,19 @@ metadata:
   name: kritika-postgres
 spec:
   instances: 2
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-bookworm
+  imageName: ghcr.io/cloudnative-pg/postgresql:19.0-standard-bookworm
   enableSuperuserAccess: false
   postgresql:
     extensions:
       - name: vchord
         image:
-          reference: ghcr.io/home-operations/vchord:1.3.0
+          reference: ghcr.io/home-operations/vchord:1.5.0
         # The image keeps Debian's paths rather than CNPG's default
         # /extensions/vchord/lib and /extensions/vchord/share.
         dynamic_library_path:
-          - /usr/lib/postgresql/18/lib/
+          - /usr/lib/postgresql/19/lib/
         extension_control_path:
-          - /usr/share/postgresql/18/
+          - /usr/share/postgresql/19/
     shared_preload_libraries:
       - vchord
     # Wait for the healthy standby; allow writes without it when unavailable.
@@ -136,17 +136,23 @@ spec:
     - name: vector
       ensure: present
     - name: vchord
-      version: "1.3.0"
+      version: "1.5.0"
       ensure: present
 ```
 
 ### Upgrading VectorChord
 
+If the Cluster runs Postgres 18.6 or earlier, change its `imageName` to 18.7
+or later before you change the VectorChord image to 1.5.0. Postgres 18.6
+cannot load the 1.5.0 library and does not start. It logs
+`undefined symbol: heap_datum_check`.
+
 Change the Cluster's image reference first, so that every instance restarts
 with the new library, and then the `Database`'s `version`, so that CNPG
 updates the extension. The new library works with the old extension in
 between. 1.3.0 upgrades in place from 1.1.1, TensorChord's last release, and
-keeps the on-disk index format. Outside CNPG, a superuser runs this in the
+keeps the on-disk index format. 1.5.0 upgrades in place from 1.3.0 and reads
+the indexes that 1.3.0 built. Outside CNPG, a superuser runs this in the
 `kritika` database after the restart:
 
 ```sql

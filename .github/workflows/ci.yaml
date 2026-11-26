@@ -123,10 +123,15 @@ jobs:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Go Integration
+    name: Go Integration (Postgres ${{ matrix.postgres }})
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The majors kritika supports, each pinned in the test-integration task.
+        postgres: ["18", "19"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -152,6 +157,8 @@ jobs:
       # owner and application roles, the same way it runs locally.
       - name: Run integration tests
         run: mise run test-integration
+        env:
+          KRITIKA_TEST_POSTGRES: ${{ matrix.postgres }}
 
   smoke:
     if: >-
