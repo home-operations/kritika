@@ -44,7 +44,7 @@ key interacts with the admin's policy. Detailed examples follow the table.
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                                       | can only turn it on                                                                                          |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some                     | replaces, and its `when` holds beside the admin's                                                            |
 | [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                                          | replaces, either way                                                                                         |
-| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it                            | replaces, `risk` can only be lowered, and `when` holds beside the admin's                                    |
+| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it                            | replaces, `risk` can only be lowered, `floors` adds, and `when` holds beside the admin's                     |
 | [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                                       | judged beside the admin's lists                                                                              |
 | `comments.inline`                                            | `false` posts the summary alone, without inline comments                               | replaces                                                                                                     |
 | [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                                          | replaces                                                                                                     |
@@ -63,8 +63,8 @@ The rest of the file still applies.
 
 These keys are the admin's alone: `agent`, `trigger.limit`,
 `review.incremental`, `review.cost`, `comments.dashboard`,
-`confidence.instructions`, `confidence.floors` and `limits`. A file that
-names one of them, or any other unknown key, does not parse.
+`confidence.instructions` and `limits`. A file that names one of them, or
+any other unknown key, does not parse.
 
 ### Models
 
@@ -150,7 +150,24 @@ reviewed without a score. Where the admin asks for a score, that pull
 request is also not approved. So the file cannot lift the admin's risk
 policy by narrowing scoring.
 
-`confidence.instructions` and `confidence.floors` are the admin's alone
+`confidence.floors` lists globs by risk level, as the admin's does. A
+change that touches a matching path is rated at least that level
+([risk](/confidence/#risk)):
+
+```yaml
+confidence:
+  floors:
+    critical: ["db/migrations/**"]
+    high: ["infrastructure/*/cilium/**"]
+```
+
+The file's floors add to the admin's, and the admin's still apply. Where
+both set a floor for a path, the higher level holds. A floor only raises a
+rating, so the file cannot lower or remove a floor that the admin set. A
+level that is not `low`, `medium`, `high` or `critical`, or a glob that is
+not valid, stops the file from parsing.
+
+`confidence.instructions` are the admin's alone
 ([confidence and approvals](/confidence/)).
 
 ### Trigger conditions

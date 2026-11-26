@@ -85,10 +85,10 @@ permissions.
   ([approvals](/confidence/#approvals)).
 - `.kritika.yaml` can narrow the admin's configuration and add rules, but
   [some keys](/configuration/#what-only-the-admin-sets) are the admin's
-  alone: the agent's bounds, `confidence.instructions`,
-  `confidence.floors` and `review.cost`. Because the
-  two `confidence` keys are the admin's, a pull request cannot talk its
-  own risk down. A repository adds commands only through its
+  alone: the agent's bounds, `confidence.instructions` and `review.cost`.
+  The instructions are the admin's, and a `confidence.floors` entry in
+  `.kritika.yaml` can only raise a rating. So a pull request cannot talk
+  its own risk down. A repository adds commands only through its
   [`tools`](/repository-config/#repository-tools), which are read from
   the merge base.
 - When one of the admin's trigger conditions has the same name, a trigger

@@ -173,12 +173,12 @@ func (c *Confidence) HoldStep(floor Risk, at string) bool {
 }
 
 // Explanation is the reason, and after it how a floor held the risk when
-// one did: the instance's floor where it holds, or else the step of a
+// one did: the floor of a path where it holds, or else the step of a
 // version the change moves.
 func (c Confidence) Explanation() string {
 	switch {
 	case c.Held != "":
-		return strings.TrimSpace(fmt.Sprintf("%s Held to %s risk by the instance's floor for %s.", c.Reason, c.Risk, c.Held))
+		return strings.TrimSpace(fmt.Sprintf("%s Held to %s risk by the floor for %s.", c.Reason, c.Risk, c.Held))
 	case c.Step != "":
 		return strings.TrimSpace(fmt.Sprintf("%s Held to %s risk by the %s.", c.Reason, c.Risk, c.Step))
 	}

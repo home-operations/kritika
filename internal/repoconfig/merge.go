@@ -44,7 +44,8 @@ type Merged struct {
 // The file narrows what an admin allows: ignore, and include and exclude
 // lists of its own, with no condition under an admin's name. The
 // file appends its context files and rules to the admin's. It can only turn
-// review.fixes on and can only lower confidence.risk. It replaces the models,
+// review.fixes on and can only lower confidence.risk. It adds risk floors to
+// the admin's, which can only raise a rating. It replaces the models,
 // their effort, the confidence threshold, how the review comments, whether
 // it approves, and whether its summary draws a diagram. It adds approval and
 // confidence conditions that must hold beside the admin's. It also adds
@@ -131,6 +132,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	default:
 		m.drop("confidence.risk", strconv.Quote(string(risk)), string(op.Confidence.Risk)+" or lower")
 	}
+	m.Confidence.Floors = withFloors(op.Confidence.Floors, f.Confidence.Floors)
 	m.Skills = configfile.WithSkills(m.Skills, f.Skills)
 	m.choose(&f, op.Providers)
 	m.agents(f.Review.Agents, op)
@@ -148,6 +150,29 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		}
 	}
 	return m, nil
+}
+
+// withFloors is the admin's risk floors with the file's added: each level
+// lists the admin's globs, then the file's that it lacks. The highest level
+// that a path matches holds (see configfile.RiskFloors.Floor), so the file
+// can raise a path's floor and never lower or remove one. The admin's floors
+// are not changed.
+func withFloors(admin, file configfile.RiskFloors) configfile.RiskFloors {
+	if len(file) == 0 {
+		return admin
+	}
+	out := make(configfile.RiskFloors, len(admin)+len(file))
+	for level, globs := range admin {
+		out[level] = slices.Clone(globs)
+	}
+	for level, globs := range file {
+		for _, g := range globs {
+			if !slices.Contains(out[level], g) {
+				out[level] = append(out[level], g)
+			}
+		}
+	}
+	return out
 }
 
 // agents adds the file's agents to the admin's. Its agents that replace the

@@ -424,7 +424,7 @@ export interface RepoSettings {
     gateWhen?: Condition[];
     risk: Risk;
     instructions: string;
-    // floors is absent when the admin set none.
+    // floors is absent when neither the admin nor the repository set any.
     floors?: Partial<Record<Risk, string[]>>;
     // when is absent when every pull request is scored, and whenInRepo
     // when the repository's .kritika.yaml adds none.

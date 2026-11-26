@@ -98,15 +98,18 @@ func (r Review) ownAgents() []configfile.Reviewer {
 // use. It also has how hard they reason, as Review.Effort, the score that it
 // must reach, and whether the commit status fails under that score. All of
 // these replace the admin's. It also has the highest risk that a change can
-// carry and still be approved, which can only lower the admin's.
+// carry and still be approved, which can only lower the admin's, and the
+// least risk that a change to some paths is rated, which adds to the
+// admin's.
 type Confidence struct {
-	Model     configfile.ModelRef `yaml:"model,omitempty"`
-	Fallback  configfile.ModelRef `yaml:"fallback,omitempty"`
-	Effort    *model.Effort       `yaml:"effort,omitempty"`
-	Threshold *int                `yaml:"threshold,omitempty"`
-	Gate      *configfile.Switch  `yaml:"gate,omitempty"`
-	Risk      review.Risk         `yaml:"risk,omitempty"`
-	When      []configfile.When   `yaml:"when,omitempty"`
+	Model     configfile.ModelRef   `yaml:"model,omitempty"`
+	Fallback  configfile.ModelRef   `yaml:"fallback,omitempty"`
+	Effort    *model.Effort         `yaml:"effort,omitempty"`
+	Threshold *int                  `yaml:"threshold,omitempty"`
+	Gate      *configfile.Switch    `yaml:"gate,omitempty"`
+	Risk      review.Risk           `yaml:"risk,omitempty"`
+	Floors    configfile.RiskFloors `yaml:"floors,omitempty"`
+	When      []configfile.When     `yaml:"when,omitempty"`
 }
 
 // Trigger narrows which pull requests get a review: include and exclude
@@ -219,6 +222,9 @@ func Parse(data []byte) (File, error) {
 	}
 	if err := configfile.CheckWhen(f.Confidence.When); err != nil {
 		return File{}, fmt.Errorf("repoconfig: confidence.%w", err)
+	}
+	if err := f.Confidence.Floors.Check(); err != nil {
+		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	var skillPaths []string
 	if f.Skills.Paths != nil {

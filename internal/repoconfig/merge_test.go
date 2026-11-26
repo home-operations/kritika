@@ -190,6 +190,16 @@ func TestMerge(t *testing.T) {
 		},
 		{name: "the risk instructions are the admin's alone", doc: "confidence: { instructions: all low }\n", wantErr: "field instructions not found"},
 		{
+			name: "risk floors where the admin sets none", doc: "confidence: { floors: { critical: ['db/migrations/**'] } }\n",
+			want: func(s *configfile.Settings) {
+				s.Confidence.Floors = configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}}
+			},
+		},
+		{name: "a risk floor at no level", doc: "confidence: { floors: { none: ['**'] } }\n",
+			wantErr: `repoconfig: confidence.floors keys must be low, medium, high or critical, got "none"`},
+		{name: "a risk floor glob that is none", doc: "confidence: { floors: { high: ['['] } }\n",
+			wantErr: `repoconfig: confidence.floors.high[0] "[" is not a valid glob`},
+		{
 			name: "an inclusion under an admin's name is dropped", include: []string{"mine", "pr.open"},
 			doc:     "trigger: { include: [{ name: wanted, expr: 'true' }, { name: mine, expr: 'true' }, { expr: pr.open }] }\n",
 			dropped: []string{`.kritika.yaml: trigger.include wanted was dropped: an admin's condition has that name`},
@@ -412,6 +422,59 @@ func TestMergeContextCollision(t *testing.T) {
 	if !reflect.DeepEqual(got.Review.Context, admin.Review.Context) || !slices.Equal(got.Dropped,
 		[]string{".kritika.yaml: context AGENTS.md was dropped: an admin context entry has that path"}) {
 		t.Fatalf("context = %+v, dropped = %v", got.Review.Context, got.Dropped)
+	}
+}
+
+// TestMergeFloors: the file's risk floors add to the admin's, level by
+// level. So the file can raise the floor of a path and never lower or remove
+// one that the admin set.
+func TestMergeFloors(t *testing.T) {
+	t.Parallel()
+	adminFloors := func() configfile.RiskFloors {
+		return configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}, review.RiskHigh: {"charts/**"}}
+	}
+	for _, tt := range []struct {
+		name    string
+		doc     string
+		want    configfile.RiskFloors
+		changed string
+		floor   review.Risk
+	}{
+		{name: "no floors of its own keeps the admin's", doc: "ignore: [gen/**]\n", want: adminFloors(),
+			changed: "charts/x/values.yaml", floor: review.RiskHigh},
+		{name: "a level the admin does not set", doc: "confidence: { floors: { medium: ['docs/**'] } }\n",
+			want:    configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}, review.RiskHigh: {"charts/**"}, review.RiskMedium: {"docs/**"}},
+			changed: "docs/a.md", floor: review.RiskMedium},
+		{name: "globs follow the admin's at a level, each once", doc: "confidence: { floors: { high: ['infra/**', 'charts/**', 'infra/**'] } }\n",
+			want:    configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}, review.RiskHigh: {"charts/**", "infra/**"}},
+			changed: "infra/cilium/values.yaml", floor: review.RiskHigh},
+		{name: "a higher level for an admin's path holds", doc: "confidence: { floors: { critical: ['charts/**'] } }\n",
+			want:    configfile.RiskFloors{review.RiskCritical: {"db/migrations/**", "charts/**"}, review.RiskHigh: {"charts/**"}},
+			changed: "charts/x/values.yaml", floor: review.RiskCritical},
+		{name: "a lower level for an admin's path does not lower it", doc: "confidence: { floors: { low: ['db/migrations/**'] } }\n",
+			want:    configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}, review.RiskHigh: {"charts/**"}, review.RiskLow: {"db/migrations/**"}},
+			changed: "db/migrations/1.sql", floor: review.RiskCritical},
+		{name: "an empty level removes none of the admin's", doc: "confidence: { floors: { critical: [], medium: [] } }\n", want: adminFloors(),
+			changed: "db/migrations/1.sql", floor: review.RiskCritical},
+		{name: "a file that does not parse leaves the admin's", doc: "confidence: { floors: { none: ['**'] } }\n", want: adminFloors(),
+			changed: "db/migrations/1.sql", floor: review.RiskCritical},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			op := adminSettings()
+			op.Confidence.Floors = adminFloors()
+			// A parse error is the last case's, and leaves the admin's settings.
+			m, _ := Merge([]byte(tt.doc), op)
+			if !reflect.DeepEqual(m.Confidence.Floors, tt.want) {
+				t.Fatalf("floors = %v, want %v", m.Confidence.Floors, tt.want)
+			}
+			if got, at := m.Confidence.Floors.Floor([]string{tt.changed}); got != tt.floor || at != tt.changed {
+				t.Fatalf("Floor(%s) = %s at %q, want %s", tt.changed, got, at, tt.floor)
+			}
+			if !reflect.DeepEqual(op.Confidence.Floors, adminFloors()) {
+				t.Fatalf("Merge changed the admin's floors: %v", op.Confidence.Floors)
+			}
+		})
 	}
 }
 

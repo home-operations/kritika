@@ -11,6 +11,8 @@ package configfile
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -247,6 +249,22 @@ type ConfidenceSpec struct {
 // matching one of the level's globs, whatever the scorer says.
 type RiskFloors map[review.Risk][]string
 
+// Check makes sure that each of f's keys is a risk level and each of its
+// globs is one that a setting can take.
+func (f RiskFloors) Check() error {
+	for _, level := range slices.Sorted(maps.Keys(f)) {
+		if !level.Valid() {
+			return fmt.Errorf("%s keys must be %s, got %q", keyFloors, review.RiskLevels, level)
+		}
+		for gi, g := range f[level] {
+			if !ValidGlob(g) {
+				return fmt.Errorf("%s.%s[%d] %q is not a valid glob", keyFloors, level, gi, g)
+			}
+		}
+	}
+	return nil
+}
+
 // Floor is the highest level in f that a path of changed matches, or
 // review.RiskLow when none does, and the first such path in order. So the
 // path named is the same for the same change however changed is listed.
@@ -292,8 +310,8 @@ type Confidence struct {
 	// able to talk its risk down.
 	Instructions string `json:"instructions"`
 	// Floors is the least risk a change to a path is rated, by level,
-	// held in code whatever the scorer says. They are the admin's alone, as
-	// Instructions are.
+	// held in code whatever the scorer says. A repository's own file can
+	// add to them, since a floor only raises a rating.
 	Floors RiskFloors `json:"floors,omitempty"`
 	// When are confidence.when's conditions, one of which a pull request
 	// must hold for to be scored, none for every one. One they hold for no

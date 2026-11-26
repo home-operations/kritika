@@ -286,7 +286,7 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 	if reopened := p.recheckAnswered(ctx); len(reopened) > 0 {
 		res.Findings = append(slices.Clone(res.Findings), reopened...)
 		if c := p.confidence; c != nil {
-			// The score rests on the risk before the instance's floor, as
+			// The score rests on the risk before a path's floor, as
 			// it was scored. The judge's concern and rejection only ever
 			// took it lower, which the score already holds.
 			counts := review.Result{Findings: slices.Concat(res.Findings, unanchored)}.Counts()

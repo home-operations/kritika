@@ -291,8 +291,14 @@ confidence:
 A floor never lowers a rating, and a change rated higher than its floor keeps
 that rating. Floors apply to every path the change touches, deleted files
 included. They apply again to the score an unchanged patch carries, so a
-floor set after a review holds on the next rebase. Floors are the admin's
-alone, as the instructions are.
+floor set after a review holds on the next rebase.
+
+A repository's `.kritika.yaml` can list floors of its own, for the paths
+that matter in its layout. They add to the admin's, and the higher level
+holds for a path that both name. The file cannot lower or remove an admin's
+floor. Its floors are read from the merge base, as the rest of the file is,
+so a pull request cannot change the floors of its own review
+([repository settings](/repository-config/#confidence)).
 
 A later push normally keeps the earlier risk rating unless the change's impact
 changes. The scorer is also told whether a review of the pull request has had
@@ -318,4 +324,4 @@ depends on more of it. These trigger a fresh rating:
 | `confidence.when`         | none: every pull request is scored | conditions, one of which a pull request must hold for to be scored ([only some pull requests](#only-some-pull-requests))                                                                                             | adds conditions that must hold as well     |
 | `confidence.risk`         | `low`                              | the highest [risk](#risk) a change can be rated and still be approved                                                                                                                                                | can only lower it. A higher one is dropped |
 | `confidence.instructions` |                                    | the admin's guidance to the scorer on [rating risk](#risk) in your code                                                                                                                                              | the admin's alone                          |
-| `confidence.floors`       | none                               | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](#risk))                                                                                        | the admin's alone                          |
+| `confidence.floors`       | none                               | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](#risk))                                                                                        | adds floors. The higher level holds        |
