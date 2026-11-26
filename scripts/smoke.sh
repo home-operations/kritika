@@ -24,7 +24,7 @@ CNPG_VERSION=v1.30.2
 # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
 POSTGRES_TAG=18.6-standard-bookworm
 # renovate: datasource=docker depName=ghcr.io/home-operations/vchord
-VCHORD_TAG=1.5
+VCHORD_TAG=1.5.0
 
 cluster="${KRITIKA_SMOKE_CLUSTER:-kritika-smoke}"
 image="${KRITIKA_SMOKE_IMAGE:-ghcr.io/home-operations/kritika:smoke}"
