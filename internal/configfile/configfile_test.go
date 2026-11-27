@@ -13,7 +13,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
-	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fixture sets the variables testdata/full.yaml's secrets name and returns
@@ -98,15 +98,15 @@ func TestLoadFull(t *testing.T) {
 		ho, _ := f.Account(ForgeGitHub, "home-operations")
 		for ref, want := range map[ModelRef]Slots{
 			"openrouter/openai/gpt-6-sol": {Limit: 3, Shared: true},
-			"local/claude-sonnet-5":       {Limit: DefaultConcurrency, Shared: true},
-			"nowhere/model":               {Limit: DefaultAccountConcurrency},
+			"local/claude-sonnet-5":       {Limit: tuning.Get().ConfigFile.DefaultConcurrency, Shared: true},
+			"nowhere/model":               {Limit: tuning.Get().ConfigFile.DefaultAccountConcurrency},
 		} {
 			if got := f.Slots(ho, ref); got != want {
 				t.Errorf("Slots(%s) = %+v, want %+v", ref, got, want)
 			}
 		}
-		if p, ok := f.Provider(ho, "local"); !ok || p.Concurrency != DefaultConcurrency {
-			t.Fatalf("Provider(local) = %+v, %v; want concurrency %d", p, ok, DefaultConcurrency)
+		if p, ok := f.Provider(ho, "local"); !ok || p.Concurrency != tuning.Get().ConfigFile.DefaultConcurrency {
+			t.Fatalf("Provider(local) = %+v, %v; want concurrency %d", p, ok, tuning.Get().ConfigFile.DefaultConcurrency)
 		}
 	})
 }
@@ -668,7 +668,7 @@ func TestParseRejects(t *testing.T) {
 		{"rule with a bad id", "rules: [{ id: Wrap_Errors, rule: x }]\n" + minimal, `configfile: rules[0].id "Wrap_Errors" must be`},
 		{"rule listed twice", "rules: [{ id: a, rule: x }, { id: a, rule: y }]\n" + minimal, `configfile: rules[1].id "a" is listed twice`},
 		{"blank rule", "rules: [{ id: a, rule: ' ' }]\n" + minimal, "configfile: rules[0]: set one of rule or file"},
-		{"overlong rule", "rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
+		{"overlong rule", "rules: [{ id: a, rule: " + strings.Repeat("x", tuning.Get().ConfigFile.MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
 		{"rule with a bad glob", "rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
 		{"rule condition syntax error", "rules: [{ id: a, rule: x, when: [{ expr: 'pr.draft &&' }] }]\n" + minimal, "configfile: rules[0].when[0]"},
 		{"rule condition on pr.lines", "rules: [{ id: a, rule: x, when: [{ expr: pr.lines > 10 }] }]\n" + minimal,
@@ -727,8 +727,8 @@ func TestJobTimeoutBounds(t *testing.T) {
 		yaml string
 		want string // substring of the error, and empty means the configuration must be accepted
 	}{
-		{"agent timeout at the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout.Seconds())), ""},
-		{"agent timeout past the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout.Seconds()) + 1), "agent.timeout must not exceed"},
+		{"agent timeout at the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout().Seconds())), ""},
+		{"agent timeout past the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout().Seconds()) + 1), "agent.timeout must not exceed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -839,17 +839,17 @@ func TestAgentReview(t *testing.T) {
 	t.Run("defaults resolve when unset", func(t *testing.T) {
 		f := mustLoad(t, withRoot(""))
 		s := f.Settings(&f.Accounts[0])
-		if !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+		if !reflect.DeepEqual(s.Agent, DefaultAgent()) || s.Incremental.MaxDeltaFiles != tuning.Get().ConfigFile.DefaultMaxDeltaFiles {
 			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
 		}
 		if s.Review.RequireSuggestedFix || len(s.Review.Rules) != 0 || s.Review.Templates != (ReviewTemplates{}) {
 			t.Fatalf("review = %+v", s.Review)
 		}
-		if DefaultMaxDeltaFiles != 25 {
-			t.Fatalf("DefaultMaxDeltaFiles = %d", DefaultMaxDeltaFiles)
+		if tuning.Get().ConfigFile.DefaultMaxDeltaFiles != 25 {
+			t.Fatalf("tuning.Get().ConfigFile.DefaultMaxDeltaFiles = %d", tuning.Get().ConfigFile.DefaultMaxDeltaFiles)
 		}
-		if DefaultAgent.MaxPromptTokens != review.DefaultBudgetTokens {
-			t.Fatalf("DefaultAgent.MaxPromptTokens = %d, want review.DefaultBudgetTokens", DefaultAgent.MaxPromptTokens)
+		if DefaultAgent().MaxPromptTokens != tuning.Get().Review.DefaultBudgetTokens {
+			t.Fatalf("DefaultAgent.MaxPromptTokens = %d, want tuning's Review.DefaultBudgetTokens", DefaultAgent().MaxPromptTokens)
 		}
 	})
 
@@ -874,9 +874,28 @@ comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl 
 		}
 	})
 
+	t.Run("the defaults are tuning's as the file is resolved", func(t *testing.T) {
+		tuning.Override(t, func(v *tuning.Values) {
+			v.Agent.DefaultMaxSteps, v.ConfigFile.DefaultParts, v.ConfigFile.DefaultMaxDeltaFiles = 9, 3, 4
+			v.ConfigFile.MinPromptTokens = 9000
+		})
+		f := mustLoad(t, withRoot("agent: { fetches: 2 }\n"))
+		s := f.Settings(&f.Accounts[0])
+		if s.Agent.MaxSteps != 9 || s.Agent.MaxParts != 3 || s.Incremental.MaxDeltaFiles != 4 || s.Agent.MaxFetches != 2 {
+			t.Fatalf("agent=%+v incremental=%+v; want the tuned defaults beside the file's fetches", s.Agent, s.Incremental)
+		}
+		f = mustLoad(t, withRoot("agent: { steps: 12 }\n"))
+		if got := f.Settings(&f.Accounts[0]).Agent.MaxSteps; got != 12 {
+			t.Fatalf("steps = %d, want the file's 12 over the tuned default", got)
+		}
+		if _, err := Parse([]byte(withRoot("agent: { prompt: 8500 }\n"))); err == nil || !strings.Contains(err.Error(), "at least 9000") {
+			t.Fatalf("a prompt under the tuned minimum: %v", err)
+		}
+	})
+
 	t.Run("a partial agent block keeps the other defaults", func(t *testing.T) {
 		f := mustLoad(t, withRoot("agent: { steps: 7 }\n"))
-		want := DefaultAgent
+		want := DefaultAgent()
 		want.MaxSteps = 7
 		if got := f.Settings(&f.Accounts[0]).Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)

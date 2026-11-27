@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // resumePublication runs before admission. A saved runner answer can still
@@ -242,7 +243,7 @@ func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (
 	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
 		return store.ReviewSuperseded, cause
 	}
-	lockCtx, cancel := context.WithTimeout(context.WithoutCancel(job), 2*detachTimeout)
+	lockCtx, cancel := context.WithTimeout(context.WithoutCancel(job), 2*tuning.Get().Worker.DetachTimeout)
 	defer cancel()
 	var status store.ReviewStatus
 	err := p.w.Store.WithPublicationLock(lockCtx, p.pr.id, func(ctx context.Context) error {
@@ -254,7 +255,7 @@ func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (
 }
 
 func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicationAnswer) (store.ReviewStatus, error) {
-	ctx, cancel := context.WithTimeout(lockCtx, detachTimeout)
+	ctx, cancel := context.WithTimeout(lockCtx, tuning.Get().Worker.DetachTimeout)
 	defer cancel()
 	var saved store.Publication
 	current := false
@@ -307,7 +308,7 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 	}
 	// Delivery can consume its entire timeout after posting. Recording that
 	// outcome has its own bound, while the publication lock is still held.
-	fctx, finish := context.WithTimeout(lockCtx, detachTimeout)
+	fctx, finish := context.WithTimeout(lockCtx, tuning.Get().Worker.DetachTimeout)
 	defer finish()
 	completed := false
 	persistDone := p.timeStage("persist")

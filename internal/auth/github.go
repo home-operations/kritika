@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/retryafter"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // githubScopes read the profile, its verified emails and org memberships.
@@ -18,8 +20,8 @@ var githubScopes = []string{"read:user", "user:email", "read:org"}
 // newGitHubProvider signs in through a GitHub OAuth app, or a GitHub App's
 // own client, on github.com.
 func newGitHubProvider(s *configfile.SignIn, redirect string, client *http.Client) *forgeProvider {
-	p := newForgeProvider(s, loginOAuth("https://github.com"), "https://api.github.com", redirect, githubScopes, client, githubAPI{})
-	p.headers = map[string]string{"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+	p := newForgeProvider(s, loginOAuth("https://github.com"), tuning.GitHubAPIURL, redirect, githubScopes, client, githubAPI{})
+	p.headers = map[string]string{"Accept": tuning.GitHubAccept, tuning.GitHubAPIVersionHeader: tuning.GitHubAPIVersion}
 	return p
 }
 
@@ -68,9 +70,10 @@ func (githubAPI) member(ctx context.Context, c apiClient, _ Identity, org string
 	return m.State == "active" && (m.Role == "admin" || m.Role == "member"), nil
 }
 
-// githubMaxPages bounds how many pages of organizations or teams a sign-in
-// reads: a hundred each, far beyond any real account.
-const githubMaxPages = 10
+// githubPerPage is how many items a page of organizations or teams holds:
+// GitHub's most. tuning's Auth.GitHubMaxPages bounds how many pages a
+// sign-in reads.
+const githubPerPage = 100
 
 // mappingVars reads the organizations the user is an active member of and
 // the teams they are on, for the role mapping.
@@ -128,9 +131,9 @@ func githubPages(ctx context.Context, c apiClient, path string, fn func(json.Raw
 	if strings.HasSuffix(path, "?") {
 		sep = ""
 	}
-	for page := 1; page <= githubMaxPages; page++ {
+	for page := 1; page <= tuning.Get().Auth.GitHubMaxPages; page++ {
 		var raw json.RawMessage
-		if err := githubGetOK(ctx, c, fmt.Sprintf("%s%sper_page=100&page=%d", path, sep, page), &raw); err != nil {
+		if err := githubGetOK(ctx, c, fmt.Sprintf("%s%sper_page=%d&page=%d", path, sep, githubPerPage, page), &raw); err != nil {
 			return err
 		}
 		var items []json.RawMessage
@@ -140,7 +143,7 @@ func githubPages(ctx context.Context, c apiClient, path string, fn func(json.Raw
 		if err := fn(raw); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrForgeAPI, path, err)
 		}
-		if len(items) < 100 {
+		if len(items) < githubPerPage {
 			return nil
 		}
 	}
@@ -173,7 +176,7 @@ func githubRateLimited(status int, h http.Header, refusal []byte) bool {
 		return true
 	case status != http.StatusForbidden:
 		return false
-	case h.Get("X-RateLimit-Remaining") == "0" || h.Get("Retry-After") != "":
+	case h.Get(retryafter.RateLimitRemaining) == "0" || h.Get(retryafter.Header) != "":
 		return true
 	}
 	var e struct {

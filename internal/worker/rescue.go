@@ -15,13 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// Rescue pace: how often the leader looks, and how many jobs and runs one
-// pass takes on.
-const (
-	rescueInterval = 30 * time.Second
-	rescueBatch    = 100
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // rescueReason is what a rescued job's attempt, and the review and run it
@@ -65,14 +59,14 @@ type Rescuer struct {
 	Logger  *slog.Logger
 	// Metrics can be nil.
 	Metrics *metrics.Metrics
-	// every overrides rescueInterval, and stale jobAbandonedAfter.
+	// every overrides tuning's Worker.RescueInterval, and stale JobTimeout.HeartbeatAbandonedAfter.
 	every, stale time.Duration
 }
 
-// Run rescues every rescueInterval until ctx ends. A pass that fails in
+// Run rescues every tuning's Worker.RescueInterval until ctx ends. A pass that fails in
 // part is logged and the rest tried again next time.
 func (r *Rescuer) Run(ctx context.Context) {
-	t := time.NewTicker(cmp.Or(r.every, rescueInterval))
+	t := time.NewTicker(cmp.Or(r.every, tuning.Get().Worker.RescueInterval))
 	defer t.Stop()
 	for {
 		select {
@@ -94,9 +88,9 @@ func (r *Rescuer) Run(ctx context.Context) {
 // job claimed again before its reap does not hide the run that its dead
 // worker left.
 func (r *Rescuer) Rescue(ctx context.Context) error {
-	stale := cmp.Or(r.stale, jobAbandonedAfter)
+	stale := cmp.Or(r.stale, tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
 	var errs []error
-	abandoned, err := r.Store.AbandonedJobs(ctx, stale, rescueBatch)
+	abandoned, err := r.Store.AbandonedJobs(ctx, stale, tuning.Get().Worker.RescueBatch)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -118,7 +112,7 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 			}
 		}
 	}
-	orphaned, err := r.Store.OrphanedRuns(ctx, rescueBatch)
+	orphaned, err := r.Store.OrphanedRuns(ctx, tuning.Get().Worker.RescueBatch)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -132,10 +126,10 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 	if _, err := r.Store.SweepJobHeartbeats(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if err := r.Store.SweepIndexProgress(ctx, rescueBatch); err != nil {
+	if err := r.Store.SweepIndexProgress(ctx, tuning.Get().Worker.RescueBatch); err != nil {
 		errs = append(errs, err)
 	}
-	recovery, err := r.Store.ReconcileModelInvocations(ctx, rescueBatch)
+	recovery, err := r.Store.ReconcileModelInvocations(ctx, tuning.Get().Worker.RescueBatch)
 	if err != nil {
 		errs = append(errs, err)
 	}

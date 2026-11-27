@@ -17,6 +17,8 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func testKeyPEM(t *testing.T) (*rsa.PrivateKey, string) {
@@ -284,18 +286,19 @@ func TestReach(t *testing.T) {
 }
 
 // TestBaseTransportBoundsTheHeaderWait: a server that accepts a request and
-// never answers fails the request after responseHeaderTimeout. So a caller
-// with no deadline of its own does not wait for good.
+// never answers fails the request after tuning's
+// GitHub.ResponseHeaderTimeout. So a caller with no deadline of its own does
+// not wait for good.
 func TestBaseTransportBoundsTheHeaderWait(t *testing.T) {
-	if baseTransport.ResponseHeaderTimeout != responseHeaderTimeout {
-		t.Fatalf("ResponseHeaderTimeout = %s, want %s", baseTransport.ResponseHeaderTimeout, responseHeaderTimeout)
+	if got, want := baseTransport().ResponseHeaderTimeout, tuning.Get().GitHub.ResponseHeaderTimeout; got != want {
+		t.Fatalf("ResponseHeaderTimeout = %s, want %s", got, want)
 	}
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-hang }))
 	// Close waits for the handler, which waits for hang.
 	defer srv.Close()
 	defer close(hang)
-	tr := baseTransport.Clone()
+	tr := baseTransport().Clone()
 	tr.ResponseHeaderTimeout = 50 * time.Millisecond
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 	if err != nil {

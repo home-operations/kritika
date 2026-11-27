@@ -21,6 +21,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 var (
@@ -91,7 +92,7 @@ func TestIssuerToken(t *testing.T) {
 	// its own future and allows no leeway. So a clock a little ahead must not
 	// make every fresh token fail.
 	if claims.Issuer != i.URL() || claims.Subject != "kritika" || len(claims.Audience) != 1 || claims.Audience[0] != "aud-1" || claims.ID == "" ||
-		!claims.Expiry.Time().Equal(now.Add(10*time.Minute)) || !claims.IssuedAt.Time().Equal(now.Add(-skew)) || !claims.NotBefore.Time().Equal(now.Add(-skew)) {
+		!claims.Expiry.Time().Equal(now.Add(10*time.Minute)) || !claims.IssuedAt.Time().Equal(now.Add(-tuning.Get().Forgejo.TokenSkew)) || !claims.NotBefore.Time().Equal(now.Add(-tuning.Get().Forgejo.TokenSkew)) {
 		t.Fatalf("claims = %+v", claims)
 	}
 	if err := claims.Validate(jwt.Expected{Issuer: i.URL(), AnyAudience: jwt.Audience{"aud-1"}, Time: now.Add(-30 * time.Second)}); err != nil {

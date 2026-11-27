@@ -26,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Forges holds one GitHub App, Forgejo, Gitea or GitLab client per
@@ -240,9 +241,6 @@ type ForgeCache struct {
 	building singleflight.Group
 }
 
-// forgeBuildTimeout bounds a client's build, which runs on no caller's ctx.
-const forgeBuildTimeout = time.Minute
-
 // For implements forge.Clients. A caller whose ctx ends while a build is
 // under way returns with ctx's error. The build goes on for the others,
 // whichever caller started it.
@@ -265,7 +263,7 @@ func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo st
 		if ok {
 			return client, nil
 		}
-		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forgeBuildTimeout)
+		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Worker.ForgeBuildTimeout)
 		defer cancel()
 		client, err := c.Build(bctx, in, repo)
 		if err != nil {

@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // runnerRole names a runner pod's container, and its component and role
@@ -59,10 +60,11 @@ type Kube struct {
 	GatewayURL string
 	// Poll is how often a run reads its Job and pod from the watch again,
 	// besides on each change to them. These reads let the run notice when the
-	// time that a pod's start is given runs out.
+	// time that a pod's start is given runs out. It is tuning's
+	// Executor.Poll unless set.
 	Poll time.Duration
 	// StartGrace is how long a pod can stay unable to start before its run
-	// is given up. It is startGrace unless set.
+	// is given up. It is tuning's Executor.StartGrace unless set.
 	StartGrace time.Duration
 	// Events, when set, records the Events on runner Jobs.
 	Events *Events
@@ -141,7 +143,10 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	defer done()
 	// The tick reads the watch again, not the API: for the grace a stuck
 	// pod or a podless Job is given, and a new Job's way to the watch.
-	poll := cmp.Or(k.Poll, 3*time.Second)
+	poll := cmp.Or(k.Poll, tuning.Get().Executor.Poll)
+	// A Job missing from the watch for tuning's Executor.MaxMissing polls in
+	// a row is given up on.
+	maxMissing := tuning.Get().Executor.MaxMissing
 	t := time.NewTicker(poll)
 	defer t.Stop()
 	missing := 0
@@ -200,7 +205,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		if stuckSince.IsZero() || podless != (stuck == noPod) {
 			stuckSince, podless = time.Now(), stuck == noPod
 		}
-		if time.Since(stuckSince) >= cmp.Or(k.StartGrace, startGrace) {
+		if time.Since(stuckSince) >= cmp.Or(k.StartGrace, tuning.Get().Executor.StartGrace) {
 			var why string
 			if stuck == noPod {
 				why = k.whyNoPod(ctx, created.Name)
@@ -261,16 +266,10 @@ func setupError(ctx context.Context, err error) error {
 	return fmt.Errorf("%w (%w)", err, context.Cause(ctx))
 }
 
-// startGrace is how long a runner pod can stay unable to start before the
-// run is given up. The pod can be uncreated, unscheduled, or have its
-// container refused. The run is given up so that it does not hold its
-// review's slot until the Job's deadline. startGrace outlasts what clears
-// on its own: a registry's hiccup, a node on its way from an autoscaler.
-const startGrace = 3 * time.Minute
-
 // noPod is why a Job's pod cannot start while none exists. The pod is on its
 // way for the moment that the Job controller takes to create it. It is stuck
-// once startGrace passes. For example, the namespace refuses it on admission,
+// once tuning's Executor.StartGrace passes. For example, the namespace
+// refuses it on admission,
 // by a ResourceQuota, Pod Security, or a webhook, and the controller keeps
 // trying.
 const noPod = "no pod was created for the Job"
@@ -320,7 +319,7 @@ func ownPods(pods []*corev1.Pod, job *batchv1.Job) []*corev1.Pod {
 
 // listedPods are the Job's pods as the API lists them now.
 func (k *Kube) listedPods(ctx context.Context, job *batchv1.Job) ([]*corev1.Pod, error) {
-	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Executor.APITimeout)
 	defer cancel()
 	list, err := k.Client.CoreV1().Pods(k.Namespace).List(lctx, metav1.ListOptions{LabelSelector: jobNameLabel + "=" + job.Name})
 	if err != nil {
@@ -343,7 +342,7 @@ func (k *Kube) podless(ctx context.Context, job *batchv1.Job) bool {
 // whyNoPod is noPod with the latest reason the Job controller recorded for
 // not creating the Job's pod, its FailedCreate Event, when one can be read.
 func (k *Kube) whyNoPod(ctx context.Context, job string) string {
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Executor.WhyNoPodTimeout)
 	defer cancel()
 	list, err := k.Client.EventsV1().Events(k.Namespace).List(rctx, metav1.ListOptions{
 		FieldSelector: fields.Set{"regarding.kind": jobKind, "regarding.name": job, "reason": "FailedCreate"}.String(),
@@ -408,10 +407,6 @@ func jobFailure(j *batchv1.Job) string {
 	return "the Job failed"
 }
 
-// maxMissing is how many ticks in a row a Job can be missing from the watch
-// before it is given up on: with the default poll, half a minute.
-const maxMissing = 10
-
 // createSecret creates the run's Secret. A create can fail without the API
 // refusing it, and the Secret can still be stored, with the answer lost. So
 // the create is sent again. If the API answers that a Secret of its name
@@ -464,7 +459,7 @@ func (k *Kube) DeleteRun(ctx context.Context, runID string) error {
 }
 
 func (k *Kube) removeJob(ctx context.Context, name string, uid types.UID) error {
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Executor.APITimeout)
 	defer cancel()
 	opts := metav1.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationForeground)}
 	if uid != "" {
@@ -494,7 +489,7 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets)
 	defer func() {
 		k.logger().Info("runner result collected", "job_name", res.JobName, "elapsed", time.Since(started))
 	}()
-	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Executor.FinishTimeout)
 	defer cancel()
 	pods, err := k.listedPods(fctx, &batchv1.Job{Name: res.JobName, UID: types.UID(res.JobUID)})
 	k.logger().Info("runner pods read", "job_name", res.JobName, "elapsed", time.Since(started), "error", err)
@@ -524,7 +519,7 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets)
 	// LimitBytes keeps the first bytes of what it is given, so the tail is
 	// asked for by lines, generously, with LimitBytes only as a ceiling.
 	// The kept tail is cut from the end of what came back.
-	lines, limit := int64(logTailLines), int64(logReadBytes)
+	lines, limit := int64(tuning.Get().Executor.LogTailLines), int64(tuning.Get().Executor.LogReadBytes)
 	logStarted := time.Now()
 	var logErr error
 	defer func() {
@@ -541,14 +536,7 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets)
 	res.LogTail = logTail(string(b), int64(len(b)) >= limit, secrets)
 }
 
-// The log read for a run's tail: enough lines to fill LogTailBytes many
-// times over, and a byte ceiling well above that.
-const (
-	logTailLines = 5000
-	logReadBytes = 4 << 20
-)
-
-// logTail is the last LogTailBytes of a pod's log, secrets masked before
+// logTail is the last tuning's Executor.LogTailBytes of a pod's log, secrets masked before
 // the cut so none straddles it. A read that hit the byte ceiling ends
 // mid-line, where a secret can be cut short of its mask, so that partial
 // line is dropped.
@@ -558,7 +546,7 @@ func logTail(log string, hitCeiling bool, secrets runspec.Secrets) string {
 			log = log[:i+1]
 		}
 	}
-	return tail(secrets.Mask(log), LogTailBytes)
+	return tail(secrets.Mask(log), int(tuning.Get().Executor.LogTailBytes))
 }
 
 // Secret keys of a run's job-scoped Secret.
@@ -632,18 +620,13 @@ func (k *Kube) secret(spec Spec, runSpec []byte, job *batchv1.Job) *corev1.Secre
 	}
 }
 
-// defaultTTL is how long a finished Job stays for kubectl when the
-// jobTemplate sets no ttlSecondsAfterFinished. The run row keeps everything
-// the Job knew.
-const defaultTTL = 10 * time.Minute
-
 // job builds the Job for a spec. The runner gets its job document as a
 // read-only file and its credentials as variables, both from the run's
 // Secret. It gets nothing else.
 func (k *Kube) job(spec Spec) *batchv1.Job {
 	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
-	ttl := int32(defaultTTL / time.Second)
+	ttl := int32(tuning.Get().Executor.JobTTL / time.Second)
 	if t := k.JobTemplate.Spec.TTLSecondsAfterFinished; t != nil {
 		ttl = *t
 	}
@@ -670,6 +653,13 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 	for _, e := range k.PodTemplate.runner().Env {
 		e.Name = runspec.CommandEnvPrefix + e.Name
 		env = append(env, e)
+	}
+	// A runner pod sees only the variables named here, and the pod
+	// template's are renamed for the commands, so serve hands on the tuning
+	// values that differ from the defaults, file-sourced ones included, for
+	// the runner to work within the same values as serve.
+	for _, e := range tuning.Env(*tuning.Get()) {
+		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 	env = append(env, []corev1.EnvVar{
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},

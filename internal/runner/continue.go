@@ -11,43 +11,37 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// conversationTimeout bounds asking the gateway for the conversation to
-// carry on.
-const conversationTimeout = 30 * time.Second
-
-// maxConversationBody bounds the gateway's answer: a conversation under
-// agent.ContinueTokens, at a few bytes a token, with room for its
-// encoding.
-const maxConversationBody = 16 << 20
-
 // conversationOf asks the gateway for the conversation the run's token
-// lets it carry on.
+// lets it carry on, within tuning's Runner.ConversationTimeout. Its answer,
+// a conversation under tuning's Agent.ContinueTokens, is bounded by
+// Gateway.MaxConversationBytes, which bounds every step's conversation.
 func conversationOf(ctx context.Context, gatewayURL, token string) (*agent.Conversation, error) {
-	ctx, cancel := context.WithTimeout(ctx, conversationTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.ConversationTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(gatewayURL, "/")+"/v1/conversation", nil)
 	if err != nil {
 		return nil, fmt.Errorf("runner: conversation: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", tuning.BearerPrefix+token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("runner: conversation: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxConversationBody+1))
+	most := int64(tuning.Get().Gateway.MaxConversationBytes)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, most+1))
 	switch {
 	case err != nil:
 		return nil, fmt.Errorf("runner: conversation: %w", err)
-	case len(body) > maxConversationBody:
+	case int64(len(body)) > most:
 		return nil, errors.New("runner: conversation: the gateway's answer is too large")
 	case resp.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("runner: conversation: %s: %s", resp.Status, bytes.TrimSpace(body))
@@ -59,18 +53,12 @@ func conversationOf(ctx context.Context, gatewayURL, token string) (*agent.Conve
 	return &c, nil
 }
 
-// carryShare bounds the conversation a run carries on to a share of its
-// token budget. Every step reads the whole of it again. Without this bound, a
-// budget that the monthly cap cut short will leave the agent too few steps to
-// work in.
-const carryShare = 4
-
 // carryOn is prompt carrying on the last review's conversation, which the
 // worker let the run carry on and the gateway serves it. It does this when
 // all of these hold. This review's system prompt and tools match those of the
 // conversation, byte for byte, so that the provider's cache still holds it.
 // The conversation opened on the pull request's title, description, and
-// linked issues as they are now. It takes at most a carryShare of the run's
+// linked issues as they are now. It takes at most 1/Runner.CarryShare of the run's
 // budget.
 //
 // Otherwise, carryOn is prompt, which starts afresh with the last review's
@@ -94,7 +82,7 @@ func carryOn(
 		why = "its system prompt or tools differ from this review's"
 	case len(c.Messages) == 0 || !review.SameBrief(c.Messages[0].Text, brief):
 		why = "the pull request's title, base branch, description or linked issues changed"
-	case c.Tokens*carryShare > agentLimits(p.Agent).MaxTokens:
+	case c.Tokens*int64(tuning.Get().Runner.CarryShare) > agentLimits(p.Agent).MaxTokens:
 		why = "too large for the run's budget"
 	}
 	if why != "" {

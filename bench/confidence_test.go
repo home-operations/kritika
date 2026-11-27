@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type confidenceCase struct {
@@ -56,7 +57,7 @@ func loadConfidenceCases(path string) ([]stageCase, error) {
 			System: system,
 			User: review.BuildConfidence(review.Input{Repository: f.Repository, Title: f.Title, Body: f.Body,
 				Diff: f.Diff, Changed: review.ChangedPaths(f.Diff), Bumps: bumps}, f.Result, review.Record{Sources: f.Sources}, nil, f.Earlier, system,
-				review.DefaultBudgetTokens),
+				tuning.Get().Review.DefaultBudgetTokens),
 			Schema: review.ConfidenceSchema(), SchemaName: "confidence",
 		}, check: func(raw string) error { return checkConfidence(f, listed, raw) }})
 	}

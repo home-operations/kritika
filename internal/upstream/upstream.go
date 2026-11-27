@@ -33,6 +33,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const remoteName = "origin"
@@ -109,15 +110,13 @@ type Result struct {
 }
 
 // MissingPath is a path a fetch asked for that the tree has nothing under,
-// with the tree's paths that end in it, at most nearMax: where a path
+// with the tree's paths that end in it, at most tuning's Upstream.NearMax:
+// where a path
 // given by its last segments is.
 type MissingPath struct {
 	Path string
 	Near []string
 }
-
-// nearMax bounds MissingPath.Near.
-const nearMax = 5
 
 // Fetcher fetches repositories within its Limits.
 type Fetcher struct {
@@ -460,7 +459,7 @@ func missingPaths(tree *object.Tree, paths []string) ([]MissingPath, error) {
 			switch {
 			case name == p || strings.HasPrefix(name, p+"/"):
 				found[i] = true
-			case strings.HasSuffix(name, "/"+p) && len(near[i]) < nearMax:
+			case strings.HasSuffix(name, "/"+p) && len(near[i]) < tuning.Get().Upstream.NearMax:
 				near[i] = append(near[i], name)
 			}
 		}
@@ -596,12 +595,6 @@ func writeBlob(dst *os.Root, name string, blob *object.Blob) error {
 	return out.Close()
 }
 
-// renameLimit is the most deleted or added files whose renames are found
-// by content: go-git scores each deleted file against each added one,
-// reading the added one whole every time. Past it, only exact renames are
-// found.
-const renameLimit = 50
-
 // render is changes, with their renames found, as a unified diff. It also
 // gives the paths that they touch by their new names, and how many files the
 // diff leaves out. Those are the files over l.BlobBytes, which are neither
@@ -620,7 +613,7 @@ func render(ctx context.Context, changes object.Changes, l Limits) (string, []st
 		}
 	}
 	opts := *object.DefaultDiffTreeOptions
-	opts.RenameLimit = renameLimit
+	opts.RenameLimit = uint(tuning.Get().Upstream.RenameLimit)
 	small, err := object.DetectRenames(small, &opts)
 	if err != nil {
 		return "", nil, 0, fmt.Errorf("upstream: renames: %w", err)

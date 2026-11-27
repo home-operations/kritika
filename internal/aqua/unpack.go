@@ -17,15 +17,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
-)
 
-// What bounds unpacking a download, against an archive that expands
-// without end: maxUnpackedBytes what it decompresses to, the entries it
-// leaves out and its headers included, and maxEntries how many entries
-// there are. Variables for the tests.
-var (
-	maxUnpackedBytes int64 = 4 << 30
-	maxEntries             = 200_000
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // The compressions a download is read through.
@@ -62,7 +55,8 @@ func unpackable(format string) bool {
 // its extension, as aqua names it, or the file itself under asset's name.
 // It stops between entries once ctx ends.
 func unpack(ctx context.Context, file, format, asset, root string) error {
-	u := &unpacker{ctx: ctx, root: root, dirs: map[string]bool{".": true}}
+	t := tuning.Get().Aqua
+	u := &unpacker{ctx: ctx, root: root, dirs: map[string]bool{".": true}, maxBytes: int64(t.MaxUnpackedBytes), maxEntries: t.MaxEntries}
 	switch format {
 	case FormatRaw:
 		if err := u.check(asset); err != nil {
@@ -86,7 +80,7 @@ func unpack(ctx context.Context, file, format, asset, root string) error {
 		return err
 	}
 	defer closer()
-	r = &bounded{r: r, left: maxUnpackedBytes}
+	r = &bounded{r: r, limit: u.maxBytes, left: u.maxBytes}
 	if archived {
 		return u.tar(r)
 	}
@@ -124,15 +118,15 @@ func decompress(r io.Reader, compression string) (_ io.Reader, closer func(), _ 
 	return nil, nil, fmt.Errorf("%s is not a compression the runner reads", compression)
 }
 
-// bounded reads r until left bytes are read, then fails.
+// bounded reads r until left bytes of limit are read, then fails.
 type bounded struct {
-	r    io.Reader
-	left int64
+	r           io.Reader
+	limit, left int64
 }
 
 func (b *bounded) Read(p []byte) (int, error) {
 	if b.left <= 0 {
-		return 0, fmt.Errorf("over %d bytes unpacked", maxUnpackedBytes)
+		return 0, fmt.Errorf("over %d bytes unpacked", b.limit)
 	}
 	n, err := b.r.Read(p[:min(int64(len(p)), b.left)])
 	b.left -= int64(n)
@@ -142,13 +136,17 @@ func (b *bounded) Read(p []byte) (int, error) {
 // unpacker writes an archive's entries under root, never through a link.
 // Every directory that an entry is written in is one it made or found as a
 // directory, not a link. A link that an entry is never replaces such a
-// directory.
+// directory. It bounds unpacking against an archive that expands without
+// end: maxBytes is what it decompresses to, the entries it leaves out and
+// its headers included, and maxEntries how many entries there are.
 type unpacker struct {
-	ctx     context.Context
-	root    string
-	dirs    map[string]bool
-	written int64
-	entries int
+	ctx        context.Context
+	root       string
+	dirs       map[string]bool
+	written    int64
+	entries    int
+	maxBytes   int64
+	maxEntries int
 }
 
 // check is why name cannot be an entry's path: one that is absolute or leaves
@@ -167,8 +165,8 @@ func (u *unpacker) clean(name string) (string, error) {
 		return "", err
 	}
 	u.entries++
-	if u.entries > maxEntries {
-		return "", fmt.Errorf("over %d entries", maxEntries)
+	if u.entries > u.maxEntries {
+		return "", fmt.Errorf("over %d entries", u.maxEntries)
 	}
 	name = path.Clean(strings.TrimPrefix(name, "./"))
 	if name == "." || name == "/" {
@@ -235,13 +233,13 @@ func (u *unpacker) file(name string, r io.Reader, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(f, io.LimitReader(r, maxUnpackedBytes-u.written+1))
+	n, err := io.Copy(f, io.LimitReader(r, u.maxBytes-u.written+1))
 	u.written += n
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
-	if err == nil && u.written > maxUnpackedBytes {
-		err = fmt.Errorf("over %d bytes unpacked", maxUnpackedBytes)
+	if err == nil && u.written > u.maxBytes {
+		err = fmt.Errorf("over %d bytes unpacked", u.maxBytes)
 	}
 	return err
 }

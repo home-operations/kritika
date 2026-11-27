@@ -18,6 +18,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -33,6 +34,13 @@ type Client struct {
 
 // webBase is where repositories, files and clone URLs live.
 const webBase = "https://github.com"
+
+// gitHubMaxPage is the most items GitHub returns in one page: REST's
+// per_page and GraphQL's first take no more.
+const gitHubMaxPage = 100
+
+// gitHubMaxContentsBytes is the largest file GitHub's contents API inlines.
+const gitHubMaxContentsBytes = 1 << 20
 
 // NewClient builds a Client for an installation.
 func NewClient(app *App, installationID int64) (*Client, error) {
@@ -167,7 +175,9 @@ func (c *Client) CommitSubject(ctx context.Context, owner, repo, sha string) (st
 }
 
 // FileAt implements forge.Client through the contents API, which inlines
-// a file up to forge.MaxFileBytes. A symlink or submodule is not a file.
+// a file up to gitHubMaxContentsBytes: it reads one up to that or tuning's
+// Forge.MaxFileBytes, whichever is less. A symlink or submodule is not a
+// file.
 func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error) {
 	fc, _, resp, err := c.api.Repositories.GetContents(ctx, owner, repo, path, &gh.RepositoryContentGetOptions{Ref: ref})
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
@@ -179,7 +189,7 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	if fc == nil || fc.GetType() != "file" {
 		return nil, fmt.Errorf("github: %s of %s/%s at %s is not a file: %w", path, owner, repo, ref, fs.ErrNotExist)
 	}
-	if fc.GetSize() > forge.MaxFileBytes {
+	if fc.GetSize() > min(int(tuning.Get().Forge.MaxFileBytes), gitHubMaxContentsBytes) {
 		return nil, fmt.Errorf("github: %s of %s/%s at %s: %w", path, owner, repo, ref, forge.ErrFileTooLarge)
 	}
 	content, err := fc.GetContent()
@@ -247,7 +257,7 @@ func (c *Client) BotLogin(ctx context.Context) (string, error) {
 
 // FindComment implements forge.Client.
 func (c *Client) FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error) {
-	for cm, err := range c.api.Issues.ListCommentsIter(ctx, owner, repo, number, &gh.IssueListCommentsOptions{PerPage: 100}) {
+	for cm, err := range c.api.Issues.ListCommentsIter(ctx, owner, repo, number, &gh.IssueListCommentsOptions{PerPage: gitHubMaxPage}) {
 		if err != nil {
 			return 0, fmt.Errorf("github: list comments on #%d: %w", number, err)
 		}
@@ -302,7 +312,8 @@ func (c *Client) CreateReview(
 		return nil, fmt.Errorf("github: review #%d: %w", number, err)
 	}
 	ids := make([]int64, len(comments))
-	for cm, err := range c.api.PullRequests.ListReviewCommentsIter(ctx, owner, repo, number, review.GetID(), &gh.ListOptions{PerPage: 100}) {
+	page := &gh.ListOptions{PerPage: gitHubMaxPage}
+	for cm, err := range c.api.PullRequests.ListReviewCommentsIter(ctx, owner, repo, number, review.GetID(), page) {
 		if err != nil {
 			return ids, fmt.Errorf("github: list the comments of review %d on #%d: %w", review.GetID(), number, err)
 		}
@@ -384,7 +395,8 @@ func (c *Client) approvalCounts(ctx context.Context, owner, repo string, number 
 	if pr.ReviewDecision != stateApproved {
 		return false, nil
 	}
-	for rule, err := range c.api.Repositories.ListRulesForBranchIter(ctx, owner, repo, pr.BaseRefName, &gh.ListOptions{PerPage: 100}) {
+	page := &gh.ListOptions{PerPage: gitHubMaxPage}
+	for rule, err := range c.api.Repositories.ListRulesForBranchIter(ctx, owner, repo, pr.BaseRefName, page) {
 		if noRulesets(err) {
 			break
 		}
@@ -432,7 +444,7 @@ func (c *Client) ChangesRequested(ctx context.Context, owner, repo string, numbe
 		return false, err
 	}
 	stands := map[string]string{}
-	for r, err := range c.api.PullRequests.ListReviewsIter(ctx, owner, repo, number, &gh.ListOptions{PerPage: 100}) {
+	for r, err := range c.api.PullRequests.ListReviewsIter(ctx, owner, repo, number, &gh.ListOptions{PerPage: gitHubMaxPage}) {
 		if err != nil {
 			return false, fmt.Errorf("github: list reviews on #%d: %w", number, err)
 		}
@@ -458,7 +470,7 @@ func (c *Client) approvals(ctx context.Context, owner, repo string, number int) 
 		return nil, err
 	}
 	var out []*gh.PullRequestReview
-	for r, err := range c.api.PullRequests.ListReviewsIter(ctx, owner, repo, number, &gh.ListOptions{PerPage: 100}) {
+	for r, err := range c.api.PullRequests.ListReviewsIter(ctx, owner, repo, number, &gh.ListOptions{PerPage: gitHubMaxPage}) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list reviews on #%d: %w", number, err)
 		}
@@ -485,20 +497,15 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id i
 	return conversationComment(cm), nil
 }
 
-// maxListedComments is how many comments ListConversation and ListInline
-// each return, the oldest: a pull request with more is not read to its end
-// into memory. A variable for the tests.
-var maxListedComments = 5000
-
 // ListConversation implements forge.Client.
 func (c *Client) ListConversation(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
-	opts := &gh.IssueListCommentsOptions{Sort: new("created"), Direction: new("asc"), PerPage: 100}
+	opts := &gh.IssueListCommentsOptions{Sort: new("created"), Direction: new("asc"), PerPage: gitHubMaxPage}
 	var out []forge.Comment
 	for cm, err := range c.api.Issues.ListCommentsIter(ctx, owner, repo, number, opts) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list comments on #%d: %w", number, err)
 		}
-		if out = append(out, conversationComment(cm)); len(out) >= maxListedComments {
+		if out = append(out, conversationComment(cm)); len(out) >= tuning.Get().GitHub.MaxListedComments {
 			break
 		}
 	}
@@ -507,13 +514,13 @@ func (c *Client) ListConversation(ctx context.Context, owner, repo string, numbe
 
 // ListInline implements forge.Client.
 func (c *Client) ListInline(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
-	opts := &gh.PullRequestListCommentsOptions{Sort: "created", Direction: "asc", PerPage: 100}
+	opts := &gh.PullRequestListCommentsOptions{Sort: "created", Direction: "asc", PerPage: gitHubMaxPage}
 	var out []forge.Comment
 	for cm, err := range c.api.PullRequests.ListCommentsIter(ctx, owner, repo, number, opts) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list review comments on #%d: %w", number, err)
 		}
-		if out = append(out, inlineComment(cm)); len(out) >= maxListedComments {
+		if out = append(out, inlineComment(cm)); len(out) >= tuning.Get().GitHub.MaxListedComments {
 			break
 		}
 	}
@@ -602,7 +609,7 @@ func (c *Client) Reaction(ctx context.Context, owner, repo string, on forge.Comm
 	if on.Inline {
 		list = c.api.Reactions.ListPullRequestCommentReactionsIter
 	}
-	opts := &gh.ListReactionOptions{Content: content, PerPage: 100}
+	opts := &gh.ListReactionOptions{Content: content, PerPage: gitHubMaxPage}
 	id, err := c.ownReaction(ctx, list(ctx, owner, repo, on.ID, opts))
 	if err != nil {
 		return 0, fmt.Errorf("github: list reactions on comment %d: %w", on.ID, err)
@@ -613,7 +620,7 @@ func (c *Client) Reaction(ctx context.Context, owner, repo string, on forge.Comm
 // PullRequestReaction implements forge.Client. A pull request's own
 // reactions are its issue's.
 func (c *Client) PullRequestReaction(ctx context.Context, owner, repo string, number int, content string) (int64, error) {
-	opts := &gh.ListReactionOptions{Content: content, PerPage: 100}
+	opts := &gh.ListReactionOptions{Content: content, PerPage: gitHubMaxPage}
 	id, err := c.ownReaction(ctx, c.api.Reactions.ListIssueReactionsIter(ctx, owner, repo, number, opts))
 	if err != nil {
 		return 0, fmt.Errorf("github: list reactions on #%d: %w", number, err)
@@ -659,7 +666,7 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 // time server-side, so the walk stops at the first page item older than
 // since.
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]forge.OpenPullRequest, error) {
-	opts := &gh.PullRequestListOptions{State: "open", Sort: "updated", Direction: "desc", PerPage: 100}
+	opts := &gh.PullRequestListOptions{State: "open", Sort: "updated", Direction: "desc", PerPage: gitHubMaxPage}
 	var out []forge.OpenPullRequest
 	for pr, err := range c.api.PullRequests.ListIter(ctx, owner, repo, opts) {
 		if err != nil {

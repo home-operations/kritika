@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -258,7 +259,8 @@ func bumpTokens(line string) []string {
 // as one too, and a four-part version as an address, so the prompt, not
 // the shape, tells them apart.
 func versionLike(tok string) bool {
-	return len(tok) <= 200 && strings.ContainsAny(tok, "0123456789") && strings.ContainsAny(tok, ".@:/-") && bumpToken.MatchString(tok)
+	return len(tok) <= tuning.Get().Review.MaxVersionBytes &&
+		strings.ContainsAny(tok, "0123456789") && strings.ContainsAny(tok, ".@:/-") && bumpToken.MatchString(tok)
 }
 
 // lockfile reports whether p is a lockfile, by the names the package

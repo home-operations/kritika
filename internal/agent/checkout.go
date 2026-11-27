@@ -10,11 +10,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-)
 
-// MaxCheckoutBytes bounds a checkout's total size on the pod's scratch
-// volume, beside the fetched pack.
-const MaxCheckoutBytes = 256 << 20
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // CheckoutStats is what Checkout wrote and what it left out.
 type CheckoutStats struct {
@@ -44,7 +42,7 @@ func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (Checko
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if f.Mode == filemode.Symlink || t.ignored(f.Name) || f.Size > MaxBlobBytes {
+		if f.Mode == filemode.Symlink || t.ignored(f.Name) || f.Size > int64(tuning.Get().Agent.MaxBlobBytes) {
 			stats.Skipped++
 			return nil
 		}

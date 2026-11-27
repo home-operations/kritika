@@ -16,14 +16,15 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fastRetries keeps the test's waits short, and its window as asked.
 func fastRetries(t *testing.T, window time.Duration) {
 	t.Helper()
-	backoff, maxBackoff, retryWindow := reportBackoff, reportMaxBackoff, reportRetryWindow
-	t.Cleanup(func() { reportBackoff, reportMaxBackoff, reportRetryWindow = backoff, maxBackoff, retryWindow })
-	reportBackoff, reportMaxBackoff, reportRetryWindow = time.Millisecond, 5*time.Millisecond, window
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Runner.ReportBackoff, v.Runner.ReportMaxBackoff, v.RunSpec.ReportRetryWindow = time.Millisecond, 5*time.Millisecond, window
+	})
 }
 
 func TestReportRetries(t *testing.T) {

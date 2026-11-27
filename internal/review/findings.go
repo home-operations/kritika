@@ -13,13 +13,14 @@
 // call no other template. Rendering is bounded, and a template that steps
 // outside a bound falls back to kritika's default with a note:
 //
-//   - Output of 64 KiB, marker included.
-//   - 20,000 loop iterations per render, charged when a loop starts.
-//   - 256 KiB per function call. This counts its arguments, its result and,
+//   - Output of tuning's Review.MaxRenderBytes, marker included.
+//   - Review.MaxIterations loop iterations per render, charged when a loop
+//     starts.
+//   - Review.MaxCallBytes per function call. This counts its arguments, its result and,
 //     for repeat, indent, nindent, join, replace, regexReplaceAll,
 //     regexReplaceAllLiteral, seq, until, untilStep, and printf, an estimate
 //     of what it allocates. printf refuses a width or precision given as *.
-//   - Two seconds per render. Identifiers that start with __kritika_ are
+//   - Review.RenderTimeout per render. Identifiers that start with __kritika_ are
 //     reserved.
 //
 // The summary template's dot is a RenderData, the inline template's a
@@ -36,6 +37,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Severity of a finding, in the order the summary lists them.
@@ -87,17 +89,6 @@ func Categories() []Category { return slices.Clone(categories) }
 
 // Valid reports whether c is one of the categories.
 func (c Category) Valid() bool { return slices.Contains(categories, c) }
-
-// maxPraise bounds Summary.Praise. The schema says so and Parse enforces it.
-const maxPraise = 3
-
-// maxChecked bounds Summary.Checked. The schema says so and Parse enforces
-// it, as it cuts each note to one line.
-const maxChecked = 10
-
-// maxDiagramBytes bounds Summary.Diagram. A diagram over it is dropped rather
-// than cut, since a cut one does not render.
-const maxDiagramBytes = 4 << 10
 
 // diagramKinds are the Mermaid diagram types that a summary can draw, by the
 // keyword that its source opens with.
@@ -415,7 +406,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 	}
 	summary := summaryProperties(diagram)
 	summary[keyChecked] = &jsonSchema{
-		Type: schemaArray, Description: describeChecked, Items: &jsonSchema{Type: schemaString}, MaxItems: maxChecked,
+		Type: schemaArray, Description: describeChecked, Items: &jsonSchema{Type: schemaString}, MaxItems: tuning.Get().Review.MaxChecked,
 	}
 	return jsonSchema{
 		Type: schemaObject,
@@ -476,25 +467,15 @@ func summaryProperties(diagram bool) map[string]*jsonSchema {
 		},
 		keyPraise: {
 			Type:        schemaArray,
-			Description: "Up to three specific things the change does well; empty when nothing stands out.",
+			Description: fmt.Sprintf("Up to %d specific things the change does well; empty when nothing stands out.", tuning.Get().Review.MaxPraise),
 			Items:       &jsonSchema{Type: schemaString},
-			MaxItems:    maxPraise,
+			MaxItems:    tuning.Get().Review.MaxPraise,
 		},
 	}
 	if diagram {
 		summary[keyDiagram] = &jsonSchema{Type: schemaString, Description: describeDiagram}
 	}
 	return summary
-}
-
-// contract picks one of the schemas contractSchema builds.
-type contract struct{ strict, diagram bool }
-
-var contracts = map[contract]json.RawMessage{
-	{false, false}: contractSchema(false, false).mustMarshal(),
-	{false, true}:  contractSchema(false, true).mustMarshal(),
-	{true, false}:  contractSchema(true, false).mustMarshal(),
-	{true, true}:   contractSchema(true, true).mustMarshal(),
 }
 
 // The keys the fullest contract defines at each level. Check holds every
@@ -528,7 +509,7 @@ func Check(raw json.RawMessage) error {
 	}
 	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
 		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
-			maxDiagramBytes, strings.Join(diagramKinds, ", "))
+			int(tuning.Get().Review.MaxDiagramBytes), strings.Join(diagramKinds, ", "))
 	}
 	return nil
 }
@@ -745,13 +726,13 @@ func stripFences(code string) string {
 }
 
 // diagram is the model's Mermaid source without its fences, or "" when it
-// does not open with one of diagramKinds or is over maxDiagramBytes. If such
+// does not open with one of diagramKinds or is over tuning's Review.MaxDiagramBytes. If such
 // a diagram reaches the forge, the forge shows a render error, or a diagram
 // too big to read, in its place. A titled front matter block and comment lines
 // can precede the kind, as Mermaid allows. diagramHeader says what is refused.
 func diagram(src string) string {
 	src = stripFences(strings.TrimSpace(src))
-	if len(src) > maxDiagramBytes {
+	if len(src) > int(tuning.Get().Review.MaxDiagramBytes) {
 		return ""
 	}
 	if kind := strings.Fields(diagramHeader(src)); len(kind) == 0 || !slices.Contains(diagramKinds, kind[0]) {

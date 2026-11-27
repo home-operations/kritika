@@ -230,11 +230,11 @@ func checkChunks(t *testing.T, chunks []Chunk, src []string) map[int]Chunk {
 			t.Fatalf("chunk %s L%d-%d is outside the file's %d lines", c.Symbol, c.StartLine, c.EndLine, len(src))
 		}
 		want := strings.Join(src[c.StartLine-1:c.EndLine], "\n")
-		if len(want) > DefaultOptions.MaxChunkBytes {
+		if len(want) > DefaultOptions().MaxChunkBytes {
 			if c.StartLine != c.EndLine {
-				t.Errorf("chunk %s L%d-%d spans %d bytes, over %d", c.Symbol, c.StartLine, c.EndLine, len(want), DefaultOptions.MaxChunkBytes)
+				t.Errorf("chunk %s L%d-%d spans %d bytes, over %d", c.Symbol, c.StartLine, c.EndLine, len(want), DefaultOptions().MaxChunkBytes)
 			}
-			want = textcut.Prefix(want, DefaultOptions.MaxChunkBytes)
+			want = textcut.Prefix(want, DefaultOptions().MaxChunkBytes)
 		}
 		if c.Text != want {
 			t.Errorf("chunk %s L%d-%d holds %d bytes, want %d", c.Symbol, c.StartLine, c.EndLine, len(c.Text), len(want))

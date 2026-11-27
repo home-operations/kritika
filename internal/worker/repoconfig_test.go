@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func adminSettings(t *testing.T) configfile.Settings {
@@ -208,7 +209,7 @@ func TestReadRepoConfig(t *testing.T) {
 		{name: "read", client: fileForge{files: map[string]string{repoconfig.FileName: "enabled: false\n"}}, doc: "enabled: false\n"},
 		{
 			name:   "over the file cap",
-			client: fileForge{files: map[string]string{repoconfig.FileName: strings.Repeat("x", repoconfig.MaxFileBytes+1)}},
+			client: fileForge{files: map[string]string{repoconfig.FileName: strings.Repeat("x", int(tuning.Get().RepoConfig.MaxFileBytes)+1)}},
 			notes:  []string{repoconfig.TooLarge(repoconfig.FileName)},
 		},
 		{

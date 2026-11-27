@@ -31,6 +31,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestIndexDocumentPrompt: the worker embeds every chunk led by the document
@@ -173,7 +174,7 @@ func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
 // one the leader's build applied, as during a rollout, snoozes the job
 // instead of building an index that the onboarding feeder rebuilds again.
 // Each wait is counted on kritika_index_snoozes_total{reason="build"}, and a
-// job that has waited buildWaitWarn times says so as a warning, since a
+// job that has waited tuning's Worker.BuildWaitWarn times says so as a warning, since a
 // leader that never applies this pod's build keeps it waiting for good.
 func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 	ctx := t.Context()
@@ -212,8 +213,8 @@ func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 		warn     bool
 	}{
 		{name: "first wait", metadata: `{}`},
-		{name: "a rollout's wait", metadata: fmt.Sprintf(`{"build_waits": %d}`, buildWaitWarn-2)},
-		{name: "a long wait", metadata: fmt.Sprintf(`{"build_waits": %d}`, buildWaitWarn-1), warn: true},
+		{name: "a rollout's wait", metadata: fmt.Sprintf(`{"build_waits": %d}`, tuning.Get().Worker.BuildWaitWarn-2)},
+		{name: "a long wait", metadata: fmt.Sprintf(`{"build_waits": %d}`, tuning.Get().Worker.BuildWaitWarn-1), warn: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
@@ -223,8 +224,8 @@ func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 			job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{ID: 1, Attempt: 1, Metadata: []byte(tc.metadata)},
 				Args: jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerOnboard}}
 			err := w.Work(ctx, job)
-			if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != appliedBuildWait {
-				t.Fatalf("Work = %v, want the job snoozed for %s", err, appliedBuildWait)
+			if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != tuning.Get().Worker.AppliedBuildWait {
+				t.Fatalf("Work = %v, want the job snoozed for %s", err, tuning.Get().Worker.AppliedBuildWait)
 			}
 			if after := indexRunCount(t, st, account.ID(), repo); after != before {
 				t.Fatalf("index runs = %d, want %d: the job started one", after, before)
@@ -266,7 +267,7 @@ func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 			t.Fatal(err)
 		}
 		row := inserted.Job
-		for waits := 1; waits <= buildWaitWarn; waits++ {
+		for waits := 1; waits <= tuning.Get().Worker.BuildWaitWarn; waits++ {
 			logs.Reset()
 			res, err := tw.WorkJob(ctx, t, tx, row)
 			if err != nil {
@@ -279,9 +280,9 @@ func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
 				t.Fatal(err)
 			}
 			warned := strings.Contains(logs.String(), `level=WARN msg="index has waited long`)
-			if res.EventKind != river.EventKindJobSnoozed || meta.Waits != waits || warned != (waits == buildWaitWarn) {
+			if res.EventKind != river.EventKindJobSnoozed || meta.Waits != waits || warned != (waits == tuning.Get().Worker.BuildWaitWarn) {
 				t.Fatalf("attempt %d: %s with %d build waits recorded, warned %v; want snoozed with %d, warned only at %d",
-					waits, res.EventKind, meta.Waits, warned, waits, buildWaitWarn)
+					waits, res.EventKind, meta.Waits, warned, waits, tuning.Get().Worker.BuildWaitWarn)
 			}
 			row = res.Job
 		}

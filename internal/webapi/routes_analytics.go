@@ -3,6 +3,7 @@ package webapi
 import (
 	"cmp"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,19 +11,11 @@ import (
 
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// analyticsRepos is how many repositories the analytics list, and
-// analyticsRefusals how many refused hosts, each with a row per
-// repository.
-const (
-	analyticsRepos        = 5
-	analyticsRefusals     = 50
-	analyticsDependencies = 50
-)
-
-// analyticsQuery reads ?group=, ?from= and ?to=: by day over the last 30
-// days unless given.
+// analyticsQuery reads ?group=, ?from= and ?to=: by day over tuning's
+// WebAPI.DefaultUsageWindow unless given.
 func (s *Server) analyticsQuery(r *http.Request) (store.AnalyticsGroup, time.Time, time.Time, error) {
 	group := store.AnalyticsGroup(cmp.Or(r.URL.Query().Get("group"), string(store.AnalyticsByDay)))
 	if !group.Valid() {
@@ -40,12 +33,12 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 	ctx := r.Context()
 	out := Analytics{Group: group, From: from, To: to}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		data, err := store.ReadAnalytics(ctx, tx, group, from, to, analyticsRepos)
+		data, err := store.ReadAnalytics(ctx, tx, group, from, to, tuning.Get().WebAPI.AnalyticsRepos)
 		if err != nil {
 			return err
 		}
 		out.Current, out.Previous, out.Series, out.Repositories = analytics(data)
-		refusals, err := store.ReadEgressRefusals(ctx, tx, from, to, analyticsRefusals)
+		refusals, err := store.ReadEgressRefusals(ctx, tx, from, to, tuning.Get().WebAPI.AnalyticsRefusals)
 		if err != nil {
 			return err
 		}
@@ -86,7 +79,7 @@ func (s *Server) getDependencyDrift(w http.ResponseWriter, r *http.Request, t *a
 	ctx := r.Context()
 	out := []DependencyDrift{}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		rows, err := store.ReadDependencyDrift(ctx, tx, from, to, analyticsDependencies)
+		rows, err := store.ReadDependencyDrift(ctx, tx, from, to, tuning.Get().WebAPI.AnalyticsDependencies)
 		if err != nil {
 			return err
 		}
@@ -167,7 +160,21 @@ func pullRef(p store.PullRef) PullRef {
 	return PullRef{Repository: p.Repository, Number: p.Number, Title: p.Title, URL: p.URL}
 }
 
-// window reads ?from= and ?to=: the last 30 days unless given.
+// spanText is d as an error names a span: "a year" for the default
+// WebAPI.MaxUsageWindow of 366 days, else whole days, or the duration.
+func spanText(d time.Duration) string {
+	const day = 24 * time.Hour
+	switch {
+	case d == 366*day:
+		return "a year"
+	case d%day == 0:
+		return strconv.FormatInt(int64(d/day), 10) + " days"
+	}
+	return d.String()
+}
+
+// window reads ?from= and ?to=: tuning's WebAPI.DefaultUsageWindow unless
+// given, and at most WebAPI.MaxUsageWindow.
 func (s *Server) window(r *http.Request) (time.Time, time.Time, error) {
 	q := r.URL.Query()
 	to := s.now().UTC()
@@ -178,7 +185,7 @@ func (s *Server) window(r *http.Request) (time.Time, time.Time, error) {
 		}
 		to = t
 	}
-	from := to.Add(-defaultUsageWindow)
+	from := to.Add(-tuning.Get().WebAPI.DefaultUsageWindow)
 	if v := q.Get("from"); v != "" {
 		t, ok := parseTime(v)
 		if !ok {
@@ -189,8 +196,8 @@ func (s *Server) window(r *http.Request) (time.Time, time.Time, error) {
 	if !from.Before(to) {
 		return time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from must be before to")
 	}
-	if to.Sub(from) > maxUsageWindow {
-		return time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from and to may span at most a year")
+	if limit := tuning.Get().WebAPI.MaxUsageWindow; to.Sub(from) > limit {
+		return time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from and to may span at most "+spanText(limit))
 	}
 	return from, to, nil
 }

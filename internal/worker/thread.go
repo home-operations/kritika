@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Thread works a review thread that someone resolved or unresolved on the
@@ -72,8 +73,8 @@ func (w *Thread) Work(ctx context.Context, job *river.Job[jobs.ThreadArgs]) erro
 		})
 	}
 	if errors.Is(err, store.ErrPublicationBusy) {
-		logger.Info("thread change snoozed: the pull request is being updated", "for", publishWait)
-		return river.JobSnooze(publishWait)
+		logger.Info("thread change snoozed: the pull request is being updated", "for", tuning.Get().Worker.PublishWait)
+		return river.JobSnooze(tuning.Get().Worker.PublishWait)
 	}
 	if err != nil {
 		w.Metrics.Thread(account.Key(), threadFailed)

@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/server"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func parseAccount(t *testing.T, slug string) *configfile.File {
@@ -190,6 +191,10 @@ func TestCheckConfig(t *testing.T) {
 		webURL    string
 		noFile    bool
 		wantErr   string
+		// similarEnv sets KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY, and
+		// similar is the value that the check leaves the process with.
+		similarEnv string
+		similar    int
 	}{
 		{name: "valid", raw: admin + "webUrl: https://kritika.example.com\n"},
 		{name: "web URL from environment", raw: admin, webURL: "https://kritika.example.com"},
@@ -208,6 +213,13 @@ func TestCheckConfig(t *testing.T) {
 		{name: "unknown pod template field", raw: admin + "webUrl: https://kritika.example.com\n" +
 			"runner: {podTemplate: {spec: {bogusField: 1}}}\n", wantErr: "runner.podTemplate"},
 		{name: "no file named", noFile: true, wantErr: "usage"},
+		{name: "tuning", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 6}}\n", similar: 6},
+		{name: "tuning from environment", raw: admin + "webUrl: https://kritika.example.com\n", similarEnv: "6", similar: 6},
+		{name: "tuning from both", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 6}}\n",
+			similarEnv: "6", wantErr: "tuning.gateway.similarPerQuery conflicts with KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY"},
+		{name: "invalid tuning", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 0}}\n",
+			wantErr: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY must be positive"},
+		{name: "unknown tuning key", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {bogus: 1}}\n", wantErr: "bogus"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// A check needs neither the database nor KRITIKA_CONFIG_FILE.
@@ -218,6 +230,11 @@ func TestCheckConfig(t *testing.T) {
 			if tt.webURL != "" {
 				t.Setenv("KRITIKA_WEB_URL", tt.webURL)
 			}
+			if tt.similarEnv != "" {
+				t.Setenv("KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY", tt.similarEnv)
+			}
+			// The check sets the process's tuning. Override restores it after.
+			tuning.Override(t, func(*tuning.Values) {})
 			t.Setenv("TEST_ADMIN_PASSWORD", "pw")
 			var args []string
 			if !tt.noFile {
@@ -237,6 +254,9 @@ func TestCheckConfig(t *testing.T) {
 			}
 			if err != nil || !strings.Contains(out.String(), "the configuration is valid") {
 				t.Fatalf("checkConfig = %v, output %q", err, out.String())
+			}
+			if tt.similar != 0 && tuning.Get().Gateway.SimilarPerQuery != tt.similar {
+				t.Fatalf("tuning.gateway.similarPerQuery = %d after the check, want %d", tuning.Get().Gateway.SimilarPerQuery, tt.similar)
 			}
 		})
 	}
@@ -289,8 +309,8 @@ func TestRiverConfig(t *testing.T) {
 	if c.ReindexerIndexNames == nil || len(c.ReindexerIndexNames) != 0 {
 		t.Errorf("reindexer indexes = %#v, want an empty list: nil is River's default set", c.ReindexerIndexNames)
 	}
-	if c.JobStuckThreshold != queueStopHeadroom {
-		t.Errorf("stuck threshold = %s, want %s", c.JobStuckThreshold, queueStopHeadroom)
+	if c.JobStuckThreshold != tuning.Get().Process.QueueStopHeadroom {
+		t.Errorf("stuck threshold = %s, want %s", c.JobStuckThreshold, tuning.Get().Process.QueueStopHeadroom)
 	}
 }
 

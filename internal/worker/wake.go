@@ -12,6 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // SlotWake wakes a review that River just saved as snoozed for a model slot,
@@ -67,7 +68,7 @@ func (s *SlotWake) check(ctx context.Context, job *rivertype.JobRow) {
 	// The slots are the model's provider's for the account, as the review
 	// counted them.
 	slots := file.Slots(account, configfile.ModelRef(meta.SlotWait))
-	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Worker.ReleaseTimeout)
 	defer cancel()
 	logger := s.Logger.With("job", job.ID, "model", meta.SlotWait)
 	woken, err := s.Store.WakeIfSlotFree(ctx, args.AccountID, meta.SlotWait, slots, job.ID)

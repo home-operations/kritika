@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -148,23 +149,18 @@ var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_id
 // shorter than the owner's, could find that cycle first and abort it. Its
 // waits for index_chunks hold no lock that another waits for, but every
 // search and build queues behind them, so yieldLocks bounds each to
-// 1/lockYieldShare of deadlock_timeout. DropLegacyIndexChunks takes
+// 1/tuning's Store.LockYieldShare of deadlock_timeout. DropLegacyIndexChunks takes
 // index_chunks at once or gives up, but at its last try, and then waits for
 // the legacy partition alone, which only the owner's own reads of it can
-// hold. Each tries partitionTries times, partitionRetryPause apart, and the
+// hold. Each tries tuning's Store.PartitionTries times, tuning's Store.PartitionRetryPause apart, and the
 // next sweep tries again.
-const (
-	lockYieldShare      = 8
-	partitionTries      = 5
-	partitionRetryPause = time.Second
-)
 
-// yieldLocks sets the transaction's lock_timeout to 1/lockYieldShare of
+// yieldLocks sets the transaction's lock_timeout to 1/tuning's Store.LockYieldShare of
 // deadlock_timeout.
 func yieldLocks(ctx context.Context, tx pgx.Tx) error {
 	_, err := tx.Exec(ctx, `SELECT set_config('lock_timeout',
 		greatest(1, extract(epoch FROM current_setting('deadlock_timeout')::interval) * 1000 / $1)::int || 'ms', true)`,
-		lockYieldShare)
+		tuning.Get().Store.LockYieldShare)
 	return err
 }
 
@@ -174,12 +170,12 @@ func lockNotAvailable(err error) bool {
 	return ok && pgErr.Code == "55P03"
 }
 
-// retryLocks runs fn again while it gives up a lock wait, partitionTries
+// retryLocks runs fn again while it gives up a lock wait, tuning's Store.PartitionTries
 // times at most.
 func retryLocks(ctx context.Context, fn func() error) error {
 	for try := 1; ; try++ {
 		err := fn()
-		if !lockNotAvailable(err) || try == partitionTries {
+		if !lockNotAvailable(err) || try == tuning.Get().Store.PartitionTries {
 			return err
 		}
 		if gaveWay != nil {
@@ -188,7 +184,7 @@ func retryLocks(ctx context.Context, fn func() error) error {
 		select {
 		case <-ctx.Done():
 			return err
-		case <-time.After(partitionRetryPause):
+		case <-time.After(tuning.Get().Store.PartitionRetryPause):
 		}
 	}
 }
@@ -431,14 +427,8 @@ func renameLegacyConstraints(ctx context.Context, tx pgx.Tx) ([]string, error) {
 	return stmts, nil
 }
 
-// legacyDrainSlice is how many chunks DrainLegacyIndexChunks moves or
-// deletes at a time. It holds the repository's lock while it does, which
-// bounds how long a publication or a webhook's write to the repository waits
-// for it.
-var legacyDrainSlice = 5000
-
 // DrainLegacyIndexChunks empties index_chunks_legacy a slice at a time: up
-// to legacyDrainSlice chunks of one generation, in a transaction of their
+// to tuning's Store.LegacyDrainSlice chunks of one generation, in a transaction of their
 // own. An active generation's chunks go first, moved to the hash partitions,
 // so that its searches read its partition alone. A generation is split
 // between the two while it moves, which a search reads as one. Then the
@@ -500,11 +490,11 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int6
 var errLegacyHeld = errors.New("store: the generation's legacy chunks are held")
 
 // drainLegacySlice moves, or deletes when keep does not hold, up to
-// legacyDrainSlice of run's chunks in index_chunks_legacy that another does
+// tuning's Store.LegacyDrainSlice of run's chunks in index_chunks_legacy that another does
 // not hold, under the locks that lockLegacyGeneration took.
 func drainLegacySlice(ctx context.Context, tx pgx.Tx, run string, keep bool) (moved, removed int64, err error) {
 	rows, err := tx.Query(ctx, `SELECT id FROM index_chunks_legacy WHERE index_run_id = $1 LIMIT $2 FOR UPDATE SKIP LOCKED`,
-		run, legacyDrainSlice)
+		run, tuning.Get().Store.LegacyDrainSlice)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -610,7 +600,7 @@ func (s *Store) DropLegacyIndexChunks(ctx context.Context) (bool, error) {
 		dropped = false
 		try++
 		lock := `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE NOWAIT`
-		if try == partitionTries {
+		if try == tuning.Get().Store.PartitionTries {
 			lock = `LOCK TABLE ONLY index_chunks IN ACCESS EXCLUSIVE MODE`
 		}
 		return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {

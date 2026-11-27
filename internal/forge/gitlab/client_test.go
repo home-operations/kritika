@@ -23,6 +23,7 @@ import (
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 var _ forge.Client = (*Client)(nil)
@@ -564,7 +565,7 @@ func TestStatusAndFiles(t *testing.T) {
 		case "dir/a.go":
 			_, _ = io.WriteString(w, "package a\n")
 		case "big":
-			_, _ = w.Write(make([]byte, forge.MaxFileBytes+1))
+			_, _ = w.Write(make([]byte, tuning.Get().Forge.MaxFileBytes+1))
 		default:
 			w.WriteHeader(404)
 		}

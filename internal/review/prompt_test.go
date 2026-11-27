@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestShortSHA(t *testing.T) {
@@ -119,13 +121,13 @@ func TestSameBriefFocus(t *testing.T) {
 }
 
 func TestCleanFocus(t *testing.T) {
-	long := strings.Repeat("x", MaxFocusRunes+5)
+	long := strings.Repeat("x", tuning.Get().Review.MaxFocusRunes+5)
 	for in, want := range map[string]string{
 		"  the  retry\tloop ":               "the retry loop",
 		"first line\nsecond line":           "first line",
 		"\r\nafter a blank line":            "after a blank line",
 		"with a \x07bell and \x1b[31mcolor": "with a bell and [31mcolor",
-		long:                                long[:MaxFocusRunes],
+		long:                                long[:tuning.Get().Review.MaxFocusRunes],
 		"ünïcödé ✓":                         "ünïcödé ✓",
 	} {
 		if got := CleanFocus(in); got != want {
@@ -135,7 +137,7 @@ func TestCleanFocus(t *testing.T) {
 }
 
 // TestBuildListsBumps: the versions the change moves follow the changed
-// files, each on its line, as many as maxBumpsBytes holds.
+// files, each on its line, as many as tuning's Review.MaxBumpsBytes holds.
 func TestBuildListsBumps(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Changed: []string{"go.mod"}, Bumps: []Bump{{Path: "go.mod", Line: 7, Old: "v1.2.3", New: "v1.3.0"}}}
 	msg, _, _, _ := Build(in)
@@ -146,7 +148,7 @@ func TestBuildListsBumps(t *testing.T) {
 		t.Fatalf("a change that moves no version lists some:\n%s", msg)
 	}
 	item := "- go.mod:7: v1.2.3 to v1.3.0\n"
-	fits := maxBumpsBytes / len(item)
+	fits := tuning.Get().Review.MaxBumpsBytes / len(item)
 	in.Bumps = slices.Repeat(in.Bumps, fits+3)
 	if msg, _, _, _ = Build(in); !strings.Contains(msg, "- and 3 more\n") || strings.Count(msg, item) != fits {
 		t.Fatalf("a long list is not cut at %d items:\n%s", fits, msg)
@@ -218,7 +220,7 @@ func TestBuildBumpRanges(t *testing.T) {
 func TestBuildBumpAnnotationsFitBudget(t *testing.T) {
 	const delta = "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -7 +7 @@\n-require x/y v1.2.9\n+require x/y v1.3.0\n"
 	const item = "- go.mod:7: v1.2.3 to v1.3.0 (v1.2.9 to v1.3.0 since your last review)\n"
-	fits := maxBumpsBytes / len(item)
+	fits := tuning.Get().Review.MaxBumpsBytes / len(item)
 	bumps := slices.Repeat(Bumps(strings.Replace(delta, "v1.2.9", "v1.2.3", 1)), fits+3)
 	fresh, _, _, _ := Build(Input{Bumps: bumps, Incremental: &IncrementalInput{DeltaDiff: delta}})
 	continued, _, _ := BuildContinuation(ContinueInput{Bumps: bumps, DeltaDiff: delta})

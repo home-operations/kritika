@@ -21,6 +21,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const (
@@ -103,9 +104,34 @@ func TestJobSpecDefaults(t *testing.T) {
 	if pod := j.Spec.Template.Spec; pod.RuntimeClassName != nil || pod.Resources != nil || pod.Affinity != nil || pod.Containers[0].ImagePullPolicy != "" {
 		t.Fatalf("pod spec = %+v, want the cluster's defaults", pod)
 	}
-	if *j.Spec.TTLSecondsAfterFinished != int32(defaultTTL/time.Second) {
+	if *j.Spec.TTLSecondsAfterFinished != int32(tuning.Get().Executor.JobTTL/time.Second) {
 		t.Fatalf("ttl = %d, want the default", *j.Spec.TTLSecondsAfterFinished)
 	}
+}
+
+// TestJobSpecTuning: a runner gets the tuning values that differ from the
+// defaults, after the commands' variables, and none at the defaults.
+func TestJobSpecTuning(t *testing.T) {
+	k := &Kube{Namespace: "kritika", PodTemplate: PodTemplate{Spec: PodTemplateSpec{Containers: []TemplateContainer{{
+		Name: runnerRole, Image: "x", Env: []corev1.EnvVar{{Name: "GOFLAGS", Value: "-mod=mod"}}}}}}}
+	isTuning := func(e corev1.EnvVar) bool { return strings.HasPrefix(e.Name, "KRITIKA_TUNING_") }
+	if env := k.job(spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env, isTuning) {
+		t.Fatalf("env = %v, want no tuning variables at the defaults", env)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.SimilarPerQuery = 6 })
+	env := k.job(spec()).Spec.Template.Spec.Containers[0].Env
+	at := slices.IndexFunc(env, isTuning)
+	if at < 0 || env[at] != (corev1.EnvVar{Name: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY", Value: "6"}) ||
+		slices.ContainsFunc(env[at+1:], isTuning) {
+		t.Fatalf("env = %v, want KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY=6 alone", env)
+	}
+	index := func(name string) int {
+		return slices.IndexFunc(env, func(e corev1.EnvVar) bool { return e.Name == name })
+	}
+	if commands := index(runspec.CommandEnvPrefix + "GOFLAGS"); commands < 0 || commands > at || at > index("KRITIKA_RUN_SPEC_FILE") {
+		t.Fatalf("env = %v, want the tuning after the commands' variables and before the run's", env)
+	}
+	checkRunnerEnv(t, env)
 }
 
 // TestJobSpecPodFailurePolicy: a pod Kubernetes disrupts fails its Job by
@@ -211,7 +237,7 @@ func checkSpecMount(t *testing.T, pod corev1.PodSpec, c corev1.Container) {
 func TestKubeRunRejectsOversizedSpecBeforeCreatingAnything(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	s := spec()
-	s.Job.RepoFiles = []string{strings.Repeat("<", runspec.MaxBytes)}
+	s.Job.RepoFiles = []string{strings.Repeat("<", int(tuning.Get().RunSpec.MaxBytes))}
 	res := newKube(t, client).Run(t.Context(), s)
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "byte limit") {
 		t.Fatalf("err = %v", res.Err)
@@ -539,7 +565,7 @@ func TestWhyNoPod(t *testing.T) {
 }
 
 // TestKubeRunGivesUpAMissingJob: a Job someone else deleted, gone from the
-// watch, is given up after maxMissing ticks. It is deleted in case it is
+// watch, is given up after Executor.MaxMissing ticks. It is deleted in case it is
 // still there, so it does not run on beside the worker's retry.
 func TestKubeRunGivesUpAMissingJob(t *testing.T) {
 	client := fake.NewSimpleClientset()
@@ -560,6 +586,31 @@ func TestKubeRunGivesUpAMissingJob(t *testing.T) {
 	if !res.Abandoned || res.Err == nil || !strings.Contains(res.Err.Error(), "not found") {
 		t.Fatalf("res = %+v, want the Job abandoned as not found", res)
 	}
+}
+
+// TestKubeRunMissingJobConfigured: a run waits out the configured
+// Executor.MaxMissing ticks for a Job missing from the watch before it gives
+// the Job up.
+func TestKubeRunMissingJobConfigured(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Executor.MaxMissing = 1 << 20 })
+	client := fake.NewSimpleClientset()
+	k := newKube(t, client)
+	created := reacted(client, "create", "jobs")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(ctx, spec()) }()
+	j := waitJob(t, client, created)
+	if err := client.BatchV1().Jobs("kritika").Delete(t.Context(), j.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case res := <-done:
+		t.Fatalf("Run gave up a missing Job within 50 ticks of a configured %d: %+v", 1<<20, res)
+	case <-time.After(500 * time.Millisecond):
+	}
+	cancel()
+	<-done
 }
 
 // TestKubeRunTakesNoOtherJobForItsOwn: a Job of the run's name the watch
@@ -1038,15 +1089,15 @@ func TestKubeRunRefusedInSetupStaysRefused(t *testing.T) {
 func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 	const token = "ghs_secret_token"
 	secrets := runspec.Secrets{GitToken: token, GatewayToken: "krk_run_token"}
-	// A secret straddles the point LogTailBytes from the end.
-	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", LogTailBytes-8) + " END\n"
+	// A secret straddles the point Executor.LogTailBytes from the end.
+	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", int(tuning.Get().Executor.LogTailBytes)-8) + " END\n"
 	tests := []struct {
 		name  string
 		logs  string
 		check func(t *testing.T, tail string)
 	}{
 		{name: "the end is kept and a straddling secret masked", logs: straddling, check: func(t *testing.T, tail string) {
-			if len(tail) > LogTailBytes || !strings.HasSuffix(tail, " END\n") || strings.Contains(tail, "HEAD") ||
+			if len(tail) > int(tuning.Get().Executor.LogTailBytes) || !strings.HasSuffix(tail, " END\n") || strings.Contains(tail, "HEAD") ||
 				strings.Contains(tail, "ghs_") || strings.Contains(tail, "_token") {
 				t.Fatalf("tail len %d starts %q ends %q", len(tail), tail[:20], tail[len(tail)-20:])
 			}
@@ -1073,7 +1124,7 @@ func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 			}, metav1.CreateOptions{})
 			res := Result{JobName: "kritika-run-01234567"}
 			newKube(t, client).finish(t.Context(), &res, secrets)
-			if opts == nil || opts.TailLines == nil || *opts.TailLines != logTailLines || opts.LimitBytes == nil || *opts.LimitBytes != logReadBytes {
+			if opts == nil || opts.TailLines == nil || *opts.TailLines != int64(tuning.Get().Executor.LogTailLines) || opts.LimitBytes == nil || *opts.LimitBytes != int64(tuning.Get().Executor.LogReadBytes) {
 				t.Fatalf("log options = %+v", opts)
 			}
 			tt.check(t, res.LogTail)

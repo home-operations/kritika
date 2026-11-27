@@ -7,19 +7,21 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestPrintfAllocation(t *testing.T) {
 	// items is a list whose bytes fit the call twice over but not three
 	// times. So a width charged against its leaves instead of the scalar that
 	// it pads refuses the call. deep is a small value nested past
-	// maxMeasureDepth.
+	// tuning's Review.MaxMeasureDepth.
 	items := make([]int, 12000)
 	for i := range items {
 		items[i] = i
 	}
 	var deep any = "leaf"
-	for range maxMeasureDepth + 8 {
+	for range tuning.Get().Review.MaxMeasureDepth + 8 {
 		deep = []any{deep}
 	}
 	for _, tt := range []struct {
@@ -49,7 +51,7 @@ func TestPrintfAllocation(t *testing.T) {
 		{name: "ordinary composite", src: `{{ printf "%3s" (list "a" "b") }}`, want: "[  a   b]"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := execute(t.Context(), tt.src, tt.data, MaxRenderBytes)
+			got, err := execute(t.Context(), tt.src, tt.data, int(tuning.Get().Review.MaxRenderBytes))
 			if tt.refused {
 				if !errors.Is(err, errSandbox) || !strings.Contains(err.Error(), "printf:") ||
 					!strings.Contains(err.Error(), "input and estimated allocation") {

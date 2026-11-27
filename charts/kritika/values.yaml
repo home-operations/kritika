@@ -79,6 +79,7 @@ strategy:
 #   indexGrace: { type: string, minLength: 1 }
 #   transcriptRetention: { type: string, minLength: 1 }
 #   diffRetention: { type: string, minLength: 1 }
+#   tuning: { type: object }
 #   auth: { type: object }
 #   apps: { type: object }
 #   forgejo: { type: object }

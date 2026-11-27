@@ -15,21 +15,8 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// defaultGrepMaxResults and grepMaxResultsCap bound grep's max_results
-// input: unset (or non-positive) falls back to the default, and any value
-// above the cap is clamped to it.
-const (
-	defaultGrepMaxResults = 100
-	grepMaxResultsCap     = 500
-	grepContextLinesCap   = 10
-)
-
-// MaxBlobBytes bounds how large a blob the agent reads: read_file rejects
-// an oversized blob with a tool error, grep skips it and keeps walking, and
-// a checkout leaves it out.
-const MaxBlobBytes = 1 << 20
 
 // decodeInput unmarshals input into v. It treats a nil or empty input as "no
 // fields set" rather than a JSON error.
@@ -84,8 +71,8 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	if err != nil {
 		return "", fmt.Errorf("agent: read_file: %w", err)
 	}
-	if f.Size > MaxBlobBytes {
-		return "", fmt.Errorf("agent: read_file: %s is %d bytes, over the %d byte limit", cleaned, f.Size, MaxBlobBytes)
+	if limit := int64(tuning.Get().Agent.MaxBlobBytes); f.Size > limit {
+		return "", fmt.Errorf("agent: read_file: %s is %d bytes, over the %d byte limit", cleaned, f.Size, limit)
 	}
 	content, err := f.Contents()
 	if err != nil {
@@ -129,20 +116,25 @@ func NumberLines(name, content string, start, end, maxBytes int) (string, error)
 	return textcut.Truncate(b.String(), maxBytes), nil
 }
 
-var grepSchema = json.RawMessage(`{
+// grepSchema is grep's input schema, which states tuning's Agent grep
+// bounds as they are when the tool is offered.
+func grepSchema() json.RawMessage {
+	t := tuning.Get().Agent
+	return json.RawMessage(fmt.Sprintf(`{
 	"type": "object",
 	"properties": {
 		"pattern": {"type": "string", "description": "RE2 regular expression to search for."},
 		"path_glob": {"type": "string", "description": "Doublestar glob restricting which files are searched; defaults to \"**\"."},
-		"max_results": {"type": "integer", "description": "Maximum matches to return; defaults to 100, capped at 500."},
+		"max_results": {"type": "integer", "description": "Maximum matches to return; defaults to %[1]d, capped at %[2]d."},
 		"context_lines": {
-			"type": "integer", "minimum": 0, "maximum": 10,
-			"description": "Lines before and after each match (default 0, cap 10). Use small windows instead of whole-file reads."
+			"type": "integer", "minimum": 0, "maximum": %[3]d,
+			"description": "Lines before and after each match (default 0, cap %[3]d). Use small windows instead of whole-file reads."
 		}
 	},
 	"required": ["pattern"],
 	"additionalProperties": false
-}`)
+}`, t.DefaultGrepMaxResults, t.GrepMaxResultsCap, t.GrepContextLinesCap))
+}
 
 type grepTool struct {
 	tree     *Tree
@@ -160,7 +152,7 @@ func (gt *grepTool) Def() model.ToolDef {
 	return model.ToolDef{
 		Name:        "grep",
 		Description: "Search the repository at the reviewed commit for matching lines, optionally with nearby context.",
-		InputSchema: grepSchema,
+		InputSchema: grepSchema(),
 	}
 }
 
@@ -185,7 +177,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	if req.ContextLines < 0 {
 		return "", fmt.Errorf("agent: grep: context_lines must be >= 0")
 	}
-	contextLines := min(req.ContextLines, grepContextLinesCap)
+	contextLines := min(req.ContextLines, tuning.Get().Agent.GrepContextLinesCap)
 	re, err := regexp.Compile(req.Pattern)
 	if err != nil {
 		return "", fmt.Errorf("agent: grep: invalid pattern: %w", err)
@@ -196,9 +188,9 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	}
 	limit := req.MaxResults
 	if limit <= 0 {
-		limit = defaultGrepMaxResults
+		limit = tuning.Get().Agent.DefaultGrepMaxResults
 	}
-	limit = min(limit, grepMaxResultsCap)
+	limit = min(limit, tuning.Get().Agent.GrepMaxResultsCap)
 
 	var matches []grepMatch
 	hits := 0
@@ -216,7 +208,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		if !doublestar.MatchUnvalidated(glob, f.Name) {
 			return nil
 		}
-		if f.Size > MaxBlobBytes {
+		if f.Size > int64(tuning.Get().Agent.MaxBlobBytes) {
 			return nil
 		}
 		content, err := f.Contents()

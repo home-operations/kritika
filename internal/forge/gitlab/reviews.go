@@ -7,11 +7,11 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -160,15 +160,11 @@ func (c *Client) CreateReview(
 	return ids, nil
 }
 
-// discardTimeout bounds the discarding of a failed review's drafts, which
-// runs on even after the review's context ends.
-const discardTimeout = 30 * time.Second
-
 // discardDrafts deletes the draft notes of a review that was not
 // published, so a later review does not publish them with its own. Best
 // effort: a draft left behind is discarded by the next review.
 func (c *Client) discardDrafts(ctx context.Context, pid string, number int, ids []int64) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), discardTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().GitLab.DiscardTimeout)
 	defer cancel()
 	for _, id := range ids {
 		_, _ = c.api.DraftNotes.DeleteDraftNote(pid, int64(number), id, gl.WithContext(ctx))

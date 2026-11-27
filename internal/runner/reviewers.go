@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // partShare is what one part of a split review reviews: its files, its
@@ -69,7 +70,7 @@ func (s partShare) role(files repoconfig.Files) *review.Reviewer {
 	r := s.reviewer
 	instructions := r.Instructions
 	if r.File != "" {
-		instructions = textcut.Prefix(strings.TrimSpace(files[r.File]), repoconfig.MaxRuleFileBytes)
+		instructions = textcut.Prefix(strings.TrimSpace(files[r.File]), int(tuning.Get().RepoConfig.MaxRuleFileBytes))
 	}
 	return &review.Reviewer{Name: r.Name, Instructions: instructions, Categories: r.Categories}
 }
@@ -166,7 +167,7 @@ func planReviewers(p runspec.Spec, res *gitfetch.Result, scope review.Scope, del
 		if a.scope == review.ScopeIncremental {
 			diff = res.DeltaDiff
 		}
-		split := review.SplitDiff(review.PartDiff(diff, a.files), p.Ignore, review.PartBytes, perReviewer)
+		split := review.SplitDiff(review.PartDiff(diff, a.files), p.Ignore, int(tuning.Get().Review.PartBytes), perReviewer)
 		if split == nil {
 			split = [][]string{a.files}
 		}

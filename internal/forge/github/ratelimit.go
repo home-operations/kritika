@@ -5,16 +5,19 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
+
+	"github.com/home-operations/kritika/internal/retryafter"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // RetryAfter reports how long to wait before trying again after err, when err
 // is GitHub's rate limit from REST or GraphQL. The wait lasts until the
 // primary limit resets, with the second of grace that rateLimitWait gives. Or
-// it lasts for the secondary limit's Retry-After, or rateLimitMaxWait when
+// it lasts for the secondary limit's Retry-After, or tuning's
+// GitHub.RateLimitMaxWait when
 // that limit names none. A 403 or 429 that go-github does not know for a
 // limit, as one whose body names no secondary limit, is one still when it
 // names a Retry-After, and lasts for that. A job retried sooner only spends
@@ -22,23 +25,16 @@ import (
 // resets.
 func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 	if e, ok := errors.AsType[*gh.RateLimitError](err); ok {
-		return max(e.Rate.Reset.Sub(now)+time.Second, time.Second), true
+		return max(e.Rate.Reset.Sub(now)+time.Second, retryafter.Floor), true
 	}
 	if e, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
-		return max(cmp.Or(e.GetRetryAfter(), rateLimitMaxWait), time.Second), true
+		return max(cmp.Or(e.GetRetryAfter(), tuning.Get().GitHub.RateLimitMaxWait), retryafter.Floor), true
 	}
-	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil && e.Response.Header.Get("Retry-After") != "" {
+	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil && e.Response.Header.Get(retryafter.Header) != "" {
 		return rateLimitWait(e.Response, now)
 	}
 	return 0, false
 }
-
-// rateLimitMaxWait bounds how long a request waits out a rate limit before it
-// is sent again. A longer wait is not worth holding a worker for. The
-// response goes back to go-github, which then refuses every request until the
-// reset without asking GitHub. It also goes back to the caller, whose job
-// River retries later.
-const rateLimitMaxWait = time.Minute
 
 // rateLimitTransport sends a request that GitHub refused for a rate limit
 // once more when the limit resets soon. GitHub's secondary limits, on content
@@ -109,7 +105,7 @@ func (t *rateLimitTransport) wait(ctx context.Context, d time.Duration) error {
 
 // rateLimitWait reads how long a response says to wait. GitHub answers a
 // rate-limited request with 403 or 429. For a secondary limit, the answer has
-// Retry-After, in seconds. For the primary limit, it has
+// Retry-After, in seconds or as a date. For the primary limit, it has
 // x-ratelimit-remaining 0 with the reset as an epoch. The wait is never under
 // a second, and a reset gets a second's grace for clock skew. Any other
 // response is not a limit.
@@ -117,15 +113,11 @@ func rateLimitWait(resp *http.Response, now time.Time) (time.Duration, bool) {
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
 		return 0, false
 	}
-	if v := resp.Header.Get("Retry-After"); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil {
-			return max(time.Duration(secs)*time.Second, time.Second), true
-		}
+	if wait, ok := retryafter.Parse(resp.Header.Get(retryafter.Header), now); ok {
+		return wait, true
 	}
-	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
-		if epoch, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
-			return max(time.Unix(epoch, 0).Sub(now)+time.Second, time.Second), true
-		}
+	if resp.Header.Get(retryafter.RateLimitRemaining) == "0" {
+		return retryafter.ResetEpoch(resp.Header.Get(retryafter.RateLimitReset), now, time.Second, false)
 	}
 	return 0, false
 }

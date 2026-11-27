@@ -22,12 +22,13 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // splitReview is the parts a review is split into, the paths of each, nil
 // when it is reviewed whole. It splits the diff it reads: the pull request's
 // or, on an incremental re-review, the diff since the last review. That diff
-// is cut where it is over review.PartBytes into no more parts than its grant
+// is cut where it is over tuning's Review.PartBytes into no more parts than its grant
 // covers.
 func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]string {
 	if p.Agent == nil {
@@ -45,7 +46,7 @@ func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]s
 	if p.Prompt != nil && len(p.Prompt.Reviewers) > 0 {
 		parts = max(1, parts/len(p.Prompt.Reviewers))
 	}
-	return review.SplitDiff(diff, p.Ignore, review.PartBytes, parts)
+	return review.SplitDiff(diff, p.Ignore, int(tuning.Get().Review.PartBytes), parts)
 }
 
 // reviewPart is one part of a split review: the files it reviews and its
@@ -84,7 +85,7 @@ func partPrompts(
 		diffs[i] = review.PartDiff(res.Diff, sh.paths)
 		inputs[i] = contextpack.Part{Diff: diffs[i], Changed: sh.paths}
 	}
-	chunks, stats, err := contextpack.BuildParts(ctx, head, base, p.Ignore, inputs, contextpack.DefaultOptions)
+	chunks, stats, err := contextpack.BuildParts(ctx, head, base, p.Ignore, inputs, contextpack.DefaultOptions())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("runner: context stages of parts: %w", err)
 	}
@@ -275,13 +276,6 @@ func splitNotes(parts []reviewPart, shares []partShare) []string {
 	return append([]string{fmt.Sprintf(noteSplit, len(parts))}, whole.notes()...)
 }
 
-// minPartTime is the least time a part of a split review starts with, or
-// half its timeout when that is less. Less is not enough for an agent to
-// read its files and answer. Its whole timeout is too much. The run's
-// deadline leaves the last round no more than that, less what the run took
-// to reach it.
-const minPartTime = 2 * time.Minute
-
 // partLocks are what the parts of a split review running at once share.
 // Each is a channel of one. So a part's slow command, fetch, or search holds
 // up another part's read of a file no more than it must.
@@ -435,7 +429,7 @@ func runParts(
 	if cerr := ctx.Err(); cerr != nil {
 		// What the parts spent is spent: the row is written on a context of
 		// its own, as a cancelled agent's is.
-		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
+		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Runner.CancelWriteTimeout)
 		defer cancel()
 		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), writeAgentRun(wctx, report, rec, "failed"))
 	}
@@ -466,7 +460,7 @@ func runPartLoops(
 	for _, n := range count {
 		rounds = max(rounds, n)
 	}
-	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout))
+	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout()))
 	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "slots", p.Agent.Slots, "commands", tools.commands(),
 		"search", tools.search != nil)
 	results := make([]agent.Result, len(parts))
@@ -481,7 +475,7 @@ func runPartLoops(
 		results[i] = agent.Result{Stop: agent.StopCanceled, Err: "part not started"}
 		pending = append(pending, i)
 	}
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(tuning.Get().Runner.PartSlotsPoll)
 	defer ticker.Stop()
 	err := scheduleParts(ctx, pending, key, p.Agent.Slots, ticker.C, report, func(gctx context.Context, i int) error {
 		part := parts[i]
@@ -490,7 +484,9 @@ func runPartLoops(
 		case gctx.Err() != nil:
 			results[i] = agent.Result{Stop: agent.StopCanceled, Err: context.Cause(gctx).Error()}
 			return nil
-		case left < min(minPartTime, timeout/2):
+		// A part starts with at least tuning's Runner.MinPartTime, or half
+		// its timeout when that is less.
+		case left < min(tuning.Get().Runner.MinPartTime, timeout/2):
 			results[i] = agent.Result{Stop: agent.StopCanceled, Err: "no agent time left"}
 			return nil
 		}

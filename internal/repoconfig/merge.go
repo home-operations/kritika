@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Merged is the admin's configuration with the merge-base FileName applied.
@@ -178,7 +179,7 @@ func withFloors(admin, file configfile.RiskFloors) configfile.RiskFloors {
 // replace the admin's, as its review.model does, whole or not at all. One
 // with a model of a provider not among op.Providers drops them all. So do
 // more of them than leave the admin's specialists room under
-// configfile.MaxReviewers. Without one of them, another model will review
+// tuning's ConfigFile.MaxReviewers. Without one of them, another model will review
 // than the file says, so all are dropped.
 //
 // Then a specialist of the file's own is added as written, with its models
@@ -225,8 +226,8 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 	}
 	if declared {
 		why := routesDropped(routes, op.Providers)
-		if n := len(m.Reviewers) + len(routes); why == "" && n > configfile.MaxReviewers {
-			why = fmt.Sprintf("with the admin's specialists, %d agents are over the %d a review runs", n, configfile.MaxReviewers)
+		if n := len(m.Reviewers) + len(routes); why == "" && n > tuning.Get().ConfigFile.MaxReviewers {
+			why = fmt.Sprintf("with the admin's specialists, %d agents are over the %d a review runs", n, tuning.Get().ConfigFile.MaxReviewers)
 		}
 		if why == "" {
 			m.Models.Routes = routes
@@ -243,9 +244,9 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 		switch {
 		case specialist:
 			m.Reviewers[r.Name] = m.addTo(key, admin, r, op.Review.Rules)
-		case len(m.Reviewers)+len(m.Models.Routes) >= configfile.MaxReviewers:
+		case len(m.Reviewers)+len(m.Models.Routes) >= tuning.Get().ConfigFile.MaxReviewers:
 			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: %d agents are the most a review runs",
-				FileName, key, configfile.MaxReviewers))
+				FileName, key, tuning.Get().ConfigFile.MaxReviewers))
 		default:
 			for _, c := range []struct {
 				field string

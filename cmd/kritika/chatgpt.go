@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/home-operations/kritika/internal/chatgpt"
 	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func loginChatGPT(ctx context.Context, cfg *config.Config, args []string, logger *slog.Logger) error {
@@ -41,7 +41,7 @@ func loginChatGPT(ctx context.Context, cfg *config.Config, args []string, logger
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().ChatGPT.LoginTimeout)
 	defer cancel()
 	login := chatgpt.Login{Out: os.Stdout, Registered: func(ctx context.Context, clientID string) error {
 		return st.RegisterChatGPTClient(ctx, key, clientID)

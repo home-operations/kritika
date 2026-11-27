@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Limits bounds a Run. It sets how many steps the Run can take and how much
@@ -24,17 +25,24 @@ type Limits struct {
 	MaxOutputTokensPerStep int64
 }
 
-// DefaultLimits are the fleet defaults. The configuration's agent defaults
-// take theirs from here.
-var DefaultLimits = Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 6_000_000, MaxOutputTokensPerStep: 16384}
+// DefaultLimits are the fleet defaults, tuning's Agent values. The
+// configuration's agent defaults take theirs from here.
+func DefaultLimits() Limits {
+	t := tuning.Get().Agent
+	return Limits{
+		MaxSteps: t.DefaultMaxSteps, MaxToolOutputBytes: int(t.DefaultMaxToolOutputBytes),
+		MaxTokens: t.DefaultMaxTokens, MaxOutputTokensPerStep: t.MaxOutputTokensPerStep,
+	}
+}
 
 // WithDefaults fills every zero-valued field of l from DefaultLimits,
 // leaving any field the caller already set untouched.
 func (l Limits) WithDefaults() Limits {
-	l.MaxSteps = cmp.Or(l.MaxSteps, DefaultLimits.MaxSteps)
-	l.MaxToolOutputBytes = cmp.Or(l.MaxToolOutputBytes, DefaultLimits.MaxToolOutputBytes)
-	l.MaxTokens = cmp.Or(l.MaxTokens, DefaultLimits.MaxTokens)
-	l.MaxOutputTokensPerStep = cmp.Or(l.MaxOutputTokensPerStep, DefaultLimits.MaxOutputTokensPerStep)
+	d := DefaultLimits()
+	l.MaxSteps = cmp.Or(l.MaxSteps, d.MaxSteps)
+	l.MaxToolOutputBytes = cmp.Or(l.MaxToolOutputBytes, d.MaxToolOutputBytes)
+	l.MaxTokens = cmp.Or(l.MaxTokens, d.MaxTokens)
+	l.MaxOutputTokensPerStep = cmp.Or(l.MaxOutputTokensPerStep, d.MaxOutputTokensPerStep)
 	return l
 }
 
@@ -218,27 +226,21 @@ func carriedTurn(c *Conversation, submit, text string) model.Message {
 // nudgeText is appended, as a user message, after a turn with no tool call.
 // It is appended once after a turn with text, before a second such turn ends
 // the Run. It is also appended after each turn with no text either, while
-// emptyRetries allows, without spending that one nudge. A turn that the
-// output cap cut off before any tool call is answered with cutOffText
-// instead, while cutOffRetries allows.
+// tuning's Agent.EmptyRetries allows, without spending that one nudge. A turn
+// that the output cap cut off before any tool call is answered with
+// cutOffText instead, while Agent.CutOffRetries allows.
 func (r Run) nudgeText() string { return "call " + r.Submit.Name }
 
-// emptyRetries is how many steps in a row can end with neither text nor a
-// tool call and each get a nudge. These nudges do not spend the once-per-Run
-// nudge. A reasoning model on the ChatGPT route sometimes ends the step
-// before its submission this way, and the nudge recovered every one. The
-// once-per-Run nudge is kept for a turn that answers in prose. One more such
-// step is taken as a turn with no tool call.
-const emptyRetries = 2
-
 // goOnText answers a step with no tool call that spends no nudge: a step
-// the output cap cut off, while cutOffRetries allows, or one that ended
-// with nothing, while emptyRetries allows. It is "" for a step that does.
+// the output cap cut off, while tuning's Agent.CutOffRetries allows, or one
+// that ended with nothing, while Agent.EmptyRetries allows. It is "" for a
+// step that does.
 func (r Run) goOnText(limit int64, cutOffs, empties int) string {
-	if 0 < cutOffs && cutOffs <= cutOffRetries {
+	t := tuning.Get().Agent
+	if 0 < cutOffs && cutOffs <= t.CutOffRetries {
 		return r.cutOffText(limit)
 	}
-	if 0 < empties && empties <= emptyRetries {
+	if 0 < empties && empties <= t.EmptyRetries {
 		return r.nudgeText()
 	}
 	return ""
@@ -263,12 +265,6 @@ func (r Run) cutOffText(limit int64) string {
 		"Go on with your next tool call, or call %s when you are done.", limit, r.Submit.Name)
 }
 
-// cutOffRetries is how many steps in a row the output cap can cut off before
-// any tool call. The model is still told to go on after each of them. One
-// more is taken as a turn with no tool call: it is better to ask a model that
-// cannot fit a step into the cap for what it has.
-const cutOffRetries = 2
-
 // cutOffStreak is how many steps in a row the output cap cut off before any
 // tool call. resp's step is the last of them, and n is the count before it.
 func cutOffStreak(n int, resp model.StepResponse) int {
@@ -285,27 +281,15 @@ func (r Run) submitNowText() string {
 	return "Call " + r.Submit.Name + " now with what you have, and call nothing else."
 }
 
-// forcedRetries is how many more steps a model gets after it was told to
-// submit and did not. Each of these steps tells it again. A rejected
-// submission goes back with its error. Prose and other tool calls go back
-// with onlySubmitText. The steps spent exploring are worth more than one slip
-// at the end. The token budget bounds the retries where the step cap does
-// not.
-const forcedRetries = 2
-
-// wrapUpFloor is the least time that a Run keeps, before its context's
-// deadline, for the steps that it tells the model to submit on. The exception
-// is a Run that was given less than four times that in all. A submission
-// writes the whole answer, so it can take longer than any step before it.
-const wrapUpFloor = 2 * time.Minute
-
 // wrapUpReserve is the time left before the deadline at which a Run tells the
 // model to submit. The Run was given total time in all, and its slowest
-// answer so far took slowest. The reserve is two such answers, one for the
-// submission and one for a retry. It is at least wrapUpFloor, or a quarter of
-// total when that is less.
+// answer so far took slowest. The reserve is tuning's Agent.WrapUpAnswers
+// such answers, for the submission and a retry. It is at least
+// Agent.WrapUpFloor, or total divided by Agent.WrapUpTotalShare when that is
+// less.
 func wrapUpReserve(slowest, total time.Duration) time.Duration {
-	return max(2*slowest, min(wrapUpFloor, total/4))
+	t := tuning.Get().Agent
+	return max(time.Duration(t.WrapUpAnswers)*slowest, min(t.WrapUpFloor, total/time.Duration(t.WrapUpTotalShare)))
 }
 
 // clock is a Run's time: the deadline its ctx has, when timed, when it began,
@@ -331,13 +315,13 @@ func (c clock) dueIn() time.Duration {
 var errWrapUp = errors.New("agent: time to submit")
 
 // forcedBy is the limit that has step, from 0, told to submit, "" for
-// none: the last step, nine tenths of the tokens spent, or no more time
-// left than wrapUpReserve keeps.
+// none: the last step, tuning's Agent.WrapUpTokenShare of the tokens spent,
+// or no more time left than wrapUpReserve keeps.
 func forcedBy(step int, spent int64, limits Limits, c clock) ForcedBy {
 	switch {
 	case step >= limits.MaxSteps-1:
 		return ForcedBySteps
-	case spent*10 >= limits.MaxTokens*9:
+	case float64(spent) >= float64(limits.MaxTokens)*tuning.Get().Agent.WrapUpTokenShare:
 		return ForcedByTokens
 	case c.due():
 		return ForcedByTime
@@ -352,13 +336,6 @@ func (r Run) onlySubmitText() string { return "agent: only " + r.Submit.Name + "
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
 const noResponseText = "(no response)"
-
-// stepRetryWaits are the waits before a step that failed transiently
-// (model.Transient) is sent again, while ctx lives. The Stepper has already
-// retried on its own schedule, so these outlast a provider outage that
-// schedule did not: the conversation so far is kept rather than the Run
-// ending with its steps spent. A variable for the tests.
-var stepRetryWaits = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute}
 
 // checkSubmit says why input is not an acceptable Submit input.
 func (r Run) checkSubmit(input json.RawMessage) error {
@@ -521,7 +498,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 
 			assistant.Text = cmp.Or(resp.Text, noResponseText)
 			if forced {
-				if forcedSteps > forcedRetries {
+				if forcedSteps > tuning.Get().Agent.ForcedRetries {
 					return forcedEnd(lastStep)
 				}
 				// The next step is told to submit again, in the user
@@ -594,7 +571,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 			result.Err = fmt.Sprintf("%s was cut off at the %d output tokens a step may produce", r.Submit.Name, limits.MaxOutputTokensPerStep)
 			return result
 		}
-		if forced && forcedSteps > forcedRetries {
+		if forced && forcedSteps > tuning.Get().Agent.ForcedRetries {
 			return forcedEnd(lastStep)
 		}
 
@@ -634,7 +611,8 @@ func (r Run) takeSubmission(
 	}, false
 }
 
-// step sends req, and sends it again after each of stepRetryWaits while the
+// step sends req, and sends it again after each of tuning's
+// Agent.StepRetryWaits while the
 // failure is transient and ctx lives. It says how long the last attempt took.
 // The waits between attempts are not the model's. If they counted, a Run
 // keeps far more time to submit in than a submission takes. A req not told to
@@ -647,7 +625,7 @@ func (r Run) step(ctx context.Context, req model.StepRequest, c clock, forced bo
 		return resp, time.Since(start), err
 	}
 	resp, took, err := attempt()
-	for _, wait := range stepRetryWaits {
+	for _, wait := range tuning.Get().Agent.StepRetryWaits {
 		if err == nil || !model.Transient(err) {
 			break
 		}

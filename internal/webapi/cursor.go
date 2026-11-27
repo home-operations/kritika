@@ -7,13 +7,7 @@ import (
 	"strconv"
 
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// Page sizes: what a list returns without ?limit=, and the most it
-// returns with one.
-const (
-	defaultLimit = 50
-	maxLimit     = 200
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // encodeCursor makes c the opaque token a client passes back as ?cursor=.
@@ -38,14 +32,15 @@ func decodeCursor(s string) (store.Cursor, error) {
 
 // parsePage reads ?cursor= and ?limit=.
 func parsePage(r *http.Request) (store.Page, error) {
-	p := store.Page{Limit: defaultLimit}
+	t := tuning.Get().WebAPI
+	p := store.Page{Limit: t.DefaultLimit}
 	q := r.URL.Query()
 	if s := q.Get("limit"); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n <= 0 {
 			return p, errBadRequest(CodeBadRequest, "limit must be a positive integer")
 		}
-		p.Limit = min(n, maxLimit)
+		p.Limit = min(n, t.MaxLimit)
 	}
 	if s := q.Get("cursor"); s != "" {
 		c, err := decodeCursor(s)

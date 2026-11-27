@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // reportEnv is a gateway and what a run holds to call it.
@@ -367,7 +368,7 @@ func TestReportPartCheckpointsAndSlots(t *testing.T) {
 	}
 	// One past the bound only costs a retry that part's run again.
 	if status := e.post(runspec.ReportCheckpointsPath, token, runspec.CheckpointReport{
-		Input: "inputs", Part: 2, Payload: json.RawMessage(strconv.Quote(strings.Repeat("x", maxCheckpointBody))),
+		Input: "inputs", Part: 2, Payload: json.RawMessage(strconv.Quote(strings.Repeat("x", int(tuning.Get().Gateway.MaxCheckpointBody)))),
 	}); status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("an oversized checkpoint = %d, want 413", status)
 	}
@@ -436,7 +437,7 @@ func TestReportIndexUpload(t *testing.T) {
 	}
 	t.Run("more chunks than one batch, sent twice", func(t *testing.T) {
 		id, token := e.run(store.RunnerKindIndex)
-		chunks := indexBatchChunks + 1
+		chunks := tuning.Get().Gateway.IndexBatchChunks + 1
 		body := indexBody(t, chunks, chunks)
 		for range 2 {
 			if status := upload(token, body); status != http.StatusNoContent {
@@ -495,7 +496,7 @@ func TestReportIndexUpload(t *testing.T) {
 		{"a chunk with a field more", func(t *testing.T) []byte { return append(indexBody(t, 1, 0), `{"path":"a","account":"b"}`+"\n"...) }, http.StatusBadRequest},
 		{"no opening line", func(*testing.T) []byte { return nil }, http.StatusRequestTimeout},
 		{"a line past the limit", func(t *testing.T) []byte {
-			return append(indexBody(t, 1, 0), fmt.Sprintf(`{"text":%q}`+"\n", strings.Repeat("x", maxIndexLine))...)
+			return append(indexBody(t, 1, 0), fmt.Sprintf(`{"text":%q}`+"\n", strings.Repeat("x", int(tuning.Get().Gateway.MaxIndexLine)))...)
 		}, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

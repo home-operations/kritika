@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const (
@@ -181,7 +182,7 @@ func TestPromptTrim(t *testing.T) {
 		return out
 	}
 	// A three-byte rune straddles the body limit.
-	straddling := strings.Repeat("a", MaxBodyBytes-1) + "€" + "tail"
+	straddling := strings.Repeat("a", int(tuning.Get().RunSpec.MaxBodyBytes)-1) + "€" + "tail"
 	tests := []struct {
 		name      string
 		body      string
@@ -190,21 +191,21 @@ func TestPromptTrim(t *testing.T) {
 		wantPrior int
 	}{
 		{name: "small prompt unchanged", body: "Adds b.", prior: findings(3, "x"), wantBody: 7, wantPrior: 3},
-		{name: "too many findings", body: "b", prior: findings(250, "x"), wantBody: 1, wantPrior: MaxPriorFindings},
-		{name: "body cut at a rune boundary", body: straddling, wantBody: MaxBodyBytes - 1},
-		{name: "huge findings halved until they fit", body: "b", prior: findings(MaxPriorFindings, strings.Repeat("<", 4<<10)),
+		{name: "too many findings", body: "b", prior: findings(250, "x"), wantBody: 1, wantPrior: tuning.Get().RunSpec.MaxPriorFindings},
+		{name: "body cut at a rune boundary", body: straddling, wantBody: int(tuning.Get().RunSpec.MaxBodyBytes) - 1},
+		{name: "huge findings halved until they fit", body: "b", prior: findings(tuning.Get().RunSpec.MaxPriorFindings, strings.Repeat("<", 4<<10)),
 			wantBody: 1, wantPrior: 25},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Prompt{PullRequest: repoconfig.PullRequest{Body: tt.body}, Prior: tt.prior,
-				Issues: []review.Issue{{ID: "#1", Body: strings.Repeat("a", MaxIssueBytes+5)}}}
+				Issues: []review.Issue{{ID: "#1", Body: strings.Repeat("a", int(tuning.Get().RunSpec.MaxIssueBytes)+5)}}}
 			p.Trim()
 			if len(p.PullRequest.Body) != tt.wantBody || len(p.Prior) != tt.wantPrior || !utf8.ValidString(p.PullRequest.Body) {
 				t.Fatalf("body = %d bytes, prior = %d; want %d, %d", len(p.PullRequest.Body), len(p.Prior), tt.wantBody, tt.wantPrior)
 			}
-			if len(p.Issues[0].Body) != MaxIssueBytes {
-				t.Fatalf("issue body = %d bytes, want %d", len(p.Issues[0].Body), MaxIssueBytes)
+			if len(p.Issues[0].Body) != int(tuning.Get().RunSpec.MaxIssueBytes) {
+				t.Fatalf("issue body = %d bytes, want %d", len(p.Issues[0].Body), int(tuning.Get().RunSpec.MaxIssueBytes))
 			}
 		})
 	}
@@ -214,7 +215,7 @@ func TestEncodeWorstCaseFits(t *testing.T) {
 	s := reviewSpec()
 	// Every '<' encodes as six bytes.
 	s.Prompt.PullRequest.Body = strings.Repeat("<", 1<<20)
-	for range review.MaxLinkedIssues {
+	for range tuning.Get().Review.MaxLinkedIssues {
 		s.Prompt.Issues = append(s.Prompt.Issues, review.Issue{ID: "#1", Title: "t", Body: strings.Repeat("<", 1<<20)})
 	}
 	s.Prompt.Prior = make([]review.Finding, 1000)
@@ -246,7 +247,7 @@ func TestRead(t *testing.T) {
 	if err := os.WriteFile(good, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(big, []byte(strings.Repeat(" ", MaxBytes+1)), 0o600); err != nil {
+	if err := os.WriteFile(big, []byte(strings.Repeat(" ", int(tuning.Get().RunSpec.MaxBytes)+1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := Read(good); err != nil || got.Prompt.PullRequest.Title != "Add b" {
@@ -256,5 +257,28 @@ func TestRead(t *testing.T) {
 		if _, err := Read(path); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("Read(%s) = %v, want %q", path, err, want)
 		}
+	}
+}
+
+// TestPromptTrimConfigured: Trim cuts to the bounds that tuning's RunSpec
+// has, and Encode refuses a spec over its configured MaxBytes.
+func TestPromptTrimConfigured(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.RunSpec.MaxPriorFindings, v.RunSpec.MaxBodyBytes, v.RunSpec.MaxIssueBytes = 5, 10, 3
+	})
+	prior := make([]review.Finding, 8)
+	p := &Prompt{PullRequest: repoconfig.PullRequest{Body: strings.Repeat("b", 20)}, Prior: prior,
+		Issues: []review.Issue{{ID: "#1", Body: "issue body"}}}
+	p.Trim()
+	if len(p.PullRequest.Body) != 10 || len(p.Prior) != 5 || p.Issues[0].Body != "iss" {
+		t.Fatalf("body = %d bytes, prior = %d, issue = %q; want 10, 5, %q", len(p.PullRequest.Body), len(p.Prior), p.Issues[0].Body, "iss")
+	}
+	b, err := Encode(reviewSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.RunSpec.MaxBytes = tuning.ByteSize(len(b) - 1) })
+	if _, err := Encode(reviewSpec()); err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("Encode over a configured MaxBytes = %v, want it refused", err)
 	}
 }

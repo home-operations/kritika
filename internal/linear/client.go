@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Endpoint is Linear's GraphQL API.
@@ -18,10 +19,6 @@ const Endpoint = "https://api.linear.app/graphql"
 // ErrNotFound is the error for an issue that Linear does not give: one that
 // does not exist, or one that the key cannot read.
 var ErrNotFound = errors.New("linear: issue not found")
-
-// maxResponseBytes bounds the answer read for one issue. The prompt keeps a
-// few thousand bytes of its description.
-const maxResponseBytes = 1 << 20
 
 // issueQuery reads an issue by its UUID or its ID, such as ENG-123.
 const issueQuery = `query Issue($id: String!) { issue(id: $id) { identifier title description team { key organization { urlKey } } } }`
@@ -41,13 +38,11 @@ type Issue struct {
 }
 
 // Client reads issues through Linear's GraphQL API. Its zero value calls
-// Endpoint with defaultHTTP.
+// Endpoint with a client of tuning's Linear.HTTPTimeout.
 type Client struct {
 	URL  string
 	HTTP *http.Client
 }
-
-var defaultHTTP = &http.Client{Timeout: 15 * time.Second}
 
 // Issue reads the issue whose ID is id with the personal API key key.
 func (c *Client) Issue(ctx context.Context, key, id string) (Issue, error) {
@@ -62,7 +57,7 @@ func (c *Client) Issue(ctx context.Context, key, id string) (Issue, error) {
 	// A personal API key goes in the header as it is, with no scheme.
 	req.Header.Set("Authorization", key)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := cmp.Or(c.HTTP, defaultHTTP).Do(req)
+	resp, err := cmp.Or(c.HTTP, &http.Client{Timeout: tuning.Get().Linear.HTTPTimeout}).Do(req)
 	if err != nil {
 		return Issue{}, fmt.Errorf("linear: issue %s: %w", id, err)
 	}
@@ -83,7 +78,7 @@ func (c *Client) Issue(ctx context.Context, key, id string) (Issue, error) {
 			Extensions struct{ Type string }
 		}
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, int64(tuning.Get().Linear.MaxResponseBytes))).Decode(&out); err != nil {
 		return Issue{}, fmt.Errorf("linear: issue %s: %s: %w", id, resp.Status, err)
 	}
 	if len(out.Errors) > 0 {

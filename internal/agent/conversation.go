@@ -7,12 +7,6 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 )
 
-// ContinueTokens is the most that a conversation can hold, in tokens, for a
-// later Run to carry it on. Every step of that Run reads the whole of it
-// again. So past this limit, a fresh Run with a handoff costs less, even with
-// the provider's cache warm.
-const ContinueTokens = 100_000
-
 // Conversation is a submitted Run's exchange with its model, kept so that
 // a later Run can carry it on while the provider still caches it: the
 // system prompt and tools it offered, every message as its last step sent

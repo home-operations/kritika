@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // ModelCallKind is what made a model call. See transcript.Kind.
@@ -158,17 +159,6 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	return r, err
 }
 
-// Rows that one statement of a retention sweep takes. A sweep is many such
-// statements, each committed on its own. So a backlog too large for the
-// owner connection's statement timeout is worked off rather than rolled
-// back whole every time. A context pack carries a diff and a conversation
-// carries a whole exchange, so their batch is the smaller. These are
-// variables for the tests.
-var (
-	modelCallSweepBatch = 5000
-	diffSweepBatch      = 200
-)
-
 // sweepBatches runs stmt, which sweeps at most $2 rows older than $1
 // seconds, until it finds fewer than a batch. It returns how many rows
 // were swept, and that count includes those before an error.
@@ -198,7 +188,8 @@ func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (i
 		return 0, fmt.Errorf("store: model call retention %s is not positive", olderThan)
 	}
 	n, err := s.sweepBatches(ctx, `DELETE FROM model_calls WHERE id IN (
-		SELECT id FROM model_calls WHERE created_at < now() - make_interval(secs => $1) LIMIT $2)`, olderThan, modelCallSweepBatch)
+		SELECT id FROM model_calls WHERE created_at < now() - make_interval(secs => $1) LIMIT $2)`,
+		olderThan, tuning.Get().Store.ModelCallSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep model calls: %w", err)
 	}
@@ -217,7 +208,7 @@ func (s *Store) SweepConversations(ctx context.Context, olderThan time.Duration)
 	}
 	n, err := s.sweepBatches(ctx, `DELETE FROM agent_conversations WHERE runner_run_id IN (
 		SELECT runner_run_id FROM agent_conversations WHERE created_at < now() - make_interval(secs => $1) LIMIT $2)`,
-		olderThan, diffSweepBatch)
+		olderThan, tuning.Get().Store.DiffSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep conversations: %w", err)
 	}
@@ -239,7 +230,7 @@ func (s *Store) SweepDiffs(ctx context.Context, olderThan time.Duration) (int64,
 	n, err := s.sweepBatches(ctx, `UPDATE context_packs SET diff = '', delta_diff = '', repo_files = '{}'::jsonb, swept_at = now(),
 		stages = (SELECT coalesce(jsonb_agg(e - 'text' ORDER BY n), '[]'::jsonb) FROM jsonb_array_elements(stages) WITH ORDINALITY AS s(e, n))
 		WHERE runner_run_id IN (SELECT runner_run_id FROM context_packs
-			WHERE swept_at IS NULL AND created_at < now() - make_interval(secs => $1) LIMIT $2)`, olderThan, diffSweepBatch)
+			WHERE swept_at IS NULL AND created_at < now() - make_interval(secs => $1) LIMIT $2)`, olderThan, tuning.Get().Store.DiffSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep diffs: %w", err)
 	}

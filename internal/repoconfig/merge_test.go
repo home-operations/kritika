@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -669,8 +670,8 @@ func TestMergeAgentsCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := m.Reviewers["x"]; !ok || len(m.Reviewers)+len(m.Models.Routes) != configfile.MaxReviewers {
-		t.Fatalf("agents = %d, want the cap of %d with x added", len(m.Reviewers)+len(m.Models.Routes), configfile.MaxReviewers)
+	if _, ok := m.Reviewers["x"]; !ok || len(m.Reviewers)+len(m.Models.Routes) != tuning.Get().ConfigFile.MaxReviewers {
+		t.Fatalf("agents = %d, want the cap of %d with x added", len(m.Reviewers)+len(m.Models.Routes), tuning.Get().ConfigFile.MaxReviewers)
 	}
 	if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "review.agents[1] (y) was dropped") }) {
 		t.Errorf("dropped %q, want y past the cap", m.Dropped)

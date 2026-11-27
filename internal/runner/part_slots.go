@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // poolKey is the slot pool a part of reviewer runs in (runspec.AgentLimits):
@@ -67,7 +68,7 @@ type partReport func(ctx context.Context, remaining, active map[string]int) map[
 
 func runnerPartSlots(report *reporter, logger *slog.Logger) partReport {
 	return func(ctx context.Context, remaining, active map[string]int) map[string]int {
-		queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		queryCtx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.PartSlotsTimeout)
 		defer cancel()
 		slots, err := report.partsRemaining(queryCtx, remaining, active)
 		if err != nil {

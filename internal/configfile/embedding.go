@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Embedding is the instance's embedder, which builds the similar-code
@@ -29,14 +30,14 @@ type Embedding struct {
 	// as similar code, for the review's similar-code stage and the agent's
 	// search_code tool alike. Where useful matches part from noise depends
 	// on the model, its prompts and the repository. Unset is
-	// DefaultSimilarFloor, which only fits inputs without prompts.
+	// tuning's ConfigFile.DefaultSimilarFloor, which only fits inputs without prompts.
 	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
 	// SimilarMargin is how far below the best match of its query, in cosine
 	// similarity, a chunk can score and still count as similar code. A
 	// query's scores sit at a height set by the code it is near. That height
 	// differs between repositories and between the hunks of one diff. So the
 	// margin follows each query's best where a floor cannot. Unset is
-	// DefaultSimilarMargin, and 0 keeps only each query's best.
+	// tuning's ConfigFile.DefaultSimilarMargin, and 0 keeps only each query's best.
 	SimilarMargin *float64 `yaml:"similarMargin,omitempty"`
 	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
 	// each similar-code query and each indexed chunk: the task prompts many
@@ -86,26 +87,19 @@ const MaxEmbedDims = 4000
 // Bounds returns MaxBatch, MaxBatchChars and MaxItemChars, each the
 // embedder's default when unset.
 func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
-	return cmp.Or(e.MaxBatch, model.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, model.DefaultEmbedMaxBatchChars),
-		cmp.Or(e.MaxItemChars, model.DefaultEmbedMaxItemChars)
+	return cmp.Or(e.MaxBatch, tuning.Get().Model.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, tuning.Get().Model.DefaultEmbedMaxBatchChars),
+		cmp.Or(e.MaxItemChars, tuning.Get().Model.DefaultEmbedMaxItemChars)
 }
 
-// DefaultSimilarFloor is the similar-code floor when the embedder sets
-// none.
-const DefaultSimilarFloor = 0.5
+// Floor returns SimilarFloor, tuning's ConfigFile.DefaultSimilarFloor when unset.
+func (e *Embedding) Floor() float64 {
+	return cmp.Or(e.SimilarFloor, tuning.Get().ConfigFile.DefaultSimilarFloor)
+}
 
-// Floor returns SimilarFloor, DefaultSimilarFloor when unset.
-func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimilarFloor) }
-
-// DefaultSimilarMargin is the similar-code margin when the embedder sets
-// none: wide enough to keep the matches close to a query's best and drop
-// only those well below it.
-const DefaultSimilarMargin = 0.1
-
-// Margin returns SimilarMargin, DefaultSimilarMargin when unset.
+// Margin returns SimilarMargin, tuning's ConfigFile.DefaultSimilarMargin when unset.
 func (e *Embedding) Margin() float64 {
 	if e.SimilarMargin == nil {
-		return DefaultSimilarMargin
+		return tuning.Get().ConfigFile.DefaultSimilarMargin
 	}
 	return *e.SimilarMargin
 }
@@ -122,15 +116,15 @@ type Rerank struct {
 	// model.RerankAPIs.
 	API string `yaml:"api"`
 	// Candidates is how many of each query's candidates, the best fused
-	// first, are sent to be reranked, at most MaxRerankCandidates. The two
+	// first, are sent to be reranked, at most tuning's ConfigFile.MaxRerankCandidates. The two
 	// searches each look for that many, and no fewer than without a reranker.
-	// Unset is DefaultRerankCandidates, or
-	// DefaultTEIRerankCandidates for the tei API.
+	// Unset is tuning's ConfigFile.DefaultRerankCandidates, or
+	// tuning's ConfigFile.DefaultTEIRerankCandidates for the tei API.
 	Candidates int `yaml:"candidates,omitempty"`
 	// Timeout bounds the reranking of one similar-code request, at most
-	// MaxRerankTimeout: the wait for one of the reranker's slots and then all
+	// tuning's ConfigFile.MaxRerankTimeout: the wait for one of the reranker's slots and then all
 	// of its queries. A query not reranked by then keeps the fused order. Unset
-	// is DefaultRerankTimeout.
+	// is tuning's ConfigFile.DefaultRerankTimeout.
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load.
@@ -142,33 +136,19 @@ type Rerank struct {
 // APIKeyValue returns the resolved API key.
 func (r *Rerank) APIKeyValue() Secret { return r.apiKey }
 
-// Reranker bounds and defaults. The timeout starts before the wait for a
-// slot, so it covers that wait and the reranking of each of the request's
-// queries in turn. A run waits a minute for its answer, of which the timeout
-// leaves at least half to the embedding, its slot and the searches.
-const (
-	DefaultRerankCandidates = 50
-	MaxRerankCandidates     = 100
-	DefaultRerankTimeout    = 15 * time.Second
-	MaxRerankTimeout        = 30 * time.Second
-)
-
-// DefaultTEIRerankCandidates is the candidates sent to a Text Embeddings
-// Inference reranker when unset: the most that its --max-client-batch-size
-// takes by default, which refuses a request of more with a 422.
-const DefaultTEIRerankCandidates = 32
-
-// CandidateCount returns Candidates when set, DefaultTEIRerankCandidates for
-// the tei API, and DefaultRerankCandidates otherwise.
+// CandidateCount returns Candidates when set, tuning's ConfigFile.DefaultTEIRerankCandidates for
+// the tei API, and tuning's ConfigFile.DefaultRerankCandidates otherwise.
 func (r *Rerank) CandidateCount() int {
 	if r.Candidates == 0 && r.API == model.RerankTEI {
-		return DefaultTEIRerankCandidates
+		return tuning.Get().ConfigFile.DefaultTEIRerankCandidates
 	}
-	return cmp.Or(r.Candidates, DefaultRerankCandidates)
+	return cmp.Or(r.Candidates, tuning.Get().ConfigFile.DefaultRerankCandidates)
 }
 
-// Deadline returns Timeout, DefaultRerankTimeout when unset.
-func (r *Rerank) Deadline() time.Duration { return cmp.Or(r.Timeout, DefaultRerankTimeout) }
+// Deadline returns Timeout, tuning's ConfigFile.DefaultRerankTimeout when unset.
+func (r *Rerank) Deadline() time.Duration {
+	return cmp.Or(r.Timeout, tuning.Get().ConfigFile.DefaultRerankTimeout)
+}
 
 // DefaultLexicalSearch is whether the similar-code search also searches by
 // name when the embedder does not say.

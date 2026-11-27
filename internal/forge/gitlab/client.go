@@ -22,15 +22,9 @@ import (
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
-
-// pageSize is how many items a paginated listing asks for per page, the
-// most GitLab serves.
-const pageSize = 100
-
-// maxDiffBytes bounds a pull request diff read whole.
-const maxDiffBytes = 8 << 20
 
 // Client is one service account's access to a GitLab instance.
 type Client struct {
@@ -166,7 +160,7 @@ func Status(err error) int {
 func list[T any](page func(gl.ListOptions) ([]T, *gl.Response, error)) ([]T, error) {
 	var out []T
 	for p := int64(1); ; {
-		batch, resp, err := page(gl.ListOptions{Page: p, PerPage: pageSize})
+		batch, resp, err := page(gl.ListOptions{Page: p, PerPage: int64(tuning.Get().GitLab.PageSize)})
 		if err != nil {
 			return nil, err
 		}
@@ -227,8 +221,8 @@ func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, number
 		return "", fmt.Errorf("gitlab: diff of %s/%s!%d: %w", owner, repo, number, err)
 	}
 	diff := unifiedDiff(full.Diffs)
-	if len(diff) > maxDiffBytes {
-		return "", fmt.Errorf("gitlab: diff of %s/%s!%d is over %d bytes", owner, repo, number, maxDiffBytes)
+	if limit := int(tuning.Get().GitLab.MaxDiffBytes); len(diff) > limit {
+		return "", fmt.Errorf("gitlab: diff of %s/%s!%d is over %d bytes", owner, repo, number, limit)
 	}
 	return diff, nil
 }
@@ -371,7 +365,7 @@ func (c *Client) CommitSubject(ctx context.Context, owner, repo, sha string) (st
 	return strings.TrimSpace(cm.Title), nil
 }
 
-// boundedFile takes a file's bytes up to forge.MaxFileBytes and refuses
+// boundedFile takes a file's bytes up to tuning's Forge.MaxFileBytes and refuses
 // the first byte over, so a file too large is never read whole. It ends
 // the request then: the SDK drains a body it did not finish reading.
 type boundedFile struct {
@@ -380,7 +374,7 @@ type boundedFile struct {
 }
 
 func (b *boundedFile) Write(p []byte) (int, error) {
-	if len(b.content)+len(p) > forge.MaxFileBytes {
+	if len(b.content)+len(p) > int(tuning.Get().Forge.MaxFileBytes) {
 		b.cancel()
 		return 0, forge.ErrFileTooLarge
 	}

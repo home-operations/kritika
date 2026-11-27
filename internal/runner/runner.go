@@ -29,6 +29,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Run executes one run and reports success or failure in the run row,
@@ -53,7 +54,7 @@ func Run(ctx context.Context, spec runspec.Spec, secrets runspec.Secrets, logger
 	beating := make(chan struct{})
 	go func() {
 		defer close(beating)
-		heartbeat(hctx, runspec.HeartbeatInterval, report.heartbeat, logger)
+		heartbeat(hctx, tuning.Get().RunSpec.HeartbeatInterval, report.heartbeat, logger)
 	}()
 	defer func() {
 		stop()
@@ -75,14 +76,6 @@ func Run(ctx context.Context, spec runspec.Spec, secrets runspec.Secrets, logger
 	}
 	return err
 }
-
-// maxPackDiffBytes is how much of a diff, and of a delta diff, a context
-// pack keeps: whole files in order, with a file left out if it will pass the
-// limit.
-// A pull request that regenerates a large text file otherwise puts the whole
-// of it in the service's memory. The prompt's own budget is far smaller, so
-// the agent is sent no less for it.
-const maxPackDiffBytes = 4 << 20
 
 // priorDelta is the prior head the fetch brought, and the paths of the delta
 // since it less the ignored ones. The prior head is nil when none was asked
@@ -225,8 +218,11 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 
 	// The pack is read whole by the service, on every publish and
 	// follow-up, so what it keeps of the diffs is bounded here.
-	packDiff, cut := review.FitDiff(res.Diff, maxPackDiffBytes)
-	packDelta, _ := review.FitDiff(res.DeltaDiff, maxPackDiffBytes)
+	// A context pack keeps tuning's Runner.MaxPackDiffBytes of a diff and
+	// of a delta diff, whole files in order.
+	most := int(tuning.Get().Runner.MaxPackDiffBytes)
+	packDiff, cut := review.FitDiff(res.Diff, most)
+	packDelta, _ := review.FitDiff(res.DeltaDiff, most)
 	if len(cut) > 0 {
 		logger.Warn("diff too large to keep whole", "diff_bytes", len(res.Diff), "kept_bytes", len(packDiff), "files_cut", len(cut))
 		notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
@@ -343,21 +339,15 @@ func similarContext(
 	return similarShown(ctx, head, p.Ignore, out.Chunks, others, logger), newSearchTool(p, secrets, head, nil)
 }
 
-// similarReportWindow bounds what a run spends, before it searches, on
-// learning whether its repository has an index and reporting its exclusions.
-// Similar code is best effort, and the review waits for it. A variable for
-// the tests.
-var similarReportWindow = 20 * time.Second
-
 // excludeFromSimilar readies the run's similar-code searches. It asks the
 // gateway, with no queries, whether the repository has an index, which embeds
 // nothing. When it has one, it reports the paths the searches leave out:
 // every changed path, and the old name of each rename, whose copy in the
 // index otherwise matches its renamed self best of all. It reports false when
-// there is no index or either request failed within similarReportWindow, and
+// there is no index or either request failed within Runner.SimilarReportWindow, and
 // the run must then not search.
 func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger) bool {
-	ctx, cancel := context.WithTimeout(ctx, similarReportWindow)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.SimilarReportWindow)
 	defer cancel()
 	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Kind: contextpack.SimilarKindDiff})
 	if err != nil {
@@ -395,7 +385,7 @@ func similarCodeFor(
 	}
 	started := time.Now()
 	out, err := similarCode(ctx, p.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{
-		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: contextpack.SimilarLimit, Languages: languages,
+		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: tuning.Get().ContextPack.SimilarLimit, Languages: languages,
 	})
 	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
 		"elapsed", time.Since(started))
@@ -435,7 +425,7 @@ func stages(
 ) ([]contextpack.Chunk, contextpack.Stats, error) {
 	chunks, stats, err := contextpack.Build(ctx, contextpack.Input{
 		Head: headTree, Base: baseTree, Diff: res.Diff, Changed: res.Changed, Ignore: ignore,
-	}, contextpack.DefaultOptions)
+	}, contextpack.DefaultOptions())
 	if err != nil {
 		return nil, stats, fmt.Errorf("runner: context stages: %w", err)
 	}
@@ -466,7 +456,7 @@ func heartbeat(ctx context.Context, interval time.Duration, beat func(context.Co
 // fail records cause as the run's error, with its secrets masked: a git or
 // provider error can carry a credential.
 func fail(ctx context.Context, report *reporter, secrets runspec.Secrets, cause error) error {
-	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Runner.FailureTimeout)
 	defer cancel()
 	if err := report.failure(fctx, secrets.Mask(cause.Error())); err != nil {
 		return fmt.Errorf("runner: record failure: %w", err)

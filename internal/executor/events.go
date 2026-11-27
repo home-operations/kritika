@@ -16,6 +16,7 @@ import (
 	recordutil "k8s.io/client-go/tools/record/util"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Events records Kubernetes Events, which kubectl describe and kubectl
@@ -37,15 +38,11 @@ type Events struct {
 	pending sync.WaitGroup
 }
 
-// Fields of every Event kritika records: the controller it names as
-// reporting it, the longest reporting instance and note one holds, and how
-// long its write can take.
-const (
-	eventController    = "kritika"
-	eventInstanceBytes = 128
-	eventNoteBytes     = 1024
-	eventTimeout       = 10 * time.Second
-)
+// eventController is the controller that every Event kritika records names
+// as reporting it. The longest reporting instance and note one holds, and how
+// long its write can take, are tuning's Executor.EventInstanceBytes,
+// EventNoteBytes and EventTimeout.
+const eventController = "kritika"
 
 // NewEvents records Events in namespace as the replica of pod podName,
 // whose UID kubectl describe matches a pod's Events by. Without a pod name
@@ -53,8 +50,8 @@ const (
 func NewEvents(client kubernetes.Interface, namespace, podName, podUID string, logger *slog.Logger) *Events {
 	host, _ := os.Hostname()
 	instance := cmp.Or(podName, host, eventController)
-	if len(instance) > eventInstanceBytes {
-		instance = cmp.Or(podUID, instance[:eventInstanceBytes])
+	if most := int(tuning.Get().Executor.EventInstanceBytes); len(instance) > most {
+		instance = cmp.Or(podUID, instance[:most])
 	}
 	e := &Events{client: client, namespace: namespace, instance: instance, logger: logger}
 	if podName != "" {
@@ -101,7 +98,7 @@ func (e *Events) PodEvent(ctx context.Context, warning bool, reason, action, not
 // record writes one Event. It often says why a run ended, which is when
 // its ctx has: the write does not end with ctx.
 func (e *Events) record(ctx context.Context, regarding corev1.ObjectReference, warning bool, reason, action, note string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), eventTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Executor.EventTimeout)
 	defer cancel()
 	eventType := corev1.EventTypeNormal
 	if warning {
@@ -111,7 +108,8 @@ func (e *Events) record(ctx context.Context, regarding corev1.ObjectReference, w
 	event := &eventsv1.Event{
 		Name: recordutil.GenerateEventName(regarding.Name, now.UnixNano()), Namespace: e.namespace,
 		EventTime: metav1.NewMicroTime(now), ReportingController: eventController, ReportingInstance: e.instance,
-		Action: action, Reason: reason, Regarding: regarding, Note: textcut.Truncate(note, eventNoteBytes), Type: eventType,
+		Action: action, Reason: reason, Regarding: regarding, Type: eventType,
+		Note: textcut.Truncate(note, int(tuning.Get().Executor.EventNoteBytes)),
 	}
 	if _, err := e.client.EventsV1().Events(e.namespace).Create(ctx, event, metav1.CreateOptions{}); err != nil {
 		e.logger.Warn("event not recorded", "object", regarding.Kind+"/"+regarding.Name, "reason", reason, "error", err)

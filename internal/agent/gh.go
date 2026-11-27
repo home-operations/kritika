@@ -3,6 +3,8 @@ package agent
 import (
 	"fmt"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // ghValueFlags are the gh flags whose value is the next argument, so it is
@@ -27,7 +29,7 @@ func ghSource(args []string) string {
 		if path == "graphql" || strings.Contains(path, "{") {
 			return ""
 		}
-		return "https://api.github.com/" + path
+		return tuning.GitHubAPIURL + "/" + path
 	}
 	var target string
 	if len(pos) > 2 {

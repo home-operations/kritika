@@ -15,6 +15,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestRateLimitWait(t *testing.T) {
@@ -147,7 +149,7 @@ func TestRateLimitTransport(t *testing.T) {
 						tt.server.ServeHTTP(rec, req)
 						return rec.Result(), nil
 					}),
-					maxWait: rateLimitMaxWait,
+					maxWait: tuning.Get().GitHub.RateLimitMaxWait,
 					observe: func(wait time.Duration, w bool) {
 						observed = append(observed, wait)
 						waited = append(waited, w)
@@ -220,7 +222,7 @@ func TestRetryAfter(t *testing.T) {
 			10*time.Minute + time.Second, true},
 		{"primary already reset", &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: now.Add(-time.Minute)}}}, time.Second, true},
 		{"secondary", fmt.Errorf("github: comment: %w", &gh.AbuseRateLimitError{RetryAfter: &twoMinutes}), 2 * time.Minute, true},
-		{"secondary with no wait", &gh.AbuseRateLimitError{}, rateLimitMaxWait, true},
+		{"secondary with no wait", &gh.AbuseRateLimitError{}, tuning.Get().GitHub.RateLimitMaxWait, true},
 		{"refusal with a Retry-After", fmt.Errorf("github: branch: %w", &gh.ErrorResponse{Response: &http.Response{
 			StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"120"}}}}), 2 * time.Minute, true},
 		{"refusal with a Retry-After of no seconds", &gh.ErrorResponse{Response: &http.Response{

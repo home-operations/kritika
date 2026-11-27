@@ -8,23 +8,20 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // PartCheckpoint is a completed part and the run that paid for it.
 type PartCheckpoint = runspec.PartCheckpoint
 
-// maxCheckpointRead bounds what one read of a run's checkpoints holds in
-// memory. What a runner saved decides the number and size of the rows, and the
-// read runs in the service.
-const maxCheckpointRead = 32 << 20
-
 // ReadPartCheckpoints reads only the current run's matching input snapshot,
-// within maxCheckpointRead. A part left out runs again, as one with no
+// within tuning's Store.MaxCheckpointRead. A part left out runs again, as one with no
 // checkpoint does. A row past the bound stays in the database, since one saved
 // before the gateway bounded saves can be of any size.
 func ReadPartCheckpoints(ctx context.Context, tx pgx.Tx, runID, inputHash string) ([]PartCheckpoint, error) {
 	rows, err := tx.Query(ctx, `SELECT part, source_run_id::text, payload FROM review_part_checkpoints
-		WHERE runner_run_id = $1 AND input_hash = $2 AND octet_length(payload) <= $3 ORDER BY part`, runID, inputHash, maxCheckpointRead)
+		WHERE runner_run_id = $1 AND input_hash = $2 AND octet_length(payload) <= $3 ORDER BY part`,
+		runID, inputHash, int(tuning.Get().Store.MaxCheckpointRead))
 	if err != nil {
 		return nil, fmt.Errorf("store: read part checkpoints: %w", err)
 	}
@@ -37,7 +34,7 @@ func ReadPartCheckpoints(ctx context.Context, tx pgx.Tx, runID, inputHash string
 		if err := rows.Scan(&c.Part, &c.SourceRun, &payload); err != nil {
 			return nil, fmt.Errorf("store: read part checkpoints: %w", err)
 		}
-		if total += len(payload); total > maxCheckpointRead {
+		if total += len(payload); total > int(tuning.Get().Store.MaxCheckpointRead) {
 			break
 		}
 		c.Payload = json.RawMessage(payload)

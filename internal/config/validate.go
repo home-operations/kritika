@@ -8,14 +8,12 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/gookit/validate/v2"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
-)
 
-// minRetention keeps transcripts and diffs available for at least a day.
-const minRetention = 24 * time.Hour
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // The comparison rules do not convert ByteSize, unlike time.Duration.
 func init() {
@@ -27,6 +25,7 @@ func init() {
 func (s Settings) Validate() error {
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)
+	minRetention := s.Tuning.Worker.MinRetention
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
@@ -64,7 +63,7 @@ func (s Settings) Validate() error {
 	}
 	v.WithTranslates(labels)
 	var extra []string
-	if _, err := s.deadline(); err != nil {
+	if _, err := s.deadline(s.Tuning.JobTimeout); err != nil {
 		extra = append(extra, err.Error())
 	}
 	if u, err := url.Parse(s.AquaRegistryURL); err != nil || u.Host == "" || (u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP) {
@@ -74,8 +73,9 @@ func (s Settings) Validate() error {
 		if s.GatewayCacheDir == "" {
 			extra = append(extra, "gatewayCacheDir: S3 needs a private local staging directory")
 		}
-		if s.GatewayCacheMaxEntrySize > 5<<30 {
-			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed 5Gi")
+		if s.GatewayCacheMaxEntrySize > tuning.S3MaxPutBytes {
+			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed "+
+				tuning.ByteSize(tuning.S3MaxPutBytes).String())
 		}
 		if err := checkS3Bucket(s.GatewayCacheS3Endpoint, s.GatewayCacheS3Region, s.GatewayCacheS3Bucket); err != nil {
 			extra = append(extra, err.Error())

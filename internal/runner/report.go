@@ -13,23 +13,8 @@ import (
 
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// A report is sent again for as long as reportRetryWindow when the gateway is
-// out of reach or says the trouble is its own. The context of the report ends
-// it sooner. They are variables for the tests.
-var (
-	reportRetryWindow = runspec.ReportRetryWindow
-	reportBackoff     = time.Second
-	reportMaxBackoff  = 15 * time.Second
-)
-
-// heartbeatTimeout bounds one heartbeat, as runspec.ReportTimeout does a report.
-const heartbeatTimeout = 10 * time.Second
-
-// maxReportAnswer bounds what the gateway's answer is read to: the part
-// checkpoints of a run, or an error.
-const maxReportAnswer = 256 << 20
 
 // reporter writes what a run found, by way of the gateway. It is the run's only
 // way to do that.
@@ -46,13 +31,13 @@ func newReporter(p runspec.Spec, secrets runspec.Secrets) *reporter {
 
 // authorize makes sure that the gateway takes this run's reports.
 func (r *reporter) authorize(ctx context.Context) error {
-	return r.send(ctx, runspec.ReportTimeout, http.MethodGet, runspec.ReportAuthorizePath, nil, nil)
+	return r.send(ctx, tuning.Get().RunSpec.ReportTimeout, http.MethodGet, runspec.ReportAuthorizePath, nil, nil)
 }
 
 // heartbeat is tried once. Another comes along soon, and one that retries
 // could only overlap it.
 func (r *reporter) heartbeat(ctx context.Context) error {
-	_, err := r.attempt(ctx, heartbeatTimeout, http.MethodPost, runspec.ReportHeartbeatPath, nil, nil)
+	_, err := r.attempt(ctx, tuning.Get().Runner.HeartbeatTimeout, http.MethodPost, runspec.ReportHeartbeatPath, nil, nil)
 	return err
 }
 
@@ -60,10 +45,11 @@ func (r *reporter) phase(ctx context.Context, phase string) error {
 	return r.post(ctx, runspec.ReportPhasePath, runspec.PhaseReport{Phase: phase}, nil)
 }
 
-// failure accepts an already redacted error. The run's row keeps its first
-// 2,000 characters, so a git error of any length still fits the report.
+// failure accepts an already redacted error, cut to tuning's
+// Runner.MaxFailureCause.
 func (r *reporter) failure(ctx context.Context, cause string) error {
-	return r.post(ctx, runspec.ReportFailurePath, runspec.FailureReport{Cause: textcut.Prefix(cause, 8<<10)}, nil)
+	cut := textcut.Prefix(cause, int(tuning.Get().Runner.MaxFailureCause))
+	return r.post(ctx, runspec.ReportFailurePath, runspec.FailureReport{Cause: cut}, nil)
 }
 
 func (r *reporter) context(ctx context.Context, pack runspec.ContextPack, phase string) error {
@@ -94,13 +80,13 @@ func (r *reporter) index(ctx context.Context, pack runspec.IndexPack, chunks []r
 		}()
 		return pr
 	}
-	return r.send(ctx, runspec.IndexUploadTimeout, http.MethodPost, runspec.ReportIndexPath, body, nil)
+	return r.send(ctx, tuning.Get().RunSpec.IndexUploadTimeout, http.MethodPost, runspec.ReportIndexPath, body, nil)
 }
 
 func (r *reporter) checkpoints(ctx context.Context, input string) ([]runspec.PartCheckpoint, error) {
 	var saved []runspec.PartCheckpoint
 	path := runspec.ReportCheckpointsPath + "?" + url.Values{runspec.ReportCheckpointInput: {input}}.Encode()
-	err := r.send(ctx, runspec.ReportTimeout, http.MethodGet, path, nil, &saved)
+	err := r.send(ctx, tuning.Get().RunSpec.ReportTimeout, http.MethodGet, path, nil, &saved)
 	return saved, err
 }
 
@@ -120,16 +106,22 @@ func (r *reporter) post(ctx context.Context, path string, v, out any) error {
 	if err != nil {
 		return fmt.Errorf("runner: encode report %s: %w", path, err)
 	}
-	return r.send(ctx, runspec.ReportTimeout, http.MethodPost, path, func() io.Reader { return bytes.NewReader(body) }, out)
+	return r.send(ctx, tuning.Get().RunSpec.ReportTimeout, http.MethodPost, path, func() io.Reader { return bytes.NewReader(body) }, out)
 }
 
-// send makes a request, again while its failure is worth another try. The window
-// bounds the retries and not an attempt, whose timeout does that. An attempt
-// that outlasted the window, as an upload can, starts the window over: it was
-// no outage that ended it, or it would have failed sooner.
+// send makes a request, again while its failure is worth another try: for as
+// long as tuning's RunSpec.ReportRetryWindow when the gateway is out of reach
+// or says the trouble is its own, waiting from Runner.ReportBackoff, doubled
+// up to Runner.ReportMaxBackoff, between attempts. The context of the report
+// ends it sooner. The window bounds the retries and not an attempt, whose
+// timeout does that. An attempt that outlasted the window, as an upload can,
+// starts the window over: it was no outage that ended it, or it would have
+// failed sooner.
 func (r *reporter) send(ctx context.Context, timeout time.Duration, method, path string, body func() io.Reader, out any) error {
-	giveUp := time.Now().Add(reportRetryWindow)
-	wait := reportBackoff
+	window, t := tuning.Get().RunSpec.ReportRetryWindow, tuning.Get().Runner
+	backoff, maxBackoff := t.ReportBackoff, t.ReportMaxBackoff
+	giveUp := time.Now().Add(window)
+	wait := backoff
 	for {
 		started := time.Now()
 		again, err := r.attempt(ctx, timeout, method, path, body, out)
@@ -137,8 +129,8 @@ func (r *reporter) send(ctx context.Context, timeout time.Duration, method, path
 			return err
 		}
 		now := time.Now()
-		if now.Sub(started) >= reportRetryWindow {
-			giveUp, wait = now.Add(reportRetryWindow), reportBackoff
+		if now.Sub(started) >= window {
+			giveUp, wait = now.Add(window), backoff
 		}
 		if now.After(giveUp) {
 			return err
@@ -148,7 +140,7 @@ func (r *reporter) send(ctx context.Context, timeout time.Duration, method, path
 			return err
 		case <-time.After(wait):
 		}
-		wait = min(wait*2, reportMaxBackoff)
+		wait = min(wait*2, maxBackoff)
 	}
 }
 
@@ -166,13 +158,13 @@ func (r *reporter) attempt(
 	if err != nil {
 		return false, fmt.Errorf("runner: report %s: %w", path, err)
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	req.Header.Set("Authorization", tuning.BearerPrefix+r.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return true, fmt.Errorf("runner: report %s: %w", path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxReportAnswer))
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(tuning.Get().Runner.MaxReportAnswer)))
 	if err != nil {
 		return true, fmt.Errorf("runner: report %s: %w", path, err)
 	}

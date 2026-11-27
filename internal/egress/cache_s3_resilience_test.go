@@ -24,6 +24,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func faultS3Cache(t *testing.T, transport http.RoundTripper) *Cache {
@@ -70,17 +71,17 @@ func TestS3CredentialDeadline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx, cancel := context.WithTimeout(t.Context(), s3LookupTimeout)
+		ctx, cancel := context.WithTimeout(t.Context(), tuning.Get().Egress.S3LookupTimeout)
 		defer cancel()
 		started := time.Now()
 		_, err = client.StatObject(ctx, "cache", "key", minio.StatObjectOptions{})
-		if err == nil || time.Since(started) > s3LookupTimeout {
+		if err == nil || time.Since(started) > tuning.Get().Egress.S3LookupTimeout {
 			t.Errorf("credential discovery: elapsed=%s error=%v", time.Since(started), err)
 		}
 		// The SDK's own default credential context carries no Context.
 		bounded := &s3Credentials{Provider: &stalledS3Credentials{}}
 		started = time.Now()
-		if _, err := bounded.RetrieveWithCredContext(&credentials.CredContext{}); err == nil || time.Since(started) != s3LookupTimeout {
+		if _, err := bounded.RetrieveWithCredContext(&credentials.CredContext{}); err == nil || time.Since(started) != tuning.Get().Egress.S3LookupTimeout {
 			t.Errorf("without a context: elapsed=%s error=%v", time.Since(started), err)
 		}
 	})
@@ -124,33 +125,33 @@ func TestS3OutageRecovery(t *testing.T) {
 				})}
 				// Distinct bodies: a failed lookup fills the local directory,
 				// so a repeated digest is a local hit and does not ask S3.
-				for i := range s3Failures + 2 {
+				for i := range tuning.Get().Egress.S3Failures + 2 {
 					started := time.Now()
 					body := fmt.Sprintf("origin /tool%d", i)
 					w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), body, nil)
 					if w.Code != http.StatusOK || w.Body.String() != body {
 						t.Fatalf("fallback: %d %q", w.Code, w.Body.String())
 					}
-					if elapsed := time.Since(started); elapsed > s3LookupTimeout || i >= s3Failures && elapsed != 0 {
+					if elapsed := time.Since(started); elapsed > tuning.Get().Egress.S3LookupTimeout || i >= tuning.Get().Egress.S3Failures && elapsed != 0 {
 						t.Fatalf("lookup %d took %s", i, elapsed)
 					}
 				}
-				if requests.Load() != s3Failures {
-					t.Fatalf("outage requests = %d, want %d", requests.Load(), s3Failures)
+				if int(requests.Load()) != tuning.Get().Egress.S3Failures {
+					t.Fatalf("outage requests = %d, want %d", requests.Load(), tuning.Get().Egress.S3Failures)
 				}
 				w := proxied(p, http.MethodGet, "http://example.com/tool0", "origin /tool0", nil)
-				if w.Code != http.StatusOK || w.Body.String() != "origin /tool0" || requests.Load() != s3Failures {
+				if w.Code != http.StatusOK || w.Body.String() != "origin /tool0" || int(requests.Load()) != tuning.Get().Egress.S3Failures {
 					t.Fatalf("local fill during outage: %d %q after %d requests", w.Code, w.Body.String(), requests.Load())
 				}
 				healthy.Store(true)
-				time.Sleep(s3Cooldown)
+				time.Sleep(tuning.Get().Egress.S3Cooldown)
 				if _, _, err := c.load(t.Context(), "missing"); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("recovery probe = %v", err)
 				}
 				if _, _, err := c.load(t.Context(), "another"); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("read after recovery = %v", err)
 				}
-				if requests.Load() != s3Failures+2 {
+				if int(requests.Load()) != tuning.Get().Egress.S3Failures+2 {
 					t.Fatalf("recovery requests = %d", requests.Load())
 				}
 			})
@@ -162,7 +163,7 @@ func TestS3CircuitProbeAndStaleCompletions(t *testing.T) {
 	var b s3Circuit
 	now := time.Now()
 	stale, _ := b.allow(now)
-	for range s3Failures {
+	for range tuning.Get().Egress.S3Failures {
 		a, _ := b.allow(now)
 		b.complete(a, io.ErrUnexpectedEOF, now)
 	}
@@ -170,7 +171,7 @@ func TestS3CircuitProbeAndStaleCompletions(t *testing.T) {
 	if _, ok := b.allow(now); ok {
 		t.Fatal("old success closed the circuit")
 	}
-	now = now.Add(s3Cooldown)
+	now = now.Add(tuning.Get().Egress.S3Cooldown)
 	a, ok := b.allow(now)
 	if !ok || !a.probe {
 		t.Fatal("cooldown did not allow a probe")
@@ -189,7 +190,7 @@ func TestS3CircuitProbeAndStaleCompletions(t *testing.T) {
 	if _, ok := b.allow(now); ok {
 		t.Fatal("failed probe did not restore cooldown")
 	}
-	now = now.Add(s3Cooldown)
+	now = now.Add(tuning.Get().Egress.S3Cooldown)
 	a, _ = b.allow(now)
 	b.complete(a, nil, now)
 	b.complete(stale, io.ErrUnexpectedEOF, now)
@@ -219,15 +220,15 @@ func TestS3StalledBody(t *testing.T) {
 			}
 			return resp, nil
 		}))
-		for range s3Failures {
+		for range tuning.Get().Egress.S3Failures {
 			f, _, err := c.load(t.Context(), keyOf("abc"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			// Metadata's short deadline must not end a healthy streaming context.
-			time.Sleep(s3LookupTimeout + time.Second)
+			time.Sleep(tuning.Get().Egress.S3LookupTimeout + time.Second)
 			started := time.Now()
-			if _, err := io.ReadAll(f); err == nil || time.Since(started) != s3ReadTimeout {
+			if _, err := io.ReadAll(f); err == nil || time.Since(started) != tuning.Get().Egress.S3ReadTimeout {
 				t.Fatalf("stalled read: %v after %s", err, time.Since(started))
 			}
 			if err := f.Close(); err != nil {
@@ -252,7 +253,7 @@ func TestS3BackgroundUploads(t *testing.T) {
 		c.Observe(metrics.New(reg), slog.New(slog.DiscardHandler))
 		// One entry per worker.
 		bodies := []string{"abc"}
-		for i := 2; len(bodies) < s3UploadWorkers; i++ {
+		for i := 2; len(bodies) < tuning.Get().Egress.S3UploadWorkers; i++ {
 			bodies = append(bodies, fmt.Sprintf("ab%d", i))
 		}
 		key := keyOf(bodies[0])
@@ -270,13 +271,13 @@ func TestS3BackgroundUploads(t *testing.T) {
 			c.queueUpload(k)
 		}
 		synctest.Wait()
-		if puts.Load() != s3UploadWorkers {
+		if int(puts.Load()) != tuning.Get().Egress.S3UploadWorkers {
 			t.Fatalf("active uploads = %d", puts.Load())
 		}
-		for range s3UploadQueue + 3 {
+		for range tuning.Get().Egress.S3UploadQueue + 3 {
 			c.queueUpload(key)
 		}
-		if len(c.s3.uploads) != s3UploadQueue || cacheMetric(t, reg, "kritika_cache_upload_skips_total", map[string]string{"reason": "queue_full"}) != 3 {
+		if len(c.s3.uploads) != tuning.Get().Egress.S3UploadQueue || cacheMetric(t, reg, "kritika_cache_upload_skips_total", map[string]string{"reason": "queue_full"}) != 3 {
 			t.Fatal("queue was not bounded or skips were not observed")
 		}
 		f, _, err := c.load(t.Context(), key)
@@ -294,7 +295,7 @@ func TestS3BackgroundUploads(t *testing.T) {
 		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
-		if puts.Load() != s3UploadWorkers {
+		if int(puts.Load()) != tuning.Get().Egress.S3UploadWorkers {
 			t.Fatal("shutdown started queued uploads")
 		}
 	})
@@ -314,9 +315,9 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 		if err := c.store(key, entryOf("https://example.com/tool", "abc"), strings.NewReader("abc"), nil); err != nil {
 			t.Fatal(err)
 		}
-		for range s3Failures {
+		for range tuning.Get().Egress.S3Failures {
 			started := time.Now()
-			if err := c.upload(t.Context(), key); err == nil || time.Since(started) != s3UploadTimeout {
+			if err := c.upload(t.Context(), key); err == nil || time.Since(started) != tuning.Get().Egress.S3UploadTimeout {
 				t.Fatalf("upload: %v after %s", err, time.Since(started))
 			}
 		}
@@ -327,18 +328,18 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 			t.Fatal("failed uploads disabled reads")
 		}
 		healthy.Store(true)
-		time.Sleep(s3Cooldown)
+		time.Sleep(tuning.Get().Egress.S3Cooldown)
 		if err := c.upload(t.Context(), key); err != nil {
 			t.Fatalf("upload recovery: %v", err)
 		}
-		// A large entry gets a deadline it can meet at s3UploadRate.
+		// A large entry gets a deadline it can meet at Egress.S3UploadRate.
 		healthy.Store(false)
 		large := strings.Repeat("x", 3<<20)
 		if err := c.store(keyOf(large), entryOf("https://example.com/large", large), strings.NewReader(large), nil); err != nil {
 			t.Fatal(err)
 		}
 		started := time.Now()
-		if err := c.upload(t.Context(), keyOf(large)); err == nil || time.Since(started) != s3UploadTimeout+3*time.Second {
+		if err := c.upload(t.Context(), keyOf(large)); err == nil || time.Since(started) != tuning.Get().Egress.S3UploadTimeout+3*time.Second {
 			t.Fatalf("large upload: %v after %s", err, time.Since(started))
 		}
 	})

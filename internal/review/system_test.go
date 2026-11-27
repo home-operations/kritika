@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestSystemPrompt(t *testing.T) {
@@ -112,7 +114,7 @@ func TestUserBudget(t *testing.T) {
 		budget int
 		want   int
 	}{
-		{name: "zero takes the default", budget: 0, want: DefaultBudgetTokens},
+		{name: "zero takes the default", budget: 0, want: tuning.Get().Review.DefaultBudgetTokens},
 		{name: "a configured budget", budget: 120_000, want: 120_000},
 	}
 	long := SystemPrompt([]Rule{{ID: "long", Text: strings.Repeat("x", 32<<10)}}, nil, nil, false, false, false, false)
@@ -131,8 +133,8 @@ func TestUserBudget(t *testing.T) {
 	// message its floor, which Build renders a small diff within.
 	t.Run("long instructions leave a small budget its floor", func(t *testing.T) {
 		got := UserBudget(long, 8_000)
-		if got != minUserBudget {
-			t.Fatalf("UserBudget = %d, want the floor of %d", got, minUserBudget)
+		if got != tuning.Get().Review.MinUserBudget {
+			t.Fatalf("UserBudget = %d, want the floor of %d", got, tuning.Get().Review.MinUserBudget)
 		}
 		msg, omitted, _, _ := Build(Input{Repository: "a/b", Number: 1, Changed: []string{"main.go"}, Diff: sampleDiff, BudgetTokens: got})
 		if len(omitted) != 0 || !strings.Contains(msg, "+	z := 4") {

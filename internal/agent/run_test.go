@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/home-operations/kritika/internal/gittest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // helperEnv makes the test binary act as a command for the run tool. So the
@@ -593,7 +594,7 @@ func TestRunToolDef(t *testing.T) {
 func TestCheckout(t *testing.T) {
 	t.Run("writes what the commands may read", func(t *testing.T) {
 		dir := t.TempDir()
-		stats, err := NewTree(testTree(t), []string{"generated/**"}).Checkout(t.Context(), dir, MaxCheckoutBytes)
+		stats, err := NewTree(testTree(t), []string{"generated/**"}).Checkout(t.Context(), dir, int64(tuning.Get().Agent.MaxCheckoutBytes))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -618,7 +619,7 @@ func TestCheckout(t *testing.T) {
 
 	t.Run("symlinks are skipped", func(t *testing.T) {
 		dir := t.TempDir()
-		stats, err := NewTree(symlinkTree(t), nil).Checkout(t.Context(), dir, MaxCheckoutBytes)
+		stats, err := NewTree(symlinkTree(t), nil).Checkout(t.Context(), dir, int64(tuning.Get().Agent.MaxCheckoutBytes))
 		if err != nil || stats.Files != 1 || stats.Skipped != 1 {
 			t.Fatalf("stats = %+v, err = %v", stats, err)
 		}

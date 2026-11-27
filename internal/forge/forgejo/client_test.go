@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fakeForge is enough of a Forgejo or Gitea instance for the client: a
@@ -159,7 +160,7 @@ func TestNewClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != runnerTokenTTL+skew {
+	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != tuning.Get().Forgejo.RunnerTokenTTL+tuning.Get().Forgejo.TokenSkew {
 		t.Fatalf("runner token claims = %+v", claims)
 	}
 	c, _ = NewClient("forge.example.com", issuer, "aud-api", "", nil)
@@ -199,7 +200,7 @@ func TestPullRequestReads(t *testing.T) {
 		_, _ = io.WriteString(w, "diff --git a/x b/x\n")
 	})
 	f.mux.HandleFunc("GET "+repoAPI+"/pulls/9.diff", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(make([]byte, maxDiffBytes+1))
+		_, _ = w.Write(make([]byte, tuning.Get().Forgejo.MaxDiffBytes+1))
 	})
 	c := f.client(t)
 	base, err := c.MergeBase(t.Context(), "acme", "widgets", 7, "main", "head1")
@@ -247,7 +248,7 @@ func TestRepositoryReads(t *testing.T) {
 		_, _ = io.WriteString(w, "a: 1\n")
 	})
 	f.mux.HandleFunc("GET "+repoAPI+"/raw/big", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(make([]byte, forge.MaxFileBytes+1))
+		_, _ = w.Write(make([]byte, tuning.Get().Forge.MaxFileBytes+1))
 	})
 	f.json("GET", repoAPI+"/issues/3", 200, map[string]any{"number": 3, "title": "bug", "body": "it breaks", "html_url": "https://x/i/3"})
 	f.json("GET", repoAPI+"/issues/7", 200, map[string]any{"number": 7, "title": "pr", "pull_request": map[string]any{"merged": false}})
@@ -589,13 +590,13 @@ func TestListOpenPullRequests(t *testing.T) {
 	f := newFake(t)
 	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if q.Get("state") != "open" || q.Get("sort") != "recentupdate" || q.Get("limit") != fmt.Sprint(pageSize) {
+		if q.Get("state") != "open" || q.Get("sort") != "recentupdate" || q.Get("limit") != fmt.Sprint(tuning.Get().Forgejo.PageSize) {
 			t.Errorf("query = %v", q)
 		}
 		var page []map[string]any
 		switch q.Get("page") {
 		case "1":
-			for i := range pageSize {
+			for i := range tuning.Get().Forgejo.PageSize {
 				page = append(page, map[string]any{"number": 100 - i, "updated_at": time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC).Add(-time.Duration(i) * time.Minute).Format(time.RFC3339),
 					"user": map[string]any{"login": "x"}})
 			}
@@ -606,7 +607,7 @@ func TestListOpenPullRequests(t *testing.T) {
 	})
 	c := f.client(t)
 	all, err := c.ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
-	if err != nil || len(all) != pageSize+1 || all[0].Number != 100 || all[pageSize].Number != 1 {
+	if err != nil || len(all) != tuning.Get().Forgejo.PageSize+1 || all[0].Number != 100 || all[tuning.Get().Forgejo.PageSize].Number != 1 {
 		t.Fatalf("ListOpenPullRequests(all) = %d, %v", len(all), err)
 	}
 	since := time.Date(2026, 10, 20, 11, 50, 0, 0, time.UTC)
@@ -689,7 +690,7 @@ func TestErrorsCarryTheStatus(t *testing.T) {
 	})
 	c := f.client(t)
 	_, err := c.ListConversation(t.Context(), "acme", "widgets", 7)
-	if err == nil || !strings.Contains(err.Error(), "500") || len(err.Error()) > maxErrorBody+200 {
+	if err == nil || !strings.Contains(err.Error(), "500") || len(err.Error()) > int(tuning.Get().Forgejo.MaxErrorBody)+200 {
 		t.Fatalf("err = %v; want the status and a bounded body", err)
 	}
 	if _, ok := errors.AsType[*apiError](err); !ok || errors.Is(err, forge.ErrNotFound) {
@@ -757,7 +758,7 @@ func TestBearerIsReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(tokenTTL - 2*time.Minute)
+	now = now.Add(tuning.Get().Forgejo.TokenTTL - 2*time.Minute)
 	if again, _ := c.bearer(); again != first {
 		t.Fatal("a token with two minutes left is kept")
 	}

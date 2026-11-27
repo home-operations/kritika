@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fakeSimilarGateway answers a run's exclusion report with status, and its
@@ -104,7 +105,7 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 // its repository has an index. It reports the paths its searches leave out
 // once, both names of a rename among them, and only when there is an index.
 // Its requests carry none. A run whose report is refused, fails until the
-// run ends, or is not answered within similarReportWindow, searches nothing:
+// run ends, or is not answered within Runner.SimilarReportWindow, searches nothing:
 // the index would answer with the old copies of the files the prompt shows.
 // A report that fails is sent again, and the window, not the report's own
 // retries, ends the wait.
@@ -132,15 +133,14 @@ func TestSimilarContextExclusions(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			fastRetries(t, time.Minute)
-			window := similarReportWindow
-			t.Cleanup(func() { similarReportWindow = window })
 			// Only a report never answered waits for the window to end.
-			similarReportWindow = time.Minute
+			window := time.Minute
 			gw := &fakeSimilarGateway{status: tt.status, answer: contextpack.SimilarResponse{Indexed: tt.indexed}}
 			if tt.unanswered {
-				similarReportWindow = 300 * time.Millisecond
+				window = 300 * time.Millisecond
 				gw.unanswered = make(chan struct{})
 			}
+			tuning.Override(t, func(v *tuning.Values) { v.Runner.SimilarReportWindow = window })
 			// A report that fails is sent again until the run ends.
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -164,7 +164,7 @@ func TestSimilarContextExclusions(t *testing.T) {
 			select {
 			case search = <-searched:
 			case <-time.After(time.Minute):
-				t.Fatalf("similar context still waits on its report a minute on, past its %s window", similarReportWindow)
+				t.Fatalf("similar context still waits on its report a minute on, past its %s window", window)
 			}
 			if gw.unanswered != nil {
 				// The run gave the report up rather than being answered. A run
@@ -192,8 +192,8 @@ func TestSimilarContextExclusions(t *testing.T) {
 				if req.Exclude != nil || req.Kind != contextpack.SimilarKindDiff {
 					t.Fatalf("a request carries exclusions %q, or is of kind %q", req.Exclude, req.Kind)
 				}
-				if len(req.Queries) > 0 && req.Limit != contextpack.SimilarLimit {
-					t.Fatalf("a search asks for %d chunks, want %d", req.Limit, contextpack.SimilarLimit)
+				if len(req.Queries) > 0 && req.Limit != tuning.Get().ContextPack.SimilarLimit {
+					t.Fatalf("a search asks for %d chunks, want %d", req.Limit, tuning.Get().ContextPack.SimilarLimit)
 				}
 				want := slices.Repeat([]string{"go"}, len(req.Queries))
 				if !slices.Equal(req.Languages, want) {
@@ -216,7 +216,7 @@ func TestSimilarContextLargeChange(t *testing.T) {
 	res := &gitfetch.Result{Diff: fileDiff("", "a.go", added("func a() {}")), Changed: append(changed, "a.go")}
 	found := contextpack.Chunk{Stage: contextpack.StageSimilar, Path: "lib/b.go", StartLine: 1, EndLine: 1, Text: "func b() {}"}
 	gw := &fakeSimilarGateway{
-		status: http.StatusNoContent, maxBody: 256 << 10,
+		status: http.StatusNoContent, maxBody: int64(tuning.Get().Gateway.MaxSimilarRequest),
 		answer: contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{found}},
 	}
 	s := reviewSpec()
@@ -269,7 +269,7 @@ func TestWithoutOverlap(t *testing.T) {
 	cutAt := func(path string, width int) contextpack.Chunk {
 		c := shown(contextpack.StageDefinition, path, 1, 200)
 		c.Text = strings.TrimSuffix(strings.Repeat(strings.Repeat("x", width-1)+"\n", 200), "\n")
-		c.Text = textcut.Prefix(c.Text, contextpack.DefaultOptions.MaxChunkBytes) + "\n… (truncated)"
+		c.Text = textcut.Prefix(c.Text, contextpack.DefaultOptions().MaxChunkBytes) + "\n… (truncated)"
 		return c
 	}
 	others := []contextpack.Chunk{
@@ -309,13 +309,13 @@ func TestWithoutOverlap(t *testing.T) {
 	}
 }
 
-// TestSimilarShown: a prompt shows at most maxSimilarShown of the chunks
+// TestSimilarShown: a prompt shows at most tuning.Get().Runner.MaxSimilarShown of the chunks
 // found, counted after it drops those that the head no longer has or that
 // other stages show.
 func TestSimilarShown(t *testing.T) {
 	files := map[string]string{}
-	found := make([]contextpack.Chunk, 0, contextpack.SimilarLimit)
-	for i := range contextpack.SimilarLimit {
+	found := make([]contextpack.Chunk, 0, tuning.Get().ContextPack.SimilarLimit)
+	for i := range tuning.Get().ContextPack.SimilarLimit {
 		path := fmt.Sprintf("f%02d.go", i)
 		files[path] = fmt.Sprintf("func f%d() {}\n", i)
 		found = append(found, contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: fmt.Sprintf("func f%d() {}", i)})
@@ -323,7 +323,7 @@ func TestSimilarShown(t *testing.T) {
 	found[0].Text = "func gone() {}"
 	others := []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "f01.go", StartLine: 1, EndLine: 1}}
 	got := similarShown(t.Context(), tree(t, files), nil, found, others, slog.New(slog.DiscardHandler))
-	if want := found[2 : 2+maxSimilarShown]; !slices.Equal(got, want) {
+	if want := found[2 : 2+tuning.Get().Runner.MaxSimilarShown]; !slices.Equal(got, want) {
 		t.Fatalf("shown %+v, want %+v", got, want)
 	}
 	t.Run("a tail that a similar chunk the other stages show overlaps", func(t *testing.T) {
@@ -369,7 +369,7 @@ func TestSimilarContextWithoutQueries(t *testing.T) {
 // it shows. One whose text or file the head no longer has is left out, as is
 // one not cut short whose last line the head has more of.
 func TestAtHead(t *testing.T) {
-	most := indexer.DefaultOptions.MaxChunkBytes
+	most := indexer.DefaultOptions().MaxChunkBytes
 	long := "var x = \"" + strings.Repeat("x", most) + "\""
 	// big's text, as the index cuts it, ends in its second line; comment's
 	// ends with the newline after its first.
@@ -401,8 +401,8 @@ func TestAtHead(t *testing.T) {
 		{"ending on a blank line past the head's last", chunk("tight.go", 3, 6, "func a() {\n\treturn\n}\n"), nil},
 		{"a whole line near the bound that the head has more of", chunk("near.go", 2, 2, near), nil},
 		{
-			"one line cut short", chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes]),
-			[]contextpack.Chunk{chunk("long.go", 2, 2, long[:indexer.DefaultOptions.MaxChunkBytes])},
+			"one line cut short", chunk("long.go", 2, 2, long[:indexer.DefaultOptions().MaxChunkBytes]),
+			[]contextpack.Chunk{chunk("long.go", 2, 2, long[:indexer.DefaultOptions().MaxChunkBytes])},
 		},
 		{"a last line the head has more of", chunk("lib.go", 3, 4, "func a() {\n\tret"), nil},
 		{"changed", chunk("lib.go", 3, 5, "func a() {\n\tpanic(1)\n}"), nil},
@@ -576,7 +576,7 @@ func TestAtHeadLooksPastAnotherDeclaration(t *testing.T) {
 // from its first word, its indentation being over the bound, is found at
 // the head's lines, where the code above it moved too.
 func TestAtHeadFindsALineIndentedPastTheBound(t *testing.T) {
-	line := strings.Repeat(" ", indexer.DefaultOptions.MaxChunkBytes+10) + "callSomething()"
+	line := strings.Repeat(" ", indexer.DefaultOptions().MaxChunkBytes+10) + "callSomething()"
 	src := "func F() {\n" + line + "\n}\n"
 	built, _, _, err := indexer.Build(t.Context(), tree(t, map[string]string{"deep.go": "package lib\n\n" + src}), nil, nil, indexer.Options{})
 	if err != nil {
@@ -609,9 +609,9 @@ func TestSimilarContextLeavesOutFilesTooLargeToIndex(t *testing.T) {
 	var diff strings.Builder
 	files := map[string]string{"small.go": "func small() {}\n"}
 	// The large files share one blob, which the tree stores once.
-	large := strings.Repeat("x", indexer.DefaultOptions.MaxFileBytes+1)
-	changed := make([]string, 0, contextpack.SimilarQueries+1)
-	for i := range contextpack.SimilarQueries {
+	large := strings.Repeat("x", indexer.DefaultOptions().MaxFileBytes+1)
+	changed := make([]string, 0, tuning.Get().ContextPack.SimilarQueries+1)
+	for i := range tuning.Get().ContextPack.SimilarQueries {
 		path := fmt.Sprintf("big%d.go", i)
 		files[path], changed = large, append(changed, path)
 		diff.WriteString(fileDiff("", path, added(fmt.Sprintf("func big%d() {", i), "\treturn", "}")))
@@ -674,7 +674,7 @@ func atHeadOf(t *testing.T, head *object.Tree, chunks []contextpack.Chunk) []con
 // TestSearchToolAsksForSpares: search_code asks the gateway for more chunks
 // than it shows, so a found chunk that the head no longer has, or that the
 // run now ignores, leaves its place to the next one rather than leaving it
-// empty. It shows no more than searchShown however many are found.
+// empty. It shows no more than tuning.Get().Runner.SearchShown however many are found.
 func TestSearchToolAsksForSpares(t *testing.T) {
 	files := map[string]string{"vendor/dep.go": "func dep() {}\n"}
 	found := func(path, text string) contextpack.Chunk {
@@ -684,8 +684,8 @@ func TestSearchToolAsksForSpares(t *testing.T) {
 		found("gone.go", "func gone() {}"), found("vendor/dep.go", "func dep() {}"), found("old.go", "func old() {}"),
 		found("vendor/other.go", "func other() {}"),
 	}
-	valid := make([]contextpack.Chunk, 0, searchShown+2)
-	for i := range searchShown + 2 {
+	valid := make([]contextpack.Chunk, 0, tuning.Get().Runner.SearchShown+2)
+	for i := range tuning.Get().Runner.SearchShown + 2 {
 		path, text := fmt.Sprintf("lib/f%d.go", i), fmt.Sprintf("func f%d() {}", i)
 		files[path] = text + "\n"
 		valid = append(valid, found(path, text))

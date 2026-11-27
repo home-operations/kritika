@@ -9,6 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/riverqueue/river/rivertype"
 )
 
@@ -63,7 +64,7 @@ func TestJobHeartbeatBeatsWhileTheJobRuns(t *testing.T) {
 		err := h.Work(jctx, job, func(context.Context) error {
 			atStart = store.count()
 			cancel()
-			time.Sleep(4*jobHeartbeatInterval + jobHeartbeatInterval/2)
+			time.Sleep(4*tuning.Get().JobTimeout.HeartbeatInterval + tuning.Get().JobTimeout.HeartbeatInterval/2)
 			during = store.count()
 			return nil
 		})
@@ -76,7 +77,7 @@ func TestJobHeartbeatBeatsWhileTheJobRuns(t *testing.T) {
 		if during != 5 {
 			t.Fatalf("beats over four and a half intervals = %d, want the first and one an interval", during)
 		}
-		time.Sleep(3 * jobHeartbeatInterval)
+		time.Sleep(3 * tuning.Get().JobTimeout.HeartbeatInterval)
 		if got := store.count(); got != during {
 			t.Fatalf("beats after Work returned = %d, want none past %d", got, during)
 		}
@@ -105,7 +106,7 @@ func TestJobHeartbeatRefusesToStartUnseen(t *testing.T) {
 }
 
 // TestJobHeartbeatFencesTheJobOnceBeatsStopLanding: the job is cut once no
-// beat landed for jobFenceAfter, before the leader can hand it back. No beat
+// beat landed for JobTimeout.JobFenceAfter, before the leader can hand it back. No beat
 // is written after, though the job runs on.
 func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -124,15 +125,15 @@ func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
 			store.mu.Lock()
 			store.down = false
 			store.mu.Unlock()
-			time.Sleep(3 * jobHeartbeatInterval)
+			time.Sleep(3 * tuning.Get().JobTimeout.HeartbeatInterval)
 			return context.Cause(ctx)
 		})
 		if !errors.Is(err, errJobFenced) {
 			t.Fatalf("Work = %v, want the job fenced", err)
 		}
-		if fencedAfter < jobFenceAfter || fencedAfter >= jobAbandonedAfter {
+		if fencedAfter < tuning.Get().JobTimeout.JobFenceAfter() || fencedAfter >= tuning.Get().JobTimeout.HeartbeatAbandonedAfter() {
 			t.Fatalf("fenced after %s, want from %s and before the leader may hand the job back at %s",
-				fencedAfter, jobFenceAfter, jobAbandonedAfter)
+				fencedAfter, tuning.Get().JobTimeout.JobFenceAfter(), tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
 		}
 		if got := store.count(); got != 1 {
 			t.Fatalf("beats written = %d, want only the first: a beat after the fence would hide the cut from the leader", got)
@@ -185,9 +186,9 @@ func TestJobHeartbeatFencesTheJobWhileABeatHangs(t *testing.T) {
 		if !errors.Is(err, errJobFenced) {
 			t.Fatalf("Work = %v, want the job fenced", err)
 		}
-		if fencedAfter < jobFenceAfter || fencedAfter >= jobAbandonedAfter {
+		if fencedAfter < tuning.Get().JobTimeout.JobFenceAfter() || fencedAfter >= tuning.Get().JobTimeout.HeartbeatAbandonedAfter() {
 			t.Fatalf("fenced after %s, want from %s and before the leader may hand the job back at %s",
-				fencedAfter, jobFenceAfter, jobAbandonedAfter)
+				fencedAfter, tuning.Get().JobTimeout.JobFenceAfter(), tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
 		}
 	})
 }
@@ -201,19 +202,19 @@ func TestJobHeartbeatOutlastsAShortOutage(t *testing.T) {
 		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
 		// Half an interval off the ticks, so no beat and no wake fall at
 		// the same instant.
-		healthy := jobFenceAfter + jobHeartbeatInterval/2
+		healthy := tuning.Get().JobTimeout.JobFenceAfter() + tuning.Get().JobTimeout.HeartbeatInterval/2
 		err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
 			time.Sleep(healthy)
 			store.mu.Lock()
 			store.fail = 3
 			store.mu.Unlock()
-			time.Sleep(4 * jobHeartbeatInterval)
+			time.Sleep(4 * tuning.Get().JobTimeout.HeartbeatInterval)
 			return context.Cause(ctx)
 		})
 		if err != nil {
 			t.Fatalf("Work = %v, want the job to outlast three missed beats", err)
 		}
-		if got, want := store.count(), 1+int(healthy/jobHeartbeatInterval)+1; got != want {
+		if got, want := store.count(), 1+int(healthy/tuning.Get().JobTimeout.HeartbeatInterval)+1; got != want {
 			t.Fatalf("beats written = %d, want %d: the first, one an interval until the outage, and one after it", got, want)
 		}
 	})

@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -18,12 +17,8 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// recordTimeout bounds recording one model call. Recording is best effort:
-// the transcript view loses a turn rather than a review, or a runner's step,
-// that waits on it.
-const recordTimeout = 2 * time.Second
 
 // ProviderSecrets are a provider's key, the headers it is given by reference,
 // and the credentials in its base URL, whole and the password alone. Some can
@@ -101,7 +96,7 @@ func (r Recorder) Record(
 	ctx context.Context, logger *slog.Logger, c store.ModelCall, req model.StepRequest, resp model.StepResponse, stepErr error,
 	mask func(string) string,
 ) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Adapter.RecordTimeout)
 	defer cancel()
 	c.Model, c.Upstream, c.Stop, c.Usage, c.CostUSD = resp.Model, resp.Upstream, resp.Stop, resp.Usage, resp.CostUSD
 	c.ChatGPTPlan = resp.ChatGPTPlan

@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestChatGPTRefresher(t *testing.T) {
@@ -217,7 +218,7 @@ func TestChatGPTRefresherWaitsOutThePreviousLeader(t *testing.T) {
 	}()
 	select {
 	case d := <-waiting:
-		if want := store.LeaderStepDown(15*time.Second) + chatGPTRefreshTimeout; d != want {
+		if want := store.LeaderStepDown(15*time.Second) + tuning.Get().Worker.ChatGPTRefreshTimeout; d != want {
 			t.Fatalf("the new leader waits %v, want %v", d, want)
 		}
 	case <-reused:

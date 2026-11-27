@@ -45,11 +45,12 @@ func LoadSettings(raw []byte) (Settings, Document, error) {
 }
 
 // envError names the environment variable a value of T failed to parse from:
-// env reports the Go field.
+// env reports the Go field, by its name and type alone. The fields that
+// tuning's areas nest can share both, so each such variable is named.
 func envError[T any](err error) error {
 	if pe, ok := errors.AsType[env.ParseError](err); ok {
-		f, _ := reflect.TypeFor[T]().FieldByName(pe.Name)
-		return fmt.Errorf("config: environment variable %s: %w", f.Tag.Get("env"), pe.Err)
+		names := envNames(reflect.TypeFor[T](), pe.Name, pe.Type)
+		return fmt.Errorf("config: environment variable %s: %w", strings.Join(names, " or "), pe.Err)
 	}
 	return fmt.Errorf("config: %w", err)
 }
@@ -176,7 +177,7 @@ func checkSources(typ reflect.Type, fields map[string]any, prefix string, fromFi
 			continue
 		}
 		path := prefix + key
-		if f.Anonymous {
+		if nests(f) {
 			if nested, ok := value.(map[string]any); ok {
 				if err := checkSources(f.Type, nested, path+".", fromFile); err != nil {
 					return err
@@ -191,4 +192,27 @@ func checkSources(typ reflect.Type, fields map[string]any, prefix string, fromFi
 		fromFile[name] = true
 	}
 	return nil
+}
+
+// nests reports whether f holds settings of its own under its YAML key, as
+// runner and tuning do, rather than being one.
+func nests(f reflect.StructField) bool {
+	return f.Anonymous || (f.IsExported() && f.Type.Kind() == reflect.Struct)
+}
+
+// envNames lists the variables of typ's fields, nested ones included, that
+// are named name and have type ft.
+func envNames(typ reflect.Type, name string, ft reflect.Type) []string {
+	var names []string
+	for f := range typ.Fields() {
+		if nests(f) {
+			names = append(names, envNames(f.Type, name, ft)...)
+			continue
+		}
+		if f.Name == name && f.Type == ft {
+			variable, _, _ := strings.Cut(f.Tag.Get("env"), ",")
+			names = append(names, variable)
+		}
+	}
+	return names
 }

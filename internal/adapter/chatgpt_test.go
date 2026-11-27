@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type planSessions struct {
@@ -159,7 +160,7 @@ func TestPlanTokensCache(t *testing.T) {
 	token("at-1", 1)
 	sessions.session.Credentials.AccessToken = "at-2"
 	token("at-1", 1)
-	now = now.Add(planTokenTTL)
+	now = now.Add(tuning.Get().Adapter.PlanTokenTTL)
 	token("at-2", 2)
 	if err := src.Expire(t.Context(), "at-2"); err != nil {
 		t.Fatal(err)
@@ -167,7 +168,7 @@ func TestPlanTokensCache(t *testing.T) {
 	token("at-2", 3)
 	// Within the refresh lead of expiry, every step reads until the leader
 	// stores the renewed token.
-	now = now.Add(time.Hour - chatgpt.RefreshLead - planTokenTTL)
+	now = now.Add(time.Hour - tuning.Get().ChatGPT.RefreshLead - tuning.Get().Adapter.PlanTokenTTL)
 	token("at-2", 4)
 	token("at-2", 5)
 }

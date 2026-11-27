@@ -1,10 +1,14 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/home-operations/kritika/internal/retryafter"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Switch is the public listener's handler from the moment it binds. It
@@ -26,11 +30,6 @@ func (s *Switch) Set(h http.Handler) { s.h.Store(&h) }
 
 func (s *Switch) ServeHTTP(w http.ResponseWriter, r *http.Request) { (*s.h.Load()).ServeHTTP(w, r) }
 
-// startingRetry is how long a caller of a starting replica is told to
-// wait: the store's own retry interval, so a browser's refresh lands just
-// after the next attempt.
-const startingRetry = 5 * time.Second
-
 // Starting is what the public listener serves until the database answers and
 // the service is built on it. It is a 503 for everything, with a page that a
 // browser renders and a plain line for a forge's delivery. It refuses the
@@ -39,7 +38,8 @@ const startingRetry = 5 * time.Second
 // request up once the service is up.
 func Starting() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", strconv.Itoa(int(startingRetry/time.Second)))
+		retry := strconv.Itoa(int(tuning.Get().Server.StartingRetry / time.Second))
+		w.Header().Set(retryafter.Header, retry)
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "kritika is starting: waiting for the database", http.StatusServiceUnavailable)
@@ -48,19 +48,19 @@ func Starting() http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(startingPage))
+			_, _ = fmt.Fprintf(w, startingPage, retry)
 		}
 	})
 }
 
-// startingPage reloads itself every startingRetry, so the dashboard
-// appears on its own once the service is up.
+// startingPage reloads itself every tuning's Server.StartingRetry, formatted
+// in as seconds, so the dashboard appears on its own once the service is up.
 const startingPage = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="5">
+<meta http-equiv="refresh" content="%s">
 <title>kritika is starting</title>
 <style>
 body { font: 16px/1.5 system-ui, sans-serif; color: #1f2328; background: #fff; margin: 0; }

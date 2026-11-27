@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/tuning"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -209,9 +209,9 @@ func TestInitVectorSearch(t *testing.T) {
 func TestDurationBucketsReachTheirLongest(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := New(reg)
-	m.Review("acme", "completed", jobtimeout.MaxJobTimeout)
-	m.RunnerRun("acme", "review", "ok", jobtimeout.MaxJobTimeout)
-	m.LeaseWait("acme", "model", jobtimeout.IndexWriteHeadroom)
+	m.Review("acme", "completed", tuning.Get().JobTimeout.MaxJobTimeout)
+	m.RunnerRun("acme", "review", "ok", tuning.Get().JobTimeout.MaxJobTimeout)
+	m.LeaseWait("acme", "model", tuning.Get().JobTimeout.IndexWriteHeadroom)
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)

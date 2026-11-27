@@ -71,12 +71,13 @@ func (opts ParseOptions) allows(f Finding) bool {
 // SchemaFor is the JSON Schema of the answer the model must produce:
 // suggested_fix required on every finding when strict, summary.diagram
 // when diagram is set, and findings of categories alone, every category
-// when it names none.
+// when it names none. It is built per call, so that the bounds it states
+// are tuning's as they are then.
 func SchemaFor(strict, diagram bool, categories []Category) json.RawMessage {
-	if len(categories) == 0 {
-		return slices.Clone(contracts[contract{strict, diagram}])
-	}
 	s := contractSchema(strict, diagram)
+	if len(categories) == 0 {
+		return s.mustMarshal()
+	}
 	kinds := make([]string, len(categories))
 	for i, c := range categories {
 		kinds[i] = string(c)

@@ -9,21 +9,13 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// gatewayWait bounds how long a runner waits for its proxy, the gateway,
-// to answer before it fetches. A runner started as the service comes up
-// can beat the gateway's Service endpoints by the readiness probe's
-// period and a little propagation. Much longer than that is an outage, and
-// the run reports it and does not sit it out.
-const gatewayWait = 90 * time.Second
-
-// gatewayPoll is how often the wait tries again. It is a variable for the
-// tests.
-var gatewayPoll = 2 * time.Second
-
 // waitForGateway blocks until the HTTPS proxy the pod was handed answers a
-// request, or gatewayWait passes. Any HTTP answer counts, a 404 included:
+// request, trying every tuning's Runner.GatewayPoll, or Runner.GatewayWait
+// passes. Any HTTP answer counts, a 404 included:
 // the gateway is up and the Service routes to it. Without a proxy there is
 // nothing to wait for.
 func waitForGateway(ctx context.Context, logger *slog.Logger) error {
@@ -31,11 +23,12 @@ func waitForGateway(ctx context.Context, logger *slog.Logger) error {
 	if addr == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, gatewayWait)
+	wait, poll := tuning.Get().Runner.GatewayWait, tuning.Get().Runner.GatewayPoll
+	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	// A zero Transport reads no proxy from the environment: the probe
 	// goes to the gateway, not through it.
-	client := &http.Client{Timeout: gatewayPoll, Transport: &http.Transport{}}
+	client := &http.Client{Timeout: poll, Transport: &http.Transport{}}
 	start := time.Now()
 	for attempt := 1; ; attempt++ {
 		err := probeGateway(ctx, client, addr)
@@ -46,15 +39,15 @@ func waitForGateway(ctx context.Context, logger *slog.Logger) error {
 			return nil
 		}
 		if ctx.Err() != nil {
-			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", addr, gatewayWait, err)
+			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", addr, wait, err)
 		}
 		if attempt == 1 {
 			logger.Info("waiting for the gateway", "url", addr, "error", err)
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", addr, gatewayWait, err)
-		case <-time.After(gatewayPoll):
+			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", addr, wait, err)
+		case <-time.After(poll):
 		}
 	}
 }

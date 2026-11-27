@@ -30,6 +30,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // lexicalAccount is the account whose repositories the search by name's
@@ -314,7 +315,7 @@ func TestSimilarFileCapLooksPastAFullWindow(t *testing.T) {
 		return []float32{float32(similarity), float32(math.Sqrt(1 - similarity*similarity)), 0, 0, 0, 0, 0, 0}
 	}
 	chunks, vectors := map[string]string{}, map[string][]float32{}
-	for i := range similarDepth {
+	for i := range tuning.Get().Gateway.SimilarDepth() {
 		key := fmt.Sprintf("a.go@%d", 10*i+1)
 		chunks[key], vectors[key] = fmt.Sprintf("func a%d() {}", i), at(0.99-0.01*float64(i))
 	}
@@ -337,14 +338,13 @@ func TestSimilarFileCapAnswerDue(t *testing.T) {
 		return []float32{float32(similarity), float32(math.Sqrt(1 - similarity*similarity)), 0, 0, 0, 0, 0, 0}
 	}
 	chunks, vectors := map[string]string{}, map[string][]float32{}
-	for i := range similarDepth {
+	for i := range tuning.Get().Gateway.SimilarDepth() {
 		key := fmt.Sprintf("a.go@%d", 10*i+1)
 		chunks[key], vectors[key] = fmt.Sprintf("func a%d() {}", i), at(0.99-0.01*float64(i))
 	}
 	chunks["b.go@1"], vectors["b.go@1"] = "func b() {}", at(0.91)
 	r := newLexicalRepo(t, "full-window-due", runspec.IndexFormat, chunks, vectors)
-	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
-	similarAnswerWithin = 0
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.SimilarWithin = 0 })
 	code, got := r.ask(t, r.file, nil, prometheus.NewRegistry(), "zzyzx quux")
 	want := []string{"a.go:similarity 0.99", "a.go:similarity 0.98"}
 	if code != http.StatusOK || !slices.Equal(got, want) {
@@ -394,12 +394,12 @@ func TestInSavepoint(t *testing.T) {
 // files make the name rare enough to search for.
 func TestSimilarLexicalLooksPastAFullWindow(t *testing.T) {
 	chunks, vectors := map[string]string{}, map[string][]float32{}
-	for i := range similarDepth {
+	for i := range tuning.Get().Gateway.SimilarDepth() {
 		key := fmt.Sprintf("a.go@%d", 10*i+1)
 		chunks[key], vectors[key] = "func widgetFactory() {}", e(2)
 	}
 	chunks["b.go@1"], vectors["b.go@1"] = "func widgetFactory() {}", e(2)
-	for i := range 2 * similarDepth {
+	for i := range 2 * tuning.Get().Gateway.SimilarDepth() {
 		key := fmt.Sprintf("other%d.go", i)
 		chunks[key], vectors[key] = fmt.Sprintf("func other%d() {}", i), e(3)
 	}
@@ -583,8 +583,7 @@ func TestSimilarRerankSlotWait(t *testing.T) {
 		t.Error("reranked without a slot")
 		return nil, model.RerankUsage{}, nil
 	})
-	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
-	similarAnswerWithin = time.Hour
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.SimilarWithin = time.Hour })
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	code, got := r.askWithin(ctx, t, file, reranked, prometheus.NewRegistry(), "widgetFactory()")
@@ -841,8 +840,7 @@ func TestSearchByNameClaims(t *testing.T) {
 // would outlast the runner's wait for the vector search's hits.
 func TestSimilarLexicalAnswerDue(t *testing.T) {
 	r := newLexicalRepo(t, "due", runspec.IndexFormat, widgets, widgetVectors())
-	defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
-	similarAnswerWithin = 0
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.SimilarWithin = 0 })
 	reg := prometheus.NewRegistry()
 	code, got := r.ask(t, r.file, nil, reg, "widgetFactory()")
 	if want := []string{"near.go:similarity 1.00"}; code != http.StatusOK || !slices.Equal(got, want) {

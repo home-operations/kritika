@@ -11,20 +11,8 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/aqua"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-const (
-	// maxAquaRegistryBytes bounds the registry's fetch, many times its
-	// size.
-	maxAquaRegistryBytes = 64 << 20
-	// aquaRegistryTimeout bounds one fetch of it.
-	aquaRegistryTimeout = 2 * time.Minute
-)
-
-// aquaRegistryRetry is how soon a replica that has no registry yet asks
-// again. So a replica that started while its source was down serves tools
-// soon after the source is back. It is a variable for the tests.
-var aquaRegistryRetry = time.Minute
 
 // AquaRegistry is the aqua registry that the gateway keeps for runners to
 // resolve repository tools against. It is the file at URL, which the gateway
@@ -53,7 +41,7 @@ func (a *AquaRegistry) Run(ctx context.Context) error {
 		}
 		wait := a.Refresh
 		if a.current() == nil {
-			wait = min(wait, aquaRegistryRetry)
+			wait = min(wait, tuning.Get().Gateway.AquaRegistryRetry)
 		}
 		select {
 		case <-ctx.Done():
@@ -64,7 +52,7 @@ func (a *AquaRegistry) Run(ctx context.Context) error {
 }
 
 func (a *AquaRegistry) refresh(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, aquaRegistryTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Gateway.AquaRegistryTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
 	if err != nil {
@@ -92,12 +80,13 @@ func (a *AquaRegistry) refresh(ctx context.Context) error {
 	default:
 		return errors.New(resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAquaRegistryBytes+1))
+	limit := int64(tuning.Get().Aqua.MaxRegistryBytes)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	switch {
 	case err != nil:
 		return err
-	case len(body) > maxAquaRegistryBytes:
-		return fmt.Errorf("larger than %d bytes", maxAquaRegistryBytes)
+	case int64(len(body)) > limit:
+		return fmt.Errorf("larger than %d bytes", limit)
 	}
 	registry, err := aqua.Parse(body)
 	if err != nil {

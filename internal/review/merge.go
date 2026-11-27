@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // mergeSystem is the instructions of the call that writes a split review's
@@ -56,22 +57,15 @@ type MergePart struct {
 	Reviewer string
 }
 
-// maxMergePaths is how many of a part's files the merge call is shown
-// before it counts the rest, and maxMergeTake how much of its take.
-const (
-	maxMergePaths = 20
-	maxMergeTake  = 1500
-)
-
 // BuildMerge renders the merge call's user message within budget tokens. It
 // holds the pull request's title and description, with the description cut to
 // a quarter of the budget. Then it holds each part's files and summary, and
 // then the findings, one line each, while they fit.
 func BuildMerge(title, body string, parts []MergePart, findings []Finding, budget int) string {
-	limit := budget * charsPerToken
+	limit := budget * tuning.Get().Review.CharsPerToken
 	var b strings.Builder
 	fmt.Fprintf(&b, "Pull request: %s\n", oneLine(title))
-	writeDescription(&b, body, limit/bodyShare)
+	writeDescription(&b, body, limit/tuning.Get().Review.BodyShare)
 	for i, p := range parts {
 		section := mergeSection(i, len(parts), p)
 		if b.Len()+len(section) > limit {
@@ -97,15 +91,15 @@ func BuildMerge(title, body string, parts []MergePart, findings []Finding, budge
 }
 
 // mergeSection is part i of n as the merge call is shown it: its files,
-// the first maxMergePaths named, and the summary its reviewer wrote.
+// the first tuning's Review.MaxMergePaths named, and the summary its reviewer wrote.
 func mergeSection(i, n int, p MergePart) string {
 	paths := p.Paths
-	if more := len(paths) - maxMergePaths; more > 0 {
-		paths = append(slices.Clone(paths[:maxMergePaths]), fmt.Sprintf("and %d more", more))
+	if more := len(paths) - tuning.Get().Review.MaxMergePaths; more > 0 {
+		paths = append(slices.Clone(paths[:tuning.Get().Review.MaxMergePaths]), fmt.Sprintf("and %d more", more))
 	}
 	take := strings.Join(strings.Fields(p.Summary.Take), " ")
-	if len(take) > maxMergeTake {
-		take = textcut.Prefix(take, maxMergeTake) + " …"
+	if len(take) > tuning.Get().Review.MaxMergeTake {
+		take = textcut.Prefix(take, tuning.Get().Review.MaxMergeTake) + " …"
 	}
 	var b strings.Builder
 	by := ""

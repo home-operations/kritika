@@ -7,7 +7,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Timeout implements river.Worker: the runner's deadline, which the agent's
@@ -29,17 +29,18 @@ func agentRunTimeout(file *configfile.File, accountID string, review bool) time.
 		agent := file.Settings(account).Agent
 		timeout := agent.Timeout
 		if review {
-			timeout = partsTimeout(agent.MaxParts*(configfile.MaxReviewers+1), timeout)
+			timeout = partsTimeout(agent.MaxParts*(tuning.Get().ConfigFile.MaxReviewers+1), timeout)
 		}
 		deadline = agentDeadline(deadline, timeout)
 	}
-	return min(deadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout)
+	jt := tuning.Get().JobTimeout
+	return min(deadline+jt.LeaseWaitHeadroom+jt.PublishHeadroom, jt.MaxJobTimeout)
 }
 
 // Timeout implements river.Worker: the runner's deadline plus embedding
 // and writing the generation, which waits on embedding leases.
 func (w *Index) Timeout(*river.Job[jobs.IndexArgs]) time.Duration {
-	return min(w.Current.Get().RunnerDeadline()+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
+	return min(w.Current.Get().RunnerDeadline()+tuning.Get().JobTimeout.IndexWriteHeadroom, tuning.Get().JobTimeout.MaxJobTimeout)
 }
 
 // Timeout implements river.Worker: a follow-up's agent runs in a runner as
@@ -48,9 +49,7 @@ func (w *FollowUp) Timeout(job *river.Job[jobs.FollowUpArgs]) time.Duration {
 	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, false)
 }
 
-// threadTimeout bounds a thread job: a few forge requests, each of which can
-// wait out a rate limit for up to a minute, River's default timeout.
-const threadTimeout = 5 * time.Minute
-
 // Timeout implements river.Worker.
-func (w *Thread) Timeout(*river.Job[jobs.ThreadArgs]) time.Duration { return threadTimeout }
+func (w *Thread) Timeout(*river.Job[jobs.ThreadArgs]) time.Duration {
+	return tuning.Get().Worker.ThreadTimeout
+}

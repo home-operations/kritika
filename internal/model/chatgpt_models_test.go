@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestChatGPTLatestModels(t *testing.T) {
@@ -71,7 +73,7 @@ func TestChatGPTLatestModels(t *testing.T) {
 	catalog[4].Visibility = "list"
 	catalogMu.Unlock()
 	step("~sol-latest", "gpt-6.10-sol")
-	now = now.Add(modelCatalogTTL)
+	now = now.Add(tuning.Get().Model.CatalogTTL)
 	step("~sol-latest", "gpt-6.10-sol")
 	settle(&c.catalogCache, "at-1")
 	step("~sol-latest", "gpt-7-sol")

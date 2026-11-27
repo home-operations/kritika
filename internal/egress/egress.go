@@ -30,6 +30,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Outcomes a request ends with, for metrics.
@@ -46,7 +47,7 @@ type Proxy struct {
 	// Resolver resolves a destination's name. nil means net.DefaultResolver.
 	Resolver Resolver
 	// Dial opens the upstream connection to an address the rules admit.
-	// nil means a net.Dialer with connectTimeout.
+	// nil means a net.Dialer with tuning's Egress.ConnectTimeout.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Outbound returns the forward proxy that a destination, a host:port,
 	// is reached through, or nil for a connection of the proxy's own. nil
@@ -135,7 +136,7 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 	}
 	dial := p.Dial
 	if dial == nil {
-		dial = (&net.Dialer{Timeout: connectTimeout}).DialContext
+		dial = (&net.Dialer{Timeout: tuning.Get().Egress.ConnectTimeout}).DialContext
 	}
 	var errs []error
 	for _, a := range addrs {
@@ -159,11 +160,6 @@ func (p *Proxy) refuse(ctx context.Context, w http.ResponseWriter, kind, host, r
 }
 
 const (
-	connectTimeout = 15 * time.Second
-	// tunnelIdle ends a CONNECT tunnel that neither side used for this long.
-	tunnelIdle = 5 * time.Minute
-	// upgradeTimeout bounds one upgraded request, response body included.
-	upgradeTimeout = 2 * time.Minute
 	// upgradedScheme is what an upgraded request goes out over.
 	upgradedScheme = "https"
 	plainScheme    = "http"
@@ -187,7 +183,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // connect tunnels a CONNECT to host:443 when the rules admit the host.
 func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 	host, port, err := net.SplitHostPort(r.Host)
-	if err != nil || port != "443" {
+	if err != nil || port != tuning.HTTPSPort {
 		p.refuse(r.Context(), w, "connect", r.Host, "only port 443 is served")
 		return
 	}
@@ -240,7 +236,7 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 		_ = upstream.Close()
 	})
 	touch := func() {
-		deadline := time.Now().Add(tunnelIdle)
+		deadline := time.Now().Add(tuning.Get().Egress.TunnelIdle)
 		_ = client.SetDeadline(deadline)
 		_ = upstream.SetDeadline(deadline)
 	}
@@ -248,7 +244,7 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 	var wg sync.WaitGroup
 	pipe := func(dst io.Writer, src io.Reader) {
 		defer stop()
-		buf := make([]byte, 32<<10)
+		buf := make([]byte, tuning.Get().Egress.TunnelBuffer)
 		for {
 			n, err := src.Read(buf)
 			if n > 0 {
@@ -312,7 +308,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 			p.Cache.metrics.CacheRequest("bypass", "ineligible")
 		}
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), tuning.Get().Egress.UpgradeTimeout)
 	defer cancel()
 	proxy := &httputil.ReverseProxy{
 		Transport: transport,
@@ -337,7 +333,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if _, ok := req.Out.Header["User-Agent"]; !ok {
-				req.Out.Header.Set("User-Agent", "kritika")
+				req.Out.Header.Set("User-Agent", tuning.Product)
 			}
 			req.Out.Header.Del("Authorization")
 			if header := cred.Header(); signed && header != "" {

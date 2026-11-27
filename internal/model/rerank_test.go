@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestReranker(t *testing.T) {
@@ -474,12 +476,12 @@ func TestRerankerDecodeStopsPastTheDocuments(t *testing.T) {
 	}
 }
 
-// TestRerankerOversizedAnswer: an answer longer than maxRerankAnswer is
+// TestRerankerOversizedAnswer: an answer longer than tuning's Model.MaxRerankAnswer is
 // refused, even when the part of it within the bound is a whole ranking, and
 // still reports the tokens TEI's header says were computed.
 func TestRerankerOversizedAnswer(t *testing.T) {
 	ranking := `[{"index":0,"score":0.9}]`
-	answer := ranking + strings.Repeat(" ", maxRerankAnswer-len(ranking)) + "x"
+	answer := ranking + strings.Repeat(" ", int(tuning.Get().Model.MaxRerankAnswer)-len(ranking)) + "x"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Compute-Tokens", "17")
 		_, _ = io.WriteString(w, answer)

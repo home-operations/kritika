@@ -12,6 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // skillDoc is a SKILL.md with the frontmatter keys given, one per line.
@@ -29,7 +30,7 @@ func TestDiscoverSkills(t *testing.T) {
 		".claude/skills/renovate/SKILL.md":  skillDoc("name: renovate\ndescription: Dependency bumps.\nallowed-tools: Bash", ""),
 		".claude/skills/broken/SKILL.md":    "# No frontmatter\n",
 		".claude/skills/dup/SKILL.md":       skillDoc("name: review-go\ndescription: Another one.", ""),
-		".claude/skills/huge/SKILL.md":      skillDoc("description: Huge.", strings.Repeat("x", repoconfig.MaxFileBytes)),
+		".claude/skills/huge/SKILL.md":      skillDoc("description: Huge.", strings.Repeat("x", int(tuning.Get().RepoConfig.MaxFileBytes))),
 		"docs/skills/release/SKILL.md":      skillDoc("description: Cutting a release.", ""),
 	}
 	goSkill := repoconfig.Skill{Name: "review-go", Description: "How Go is reviewed here.", Dir: ".agents/skills/review-go", Text: "# Go"}
@@ -56,7 +57,7 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 		return out
 	}
-	overCap := many(repoconfig.MaxSkills + 2)
+	overCap := many(tuning.Get().RepoConfig.MaxSkills + 2)
 	maps.Copy(overCap, map[string]string{"z/late/SKILL.md": skillDoc("description: Past the cap.", "")})
 
 	tests := []struct {
@@ -85,9 +86,9 @@ func TestDiscoverSkills(t *testing.T) {
 		{name: "a file named as a directory", files: files, dirs: []string{"main.go"}},
 		{name: "a skill's own folder is not a directory of skills", files: files, dirs: []string{".agents/skills/review-go"}},
 		{name: "no directories", files: files},
-		{name: "as many as are read", files: many(repoconfig.MaxSkills), dirs: []string{"s"}, want: capped(repoconfig.MaxSkills)},
+		{name: "as many as are read", files: many(tuning.Get().RepoConfig.MaxSkills), dirs: []string{"s"}, want: capped(tuning.Get().RepoConfig.MaxSkills)},
 		{
-			name: "past the cap", files: overCap, dirs: []string{"s", "z"}, want: capped(repoconfig.MaxSkills),
+			name: "past the cap", files: overCap, dirs: []string{"s", "z"}, want: capped(tuning.Get().RepoConfig.MaxSkills),
 			wantNotes: []string{"more than 50 skills found; the rest were left out"},
 		},
 	}
@@ -198,7 +199,7 @@ func TestPromptInputsSkills(t *testing.T) {
 	for i := range 6 {
 		big = append(big, repoconfig.Skill{Name: fmt.Sprintf("big-%d", i), Description: strings.Repeat("x", 1000)})
 	}
-	huge := repoconfig.Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", repoconfig.MaxSkillLoadedBytes+1)}
+	huge := repoconfig.Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", int(tuning.Get().RepoConfig.MaxSkillLoadedBytes)+1)}
 	tests := []struct {
 		name       string
 		skills     *runspec.Skills

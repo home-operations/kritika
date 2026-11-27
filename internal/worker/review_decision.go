@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type reviewDisposition uint8
@@ -41,7 +42,7 @@ func (d reviewDecision) jobError() error {
 	case reviewRetry, reviewInterrupted, reviewPublicationFailed:
 		return d.err
 	case reviewSnooze:
-		return river.JobSnooze(time.Second)
+		return river.JobSnooze(tuning.Get().Worker.LabelsMovedSnooze)
 	case reviewContinue, reviewFinish:
 		return nil
 	default:

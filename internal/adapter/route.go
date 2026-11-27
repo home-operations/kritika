@@ -8,6 +8,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Route is a model and where it runs: its adapter and its provider, whose
@@ -123,10 +124,10 @@ func (c Call) Budget() time.Duration {
 // timeouts are the request timeouts of Route's provider and of the
 // Fallback's, Route's again without a Fallback.
 func (c Call) timeouts() (primary, fallback time.Duration) {
-	primary = cmp.Or(c.Provider.Timeout, model.DefaultStepTimeout)
+	primary = cmp.Or(c.Provider.Timeout, tuning.Get().Model.DefaultStepTimeout)
 	fallback = primary
 	if c.Fallback != nil {
-		fallback = cmp.Or(c.Fallback.Provider.Timeout, model.DefaultStepTimeout)
+		fallback = cmp.Or(c.Fallback.Provider.Timeout, tuning.Get().Model.DefaultStepTimeout)
 	}
 	return primary, fallback
 }

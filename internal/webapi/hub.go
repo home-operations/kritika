@@ -12,17 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// SSE tuning: how often an idle stream carries a comment so that proxies and
-// the browser keep it open. Also, how many events a slow client can fall
-// behind before it is told to resync instead.
-const (
-	heartbeatInterval = 25 * time.Second
-	clientBuffer      = 64
-	// writeTimeout bounds each write to a stream, so a client that stops
-	// reading is dropped rather than holding its goroutine forever.
-	writeTimeout = 30 * time.Second
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // hub fans the store's row events out to the server-sent event streams of
@@ -65,7 +55,7 @@ func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub
 		panic(err)
 	}
 	return &hub{
-		current: current, logger: logger, heartbeat: heartbeatInterval, buffer: clientBuffer,
+		current: current, logger: logger, heartbeat: tuning.Get().WebAPI.HeartbeatInterval, buffer: tuning.Get().WebAPI.ClientBuffer,
 		clients: map[*client]struct{}{}, done: make(chan struct{}),
 		resyncFrame: fmt.Appendf(nil, "event: resync\ndata: %s\n\n", data),
 	}
@@ -144,7 +134,7 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	// A server-wide write timeout cuts a stream that never finishes. Instead,
 	// each write gets its own deadline.
 	extend := func() bool {
-		err := rc.SetWriteDeadline(time.Now().Add(writeTimeout))
+		err := rc.SetWriteDeadline(time.Now().Add(tuning.Get().WebAPI.WriteTimeout))
 		return err == nil || errors.Is(err, http.ErrNotSupported)
 	}
 	hdr := w.Header()

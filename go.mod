@@ -16,6 +16,7 @@ require (
 	github.com/go-sprout/sprout v1.1.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-github/v93 v93.0.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/gookit/validate/v2 v2.0.4
 	github.com/hashicorp/go-retryablehttp v0.7.8
@@ -107,7 +108,6 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-containerregistry v0.22.1 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/gookit/filter v1.2.3 // indirect
 	github.com/gookit/goutil v0.8.6 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect

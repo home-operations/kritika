@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const deltaDiff = `diff --git a/main.go b/main.go
@@ -295,10 +296,10 @@ func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.in.BudgetTokens = tc.budgetChars / charsPerToken
+			tc.in.BudgetTokens = tc.budgetChars / tuning.Get().Review.CharsPerToken
 			msg, omitted, contextOmitted, _ := Build(tc.in)
-			if len(msg) > tc.in.BudgetTokens*charsPerToken {
-				t.Fatalf("message is %d chars, over the budget of %d", len(msg), tc.in.BudgetTokens*charsPerToken)
+			if len(msg) > tc.in.BudgetTokens*tuning.Get().Review.CharsPerToken {
+				t.Fatalf("message is %d chars, over the budget of %d", len(msg), tc.in.BudgetTokens*tuning.Get().Review.CharsPerToken)
 			}
 			if len(omitted) != 0 {
 				t.Fatalf("the diff must stay whole, omitted %v", omitted)
@@ -353,7 +354,7 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	}
 	note := msg[strings.Index(msg, "\n\n[")+2:]
 	note = note[:strings.Index(note, "\n")+1]
-	if len(note) > omissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
+	if len(note) > tuning.Get().Review.OmissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
 		t.Fatalf("note of %d bytes: %q", len(note), note)
 	}
 	// The diff took the room that the delta otherwise has, so the model is
@@ -362,8 +363,8 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	if !strings.Contains(msg, deltaOmitted) || !strings.Contains(msg, priorPrefix("main.go", "y changed")) {
 		t.Fatalf("missing the delta's omission note or the earlier finding after %d omitted files:\n%s", len(omitted), msg[len(msg)-1500:])
 	}
-	if len(msg) > in.BudgetTokens*charsPerToken {
-		t.Fatalf("message of %d chars exceeds the budget of %d", len(msg), in.BudgetTokens*charsPerToken)
+	if len(msg) > in.BudgetTokens*tuning.Get().Review.CharsPerToken {
+		t.Fatalf("message of %d chars exceeds the budget of %d", len(msg), in.BudgetTokens*tuning.Get().Review.CharsPerToken)
 	}
 }
 
@@ -401,16 +402,16 @@ func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
 				in.Earlier, in.Incremental = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: tc.prior}, nil
 			}
 			msg, omitted, _, _ := Build(in)
-			budget := in.BudgetTokens * charsPerToken
+			budget := in.BudgetTokens * tuning.Get().Review.CharsPerToken
 			start := strings.Index(msg, "\n\n"+priorHeading)
 			if len(omitted) == 0 || start < 0 || !strings.Contains(msg, priorPrefix("main.go", tc.prior[0].Title)) || len(msg) > budget {
 				t.Fatalf("omitted %d diff files, earlier findings at %d, %d characters of %d:\n%s", len(omitted), start, len(msg), budget, msg)
 			}
 			const more = " more finding(s) from the last review omitted to fit the prompt budget]\n"
 			end := strings.Index(msg, more)
-			if (end >= 0) != tc.cut || (tc.cut && end+len(more)-start > budget/bodyShare) {
+			if (end >= 0) != tc.cut || (tc.cut && end+len(more)-start > budget/tuning.Get().Review.BodyShare) {
 				t.Fatalf("the earlier findings take %d characters, cut %v; want them cut %v within %d", end+len(more)-start, end >= 0, tc.cut,
-					budget/bodyShare)
+					budget/tuning.Get().Review.BodyShare)
 			}
 		})
 	}
@@ -516,7 +517,7 @@ func TestBuildIncrementalDeltaBeforeDiagram(t *testing.T) {
 	}
 	// Room for the delta and the prior findings, and under a quarter of
 	// what the diagram needs.
-	in.BudgetTokens = (len(whole) + 700) / charsPerToken
+	in.BudgetTokens = (len(whole) + 700) / tuning.Get().Review.CharsPerToken
 	msg, omitted, _, _ := Build(in)
 	if len(omitted) != 0 || !strings.Contains(msg, "+\tlast()\n") || strings.Contains(msg, "omitted to fit") ||
 		!strings.Contains(msg, priorHeading) {

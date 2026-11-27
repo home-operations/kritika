@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -99,16 +100,16 @@ var ErrPublicationBusy = errors.New("store: publication is busy")
 // calls must not hold an application-pool connection or an open transaction:
 // heartbeats and cancellation need that pool while delivery is in progress.
 func (s *Store) WithPublicationLock(ctx context.Context, pullRequestID string, fn func(context.Context) error) (err error) {
-	attemptCtx, cancelAttempt := context.WithTimeout(ctx, lockTimeout)
+	attemptCtx, cancelAttempt := context.WithTimeout(ctx, tuning.Get().Store.LockTimeout)
 	defer cancelAttempt()
 	cfg := s.app.Config().ConnConfig
-	cfg.RuntimeParams["application_name"] = "kritika-publication"
+	cfg.RuntimeParams[applicationNameParam] = applicationName("publication")
 	conn, err := pgx.ConnectConfig(attemptCtx, cfg)
 	if err != nil {
 		return fmt.Errorf("store: publication connection: %w", err)
 	}
 	defer func() {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.SessionCloseTimeout)
 		defer cancel()
 		if err := conn.Close(cctx); err != nil {
 			s.logger.Warn("publication connection not closed cleanly", "error", err)
@@ -127,7 +128,7 @@ func (s *Store) WithPublicationLock(ctx context.Context, pullRequestID string, f
 	defer cancel(nil)
 	done := make(chan error, 1)
 	go func() {
-		ticker := time.NewTicker(lockTimeout)
+		ticker := time.NewTicker(tuning.Get().Store.LockTimeout)
 		defer ticker.Stop()
 		for {
 			select {
@@ -135,7 +136,7 @@ func (s *Store) WithPublicationLock(ctx context.Context, pullRequestID string, f
 				done <- nil
 				return
 			case <-ticker.C:
-				pingCtx, cancelPing := context.WithTimeout(lockCtx, lockTimeout)
+				pingCtx, cancelPing := context.WithTimeout(lockCtx, tuning.Get().Store.LockTimeout)
 				err := conn.Ping(pingCtx)
 				cancelPing()
 				if err != nil {

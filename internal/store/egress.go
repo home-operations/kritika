@@ -6,14 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
-
-// refusalsPerRun bounds the refusal rows that a run has, one per kind, host
-// and reason. Past it, a run's further refusals are counted on the rows it
-// has and new ones go unrecorded. So a looping agent cannot fill the table.
-// It is a variable for the tests.
-var refusalsPerRun = 100
 
 // EgressRefusal is one proxy request the gateway refused a run, with the
 // host as the agent asked for it.
@@ -26,7 +21,7 @@ type EgressRefusal struct {
 
 // RecordEgressRefusal counts r against its run: a row for the first
 // refusal of a host for a reason, and that row's count after. It reports
-// false when the run already has refusalsPerRun rows and this refusal will
+// false when the run already has tuning's Store.RefusalsPerRun rows and this refusal will
 // otherwise be another. The run's refusals are recorded one at a time, under an
 // advisory lock that the transaction holds. So two at once cannot both pass
 // the bound.
@@ -39,7 +34,7 @@ func RecordEgressRefusal(ctx context.Context, tx pgx.Tx, r EgressRefusal) (bool,
 		WHERE EXISTS (SELECT 1 FROM egress_refusals WHERE runner_run_id = $1 AND kind = $4 AND host = $5 AND reason = $6)
 		   OR (SELECT count(*) FROM egress_refusals WHERE runner_run_id = $1) < $7
 		ON CONFLICT (runner_run_id, kind, host, reason) DO UPDATE SET count = egress_refusals.count + 1, last_seen_at = now()`,
-		r.RunID, r.AccountID, r.RepositoryID, r.Kind, r.Host, r.Reason, refusalsPerRun)
+		r.RunID, r.AccountID, r.RepositoryID, r.Kind, r.Host, r.Reason, tuning.Get().Store.RefusalsPerRun)
 	if err != nil {
 		return false, fmt.Errorf("store: record egress refusal: %w", err)
 	}
@@ -103,7 +98,7 @@ func (s *Store) SweepEgressRefusals(ctx context.Context, olderThan time.Duration
 	}
 	n, err := s.sweepBatches(ctx, `DELETE FROM egress_refusals WHERE (runner_run_id, kind, host, reason) IN (
 		SELECT runner_run_id, kind, host, reason FROM egress_refusals WHERE last_seen_at < now() - make_interval(secs => $1) LIMIT $2)`,
-		olderThan, modelCallSweepBatch)
+		olderThan, tuning.Get().Store.ModelCallSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep egress refusals: %w", err)
 	}

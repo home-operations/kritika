@@ -18,6 +18,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Base is what every worker shares: the store, the live configuration,
@@ -67,15 +68,6 @@ func runnerAnnotations(jobID int64, sha string) map[string]string {
 	return map[string]string{"river-job-id": strconv.FormatInt(jobID, 10), "head-sha": sha}
 }
 
-// releaseTimeout bounds the lease release after the job's context is gone.
-const releaseTimeout = 10 * time.Second
-
-// detachTimeout bounds work that runs on past the job's ctx once the model
-// answers: publishing, and ending a review whose job ended. It must still
-// finish then, but a hung forge or database call must not hold the job
-// forever.
-const detachTimeout = 2 * time.Minute
-
 // completeJob completes job in tx while River still runs this attempt of it.
 // River returns a row that is no longer running unchanged, and it completes
 // whichever attempt is running. So either way, what tx holds of this attempt
@@ -92,9 +84,9 @@ func completeJob[T river.JobArgs](ctx context.Context, tx pgx.Tx, job *river.Job
 	return nil
 }
 
-// detach is ctx without its cancellation, bounded by detachTimeout.
+// detach is ctx without its cancellation, bounded by tuning's Worker.DetachTimeout.
 func detach(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(ctx), detachTimeout)
+	return context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Worker.DetachTimeout)
 }
 
 // detachUnlessFenced is detach, but a fence of the job still ends it, with
@@ -138,7 +130,7 @@ func (b *Base) withLease(
 // snoozed review that the freed slot woke, to logger. logger carries whatever
 // the caller knows of the job.
 func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *store.Lease, key string) {
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Worker.ReleaseTimeout)
 	defer cancel()
 	woken, err := l.Release(rctx)
 	if err != nil {

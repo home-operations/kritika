@@ -20,24 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// Bounds on what a run reports. A record holds its context pack's two diffs
-// at 4 MiB each and its conversation of up to maxBody, which JSON and base64
-// grow. An index upload holds the indexer's 100,000 chunks of 6,000 bytes,
-// which JSON grows too, and its opening line holds every changed path. A batch
-// is written as soon as it holds indexBatchChunks chunks or indexBatchBytes, so
-// an upload costs a batch and a line of memory however long it is. A part
-// checkpoint holds one part's submitted answer, far below maxCheckpointBody,
-// and one refused only costs a retry that part's run again.
-const (
-	maxReportBody     = 64 << 20
-	maxCheckpointBody = 4 << 20
-	maxSmallReport    = 64 << 10
-	maxIndexBody      = 2 << 30
-	maxIndexLine      = 32 << 20
-	indexBatchChunks  = 500
-	indexBatchBytes   = 8 << 20
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // runReport is a runner's report, authenticated by its report token. That
@@ -55,7 +38,7 @@ type runReport struct {
 // name neither a run nor an account.
 func (g *Server) report(w http.ResponseWriter, r *http.Request) {
 	c := runReport{logger: g.Logger}
-	c.token, _ = strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	c.token, _ = strings.CutPrefix(r.Header.Get("Authorization"), tuning.BearerPrefix)
 	// A token that is not a live run's is refused before its body is read, so
 	// only a live run's report costs memory.
 	if !g.runnerTx(r.Context(), w, c, func(_ context.Context, _ pgx.Tx, grant store.RunnerGrant) error {
@@ -72,21 +55,21 @@ func (g *Server) report(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost + " " + runspec.ReportHeartbeatPath:
 		g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.HeartbeatRunner(ctx, tx, id) })
 	case http.MethodPost + " " + runspec.ReportPhasePath:
-		if v, ok := decodeReport[runspec.PhaseReport](w, r, maxSmallReport); ok {
+		if v, ok := decodeReport[runspec.PhaseReport](w, r, tuning.Get().Gateway.MaxSmallReport); ok {
 			g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.SetRunnerPhase(ctx, tx, id, v.Phase) })
 		}
 	case http.MethodPost + " " + runspec.ReportFailurePath:
-		if v, ok := decodeReport[runspec.FailureReport](w, r, maxSmallReport); ok {
+		if v, ok := decodeReport[runspec.FailureReport](w, r, tuning.Get().Gateway.MaxSmallReport); ok {
 			g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.RecordRunnerFailure(ctx, tx, id, v.Cause) })
 		}
 	case http.MethodPost + " " + runspec.ReportContextPath:
-		if v, ok := decodeReport[runspec.ContextReport](w, r, maxReportBody); ok {
+		if v, ok := decodeReport[runspec.ContextReport](w, r, tuning.Get().Gateway.MaxReportBody); ok {
 			g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error {
 				return store.WriteRunnerContext(ctx, tx, id, v.Pack, v.Phase)
 			})
 		}
 	case http.MethodPost + " " + runspec.ReportAgentPath:
-		if v, ok := decodeReport[runspec.AgentReport](w, r, maxReportBody); ok {
+		if v, ok := decodeReport[runspec.AgentReport](w, r, tuning.Get().Gateway.MaxReportBody); ok {
 			g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error {
 				return store.WriteRunnerAgent(ctx, tx, id, v.Record, v.Phase)
 			})
@@ -96,7 +79,7 @@ func (g *Server) report(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet + " " + runspec.ReportCheckpointsPath:
 		g.reportCheckpoints(w, r, c)
 	case http.MethodPost + " " + runspec.ReportCheckpointsPath:
-		if v, ok := decodeReport[runspec.CheckpointReport](w, r, maxCheckpointBody); ok {
+		if v, ok := decodeReport[runspec.CheckpointReport](w, r, tuning.Get().Gateway.MaxCheckpointBody); ok {
 			// The column is text, so nothing else makes sure of this, and a save
 			// that holds nothing would break every read of the run's checkpoints.
 			if !json.Valid(v.Payload) {
@@ -113,7 +96,7 @@ func (g *Server) report(w http.ResponseWriter, r *http.Request) {
 		// The context pack carries the same paths, so the same bound holds. A
 		// search reads them from the table it writes, so their number bounds
 		// neither a search nor its request.
-		if v, ok := decodeReport[runspec.SimilarExcludeReport](w, r, maxReportBody); ok {
+		if v, ok := decodeReport[runspec.SimilarExcludeReport](w, r, tuning.Get().Gateway.MaxReportBody); ok {
 			g.reportWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.SetSimilarExclude(ctx, tx, id, v.Paths) })
 		}
 	default:
@@ -173,9 +156,9 @@ func (g *Server) reportWrite(w http.ResponseWriter, r *http.Request, c runReport
 
 // decodeReport reads a report's body, or refuses the request and reports
 // false.
-func decodeReport[T any](w http.ResponseWriter, r *http.Request, limit int64) (T, bool) {
+func decodeReport[T any](w http.ResponseWriter, r *http.Request, limit tuning.ByteSize) (T, bool) {
 	var v T
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, int64(limit)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&v); err != nil {
 		refuseBody(w, err)
@@ -215,7 +198,7 @@ func (g *Server) reportCheckpoints(w http.ResponseWriter, r *http.Request, c run
 // reportParts takes the run's unfinished work and answers with the slots that
 // the worker gave it.
 func (g *Server) reportParts(w http.ResponseWriter, r *http.Request, c runReport) {
-	v, ok := decodeReport[runspec.PartsReport](w, r, maxSmallReport)
+	v, ok := decodeReport[runspec.PartsReport](w, r, tuning.Get().Gateway.MaxSmallReport)
 	if !ok {
 		return
 	}
@@ -247,12 +230,13 @@ func writeReportJSON(w http.ResponseWriter, v any, logger *slog.Logger) {
 // pooled connection while it waits. The pack that seals the upload commits with
 // the run's done phase, and nothing reads staging before it exists.
 func (g *Server) reportIndex(w http.ResponseWriter, r *http.Request, c runReport) {
-	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(runspec.IndexUploadTimeout)); err != nil {
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(tuning.Get().RunSpec.IndexUploadTimeout)); err != nil {
 		c.logger.Warn("gateway: index upload keeps the listener's read deadline", "error", err)
 	}
-	body := http.MaxBytesReader(w, r.Body, maxIndexBody)
+	t := tuning.Get().Gateway
+	body := http.MaxBytesReader(w, r.Body, int64(t.MaxIndexBody))
 	lines := bufio.NewScanner(body)
-	lines.Buffer(nil, maxIndexLine)
+	lines.Buffer(nil, int(t.MaxIndexLine))
 	if !lines.Scan() {
 		refuseBody(w, cmp.Or(lines.Err(), io.ErrUnexpectedEOF))
 		return
@@ -279,7 +263,7 @@ func (g *Server) reportIndex(w http.ResponseWriter, r *http.Request, c runReport
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	batch, size, count := make([]runspec.IndexChunk, 0, indexBatchChunks), 0, 0
+	batch, size, count := make([]runspec.IndexChunk, 0, t.IndexBatchChunks), 0, 0
 	flush := func() bool {
 		ok := g.runnerWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.StageRunnerChunks(ctx, tx, id, upload, batch) })
 		batch, size = batch[:0], 0
@@ -292,7 +276,7 @@ func (g *Server) reportIndex(w http.ResponseWriter, r *http.Request, c runReport
 			return
 		}
 		batch, size, count = append(batch, chunk), size+len(lines.Bytes()), count+1
-		if (len(batch) >= indexBatchChunks || size >= indexBatchBytes) && !flush() {
+		if (len(batch) >= t.IndexBatchChunks || size >= int(t.IndexBatchBytes)) && !flush() {
 			return
 		}
 	}

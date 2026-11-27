@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Reranker scores documents by how well each answers a query.
@@ -58,10 +60,6 @@ var RerankAPIs = []string{RerankCohere, RerankJina, RerankVoyage, RerankTEI}
 // number or past the bound is taken for none reported.
 const maxRerankUsage = math.MaxUint32
 
-// maxRerankAnswer bounds a rerank answer, which carries a score, and with
-// some APIs a document, for each document sent.
-const maxRerankAnswer = 8 << 20
-
 // HTTPReranker is a Reranker over one of the RerankAPIs.
 type HTTPReranker struct {
 	api, url, key, model string
@@ -98,7 +96,7 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent())
 	if r.key != "" {
-		req.Header.Set("Authorization", "Bearer "+r.key)
+		req.Header.Set("Authorization", tuning.BearerPrefix+r.key)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -120,12 +118,13 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	// One byte past the bound tells an answer cut at it from one that ends
 	// there: the part within the bound can be whole JSON of its own.
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankAnswer+1))
+	maxAnswer := int(tuning.Get().Model.MaxRerankAnswer)
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxAnswer)+1))
 	if err != nil {
 		return nil, computed, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
 	}
-	if len(answer) > maxRerankAnswer {
-		return nil, computed, fmt.Errorf("model: rerank: the answer is longer than %d bytes", maxRerankAnswer)
+	if len(answer) > maxAnswer {
+		return nil, computed, fmt.Errorf("model: rerank: the answer is longer than %d bytes", maxAnswer)
 	}
 	// An answer refused for its ranks still reports what the provider spent
 	// on it, which the gateway charges the run.
@@ -200,7 +199,7 @@ var (
 // decodeRanks decodes raw, a JSON array of ranks or null, one rank at a time.
 // An array of more than documents ranks is refused with errExtraRanks as the
 // rank past them is reached: no valid answer holds it, and decoding the rest
-// would take memory in proportion to the answer, up to maxRerankAnswer,
+// would take memory in proportion to the answer, up to tuning's Model.MaxRerankAnswer,
 // rather than to the documents sent. Its errors quote none of raw.
 func decodeRanks(raw []byte, documents int) ([]answerRank, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))

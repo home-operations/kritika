@@ -20,13 +20,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-)
 
-// Bounds on what a document stores: lexemes, and bytes of one. A longer
-// run of letters is a key, a hash or encoded data, which no query names.
-const (
-	maxDocumentLexemes = 2048
-	maxLexemeBytes     = 64
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Word is one lexeme of a text and how the text spells it.
@@ -88,6 +83,9 @@ func hyphenationOf(language string) hyphenation {
 func words(text string, hyphens hyphenation) []Word {
 	var out []Word
 	at := map[string]int{}
+	// A run of letters longer than tuning's Lexical.MaxLexemeBytes is a
+	// key, a hash or encoded data, which no query names.
+	longest := tuning.Get().Lexical.MaxLexemeBytes
 	strength := func(w Word) int {
 		switch {
 		case w.Compound:
@@ -98,7 +96,7 @@ func words(text string, hyphens hyphenation) []Word {
 		return 0
 	}
 	add := func(lexeme, spelling string, whole, compound bool) {
-		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > maxLexemeBytes || stop[lexeme] || !startsWithName(lexeme) {
+		if utf8.RuneCountInString(lexeme) < 2 || len(lexeme) > longest || stop[lexeme] || !startsWithName(lexeme) {
 			return
 		}
 		w := Word{Lexeme: lexeme, Spelling: spelling, Whole: whole, Compound: compound}
@@ -147,20 +145,21 @@ var separators = strings.NewReplacer("_", "", "-", "")
 
 // Document is the lexemes of an index chunk of the language (package chunk
 // names it): of its path, the scope and symbol of its declaration, and its
-// text, each once and at most maxDocumentLexemes. A hyphen joins the words
+// text, each once and at most tuning's Lexical.MaxDocumentLexemes. A hyphen joins the words
 // of the path, and is read in the rest as the language's code reads it
 // (hyphenationOf).
 func Document(language, path, scope, symbol, text string) []string {
 	var out []string
 	seen := map[string]bool{}
 	code := hyphenationOf(language)
+	most := tuning.Get().Lexical.MaxDocumentLexemes
 	for i, s := range []string{path, scope, symbol, text} {
 		hyphens := code
 		if i == 0 {
 			hyphens = hyphenJoins
 		}
 		for _, w := range words(s, hyphens) {
-			if len(out) == maxDocumentLexemes {
+			if len(out) == most {
 				return out
 			}
 			if !seen[w.Lexeme] {

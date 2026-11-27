@@ -10,24 +10,11 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
-)
-
-// A replica's liveness on the River jobs it works: a beat every
-// jobHeartbeatInterval. A job whose last beat is older than jobAbandonedAfter
-// belongs to a replica that died. That is six missed beats, so a slow database
-// alone never has a live job rescued and run twice. A replica that cannot write a beat for jobFenceAfter fences
-// itself: it ends the job's context an interval before the leader can hand
-// the job to another replica. So a replica cut off from the database alone,
-// its runner pod still working, never has its job worked twice either.
-const (
-	jobHeartbeatInterval = jobtimeout.HeartbeatInterval
-	jobAbandonedAfter    = jobtimeout.HeartbeatAbandonedAfter
-	jobFenceAfter        = jobAbandonedAfter - jobHeartbeatInterval
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // errJobFenced is the cause a job's context ends with when its replica failed
-// to write the job's heartbeat for jobFenceAfter.
+// to write the job's heartbeat for JobTimeout.JobFenceAfter.
 var errJobFenced = errors.New("worker: job heartbeat not written; the job is handed back")
 
 // jobFenceKey carries, in the context of a job JobHeartbeat works, a
@@ -51,8 +38,9 @@ type jobHeartbeater interface {
 
 // JobHeartbeat is River middleware that stamps a heartbeat on every job this
 // replica works. It stamps once before the job starts and then every
-// jobHeartbeatInterval until Work returns. So the leader's Rescuer can tell a
-// job whose replica died from one still being worked. A replica that stops
+// tuning's JobTimeout.HeartbeatInterval until Work returns. So the leader's
+// Rescuer can tell a job whose replica died, its last beat older than
+// JobTimeout.HeartbeatAbandonedAfter, from one still being worked. A replica that stops
 // drains its own jobs. This covers one that does not get to.
 type JobHeartbeat struct {
 	river.MiddlewareDefaults
@@ -65,7 +53,7 @@ type JobHeartbeat struct {
 // start. Later beats go on past ctx, which a timeout or a cancel ends while
 // the job is still this replica's to finish on detached contexts. The job
 // gets a context of its own, which beats that cannot be written for
-// jobFenceAfter end with errJobFenced, as they end its jobFence.
+// JobTimeout.JobFenceAfter end with errJobFenced, as they end its jobFence.
 func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
 	if err := h.Store.HeartbeatJob(ctx, job.ID); err != nil {
 		return fmt.Errorf("worker: first heartbeat of job %d: %w", job.ID, err)
@@ -88,14 +76,15 @@ func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner 
 }
 
 // beat writes the job's heartbeat every interval until ctx ends, or until
-// none was written for jobFenceAfter. Then it fences the job and stops,
-// because a beat written later has the leader take the job for alive after
+// none was written for tuning's JobTimeout.JobFenceAfter. Then it fences
+// the job and stops, because a beat written later has the leader take the job for alive after
 // this replica cut it. A beat gets only what is left of that window. A beat
 // stuck waiting for a connection, or on a connection that the network
 // dropped, must not hold the fence back.
 func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.CancelCauseFunc, done chan<- struct{}) {
 	defer close(done)
-	t := time.NewTicker(jobHeartbeatInterval)
+	jt := tuning.Get().JobTimeout
+	t := time.NewTicker(jt.HeartbeatInterval)
 	defer t.Stop()
 	written := time.Now()
 	for {
@@ -104,7 +93,7 @@ func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.Canc
 			return
 		case <-t.C:
 		}
-		bctx, cancel := context.WithDeadline(ctx, written.Add(jobFenceAfter))
+		bctx, cancel := context.WithDeadline(ctx, written.Add(jt.JobFenceAfter()))
 		err := h.Store.HeartbeatJob(bctx, jobID)
 		cancel()
 		if err == nil {
@@ -118,7 +107,7 @@ func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.Canc
 		// them has the leader rescue it, and this replica let go of it.
 		unwritten := time.Since(written)
 		h.Logger.Warn("job heartbeat not written", "job", jobID, "error", err, "unwritten_for", unwritten)
-		if unwritten >= jobFenceAfter {
+		if unwritten >= jt.JobFenceAfter() {
 			h.Logger.Error("job heartbeat not written for too long; the job is cut before the leader hands it back", "job", jobID)
 			fence(errJobFenced)
 			return

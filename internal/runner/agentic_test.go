@@ -22,6 +22,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const agentDiff = `diff --git a/main.go b/main.go
@@ -242,7 +243,7 @@ func ruleIDs(rules []review.Rule) []string {
 func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
 	s.Agent.MaxPromptTokens = 24_000
-	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
+	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", int(tuning.Get().RepoConfig.MaxRulesBytes))}, {ID: "left", Rule: "Wrap errors."}}
 	in := newPromptInputs(s, nil, nil, []string{"main.go"})
 	if want := []string{"1 review rule(s) left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given: big"}; !slices.Equal(in.notes, want) {
 		t.Fatalf("notes = %q, want %q", in.notes, want)
@@ -361,8 +362,8 @@ func TestKeptConversation(t *testing.T) {
 		kept bool
 	}{
 		{"none", nil, false},
-		{"short enough", conv("the diff", agent.ContinueTokens-1), true},
-		{"too long to carry on", conv("the diff", agent.ContinueTokens), false},
+		{"short enough", conv("the diff", tuning.Get().Agent.ContinueTokens-1), true},
+		{"too long to carry on", conv("the diff", tuning.Get().Agent.ContinueTokens), false},
 		{"holding the git token", conv("a log said git-token", 10), false},
 		{"holding the run token", conv(`{"auth":"krk_run_token"}`, 10), false},
 	}
@@ -464,7 +465,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaFor(true, true, nil)) {
 		t.Fatalf("submit tool = %+v", submit)
 	}
-	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != agent.DefaultLimits.MaxOutputTokensPerStep {
+	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != agent.DefaultLimits().MaxOutputTokensPerStep {
 		t.Fatalf("request = %+v", st.reqs[0])
 	}
 }
@@ -562,6 +563,8 @@ func TestSimilarCode(t *testing.T) {
 // TestSearchTool: search_code asks the gateway once per call, formats what
 // it gets back, and stops at its call limit.
 func TestSearchTool(t *testing.T) {
+	// The limit is the configured Runner.SearchCalls.
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.SearchCalls = 3 })
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -585,12 +588,12 @@ func TestSearchTool(t *testing.T) {
 	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":" "}`)); err == nil {
 		t.Fatal("an empty query ran")
 	}
-	for range searchCalls - 1 {
+	for range 3 - 1 {
 		if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != searchCalls {
+	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != 3 {
 		t.Fatalf("past the limit: err=%v calls=%d", err, calls)
 	}
 }

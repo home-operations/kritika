@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // stackForge answers StackBelow alone.
@@ -66,8 +67,8 @@ func TestStackBelowStalled(t *testing.T) {
 		defer cancel()
 		started := time.Now()
 		got := stackBelow(ctx, &stackForge{stalled: true}, &pullRequest{repository: "o/r", number: 8}, slog.New(slog.DiscardHandler))
-		if got != nil || time.Since(started) != stackTimeout || ctx.Err() != nil {
-			t.Fatalf("stackBelow = %+v after %s, caller's context: %v; want none after %s", got, time.Since(started), ctx.Err(), stackTimeout)
+		if got != nil || time.Since(started) != tuning.Get().Worker.StackTimeout || ctx.Err() != nil {
+			t.Fatalf("stackBelow = %+v after %s, caller's context: %v; want none after %s", got, time.Since(started), ctx.Err(), tuning.Get().Worker.StackTimeout)
 		}
 	})
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestDedupesBotPatch(t *testing.T) {
@@ -43,10 +44,10 @@ func TestSnooze(t *testing.T) {
 		metadata string
 		min, max time.Duration
 	}{
-		{name: "the first snooze uses the base", metadata: `{}`, min: snoozeMin / 2, max: snoozeMin},
-		{name: "each snooze doubles the base", metadata: `{"snoozes":3}`, min: snoozeMin * 8 / 2, max: snoozeMin * 8},
-		{name: "a long run of snoozes is capped", metadata: `{"snoozes":40}`, min: snoozeMax / 2, max: snoozeMax},
-		{name: "unreadable metadata snoozes as if for the first time", metadata: `not json`, min: snoozeMin / 2, max: snoozeMin},
+		{name: "the first snooze uses the base", metadata: `{}`, min: tuning.Get().Worker.SnoozeMin / 2, max: tuning.Get().Worker.SnoozeMin},
+		{name: "each snooze doubles the base", metadata: `{"snoozes":3}`, min: tuning.Get().Worker.SnoozeMin * 8 / 2, max: tuning.Get().Worker.SnoozeMin * 8},
+		{name: "a long run of snoozes is capped", metadata: `{"snoozes":40}`, min: tuning.Get().Worker.SnoozeMax / 2, max: tuning.Get().Worker.SnoozeMax},
+		{name: "unreadable metadata snoozes as if for the first time", metadata: `not json`, min: tuning.Get().Worker.SnoozeMin / 2, max: tuning.Get().Worker.SnoozeMin},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

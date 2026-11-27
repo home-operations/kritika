@@ -13,6 +13,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestModelCalls(t *testing.T) {
@@ -262,9 +263,7 @@ func TestSweepModelCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	// One row a statement, so the sweep has to go round more than once.
-	batch := modelCallSweepBatch
-	modelCallSweepBatch = 1
-	t.Cleanup(func() { modelCallSweepBatch = batch })
+	tuning.Override(t, func(v *tuning.Values) { v.Store.ModelCallSweepBatch = 1 })
 	if _, err := s.SweepModelCalls(ctx, 0); err == nil {
 		t.Fatal("a zero retention was accepted")
 	}
@@ -313,9 +312,7 @@ func TestSweepDiffs(t *testing.T) {
 		t.Fatal(err)
 	}
 	// One pack a statement, so the sweep has to go round more than once.
-	batch := diffSweepBatch
-	diffSweepBatch = 1
-	t.Cleanup(func() { diffSweepBatch = batch })
+	tuning.Override(t, func(v *tuning.Values) { v.Store.DiffSweepBatch = 1 })
 	if _, err := s.SweepDiffs(ctx, 0); err == nil {
 		t.Fatal("a zero retention was accepted")
 	}
@@ -374,9 +371,7 @@ func TestSweepConversations(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM agent_conversations WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
 	})
-	batch := diffSweepBatch
-	diffSweepBatch = 1
-	t.Cleanup(func() { diffSweepBatch = batch })
+	tuning.Override(t, func(v *tuning.Values) { v.Store.DiffSweepBatch = 1 })
 	if _, err := s.SweepConversations(ctx, 0); err == nil {
 		t.Fatal("a zero retention was accepted")
 	}

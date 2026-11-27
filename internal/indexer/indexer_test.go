@@ -20,9 +20,9 @@ import (
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
-	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestBuildIncrementalRejectsTruncation(t *testing.T) {
@@ -31,13 +31,13 @@ func TestBuildIncrementalRejectsTruncation(t *testing.T) {
 		name                 string
 		files, bytes, chunks int
 	}{
-		{name: "file limit", files: 0, bytes: DefaultOptions.MaxBytes, chunks: DefaultOptions.MaxChunks},
-		{name: "byte limit", files: DefaultOptions.MaxFiles, bytes: 1, chunks: DefaultOptions.MaxChunks},
-		{name: "chunk limit inside a file", files: DefaultOptions.MaxFiles, bytes: DefaultOptions.MaxBytes, chunks: 1},
+		{name: "file limit", files: 0, bytes: DefaultOptions().MaxBytes, chunks: DefaultOptions().MaxChunks},
+		{name: "byte limit", files: DefaultOptions().MaxFiles, bytes: 1, chunks: DefaultOptions().MaxChunks},
+		{name: "chunk limit inside a file", files: DefaultOptions().MaxFiles, bytes: DefaultOptions().MaxBytes, chunks: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := DefaultOptions
+			opts := DefaultOptions()
 			opts.MaxFiles, opts.MaxBytes, opts.MaxChunks = tt.files, tt.bytes, tt.chunks
 			chunks, changed, stats, err := Build(t.Context(), head, base, nil, opts)
 			if !errors.Is(err, ErrBudgetReached) || !stats.Truncated || chunks != nil || changed != nil {
@@ -144,7 +144,7 @@ func TestBuildIncremental(t *testing.T) {
 
 func TestBuildStopsAtBudget(t *testing.T) {
 	head, _ := trees(t)
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxFiles = 1
 	_, _, stats, err := Build(t.Context(), head, nil, nil, opts)
 	if err != nil || !stats.Truncated || stats.Files != 1 {
@@ -175,7 +175,7 @@ func TestBuildKeepsTextValidUTF8(t *testing.T) {
 	}
 	c, _ := r.CommitObject(hash)
 	head, _ := c.Tree()
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxChunkBytes = 8
 	chunks, _, stats, err := Build(t.Context(), head, nil, nil, opts)
 	if err != nil {
@@ -252,7 +252,7 @@ func TestBuildSkipsUnindexedFiles(t *testing.T) {
 }
 
 // TestBuildSignatures: a window of a declaration that does not show the line
-// naming the declaration carries that line, cut to maxSignatureBytes, and its
+// naming the declaration carries that line, cut to Indexer.MaxSignatureBytes, and its
 // text stays the source's lines. A piece that shows the line, a declaration
 // stored whole and a window of a file with no declarations carry none.
 func TestBuildSignatures(t *testing.T) {
@@ -316,8 +316,8 @@ func TestBuildSignatures(t *testing.T) {
 				if c.Signature != want {
 					t.Errorf("chunk %s L%d-%d signature = %q, want %q", c.Symbol, c.StartLine, c.EndLine, c.Signature, want)
 				}
-				if len(c.Signature) > maxSignatureBytes || !utf8.ValidString(c.Signature) {
-					t.Errorf("chunk %s L%d-%d signature %q is over %d bytes or not UTF-8", c.Symbol, c.StartLine, c.EndLine, c.Signature, maxSignatureBytes)
+				if len(c.Signature) > int(tuning.Get().Indexer.MaxSignatureBytes) || !utf8.ValidString(c.Signature) {
+					t.Errorf("chunk %s L%d-%d signature %q is over %d bytes or not UTF-8", c.Symbol, c.StartLine, c.EndLine, c.Signature, int(tuning.Get().Indexer.MaxSignatureBytes))
 				}
 				if first, _, _ := strings.Cut(c.Text, "\n"); first != src[c.StartLine-1] {
 					t.Errorf("chunk %s L%d-%d starts %q, want the source's line %q", c.Symbol, c.StartLine, c.EndLine, first, src[c.StartLine-1])
@@ -345,7 +345,7 @@ func TestBuildSignaturesCopyTheirCut(t *testing.T) {
 		t.Fatal(err)
 	}
 	newBuilder := func() *builder {
-		return &builder{opts: DefaultOptions, parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: DefaultOptions.MaxFileBytes}}}
+		return &builder{opts: DefaultOptions(), parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: DefaultOptions().MaxFileBytes}}}
 	}
 	// A first build loads the grammar, which stays loaded.
 	if err := newBuilder().file(f); err != nil {
@@ -366,7 +366,7 @@ func TestBuildSignaturesCopyTheirCut(t *testing.T) {
 	for _, c := range b.chunks {
 		if c.Signature != "" {
 			carried++
-			if want := textcut.Prefix(head, maxSignatureBytes); c.Signature != want {
+			if want := textcut.Prefix(head, int(tuning.Get().Indexer.MaxSignatureBytes)); c.Signature != want {
 				t.Fatalf("chunk L%d-%d signature = %q, want %q", c.StartLine, c.EndLine, c.Signature, want)
 			}
 		}
@@ -394,7 +394,7 @@ func TestBuildChunksCopyTheirCut(t *testing.T) {
 	for i := range n {
 		indent := ""
 		if i%2 == 1 {
-			indent = strings.Repeat(" ", DefaultOptions.MaxChunkBytes+10)
+			indent = strings.Repeat(" ", DefaultOptions().MaxChunkBytes+10)
 		}
 		fmt.Fprintf(&src, "%sline%d %s\n", indent, i, strings.Repeat("word ", size/5))
 	}
@@ -403,7 +403,7 @@ func TestBuildChunksCopyTheirCut(t *testing.T) {
 		t.Fatal(err)
 	}
 	newBuilder := func() *builder {
-		return &builder{opts: DefaultOptions, parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: DefaultOptions.MaxFileBytes}}}
+		return &builder{opts: DefaultOptions(), parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: DefaultOptions().MaxFileBytes}}}
 	}
 	if err := newBuilder().file(f); err != nil {
 		t.Fatal(err)
@@ -423,8 +423,8 @@ func TestBuildChunksCopyTheirCut(t *testing.T) {
 		t.Fatalf("%d chunks, want one per line, %d", len(b.chunks), n)
 	}
 	for i, c := range b.chunks {
-		if !strings.HasPrefix(c.Text, fmt.Sprintf("line%d word", i)) || len(c.Text) > DefaultOptions.MaxChunkBytes {
-			t.Fatalf("chunk %d text = %q, %d bytes, want line%d from its first word within %d bytes", i, textcut.Prefix(c.Text, 40), len(c.Text), i, DefaultOptions.MaxChunkBytes)
+		if !strings.HasPrefix(c.Text, fmt.Sprintf("line%d word", i)) || len(c.Text) > DefaultOptions().MaxChunkBytes {
+			t.Fatalf("chunk %d text = %q, %d bytes, want line%d from its first word within %d bytes", i, textcut.Prefix(c.Text, 40), len(c.Text), i, DefaultOptions().MaxChunkBytes)
 		}
 	}
 	if held := int64(after.HeapAlloc) - int64(before.HeapAlloc); held > int64(n*size/4) {
@@ -465,7 +465,7 @@ func TestBuildSkipsWordlessWindows(t *testing.T) {
 	gittest.Unsigned(t, r)
 	wt, _ := r.Worktree()
 	f, _ := fs.Create("gap.md")
-	_, _ = f.Write([]byte("intro words\n" + strings.Repeat(" ", DefaultOptions.MaxChunkBytes) + "\nclosing words\n"))
+	_, _ = f.Write([]byte("intro words\n" + strings.Repeat(" ", DefaultOptions().MaxChunkBytes) + "\nclosing words\n"))
 	_ = f.Close()
 	_, _ = wt.Add("gap.md")
 	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
@@ -474,7 +474,7 @@ func TestBuildSkipsWordlessWindows(t *testing.T) {
 	}
 	c, _ := r.CommitObject(hash)
 	head, _ := c.Tree()
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxChunks = 2
 	chunks, _, stats, err := Build(t.Context(), head, nil, nil, opts)
 	if err != nil {
@@ -493,9 +493,9 @@ func TestBuildSkipsWordlessWindows(t *testing.T) {
 // before its first word than a chunk holds is stored from that word, so
 // the name on it is found, as a query of the same line asks about it.
 func TestBuildKeepsALineIndentedPastTheBound(t *testing.T) {
-	line := strings.Repeat(" ", DefaultOptions.MaxChunkBytes+10) + "callSomething()"
+	line := strings.Repeat(" ", DefaultOptions().MaxChunkBytes+10) + "callSomething()"
 	head := oneFileTree(t, "deep.go", "package lib\n\nfunc F() {\n"+line+"\n}\n")
-	chunks, _, _, err := Build(t.Context(), head, nil, nil, DefaultOptions)
+	chunks, _, _, err := Build(t.Context(), head, nil, nil, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,15 +574,15 @@ func TestIndexableReadsOnlyTheFilesThatTakeATurn(t *testing.T) {
 	diff.WriteString(fileDiff("", "api_pb2.py", added("def api(): pass")))
 	diff.WriteString(fileDiff("", "notes.unknownext", added("notes")))
 	diff.WriteString(fileDiff("removed.go", "removed.go", "@@ -1,1 +0,0 @@\n-func gone() {}\n"))
-	for i := range contextpack.SimilarQueries + 2 {
+	for i := range tuning.Get().ContextPack.SimilarQueries + 2 {
 		p := fmt.Sprintf("f%02d.go", i)
 		write(p)
-		lines := make([]string, 0, contextpack.SimilarQueries+2-i)
+		lines := make([]string, 0, tuning.Get().ContextPack.SimilarQueries+2-i)
 		for j := range cap(lines) {
 			lines = append(lines, fmt.Sprintf("var v%d_%d = %d", i, j, j))
 		}
 		diff.WriteString(fileDiff("", p, added(lines...)))
-		if i < contextpack.SimilarQueries {
+		if i < tuning.Get().ContextPack.SimilarQueries {
 			used = append(used, p)
 		}
 	}
@@ -615,7 +615,7 @@ func TestIndexableReadsOnlyTheFilesThatTakeATurn(t *testing.T) {
 // TestIndexableIsSharedSafely: split reviews share one predicate between
 // HunkQueries calls that run at once, and each gets the same answer.
 func TestIndexableIsSharedSafely(t *testing.T) {
-	head := oneFileTree(t, "big.go", strings.Repeat("x", DefaultOptions.MaxFileBytes+1))
+	head := oneFileTree(t, "big.go", strings.Repeat("x", DefaultOptions().MaxFileBytes+1))
 	indexable := Indexable(head, []string{"big.go", "gone.go"})
 	var g errgroup.Group
 	for range 8 {

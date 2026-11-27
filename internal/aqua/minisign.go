@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/blake2b"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // verifyMinisign makes sure that sig, a minisign signature file, is valid
@@ -37,7 +39,7 @@ func verifyMinisign(publicKey string, sig []byte, r io.Reader) error {
 	var message []byte
 	switch algorithm {
 	case "Ed":
-		if message, err = io.ReadAll(io.LimitReader(r, maxDownloadBytes)); err != nil {
+		if message, err = io.ReadAll(io.LimitReader(r, int64(tuning.Get().Aqua.MaxDownloadBytes))); err != nil {
 			return err
 		}
 	case "ED":

@@ -16,6 +16,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // URL schemes that the dashboard can be served on.
@@ -32,9 +33,6 @@ const sessionCookieBase = "kritika_session"
 // browser that started it. So a callback URL carried into another browser
 // cannot sign that browser in as someone else (login CSRF).
 const loginCookieBase = "kritika_login"
-
-// defaultHTTPTimeout bounds each call to a sign-in provider.
-const defaultHTTPTimeout = 15 * time.Second
 
 // returnToRe is the only shape that a post-sign-in destination can take: a
 // route of the dashboard's hash router. So a return_to can never leave
@@ -80,7 +78,7 @@ func New(c Config) (*Handler, error) {
 		return nil, fmt.Errorf("%w: got %q", ErrWebURL, c.WebURL.Redacted())
 	}
 	if c.HTTPClient == nil {
-		c.HTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
+		c.HTTPClient = &http.Client{Timeout: tuning.Get().Auth.HTTPTimeout}
 	}
 	if c.Now == nil {
 		c.Now = time.Now
@@ -371,7 +369,7 @@ func clearedCookie(webURL *url.URL) *http.Cookie {
 
 func loginCookie(webURL *url.URL, value string) *http.Cookie {
 	c := newCookie(webURL, loginCookieName(webURL), value, loginCookiePath(webURL))
-	c.MaxAge = int(store.LoginStateTTL / time.Second)
+	c.MaxAge = int(tuning.Get().Store.LoginStateTTL / time.Second)
 	return c
 }
 

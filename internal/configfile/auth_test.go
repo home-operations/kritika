@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const authMinimal = `auth:
@@ -54,7 +56,7 @@ func TestAuth(t *testing.T) {
 	if got := a.SignIns(); len(got) != 2 || got[0] != oidc || got[1] != gh {
 		t.Fatalf("SignIns = %v", got)
 	}
-	if a.SessionTTLOrDefault() != 8*time.Hour || (&Auth{}).SessionTTLOrDefault() != DefaultSessionTTL || DefaultSessionTTL != 12*time.Hour {
+	if a.SessionTTLOrDefault() != 8*time.Hour || (&Auth{}).SessionTTLOrDefault() != tuning.Get().ConfigFile.DefaultSessionTTL || tuning.Get().ConfigFile.DefaultSessionTTL != 12*time.Hour {
 		t.Fatal("session ttl")
 	}
 	if !a.Configured() || (&Auth{}).Configured() {

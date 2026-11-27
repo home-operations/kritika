@@ -16,6 +16,8 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // S3Options locates an existing bucket. Only gateway processes receive its credentials.
@@ -38,19 +40,20 @@ type s3Cache struct {
 // The bucket is not contacted at startup, so its availability cannot stop serve.
 // Package config made sure that the configuration o comes from is valid.
 func (c *Cache) UseS3(o S3Options) error {
-	if c.MaxEntryBytes <= 0 || c.MaxEntryBytes > 5<<30 {
-		return errors.New("egress: cache: S3 entry limit must be positive and at most 5Gi")
+	if c.MaxEntryBytes <= 0 || c.MaxEntryBytes > tuning.S3MaxPutBytes {
+		return fmt.Errorf("egress: cache: S3 entry limit must be positive and at most %s", tuning.ByteSize(tuning.S3MaxPutBytes))
 	}
-	c.MaxBytes = maxFills * c.MaxEntryBytes
+	c.MaxBytes = int64(tuning.Get().Egress.MaxFills) * c.MaxEntryBytes
 	u, _ := url.Parse(o.Endpoint)
 	creds := credentials.New(&s3Credentials{Provider: &credentials.IAM{}})
 	if o.AccessKey != "" {
 		creds = credentials.NewStaticV4(o.AccessKey, o.SecretKey, "")
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = (&net.Dialer{Timeout: s3LookupTimeout, KeepAlive: 30 * time.Second}).DialContext
-	transport.ResponseHeaderTimeout = s3LookupTimeout
-	transport.TLSHandshakeTimeout = s3LookupTimeout
+	t := tuning.Get().Egress
+	transport.DialContext = (&net.Dialer{Timeout: t.S3LookupTimeout, KeepAlive: t.S3KeepAlive}).DialContext
+	transport.ResponseHeaderTimeout = t.S3LookupTimeout
+	transport.TLSHandshakeTimeout = t.S3LookupTimeout
 	lookup := minio.BucketLookupAuto
 	if o.ForcePathStyle {
 		lookup = minio.BucketLookupPath
@@ -64,7 +67,7 @@ func (c *Cache) UseS3(o S3Options) error {
 	}
 	c.s3 = &s3Cache{client: client, bucket: o.Bucket, prefix: strings.TrimSuffix(o.Prefix, "/") + "/v1/"}
 	c.s3.prefix = strings.TrimPrefix(c.s3.prefix, "/")
-	c.s3.uploads = make(chan string, s3UploadQueue)
+	c.s3.uploads = make(chan string, t.S3UploadQueue)
 	return nil
 }
 
@@ -108,7 +111,7 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 		}
 		c.metrics.CacheOperation("s3_lookup", result, time.Since(started), 0)
 	}()
-	lookupCtx, cancel := context.WithTimeout(ctx, s3LookupTimeout)
+	lookupCtx, cancel := context.WithTimeout(ctx, tuning.Get().Egress.S3LookupTimeout)
 	info, err := c.s3.client.StatObject(lookupCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
 	cancel()
 	if err != nil {
@@ -192,7 +195,7 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 	// same digest. Then this upload is not made. The lookup spends from the
 	// upload's own budget. A failed lookup does not stop the upload, which the
 	// circuit bounds.
-	statCtx, cancelStat := context.WithTimeout(ctx, s3LookupTimeout)
+	statCtx, cancelStat := context.WithTimeout(ctx, tuning.Get().Egress.S3LookupTimeout)
 	info, err := c.s3.client.StatObject(statCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
 	cancelStat()
 	if err == nil {

@@ -780,7 +780,7 @@ func lexicalScaleCorpus(b testing.TB, rng *rand.Rand, tree string, size int) (ch
 	if err != nil {
 		b.Fatal(err)
 	}
-	built, _, _, err := indexer.Build(b.Context(), root, nil, configfile.DefaultIgnore, indexer.DefaultOptions)
+	built, _, _, err := indexer.Build(b.Context(), root, nil, configfile.DefaultIgnore, indexer.DefaultOptions())
 	if err != nil {
 		b.Fatal(err)
 	}

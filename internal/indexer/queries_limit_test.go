@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/chunk"
-	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -33,9 +33,9 @@ func TestRegionQueriesStopAtTheRequestBound(t *testing.T) {
 		if _, ok := f.next(&parser); !ok {
 			t.Fatalf("declarations first %v: no query", first)
 		}
-		if built := len(f.pending) + 1; built > contextpack.SimilarQueries {
+		if built := len(f.pending) + 1; built > tuning.Get().ContextPack.SimilarQueries {
 			t.Errorf("declarations first %v: the region was cut into %d queries, more than the %d a request carries",
-				first, built, contextpack.SimilarQueries)
+				first, built, tuning.Get().ContextPack.SimilarQueries)
 		}
 	}
 }
@@ -63,13 +63,13 @@ func TestRegionQueriesDoNotCopyDeclarationsOverTheBound(t *testing.T) {
 		size += len(l.Text) + 1
 	}
 	var parser chunk.Parser
-	if got, want := regionQueries(&parser, "x.js", region, contextpack.SimilarQueries), []string{"function inner() {\n  return 1;\n}\n"}; !slices.Equal(got, want) {
+	if got, want := regionQueries(&parser, "x.js", region, tuning.Get().ContextPack.SimilarQueries), []string{"function inner() {\n  return 1;\n}\n"}; !slices.Equal(got, want) {
 		t.Fatalf("queries = %q, want %q", got, want)
 	}
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	regionQueries(&parser, "x.js", region, contextpack.SimilarQueries)
+	regionQueries(&parser, "x.js", region, tuning.Get().ContextPack.SimilarQueries)
 	runtime.ReadMemStats(&after)
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > depth/2*uint64(size) {
 		t.Errorf("the queries allocated %d bytes, over %d copies of the %d-byte region", allocated, depth/2, size)

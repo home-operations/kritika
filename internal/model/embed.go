@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // OpenAIEmbedder is an Embedder over any OpenAI-compatible embeddings
@@ -26,30 +26,19 @@ type OpenAIEmbedder struct {
 	MaxBatch, MaxBatchChars, MaxItemChars int
 }
 
-// Request bounds an embedder keeps to unless told otherwise, conservative
-// enough for the common OpenAI-compatible servers.
-const (
-	DefaultEmbedMaxBatch      = 64
-	DefaultEmbedMaxBatchChars = 200_000
-	DefaultEmbedMaxItemChars  = 16_000
-)
-
-// embedTimeout bounds one embeddings request, a batch of at most MaxBatch
-// short texts.
-const embedTimeout = time.Minute
-
 // NewOpenAIEmbedder builds an embedder. dims is sent to the server so the
 // vectors match the table. Models that ignore it return their native size,
 // and the caller must make sure that the size is right.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
 	opts := append(withoutEnvironment(), option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
-		option.WithRequestTimeout(embedTimeout))
+		option.WithRequestTimeout(tuning.Get().Model.EmbedTimeout))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
+	t := tuning.Get().Model
 	return &OpenAIEmbedder{
 		client: openai.NewClient(opts...), model: model, dims: int64(dims),
-		MaxBatch: DefaultEmbedMaxBatch, MaxBatchChars: DefaultEmbedMaxBatchChars, MaxItemChars: DefaultEmbedMaxItemChars,
+		MaxBatch: t.DefaultEmbedMaxBatch, MaxBatchChars: t.DefaultEmbedMaxBatchChars, MaxItemChars: t.DefaultEmbedMaxItemChars,
 	}
 }
 

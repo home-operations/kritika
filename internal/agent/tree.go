@@ -14,11 +14,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// binarySniffBytes is how many bytes at the start of a file isBinary searches
-// for a NUL byte to decide that the file is binary.
-const binarySniffBytes = 8 << 10
 
 // Tree is a read-only view over a commit's tree for the agent's tools. The
 // tools read this tree's git objects directly, never a working tree, so
@@ -73,7 +70,7 @@ func cleanPath(p string) (string, error) {
 // isBinary reports whether content has a NUL byte in its first 8 KiB. git
 // itself uses the same heuristic to skip a file in a text diff.
 func isBinary(content string) bool {
-	n := min(len(content), binarySniffBytes)
+	n := min(len(content), int(tuning.Get().Agent.BinarySniffBytes))
 	return strings.IndexByte(content[:n], 0) >= 0
 }
 

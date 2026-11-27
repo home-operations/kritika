@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/home-operations/kritika/internal/gittest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func partsTree(t testing.TB, files int) (*object.Tree, []Part) {
@@ -100,7 +101,7 @@ func TestBuildParts(t *testing.T) {
 		{name: "chunk budget", adjust: func(o *Options) { o.MaxChunkBytes = 20 }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := DefaultOptions
+			opts := DefaultOptions()
 			if tt.adjust != nil {
 				tt.adjust(&opts)
 			}
@@ -196,7 +197,7 @@ func BenchmarkBuildParts(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
 					for _, p := range parts[:n] {
-						if _, _, err := Build(b.Context(), Input{Head: head, Diff: p.Diff, Changed: p.Changed}, DefaultOptions); err != nil {
+						if _, _, err := Build(b.Context(), Input{Head: head, Diff: p.Diff, Changed: p.Changed}, DefaultOptions()); err != nil {
 							b.Fatal(err)
 						}
 					}
@@ -205,11 +206,33 @@ func BenchmarkBuildParts(b *testing.B) {
 			b.Run("shared", func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
-					if _, _, err := BuildParts(b.Context(), head, nil, nil, parts[:n], DefaultOptions); err != nil {
+					if _, _, err := BuildParts(b.Context(), head, nil, nil, parts[:n], DefaultOptions()); err != nil {
 						b.Fatal(err)
 					}
 				}
 			})
 		})
+	}
+}
+
+// TestBuildPartsConfiguredBudget: zero Options build within tuning's
+// ContextPack values, so a configured MaxPackBytes bounds the packs.
+func TestBuildPartsConfiguredBudget(t *testing.T) {
+	head, parts := partsTree(t, 12)
+	size := func(t *testing.T) int {
+		got, _, err := BuildParts(t.Context(), head, nil, nil, parts, Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, c := range got[0] {
+			n += len(c.Text)
+		}
+		return n
+	}
+	full := size(t)
+	tuning.Override(t, func(v *tuning.Values) { v.ContextPack.MaxPackBytes = 100 })
+	if cut := size(t); full <= 100 || cut > 100 || cut >= full {
+		t.Fatalf("pack = %d bytes at the default, %d at a configured 100, want it cut to at most 100", full, cut)
 	}
 }

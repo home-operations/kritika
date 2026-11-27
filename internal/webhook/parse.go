@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // stateOpen is the pull request state that kritika acts on. Everything else
@@ -190,16 +191,12 @@ type Installation struct {
 	Repositories []string
 }
 
-// MaxBody bounds a payload before parsing. GitHub caps deliveries at 25 MB. A
-// PR event is a few hundred kilobytes at most.
-const MaxBody = 4 << 20
-
 // Parse turns a verified webhook into an Event. Unknown events are
 // KindIgnored rather than an error: forges add event types, and an ignored
 // event must not make a delivery fail.
 func Parse(forge configfile.Forge, header http.Header, body []byte) (Event, error) {
-	if len(body) > MaxBody {
-		return Event{}, fmt.Errorf("webhook: payload of %d bytes exceeds %d", len(body), MaxBody)
+	if limit := int(tuning.Get().Webhook.MaxBody); len(body) > limit {
+		return Event{}, fmt.Errorf("webhook: payload of %d bytes exceeds %d", len(body), limit)
 	}
 	body = unwrapFormPayload(header, body)
 	switch forge {

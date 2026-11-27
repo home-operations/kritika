@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fakeTool is a Tool whose Run returns a fixed output or error, for
@@ -370,8 +371,8 @@ func checkForcedNeverSubmits(t *testing.T, result Result, events []StepEvent, sc
 	if result.Submitted != nil {
 		t.Fatalf("Submitted = %s, want nil", result.Submitted)
 	}
-	if len(scripted.calls) != 1+forcedRetries {
-		t.Fatalf("%d calls to the stepper, want the forced step and %d retries", len(scripted.calls), forcedRetries)
+	if len(scripted.calls) != 1+tuning.Get().Agent.ForcedRetries {
+		t.Fatalf("%d calls to the stepper, want the forced step and %d retries", len(scripted.calls), tuning.Get().Agent.ForcedRetries)
 	}
 	for i, call := range scripted.calls {
 		if !toldToSubmit(call) {
@@ -489,8 +490,8 @@ func setupBudgetForcedNeverSubmits(t *testing.T) (model.Stepper, context.Context
 }
 
 func checkBudgetForcedNeverSubmits(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
-	if len(scripted.calls) != 2+forcedRetries || !strings.Contains(result.Err, "3 step(s)") {
-		t.Fatalf("%d calls, err %q; want a free step, a forced one and %d retries", len(scripted.calls), result.Err, forcedRetries)
+	if len(scripted.calls) != 2+tuning.Get().Agent.ForcedRetries || !strings.Contains(result.Err, "3 step(s)") {
+		t.Fatalf("%d calls, err %q; want a free step, a forced one and %d retries", len(scripted.calls), result.Err, tuning.Get().Agent.ForcedRetries)
 	}
 }
 
@@ -532,7 +533,7 @@ func setupCutOffStepGoesOn(t *testing.T) (model.Stepper, context.Context, *scrip
 
 func checkCutOffStepGoesOn(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
 	run := Run{Submit: testSubmitDef}
-	if got, want := lastUserText(scripted.calls[1]), run.cutOffText(DefaultLimits.MaxOutputTokensPerStep); got != want {
+	if got, want := lastUserText(scripted.calls[1]), run.cutOffText(DefaultLimits().MaxOutputTokensPerStep); got != want {
 		t.Fatalf("after the cut-off step the model was told %q, want %q", got, want)
 	}
 	// The cut-off step left the nudge for a turn that answered in prose.
@@ -607,7 +608,7 @@ func checkEmptyTurnsInARow(t *testing.T, _ Result, _ []StepEvent, scripted *scri
 	}
 }
 
-// setupToolTurnEndsEmptyTurns ends the step with nothing emptyRetries
+// setupToolTurnEndsEmptyTurns ends the step with nothing Agent.EmptyRetries
 // times, calls a tool, does so again, then submits.
 func setupToolTurnEndsEmptyTurns(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
@@ -632,7 +633,7 @@ func checkToolTurnEndsEmptyTurns(t *testing.T, _ Result, _ []StepEvent, scripted
 
 func checkCutOffAfterProse(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
 	run := Run{Submit: testSubmitDef}
-	goOn := run.cutOffText(DefaultLimits.MaxOutputTokensPerStep)
+	goOn := run.cutOffText(DefaultLimits().MaxOutputTokensPerStep)
 	want := []string{"", goOn, goOn, run.nudgeText(), goOn}
 	for i, call := range scripted.calls {
 		if got := lastUserText(call); got != want[i] {
@@ -643,7 +644,7 @@ func checkCutOffAfterProse(t *testing.T, _ Result, _ []StepEvent, scripted *scri
 
 func checkCutOffStepsInARow(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
 	run := Run{Submit: testSubmitDef}
-	goOn := run.cutOffText(DefaultLimits.MaxOutputTokensPerStep)
+	goOn := run.cutOffText(DefaultLimits().MaxOutputTokensPerStep)
 	// The opening message and the tool's results carry no text.
 	want := []string{"", goOn, goOn, "", goOn, goOn, run.nudgeText()}
 	for i, call := range scripted.calls {
@@ -882,9 +883,7 @@ func (s *outageStepper) Step(context.Context, model.StepRequest) (model.StepResp
 }
 
 func TestRunWaitsOutATransientStepFailure(t *testing.T) {
-	old := stepRetryWaits
-	stepRetryWaits = []time.Duration{time.Millisecond, time.Millisecond}
-	t.Cleanup(func() { stepRetryWaits = old })
+	tuning.Override(t, func(v *tuning.Values) { v.Agent.StepRetryWaits = []time.Duration{time.Millisecond, time.Millisecond} })
 	tests := []struct {
 		name      string
 		outage    int
@@ -908,7 +907,7 @@ func TestRunWaitsOutATransientStepFailure(t *testing.T) {
 	// starts. The step goes again, told to submit. The ctx cuts that one's
 	// wait.
 	t.Run("a wait the ctx cut ends the run canceled", func(t *testing.T) {
-		stepRetryWaits = []time.Duration{time.Hour}
+		tuning.Override(t, func(v *tuning.Values) { v.Agent.StepRetryWaits = []time.Duration{time.Hour} })
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
 		s := &outageStepper{outage: 5}
@@ -944,9 +943,7 @@ func toolSteps(n int) []model.StepResponse {
 }
 
 func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
-	old := stepRetryWaits
-	t.Cleanup(func() { stepRetryWaits = old })
-	stepRetryWaits = []time.Duration{3 * time.Minute}
+	tuning.Override(t, func(v *tuning.Values) { v.Agent.StepRetryWaits = []time.Duration{3 * time.Minute} })
 	tests := []struct {
 		name          string
 		timeout, took time.Duration
@@ -1039,7 +1036,7 @@ func TestRun(t *testing.T) {
 			limits:    Limits{MaxSteps: 1},
 			setup:     setupForcedNeverSubmits,
 			wantStop:  StopMaxSteps,
-			wantSteps: 1 + forcedRetries,
+			wantSteps: 1 + tuning.Get().Agent.ForcedRetries,
 			check:     checkForcedNeverSubmits,
 		},
 		{
@@ -1100,7 +1097,7 @@ func TestRun(t *testing.T) {
 			fallback:  holdFallback,
 			setup:     setupForcedFallbackTaken,
 			wantStop:  StopSubmitted,
-			wantSteps: 1 + forcedRetries,
+			wantSteps: 1 + tuning.Get().Agent.ForcedRetries,
 			check:     checkForcedFallbackTaken,
 		},
 		{
@@ -1110,7 +1107,7 @@ func TestRun(t *testing.T) {
 			fallback:  holdFallback,
 			setup:     setupForcedNothingHeld,
 			wantStop:  StopMaxSteps,
-			wantSteps: 1 + forcedRetries,
+			wantSteps: 1 + tuning.Get().Agent.ForcedRetries,
 			check:     checkNothingSubmitted,
 		},
 		{
@@ -1167,7 +1164,7 @@ func TestRun(t *testing.T) {
 			limits:    Limits{MaxTokens: 100},
 			setup:     setupBudgetForcedNeverSubmits,
 			wantStop:  StopNoSubmit,
-			wantSteps: 2 + forcedRetries,
+			wantSteps: 2 + tuning.Get().Agent.ForcedRetries,
 			check:     checkBudgetForcedNeverSubmits,
 		},
 		{
@@ -1190,7 +1187,7 @@ func TestRun(t *testing.T) {
 			check:     checkCutOffStepGoesOn,
 		},
 		{
-			// If the model is cut off more than cutOffRetries times in a row,
+			// If the model is cut off more than Agent.CutOffRetries times in a row,
 			// it is nudged to submit. The next cut-off ends the run as a turn
 			// with no tool call does.
 			name:      "cut_off_steps_in_a_row_fall_back_to_the_nudge",
@@ -1220,13 +1217,13 @@ func TestRun(t *testing.T) {
 			check:     checkEmptyTurnKeepsTheNudge,
 		},
 		{
-			// If the model is empty more than emptyRetries times in a row, it
+			// If the model is empty more than Agent.EmptyRetries times in a row, it
 			// spends the nudge. The next empty turn ends the run as a turn
 			// with no tool call does.
 			name:      "empty_turns_in_a_row_fall_back_to_the_nudge",
 			setup:     setupEmptyTurnsInARow,
 			wantStop:  StopNoSubmit,
-			wantSteps: 2 + emptyRetries,
+			wantSteps: 2 + tuning.Get().Agent.EmptyRetries,
 			check:     checkEmptyTurnsInARow,
 		},
 		{
@@ -1236,7 +1233,7 @@ func TestRun(t *testing.T) {
 			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
 			setup:     setupToolTurnEndsEmptyTurns,
 			wantStop:  StopSubmitted,
-			wantSteps: 4 + emptyRetries,
+			wantSteps: 4 + tuning.Get().Agent.EmptyRetries,
 			check:     checkToolTurnEndsEmptyTurns,
 		},
 		{
@@ -1254,7 +1251,7 @@ func TestRun(t *testing.T) {
 			limits:    Limits{MaxSteps: 2},
 			setup:     setupMaxStepsReachedWithoutSubmit,
 			wantStop:  StopMaxSteps,
-			wantSteps: 2 + forcedRetries,
+			wantSteps: 2 + tuning.Get().Agent.ForcedRetries,
 			check:     checkMaxStepsReachedWithoutSubmit,
 		},
 		{

@@ -9,6 +9,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fileWithDefaults is minimal's app with instance defaults: a provider,
@@ -91,8 +92,8 @@ func TestProviderConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != DefaultConcurrency {
-		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, DefaultConcurrency)
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != tuning.Get().ConfigFile.DefaultConcurrency {
+		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, tuning.Get().ConfigFile.DefaultConcurrency)
 	}
 	withConcurrency := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, concurrency: 5 }", 1)
 	f, err = Parse([]byte(withConcurrency))
@@ -117,8 +118,8 @@ func TestProviderTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Timeout != model.DefaultStepTimeout {
-		t.Fatalf("timeout unset = %s, want %s", p.Timeout, model.DefaultStepTimeout)
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Timeout != tuning.Get().Model.DefaultStepTimeout {
+		t.Fatalf("timeout unset = %s, want %s", p.Timeout, tuning.Get().Model.DefaultStepTimeout)
 	}
 	if got := f.StepBudget(&f.Accounts[0], "openrouter/big", "openrouter/small"); got != 12*time.Minute {
 		t.Fatalf("StepBudget by default = %s, want 12m", got)

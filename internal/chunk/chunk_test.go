@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/odvcencio/gotreesitter"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestFileWindow(t *testing.T) {
@@ -241,15 +243,40 @@ func contains(ss []string, s string) bool {
 // drive the parse stack deep stops at the depth limit and falls back to
 // fixed windows. Every bound counts work rather than time, so that the test
 // holds on any machine.
+// TestParseBoundsConfigured: a parser takes the bounds that tuning's Chunk
+// has when it is made, and a file over Chunk.MaxFileBytes is not parsed
+// unless the caller sets a limit of its own.
+func TestParseBoundsConfigured(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Chunk.ParseMemoryBudget, v.Chunk.ParseStackDepth, v.Chunk.MaxFileBytes = 64<<20, 100, 16
+	})
+	var p Parser
+	parser := p.language("x.go").parser
+	if got := parser.MemoryBudgetBytes(); got != 64<<20 {
+		t.Errorf("memory budget = %d, want the configured %d", got, 64<<20)
+	}
+	if got := parser.ParseWorkLimits().StackDepthLimit; got != 100 {
+		t.Errorf("stack depth limit = %d, want the configured 100", got)
+	}
+	src := []byte("package x\n\nfunc F() {}\n")
+	if f := p.Parse("x.go", src); f.Language != "" || len(f.Decls) > 0 {
+		t.Errorf("a %d-byte file past a configured 16 was parsed: %+v", len(src), f.Decls)
+	}
+	p.Limits.MaxBytes = len(src)
+	if f := p.Parse("x.go", src); len(f.Decls) == 0 {
+		t.Errorf("a file within the caller's own limit was not parsed: %+v", f.Decls)
+	}
+}
+
 func TestParseBounds(t *testing.T) {
 	var p Parser
 	for _, path := range []string{"x.go", "x.js"} {
 		parser := p.language(path).parser
-		if got := parser.MemoryBudgetBytes(); got != parseMemoryBudget {
-			t.Errorf("%s: memory budget = %d, want %d", path, got, parseMemoryBudget)
+		if got, want := parser.MemoryBudgetBytes(), int64(tuning.Get().Chunk.ParseMemoryBudget); got != want {
+			t.Errorf("%s: memory budget = %d, want %d", path, got, want)
 		}
-		if got := parser.ParseWorkLimits().StackDepthLimit; got != parseStackDepthLimit {
-			t.Errorf("%s: stack depth limit = %d, want %d", path, got, parseStackDepthLimit)
+		if got, want := parser.ParseWorkLimits().StackDepthLimit, tuning.Get().Chunk.ParseStackDepth; got != want {
+			t.Errorf("%s: stack depth limit = %d, want %d", path, got, want)
 		}
 		if got := parser.TimeoutMicros(); got != 0 {
 			t.Errorf("%s: timeout = %dµs, want none", path, got)

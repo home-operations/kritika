@@ -20,6 +20,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -271,7 +272,7 @@ func TestHandlerServesWhenTheDeliveryIsNotRecorded(t *testing.T) {
 
 func TestHandlerRejectsOversizedBody(t *testing.T) {
 	srv := setup(t, &fakeDispatcher{})
-	body := `{"pad":"` + strings.Repeat("x", webhook.MaxBody) + `"}`
+	body := `{"pad":"` + strings.Repeat("x", int(tuning.Get().Webhook.MaxBody)) + `"}`
 	if resp := post(t, srv, "/hooks/bot-ross", "push", "s3cret", body); resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}

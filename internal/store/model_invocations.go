@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -127,7 +128,7 @@ func (s *Store) SweepModelInvocations(ctx context.Context, olderThan time.Durati
 	}
 	n, err := s.sweepBatches(ctx, `DELETE FROM model_invocations WHERE id IN (
 		SELECT id FROM model_invocations WHERE state = 'settled' AND settled_at < now() - make_interval(secs => $1) LIMIT $2)`,
-		olderThan, modelCallSweepBatch)
+		olderThan, tuning.Get().Store.ModelCallSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep model invocations: %w", err)
 	}

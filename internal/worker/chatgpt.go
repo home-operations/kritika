@@ -12,9 +12,8 @@ import (
 	"github.com/home-operations/kritika/internal/chatgpt"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-const chatGPTRefreshInterval = time.Minute
 
 // ChatGPTRefresher renews configured providers' tokens. Only the elected
 // leader runs it, and a new leader waits out the last one's refreshes, so
@@ -40,7 +39,7 @@ type ChatGPTRefresher struct {
 // Run refreshes near expiry until this leader's tenure ends. The first
 // refresh waits until a previous leader's last refresh must be over. A leader
 // whose lock the server dropped goes on refreshing until it notices. A
-// refresh that it started by then runs on for at most chatGPTRefreshTimeout.
+// refresh that it started by then runs on for at most tuning's Worker.ChatGPTRefreshTimeout.
 // A refresh alongside it sends the refresh token that it just spent, and the
 // refusal signs the provider out.
 func (r *ChatGPTRefresher) Run(ctx context.Context) {
@@ -51,9 +50,9 @@ func (r *ChatGPTRefresher) Run(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 		return
-	case <-after(store.LeaderStepDown(r.LeaderInterval) + chatGPTRefreshTimeout):
+	case <-after(store.LeaderStepDown(r.LeaderInterval) + tuning.Get().Worker.ChatGPTRefreshTimeout):
 	}
-	t := time.NewTicker(chatGPTRefreshInterval)
+	t := time.NewTicker(tuning.Get().Worker.ChatGPTRefreshInterval)
 	defer t.Stop()
 	for {
 		if err := r.Refresh(ctx); err != nil && ctx.Err() == nil {
@@ -66,16 +65,6 @@ func (r *ChatGPTRefresher) Run(ctx context.Context) {
 		}
 	}
 }
-
-// chatGPTRefreshTimeout bounds one session's refresh and the write that
-// saves it, which run on past the leader's cancellation: once OpenAI
-// answers, the refresh token it rotated is spent, and only the saved
-// replacement can renew the session again.
-const chatGPTRefreshTimeout = time.Minute
-
-// chatGPTSaveAttempts is how many times a refreshed token set is written
-// before it is given up, a second apart and more each time.
-const chatGPTSaveAttempts = 4
 
 // Refresh renews due sessions. It preserves credentials on transient failures
 // and clears unusable tokens after a terminal refresh error.
@@ -94,7 +83,7 @@ func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 	}
 	client := r.Client
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = &http.Client{Timeout: tuning.Get().Worker.ChatGPTHTTPTimeout}
 	}
 	var errs []error
 	for _, s := range sessions {
@@ -115,11 +104,11 @@ func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 func (r *ChatGPTRefresher) refresh(
 	leading context.Context, client *http.Client, key string, c chatgpt.Credentials, now time.Time,
 ) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(leading), chatGPTRefreshTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(leading), tuning.Get().Worker.ChatGPTRefreshTimeout)
 	defer cancel()
 	// refresh makes sure that its leader still leads once the timeout runs.
 	// So a refresh starts only while its leader leads, and ends within
-	// chatGPTRefreshTimeout of that.
+	// tuning's Worker.ChatGPTRefreshTimeout of that.
 	if err := leading.Err(); err != nil {
 		return err
 	}
@@ -133,13 +122,13 @@ func (r *ChatGPTRefresher) refresh(
 	}
 	for attempt := 1; ; attempt++ {
 		_, err := r.Store.RefreshChatGPTSession(ctx, key, renewed, c.RefreshToken)
-		if err == nil || attempt == chatGPTSaveAttempts {
+		if err == nil || attempt == tuning.Get().Worker.ChatGPTSaveAttempts {
 			return err
 		}
 		select {
 		case <-ctx.Done():
 			return errors.Join(err, ctx.Err())
-		case <-time.After(time.Duration(attempt) * time.Second):
+		case <-time.After(time.Duration(attempt) * tuning.Get().Worker.ChatGPTSaveBackoff):
 		}
 	}
 }

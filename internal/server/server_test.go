@@ -15,6 +15,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestManagementHandler(t *testing.T) {
@@ -161,7 +163,7 @@ func TestServeDrainsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, addr, http.NotFoundHandler(), shutdownTimeout, slog.New(slog.DiscardHandler))
+		done <- Serve(ctx, addr, http.NotFoundHandler(), tuning.Get().Server.ShutdownTimeout, slog.New(slog.DiscardHandler))
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -181,7 +183,7 @@ func TestServeDrainsOnCancel(t *testing.T) {
 		if err != nil {
 			t.Fatalf("serve returned %v after cancel", err)
 		}
-	case <-time.After(shutdownTimeout + time.Second):
+	case <-time.After(tuning.Get().Server.ShutdownTimeout + time.Second):
 		t.Fatal("serve did not return after cancel")
 	}
 }
@@ -235,9 +237,8 @@ func TestServeDrainCutsWhatOutlastsIt(t *testing.T) {
 // keep-alive connection left idle are both closed, while a handler that
 // outlasts the read timeout still answers.
 func TestServeBoundsReadsAndIdleConnections(t *testing.T) {
-	oldRead, oldIdle := readTimeout, idleTimeout
-	readTimeout, idleTimeout = 200*time.Millisecond, 200*time.Millisecond
-	t.Cleanup(func() { readTimeout, idleTimeout = oldRead, oldIdle })
+	const readTimeout = 200 * time.Millisecond
+	tuning.Override(t, func(v *tuning.Values) { v.Server.ReadTimeout, v.Server.IdleTimeout = readTimeout, readTimeout })
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

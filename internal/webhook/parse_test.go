@@ -2,10 +2,12 @@ package webhook
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const ghPullRequest = `{
@@ -268,7 +270,20 @@ func TestParseRejectsMalformedAndOversized(t *testing.T) {
 	if _, err := Parse(configfile.ForgeGitHub, gh("pull_request"), []byte(`{not json`)); err == nil {
 		t.Fatal("malformed JSON must error")
 	}
-	if _, err := Parse(configfile.ForgeGitHub, gh("push"), make([]byte, MaxBody+1)); err == nil {
+	if _, err := Parse(configfile.ForgeGitHub, gh("push"), make([]byte, tuning.Get().Webhook.MaxBody+1)); err == nil {
 		t.Fatal("oversized payload must error")
+	}
+}
+
+// TestParseMaxBodyIsTunable: the payload bound is tuning's Webhook.MaxBody
+// as it is when the delivery is parsed.
+func TestParseMaxBodyIsTunable(t *testing.T) {
+	body := []byte(`{"pad":"` + strings.Repeat("x", 100) + `"}`)
+	if _, err := Parse(configfile.ForgeGitHub, gh("push"), body); err != nil {
+		t.Fatalf("a payload within the default bound: %v", err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Webhook.MaxBody = 64 })
+	if _, err := Parse(configfile.ForgeGitHub, gh("push"), body); err == nil || !strings.Contains(err.Error(), "exceeds 64") {
+		t.Fatalf("err = %v, want the payload refused over the 64 byte bound", err)
 	}
 }

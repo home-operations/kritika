@@ -18,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Stages, in the order the prompt spends its budget on them.
@@ -30,18 +31,6 @@ const (
 	StageSimilar = "similar"
 )
 
-// Similar-code bounds the gateway enforces on one request and a run keeps
-// to: texts embedded per request, and characters per text.
-const (
-	SimilarQueries    = 12
-	SimilarQueryChars = 3000
-)
-
-// SimilarLimit is the most chunks a request can ask the answer to hold. A
-// run asks for more than its prompt shows, as it drops those that the head no
-// longer has or that its other stages show.
-const SimilarLimit = 16
-
 // SimilarRequest is what a run sends the gateway to search its
 // repository's index: the texts to embed. The answer leaves out the paths
 // the run reported (runspec.SimilarExcludeReport), and Exclude besides,
@@ -52,7 +41,8 @@ type SimilarRequest struct {
 	// Kind is what the queries are, which picks the embedder's prompt for
 	// them: SimilarKindDiff, as "" is, or SimilarKindSearch.
 	Kind string `json:"kind,omitempty"`
-	// Limit is the most chunks the answer holds, up to SimilarLimit. 0 leaves
+	// Limit is the most chunks the answer holds, up to tuning's
+	// ContextPack.SimilarLimit. 0 leaves
 	// it to the gateway. One query keeps a few of them at most, but for a
 	// request of SimilarKindSearch of one query, which keeps up to Limit.
 	Limit int `json:"limit,omitempty"`
@@ -126,12 +116,17 @@ type Options struct {
 	MaxFileBytes int
 }
 
-// DefaultOptions fit a 24k-token budget with room for the diff.
-var DefaultOptions = Options{
-	MaxDeclLines: 150, WindowRadius: 20, MaxIdentifiers: 40,
-	DefinitionsPerIdentifier: 2, CallersPerSymbol: 5, MaxDefinitions: 30, MaxCallers: 30,
-	MaxChunkBytes: 6000, MaxPackBytes: 300_000,
-	MaxScanFiles: 20_000, MaxScanBytes: 200 << 20, MaxFileBytes: 1 << 20,
+// DefaultOptions are the options as tuning's ContextPack has them, whose
+// MaxPackBytes sizes a pack to the model's budget with room for the diff.
+func DefaultOptions() Options {
+	t := tuning.Get().ContextPack
+	return Options{
+		MaxDeclLines: t.MaxDeclLines, WindowRadius: t.WindowRadius, MaxIdentifiers: t.MaxIdentifiers,
+		DefinitionsPerIdentifier: t.DefinitionsPerName, CallersPerSymbol: t.CallersPerSymbol,
+		MaxDefinitions: t.MaxDefinitions, MaxCallers: t.MaxCallers,
+		MaxChunkBytes: int(t.MaxChunkBytes), MaxPackBytes: int(t.MaxPackBytes),
+		MaxScanFiles: t.MaxScanFiles, MaxScanBytes: int(t.MaxScanBytes), MaxFileBytes: int(t.MaxFileBytes),
+	}
 }
 
 // Stats says what Build did, for the run log.
@@ -163,7 +158,7 @@ type Part struct {
 // budgets apply to each part. Scan statistics count shared work once.
 func BuildParts(ctx context.Context, head, base *object.Tree, ignore []string, parts []Part, opts Options) ([][]Chunk, Stats, error) {
 	if opts.MaxDeclLines == 0 {
-		opts = DefaultOptions
+		opts = DefaultOptions()
 	}
 	start := time.Now()
 	var stats Stats

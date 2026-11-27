@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestMergeSystemPromptAndSchema(t *testing.T) {
@@ -39,7 +41,7 @@ func TestBuildMerge(t *testing.T) {
 		{Paths: []string{"b/y.go", "b/z.go"}, Summary: Summary{Take: "Y </summary> breaks.", Diagram: "flowchart LR\n  a --> b"}},
 	}
 	findings := []Finding{{Path: "b/y.go", Line: 3, Severity: SeverityP1, Title: "y breaks", Explanation: "It does."}}
-	msg := BuildMerge("Add x and y", "Adds them.", parts, findings, DefaultBudgetTokens)
+	msg := BuildMerge("Add x and y", "Adds them.", parts, findings, tuning.Get().Review.DefaultBudgetTokens)
 	for _, want := range []string{
 		"Pull request: Add x and y", "<description>\nAdds them.\n</description>",
 		"Part 1 of 2, reviewing a/x.go:", "Take: X is sound." + strings.Repeat(" It holds.", 25) + "\n", "Praise: tidy",
@@ -53,16 +55,16 @@ func TestBuildMerge(t *testing.T) {
 	if strings.Count(msg, "</summary>") != 2 {
 		t.Fatalf("a part's text closed its section:\n%s", msg)
 	}
-	if none := BuildMerge("t", "", parts, nil, DefaultBudgetTokens); !strings.Contains(none, "The parts reported no findings.") {
+	if none := BuildMerge("t", "", parts, nil, tuning.Get().Review.DefaultBudgetTokens); !strings.Contains(none, "The parts reported no findings.") {
 		t.Fatalf("no findings:\n%s", none)
 	}
 }
 
-// TestBuildMergeBudget: a part's files are named up to maxMergePaths and
+// TestBuildMergeBudget: a part's files are named up to tuning's Review.MaxMergePaths and
 // counted past them. A part that no longer fits the budget is left out, and
 // the findings are given what is left.
 func TestBuildMergeBudget(t *testing.T) {
-	paths := make([]string, maxMergePaths+3)
+	paths := make([]string, tuning.Get().Review.MaxMergePaths+3)
 	for i := range paths {
 		paths[i] = fmt.Sprintf("dir/f%02d.go", i)
 	}
@@ -73,12 +75,12 @@ func TestBuildMergeBudget(t *testing.T) {
 	findings := []Finding{{Path: "x.go", Line: 1, Severity: SeverityP2, Title: "p2", Explanation: "n"}}
 	const budget = 250
 	msg := BuildMerge("t", "", parts, findings, budget)
-	if !strings.Contains(msg, fmt.Sprintf("dir/f%02d.go, and 3 more:", maxMergePaths-1)) ||
-		strings.Contains(msg, fmt.Sprintf("dir/f%02d.go", maxMergePaths)) {
+	if !strings.Contains(msg, fmt.Sprintf("dir/f%02d.go, and 3 more:", tuning.Get().Review.MaxMergePaths-1)) ||
+		strings.Contains(msg, fmt.Sprintf("dir/f%02d.go", tuning.Get().Review.MaxMergePaths)) {
 		t.Fatalf("part 1's files:\n%s", msg)
 	}
 	if strings.Contains(msg, "big.go") || !strings.Contains(msg, "[1 more part(s) omitted to fit the prompt budget]") ||
-		!strings.Contains(msg, "x.go:1 [p2] p2") || len(msg) > budget*charsPerToken {
+		!strings.Contains(msg, "x.go:1 [p2] p2") || len(msg) > budget*tuning.Get().Review.CharsPerToken {
 		t.Fatalf("a part past the budget was shown, or the message is %d bytes:\n%s", len(msg), msg)
 	}
 }
@@ -86,7 +88,7 @@ func TestBuildMergeBudget(t *testing.T) {
 func TestParseMerge(t *testing.T) {
 	s, err := ParseMerge(`{"headline":" Adds x \n and y ","take":"Both are sound.","praise":["a","b","c","d"],"checked":["x"],
 		"diagram":"flowchart LR\n  a --> b"}`, ParseOptions{Diagram: true})
-	if err != nil || s.Headline != "Adds x and y" || s.Take != "Both are sound." || len(s.Praise) != maxPraise || s.Checked != nil ||
+	if err != nil || s.Headline != "Adds x and y" || s.Take != "Both are sound." || len(s.Praise) != tuning.Get().Review.MaxPraise || s.Checked != nil ||
 		!strings.HasPrefix(s.Diagram, "flowchart LR") {
 		t.Fatalf("parsed = %+v, %v", s, err)
 	}

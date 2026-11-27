@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // repoFiles reads the repository files the spec names from the merge-base
@@ -43,7 +44,7 @@ func treeReader(tree *object.Tree) func(string) ([]byte, error) {
 			return nil, fmt.Errorf("runner: read %s: %w", name, err)
 		}
 		defer func() { _ = r.Close() }()
-		b, err := io.ReadAll(io.LimitReader(r, repoconfig.MaxFileBytes+1))
+		b, err := io.ReadAll(io.LimitReader(r, int64(tuning.Get().RepoConfig.MaxFileBytes)+1))
 		if err != nil {
 			return nil, fmt.Errorf("runner: read %s: %w", name, err)
 		}

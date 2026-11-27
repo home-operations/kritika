@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // ToolUsage ranks commands across the instance's currently served accounts.
@@ -50,7 +51,7 @@ func (s *Server) getToolUsage(w http.ResponseWriter, r *http.Request) error {
 			out.TotalExecutions += count
 		}
 	}
-	out.Tools = topTools(counts, 10)
+	out.Tools = topTools(counts, tuning.Get().WebAPI.TopTools)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

@@ -11,23 +11,13 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// Password guessing is held to maxFailedSignIns wrong answers per client
-// address in failedSignInWindow. Behind a proxy every client shares its
-// address, so the limit is then the whole instance's: guessing slows for
-// everyone, which is the side to err on.
-const (
-	maxFailedSignIns   = 10
-	failedSignInWindow = 15 * time.Minute
-	// maxTrackedClients bounds the limiter's memory. At this bound, the
-	// limiter drops the expired windows. If that frees no room, it drops the
-	// oldest window. So a flood of addresses costs the displaced client its
-	// count, not the process its memory.
-	maxTrackedClients = 10_000
-)
-
-// attempts counts failed local sign-ins per client address.
+// attempts counts failed local sign-ins per client address, to hold
+// password guessing to tuning's Auth.MaxFailedSignIns wrong answers per
+// address in Auth.FailedSignInWindow, tracking at most
+// Auth.MaxTrackedClients addresses.
 type attempts struct {
 	now func() time.Time
 
@@ -53,13 +43,13 @@ func newAttempts(now func() time.Time) *attempts {
 func (a *attempts) try(client string, check func() bool) (admitted, ok bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	now := a.now()
+	now, t := a.now(), tuning.Get().Auth
 	w, tracked := a.failed[client]
-	if tracked && now.Sub(w.start) >= failedSignInWindow {
+	if tracked && now.Sub(w.start) >= t.FailedSignInWindow {
 		delete(a.failed, client)
 		w, tracked = window{}, false
 	}
-	if w.n >= maxFailedSignIns {
+	if w.n >= t.MaxFailedSignIns {
 		return false, false
 	}
 	if check() {
@@ -74,18 +64,19 @@ func (a *attempts) try(client string, check func() bool) (admitted, ok bool) {
 	return true, false
 }
 
-// evict makes room for one more client once maxTrackedClients are
-// tracked: the expired windows go, and failing that the oldest one.
+// evict makes room for one more client once tuning's Auth.MaxTrackedClients
+// are tracked: the expired windows go, and failing that the oldest one.
 func (a *attempts) evict(now time.Time) {
-	if len(a.failed) < maxTrackedClients {
+	t := tuning.Get().Auth
+	if len(a.failed) < t.MaxTrackedClients {
 		return
 	}
 	for k, w := range a.failed {
-		if now.Sub(w.start) >= failedSignInWindow {
+		if now.Sub(w.start) >= t.FailedSignInWindow {
 			delete(a.failed, k)
 		}
 	}
-	if len(a.failed) < maxTrackedClients {
+	if len(a.failed) < t.MaxTrackedClients {
 		return
 	}
 	var oldest string
@@ -106,9 +97,6 @@ func clientAddr(r *http.Request) string {
 	return host
 }
 
-// maxLocalBody bounds a password sign-in's request body.
-const maxLocalBody = 4 << 10
-
 // localSignIn signs the local admin in with the password the file or the
 // environment sets, and starts an admin session. It answers in JSON, since
 // the dashboard posts it from the sign-in page.
@@ -123,7 +111,7 @@ func (h *Handler) localSignIn(w http.ResponseWriter, r *http.Request) {
 		User     string `json:"user"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLocalBody)).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, int64(tuning.Get().Auth.MaxLocalBody))).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Code: codeInvalidRequest})
 		return
 	}

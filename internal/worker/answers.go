@@ -15,18 +15,12 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
-)
-
-// What a re-review is shown of a finding's thread: its latest replies, each
-// cut.
-const (
-	maxAnswers  = 4
-	answerBytes = 600
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // threadAnswers are the replies in the threads of the findings whose inline
 // comments roots holds, by that comment's id, oldest first and the latest
-// maxAnswers of each. Only the replies of people with write access count:
+// tuning's Worker.MaxAnswers of each. Only the replies of people with write access count:
 // on a public repository anyone can reply, and an answer can end a finding.
 // The bot's own replies, login's, are kept as its own, so that a review does
 // not contradict them unknowing. Another bot's reply is none. A finding's comment can
@@ -92,7 +86,7 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 	out := map[int64][]review.Answer{}
 	for id, t := range thread {
 		if rs := replies[t]; len(rs) > 0 {
-			out[id] = rs[max(0, len(rs)-maxAnswers):]
+			out[id] = rs[max(0, len(rs)-tuning.Get().Worker.MaxAnswers):]
 		}
 	}
 	return out, nil
@@ -101,7 +95,8 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 // answerOf is a reply as a review is shown it and publication compares it.
 func answerOf(c forge.Comment) review.Answer {
 	sum := sha256.Sum256([]byte(c.Body))
-	return review.Answer{ID: c.ID, Digest: hex.EncodeToString(sum[:16]), Author: c.Author, Text: textcut.Truncate(c.Body, answerBytes)}
+	text := textcut.Truncate(c.Body, tuning.Get().Worker.AnswerBytes)
+	return review.Answer{ID: c.ID, Digest: hex.EncodeToString(sum[:16]), Author: c.Author, Text: text}
 }
 
 // answeredThreads are the threads that the findings of the answered
@@ -223,7 +218,8 @@ func answeredDismissals(accountID, pullRequestID, login string, answered []answe
 	for _, a := range answered {
 		out = append(out, store.Dismissal{
 			AccountID: accountID, PullRequestID: pullRequestID, Fingerprint: review.Fingerprint(a.Finding), Finding: a.Finding,
-			Reason: "kritika accepted the answer of " + a.answer.Author + ": " + textcut.Truncate(a.answer.Text, 200),
+			Reason: "kritika accepted the answer of " + a.answer.Author + ": " +
+				textcut.Truncate(a.answer.Text, tuning.Get().Worker.ConcessionReasonBytes),
 			Author: login, CommentID: a.answer.ID, Source: store.DismissedByConcession,
 		})
 	}

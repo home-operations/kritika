@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestFileSettings(t *testing.T) {
@@ -203,5 +205,90 @@ func TestByteSize(t *testing.T) {
 	}
 	if s, _, err = LoadSettings(nil); err != nil || s.GatewayCacheMaxSize != 2<<30 || s.GatewayCacheDir != "" {
 		t.Fatalf("defaults: size %d, dir %q, %v", s.GatewayCacheMaxSize, s.GatewayCacheDir, err)
+	}
+}
+
+func TestTuning(t *testing.T) {
+	const name = "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY"
+	for _, tt := range []struct {
+		name, doc, value, wantErr string
+		want                      int
+	}{
+		{name: "default", want: 4},
+		{name: "environment", value: "6", want: 6},
+		{name: "file", doc: "tuning: {gateway: {similarPerQuery: 6}}", want: 6},
+		{name: "file beside other settings", doc: "reviewWorkers: 3\ntuning:\n  gateway:\n    similarPerQuery: 6\n", want: 6},
+		{name: "null", doc: "tuning: {gateway: {similarPerQuery: null}}", want: 4},
+		{name: "both", doc: "tuning: {gateway: {similarPerQuery: 6}}", value: "6",
+			wantErr: "tuning.gateway.similarPerQuery conflicts with " + name},
+		{name: "unknown key", doc: "tuning: {gateway: {bogus: 1}}", wantErr: "bogus"},
+		{name: "unknown area", doc: "tuning: {nowhere: {similarPerQuery: 1}}", wantErr: "nowhere"},
+		{name: "zero from the file", doc: "tuning: {gateway: {similarPerQuery: 0}}",
+			wantErr: "tuning.gateway.similarPerQuery: " + name + " must be positive"},
+		{name: "zero from the environment", value: "0", wantErr: "tuning.gateway.similarPerQuery: " + name + " must be positive"},
+		{name: "not a number", value: "many", wantErr: "config: environment variable " + name + ": "},
+		{name: "fraction", doc: "tuning: {gateway: {similarPerQuery: 1.5}}", wantErr: "whole number"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.doc), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("KRITIKA_CONFIG_FILE", path)
+			t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
+			if tt.value != "" {
+				t.Setenv(name, tt.value)
+			}
+			c, err := Load()
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Load = %v, want %s", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Tuning.Gateway.SimilarPerQuery != tt.want || c.Tuning.Gateway.SimilarMax != 10 {
+				t.Fatalf("tuning.gateway = %+v, want similarPerQuery %d and the other defaults", c.Tuning.Gateway, tt.want)
+			}
+		})
+	}
+}
+
+// TestTuningFromFile follows a file's tuning block from LoadFile, as
+// kritika config check and serve read it, to tuning.Get and Env.
+func TestTuningFromFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("tuning: {gateway: {similarPerQuery: 6}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { *v = cfg.Tuning })
+	if got := tuning.Get().Gateway.SimilarPerQuery; got != 6 {
+		t.Fatalf("tuning.Get().Gateway.SimilarPerQuery = %d, want 6", got)
+	}
+	var found bool
+	for _, e := range cfg.Env() {
+		switch e.Name {
+		case "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY":
+			found = true
+			if !e.File || e.Set || e.Path != "tuning.gateway.similarPerQuery" || e.Value != "6" {
+				t.Fatalf("Env = %+v, want the file's 6 at tuning.gateway.similarPerQuery", e)
+			}
+		case "KRITIKA_TUNING_GATEWAY_SIMILAR_MAX":
+			if e.File || e.Value != "10" {
+				t.Fatalf("Env = %+v, want the default 10", e)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Env does not list KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY")
+	}
+	if got := tuning.Env(cfg.Tuning); len(got) != 1 || got[0] != (tuning.EnvPair{Name: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY", Value: "6"}) {
+		t.Fatalf("tuning.Env = %v, want the one file setting", got)
 	}
 }

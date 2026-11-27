@@ -13,15 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// Carrying on a conversation saves only while the provider still caches it.
-// OpenAI keeps a prompt's prefix for about 30 minutes after its last use, and
-// Anthropic for 5. Each window leaves a runner the minutes it takes from the
-// decision to its first step.
-const (
-	continueWindow          = 25 * time.Minute
-	anthropicContinueWindow = 4 * time.Minute
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // carryWindow is how recently a run must keep a conversation on ref, whose
@@ -29,9 +21,9 @@ const (
 func carryWindow(t configfile.ProviderType, ref configfile.ModelRef) time.Duration {
 	if t == configfile.ProviderAnthropic ||
 		(t == configfile.ProviderOpenRouter && strings.HasPrefix(strings.TrimPrefix(ref.Model(), "~"), "anthropic/")) {
-		return anthropicContinueWindow
+		return tuning.Get().Worker.AnthropicContinueWindow
 	}
-	return continueWindow
+	return tuning.Get().Worker.ContinueWindow
 }
 
 // continuation is the last review's conversation that a review of head

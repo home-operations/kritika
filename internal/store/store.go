@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,41 +28,21 @@ type Store struct {
 	logger *slog.Logger
 }
 
-// Pool ceilings when the URI sets no pool_max_conns. pgx's own default is
-// the node's CPU count, and a serve pod has no CPU limit. So on a large
-// node, two replicas alone can take most of Postgres's 100 connections.
-// The application pool carries River's fetchers, a handful of jobs and the
-// requests that runner pods and the dashboard make. The owner pool carries
-// only the leader's duties. Connections open on demand, so a ceiling costs an
-// idle process nothing.
-const (
-	appPoolMaxConns   = 16
-	ownerPoolMaxConns = 4
-)
-
-// appStatementTimeout bounds every statement on the application pool. River,
-// webhook ingest, the gateway and the dashboard share the pool. So a
-// dashboard query over a large account that runs unbounded can hold its
-// connections and stall the rest. Nothing that the pool runs is meant to
-// take anywhere near this long.
-const appStatementTimeout = time.Minute
-
-// pingTimeout bounds the ping a pool gives an idle connection before
-// handing it out. Without it the ping waits on the kernel's TCP
-// retransmissions, about fifteen minutes, when the server died without
-// closing the socket: every acquire on the pool hangs that long, the
-// leader's lock attempt included. A ping is an empty query, so a few
-// seconds is generous for a server that is up.
-const pingTimeout = 5 * time.Second
-
 // newPool opens a pool with server-side TCP keepalives. So Postgres drops
 // the session of a client that died without closing it (a node lost, a pod
-// killed) within about a minute. Any advisory lock that the session held goes
-// with it. Postgres's own defaults leave that to the kernel's two hours. The
-// pool's own ping of an idle connection is bounded by pingTimeout. So a
-// server that died the same way costs a client seconds, not the kernel's
+// killed) within tuning's Store.KeepaliveIdle, KeepaliveInterval and
+// KeepaliveCount, and any advisory lock that the session held goes with it.
+// The pool's own ping of an idle connection is bounded by Store.PingTimeout.
+// So a server that died the same way costs a client seconds, not the kernel's
 // retransmissions. A statement timeout, when given, bounds every statement
 // on the pool.
+// applicationNameParam is the connection parameter that names a connection
+// in pg_stat_activity, and applicationName is the name of a connection for
+// role: kritika-app, kritika-listen and so on.
+const applicationNameParam = "application_name"
+
+func applicationName(role string) string { return tuning.Product + "-" + role }
+
 func newPool(ctx context.Context, url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Pool, error) {
 	cfg, err := poolConfig(url, application, statementTimeout, maxConns)
 	if err != nil {
@@ -71,7 +52,7 @@ func newPool(ctx context.Context, url, application string, statementTimeout time
 }
 
 // poolConfig is newPool's configuration. maxConns is the pool's ceiling
-// and pingTimeout is its ping bound, unless the URI names its own with
+// and tuning's Store.PingTimeout is its ping bound, unless the URI names its own with
 // pool_max_conns or pool_ping_timeout. pgx already read those by the time
 // that the configuration is parsed.
 func poolConfig(url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
@@ -83,13 +64,14 @@ func poolConfig(url, application string, statementTimeout time.Duration, maxConn
 		cfg.MaxConns = maxConns
 	}
 	if !strings.Contains(url, "pool_ping_timeout") {
-		cfg.PingTimeout = pingTimeout
+		cfg.PingTimeout = tuning.Get().Store.PingTimeout
 	}
 	params := cfg.ConnConfig.RuntimeParams
-	params["application_name"] = application
-	params["tcp_keepalives_idle"] = "30"
-	params["tcp_keepalives_interval"] = "10"
-	params["tcp_keepalives_count"] = "3"
+	params[applicationNameParam] = application
+	t := tuning.Get().Store
+	params["tcp_keepalives_idle"] = strconv.FormatInt(int64(t.KeepaliveIdle/time.Second), 10)
+	params["tcp_keepalives_interval"] = strconv.FormatInt(int64(t.KeepaliveInterval/time.Second), 10)
+	params["tcp_keepalives_count"] = strconv.Itoa(t.KeepaliveCount)
 	if statementTimeout > 0 {
 		params["statement_timeout"] = strconv.FormatInt(statementTimeout.Milliseconds(), 10)
 	}
@@ -111,7 +93,8 @@ type Options struct {
 // the vector extension is missing. Either one is invisible at runtime and
 // wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	app, err := newPool(ctx, opts.AppURL, "kritika-app", appStatementTimeout, appPoolMaxConns)
+	t := tuning.Get().Store
+	app, err := newPool(ctx, opts.AppURL, applicationName("app"), t.AppStatementTimeout, int32(t.AppPoolMaxConns))
 	if err != nil {
 		return nil, fmt.Errorf("store: application pool: %w", err)
 	}
@@ -127,7 +110,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if opts.OwnerURL != "" {
 		// Migrations can build an index for minutes. Anything longer on the
 		// owner connection is a hang worth breaking.
-		owner, err := newPool(ctx, opts.OwnerURL, "kritika-owner", 10*time.Minute, ownerPoolMaxConns)
+		owner, err := newPool(ctx, opts.OwnerURL, applicationName("owner"), t.OwnerStatementTimeout, int32(t.OwnerPoolMaxConns))
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("store: owner pool: %w", err)
@@ -227,7 +210,7 @@ func assertOwnerRole(ctx context.Context, owner *pgxpool.Pool) error {
 // can bypass row-level security, no vector extension) is returned at
 // once: waiting does not change it.
 func OpenWhenReady(ctx context.Context, opts Options) (*Store, error) {
-	const retry = 5 * time.Second
+	retry := tuning.Get().Store.OpenRetry
 	for {
 		st, err := Open(ctx, opts)
 		if err == nil {

@@ -11,7 +11,7 @@ import (
 // overlayRun is a text file of n added lines, each a wide unchanged line
 // from the next, so they make one run far over MaxChunkBytes, and its diff.
 func overlayRun(n int) (src, diff string) {
-	wide := strings.Repeat("w", DefaultOptions.MaxChunkBytes/2)
+	wide := strings.Repeat("w", DefaultOptions().MaxChunkBytes/2)
 	var text, d strings.Builder
 	d.WriteString("diff --git a/run.txt b/run.txt\n--- a/run.txt\n+++ b/run.txt\n")
 	for i := range n {
@@ -29,7 +29,7 @@ func TestOverlaySplitsALongRunInBoundedCopies(t *testing.T) {
 	src, diff := overlayRun(100)
 	b := &builder{
 		in:   Input{Head: headTree(t, map[string]string{"run.txt": src}), Diff: diff, Changed: []string{"run.txt"}},
-		opts: DefaultOptions, parser: &chunk.Parser{},
+		opts: DefaultOptions(), parser: &chunk.Parser{},
 	}
 	n := 0
 	copied = &n
@@ -55,7 +55,7 @@ func BenchmarkOverlayLongRun(b *testing.B) {
 	head := headTree(b, map[string]string{"run.txt": src})
 	b.ReportAllocs()
 	for b.Loop() {
-		bl := &builder{in: Input{Head: head, Diff: diff, Changed: []string{"run.txt"}}, opts: DefaultOptions, parser: &chunk.Parser{}}
+		bl := &builder{in: Input{Head: head, Diff: diff, Changed: []string{"run.txt"}}, opts: DefaultOptions(), parser: &chunk.Parser{}}
 		if err := bl.overlay(b.Context()); err != nil {
 			b.Fatal(err)
 		}

@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestThreadWorker: resolving one of the bot's finding threads dismisses the
@@ -197,8 +198,8 @@ func checkConcurrentThreadRestore(t *testing.T, base Base, client forge.Client, 
 	if firstErr := <-done; firstErr != nil {
 		t.Fatalf("resolve: %v", firstErr)
 	}
-	if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != publishWait {
-		t.Fatalf("restore error = %v, want a %s snooze while resolution is in progress", err, publishWait)
+	if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != tuning.Get().Worker.PublishWait {
+		t.Fatalf("restore error = %v, want a %s snooze while resolution is in progress", err, tuning.Get().Worker.PublishWait)
 	}
 	if err := secondWorker.Work(t.Context(), &river.Job[jobs.ThreadArgs]{Args: args}); err != nil {
 		t.Fatalf("restore retry: %v", err)

@@ -28,19 +28,10 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/retryafter"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
-
-// maxErrorBody bounds how much of an error response an apiError quotes.
-const maxErrorBody = 512
-
-// maxDiffBytes bounds a pull request diff read whole.
-const maxDiffBytes = 8 << 20
-
-// pageSize is how many items a paginated listing asks for per page. A
-// short page is the last: the page size is sent, so the server's own
-// default never makes a full page look short.
-const pageSize = 50
 
 // errNoContent is a 204 answering a request that expected a body.
 var errNoContent = errors.New("forgejo: no content")
@@ -89,7 +80,7 @@ func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 	if Status(err) != http.StatusTooManyRequests {
 		return 0, false
 	}
-	return forge.RetryAfter(RetryAfterHeader(err), now)
+	return retryafter.Parse(RetryAfterHeader(err), now)
 }
 
 // Client is one authorized integration's access to a Forgejo instance,
@@ -161,16 +152,16 @@ func NewGiteaClient(host, token, runnerToken string, httpClient *http.Client) (*
 }
 
 // ErrRedirectLoop is what the default HTTP client stops a request with past
-// its tenth redirect, as net/http's does. Go wraps it in a *url.Error, which
-// is no failed connection to retry: the instance answers, and sends the
-// request round again.
-var ErrRedirectLoop = errors.New("forgejo: stopped after 10 redirects")
+// tuning's Forgejo.MaxRedirects redirects, as net/http's does past its tenth.
+// Go wraps it in a *url.Error, which is no failed connection to retry: the
+// instance answers, and sends the request round again.
+var ErrRedirectLoop = errors.New("forgejo: too many redirects")
 
 // defaultHTTP is http.DefaultClient but for the error it stops a redirect
 // loop with.
 var defaultHTTP = &http.Client{CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-	if len(via) >= 10 {
-		return ErrRedirectLoop
+	if limit := tuning.Get().Forgejo.MaxRedirects; len(via) >= limit {
+		return fmt.Errorf("%w: stopped after %d redirects", ErrRedirectLoop, limit)
 	}
 	return nil
 }}
@@ -194,7 +185,8 @@ func newClient(host string, httpClient *http.Client) (*Client, error) {
 }
 
 // bearer is the token the API is called with: Gitea's access token, or
-// the one in use while it has a minute left, else a new one.
+// the one in use while it has tuning's Forgejo.TokenReuseMargin left, else a
+// new one.
 func (c *Client) bearer() (string, error) {
 	if c.gitea {
 		return c.apiToken, nil
@@ -202,14 +194,15 @@ func (c *Client) bearer() (string, error) {
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
 	now := c.now()
-	if c.token != "" && now.Before(c.expires.Add(-time.Minute)) {
+	t := tuning.Get().Forgejo
+	if c.token != "" && now.Before(c.expires.Add(-t.TokenReuseMargin)) {
 		return c.token, nil
 	}
-	token, err := c.issuer.Token(c.audience, tokenTTL, now)
+	token, err := c.issuer.Token(c.audience, t.TokenTTL, now)
 	if err != nil {
 		return "", err
 	}
-	c.token, c.expires = token, now.Add(tokenTTL)
+	c.token, c.expires = token, now.Add(t.TokenTTL)
 	return token, nil
 }
 
@@ -239,7 +232,7 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", tuning.BearerPrefix+token)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -250,9 +243,9 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, int64(tuning.Get().Forgejo.MaxErrorBody)))
 		return resp.Header, &apiError{method: method, path: path, status: resp.StatusCode, body: string(raw),
-			retryAfter: resp.Header.Get("Retry-After")}
+			retryAfter: resp.Header.Get(retryafter.Header)}
 	}
 	if out == nil {
 		return resp.Header, nil
@@ -261,12 +254,13 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 		return resp.Header, fmt.Errorf("forgejo: %s %s: %w", method, path, errNoContent)
 	}
 	if text, ok := out.(*string); ok {
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxDiffBytes+1))
+		limit := int(tuning.Get().Forgejo.MaxDiffBytes)
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 		if err != nil {
 			return resp.Header, fmt.Errorf("forgejo: read %s %s: %w", method, path, err)
 		}
-		if len(raw) > maxDiffBytes {
-			return resp.Header, fmt.Errorf("forgejo: %s %s: response is over %d bytes", method, path, maxDiffBytes)
+		if len(raw) > limit {
+			return resp.Header, fmt.Errorf("forgejo: %s %s: response is over %d bytes", method, path, limit)
 		}
 		*text = string(raw)
 		return resp.Header, nil
@@ -291,7 +285,7 @@ func (c *Client) list[T any](ctx context.Context, path string, query url.Values,
 		q := url.Values{}
 		maps.Copy(q, query)
 		q.Set("page", strconv.Itoa(page))
-		q.Set("limit", strconv.Itoa(pageSize))
+		q.Set("limit", strconv.Itoa(tuning.Get().Forgejo.PageSize))
 		var batch []T
 		header, err := c.request(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &batch)
 		if err != nil {
@@ -325,7 +319,7 @@ func morePages(header http.Header, page, got, largest int) bool {
 	if total, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil {
 		return page*max(largest, 1) < total
 	}
-	return got >= pageSize
+	return got >= tuning.Get().Forgejo.PageSize
 }
 
 func repoPath(owner, repo string) string {
@@ -403,7 +397,7 @@ func (c *Client) GitToken(context.Context, string) (string, error) {
 	if c.gitea {
 		return c.runnerToken, nil
 	}
-	return c.issuer.Token(c.runnerAudience, runnerTokenTTL, c.now())
+	return c.issuer.Token(c.runnerAudience, tuning.Get().Forgejo.RunnerTokenTTL, c.now())
 }
 
 // BranchTip implements forge.Client.
@@ -447,7 +441,7 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", tuning.BearerPrefix+token)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
@@ -457,16 +451,17 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, fs.ErrNotExist)
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, int64(tuning.Get().Forgejo.MaxErrorBody)))
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref,
 			&apiError{method: http.MethodGet, path: path, status: resp.StatusCode, body: string(raw),
-				retryAfter: resp.Header.Get("Retry-After")})
+				retryAfter: resp.Header.Get(retryafter.Header)})
 	}
-	content, err := io.ReadAll(io.LimitReader(resp.Body, forge.MaxFileBytes+1))
+	limit := int(tuning.Get().Forge.MaxFileBytes)
+	content, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
 	}
-	if len(content) > forge.MaxFileBytes {
+	if len(content) > limit {
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, forge.ErrFileTooLarge)
 	}
 	return content, nil

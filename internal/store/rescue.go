@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // HeartbeatJob stamps the worker's heartbeat on the River job it is
@@ -105,10 +107,11 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 	if tag.RowsAffected() == 0 {
 		return false, nil
 	}
-	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now(),
+	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, $4), finished_at = now(),
 		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
 		WHERE river_job_id = $1 AND finished_at IS NULL
-		AND NOT ($3 AND publication IS NOT NULL)`, job.ID, reason, job.RescueState() == rivertype.JobStateRetryable); err != nil {
+		AND NOT ($3 AND publication IS NOT NULL)`,
+		job.ID, reason, job.RescueState() == rivertype.JobStateRetryable, tuning.Get().Store.ErrorTextChars); err != nil {
 		return false, fmt.Errorf("store: end the reviews of job %d: %w", job.ID, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -237,20 +240,20 @@ func (s *Store) EndOrphanedRun(ctx context.Context, run OrphanedRun, reason stri
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now()
-		WHERE id = $1 AND finished_at IS NULL`, run.ID, reason); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, $3), finished_at = now()
+		WHERE id = $1 AND finished_at IS NULL`, run.ID, reason, tuning.Get().Store.ErrorTextChars); err != nil {
 		return fmt.Errorf("store: end orphaned run %s: %w", run.ID, err)
 	}
 	switch {
 	case run.ReviewID != "":
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now(),
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, $3), finished_at = now(),
 		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
-			WHERE id = $1 AND finished_at IS NULL`, run.ReviewID, reason); err != nil {
+			WHERE id = $1 AND finished_at IS NULL`, run.ReviewID, reason, tuning.Get().Store.ErrorTextChars); err != nil {
 			return fmt.Errorf("store: end the review of run %s: %w", run.ID, err)
 		}
 	case run.IndexRunID != "":
-		if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'failed', error = left($2, 2000), finished_at = now()
-			WHERE id = $1 AND finished_at IS NULL`, run.IndexRunID, reason); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'failed', error = left($2, $3), finished_at = now()
+			WHERE id = $1 AND finished_at IS NULL`, run.IndexRunID, reason, tuning.Get().Store.ErrorTextChars); err != nil {
 			return fmt.Errorf("store: end the index run of run %s: %w", run.ID, err)
 		}
 	}

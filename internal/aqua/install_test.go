@@ -23,6 +23,8 @@ import (
 	"github.com/aquaproj/aqua/v2/pkg/config/registry"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // entry is one entry of an archive a test builds.
@@ -509,8 +511,7 @@ func TestCommandOutOfDownload(t *testing.T) {
 // TestUnpackBounded: what an archive decompresses to is bounded, the
 // bodies of the entries it leaves out included.
 func TestUnpackBounded(t *testing.T) {
-	limit, most := maxUnpackedBytes, maxEntries
-	t.Cleanup(func() { maxUnpackedBytes, maxEntries = limit, most })
+	limit, most := int64(tuning.Get().Aqua.MaxUnpackedBytes), tuning.Get().Aqua.MaxEntries
 	body := strings.Repeat("x", 4<<10)
 	root := entry{name: "./", typ: tar.TypeDir, mode: 0o755}
 	for _, tt := range []struct {
@@ -525,7 +526,9 @@ func TestUnpackBounded(t *testing.T) {
 		{"the root, again", limit, 3, []entry{root, root, root, root}, "over 3 entries"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			maxUnpackedBytes, maxEntries = tt.bytes, tt.entries
+			tuning.Override(t, func(v *tuning.Values) {
+				v.Aqua.MaxUnpackedBytes, v.Aqua.MaxEntries = tuning.ByteSize(tt.bytes), tt.entries
+			})
 			dir := t.TempDir()
 			download := filepath.Join(dir, "download")
 			if err := os.WriteFile(download, gzipped(t, tarball(t, tt.archive...)), 0o644); err != nil {

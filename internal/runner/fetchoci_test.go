@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fakeRegistry serves one repository, "acme/app", over the distribution
@@ -285,7 +287,7 @@ func TestFetchOCITags(t *testing.T) {
 func TestFetchOCILimits(t *testing.T) {
 	reg := newFakeRegistry(t)
 	huge, err := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
-		"config": map[string]any{}, "layers": []any{}, "pad": strings.Repeat("x", ociMetadataBytes)})
+		"config": map[string]any{}, "layers": []any{}, "pad": strings.Repeat("x", int(tuning.Get().Runner.OCIMetadataBytes))})
 	if err != nil {
 		t.Fatal(err)
 	}

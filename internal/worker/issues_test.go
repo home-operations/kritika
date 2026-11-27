@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/linear"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // issueForge answers Issue from a fixed set and fails the numbers it is
@@ -51,7 +52,7 @@ func TestLinkedIssues(t *testing.T) {
 		t.Fatalf("issues = %+v, want %+v", issues, want)
 	}
 	if !slices.Equal(client.asked, []int{12, 13, 14}) {
-		t.Fatalf("asked the forge for %v, want the first %d linked issues", client.asked, review.MaxLinkedIssues)
+		t.Fatalf("asked the forge for %v, want the first %d linked issues", client.asked, tuning.Get().Review.MaxLinkedIssues)
 	}
 	if len(notes) != 0 {
 		t.Fatalf("notes = %q, want none for issues within the first three", notes)

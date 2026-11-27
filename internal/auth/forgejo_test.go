@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // forgejoInstances are two Forgejo connections on different instances,
@@ -146,7 +147,7 @@ func TestForgejoMappingVars(t *testing.T) {
 func TestForgejoMappingVarsTooMany(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Total-Count", "5000")
-		_, _ = fmt.Fprint(w, "["+strings.TrimSuffix(strings.Repeat(`{"name":"o"},`, forgejoPageSize), ",")+"]")
+		_, _ = fmt.Fprint(w, "["+strings.TrimSuffix(strings.Repeat(`{"name":"o"},`, tuning.Get().Auth.ForgejoPageSize), ",")+"]")
 	}))
 	defer srv.Close()
 	_, err := forgejoAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"})

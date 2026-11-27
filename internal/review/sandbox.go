@@ -24,6 +24,7 @@ import (
 	"github.com/go-sprout/sprout/registry/std"
 	sproutstrings "github.com/go-sprout/sprout/registry/strings"
 	sprouttime "github.com/go-sprout/sprout/registry/time"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Sandbox bounds for templates. A repository template is trusted to be
@@ -31,24 +32,13 @@ import (
 // keep a mistake in one repository's template from stalling or exhausting
 // a worker that serves every account. text/template has no operators, so
 // every value a template builds passes through a function, and the
-// bounds are enforced there and on loops.
-const (
-	// maxIterations is the render-wide budget of loop iterations, charged
-	// in full when a loop starts, so nested loops cannot multiply it.
-	maxIterations = 20_000
-	// maxCallBytes bounds one function call: its arguments plus an estimate
-	// of what it allocates, and its result. The estimate is computed from the
-	// arguments before the call runs, so that amplifying functions fail
-	// before they allocate.
-	maxCallBytes = 4 * MaxRenderBytes
-	// maxMeasureDepth bounds how deep a value is measured. Anything deeper
-	// counts as one node.
-	maxMeasureDepth = 64
-	// nodeBytes is what a slice element, map entry, or struct field is
-	// counted as beyond its contents. So a large shared structure is refused
-	// as if it were copied.
-	nodeBytes = 8
-)
+// bounds are enforced there and on loops: tuning's Review.MaxIterations,
+// Review.MaxCallBytes and Review.MaxMeasureDepth.
+//
+// nodeBytes is what a slice element, map entry, or struct field is counted
+// as beyond its contents. So a large shared structure is refused as if it
+// were copied.
+const nodeBytes = 8
 
 // Names the sandbox adds to every template. Templates cannot use identifiers
 // with this prefix, so they cannot call the guards themselves.
@@ -231,13 +221,14 @@ func (g *guard) wrap(name string, fn reflect.Value) any {
 		}
 		size := 0
 		for _, a := range args {
-			size += measure(a, 0, maxCallBytes)
+			size += measure(a, 0, tuning.Get().Review.MaxCallBytes())
 		}
 		if estimate != nil {
 			size += estimate(args)
 		}
-		if size > maxCallBytes {
-			panic(fmt.Errorf("%w: %s: %d bytes of input and estimated allocation, at most %d", errSandbox, name, size, maxCallBytes))
+		if size > tuning.Get().Review.MaxCallBytes() {
+			panic(fmt.Errorf("%w: %s: %d bytes of input and estimated allocation, at most %d",
+				errSandbox, name, size, tuning.Get().Review.MaxCallBytes()))
 		}
 		var out []reflect.Value
 		if t.IsVariadic() {
@@ -245,8 +236,8 @@ func (g *guard) wrap(name string, fn reflect.Value) any {
 		} else {
 			out = fn.Call(args)
 		}
-		if n := measure(out[0], 0, maxCallBytes); n > maxCallBytes {
-			panic(fmt.Errorf("%w: %s returned more than %d bytes", errSandbox, name, maxCallBytes))
+		if n := measure(out[0], 0, tuning.Get().Review.MaxCallBytes()); n > tuning.Get().Review.MaxCallBytes() {
+			panic(fmt.Errorf("%w: %s returned more than %d bytes", errSandbox, name, tuning.Get().Review.MaxCallBytes()))
 		}
 		return out
 	}).Interface()
@@ -263,8 +254,8 @@ func (g *guard) iter(v any) (any, error) {
 		return nil, fmt.Errorf("%w: %w", errSandbox, err)
 	}
 	g.iterations += n
-	if g.iterations > maxIterations {
-		return nil, fmt.Errorf("%w: loops over more than %d items per render", errSandbox, maxIterations)
+	if g.iterations > tuning.Get().Review.MaxIterations {
+		return nil, fmt.Errorf("%w: loops over more than %d items per render", errSandbox, tuning.Get().Review.MaxIterations)
 	}
 	return v, nil
 }
@@ -275,9 +266,9 @@ func iterations(v reflect.Value) (int, error) {
 	case reflect.Slice, reflect.Array, reflect.Map, reflect.String:
 		return v.Len(), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return int(min(max(v.Int(), 0), maxIterations+1)), nil
+		return int(min(max(v.Int(), 0), int64(tuning.Get().Review.MaxIterations)+1)), nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return int(min(v.Uint(), maxIterations+1)), nil
+		return int(min(v.Uint(), uint64(tuning.Get().Review.MaxIterations)+1)), nil
 	case reflect.Func, reflect.Chan:
 		return 0, fmt.Errorf("cannot loop over a %s", v.Kind())
 	}
@@ -303,7 +294,7 @@ func measure(v reflect.Value, depth, limit int) int {
 	if !v.IsValid() {
 		return 0
 	}
-	if depth >= maxMeasureDepth {
+	if depth >= tuning.Get().Review.MaxMeasureDepth {
 		return nodeBytes
 	}
 	switch v.Kind() {
@@ -371,13 +362,13 @@ var estimates = map[string]func(args []reflect.Value) int{
 // seqItemBytes is what one number of seq's output is counted as.
 const seqItemBytes = 12
 
-// product is x*y clamped to [0, maxCallBytes+1].
+// product is x*y clamped to [0, tuning's Review.MaxCallBytes+1].
 func product(x, y int64) int {
 	if x <= 0 || y <= 0 {
 		return 0
 	}
-	if x > (maxCallBytes+1)/y {
-		return maxCallBytes + 1
+	if limit := int64(tuning.Get().Review.MaxCallBytes()) + 1; x > limit/y {
+		return int(limit)
 	}
 	return int(x * y)
 }
@@ -439,8 +430,8 @@ func printfAllocation(a []reflect.Value) int {
 				continue
 			}
 			w, err := strconv.Atoi(n)
-			if err != nil || n == "*" || w > maxCallBytes-pad {
-				return maxCallBytes + 1
+			if err != nil || n == "*" || w > tuning.Get().Review.MaxCallBytes()-pad {
+				return tuning.Get().Review.MaxCallBytes() + 1
 			}
 			pad += w
 		}
@@ -465,14 +456,14 @@ func printfAllocation(a []reflect.Value) int {
 		}
 		next = arg + 1
 		if sizes[arg] < 0 {
-			sizes[arg] = measure(args.Index(arg), 0, maxCallBytes)
+			sizes[arg] = measure(args.Index(arg), 0, tuning.Get().Review.MaxCallBytes())
 		}
 		total += sizes[arg]
 		if pad > 0 {
 			total += product(int64(pad), int64(printfElements(args.Index(arg), 0)))
 		}
-		if total > maxCallBytes {
-			return maxCallBytes + 1
+		if total > tuning.Get().Review.MaxCallBytes() {
+			return tuning.Get().Review.MaxCallBytes() + 1
 		}
 	}
 	return total
@@ -480,25 +471,25 @@ func printfAllocation(a []reflect.Value) int {
 
 // printfElements is how many values fmt pads when it formats v: the
 // leaves of a slice, array, map or struct, one for anything else. A value
-// at maxMeasureDepth counts as one leaf, as measure counts it as one
-// node, and the count stops once past maxCallBytes.
+// at tuning's Review.MaxMeasureDepth counts as one leaf, as measure counts it as one
+// node, and the count stops once past tuning's Review.MaxCallBytes.
 func printfElements(v reflect.Value, depth int) int {
 	v = indirect(v)
-	if depth >= maxMeasureDepth {
+	if depth >= tuning.Get().Review.MaxMeasureDepth {
 		return 1
 	}
 	n := 0
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:
-		for i := 0; i < v.Len() && n <= maxCallBytes; i++ {
+		for i := 0; i < v.Len() && n <= tuning.Get().Review.MaxCallBytes(); i++ {
 			n += printfElements(v.Index(i), depth+1)
 		}
 	case reflect.Map:
-		for it := v.MapRange(); it.Next() && n <= maxCallBytes; {
+		for it := v.MapRange(); it.Next() && n <= tuning.Get().Review.MaxCallBytes(); {
 			n += printfElements(it.Key(), depth+1) + printfElements(it.Value(), depth+1)
 		}
 	case reflect.Struct:
-		for i := 0; i < v.NumField() && n <= maxCallBytes; i++ {
+		for i := 0; i < v.NumField() && n <= tuning.Get().Review.MaxCallBytes(); i++ {
 			n += printfElements(v.Field(i), depth+1)
 		}
 	}

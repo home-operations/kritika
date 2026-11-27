@@ -25,6 +25,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // nameRe bounds connection and provider names to what is safe in a URL
@@ -383,10 +384,12 @@ func (f *File) validateEmbedding() error {
 		switch {
 		case !slices.Contains(model.RerankAPIs, r.API):
 			return fmt.Errorf("configfile: embedding.rerank.api must be one of %s, got %q", strings.Join(model.RerankAPIs, ", "), r.API)
-		case r.Candidates < 0 || r.Candidates > MaxRerankCandidates:
-			return fmt.Errorf("configfile: embedding.rerank.candidates must be between 0 and %d, got %d", MaxRerankCandidates, r.Candidates)
-		case r.Timeout < 0 || r.Timeout > MaxRerankTimeout:
-			return fmt.Errorf("configfile: embedding.rerank.timeout must be between 0 and %s, got %s", MaxRerankTimeout, r.Timeout)
+		case r.Candidates < 0 || r.Candidates > tuning.Get().ConfigFile.MaxRerankCandidates:
+			return fmt.Errorf("configfile: embedding.rerank.candidates must be between 0 and %d, got %d",
+				tuning.Get().ConfigFile.MaxRerankCandidates, r.Candidates)
+		case r.Timeout < 0 || r.Timeout > tuning.Get().ConfigFile.MaxRerankTimeout:
+			return fmt.Errorf("configfile: embedding.rerank.timeout must be between 0 and %s, got %s",
+				tuning.Get().ConfigFile.MaxRerankTimeout, r.Timeout)
 		}
 	}
 	return nil
@@ -463,8 +466,8 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: trigger.limit must not be negative")
 	}
-	if r.Trigger.Settle != nil && (*r.Trigger.Settle < 0 || *r.Trigger.Settle > MaxPushSettle) {
-		return fmt.Errorf("configfile: trigger.settle must be between 0s and %s", MaxPushSettle)
+	if r.Trigger.Settle != nil && (*r.Trigger.Settle < 0 || *r.Trigger.Settle > tuning.Get().ConfigFile.MaxPushSettle) {
+		return fmt.Errorf("configfile: trigger.settle must be between 0s and %s", tuning.Get().ConfigFile.MaxPushSettle)
 	}
 	for gi, g := range r.Ignore {
 		if !ValidGlob(g) {
@@ -497,15 +500,15 @@ func validateAgent(a Agent) error {
 	if a.Tokens != nil && *a.Tokens <= 0 {
 		return fmt.Errorf("configfile: agent.tokens must be positive")
 	}
-	if a.Prompt != nil && *a.Prompt < MinPromptTokens {
-		return fmt.Errorf("configfile: agent.prompt must be at least %d", MinPromptTokens)
+	if a.Prompt != nil && *a.Prompt < tuning.Get().ConfigFile.MinPromptTokens {
+		return fmt.Errorf("configfile: agent.prompt must be at least %d", tuning.Get().ConfigFile.MinPromptTokens)
 	}
 	if a.Timeout != nil && *a.Timeout <= 0 {
 		return fmt.Errorf("configfile: agent.timeout must be positive")
 	}
-	if a.Timeout != nil && *a.Timeout > jobtimeout.MaxAgentTimeout {
+	if a.Timeout != nil && *a.Timeout > jobtimeout.MaxAgentTimeout() {
 		return fmt.Errorf("configfile: agent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",
-			jobtimeout.MaxAgentTimeout, jobtimeout.MaxJobTimeout)
+			jobtimeout.MaxAgentTimeout(), tuning.Get().JobTimeout.MaxJobTimeout)
 	}
 	// The job document carries whole seconds.
 	if a.CommandTimeout != nil && *a.CommandTimeout < time.Second {

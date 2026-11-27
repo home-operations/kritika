@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestAgentRunStopError(t *testing.T) {
@@ -91,7 +92,7 @@ func TestAgentBudget(t *testing.T) {
 		{name: "plenty left", agentMax: 4_000_000, perMonth: 10_000_000, used: 1_000_000, want: 4_000_000},
 		{name: "cut to what is left", agentMax: 4_000_000, perMonth: 10_000_000, used: 9_000_000, want: 1_000_000},
 		{name: "repository budget below what is left", agentMax: 200_000, perMonth: 10_000_000, used: 9_000_000, want: 200_000},
-		{name: "at the floor", agentMax: 4_000_000, perMonth: 1_000_000, used: 1_000_000 - minAgentTokens, capped: true},
+		{name: "at the floor", agentMax: 4_000_000, perMonth: 1_000_000, used: 1_000_000 - tuning.Get().Worker.MinAgentTokens, capped: true},
 		{name: "over the cap", agentMax: 4_000_000, perMonth: 1_000_000, used: 1_200_000, capped: true},
 	}
 	for _, tt := range tests {
@@ -105,7 +106,7 @@ func TestAgentBudget(t *testing.T) {
 }
 
 // TestEstimateParts: the forge's counts of a pull request's lines and files
-// size its diff in parts of review.PartBytes, one at least and maxParts at
+// size its diff in parts of tuning's Review.PartBytes, one at least and maxParts at
 // most.
 func TestEstimateParts(t *testing.T) {
 	tests := []struct {
@@ -165,7 +166,7 @@ func TestPartsTimeout(t *testing.T) {
 		{size: sizing{parts: map[string]int{"default": 1}, slots: map[string]int{"default": 1}}, timeout: 20 * time.Minute, want: 20 * time.Minute},
 		{size: sizing{parts: map[string]int{"default": 3}, slots: map[string]int{"default": 1}}, timeout: 20 * time.Minute, want: time.Hour},
 		{size: sizing{parts: map[string]int{"default": 3}, slots: map[string]int{"default": 3}}, timeout: 20 * time.Minute, want: time.Hour},
-		{size: sizing{parts: map[string]int{"default": 8}, slots: map[string]int{"default": 8}}, timeout: 20 * time.Minute, want: jobtimeout.MaxAgentTimeout},
+		{size: sizing{parts: map[string]int{"default": 8}, slots: map[string]int{"default": 8}}, timeout: 20 * time.Minute, want: jobtimeout.MaxAgentTimeout()},
 		// The model with the most parts sets the rounds.
 		{size: sizing{parts: map[string]int{"a/big": 4, "b/small": 2}, slots: map[string]int{"a/big": 4, "b/small": 1}}, timeout: 20 * time.Minute, want: 80 * time.Minute},
 		{size: sizing{parts: map[string]int{"a/big": 2, "b/small": 3}, slots: map[string]int{"a/big": 2}}, timeout: 20 * time.Minute, want: time.Hour},

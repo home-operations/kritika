@@ -46,7 +46,7 @@ type ToolCall struct {
 }
 
 // ToolResult is model.ToolResult as stored. TruncatedBytes is how much of
-// Content was cut to fit ToolResultCap.
+// Content was cut to fit tuning's Transcript.ToolResultCap.
 type ToolResult struct {
 	CallID         string `json:"callId"`
 	Content        string `json:"content"`

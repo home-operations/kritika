@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -199,7 +200,7 @@ func diffPaths(diff string) []string {
 // ownReason is why a change to the paths of changedOwn is not approved,
 // with the first few of them.
 func ownReason(changed []string) string {
-	const named = 3
+	named := tuning.Get().Worker.OwnPathsNamed
 	list := strings.Join(changed[:min(len(changed), named)], ", ")
 	if len(changed) > named {
 		list += fmt.Sprintf(" and %d more", len(changed)-named)

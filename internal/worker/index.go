@@ -29,10 +29,8 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// embedBatch is how many staged chunks are embedded and inserted at once.
-const embedBatch = 128
 
 // indexSlots is how many of the embedder's slots index runs can hold at
 // once: all but one. So a review's similar-code lookup, which takes a slot
@@ -59,9 +57,9 @@ type Index struct {
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
 
-	// superviseEvery overrides superviseInterval.
+	// superviseEvery overrides tuning's Worker.SuperviseInterval.
 	superviseEvery time.Duration
-	// batch overrides embedBatch.
+	// batch overrides tuning's Worker.EmbedBatch.
 	batch int
 }
 
@@ -154,7 +152,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		}
 		runID, runnerRunID, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
 			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Commit: commit, Base: base, Mode: mode, Trigger: args.Trigger,
-			Embedding: *emb, IgnoreHash: ignoreHash, ResumeKey: resumeKey, StrayAfter: jobtimeout.RescueStuckJobsAfter, JobID: job.ID,
+			Embedding: *emb, IgnoreHash: ignoreHash, ResumeKey: resumeKey, StrayAfter: jobtimeout.RescueStuckJobsAfter(), JobID: job.ID,
 		})
 		return err
 	})
@@ -320,29 +318,20 @@ func (w *Index) completed(account *configfile.Account, pack store.IndexPack, n i
 	}
 }
 
-// appliedBuildWait is how long an index job waits on a pod whose embedder or
-// index format the leader did not apply, before it is tried again.
-// tipCheckWait is how long one waits to ask the forge for the branch tip
-// again after the forge did not give it.
-const (
-	appliedBuildWait = time.Minute
-	tipCheckWait     = time.Minute
-)
-
 // tipCheckDelay is how long an index job waits to ask for the branch tip
-// again after the forge did not give it, with err: tipCheckWait, or until
+// again after the forge did not give it, with err: tuning's Worker.TipCheckWait, or until
 // the later time that GitHub's rate limit or another forge's 429 names
 // (forgeRetryAfter). The snooze replaces err, so ForgeRateLimit never sees
 // GitHub's limit here.
 func tipCheckDelay(err error) time.Duration {
 	now := time.Now()
 	if d, limited := github.RetryAfter(err, now); limited {
-		return max(tipCheckWait, d)
+		return max(tuning.Get().Worker.TipCheckWait, d)
 	}
 	if d, limited := forgeRetryAfter(err, now); limited {
-		return max(tipCheckWait, d)
+		return max(tuning.Get().Worker.TipCheckWait, d)
 	}
-	return tipCheckWait
+	return tuning.Get().Worker.TipCheckWait
 }
 
 // forgeRetryAfter is how long to wait before asking again after err, when
@@ -354,20 +343,12 @@ func forgeRetryAfter(err error, now time.Time) (time.Duration, bool) {
 	return forgejo.RetryAfter(err, now)
 }
 
-// An index job waits out a forge that failed transiently before its run
-// starts, from forgeWaitMin doubling to forgeWaitMax, forgeWaits times: up to
-// about an hour in all. River's backoff would spend the job's few attempts
-// within seconds and drop the push that queued it. A snooze spends none, so
-// forgeWaitsKey counts the waits in the job's metadata, where River's own
-// snooze count also counts waits for other reasons. Past forgeWaits, the
-// failure spends an attempt. A publication clears the count, so a job that
-// indexes again, for a branch that moved while it ran, has every wait again.
-const (
-	forgeWaitMin  = 30 * time.Second
-	forgeWaitMax  = 15 * time.Minute
-	forgeWaits    = 8
-	forgeWaitsKey = "forge_waits"
-)
+// forgeWaitsKey counts, in an index job's metadata, its waits for a forge
+// that failed transiently before its run starts (tuning's Worker.ForgeWaits),
+// where River's own snooze count also counts waits for other reasons. A
+// publication clears the count, so a job that indexes again, for a branch
+// that moved while it ran, has every wait again.
+const forgeWaitsKey = "forge_waits"
 
 // forgeWait is how long an index job, with metadata, waits out err from a
 // forge, and the count of its waits with this one. A count of 0 says that it
@@ -380,10 +361,10 @@ func forgeWait(err error, metadata []byte) (time.Duration, int) {
 	var meta struct {
 		Waits int `json:"forge_waits"`
 	}
-	if json.Unmarshal(metadata, &meta) != nil || meta.Waits >= forgeWaits {
+	if json.Unmarshal(metadata, &meta) != nil || meta.Waits >= tuning.Get().Worker.ForgeWaits {
 		return 0, 0
 	}
-	return store.Backoff(meta.Waits, forgeWaitMin, forgeWaitMax), meta.Waits + 1
+	return store.Backoff(meta.Waits, tuning.Get().Worker.ForgeWaitMin, tuning.Get().Worker.ForgeWaitMax), meta.Waits + 1
 }
 
 // clearForgeWaits clears the forge waits that metadata counts, when it
@@ -422,7 +403,8 @@ func (w *Index) waitOutForge(ctx context.Context, job *river.Job[jobs.IndexArgs]
 		logger.Warn("forge wait not counted, the failure spends an attempt", "error", serr)
 		return err
 	}
-	logger.Warn("index waits out a forge failure", "waits", waits, "of", forgeWaits, "for", d.Round(time.Second), "error", err)
+	logger.Warn("index waits out a forge failure",
+		"waits", waits, "of", tuning.Get().Worker.ForgeWaits, "for", d.Round(time.Second), "error", err)
 	w.Metrics.IndexSnoozed(account, "forge")
 	return river.JobSnooze(d)
 }
@@ -478,19 +460,15 @@ func (w *Index) lockAppliedIndexBuild(
 	return w.awaitAppliedBuild(ctx, job, account, logger)
 }
 
-// buildWaitWarn is the wait for a pod on the applied build from which an
-// index job logs each wait as a warning. A rollout's waits end within
-// minutes. A leader that never applies the pods' embedder or index format, as
-// when the store refused the configuration that the leader applies them with,
-// keeps every index job waiting, with the pushes that its unique key folds
-// into it, until a restart. buildWaitsKey counts the waits in the job's
-// metadata.
-const (
-	buildWaitWarn = 10
-	buildWaitsKey = "build_waits"
-)
+// buildWaitsKey counts, in an index job's metadata, its waits for a pod on
+// the applied build (tuning's Worker.BuildWaitWarn). A leader that never
+// applies the pods' embedder or index format, as when the store refused the
+// configuration that the leader applies them with, keeps every index job
+// waiting, with the pushes that its unique key folds into it, until a
+// restart.
+const buildWaitsKey = "build_waits"
 
-// awaitAppliedBuild snoozes the job, as its error, for appliedBuildWait, to
+// awaitAppliedBuild snoozes the job, as its error, for tuning's Worker.AppliedBuildWait, to
 // leave it to a pod on the embedder and index format that the leader applied.
 func (w *Index) awaitAppliedBuild(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger) error {
 	var meta struct {
@@ -504,15 +482,15 @@ func (w *Index) awaitAppliedBuild(ctx context.Context, job *river.Job[jobs.Index
 		logger.Warn("build wait not counted", "error", err)
 	}
 	w.Metrics.IndexSnoozed(account, "build")
-	if waits >= buildWaitWarn {
+	if waits >= tuning.Get().Worker.BuildWaitWarn {
 		logger.Warn("index has waited long for a pod on the embedder and index format the leader applied; "+
 			"check kritika_config_error for a configuration the store refused",
-			"waits", waits, "for", appliedBuildWait, "format", runspec.IndexFormat)
+			"waits", waits, "for", tuning.Get().Worker.AppliedBuildWait, "format", runspec.IndexFormat)
 	} else {
 		logger.Info("index waits for a pod on the embedder and index format the leader applied",
-			"waits", waits, "for", appliedBuildWait, "format", runspec.IndexFormat)
+			"waits", waits, "for", tuning.Get().Worker.AppliedBuildWait, "format", runspec.IndexFormat)
 	}
-	return river.JobSnooze(appliedBuildWait)
+	return river.JobSnooze(tuning.Get().Worker.AppliedBuildWait)
 }
 
 // activeGeneration reads the repository's active generation, nil when it
@@ -591,7 +569,7 @@ func (w *Index) embed(
 		var batch []store.StagedChunk
 		err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 			var err error
-			batch, err = store.ReadStagedChunks(ctx, tx, runnerRunID, last, cmp.Or(w.batch, embedBatch))
+			batch, err = store.ReadStagedChunks(ctx, tx, runnerRunID, last, cmp.Or(w.batch, tuning.Get().Worker.EmbedBatch))
 			return err
 		})
 		if err != nil {

@@ -27,6 +27,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Review works the review queue.
@@ -52,7 +53,7 @@ type Review struct {
 	// value calls Linear's API.
 	Linear linear.Client
 
-	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
+	// superviseEvery overrides tuning's Worker.SuperviseInterval, and rowWait tuning's Worker.AgentRowWait.
 	superviseEvery time.Duration
 	rowWait        time.Duration
 }
@@ -99,8 +100,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	})
 	switch {
 	case errors.Is(err, store.ErrPublicationBusy):
-		logger.Info("review snoozed: a review of the pull request is being published", "for", publishWait)
-		return river.JobSnooze(publishWait)
+		logger.Info("review snoozed: a review of the pull request is being published", "for", tuning.Get().Worker.PublishWait)
+		return river.JobSnooze(tuning.Get().Worker.PublishWait)
 	case errors.Is(err, store.ErrHeadMoved):
 		logger.Info("review superseded at start: the head moved")
 		return w.endHeadMoved(ctx, b.early, job)
@@ -601,17 +602,6 @@ func (w *Review) slotsHeld(
 	return true, w.snooze(ctx, e, job, ref)
 }
 
-// A review that did not start its runner is snoozed while every model slot is
-// held, between snoozeMin and snoozeMax. It gives its worker back to the
-// queue meanwhile. A slot let go before then wakes it (see store.SlotWaitKey
-// and SlotWake). The snooze bounds the wait when no slot is let go. For
-// example, a holder died and its lease expired, or River dropped the event of
-// the saved snooze.
-const (
-	snoozeMin = 5 * time.Second
-	snoozeMax = time.Minute
-)
-
 // snooze puts a review that found every model slot held back on the
 // queue, for longer each time, without counting an attempt: it gives its
 // worker back rather than holding it while it waits. The job is marked
@@ -630,7 +620,7 @@ func (w *Review) snooze(ctx context.Context, e earlyEnd, job *river.Job[jobs.Rev
 	if err := river.MetadataSet(ctx, slotWaitSinceKey, time.Now().UTC()); err != nil {
 		e.logger.Warn("model slot wait start not recorded", "error", err)
 	}
-	d := store.Backoff(meta.Snoozes, snoozeMin, snoozeMax)
+	d := store.Backoff(meta.Snoozes, tuning.Get().Worker.SnoozeMin, tuning.Get().Worker.SnoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
 	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
 	return river.JobSnooze(d)
@@ -677,12 +667,6 @@ func (w *Review) botPatch(
 	}
 	return patch, last != "" && last == patch
 }
-
-// publishWait is how long a review whose start found the pull request's
-// publication lock held waits before it tries again: the older review is
-// posting, which is brief, and ends completed or not before the new one can
-// cancel it.
-const publishWait = 5 * time.Second
 
 // start records the review and its runner run, and cancels the pull request's
 // older active reviews (see store.StartReview). It reads the last completed

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const sampleDiff = `diff --git a/main.go b/main.go
@@ -427,7 +428,7 @@ func TestBuildFitsBudgetAtFileBoundaries(t *testing.T) {
 	// header, the omission headroom, and the first file section.
 	sections := splitFiles(sampleDiff)
 	header := len(full) - len(sampleDiff)
-	in.BudgetTokens = (header + 512 + len(sections[0].text) + 8) / charsPerToken
+	in.BudgetTokens = (header + 512 + len(sections[0].text) + 8) / tuning.Get().Review.CharsPerToken
 	msg, omitted, _, _ := Build(in)
 	if len(omitted) != 1 || omitted[0] != "README.md" || strings.Contains(msg, "+new line") || !strings.Contains(msg, "omitted to fit") {
 		t.Fatalf("omitted = %v\n%s", omitted, msg)
@@ -455,7 +456,7 @@ func TestBuildAppendsContextWithinBudget(t *testing.T) {
 		t.Fatal("context must follow the diff under its own heading")
 	}
 	// A budget that fits the diff and the first chunk only.
-	in.BudgetTokens = (strings.Index(msg, "### caller") + 4) / charsPerToken
+	in.BudgetTokens = (strings.Index(msg, "### caller") + 4) / tuning.Get().Review.CharsPerToken
 	msg, _, contextOmitted, _ = Build(in)
 	if contextOmitted != 2 || strings.Contains(msg, "### caller") || !strings.Contains(msg, "### overlay") {
 		t.Fatalf("context omitted %d:\n%s", contextOmitted, msg)
@@ -482,12 +483,12 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	findings := []Finding{{Path: "main.go", Line: 11, Severity: SeverityP1, Title: "y changed", Explanation: "why\nit matters"}}
 	thread := []Message{
 		NewMessage("kritika[bot]", "## Kritika Review\n\nFine.\n", time.Time{}),
-		NewMessage("outsider", strings.Repeat("x", maxMessageChars+1), time.Time{}),
+		NewMessage("outsider", strings.Repeat("x", tuning.Get().Review.MaxMessageChars+1), time.Time{}),
 		NewMessage("onedr0p", "@kritika why is y changed?", time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)),
 	}
 	msg := BuildFollowUp(in, findings, thread)
 	for _, want := range []string{"Diff (unified", "+	z := 4", "Findings kritika posted on this pull request (1)", "main.go:11 [p1] y changed: why it matters",
-		"--- kritika[bot] ---\n## Kritika Review\n\nFine.\n", "--- outsider ---\n" + strings.Repeat("x", maxMessageChars) + " …\n",
+		"--- kritika[bot] ---\n## Kritika Review\n\nFine.\n", "--- outsider ---\n" + strings.Repeat("x", tuning.Get().Review.MaxMessageChars) + " …\n",
 		"--- onedr0p (2026-09-24 21:00) [answer this] ---", "Reply to the last message from onedr0p."} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
@@ -620,7 +621,7 @@ func TestBuildRendersDescriptionAsData(t *testing.T) {
 		if !strings.Contains(msg, want) || strings.Contains(msg, "xé") {
 			t.Fatalf("missing %q in:\n%s", want, msg)
 		}
-		if len(msg) > in.BudgetTokens*charsPerToken {
+		if len(msg) > in.BudgetTokens*tuning.Get().Review.CharsPerToken {
 			t.Fatalf("message is %d chars, over the budget", len(msg))
 		}
 	})
@@ -762,14 +763,14 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 }
 
 // TestParseChecked: the notes for the next review are cut to one line
-// each and to maxChecked of them, blank ones dropped.
+// each and to tuning's Review.MaxChecked of them, blank ones dropped.
 func TestParseChecked(t *testing.T) {
-	notes := make([]string, 0, 2+maxChecked)
+	notes := make([]string, 0, 2+tuning.Get().Review.MaxChecked)
 	notes = append(notes, `" main.go:\n f1 is pure "`, `"  "`)
 	want := []string{"main.go: f1 is pure"}
-	for i := range maxChecked {
+	for i := range tuning.Get().Review.MaxChecked {
 		notes = append(notes, fmt.Sprintf(`"n%d"`, i))
-		if len(want) < maxChecked {
+		if len(want) < tuning.Get().Review.MaxChecked {
 			want = append(want, fmt.Sprintf("n%d", i))
 		}
 	}
@@ -801,7 +802,7 @@ func TestParseDiagram(t *testing.T) {
 		{"an init directive within a line is dropped", "flowchart LR\n  A --> B %%{init: {\"theme\": \"dark\"}}%%", ""},
 		{"front matter that configures is dropped", "---\ntitle: Flow\nconfig:\n  theme: dark\n---\n" + flow, ""},
 		{"prose is dropped", "The webhook calls the worker.", ""},
-		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", maxDiagramBytes/10), ""},
+		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", int(tuning.Get().Review.MaxDiagramBytes)/10), ""},
 		{"none stays none", "", ""},
 	}
 	t.Run("a diagram not asked for is dropped", func(t *testing.T) {
@@ -831,11 +832,11 @@ func TestParseDiagram(t *testing.T) {
 }
 
 func TestBuildDefaultBudget(t *testing.T) {
-	big := strings.Repeat("x", DefaultBudgetTokens*charsPerToken)
+	big := strings.Repeat("x", tuning.Get().Review.DefaultBudgetTokens*tuning.Get().Review.CharsPerToken)
 	in := Input{Repository: "acme/widgets", Number: 1, Changed: []string{"a.go"}, Diff: sampleDiff + "\n" + big}
 	msg, _, _, _ := Build(in)
-	if len(msg) > DefaultBudgetTokens*charsPerToken {
-		t.Fatalf("message is %d chars, over the default budget of %d tokens", len(msg), DefaultBudgetTokens)
+	if len(msg) > tuning.Get().Review.DefaultBudgetTokens*tuning.Get().Review.CharsPerToken {
+		t.Fatalf("message is %d chars, over the default budget of %d tokens", len(msg), tuning.Get().Review.DefaultBudgetTokens)
 	}
 }
 

@@ -14,13 +14,15 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // OpenAI's authorization server, and the resource a plan's tokens are for.
 const (
 	Issuer   = "https://auth.openai.com"
 	TokenURL = Issuer + "/api/accounts/oauth/token"
-	Resource = "https://api.openai.com/v1"
+	Resource = tuning.OpenAIBaseURL
 	// PlanScope is the scope that lets an app's requests draw on the plan. A
 	// sign-in without it is an identity and nothing to review with.
 	PlanScope = "chatgpt.tokens.use.direct"
@@ -67,16 +69,11 @@ func (c Credentials) Expiry() time.Time {
 	return c.SavedAt.Add(time.Duration(c.ExpiresIn) * time.Second)
 }
 
-// RefreshLead is how long before the access token expires it is renewed. So a
-// step's request never goes out with a token about to lapse under it.
-const RefreshLead = 5 * time.Minute
-
-// Due reports whether the access token is within RefreshLead of expiry at
-// now, or past it.
-func (c Credentials) Due(now time.Time) bool { return !now.Before(c.Expiry().Add(-RefreshLead)) }
-
-// clientTimeout bounds one request of a client the package makes itself.
-const clientTimeout = 30 * time.Second
+// Due reports whether the access token is within tuning's
+// ChatGPT.RefreshLead of expiry at now, or past it.
+func (c Credentials) Due(now time.Time) bool {
+	return !now.Before(c.Expiry().Add(-tuning.Get().ChatGPT.RefreshLead))
+}
 
 // ErrSignedOut is a disconnected provider or an unusable refresh token.
 // The saved client and host identify the next sign-in.
@@ -108,7 +105,7 @@ func Refresh(ctx context.Context, client *http.Client, tokenURL string, c Creden
 		return c, fmt.Errorf("chatgpt: refresh: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(tuning.Get().ChatGPT.MaxTokenBody)))
 	if err != nil {
 		return c, fmt.Errorf("chatgpt: refresh: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -47,9 +48,6 @@ func (t *readDiffTool) Def() model.ToolDef {
 	}
 }
 
-// pageNoteRoom is kept free on a page for the note that numbers it.
-const pageNoteRoom = 96
-
 func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, error) {
 	var req struct {
 		Path string `json:"path"`
@@ -64,7 +62,7 @@ func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, er
 	if !ok {
 		return "", fmt.Errorf("agent: read_diff: %q is not a file the pull request changes", req.Path)
 	}
-	pages := diffPages(numberDiff(section), t.maxBytes-pageNoteRoom)
+	pages := diffPages(numberDiff(section), t.maxBytes-tuning.Get().Runner.PageNoteRoom)
 	page := max(req.Page, 1)
 	if page > len(pages) {
 		return "", fmt.Errorf("agent: read_diff: %s's diff ends at page %d", req.Path, len(pages))

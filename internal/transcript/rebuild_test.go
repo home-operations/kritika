@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // store records reqs as consecutive agent steps of run and decodes the
@@ -73,7 +74,7 @@ func TestRebuild(t *testing.T) {
 	singleRow := decoded(t, single.Encode(), StoredRow{Kind: KindFollowUp, Usage: model.Usage{Input: 10, Output: 5}, CostUSD: 0.01,
 		Duration: time.Second, Model: "m"})
 
-	truncated := delta(State{}, stepReq("sys", result(string(make([]byte, ToolResultCap+1)))))
+	truncated := delta(State{}, stepReq("sys", result(string(make([]byte, int(tuning.Get().Transcript.ToolResultCap)+1)))))
 	truncatedRow := decoded(t, truncated.Encode(), StoredRow{Kind: KindAgentStep, RunnerRunID: "r"})
 
 	tests := []struct {

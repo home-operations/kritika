@@ -10,10 +10,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -66,9 +66,6 @@ type Authors interface {
 	PullRequestAuthor(ctx context.Context, in *configfile.Connection, repo string, number int) (login string, bot bool, err error)
 }
 
-// dispatchTimeout bounds one dispatch, which does not end with its request.
-const dispatchTimeout = 30 * time.Second
-
 // Handler serves POST /hooks/{connection}.
 type Handler struct {
 	current *configfile.Current
@@ -107,7 +104,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logger := h.logger.With("connection", name)
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhook.MaxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(tuning.Get().Webhook.MaxBody)))
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			h.Metrics.Webhook(name, "too_large")
@@ -186,7 +183,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The forge gives up on a delivery after ten seconds and does not send it
 	// again. So a dispatch that outlasts the request still finishes. A
 	// comment or thread event that rolls back with the request is lost.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), dispatchTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), tuning.Get().Ingest.DispatchTimeout)
 	defer cancel()
 	// A pull request recorded with no author loses the one it had. So an
 	// author that the payload does not name is read from the forge.

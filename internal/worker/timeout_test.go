@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const timeoutConfigYAML = `
@@ -53,9 +54,9 @@ func TestJobTimeouts(t *testing.T) {
 			index: 75 * time.Minute, followUp: 35 * time.Minute},
 		// The parts of 20m each pass the agent's cap, so a review can run
 		// to the job cap. A follow-up is never split.
-		{name: "the default agent timeout", accountID: "acme", review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
+		{name: "the default agent timeout", accountID: "acme", review: tuning.Get().JobTimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
 		{name: "a longer agent timeout", root: "agent: { timeout: 50m }\n", accountID: "acme",
-			review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
+			review: tuning.Get().JobTimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
 		{name: "unknown account", accountID: "missing", review: 35 * time.Minute, index: 75 * time.Minute, followUp: 35 * time.Minute},
 	}
 	for _, tt := range tests {
@@ -89,9 +90,9 @@ func TestJobTimeouts(t *testing.T) {
 			// The job outlasts the runner Job of the largest review: every
 			// agent on one model, each split into the most parts.
 			agent := file.Settings(account).Agent
-			largest := sizing{parts: map[string]int{"m": agent.MaxParts * (configfile.MaxReviewers + 1)}}
+			largest := sizing{parts: map[string]int{"m": agent.MaxParts * (tuning.Get().ConfigFile.MaxReviewers + 1)}}
 			runner := agentDeadline(file.RunnerDeadline(), partsTimeout(largest.rounds(), agent.Timeout))
-			if want := min(runner+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout); tt.review < want {
+			if want := min(runner+tuning.Get().JobTimeout.LeaseWaitHeadroom+tuning.Get().JobTimeout.PublishHeadroom, tuning.Get().JobTimeout.MaxJobTimeout); tt.review < want {
 				t.Errorf("review timeout = %s, under the largest review's %s", tt.review, want)
 			}
 		})
@@ -99,16 +100,16 @@ func TestJobTimeouts(t *testing.T) {
 
 	// A runner deadline at configfile's max: the index job lands exactly on
 	// MaxJobTimeout. The review's agents, of 1m each, fit in that deadline.
-	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline/time.Second)))
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline()/time.Second)))
 	file := configfiletest.Load(t, "agent: { parts: 1, timeout: 1m }\n"+timeoutConfigYAML)
 	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
 	current := configfile.NewCurrent(file)
 	review, index := &Review{Current: current}, &Index{Current: current}
 	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID()}}),
-		jobtimeout.MaxRunnerDeadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom; got != want {
+		jobtimeout.MaxRunnerDeadline()+tuning.Get().JobTimeout.LeaseWaitHeadroom+tuning.Get().JobTimeout.PublishHeadroom; got != want {
 		t.Errorf("review timeout at the max deadline = %s, want %s", got, want)
 	}
-	if got := index.Timeout(&river.Job[jobs.IndexArgs]{}); got != jobtimeout.MaxRunnerDeadline+jobtimeout.IndexWriteHeadroom {
+	if got := index.Timeout(&river.Job[jobs.IndexArgs]{}); got != jobtimeout.MaxRunnerDeadline()+tuning.Get().JobTimeout.IndexWriteHeadroom {
 		t.Errorf("index timeout at the max deadline = %s", got)
 	}
 }
@@ -130,8 +131,8 @@ func TestDetach(t *testing.T) {
 		t.Fatalf("detached ctx ended with its parent: %v", ctx.Err())
 	}
 	deadline, ok := ctx.Deadline()
-	if !ok || time.Until(deadline) > detachTimeout {
-		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, detachTimeout)
+	if !ok || time.Until(deadline) > tuning.Get().Worker.DetachTimeout {
+		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, tuning.Get().Worker.DetachTimeout)
 	}
 }
 

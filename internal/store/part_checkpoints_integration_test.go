@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -117,13 +118,13 @@ func TestPartCheckpointReadIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, token := runnerWriteFixture(t, s, accountID(t, s, "alpha"), RunnerKindReview)
-	const third = maxCheckpointRead/3 + 1
+	third := int(tuning.Get().Store.MaxCheckpointRead)/3 + 1
 	payload, err := json.Marshal(strings.Repeat("x", third))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Saved before the gateway bounded saves, and larger than a whole read.
-	legacy, err := json.Marshal(strings.Repeat("x", maxCheckpointRead))
+	legacy, err := json.Marshal(strings.Repeat("x", int(tuning.Get().Store.MaxCheckpointRead)))
 	if err != nil {
 		t.Fatal(err)
 	}

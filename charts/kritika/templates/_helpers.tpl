@@ -267,5 +267,15 @@ an `env` key that duplicates one of them.
 {{- $_ := set $names (printf "KRITIKA_RUNNER_%s" ($key | snakecase | upper)) (printf "runner.%s" $key) -}}
 {{- end -}}
 {{- end -}}
+{{- /* A product's name is one word in a tuning area's variable. */ -}}
+{{- $areaPrefix := dict "gitHub" "GITHUB" "gitLab" "GITLAB" "chatGpt" "CHATGPT" -}}
+{{- range $area, $fields := (get . "tuning" | default dict) -}}
+{{- $prefix := get $areaPrefix $area | default ($area | snakecase | upper) -}}
+{{- range $key, $value := ($fields | default dict) -}}
+{{- if ne $value nil -}}
+{{- $_ := set $names (printf "KRITIKA_TUNING_%s_%s" $prefix ($key | snakecase | upper)) (printf "tuning.%s.%s" $area $key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- toYaml $names -}}
 {{- end -}}

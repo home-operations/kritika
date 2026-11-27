@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fileApp is an app named name serving accounts, its secrets read from
@@ -158,7 +159,7 @@ func TestParseRerank(t *testing.T) {
 	}
 	r := f.Embedding.Rerank
 	if r.BaseURL != "https://api.cohere.com/v2" || r.Model != "rerank-v3.5" || r.APIKeyValue().Value() != "rk" ||
-		r.CandidateCount() != DefaultRerankCandidates || r.Deadline() != DefaultRerankTimeout {
+		r.CandidateCount() != tuning.Get().ConfigFile.DefaultRerankCandidates || r.Deadline() != tuning.Get().ConfigFile.DefaultRerankTimeout {
 		t.Fatalf("rerank = %+v", r)
 	}
 	if !f.Embedding.LexicalSearch() {
@@ -185,17 +186,17 @@ func TestParseEmbedding(t *testing.T) {
 	if e == nil || e.Model != "voyage-code-3" || e.BaseURL != model.OpenRouterBaseURL || e.Dims != 1024 || e.APIKeyValue().Value() != "ek" {
 		t.Fatalf("embedding = %+v", e)
 	}
-	if batch, chars, item := e.Bounds(); batch != 8 || chars != model.DefaultEmbedMaxBatchChars || item != model.DefaultEmbedMaxItemChars {
+	if batch, chars, item := e.Bounds(); batch != 8 || chars != tuning.Get().Model.DefaultEmbedMaxBatchChars || item != tuning.Get().Model.DefaultEmbedMaxItemChars {
 		t.Fatalf("Bounds = %d, %d, %d", batch, chars, item)
 	}
-	if e.Floor() != DefaultSimilarFloor {
-		t.Fatalf("Floor = %g, want the default %g", e.Floor(), DefaultSimilarFloor)
+	if e.Floor() != tuning.Get().ConfigFile.DefaultSimilarFloor {
+		t.Fatalf("Floor = %g, want the default %g", e.Floor(), tuning.Get().ConfigFile.DefaultSimilarFloor)
 	}
 	if f, err := Parse([]byte(embeddingDoc("similarFloor: 0.7"))); err != nil || f.Embedding.Floor() != 0.7 {
 		t.Fatalf("Parse(similarFloor: 0.7) = %v, floor %v", err, f)
 	}
-	if e.Margin() != DefaultSimilarMargin {
-		t.Fatalf("Margin = %g, want the default %g", e.Margin(), DefaultSimilarMargin)
+	if e.Margin() != tuning.Get().ConfigFile.DefaultSimilarMargin {
+		t.Fatalf("Margin = %g, want the default %g", e.Margin(), tuning.Get().ConfigFile.DefaultSimilarMargin)
 	}
 	for _, margin := range []float64{0.05, 0} {
 		doc := embeddingDoc(fmt.Sprintf("similarMargin: %g", margin))

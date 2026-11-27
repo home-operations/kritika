@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // requestLog records the SQL of every request that a pool's connections
@@ -179,8 +180,8 @@ func TestDropLegacyIndexChunksBesideSustainedSearches(t *testing.T) {
 			got.dropped, got.err, gaveUp)
 	default:
 	}
-	if gaveUp != partitionTries-1 {
-		t.Fatalf("the drop waited for the lock after giving way %d times, want %d", gaveUp, partitionTries-1)
+	if gaveUp != tuning.Get().Store.PartitionTries-1 {
+		t.Fatalf("the drop waited for the lock after giving way %d times, want %d", gaveUp, tuning.Get().Store.PartitionTries-1)
 	}
 	// The search that holds index_chunks now ends, and the drop takes it.
 	if err := holding.Commit(ctx); err != nil {

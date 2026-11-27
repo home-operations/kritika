@@ -26,6 +26,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Cache keeps the bodies of upgraded downloads for which a runner names the
@@ -159,16 +160,6 @@ var (
 	errDigest       = errors.New("egress: cache: the body does not have the digest asked for")
 )
 
-const (
-	// maxEntryHeader bounds an entry's first line.
-	maxEntryHeader = 16 << 10
-	// maxRedirects bounds the redirects one fill follows.
-	maxRedirects = 10
-	// maxFills bounds the fills under way at once, and each fill holds an
-	// upstream connection. A request past them is forwarded.
-	maxFills = 8
-)
-
 // cacheable reports whether r, an upgraded request to host, can be
 // answered from the cache: one marked ForDigest, to any host the rules do
 // not name as uncached. A URL with a query is not: a signed URL's query is
@@ -209,7 +200,7 @@ func upstreamURL(u *url.URL, host string) string {
 // If cached cannot get the entry, it writes nothing and returns false. r is
 // then forwarded as any other request is.
 func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool {
-	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), tuning.Get().Egress.UpgradeTimeout)
 	defer cancel()
 	d, _ := DigestOf(r.Context())
 	key := d.key()
@@ -256,7 +247,7 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	// cannot hold an entry's file, evicted or not, open for longer. The
 	// gateway's writer supports the deadline. A writer that does not support it
 	// leaves the response unbounded, as forwarding is without its context.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(upgradeTimeout))
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(tuning.Get().Egress.UpgradeTimeout))
 	p.observe("http", OutcomeAllowed)
 	p.Logger.Debug("egress cache", "outcome", outcome, "host", host, "method", r.Method, "path", r.URL.Path, "bytes", entry.Size)
 	p.serveCached(w, r, key, f)
@@ -266,7 +257,7 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 // fill fetches target and follows its redirects. It keeps the body under
 // key, which is d's key, when the body has d. Every request waiting on key
 // waits on this one fetch, so the fetch does not end with the request that
-// started it. The fetch is bounded as one upgraded request is. While maxFills
+// started it. The fetch is bounded as one upgraded request is. While Egress.MaxFills
 // are under way or their bytes hold MaxBytes, the fetch is not made at all,
 // and the request is left to be forwarded. The fetch is the gateway's own,
 // with a User-Agent and Accept of its own.
@@ -289,7 +280,7 @@ func (p *Proxy) fill(ctx context.Context, key string, d Digest, target string) e
 	}
 	var reserved int64
 	defer func() { p.Cache.end(reserved) }()
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), upgradeTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Egress.UpgradeTimeout)
 	defer cancel()
 	started := time.Now()
 	resp, err := p.fetch(ctx, target)
@@ -355,7 +346,7 @@ func (p *Proxy) fetch(ctx context.Context, target string) (*http.Response, error
 	if err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
-	req.Header.Set("User-Agent", "kritika")
+	req.Header.Set("User-Agent", tuning.Product)
 	req.Header.Set("Accept", "*/*")
 	// The body is kept as the server sends it, not as a transport decodes it.
 	req.Header.Set("Accept-Encoding", "identity")
@@ -376,15 +367,15 @@ func (p *Proxy) fetch(ctx context.Context, target string) (*http.Response, error
 // turns a URL's userinfo into Basic authorization.
 func (p *Proxy) checkRedirect(req *http.Request, via []*http.Request) error {
 	switch {
-	case len(via) >= maxRedirects:
-		return fmt.Errorf("egress: cache: stopped after %d redirects", maxRedirects)
+	case len(via) >= tuning.Get().Egress.MaxRedirects:
+		return fmt.Errorf("egress: cache: stopped after %d redirects", len(via))
 	case req.URL.Scheme != upgradedScheme:
 		return fmt.Errorf("egress: cache: redirect to %s", req.URL.Scheme)
 	case req.URL.User != nil:
 		return errors.New("egress: cache: redirect to a URL with credentials")
 	case req.Response != nil && private(req.Response.Header):
 		return errors.New("egress: cache: a redirect asks not to be shared")
-	case req.URL.Port() != "" && req.URL.Port() != "443":
+	case req.URL.Port() != "" && req.URL.Port() != tuning.HTTPSPort:
 		return &refusal{req.URL.Host, "only port 443 is served"}
 	}
 	rules := p.Rules()
@@ -416,12 +407,13 @@ func private(h http.Header) bool {
 	return false
 }
 
-// begin claims a place for a fill among the maxFills under way at once,
+// begin claims a place for a fill among tuning's Egress.MaxFills under way
+// at once,
 // false when there is none.
 func (c *Cache) begin() bool {
 	c.underway.Lock()
 	defer c.underway.Unlock()
-	if c.filling >= maxFills {
+	if c.filling >= tuning.Get().Egress.MaxFills {
 		return false
 	}
 	c.filling++
@@ -480,7 +472,7 @@ func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 // readEntry reads the first line of f, an entry's file, and makes sure that
 // the body after it is as long as the line says.
 func readEntry(f *os.File) (cacheEntry, int64, error) {
-	line, err := bufio.NewReader(io.LimitReader(f, maxEntryHeader)).ReadBytes('\n')
+	line, err := bufio.NewReader(io.LimitReader(f, int64(tuning.Get().Egress.MaxEntryHeader))).ReadBytes('\n')
 	if err != nil {
 		return cacheEntry{}, 0, fmt.Errorf("egress: cache entry: %w", err)
 	}
@@ -564,7 +556,7 @@ func (c *Cache) evict(keep string) {
 			continue
 		}
 		if strings.HasPrefix(d.Name(), ".") {
-			if time.Since(info.ModTime()) > 2*upgradeTimeout {
+			if time.Since(info.ModTime()) > 2*tuning.Get().Egress.UpgradeTimeout {
 				_ = os.Remove(filepath.Join(c.Dir, d.Name()))
 			}
 			continue

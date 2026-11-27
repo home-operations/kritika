@@ -1,8 +1,10 @@
 package webapi
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,13 +15,36 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// tokenNameMax is the longest name that a token can have, in characters.
-const tokenNameMax = 100
+// tokenLifetime reports whether tuning's WebAPI.TokenLifetimes offers a
+// token that lasts days, 0 for one that never expires.
+func tokenLifetime(days int) bool {
+	return slices.Contains(tuning.Get().WebAPI.TokenLifetimes, time.Duration(days)*24*time.Hour)
+}
 
-// tokenLifetimes are the days that a token can last. 0 is never expiring.
-var tokenLifetimes = []int{0, 7, 30, 90, 365}
+// tokenLifetimeChoices is how an error names tuning's WebAPI.TokenLifetimes:
+// "7, 30, 90, 365, or 0 for never".
+func tokenLifetimeChoices() string {
+	var days []string
+	never := false
+	for _, d := range tuning.Get().WebAPI.TokenLifetimes {
+		if d == 0 {
+			never = true
+		} else {
+			days = append(days, strconv.FormatInt(int64(d/(24*time.Hour)), 10))
+		}
+	}
+	switch s := strings.Join(days, ", "); {
+	case !never:
+		return s
+	case s == "":
+		return "0 for never"
+	default:
+		return s + ", or 0 for never"
+	}
+}
 
 // registerTokens mounts the personal access tokens a user manages, and
 // those an admin lists and revokes.
@@ -68,11 +93,14 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	name := strings.TrimSpace(req.Name)
-	if name == "" || utf8.RuneCountInString(name) > tokenNameMax {
-		return errBadRequest(CodeBadRequest, "name must be 1 to 100 characters")
+	if limit := tuning.Get().WebAPI.TokenNameMax; name == "" || utf8.RuneCountInString(name) > limit {
+		return errBadRequest(CodeBadRequest, fmt.Sprintf("name must be 1 to %d characters", limit))
 	}
-	if !slices.Contains(tokenLifetimes, req.ExpiresInDays) {
-		return errBadRequest(CodeBadRequest, "expiresInDays must be 7, 30, 90, 365, or 0 for never")
+	if !tokenLifetime(req.ExpiresInDays) {
+		if len(tuning.Get().WebAPI.TokenLifetimes) == 0 {
+			return errBadRequest(CodeBadRequest, "tokens cannot be created: tuning.webApi.tokenLifetimes offers no lifetime")
+		}
+		return errBadRequest(CodeBadRequest, "expiresInDays must be "+tokenLifetimeChoices())
 	}
 	ctx, p, file, now := r.Context(), auth.PrincipalFrom(r.Context()), s.current.Get(), s.now()
 	g, err := tokenGrant(file, p, req.Accounts)

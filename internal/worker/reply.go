@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // replyDisqualified returns why the comment is not answered as a reply, or
@@ -40,7 +41,7 @@ func (f *followUp) replyDisqualified(ctx context.Context) string {
 
 // runReply answers a reply in one of the bot's finding threads that did not
 // address it, as run answers a mention. It does so when the thread holds
-// fewer than repliesPerThread of the bot's replies, counted again before the
+// fewer than tuning's Worker.RepliesPerThread of the bot's replies, counted again before the
 // reply is posted. Replies handled at once pass the first count together, and
 // the second count leaves the window that the posts themselves take.
 //
@@ -62,7 +63,7 @@ func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err er
 	if err != nil {
 		return store.FollowupFailed, err
 	}
-	if replied >= repliesPerThread {
+	if replied >= tuning.Get().Worker.RepliesPerThread {
 		reason := fmt.Sprintf("kritika has replied %d times in this thread; mention it to go on", replied)
 		f.logger.Info("reply ignored", "reason", reason)
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
@@ -99,7 +100,7 @@ func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err er
 	// fails leaves the reply, which the model was paid for, to post.
 	if _, replied, err := f.thread(pctx); err != nil {
 		f.logger.Warn("thread not counted again before the reply", "error", err)
-	} else if replied >= repliesPerThread {
+	} else if replied >= tuning.Get().Worker.RepliesPerThread {
 		reason := fmt.Sprintf("nothing posted: kritika replied %d times in this thread meanwhile", replied)
 		f.logger.Info("reply not posted", "reason", reason, "model", agent.Model, "cost_usd", agent.CostUSD)
 		return store.FollowupAnswered, f.record(pctx, store.FollowupAnswered, reason, 0, agent.Model)
@@ -150,7 +151,8 @@ func (f *followUp) recordConcession(ctx context.Context, replyID int64, modelNam
 		f.logger.Info("finding conceded", "fingerprint", fingerprint)
 		return store.RecordDismissal(ctx, tx, store.Dismissal{
 			AccountID: f.account.ID(), PullRequestID: f.pr.id, Fingerprint: fingerprint, Finding: finding,
-			Reason: "kritika conceded: " + textcut.Truncate(reply, 200), Author: f.botLogin, CommentID: replyID,
+			Reason: "kritika conceded: " + textcut.Truncate(reply, tuning.Get().Worker.ConcessionReasonBytes),
+			Author: f.botLogin, CommentID: replyID,
 			Source: store.DismissedByConcession,
 		})
 	})

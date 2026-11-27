@@ -21,20 +21,18 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// installTimeout bounds each step of installing a tool: the registry's
-// fetch, a checksum's lookup, and each attempt at the download. It does so
-// as fetchTimeout bounds a fetch. fetchRegistry fetches the aqua registry the
-// run's gateway keeps, and githubAPI is where the GitHub REST API is.
-// Variables for the tests.
+// fetchRegistry fetches the aqua registry the run's gateway keeps, and
+// githubAPI is where the GitHub REST API is. Variables for the tests. Each
+// step of installing a tool is bounded by tuning's Runner.InstallTimeout.
 var (
-	installTimeout = 2 * time.Minute
-	fetchRegistry  = func(ctx context.Context, gatewayURL, gatewayToken string) (*aqua.Registry, error) {
+	fetchRegistry = func(ctx context.Context, gatewayURL, gatewayToken string) (*aqua.Registry, error) {
 		return aqua.FetchRegistry(ctx, http.DefaultClient, strings.TrimSuffix(gatewayURL, "/")+runspec.AquaRegistryPath,
-			http.Header{"Authorization": {"Bearer " + gatewayToken}})
+			http.Header{"Authorization": {tuning.BearerPrefix + gatewayToken}})
 	}
-	githubAPI = "https://" + configfile.GitHubAPIHost
+	githubAPI = tuning.GitHubAPIURL
 )
 
 // repoTool is one of the repository's tools.
@@ -202,7 +200,7 @@ var keptOutHosts = []string{configfile.GitHubAPIHost}
 // credentials or query, to a host not kept out. Any other URL is u.
 func plainHTTP(u *url.URL) *url.URL {
 	host := strings.ToLower(u.Hostname())
-	if u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Port() != "" && u.Port() != "443" ||
+	if u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Port() != "" && u.Port() != tuning.HTTPSPort ||
 		host == "" || strings.Contains(host, ":") || strings.HasSuffix(host, ".") || slices.Contains(keptOutHosts, host) {
 		return u
 	}
@@ -265,7 +263,7 @@ func (r *repoTools) resolveWith(onPath map[string]string, env []string) func(con
 // around the cache. The download first comes through the gateway's cache,
 // while the gateway keeps checked downloads. If that fails, it comes around
 // the cache, in case the gateway's own fetch is what the origin refuses. The
-// lookup and each attempt have installTimeout of their own, so one that
+// lookup and each attempt have Runner.InstallTimeout of their own, so one that
 // stalls leaves the next its time.
 //
 // Whatever an earlier call left of t's directory goes first. A tool whose
@@ -302,7 +300,7 @@ func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 		return ctx.Err()
 	case errors.Is(err, context.DeadlineExceeded):
 		r.logger.Warn("tool not installed", "tool", t.name, "version", t.pkg.Version, "error", err)
-		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, installTimeout)
+		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, tuning.Get().Runner.InstallTimeout)
 	default:
 		r.logger.Warn("tool not installed", "tool", t.name, "version", t.pkg.Version, "error", err)
 		return fmt.Errorf("%s could not be installed: %w", t.name, err)
@@ -317,9 +315,9 @@ func (r *repoTools) install(ctx context.Context, t *repoTool) error {
 	return nil
 }
 
-// within runs f with installTimeout of its own, and f ends with ctx.
+// within runs f with Runner.InstallTimeout of its own, and f ends with ctx.
 func within[T any](ctx context.Context, f func(context.Context) (T, error)) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, installTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.InstallTimeout)
 	defer cancel()
 	return f(ctx)
 }

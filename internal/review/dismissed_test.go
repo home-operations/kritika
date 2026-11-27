@@ -3,6 +3,8 @@ package review
 import (
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestBuildDismissed(t *testing.T) {
@@ -31,7 +33,7 @@ func TestBuildDismissed(t *testing.T) {
 	if strings.Index(msg, "dismissed on this pull request") > strings.Index(msg, "Reference files") {
 		t.Fatalf("the dismissed findings must precede the references:\n%s", msg)
 	}
-	in.BudgetTokens = (strings.Index(msg, "\n\nReference files") + 20) / charsPerToken
+	in.BudgetTokens = (strings.Index(msg, "\n\nReference files") + 20) / tuning.Get().Review.CharsPerToken
 	if cut, _, _, _ := Build(in); !strings.Contains(cut, "### ARCH.md: the shape") || !strings.Contains(cut, "Unchecked error") || !strings.Contains(cut, "+x") {
 		t.Fatalf("references keep their reserved room alongside dismissed findings:\n%s", cut)
 	}

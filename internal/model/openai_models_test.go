@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestOpenAILatestModels(t *testing.T) {
@@ -82,7 +84,7 @@ func TestOpenAILatestModels(t *testing.T) {
 	catalog[3] = "sol-7"
 	catalogMu.Unlock()
 	step(t, "~sol-latest", "gpt-6.10-sol", 0.00036)
-	now = now.Add(modelCatalogTTL)
+	now = now.Add(tuning.Get().Model.CatalogTTL)
 	step(t, "~sol-latest", "gpt-6.10-sol", 0.00036)
 	settle(&c.catalogCache, "")
 	step(t, "~sol-latest", "sol-7", 0.00084)

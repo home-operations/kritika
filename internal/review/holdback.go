@@ -1,16 +1,15 @@
 package review
 
-import "github.com/home-operations/kritika/internal/contextpack"
-
-// HeldBackLines is how far from every line changed since the last review an
-// incremental re-review's new finding can point before it is held back.
-const HeldBackLines = 3
+import (
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // HoldBack keeps an incremental re-review to the commits since the last
 // review, which the prompt asks for and the model does not always heed. It
 // reports whether a finding is held back. A held-back finding is one that the
 // last review, whose findings are prior, did not make. It also points more
-// than HeldBackLines from every line that delta, the diff since that review,
+// than tuning's Review.HeldBackLines from every line that delta, the diff since that review,
 // changed. reported are all of this review's findings. A prior finding in a
 // file that delta renames is taken as made under the new name. A finding is
 // never held back in a file where one of prior went unreported. It can be
@@ -44,7 +43,7 @@ func HoldBack(prior, reported []Finding, delta string, deltaPaths []string) func
 		if made[Fingerprint(f)] || spared[f.Path] {
 			return false
 		}
-		from, to := f.Line-HeldBackLines, max(f.Line, f.EndLine)+HeldBackLines
+		from, to := f.Line-tuning.Get().Review.HeldBackLines, max(f.Line, f.EndLine)+tuning.Get().Review.HeldBackLines
 		for _, l := range touched[f.Path] {
 			if l >= from && l <= to {
 				return false

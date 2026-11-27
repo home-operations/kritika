@@ -11,14 +11,15 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // pastFullFiles adds to hits, the vector search's depth nearest chunks of
 // each query, the next nearest outside the files of which the query's hits
-// hold similarPerFile or more, for each query that the file cap would
-// otherwise leave short: its hits fill the window, the last of them still
-// qualifies, and the cap keeps fewer than target of them, the most chunks a
-// query keeps. A window that is not full has nothing past it, and nothing
+// hold tuning's Gateway.SimilarPerFile or more, for each query that the
+// file cap would otherwise leave short: its hits fill the window, the last
+// of them still qualifies, and the cap keeps fewer than target of them, the
+// most chunks a query keeps. A window that is not full has nothing past it, and nothing
 // past a last hit under the floor or the margin qualifies either. A query is
 // searched again until it is no longer short, at most target times: each
 // full window past the files the cap fills adds a chunk that the cap keeps,
@@ -120,7 +121,7 @@ func pastFull(
 }
 
 // fullFiles is the files of which found, a query's hits, holds
-// similarPerFile or more, when the file cap leaves the query short of
+// Gateway.SimilarPerFile or more, when the file cap leaves the query short of
 // target chunks and the search's last window, which found ends with, says
 // that more chunks past it can qualify: it is depth long, and qualifies its
 // last hit, given found. It is nil otherwise.
@@ -134,11 +135,12 @@ func fullFiles(
 	for _, h := range found {
 		perFile[h.Chunk.Path]++
 	}
+	fileCap := tuning.Get().Gateway.SimilarPerFile
 	var kept int
 	var full []string
 	for path, n := range perFile {
-		kept += min(n, similarPerFile)
-		if n >= similarPerFile {
+		kept += min(n, fileCap)
+		if n >= fileCap {
 			full = append(full, path)
 		}
 	}
@@ -157,8 +159,9 @@ func closeTo(similarity, best, floor, margin float64) bool {
 	return similarity >= floor && similarity >= best-margin-1e-9
 }
 
-// namedBy reports whether a lexical weight is at least lexicalShare of best,
+// namedBy reports whether a lexical weight is at least tuning's
+// Gateway.LexicalShare of best,
 // its query's best lexical weight: whether its names alone vouch for a hit.
 func namedBy(lexical, best float64) bool {
-	return lexical >= lexicalShare*best
+	return lexical >= tuning.Get().Gateway.LexicalShare*best
 }

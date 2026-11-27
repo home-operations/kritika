@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestUsageFollowupGrouping(t *testing.T) {
@@ -218,7 +219,7 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 				}
 				if _, err := tx.Exec(ctx, `INSERT INTO river_job (kind, args, state, finalized_at)
 					SELECT 'thread', jsonb_build_object('account_id', $1::text, 'repository_id', $2::text, 'number', 910, 'comment_id', n, 'resolved', n % 2 = 0), 'completed', now()
-					FROM generate_series(1, $3::int) n`, account, repo, queueFinished); err != nil {
+					FROM generate_series(1, $3::int) n`, account, repo, tuning.Get().Store.QueueFinished); err != nil {
 					return err
 				}
 				rows, err := ListQueue(ctx, tx)
@@ -237,7 +238,7 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 						t.Errorf("thread state = %+v", row)
 					}
 				}
-				if !found || finished != queueFinished {
+				if !found || finished != tuning.Get().Store.QueueFinished {
 					t.Errorf("failure retained = %v, finished = %d", found, finished)
 				}
 				return nil

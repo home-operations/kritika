@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // cacheProxy is a proxy with a cache in front of an HTTPS server that
@@ -404,17 +405,29 @@ func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 	}
 }
 
-// TestCacheBoundsFills: a fill past maxFills, or past the bytes the fills
-// under way can write, is not made, and the request is forwarded.
+// TestCacheBoundsFills: a fill past Egress.MaxFills, or past the bytes the
+// fills under way can write, is not made, and the request is forwarded.
 func TestCacheBoundsFills(t *testing.T) {
+	t.Run("configured", func(t *testing.T) {
+		tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxFills = 3 })
+		c := &Cache{MaxBytes: 100}
+		for range 3 {
+			if !c.begin() {
+				t.Fatal("a fill was refused below the configured 3")
+			}
+		}
+		if c.begin() {
+			t.Fatal("a fill past the configured 3 was let through")
+		}
+	})
 	c := &Cache{MaxBytes: 100}
-	for range maxFills {
+	for range tuning.Get().Egress.MaxFills {
 		if !c.begin() {
-			t.Fatal("a fill was refused below maxFills")
+			t.Fatal("a fill was refused below Egress.MaxFills")
 		}
 	}
 	if c.begin() {
-		t.Fatal("a fill past maxFills was let through")
+		t.Fatal("a fill past Egress.MaxFills was let through")
 	}
 	if !c.reserve(60) || c.reserve(41) || !c.reserve(40) {
 		t.Fatalf("reserved = %d: want 60 and 40 of 100 held, 41 more refused", c.reserved)

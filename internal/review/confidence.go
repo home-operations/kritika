@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // MaxConfidence is the highest confidence score.
@@ -383,15 +384,6 @@ var confidenceSchema = jsonSchema{
 // version the change moves, and the reason.
 func ConfidenceSchema() json.RawMessage { return slices.Clone(confidenceSchema) }
 
-// maxConfidenceFinding bounds one finding in the scorer's prompt and the
-// review's summary, maxConfidenceSources the sources it lists, and
-// maxConfidenceReason the reason kept of its answer.
-const (
-	maxConfidenceFinding = 1500
-	maxConfidenceSources = 20
-	maxConfidenceReason  = 500
-)
-
 // Record is what kritika saw of a review's run, as the scorer is told it
 // beside the review's own account. It holds the sources that its tools read
 // outside the repository, the commands that it ran, and the ones that failed
@@ -416,8 +408,8 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 	var tail strings.Builder
 	tail.WriteString("\n\nThe review's account of itself:\n")
 	if take := strings.Join(strings.Fields(res.Summary.Take), " "); take != "" {
-		if len(take) > maxConfidenceFinding {
-			take = textcut.Prefix(take, maxConfidenceFinding) + " …"
+		if len(take) > tuning.Get().Review.MaxConfidenceFinding {
+			take = textcut.Prefix(take, tuning.Get().Review.MaxConfidenceFinding) + " …"
 		}
 		fmt.Fprintf(&tail, "\nIts summary: %s\n", take)
 	}
@@ -433,10 +425,10 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		tail.WriteString("\nIt read no sources outside the repository.\n")
 	} else {
 		tail.WriteString("\nThe sources it read outside the repository:\n")
-		for _, s := range rec.Sources[:min(len(rec.Sources), maxConfidenceSources)] {
+		for _, s := range rec.Sources[:min(len(rec.Sources), tuning.Get().Review.MaxConfidenceSources)] {
 			fmt.Fprintf(&tail, "- %s\n", oneLine(s))
 		}
-		if more := len(rec.Sources) - maxConfidenceSources; more > 0 {
+		if more := len(rec.Sources) - tuning.Get().Review.MaxConfidenceSources; more > 0 {
 			fmt.Fprintf(&tail, "- and %d more\n", more)
 		}
 	}
@@ -455,8 +447,8 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 	// A note names the files that went unreviewed, which the rubric rests on.
 	// So it is kept whole as a finding is, not cut as a line.
 	for _, n := range rec.Unfinished {
-		if n = strings.Join(strings.Fields(n), " "); len(n) > maxConfidenceFinding {
-			n = textcut.Prefix(n, maxConfidenceFinding) + " …"
+		if n = strings.Join(strings.Fields(n), " "); len(n) > tuning.Get().Review.MaxConfidenceFinding {
+			n = textcut.Prefix(n, tuning.Get().Review.MaxConfidenceFinding) + " …"
 		}
 		fmt.Fprintf(&tail, "\nUnreviewed: %s\n", n)
 	}
@@ -467,8 +459,8 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		fmt.Fprintf(&tail, "\n\nFindings the review reported (%d):\n", len(findings))
 		for _, f := range findings {
 			text := strings.TrimSpace(f.Explanation)
-			if len(text) > maxConfidenceFinding {
-				text = textcut.Prefix(text, maxConfidenceFinding) + " …"
+			if len(text) > tuning.Get().Review.MaxConfidenceFinding {
+				text = textcut.Prefix(text, tuning.Get().Review.MaxConfidenceFinding) + " …"
 			}
 			fmt.Fprintf(&tail, "\n- [%s] %s:%d %s\n  %s\n", f.Severity, f.Path, f.Line, oneLine(f.Title), strings.ReplaceAll(text, "\n", "\n  "))
 		}
@@ -497,7 +489,7 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		}
 		tail.WriteString("\n")
 	}
-	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/charsPerToken, minUserBudget)
+	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/tuning.Get().Review.CharsPerToken, tuning.Get().Review.MinUserBudget)
 	in.Toolless = true
 	msg, _, _, _ := Build(in)
 	return msg + tail.String()
@@ -550,7 +542,7 @@ func (p Parsed) Defaulted() bool { return string(p.Risk) != p.RiskGiven }
 // bump is dropped.
 // The reason's GitHub references are redirected as Parse does for a review.
 // repository is the "owner/repo" that the pull request is on. A reason over
-// maxConfidenceReason is cut after the last word that fits, once the
+// tuning's Review.MaxConfidenceReason is cut after the last word that fits, once the
 // references are redirected. So the cut lands inside neither a word nor a
 // link that the redirection made. A risk that is no level is the highest:
 // an answer that does not say how risky the change is must not read as a
@@ -584,8 +576,8 @@ func ParseConfidence(raw, repository string, bumps []Bump) (Parsed, error) {
 		}
 	}
 	p.Reason = prose(strings.Join(strings.Fields(out.Reason), " "), repository)
-	if len(p.Reason) > maxConfidenceReason {
-		p.Reason = cutWords(p.Reason, maxConfidenceReason) + " …"
+	if len(p.Reason) > tuning.Get().Review.MaxConfidenceReason {
+		p.Reason = cutWords(p.Reason, tuning.Get().Review.MaxConfidenceReason) + " …"
 	}
 	return p, nil
 }

@@ -9,6 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestEvents: an Event lands on the run's Job or on this replica's pod,
@@ -42,7 +44,7 @@ func TestEvents(t *testing.T) {
 	}
 	pod := list.Items[byReason["ConfigRefused"]]
 	if pod.Regarding != (corev1.ObjectReference{APIVersion: "v1", Kind: "Pod", Namespace: "kritika", Name: "kritika-7c9f5d6b8-xk2lp", UID: "pod-uid"}) ||
-		pod.Type != corev1.EventTypeWarning || pod.Action != "ApplyConfiguration" || len(pod.Note) > eventNoteBytes {
+		pod.Type != corev1.EventTypeWarning || pod.Action != "ApplyConfiguration" || len(pod.Note) > int(tuning.Get().Executor.EventNoteBytes) {
 		t.Fatalf("pod event = %+v (note %d bytes)", pod, len(pod.Note))
 	}
 }

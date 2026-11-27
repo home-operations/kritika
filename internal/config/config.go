@@ -258,6 +258,9 @@ func (c *Config) validate() error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
+	if err := c.Tuning.Validate(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	if c.GatewayURL != "" {
 		if err := checkGatewayURL(c.GatewayURL); err != nil {
 			return fmt.Errorf("config: gatewayUrl: KRITIKA_GATEWAY_URL: %w", err)
@@ -320,7 +323,7 @@ func (c *Config) Env() []EnvVar {
 	visit = func(v reflect.Value, prefix string) {
 		for i := range v.NumField() {
 			key, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("yaml"), ",")
-			if v.Type().Field(i).Anonymous {
+			if nests(v.Type().Field(i)) {
 				nested := prefix
 				if key != "" {
 					nested += key + "."

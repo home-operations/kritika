@@ -212,6 +212,10 @@
           "required": [],
           "type": "object"
         },
+        "tuning": {
+          "required": [],
+          "type": "object"
+        },
         "webUrl": {
           "type": "string"
         }

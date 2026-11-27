@@ -16,11 +16,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-)
 
-// shutdownTimeout bounds how long an in-flight request can hold up process
-// exit once the root context is canceled.
-const shutdownTimeout = 10 * time.Second
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // Management serves /healthz, /readyz and /metrics. Readiness starts false.
 // The role flips it once the role's own dependencies are up, so a pod is not
@@ -74,32 +72,26 @@ func (m *Management) Handler() http.Handler {
 	return mux
 }
 
-// Run serves until ctx is cancelled, then drains within shutdownTimeout.
+// Run serves until ctx is cancelled, then drains within tuning's
+// Server.ShutdownTimeout.
 func (m *Management) Run(ctx context.Context) error {
-	return Serve(ctx, m.addr, m.Handler(), shutdownTimeout, m.logger.With("listener", "management"))
+	return Serve(ctx, m.addr, m.Handler(), tuning.Get().Server.ShutdownTimeout, m.logger.With("listener", "management"))
 }
 
-// readTimeout bounds reading one request, body included, so a client that
-// trickles a body does not hold its connection open. It does not bound the
-// handler: an event stream or a model step runs on past it. idleTimeout is
-// how long a keep-alive connection can wait for its next request. There is no
-// write timeout, because a write timeout cuts the event streams. These are
-// variables for the tests.
-var (
-	readTimeout = time.Minute
-	idleTimeout = 2 * time.Minute
-)
-
 // Serve runs h on addr until ctx is cancelled, then drains within drain.
+// tuning's Server values bound reading a request and an idle connection;
+// there is no write timeout, because a write timeout cuts the event
+// streams.
 // Requests still in flight when it runs out are cut: a stopping process is
 // not failing.
 func Serve(ctx context.Context, addr string, h http.Handler, drain time.Duration, logger *slog.Logger) error {
+	t := tuning.Get().Server
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       readTimeout,
-		IdleTimeout:       idleTimeout,
+		ReadHeaderTimeout: t.ReadHeaderTimeout,
+		ReadTimeout:       t.ReadTimeout,
+		IdleTimeout:       t.IdleTimeout,
 	}
 	errc := make(chan error, 1)
 	go func() {

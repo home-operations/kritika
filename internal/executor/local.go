@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Local runs the runner in this process, reporting to the gateway that the job
@@ -32,7 +33,7 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 	if err == nil {
 		err = runner.Run(ctx, job, spec.Secrets, logger)
 	}
-	logTail := tail(spec.Secrets.Mask(buf.String()), LogTailBytes)
+	logTail := tail(spec.Secrets.Mask(buf.String()), int(tuning.Get().Executor.LogTailBytes))
 	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail}
 	if err != nil {
 		// A git or provider error can carry a credential, and the worker
@@ -65,10 +66,6 @@ func specRoundTrip(s runspec.Spec) (runspec.Spec, error) {
 	}
 	return runspec.Decode(b)
 }
-
-// LogTailBytes is how much of a runner's output is kept: enough to diagnose,
-// small enough to store per run.
-const LogTailBytes = 64 << 10
 
 // tail is the last n bytes of s, less any leading bytes of a rune that the
 // cut split. So the result stays valid UTF-8 for a text column.

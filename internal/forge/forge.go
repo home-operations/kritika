@@ -146,11 +146,7 @@ func (p Permission) Valid() bool {
 	return false
 }
 
-// MaxFileBytes bounds what FileAt reads of one file: GitHub's contents API
-// inlines a file only up to this size.
-const MaxFileBytes = 1 << 20
-
-// ErrFileTooLarge is FileAt refusing a file over MaxFileBytes.
+// ErrFileTooLarge is FileAt refusing a file over tuning's Forge.MaxFileBytes.
 var ErrFileTooLarge = errors.New("forge: file is over the size limit")
 
 // ErrNotFound is the forge having no issue, pull request or comment of

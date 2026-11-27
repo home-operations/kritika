@@ -19,9 +19,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // servedRepo serves, over HTTPS, a repository with two tags: v1, with
@@ -78,7 +78,7 @@ func servedRepoMirror(t *testing.T) (string, *fetchRepoTool, *git.Repository) {
 	}
 	srv := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(root), false)))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes), fetchMax: configfile.DefaultFetches}, mirror
+	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(int64(tuning.Get().Runner.FetchWriteBytes)), fetchMax: tuning.Get().ConfigFile.DefaultFetches}, mirror
 }
 
 func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
@@ -113,8 +113,8 @@ func TestFetchRepoTool(t *testing.T) {
 	if err != nil || !strings.Contains(string(diff), "+func A() {}") {
 		t.Fatalf("diff file = %q, %v", diff, err)
 	}
-	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); fetchWriteBytes-tool.budget.Left() != want {
-		t.Fatalf("written = %d, want %d", fetchWriteBytes-tool.budget.Left(), want)
+	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); int64(tuning.Get().Runner.FetchWriteBytes)-tool.budget.Left() != want {
+		t.Fatalf("written = %d, want %d", int64(tuning.Get().Runner.FetchWriteBytes)-tool.budget.Left(), want)
 	}
 
 	if out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1"})); err != nil ||
@@ -253,8 +253,8 @@ func TestDirName(t *testing.T) {
 	} {
 		got := dirName(tt.n, tt.url, tt.ref)
 		if tt.wantLimit {
-			if len(got) != dirNameMax || !strings.HasPrefix(got, "4-r@aaa") {
-				t.Errorf("dirName(%q) = %q, want it cut to %d", tt.ref, got, dirNameMax)
+			if len(got) != tuning.Get().Runner.MaxDirNameBytes || !strings.HasPrefix(got, "4-r@aaa") {
+				t.Errorf("dirName(%q) = %q, want it cut to %d", tt.ref, got, tuning.Get().Runner.MaxDirNameBytes)
 			}
 			continue
 		}
@@ -300,7 +300,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("description = %q", d)
 	}
 	tool.hosts = nil
-	if tool.fetches != 0 || tool.budget.Left() != fetchWriteBytes {
+	if tool.fetches != 0 || tool.budget.Left() != int64(tuning.Get().Runner.FetchWriteBytes) {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}
 
@@ -316,7 +316,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("listings = %d, want 5: three asked for and two after a missing ref", tool.listings)
 	}
 
-	tool.listings = listMax
+	tool.listings = tuning.Get().Runner.MaxTagListings
 	if _, err := run(map[string]any{"tags": ""}); err == nil || !strings.Contains(err.Error(), "listed tags 8 times") {
 		t.Fatalf("past the listing count: err = %v", err)
 	}
@@ -431,7 +431,7 @@ func TestFetchedReadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A fetch keeps a diff larger than any file it writes.
-	big := strings.Repeat("+a line of a long diff\n", (fetchDiffBytes-1)/len("+a line of a long diff\n"))
+	big := strings.Repeat("+a line of a long diff\n", (int(tuning.Get().Runner.FetchDiffBytes)-1)/len("+a line of a long diff\n"))
 	if err := os.WriteFile(filepath.Join(fetch.dir, "9-repo@v9.diff"), []byte(big), 0o644); err != nil {
 		t.Fatal(err)
 	}

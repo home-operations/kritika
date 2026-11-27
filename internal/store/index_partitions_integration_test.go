@@ -18,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // createUnpartitionedIndexChunks creates index_chunks as a build before
@@ -730,7 +731,7 @@ func TestPartitionIndexChunksYieldsToPublication(t *testing.T) {
 		err         error
 	}
 	gaveUp := 0
-	gave := make(chan error, partitionTries)
+	gave := make(chan error, tuning.Get().Store.PartitionTries)
 	gaveWay = func(err error) {
 		gaveUp++
 		gave <- err
@@ -863,7 +864,7 @@ func TestDropLegacyIndexChunksYieldsToSearch(t *testing.T) {
 			}
 			messages = append(messages, pgErr.Message)
 		}
-		want := slices.Repeat([]string{`could not obtain lock on relation "index_chunks"`}, partitionTries-1)
+		want := slices.Repeat([]string{`could not obtain lock on relation "index_chunks"`}, tuning.Get().Store.PartitionTries-1)
 		want = append(want, "canceling statement due to lock timeout")
 		if dropped || !slices.Equal(messages, want) {
 			t.Fatalf("DropLegacyIndexChunks beside a chunk writer = %v, after %q; want it to give way at once but at its last try: %q",
@@ -1051,9 +1052,7 @@ func TestDrainLegacyIndexChunksInSlices(t *testing.T) {
 	repo := configfile.RepositoryID(account, "index-slices/one")
 	run := partitionRun(t, s, account, repo, true, "a.go", "b.go", "c.go")
 	partitionLegacy(t, s)
-	slice := legacyDrainSlice
-	legacyDrainSlice = 2
-	t.Cleanup(func() { legacyDrainSlice = slice })
+	tuning.Override(t, func(v *tuning.Values) { v.Store.LegacyDrainSlice = 2 })
 
 	if moved, removed, err := s.DrainLegacyIndexChunks(ctx); err != nil || moved != 2 || removed != 0 {
 		t.Fatalf("first slice moved %d and deleted %d, %v; want 2 moved", moved, removed, err)
@@ -1188,9 +1187,7 @@ func TestDrainLegacyIndexChunksPassesOverHeldGenerations(t *testing.T) {
 	second := partitionRun(t, s, account, repo, false, "d.go", "e.go", "f.go")
 	runners := legacyBuilds(t, s, account, first, second)
 	partitionLegacy(t, s)
-	slice := legacyDrainSlice
-	legacyDrainSlice = 1
-	t.Cleanup(func() { legacyDrainSlice = slice })
+	tuning.Override(t, func(v *tuning.Values) { v.Store.LegacyDrainSlice = 1 })
 
 	const job = `SELECT 1 FROM river_job WHERE id = (SELECT river_job_id FROM runner_runs WHERE id = $1) FOR UPDATE`
 	const chunks = `SELECT 1 FROM index_chunks_legacy WHERE index_run_id = $1 FOR UPDATE`
@@ -1246,8 +1243,7 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 	}
 	run := partitionRun(t, s, account, repo, true, paths...)
 	partitionLegacy(t, s)
-	slice := legacyDrainSlice
-	legacyDrainSlice = 1
+	tuning.Override(t, func(v *tuning.Values) { v.Store.LegacyDrainSlice = 1 })
 	drainCtx, stopDrain := context.WithCancel(ctx)
 	drained := make(chan error, 1)
 	draining := false
@@ -1258,7 +1254,6 @@ func TestDrainLegacyIndexChunksBesidePublications(t *testing.T) {
 				t.Error(err)
 			}
 		}
-		legacyDrainSlice = slice
 	})
 
 	// Each step replaces one file's chunk with its own.
