@@ -1019,7 +1019,7 @@ this release's `-tools` image unless it names one.
 
 ### Tuning
 
-The caps, budgets, timeouts, intervals, batch sizes and retry counts that kritika works within have defaults that suit most installations. Each one can be changed under the file's `tuning` block, at `tuning.<area>.<name>`, or with its `KRITIKA_TUNING_<AREA>_<NAME>` environment variable. As with every other setting, use one source for each value: a value in both is refused at startup, and the chart refuses an `env` entry for a key that `config.tuning` sets. Under Helm, `tuning` goes under `config`.
+The caps, budgets, timeouts, intervals, batch sizes and retry counts that kritika works within have defaults that suit most installations. [Tuning](/tuning/) says which few matter for a symptom you see, and what changing them costs. Each one can be changed under the file's `tuning` block, at `tuning.<area>.<name>`, or with its `KRITIKA_TUNING_<AREA>_<NAME>` environment variable. As with every other setting, use one source for each value: a value in both is refused at startup, and the chart refuses an `env` entry for a key that `config.tuning` sets. Under Helm, `tuning` goes under `config`.
 
 ```yaml
 tuning:
