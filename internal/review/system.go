@@ -74,7 +74,7 @@ the repository, as the PR head has them, that a search of the repository found s
 similarity, or with the names it shares with the change when its names alone found it. Use it to judge the change. A
 similar snippet can be unrelated to the change: rely on it only where it bears on what the change does.
 
-Answer with a summary and findings. ` + summarySpec + `
+Answer with a summary and findings. ` + summarySpec + ` ` + crossReference + `
 Checked is where what you read goes, as the schema says; no comment shows it. Each finding has a severity and a
 category as the schema defines them: pick the category the fix is really about, and never call a style point
 security. Give it a one-line title and an explanation of why it matters. The fix goes in one field: replacement when
@@ -101,6 +101,14 @@ take gives no verdict, does not count the findings or say there are none, and do
 reassure that nothing else changes or that the merge is safe. It omits how the code does what it does, what you
 read and how, generic caveats about what a diff cannot show, and routine advice such as watching logs. Praise lists
 at most three specific things done well, and is empty when nothing stands out.`
+
+// crossReference is how every prompt whose text the forge renders cites
+// another repository's issue or pull request. The forge links a bare #N to
+// the repository under review, and RedirectReferences turns owner/repo#N
+// into a link to GitHub.
+const crossReference = `Cite an issue or pull request of another repository as owner/repo#N, such as
+google/go-github#1234, or by its URL when it is not on GitHub, never as #1234 alone: the forge links a bare number
+to this repository's own issue or pull request.`
 
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries
