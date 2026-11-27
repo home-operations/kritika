@@ -104,11 +104,12 @@ at most three specific things done well, and is empty when nothing stands out.`
 
 // crossReference is how every prompt whose text the forge renders cites
 // another repository's issue or pull request. The forge links a bare #N to
-// the repository under review, and RedirectReferences turns owner/repo#N
-// into a link to GitHub.
+// the repository under review. RedirectReferences turns owner/repo#N into a
+// link to GitHub, except the slug under review, which the forge links to
+// itself even when the model meant a GitHub repository of the same name.
 const crossReference = `Cite an issue or pull request of another repository as owner/repo#N, such as
-google/go-github#1234, or by its URL when it is not on GitHub, never as #1234 alone: the forge links a bare number
-to this repository's own issue or pull request.`
+google/go-github#1234, never as #1234 alone: the forge links a bare number to this repository's own issue or pull
+request. Cite it by its URL instead when it is not on GitHub or its owner/repo is the same as this repository's.`
 
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries
