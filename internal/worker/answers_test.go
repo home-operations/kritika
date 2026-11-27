@@ -63,9 +63,10 @@ func TestThreadAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	own := answerOf(f.comments[3])
+	caps := currentCaps()
+	own := answerOf(f.comments[3], caps)
 	own.Own = true
-	want := map[int64][]review.Answer{1: {own, answerOf(f.comments[4]), answerOf(f.comments[5]), answerOf(f.comments[6])}, 11: {answerOf(f.comments[11])}}
+	want := map[int64][]review.Answer{1: {own, answerOf(f.comments[4], caps), answerOf(f.comments[5], caps), answerOf(f.comments[6], caps)}, 11: {answerOf(f.comments[11], caps)}}
 	if want[1][1].Text != "second" || want[1][1].ID != 5 || want[1][1].Digest == "" {
 		t.Fatalf("answerOf = %+v", want[1][1])
 	}
@@ -125,7 +126,7 @@ func TestHeldOf(t *testing.T) {
 	// An edit past the cut that the review was shown changes the digest
 	// alone, and holds no answer either.
 	long := strings.Repeat("x", tuning.Get().Worker.AnswerBytes+20)
-	was, edited := answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " keep it"}), answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " drop it"})
+	was, edited := answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " keep it"}, currentCaps()), answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " drop it"}, currentCaps())
 	if was.Text != edited.Text || was.Digest == edited.Digest {
 		t.Fatalf("answerOf: %+v against %+v", was, edited)
 	}

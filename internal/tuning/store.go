@@ -191,5 +191,22 @@ func init() {
 			}
 			return errors.Join(errs...)
 		},
+		func(v Values) error {
+			// Postgres takes statement_timeout in whole milliseconds, and 0
+			// turns it off.
+			var errs []error
+			for _, f := range []struct {
+				path string
+				d    time.Duration
+			}{
+				{"store.appStatementTimeout", v.Store.AppStatementTimeout}, {"store.ownerStatementTimeout", v.Store.OwnerStatementTimeout},
+			} {
+				if f.d < time.Millisecond {
+					errs = append(errs, fmt.Errorf("%s must be at least 1ms: Postgres counts it in whole milliseconds, and 0 is none",
+						fieldLabel(f.path)))
+				}
+			}
+			return errors.Join(errs...)
+		},
 	)
 }

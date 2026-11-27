@@ -321,7 +321,7 @@ var (
 // the returned note, also shown in the comment, says why.
 func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string, notes []string) {
 	marker := Marker(d.Number) + "\n"
-	limit := int(tuning.Get().Review.MaxRenderBytes) - len(marker)
+	limit := bodyLimit(marker)
 	if t.Summary != "" {
 		out, err := render(ctx, t.Summary, d, limit)
 		if err == nil {
@@ -376,7 +376,7 @@ type InlineData struct {
 // FindingMarker. It falls back to the default template as RenderSummary does.
 func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []string) {
 	marker := FindingMarker(Fingerprint(d.Finding)) + "\n"
-	limit := int(tuning.Get().Review.MaxRenderBytes) - len(marker)
+	limit := bodyLimit(marker)
 	var notes []string
 	if t.Inline != "" {
 		out, err := render(ctx, t.Inline, d, limit)
@@ -392,11 +392,20 @@ func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []str
 	return marker + out, notes
 }
 
+// bodyLimit is what tuning's Review.MaxRenderBytes leaves a comment's body
+// after marker, never under zero: Validate keeps room for every marker, and
+// this keeps the fallback's cut in bounds should a marker outgrow it.
+func bodyLimit(marker string) int {
+	return max(int(tuning.Get().Review.MaxRenderBytes)-len(marker), 0)
+}
+
 func fallbackNote(which string, err error) string {
 	why := "failed to render"
-	switch {
+	switch limit := int64(tuning.Get().Review.MaxRenderBytes); {
+	case errors.Is(err, errTooLarge) && limit%(1<<10) == 0:
+		why = fmt.Sprintf("produced more than %d KiB", limit>>10)
 	case errors.Is(err, errTooLarge):
-		why = fmt.Sprintf("produced more than %d KiB", int(tuning.Get().Review.MaxRenderBytes)>>10)
+		why = fmt.Sprintf("produced more than %d bytes", limit)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		why = "ran out of time"
 	}

@@ -152,7 +152,9 @@ func TestStepRetries(t *testing.T) {
 // tuning's Adapter values as they are when the step runs.
 func TestStepRetryBoundsAreTunable(t *testing.T) {
 	tuning.Override(t, func(v *tuning.Values) {
-		v.Adapter.RetryMin, v.Adapter.RetryMax, v.Adapter.RetryAfterMax = 10*time.Second, 10*time.Second, 5*time.Second
+		// The cap is past the longest backoff, so the rate-limited wait
+		// shows the cap rather than the backoff.
+		v.Adapter.RetryMin, v.Adapter.RetryMax, v.Adapter.RetryAfterMax = 10*time.Second, 10*time.Second, 15*time.Second
 	})
 	var waits []time.Duration
 	wait := func(_ context.Context, d time.Duration) bool { waits = append(waits, d); return true }
@@ -162,9 +164,15 @@ func TestStepRetryBoundsAreTunable(t *testing.T) {
 	if _, attempts, err := step(t.Context(), s, model.StepRequest{Model: "m"}, 3, wait, func(error) {}); err != nil || attempts != 4 {
 		t.Fatalf("step = %d attempts, %v; want an answer after four", attempts, err)
 	}
-	for i, d := range waits {
+	if len(waits) != 3 {
+		t.Fatalf("waits = %v, want one after each failure", waits)
+	}
+	for i, d := range waits[:2] {
 		if d < 5*time.Second || d > 10*time.Second {
 			t.Fatalf("wait %d = %s, want within the overridden backoff of 5s to 10s", i, d)
 		}
+	}
+	if waits[2] != 15*time.Second {
+		t.Fatalf("rate-limited wait = %s, want the hour's Retry-After capped at the overridden 15s", waits[2])
 	}
 }

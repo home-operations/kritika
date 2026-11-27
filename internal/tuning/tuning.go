@@ -116,9 +116,13 @@ func clone(v Values) Values {
 	return v
 }
 
-// format is a field's value as its environment variable spells it.
+// format is a field's value as its environment variable spells it. An
+// empty list is EmptyList: env reads an empty variable as unset.
 func format(l leaf) string {
 	if l.value.Kind() == reflect.Slice {
+		if l.value.Len() == 0 {
+			return EmptyList
+		}
 		parts := make([]string, l.value.Len())
 		for i := range parts {
 			parts[i] = formatScalar(l.path, l.value.Index(i))

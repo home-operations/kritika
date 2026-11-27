@@ -214,7 +214,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			// can miss a pod created meanwhile. So the API is asked before the
 			// Job is given up. A pod list that fails, or one that no longer
 			// shows what the watch did, gives nothing up.
-			pods, err := k.listedPods(ctx, created)
+			pods, err := k.listedPods(context.WithoutCancel(ctx), created)
 			var fresh string
 			if err == nil {
 				started, fresh = podStart(pods)
@@ -317,9 +317,10 @@ func ownPods(pods []*corev1.Pod, job *batchv1.Job) []*corev1.Pod {
 	})
 }
 
-// listedPods are the Job's pods as the API lists them now.
+// listedPods are the Job's pods as the API lists them now. The list ends
+// with ctx, and no later than tuning's Executor.APITimeout.
 func (k *Kube) listedPods(ctx context.Context, job *batchv1.Job) ([]*corev1.Pod, error) {
-	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Executor.APITimeout)
+	lctx, cancel := context.WithTimeout(ctx, tuning.Get().Executor.APITimeout)
 	defer cancel()
 	list, err := k.Client.CoreV1().Pods(k.Namespace).List(lctx, metav1.ListOptions{LabelSelector: jobNameLabel + "=" + job.Name})
 	if err != nil {
@@ -335,7 +336,7 @@ func (k *Kube) listedPods(ctx context.Context, job *batchv1.Job) ([]*corev1.Pod,
 // podless reports whether the Job has no pod, false when its pods cannot
 // be read.
 func (k *Kube) podless(ctx context.Context, job *batchv1.Job) bool {
-	pods, err := k.listedPods(ctx, job)
+	pods, err := k.listedPods(context.WithoutCancel(ctx), job)
 	return err == nil && len(pods) == 0
 }
 
@@ -533,18 +534,17 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets)
 	}
 	defer func() { _ = stream.Close() }()
 	b, logErr := io.ReadAll(io.LimitReader(stream, limit))
-	res.LogTail = logTail(string(b), int64(len(b)) >= limit, secrets)
+	res.LogTail = logTail(string(b), int64(len(b)) >= limit || logErr != nil, secrets)
 }
 
 // logTail is the last tuning's Executor.LogTailBytes of a pod's log, secrets masked before
-// the cut so none straddles it. A read that hit the byte ceiling ends
-// mid-line, where a secret can be cut short of its mask, so that partial
-// line is dropped.
-func logTail(log string, hitCeiling bool, secrets runspec.Secrets) string {
-	if hitCeiling {
-		if i := strings.LastIndexByte(log, '\n'); i >= 0 {
-			log = log[:i+1]
-		}
+// the cut so none straddles it. A read that hit the byte ceiling or failed
+// is incomplete: it can end mid-line, where a secret can be cut short of its
+// mask, so that partial line is dropped, and with it the whole of a log that
+// holds no complete line.
+func logTail(log string, incomplete bool, secrets runspec.Secrets) string {
+	if incomplete {
+		log = log[:strings.LastIndexByte(log, '\n')+1]
 	}
 	return tail(secrets.Mask(log), int(tuning.Get().Executor.LogTailBytes))
 }

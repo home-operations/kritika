@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -39,8 +40,15 @@ func verifyMinisign(publicKey string, sig []byte, r io.Reader) error {
 	var message []byte
 	switch algorithm {
 	case "Ed":
-		if message, err = io.ReadAll(io.LimitReader(r, int64(tuning.Get().Aqua.MaxDownloadBytes))); err != nil {
+		// The message is a download or a checksum file, each read under its
+		// own limit already. One over both is refused, never verified in
+		// part: a prefix that verifies says nothing of the rest.
+		most := max(int64(tuning.Get().Aqua.MaxDownloadBytes), int64(tuning.Get().Aqua.MaxChecksumFileBytes))
+		if message, err = io.ReadAll(io.LimitReader(r, most+1)); err != nil {
 			return err
+		}
+		if int64(len(message)) > most {
+			return fmt.Errorf("minisign: the message is over %d bytes, too large to verify", most)
 		}
 	case "ED":
 		h, _ := blake2b.New512(nil)

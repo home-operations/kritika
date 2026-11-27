@@ -35,9 +35,9 @@ const mergeDiagram = summaryDiagram + ` Draw it from the parts' diagrams, as one
 // when the summary carries one.
 func MergeSystemPrompt(diagram bool) string {
 	if diagram {
-		return mergeSystem + mergeDiagram
+		return withPraiseCap(mergeSystem) + mergeDiagram
 	}
-	return mergeSystem
+	return withPraiseCap(mergeSystem)
 }
 
 // MergeSchema is the merge call's answer shape: a summary's headline, take

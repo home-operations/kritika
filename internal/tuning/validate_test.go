@@ -1,6 +1,7 @@
 package tuning
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -22,30 +23,65 @@ func TestCrossFieldEdges(t *testing.T) {
 			[]string{"tuning.gateway.similarWithin: KRITIKA_TUNING_GATEWAY_SIMILAR_WITHIN", "tuning.runner.similarTimeout: KRITIKA_TUNING_RUNNER_SIMILAR_TIMEOUT"},
 		},
 		{
-			"index body holds the index",
-			func(v *Values) {
-				v.Gateway.MaxIndexBody = ByteSize(int64(v.Indexer.MaxChunks)*int64(v.Indexer.MaxChunkBytes) - 1)
-			},
-			func(v *Values) {
-				v.Gateway.MaxIndexBody = ByteSize(int64(v.Indexer.MaxChunks) * int64(v.Indexer.MaxChunkBytes))
-			},
-			[]string{"KRITIKA_TUNING_GATEWAY_MAX_INDEX_BODY", "KRITIKA_TUNING_INDEXER_MAX_CHUNKS", "KRITIKA_TUNING_INDEXER_MAX_CHUNK_BYTES"},
+			"index body holds the encoded index",
+			func(v *Values) { v.Gateway.MaxIndexBody = ByteSize(v.indexUpload() - 1) },
+			func(v *Values) { v.Gateway.MaxIndexBody = ByteSize(v.indexUpload()) },
+			[]string{"KRITIKA_TUNING_GATEWAY_MAX_INDEX_BODY", "KRITIKA_TUNING_GATEWAY_MAX_INDEX_LINE", "KRITIKA_TUNING_INDEXER_MAX_CHUNKS",
+				"KRITIKA_TUNING_INDEXER_MAX_CHUNK_BYTES", "KRITIKA_TUNING_INDEXER_MAX_SIGNATURE_BYTES"},
 		},
 		{
-			"report body holds the pack's diffs and the conversation",
-			func(v *Values) { v.Runner.MaxPackDiffBytes = v.Gateway.MaxReportBody / 2 },
+			"index body holds more than one chunk's raw text",
 			func(v *Values) {
-				v.Runner.MaxPackDiffBytes = (v.Gateway.MaxReportBody - v.Gateway.MaxConversationBytes) / 2
+				v.Indexer.MaxChunks, v.Gateway.MaxIndexLine = 1, ByteSize(v.indexChunkLine())
+				v.Gateway.MaxIndexBody = v.Indexer.MaxChunkBytes
 			},
-			[]string{"tuning.gateway.maxReportBody: KRITIKA_TUNING_GATEWAY_MAX_REPORT_BODY", "tuning.runner.maxPackDiffBytes", "tuning.gateway.maxConversationBytes"},
+			func(v *Values) {
+				v.Indexer.MaxChunks, v.Gateway.MaxIndexLine = 1, ByteSize(v.indexChunkLine())
+				v.Gateway.MaxIndexBody = ByteSize(v.indexUpload())
+			},
+			[]string{"tuning.gateway.maxIndexBody: KRITIKA_TUNING_GATEWAY_MAX_INDEX_BODY"},
 		},
 		{
-			"similar request body holds its queries",
-			func(v *Values) { v.ContextPack.SimilarQueryChars = int(v.Gateway.MaxSimilarRequest) },
+			"index line holds an escaped chunk",
+			func(v *Values) { v.Gateway.MaxIndexLine = 4 << 10 },
+			func(v *Values) { v.Gateway.MaxIndexLine = ByteSize(v.indexChunkLine()) },
+			[]string{"tuning.gateway.maxIndexLine: KRITIKA_TUNING_GATEWAY_MAX_INDEX_LINE", "tuning.indexer.maxChunkBytes",
+				"tuning.indexer.maxSignatureBytes"},
+		},
+		{
+			"report body holds an escaped context report",
 			func(v *Values) {
-				v.ContextPack.SimilarQueryChars = int(v.Gateway.MaxSimilarRequest) / v.ContextPack.SimilarQueries
+				v.Runner.MaxPackDiffBytes = ((v.Gateway.MaxReportBody-reportEnvelope)/jsonGrowth-v.ContextPack.MaxPackBytes)/2 + 1
+			},
+			func(v *Values) {
+				v.Runner.MaxPackDiffBytes = ((v.Gateway.MaxReportBody-reportEnvelope)/jsonGrowth - v.ContextPack.MaxPackBytes) / 2
+			},
+			[]string{"tuning.gateway.maxReportBody: KRITIKA_TUNING_GATEWAY_MAX_REPORT_BODY", "tuning.runner.maxPackDiffBytes",
+				"tuning.contextPack.maxPackBytes"},
+		},
+		{
+			"report body holds the conversation in base64",
+			func(v *Values) { v.Gateway.MaxConversationBytes = 3*((v.Gateway.MaxReportBody-reportEnvelope)/4) + 1 },
+			func(v *Values) { v.Gateway.MaxConversationBytes = 3 * ((v.Gateway.MaxReportBody - reportEnvelope) / 4) },
+			[]string{"tuning.gateway.maxReportBody: KRITIKA_TUNING_GATEWAY_MAX_REPORT_BODY", "tuning.gateway.maxConversationBytes"},
+		},
+		{
+			"similar request body holds its escaped queries",
+			func(v *Values) {
+				v.ContextPack.SimilarQueryChars = int((int64(v.Gateway.MaxSimilarRequest)-similarEnvelope)/int64(v.ContextPack.SimilarQueries)-
+					similarLanguageBytes-6)/jsonGrowth + 1
+			},
+			func(v *Values) {
+				v.ContextPack.SimilarQueryChars = int((int64(v.Gateway.MaxSimilarRequest)-similarEnvelope)/int64(v.ContextPack.SimilarQueries)-
+					similarLanguageBytes-6) / jsonGrowth
 			},
 			[]string{"tuning.gateway.maxSimilarRequest", "KRITIKA_TUNING_CONTEXT_PACK_SIMILAR_QUERIES", "KRITIKA_TUNING_CONTEXT_PACK_SIMILAR_QUERY_CHARS"},
+		},
+		{
+			"similar request body holds the default queries escaped",
+			func(v *Values) { v.Gateway.MaxSimilarRequest = 36000 },
+			func(v *Values) {},
+			[]string{"tuning.gateway.maxSimilarRequest: KRITIKA_TUNING_GATEWAY_MAX_SIMILAR_REQUEST"},
 		},
 		{
 			"similar answer body holds its chunks",
@@ -64,10 +100,64 @@ func TestCrossFieldEdges(t *testing.T) {
 			[]string{"tuning.contextPack.similarLimit: KRITIKA_TUNING_CONTEXT_PACK_SIMILAR_LIMIT", "tuning.gateway.similarMax: KRITIKA_TUNING_GATEWAY_SIMILAR_MAX"},
 		},
 		{
-			"spec within the Secret",
-			func(v *Values) { v.RunSpec.MaxBytes = 1 << 20 },
-			func(v *Values) { v.RunSpec.MaxBytes = 1<<20 - 1 },
-			[]string{"tuning.runSpec.maxBytes: KRITIKA_TUNING_RUN_SPEC_MAX_BYTES", "Secret"},
+			"spec within what a version 1 runner reads",
+			func(v *Values) { v.RunSpec.MaxBytes = 900<<10 + 1 },
+			func(v *Values) { v.RunSpec.MaxBytes = 900 << 10 },
+			[]string{"tuning.runSpec.maxBytes: KRITIKA_TUNING_RUN_SPEC_MAX_BYTES", "spec version 1", "Secret"},
+		},
+		{
+			"window overlap less than a window",
+			func(v *Values) { v.Indexer.WindowOverlap = v.Indexer.WindowLines },
+			func(v *Values) { v.Indexer.WindowOverlap = v.Indexer.WindowLines - 1 },
+			[]string{"tuning.indexer.windowOverlap: KRITIKA_TUNING_INDEXER_WINDOW_OVERLAP", "tuning.indexer.windowLines: KRITIKA_TUNING_INDEXER_WINDOW_LINES"},
+		},
+		{
+			"window lines lowered to the default overlap",
+			func(v *Values) { v.Indexer.WindowLines = 10 },
+			func(v *Values) { v.Indexer.WindowLines, v.Indexer.WindowOverlap = 10, 0 },
+			[]string{"tuning.indexer.windowOverlap", "tuning.indexer.windowLines"},
+		},
+		{
+			"lexeme within PostgreSQL's limit",
+			func(v *Values) { v.Lexical.MaxLexemeBytes = 2048 },
+			func(v *Values) { v.Lexical.MaxLexemeBytes = 2047 },
+			[]string{"tuning.lexical.maxLexemeBytes: KRITIKA_TUNING_LEXICAL_MAX_LEXEME_BYTES", "PostgreSQL"},
+		},
+		{
+			"event instance within Kubernetes' limit",
+			func(v *Values) { v.Executor.EventInstanceBytes = 129 },
+			func(v *Values) { v.Executor.EventInstanceBytes = 128 },
+			[]string{"tuning.executor.eventInstanceBytes: KRITIKA_TUNING_EXECUTOR_EVENT_INSTANCE_BYTES", "Kubernetes"},
+		},
+		{
+			"event note within Kubernetes' limit",
+			func(v *Values) { v.Executor.EventNoteBytes = 1025 },
+			func(v *Values) { v.Executor.EventNoteBytes = 1024 },
+			[]string{"tuning.executor.eventNoteBytes: KRITIKA_TUNING_EXECUTOR_EVENT_NOTE_BYTES", "Kubernetes"},
+		},
+		{
+			"job ttl at least a second",
+			func(v *Values) { v.Executor.JobTTL = 500 * time.Millisecond },
+			func(v *Values) { v.Executor.JobTTL = time.Second },
+			[]string{"tuning.executor.jobTtl: KRITIKA_TUNING_EXECUTOR_JOB_TTL"},
+		},
+		{
+			"job ttl in whole seconds",
+			func(v *Values) { v.Executor.JobTTL = 1500 * time.Millisecond },
+			func(v *Values) { v.Executor.JobTTL = 2 * time.Second },
+			[]string{"tuning.executor.jobTtl: KRITIKA_TUNING_EXECUTOR_JOB_TTL"},
+		},
+		{
+			"job ttl within an int32 of seconds",
+			func(v *Values) { v.Executor.JobTTL = (math.MaxInt32 + 1) * time.Second },
+			func(v *Values) { v.Executor.JobTTL = math.MaxInt32 * time.Second },
+			[]string{"tuning.executor.jobTtl: KRITIKA_TUNING_EXECUTOR_JOB_TTL"},
+		},
+		{
+			"fetch directory name leaves room for .diff",
+			func(v *Values) { v.Runner.MaxDirNameBytes = 251 },
+			func(v *Values) { v.Runner.MaxDirNameBytes = 250 },
+			[]string{"tuning.runner.maxDirNameBytes: KRITIKA_TUNING_RUNNER_MAX_DIR_NAME_BYTES", ".diff"},
 		},
 		{
 			"prompt within the spec",
@@ -264,14 +354,122 @@ func TestCrossFieldMessages(t *testing.T) {
 			},
 		},
 		{
-			name:   "abandoned at the first missed beat",
-			change: func(v *Values) { v.JobTimeout.AbandonedBeats = 1 },
+			name:   "abandoned at the second missed beat",
+			change: func(v *Values) { v.JobTimeout.AbandonedBeats = 2 },
 			want: []string{
-				"tuning.jobTimeout.abandonedBeats: KRITIKA_TUNING_JOB_TIMEOUT_ABANDONED_BEATS must be at least 2",
+				"tuning.jobTimeout.abandonedBeats: KRITIKA_TUNING_JOB_TIMEOUT_ABANDONED_BEATS must be at least 3",
 				"tuning.jobTimeout.heartbeatInterval: KRITIKA_TUNING_JOB_TIMEOUT_HEARTBEAT_INTERVAL",
 			},
 		},
-		{name: "abandoned at the second", change: func(v *Values) { v.JobTimeout.AbandonedBeats = 2 }},
+		{name: "abandoned at the third", change: func(v *Values) { v.JobTimeout.AbandonedBeats = 3 }},
+		{
+			name:   "a default runner deadline under a second",
+			change: func(v *Values) { v.JobTimeout.RunnerDeadline = 500 * time.Millisecond },
+			want:   []string{"tuning.jobTimeout.runnerDeadline: KRITIKA_TUNING_JOB_TIMEOUT_RUNNER_DEADLINE must be a whole number of seconds"},
+		},
+		{
+			name:   "a default runner deadline of fractional seconds",
+			change: func(v *Values) { v.JobTimeout.RunnerDeadline = 1500 * time.Millisecond },
+			want:   []string{"tuning.jobTimeout.runnerDeadline: KRITIKA_TUNING_JOB_TIMEOUT_RUNNER_DEADLINE must be a whole number of seconds"},
+		},
+		{name: "a default runner deadline of a second", change: func(v *Values) { v.JobTimeout.RunnerDeadline = time.Second }},
+		{
+			name:   "a rescue wait past the longest duration",
+			change: func(v *Values) { v.JobTimeout.RescueGrace = 2562047 * time.Hour },
+			want: []string{
+				"tuning.jobTimeout.maxJobTimeout: KRITIKA_TUNING_JOB_TIMEOUT_MAX_JOB_TIMEOUT and " +
+					"tuning.jobTimeout.rescueGrace: KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE together must not exceed",
+			},
+		},
+		{
+			name:   "a rescue wait at the longest duration",
+			change: func(v *Values) { v.JobTimeout.RescueGrace = time.Duration(math.MaxInt64) - v.JobTimeout.MaxJobTimeout },
+		},
+		{
+			name: "a ChatGPT look and refresh that fill the lead",
+			change: func(v *Values) {
+				v.Worker.ChatGPTRefreshInterval = v.ChatGPT.RefreshLead - v.Worker.ChatGPTRefreshTimeout
+			},
+			want: []string{
+				"tuning.worker.chatGptRefreshInterval: KRITIKA_TUNING_WORKER_CHAT_GPT_REFRESH_INTERVAL and " +
+					"tuning.worker.chatGptRefreshTimeout: KRITIKA_TUNING_WORKER_CHAT_GPT_REFRESH_TIMEOUT together must be less than " +
+					"tuning.chatGpt.refreshLead: KRITIKA_TUNING_CHATGPT_REFRESH_LEAD",
+			},
+		},
+		{
+			name: "a ChatGPT refresh as long as the lead",
+			change: func(v *Values) {
+				v.Worker.ChatGPTRefreshInterval, v.Worker.ChatGPTRefreshTimeout = time.Second, v.ChatGPT.RefreshLead
+			},
+			want: []string{"tuning.worker.chatGptRefreshInterval: KRITIKA_TUNING_WORKER_CHAT_GPT_REFRESH_INTERVAL and "},
+		},
+		{
+			name: "a ChatGPT look and refresh just within the lead",
+			change: func(v *Values) {
+				v.Worker.ChatGPTRefreshInterval = v.ChatGPT.RefreshLead - v.Worker.ChatGPTRefreshTimeout - time.Nanosecond
+			},
+		},
+		{
+			name:   "a token lifetime of part of a day",
+			change: func(v *Values) { v.WebAPI.TokenLifetimes = Durations{0, 36 * time.Hour} },
+			want:   []string{"tuning.webApi.tokenLifetimes: KRITIKA_TUNING_WEB_API_TOKEN_LIFETIMES must be whole days, or 0 for never", "entry 2"},
+		},
+		{name: "a token lifetime of a day", change: func(v *Values) { v.WebAPI.TokenLifetimes = Durations{24 * time.Hour} }},
+		{name: "no token lifetimes", change: func(v *Values) { v.WebAPI.TokenLifetimes = Durations{} }},
+		{
+			name:   "an application statement timeout under a millisecond",
+			change: func(v *Values) { v.Store.AppStatementTimeout = 999 * time.Microsecond },
+			want:   []string{"tuning.store.appStatementTimeout: KRITIKA_TUNING_STORE_APP_STATEMENT_TIMEOUT must be at least 1ms"},
+		},
+		{
+			name:   "an owner statement timeout under a millisecond",
+			change: func(v *Values) { v.Store.OwnerStatementTimeout = 999 * time.Microsecond },
+			want:   []string{"tuning.store.ownerStatementTimeout: KRITIKA_TUNING_STORE_OWNER_STATEMENT_TIMEOUT must be at least 1ms"},
+		},
+		{
+			name: "statement timeouts of a millisecond",
+			change: func(v *Values) {
+				v.Store.AppStatementTimeout, v.Store.OwnerStatementTimeout = time.Millisecond, time.Millisecond
+			},
+		},
+		{
+			name:   "a default agent timeout under a second",
+			change: func(v *Values) { v.ConfigFile.DefaultAgentTimeout = 500 * time.Millisecond },
+			want: []string{
+				"tuning.configFile.defaultAgentTimeout: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_AGENT_TIMEOUT must be a whole number of seconds",
+			},
+		},
+		{
+			name:   "a default agent timeout of fractional seconds",
+			change: func(v *Values) { v.ConfigFile.DefaultAgentTimeout = 1500 * time.Millisecond },
+			want: []string{
+				"tuning.configFile.defaultAgentTimeout: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_AGENT_TIMEOUT must be a whole number of seconds",
+			},
+		},
+		{name: "a default agent timeout of a second", change: func(v *Values) { v.ConfigFile.DefaultAgentTimeout = time.Second }},
+		{
+			name:   "a similar-code floor past 1",
+			change: func(v *Values) { v.ConfigFile.DefaultSimilarFloor = 1.1 },
+			want:   []string{"tuning.configFile.defaultSimilarFloor: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_FLOOR must be from 0 to 1"},
+		},
+		{
+			name:   "a similar-code margin past 1",
+			change: func(v *Values) { v.ConfigFile.DefaultSimilarMargin = 1.1 },
+			want:   []string{"tuning.configFile.defaultSimilarMargin: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_MARGIN must be from 0 to 1"},
+		},
+		{
+			name:   "a similar-code floor that is not a number",
+			change: func(v *Values) { v.ConfigFile.DefaultSimilarFloor = math.NaN() },
+			want:   []string{"tuning.configFile.defaultSimilarFloor: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_FLOOR must be from 0 to 1"},
+		},
+		{
+			name:   "a similar-code floor and margin of 0",
+			change: func(v *Values) { v.ConfigFile.DefaultSimilarFloor, v.ConfigFile.DefaultSimilarMargin = 0, 0 },
+		},
+		{
+			name:   "a similar-code floor and margin of 1",
+			change: func(v *Values) { v.ConfigFile.DefaultSimilarFloor, v.ConfigFile.DefaultSimilarMargin = 1, 1 },
+		},
 		{
 			name:   "scoring at the publish headroom",
 			change: func(v *Values) { v.Worker.ConfidenceTimeout = v.JobTimeout.PublishHeadroom },
@@ -340,6 +538,18 @@ func TestCrossFieldMessages(t *testing.T) {
 			name:   "a comment past GitHub's cap",
 			change: func(v *Values) { v.Review.MaxRenderBytes = 65537 },
 			want:   []string{"tuning.review.maxRenderBytes: KRITIKA_TUNING_REVIEW_MAX_RENDER_BYTES must not exceed GitHub's comment cap"},
+		},
+		{name: "a comment at the render floor", change: func(v *Values) { v.Review.MaxRenderBytes = MinRenderBytes }},
+		{
+			name:   "a comment under the render floor",
+			change: func(v *Values) { v.Review.MaxRenderBytes = MinRenderBytes - 1 },
+			want:   []string{"tuning.review.maxRenderBytes: KRITIKA_TUNING_REVIEW_MAX_RENDER_BYTES must be at least 1024 bytes"},
+		},
+		{name: "a body share at its floor", change: func(v *Values) { v.Review.BodyShare = MinBodyShare }},
+		{
+			name:   "a body share under its floor",
+			change: func(v *Values) { v.Review.BodyShare = MinBodyShare - 1 },
+			want:   []string{"tuning.review.bodyShare: KRITIKA_TUNING_REVIEW_BODY_SHARE must be at least 3"},
 		},
 	}
 	for _, tt := range tests {

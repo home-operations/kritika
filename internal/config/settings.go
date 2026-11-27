@@ -194,9 +194,10 @@ type Runner struct {
 // activeDeadlineSeconds, and so the work around it: the job that runs it
 // and the run's gateway token. A jobTemplate that sets none gets tuning's
 // JobTimeout.RunnerDeadline. Validate refuses one that is not a positive
-// whole number of seconds within JobTimeout.MaxRunnerDeadline.
-func (r Runner) RunnerDeadline() time.Duration {
-	d, _ := r.deadline(tuning.Get().JobTimeout)
+// whole number of seconds within JobTimeout.MaxRunnerDeadline. Both read
+// the tuning values that s was loaded with, which serve's are too.
+func (s Settings) RunnerDeadline() time.Duration {
+	d, _ := s.deadline(s.Tuning.JobTimeout)
 	return d
 }
 

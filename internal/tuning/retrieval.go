@@ -54,7 +54,7 @@ type Indexer struct {
 	// are represented by their nested declarations, or windowed.
 	MaxDeclLines int `env:"KRITIKA_TUNING_INDEXER_MAX_DECL_LINES" envDefault:"150" yaml:"maxDeclLines,omitempty"`
 	// WindowLines and WindowOverlap cut files that have no declarations
-	// into overlapping windows of lines.
+	// into overlapping windows of lines. The overlap is less than a window.
 	WindowLines   int `env:"KRITIKA_TUNING_INDEXER_WINDOW_LINES" envDefault:"60" yaml:"windowLines,omitempty"`
 	WindowOverlap int `env:"KRITIKA_TUNING_INDEXER_WINDOW_OVERLAP" envDefault:"10" yaml:"windowOverlap,omitempty" tuning:"zero"`
 	// MaxChunkBytes truncates one chunk's text.
@@ -104,12 +104,33 @@ type Chunk struct {
 type Lexical struct {
 	// MaxDocumentLexemes is how many lexemes one document keeps.
 	MaxDocumentLexemes int `env:"KRITIKA_TUNING_LEXICAL_MAX_DOCUMENT_LEXEMES" envDefault:"2048" yaml:"maxDocumentLexemes,omitempty"`
-	// MaxLexemeBytes is the longest lexeme kept.
+	// MaxLexemeBytes is the longest lexeme kept, at most the 2047 bytes of
+	// a lexeme of a PostgreSQL tsvector.
 	MaxLexemeBytes int `env:"KRITIKA_TUNING_LEXICAL_MAX_LEXEME_BYTES" envDefault:"64" yaml:"maxLexemeBytes,omitempty"`
 }
 
+// postgresMaxLexemeBytes is the longest lexeme that a PostgreSQL tsvector
+// holds: array_to_tsvector refuses a longer one, and with it the batch of
+// chunks that holds it.
+const postgresMaxLexemeBytes = 2047
+
 func init() {
 	crossField = append(crossField,
+		func(v Values) error {
+			if v.Indexer.WindowOverlap >= v.Indexer.WindowLines {
+				return fmt.Errorf("%s (%d) must be less than %s (%d)",
+					fieldLabel("indexer.windowOverlap"), v.Indexer.WindowOverlap,
+					fieldLabel("indexer.windowLines"), v.Indexer.WindowLines)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Lexical.MaxLexemeBytes > postgresMaxLexemeBytes {
+				return fmt.Errorf("%s (%d) %w PostgreSQL's tsvector lexeme limit, %d bytes",
+					fieldLabel("lexical.maxLexemeBytes"), v.Lexical.MaxLexemeBytes, errMustNotExceed, postgresMaxLexemeBytes)
+			}
+			return nil
+		},
 		func(v Values) error {
 			if v.ContextPack.SimilarLimit < v.Gateway.SimilarMax {
 				return fmt.Errorf("%s (%d) must be at least %s (%d)",

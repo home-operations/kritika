@@ -69,7 +69,8 @@ type ConfigFile struct {
 	MaxPushSettle time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_MAX_PUSH_SETTLE" envDefault:"1h" yaml:"maxPushSettle,omitempty"`
 	// DefaultAgentTimeout bounds a review's agent: the default when the
 	// configuration file does not set agent.timeout. At most the agent
-	// timeout that jobTimeout leaves.
+	// timeout that jobTimeout leaves, and whole seconds, as a run's spec
+	// carries it.
 	DefaultAgentTimeout time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_AGENT_TIMEOUT" envDefault:"20m" yaml:"defaultAgentTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// DefaultParts is the most parts a review is split into: the default
 	// when the configuration file does not set agent.parts. A 512 KiB diff
@@ -92,13 +93,14 @@ type ConfigFile struct {
 	// the default when a repository sets no review.incremental.
 	DefaultMaxDeltaFiles int `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_MAX_DELTA_FILES" envDefault:"25" yaml:"defaultMaxDeltaFiles,omitempty"`
 	// DefaultSimilarFloor is the similar-code floor: the default when the
-	// configuration file does not set embedding.similarFloor.
-	DefaultSimilarFloor float64 `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_FLOOR" envDefault:"0.5" yaml:"defaultSimilarFloor,omitempty"`
+	// configuration file does not set embedding.similarFloor. A cosine
+	// similarity, from 0 to 1, as that key is.
+	DefaultSimilarFloor float64 `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_FLOOR" envDefault:"0.5" yaml:"defaultSimilarFloor,omitempty" tuning:"zero"` //nolint:lll // a struct tag does not wrap
 	// DefaultSimilarMargin is the similar-code margin: the default when the
 	// configuration file does not set embedding.similarMargin. Wide enough
 	// to keep the matches close to a query's best and drop only those well
-	// below it.
-	DefaultSimilarMargin float64 `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_MARGIN" envDefault:"0.1" yaml:"defaultSimilarMargin,omitempty"` //nolint:lll // a struct tag does not wrap
+	// below it. From 0 to 1, as that key is.
+	DefaultSimilarMargin float64 `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_SIMILAR_MARGIN" envDefault:"0.1" yaml:"defaultSimilarMargin,omitempty" tuning:"zero"` //nolint:lll // a struct tag does not wrap
 	// DefaultRerankCandidates is how many of each query's candidates are
 	// sent to be reranked: the default when the configuration file does not
 	// set embedding.rerank.candidates, but for the tei API. At most
@@ -145,10 +147,12 @@ type ConfigFile struct {
 }
 
 // Process holds the tunable values of the two mains, serve's and the
-// runner's. On stopping, serve's queueDrain, queueStopHeadroom and
-// eventsDrain run one after another, beside gateway.drain, and together
-// must fit within the chart's terminationGracePeriodSeconds, 200s by
-// default: raising one means raising that too.
+// runner's. On stopping, serve runs three paths side by side: queueDrain,
+// queueStopHeadroom and eventsDrain one after another; linger, then
+// gateway.drain; and linger, then publicDrain. The longest of them, with
+// room for the process to exit, must fit within the chart's
+// terminationGracePeriodSeconds, 200s by default: raising one means
+// raising that too.
 type Process struct {
 	// MemLimitRefresh is how often GOMEMLIMIT follows the cgroup memory
 	// limit, for a pod resized in place.
@@ -225,5 +229,29 @@ func init() {
 			}
 			return nil
 		},
+		func(v Values) error {
+			// A run's spec carries whole seconds, and the runner sets no
+			// agent deadline for 0.
+			if d := v.ConfigFile.DefaultAgentTimeout; d < time.Second || d%time.Second != 0 {
+				return fmt.Errorf("%s must be a whole number of seconds, at least 1s: a run's spec carries it so",
+					fieldLabel("configFile.defaultAgentTimeout"))
+			}
+			return nil
+		},
+		func(v Values) error {
+			return similarity(v.ConfigFile.DefaultSimilarFloor, "configFile.defaultSimilarFloor")
+		},
+		func(v Values) error {
+			return similarity(v.ConfigFile.DefaultSimilarMargin, "configFile.defaultSimilarMargin")
+		},
 	)
+}
+
+// similarity is the error of a field, a cosine similarity or a difference
+// of them, outside 0 to 1, or nil. NaN is refused too.
+func similarity(x float64, path string) error {
+	if !(x >= 0 && x <= 1) {
+		return fmt.Errorf("%s must be from 0 to 1, as a cosine similarity is", fieldLabel(path))
+	}
+	return nil
 }

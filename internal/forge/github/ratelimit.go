@@ -28,6 +28,18 @@ func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 		return max(e.Rate.Reset.Sub(now)+time.Second, retryafter.Floor), true
 	}
 	if e, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
+		// go-github reads only seconds, and an HTTP date as 0, so GitHub's
+		// own header goes first. One that names no wait gets the fallback,
+		// not go-github's reading of it. A refusal that go-github makes
+		// itself, before a request, carries no header.
+		if e.Response != nil {
+			if v := e.Response.Header.Get(retryafter.Header); v != "" {
+				if wait, ok := retryafter.Parse(v, now); ok {
+					return wait, true
+				}
+				return max(tuning.Get().GitHub.RateLimitMaxWait, retryafter.Floor), true
+			}
+		}
 		return max(cmp.Or(e.GetRetryAfter(), tuning.Get().GitHub.RateLimitMaxWait), retryafter.Floor), true
 	}
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil && e.Response.Header.Get(retryafter.Header) != "" {

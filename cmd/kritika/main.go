@@ -506,7 +506,12 @@ func workQueues(
 	return nil
 }
 
-func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.Logger) error {
+// starter is the part of River's client that startQueue starts.
+type starter interface {
+	Start(ctx context.Context) error
+}
+
+func startQueue(ctx context.Context, queue starter, logger *slog.Logger) error {
 	retry, attempts := tuning.Get().Process.QueueStartRetry, tuning.Get().Process.QueueStartAttempts
 	var err error
 	for i := 1; i <= attempts; i++ {
@@ -515,6 +520,9 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 		}
 		if ctx.Err() != nil {
 			return nil
+		}
+		if i == attempts {
+			break
 		}
 		logger.Warn("queue start failed, retrying", "error", err, "attempt", i, "after", retry)
 		select {

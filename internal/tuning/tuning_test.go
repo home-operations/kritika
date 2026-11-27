@@ -74,35 +74,62 @@ func TestEnvAtDefaults(t *testing.T) {
 	}
 }
 
-// mutate changes every field of v to another valid value.
-func mutate(v *Values) {
-	walk(reflect.ValueOf(v).Elem(), "", func(l leaf) {
-		if l.path == "review.maxRenderBytes" {
-			// Its default is GitHub's comment cap, which Validate refuses
-			// to exceed.
-			l.value.SetInt(l.value.Int() - 1)
-			return
-		}
-		switch l.value.Kind() {
-		case reflect.Slice:
-			l.value.Set(reflect.Append(l.value, reflect.ValueOf(1500*time.Millisecond)))
-		case reflect.Float32, reflect.Float64:
-			l.value.SetFloat(l.value.Float()*2 + 0.25)
-		default:
-			if l.value.Type() == reflect.TypeFor[time.Duration]() {
-				l.value.SetInt(l.value.Int() + int64(1500*time.Millisecond))
-			} else {
-				l.value.SetInt(l.value.Int() + 1)
+// mutate changes every field of v, which starts at the defaults, to another
+// valid value: the first of a few changes that the field's own bounds and
+// the invariants take, a fractional one first, so that formatting it is
+// tested too.
+func mutate(t *testing.T, v *Values) {
+	t.Helper()
+	var leaves []leaf
+	walk(reflect.ValueOf(v).Elem(), "", func(l leaf) { leaves = append(leaves, l) })
+	for i, l := range leaves {
+		var ok bool
+		for _, change := range changes(l.value) {
+			try := Defaults()
+			var j int
+			walk(reflect.ValueOf(&try).Elem(), "", func(f leaf) {
+				if j == i {
+					change(f.value)
+				}
+				j++
+			})
+			if try.Validate() == nil {
+				change(l.value)
+				ok = true
+				break
 			}
 		}
-	})
+		if !ok {
+			t.Fatalf("tuning.%s: no change of its default is valid", l.path)
+		}
+	}
+}
+
+// changes are the changes that mutate tries on a field's value, in order.
+func changes(v reflect.Value) []func(reflect.Value) {
+	add := func(d time.Duration) func(reflect.Value) {
+		return func(f reflect.Value) { f.SetInt(f.Int() + int64(d)) }
+	}
+	switch {
+	case v.Kind() == reflect.Slice:
+		appendOne := func(d time.Duration) func(reflect.Value) {
+			return func(f reflect.Value) { f.Set(reflect.Append(f, reflect.ValueOf(d))) }
+		}
+		return []func(reflect.Value){appendOne(1500 * time.Millisecond), appendOne(2 * 24 * time.Hour)}
+	case v.Kind() == reflect.Float32 || v.Kind() == reflect.Float64:
+		return []func(reflect.Value){func(f reflect.Value) { f.SetFloat(f.Float()/2 + 0.125) }}
+	case v.Type() == reflect.TypeFor[time.Duration]():
+		return []func(reflect.Value){add(1500 * time.Millisecond), add(time.Second), add(-time.Second)}
+	default:
+		return []func(reflect.Value){add(1), add(-1)}
+	}
 }
 
 // TestEnvRoundTrip: the variables Env lists parse back into the values
 // they came from, for every field.
 func TestEnvRoundTrip(t *testing.T) {
 	v := Defaults()
-	mutate(&v)
+	mutate(t, &v)
 	pairs := Env(v)
 	environment := map[string]string{}
 	for _, p := range pairs {
@@ -254,8 +281,35 @@ func TestSetCopies(t *testing.T) {
 	t.Cleanup(func() { current.Store(before) })
 	v := Defaults()
 	Set(v)
-	v.Gateway.SimilarPerFile = 7
-	if Get().Gateway.SimilarPerFile != 2 {
-		t.Fatal("Set kept a reference to its argument")
+	// Values is passed by value, so only a slice can share its argument's
+	// memory.
+	want := v.Agent.StepRetryWaits[0]
+	v.Agent.StepRetryWaits[0] = time.Hour
+	if got := Get().Agent.StepRetryWaits[0]; got != want {
+		t.Fatalf("StepRetryWaits[0] = %s after the argument changed, want %s: Set kept its argument's slice", got, want)
+	}
+}
+
+// TestEnvEmptyList: an empty list is spelled EmptyList, because env reads an
+// empty variable as unset, and so as the default, and it reads back empty.
+func TestEnvEmptyList(t *testing.T) {
+	v := Defaults()
+	v.WebAPI.TokenLifetimes = Durations{}
+	pairs := Env(v)
+	if want := []EnvPair{{"KRITIKA_TUNING_WEB_API_TOKEN_LIFETIMES", EmptyList}}; !reflect.DeepEqual(pairs, want) {
+		t.Fatalf("Env = %v, want %v", pairs, want)
+	}
+	got, err := env.ParseAsWithOptions[Values](env.Options{Environment: map[string]string{pairs[0].Name: pairs[0].Value}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WebAPI.TokenLifetimes == nil || len(got.WebAPI.TokenLifetimes) != 0 {
+		t.Fatalf("TokenLifetimes = %#v, want an empty list", got.WebAPI.TokenLifetimes)
+	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("an empty TokenLifetimes is invalid: %v", err)
+	}
+	if _, err := env.ParseAsWithOptions[Values](env.Options{Environment: map[string]string{pairs[0].Name: "7d"}}); err == nil {
+		t.Fatal("a list that does not parse was read")
 	}
 }

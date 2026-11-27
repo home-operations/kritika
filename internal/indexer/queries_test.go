@@ -3,6 +3,7 @@ package indexer
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -424,5 +425,27 @@ func TestHunkQueriesLeavesOutWhatIsNotIndexable(t *testing.T) {
 	head = oneFileTree(t, "eleven.go", strings.Repeat("x", 11))
 	if Indexable(head, []string{"eleven.go"})("eleven.go") {
 		t.Fatal("Indexable took an 11-byte file past a configured Indexer.MaxFileBytes of 10")
+	}
+}
+
+// TestChangedRegionTakesAnyContext: a query context of any size, up to
+// math.MaxInt, is held to the hunk, whose head-side lines are then the
+// region whole.
+func TestChangedRegionTakesAnyContext(t *testing.T) {
+	h := udiff.Hunk{Lines: []udiff.Line{{Kind: ' ', Text: "a"}, {Kind: '-', Text: "b"}, {Kind: '+', Text: "c"}, {Kind: ' ', Text: "d"}}}
+	for _, around := range []int{0, 1, math.MaxInt} {
+		tuning.Override(t, func(v *tuning.Values) { v.Indexer.QueryContext = around })
+		region, n := changedRegion(h)
+		want := []string{"a", "c", "d"}
+		if around == 0 {
+			want = []string{"c"}
+		}
+		got := make([]string, 0, len(region))
+		for _, l := range region {
+			got = append(got, l.Text)
+		}
+		if n != 1 || !slices.Equal(got, want) {
+			t.Fatalf("context %d: region %q adding %d, want %q adding 1", around, got, n, want)
+		}
 	}
 }

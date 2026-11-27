@@ -65,3 +65,38 @@ func TestPrintfAllocation(t *testing.T) {
 		})
 	}
 }
+
+// TestIterationBudgetAccounting: the iteration guard charges a loop against
+// what is left of the budget before it adds the charge, so that neither a
+// budget as large as an int goes nor a charge as large as a uint64 goes
+// wraps, and a run of loops is refused at the first that would pass it.
+func TestIterationBudgetAccounting(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MaxIterations = math.MaxInt })
+	g := &guard{ctx: t.Context()}
+	if _, err := g.iter(5); err != nil || g.iterations != 5 {
+		t.Fatalf("a range of 5 under the largest budget: %v, %d charged", err, g.iterations)
+	}
+	if _, err := g.iter(uint64(math.MaxUint64)); !errors.Is(err, errSandbox) || g.iterations != 5 {
+		t.Fatalf("a range past the largest budget: %v, %d charged; want it refused uncharged", err, g.iterations)
+	}
+	if _, err := g.iter(math.MaxInt - 5); err != nil || g.iterations != math.MaxInt {
+		t.Fatalf("a range of what is left: %v, %d charged", err, g.iterations)
+	}
+	if _, err := g.iter(1); !errors.Is(err, errSandbox) {
+		t.Fatalf("a range past a spent budget: %v", err)
+	}
+
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MaxIterations = 10 })
+	g = &guard{ctx: t.Context()}
+	for i, tt := range []struct {
+		n       any
+		refused bool
+	}{{4, false}, {-3, false}, {[]int{1, 2, 3}, false}, {"abcd", true}, {3, false}, {1, true}} {
+		if _, err := g.iter(tt.n); errors.Is(err, errSandbox) != tt.refused {
+			t.Fatalf("charge %d (%v): %v, want refused %v", i, tt.n, err, tt.refused)
+		}
+	}
+	if g.iterations != 10 {
+		t.Fatalf("charged %d, want the budget of 10 spent exactly", g.iterations)
+	}
+}

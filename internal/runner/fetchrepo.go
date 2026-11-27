@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/home-operations/kritika/internal/agent"
@@ -27,9 +28,10 @@ import (
 // rest is tuning's Runner: what they write of their files (FetchWriteBytes,
 // beside its checkout and shared with the run tool's kept outputs), what one
 // fetch takes from the server (FetchWireBytes) and of wall time
-// (FetchTimeout), and what it keeps of a diff (FetchDiffBytes). A run lists
-// tags at most MaxTagListings times, the listing that a fetch naming a
-// missing ref makes to name the closest included. An answer shows at most
+// (FetchTimeout), and what it keeps of a diff (FetchDiffBytes). A run's
+// fetch_repo lists tags at most MaxTagListings times, counted apart from
+// fetch_oci's listings: the listing that a fetch naming a missing ref
+// makes to name the closest included. An answer shows at most
 // TagsShown names, such an error at most ClosestTagsShown, and a diff's
 // answer at most ChangedShown of the paths it changes before the patches.
 
@@ -445,7 +447,8 @@ func (t *fetchRepoTool) record(rawURL, page string) {
 }
 
 // dirName names fetch n's directory after the repository and the ref, in
-// characters a command takes as given.
+// characters a command takes as given, cut to Runner.MaxDirNameBytes. The
+// cut spares the fetch's number, which keeps each fetch's directory its own.
 func dirName(n int, rawURL, ref string) string {
 	repo := "repo"
 	if u, err := url.Parse(rawURL); err == nil {
@@ -459,8 +462,9 @@ func dirName(n int, rawURL, ref string) string {
 			return r
 		}
 		return '-'
-	}, fmt.Sprintf("%d-%s@%s", n, repo, ref))
-	return name[:min(len(name), tuning.Get().Runner.MaxDirNameBytes)]
+	}, repo+"@"+ref)
+	prefix := strconv.Itoa(n) + "-"
+	return prefix + name[:min(len(name), max(0, tuning.Get().Runner.MaxDirNameBytes-len(prefix)))]
 }
 
 // fetchedReadFile is read_file that also reads the files fetch_repo and the
@@ -519,9 +523,14 @@ func (r fetchedReadFile) Run(ctx context.Context, input json.RawMessage) (string
 
 // readFetched reads the file at rel under dir. The read stays inside dir
 // whatever rel or a link in it says. A fetch writes no file over
-// Agent.MaxBlobBytes, but keeps a diff of up to Runner.FetchDiffBytes, as the run tool
-// keeps an output. Such a file is read in line ranges.
+// Agent.MaxBlobBytes into a fetch's directory, but keeps a diff of up to
+// Runner.FetchDiffBytes beside those directories, as the run tool keeps an
+// output. Such a file is read in line ranges. Each is held to its own limit.
 func readFetched(dir, rel string) (string, error) {
+	limit := int64(tuning.Get().Agent.MaxBlobBytes)
+	if !strings.Contains(path.Clean(rel), "/") {
+		limit = int64(tuning.Get().Runner.FetchDiffBytes)
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", err
@@ -541,8 +550,8 @@ func readFetched(dir, rel string) (string, error) {
 		return "", err
 	case info.IsDir():
 		return "", errors.New("a directory: list it with the run tool's commands")
-	case info.Size() > int64(tuning.Get().Runner.FetchDiffBytes):
-		return "", fmt.Errorf("%d bytes, over the %d byte limit", info.Size(), int64(tuning.Get().Runner.FetchDiffBytes))
+	case info.Size() > limit:
+		return "", fmt.Errorf("%d bytes, over the %d byte limit", info.Size(), limit)
 	}
 	b, err := io.ReadAll(f)
 	return string(b), err

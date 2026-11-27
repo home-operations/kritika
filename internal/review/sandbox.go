@@ -253,22 +253,27 @@ func (g *guard) iter(v any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errSandbox, err)
 	}
-	g.iterations += n
-	if g.iterations > tuning.Get().Review.MaxIterations {
-		return nil, fmt.Errorf("%w: loops over more than %d items per render", errSandbox, tuning.Get().Review.MaxIterations)
+	// The charge is held to what is left before it is added, so that
+	// neither the charge nor the sum can wrap, whatever the budget.
+	limit := tuning.Get().Review.MaxIterations
+	if n > uint64(max(limit-g.iterations, 0)) {
+		return nil, fmt.Errorf("%w: loops over more than %d items per render", errSandbox, limit)
 	}
+	g.iterations += int(n)
 	return v, nil
 }
 
-func iterations(v reflect.Value) (int, error) {
+// iterations is how many times a range over v loops: an integer's value,
+// none for a negative one.
+func iterations(v reflect.Value) (uint64, error) {
 	v = indirect(v)
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array, reflect.Map, reflect.String:
-		return v.Len(), nil
+		return uint64(v.Len()), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return int(min(max(v.Int(), 0), int64(tuning.Get().Review.MaxIterations)+1)), nil
+		return uint64(max(v.Int(), 0)), nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return int(min(v.Uint(), uint64(tuning.Get().Review.MaxIterations)+1)), nil
+		return v.Uint(), nil
 	case reflect.Func, reflect.Chan:
 		return 0, fmt.Errorf("cannot loop over a %s", v.Kind())
 	}

@@ -73,7 +73,8 @@ func poolConfig(url, application string, statementTimeout time.Duration, maxConn
 	params["tcp_keepalives_interval"] = strconv.FormatInt(int64(t.KeepaliveInterval/time.Second), 10)
 	params["tcp_keepalives_count"] = strconv.Itoa(t.KeepaliveCount)
 	if statementTimeout > 0 {
-		params["statement_timeout"] = strconv.FormatInt(statementTimeout.Milliseconds(), 10)
+		// Rounded up: Postgres reads 0 as no timeout at all.
+		params["statement_timeout"] = strconv.FormatInt(int64((statementTimeout+time.Millisecond-1)/time.Millisecond), 10)
 	}
 	return cfg, nil
 }

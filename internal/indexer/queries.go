@@ -123,8 +123,10 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 	if n == 0 {
 		return nil, 0
 	}
-	around := tuning.Get().Indexer.QueryContext
-	return head[max(0, first-around):min(len(head), last+around+1)], n
+	// Clamped to the region, so that a context of any size, up to
+	// math.MaxInt, does not overflow the arithmetic.
+	around := min(tuning.Get().Indexer.QueryContext, len(head))
+	return head[first-min(first, around) : last+1+min(around, len(head)-last-1)], n
 }
 
 // regionQueries is the queries of one changed region: the region itself when

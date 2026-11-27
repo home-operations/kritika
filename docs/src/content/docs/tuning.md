@@ -407,14 +407,17 @@ Reference: [`tuning.jobTimeout`](/configuration/#tuningjobtimeout),
 Signs: serve logs `the queues did not stop in time`, reviews are retried
 after a rollout, or pods are killed before they exit.
 
-On stopping, serve's public listener and gateway keep taking connections
-for `process.linger` (`5s`), while traffic moves off the pod.
+On stopping, serve runs three paths side by side. The job queues take
 `process.queueDrain` (`100s`), `process.queueStopHeadroom` (`90s`) and
-`process.eventsDrain` (`5s`) run one after another, 195 seconds at the
-defaults. Beside them, the gateway lets model steps in flight finish for
-`gateway.drain` (`2m`). All of it must fit within the pod's
-`terminationGracePeriodSeconds`, 200 in the chart. Raise that when you
-raise any of these.
+`process.eventsDrain` (`5s`) one after another, 195 seconds at the
+defaults. The gateway and the public listener first keep taking
+connections for `process.linger` (`5s`), while traffic moves off the pod.
+Then the gateway lets model steps in flight finish for `gateway.drain`
+(`2m`), and the public listener lets requests finish for
+`process.publicDrain` (`10s`): 125 and 15 seconds at the defaults. The
+longest path, with room for the process to exit, must fit within the
+pod's `terminationGracePeriodSeconds`, 200 in the chart. Raise that when
+you raise any of these.
 
 A shorter `process.queueDrain` cuts more running reviews, which are
 retried. A shorter `gateway.drain` cuts more model steps. A cut step is

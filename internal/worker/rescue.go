@@ -81,7 +81,10 @@ func (r *Rescuer) Run(ctx context.Context) {
 }
 
 // Rescue makes one pass: jobs whose heartbeat went stale are handed back to
-// River. Then every unfinished run whose job is no longer running, or runs
+// River. A beat is stale by the abandonment window that its replica wrote
+// with it, so a leader on other heartbeat settings, as during a rollout,
+// waits out the job's own replica's fence. Only a beat that carries none is
+// judged by this replica's JobTimeout.HeartbeatAbandonedAfter. Then every unfinished run whose job is no longer running, or runs
 // anew with a run of its own, is reaped. The heartbeats of ended jobs are
 // swept too. The two are independent, each idempotent. So a reap that the API
 // server refuses is tried again next pass, without the job waiting on it. A

@@ -51,7 +51,11 @@ func NewEvents(client kubernetes.Interface, namespace, podName, podUID string, l
 	host, _ := os.Hostname()
 	instance := cmp.Or(podName, host, eventController)
 	if most := int(tuning.Get().Executor.EventInstanceBytes); len(instance) > most {
-		instance = cmp.Or(podUID, instance[:most])
+		if podUID != "" && len(podUID) <= most {
+			instance = podUID
+		} else {
+			instance = instance[:most]
+		}
 	}
 	e := &Events{client: client, namespace: namespace, instance: instance, logger: logger}
 	if podName != "" {

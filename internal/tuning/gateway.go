@@ -2,6 +2,7 @@ package tuning
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -20,7 +21,7 @@ type Gateway struct {
 	// Drain is how long a stopping gateway lets model steps in flight
 	// finish. A step that it cuts is paid for and not recorded, and the
 	// runner's retry is paid for again. So Drain covers a long step, not
-	// the usual few seconds. The chart's grace period must outlast it.
+	// the usual few seconds. The chart's grace period must outlast process.linger plus it.
 	Drain time.Duration `env:"KRITIKA_TUNING_GATEWAY_DRAIN" envDefault:"2m" yaml:"drain,omitempty"`
 	// MaxConversationBytes bounds one model step's request, the whole
 	// conversation so far with every tool output in it capped, and so the
@@ -35,9 +36,11 @@ type Gateway struct {
 	RefusedWriteTimeout time.Duration `env:"KRITIKA_TUNING_GATEWAY_REFUSED_WRITE_TIMEOUT" envDefault:"5s" yaml:"refusedWriteTimeout,omitempty"`
 
 	// MaxReportBody bounds a run's context, agent and similar-exclusion
-	// reports. A record holds its context pack's two diffs, each of up to
-	// runner.maxPackDiffBytes, and its conversation, of up to
-	// maxConversationBytes, which JSON and base64 grow.
+	// reports, as JSON encodes them. A context report holds its pack's two
+	// diffs, each of up to runner.maxPackDiffBytes, which escaping can make
+	// six times as long; the runner leaves whole files out of them until
+	// the report fits. An agent report holds the conversation, of up to
+	// maxConversationBytes, in base64.
 	MaxReportBody ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_REPORT_BODY" envDefault:"64Mi" yaml:"maxReportBody,omitempty"`
 	// MaxCheckpointBody bounds a part checkpoint, which holds one part's
 	// submitted answer, far below it. One that it refuses only costs a
@@ -46,11 +49,14 @@ type Gateway struct {
 	// MaxSmallReport bounds a run's phase, failure and remaining-parts
 	// reports.
 	MaxSmallReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_SMALL_REPORT" envDefault:"64Ki" yaml:"maxSmallReport,omitempty"`
-	// MaxIndexBody bounds an index upload, which holds up to
-	// indexer.maxChunks chunks of indexer.maxChunkBytes, which JSON grows.
+	// MaxIndexBody bounds an index upload: its opening line, and a line for
+	// each of up to indexer.maxChunks chunks of indexer.maxChunkBytes, whose
+	// source text the upload's JSON can make twice as long. Control bytes or
+	// invalid UTF-8 can make it longer, which the runner checks before it
+	// uploads.
 	MaxIndexBody ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_INDEX_BODY" envDefault:"2Gi" yaml:"maxIndexBody,omitempty"`
-	// MaxIndexLine bounds one line of an index upload. Its opening line
-	// holds every changed path.
+	// MaxIndexLine bounds one line of an index upload: a chunk, its text
+	// escaped at worst, and the opening line, which holds every changed path.
 	MaxIndexLine ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_INDEX_LINE" envDefault:"32Mi" yaml:"maxIndexLine,omitempty"`
 	// IndexBatchChunks and IndexBatchBytes are when an index upload's
 	// batch is written: as soon as it holds either, so an upload costs a
@@ -66,10 +72,11 @@ type Gateway struct {
 	// tools soon after the source is back.
 	AquaRegistryRetry time.Duration `env:"KRITIKA_TUNING_GATEWAY_AQUA_REGISTRY_RETRY" envDefault:"1m" yaml:"aquaRegistryRetry,omitempty"`
 
-	// MaxSimilarRequest bounds a similar-code request: its queries,
-	// each cut to contextPack.similarQueryChars, with room for their
-	// encoding. The paths a search leaves out are the run's report, not the
-	// request's, so the bound holds however many files a change touches.
+	// MaxSimilarRequest bounds a similar-code request as JSON encodes it:
+	// its queries, each cut to contextPack.similarQueryChars, which escaping
+	// can make six times as long, and their languages. The paths a search
+	// leaves out are the run's report, not the request's, so the bound
+	// holds however many files a change touches.
 	MaxSimilarRequest ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_SIMILAR_REQUEST" envDefault:"256Ki" yaml:"maxSimilarRequest,omitempty"`
 	// SimilarWithin is how long after a similar-code request arrives
 	// the vector search's looks past full files, its search by name and its
@@ -202,6 +209,63 @@ type Aqua struct {
 	MaxSignatureBytes ByteSize `env:"KRITIKA_TUNING_AQUA_MAX_SIGNATURE_BYTES" envDefault:"16Mi" yaml:"maxSignatureBytes,omitempty"`
 }
 
+// How a report's JSON grows what it carries, for the bounds that the
+// gateway's request limits must hold.
+const (
+	// jsonGrowth is the most bytes that encoding/json writes for one byte
+	// of a string: < for a <, as it escapes HTML, or for a control
+	// byte, and � for a byte of invalid UTF-8.
+	jsonGrowth = 6
+	// sourceGrowth is what an index upload's encoding, which leaves HTML
+	// unescaped, makes of source text at most, but for control bytes and
+	// invalid UTF-8, which the indexer's text rarely holds and the runner
+	// measures before it uploads: a newline, a tab, a quote or a backslash
+	// takes two bytes.
+	sourceGrowth = 2
+	// indexChunkFields is the room of an index chunk's line beside its text
+	// and signature: its keys, its line numbers and newline, and its path,
+	// language, symbol, kind and scope.
+	indexChunkFields = 2 << 10
+	// reportEnvelope is the room of a context or agent report beside the
+	// fields whose bounds are tunable.
+	reportEnvelope = 1 << 20
+	// similarLanguageBytes is the room of one query's language, a name of
+	// package chunk's, in a similar-code request, and similarEnvelope that
+	// of its keys, its kind and its limit.
+	similarLanguageBytes = 64
+	similarEnvelope      = 256
+)
+
+// satAdd and satMul are a+b and a*b of sizes that cannot be negative,
+// capped at math.MaxInt64 where they would overflow.
+func satAdd(a, b int64) int64 {
+	if a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	return a + b
+}
+
+func satMul(a, b int64) int64 {
+	if a > 0 && b > math.MaxInt64/a {
+		return math.MaxInt64
+	}
+	return a * b
+}
+
+// indexChunkLine is the most that one chunk's line of an index upload
+// takes, its text and signature escaped at worst.
+func (v Values) indexChunkLine() int64 {
+	return satMul(jsonGrowth, satAdd(satAdd(int64(v.Indexer.MaxChunkBytes), int64(v.Indexer.MaxSignatureBytes)), indexChunkFields))
+}
+
+// indexUpload is what an index upload of indexer.maxChunks full chunks
+// takes: its opening line, which gateway.maxIndexLine bounds, and each
+// chunk's line, its source text as the upload encodes it.
+func (v Values) indexUpload() int64 {
+	line := satAdd(satMul(sourceGrowth, satAdd(int64(v.Indexer.MaxChunkBytes), int64(v.Indexer.MaxSignatureBytes))), indexChunkFields)
+	return satAdd(int64(v.Gateway.MaxIndexLine), satMul(int64(v.Indexer.MaxChunks), line))
+}
+
 func init() {
 	crossField = append(crossField,
 		func(v Values) error {
@@ -213,26 +277,46 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if need := int64(v.Indexer.MaxChunks) * int64(v.Indexer.MaxChunkBytes); int64(v.Gateway.MaxIndexBody) < need {
-				return fmt.Errorf("%s (%s) must hold %s chunks of %s, %d bytes",
-					fieldLabel("gateway.maxIndexBody"), v.Gateway.MaxIndexBody,
-					fieldLabel("indexer.maxChunks"), fieldLabel("indexer.maxChunkBytes"), need)
+			if need := v.indexUpload(); int64(v.Gateway.MaxIndexBody) < need {
+				return fmt.Errorf("%s (%s) must hold an index upload's opening line of up to %s and %s chunks of %s and %s, "+
+					"as the upload encodes them, %d bytes",
+					fieldLabel("gateway.maxIndexBody"), v.Gateway.MaxIndexBody, fieldLabel("gateway.maxIndexLine"),
+					fieldLabel("indexer.maxChunks"), fieldLabel("indexer.maxChunkBytes"), fieldLabel("indexer.maxSignatureBytes"), need)
 			}
 			return nil
 		},
 		func(v Values) error {
-			if need := 2*int64(v.Runner.MaxPackDiffBytes) + int64(v.Gateway.MaxConversationBytes); int64(v.Gateway.MaxReportBody) < need {
-				return fmt.Errorf("%s (%s) must hold two of %s and one of %s, %d bytes",
+			if need := v.indexChunkLine(); int64(v.Gateway.MaxIndexLine) < need {
+				return fmt.Errorf("%s (%s) must hold one chunk's line, a text of %s and a signature of %s escaped, %d bytes",
+					fieldLabel("gateway.maxIndexLine"), v.Gateway.MaxIndexLine,
+					fieldLabel("indexer.maxChunkBytes"), fieldLabel("indexer.maxSignatureBytes"), need)
+			}
+			return nil
+		},
+		func(v Values) error {
+			diffs := satMul(2, int64(v.Runner.MaxPackDiffBytes))
+			need := satAdd(satMul(jsonGrowth, satAdd(diffs, int64(v.ContextPack.MaxPackBytes))), reportEnvelope)
+			if int64(v.Gateway.MaxReportBody) < need {
+				return fmt.Errorf("%s (%s) must hold a context report: two diffs of %s and a pack of %s, escaped, %d bytes",
 					fieldLabel("gateway.maxReportBody"), v.Gateway.MaxReportBody,
-					fieldLabel("runner.maxPackDiffBytes"),
+					fieldLabel("runner.maxPackDiffBytes"), fieldLabel("contextPack.maxPackBytes"), need)
+			}
+			return nil
+		},
+		func(v Values) error {
+			conversation := satMul(4, (int64(v.Gateway.MaxConversationBytes)+2)/3)
+			if need := satAdd(conversation, reportEnvelope); int64(v.Gateway.MaxReportBody) < need {
+				return fmt.Errorf("%s (%s) must hold an agent report: a conversation of %s in base64, %d bytes",
+					fieldLabel("gateway.maxReportBody"), v.Gateway.MaxReportBody,
 					fieldLabel("gateway.maxConversationBytes"), need)
 			}
 			return nil
 		},
 		func(v Values) error {
-			need := int64(v.ContextPack.SimilarQueries) * int64(v.ContextPack.SimilarQueryChars)
+			query := satAdd(satMul(jsonGrowth, int64(v.ContextPack.SimilarQueryChars)), similarLanguageBytes+6)
+			need := satAdd(satMul(int64(v.ContextPack.SimilarQueries), query), similarEnvelope)
 			if int64(v.Gateway.MaxSimilarRequest) < need {
-				return fmt.Errorf("%s (%s) must hold %s queries of %s, %d bytes",
+				return fmt.Errorf("%s (%s) must hold %s queries of %s, each with its language, escaped, %d bytes",
 					fieldLabel("gateway.maxSimilarRequest"), v.Gateway.MaxSimilarRequest,
 					fieldLabel("contextPack.similarQueries"),
 					fieldLabel("contextPack.similarQueryChars"), need)

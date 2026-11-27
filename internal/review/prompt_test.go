@@ -310,3 +310,23 @@ func TestBuildReplyWrites(t *testing.T) {
 		t.Fatalf("thread:\n%s", msg)
 	}
 }
+
+// TestBuildAtTheLeastBodyShare: at the least body share Validate takes, a
+// description and linked issues each far over the budget leave a small
+// diff its room, and the message within the budget.
+func TestBuildAtTheLeastBodyShare(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.BodyShare = tuning.MinBodyShare })
+	const budget = 2_000
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	long := strings.Repeat("words ", 4*budget*tuning.Get().Review.CharsPerToken)
+	msg, omitted, _, _ := Build(Input{
+		Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: budget,
+		Body: long, Issues: []Issue{{ID: "#1", Title: "one", Body: long}, {ID: "#2", Title: "two", Body: long}},
+	})
+	if len(omitted) != 0 || !strings.Contains(msg, diff) {
+		t.Fatalf("omitted %v; want the diff shown in full", omitted)
+	}
+	if most := budget * tuning.Get().Review.CharsPerToken; len(msg) > most {
+		t.Fatalf("message of %d bytes, want at most the budget's %d", len(msg), most)
+	}
+}

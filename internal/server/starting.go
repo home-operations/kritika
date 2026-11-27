@@ -38,7 +38,8 @@ func (s *Switch) ServeHTTP(w http.ResponseWriter, r *http.Request) { (*s.h.Load(
 // request up once the service is up.
 func Starting() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		retry := strconv.Itoa(int(tuning.Get().Server.StartingRetry / time.Second))
+		// Whole seconds, rounded up: 0 would reload the page at once.
+		retry := strconv.FormatInt(int64((tuning.Get().Server.StartingRetry+time.Second-1)/time.Second), 10)
 		w.Header().Set(retryafter.Header, retry)
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

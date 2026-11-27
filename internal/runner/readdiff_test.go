@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const readDiffSample = "diff --git a/main.go b/main.go\n" +
@@ -82,7 +80,7 @@ func TestReadDiff(t *testing.T) {
 // ends, which together are the whole. So a page that starts inside a hunk
 // still leads each line with its number.
 func TestReadDiffPages(t *testing.T) {
-	tool := newReadDiffTool(readDiffSample, tuning.Get().Runner.PageNoteRoom+80)
+	tool := newReadDiffTool(readDiffSample, pageNoteRoom(numberedMain)+80)
 	note := regexp.MustCompile(`\[page (\d+) of (\d+) of this file's diff(; read_diff with page \d+ reads on)?\]$`)
 	var pages []string
 	for page := 1; ; page++ {

@@ -2,6 +2,7 @@ package tuning
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -226,7 +227,11 @@ type JobTimeout struct {
 	HeartbeatInterval time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_HEARTBEAT_INTERVAL" envDefault:"30s" yaml:"heartbeatInterval,omitempty"`
 	// AbandonedBeats is how many beats a job can miss before it counts as
 	// abandoned by a dead replica (HeartbeatAbandonedAfter), enough to allow
-	// for a slow database. A replica fences its job one beat before that.
+	// for a slow database. A replica fences its job one beat before that,
+	// so Validate holds it to at least 3: the first renewal is written a
+	// beat after the first beat and needs a beat to be written in. Each beat
+	// carries its replica's HeartbeatAbandonedAfter, which the leader
+	// rescues the job by, so replicas can differ in these during a rollout.
 	AbandonedBeats int `env:"KRITIKA_TUNING_JOB_TIMEOUT_ABANDONED_BEATS" envDefault:"6" yaml:"abandonedBeats,omitempty"`
 	// LeaseWaitHeadroom is the time a review or a follow-up can spend
 	// taking its model lease before its runner starts.
@@ -359,9 +364,42 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if v.JobTimeout.AbandonedBeats < 2 {
-				return fmt.Errorf("%s must be at least 2, so that a job's replica can fence it a beat of %s before it counts as abandoned",
+			// Kubernetes takes activeDeadlineSeconds in whole seconds, and
+			// refuses 0.
+			if d := v.JobTimeout.RunnerDeadline; d < time.Second || d%time.Second != 0 {
+				return fmt.Errorf("%s must be a whole number of seconds, at least 1s: Kubernetes takes activeDeadlineSeconds so",
+					fieldLabel("jobTimeout.runnerDeadline"))
+			}
+			return nil
+		},
+		func(v Values) error {
+			// River takes the sum as RescueStuckJobsAfter, and refuses one
+			// that wrapped negative.
+			if j := v.JobTimeout; j.MaxJobTimeout > 0 && j.RescueGrace > time.Duration(math.MaxInt64)-j.MaxJobTimeout {
+				return fmt.Errorf("%s and %s together must not exceed %s", fieldLabel("jobTimeout.maxJobTimeout"),
+					fieldLabel("jobTimeout.rescueGrace"), time.Duration(math.MaxInt64))
+			}
+			return nil
+		},
+		func(v Values) error {
+			// A replica fences its job AbandonedBeats-1 beats after it last
+			// wrote one, and its first renewal starts a beat after the first
+			// write: at 2 that renewal has no time left before the fence.
+			if v.JobTimeout.AbandonedBeats < 3 {
+				return fmt.Errorf("%s must be at least 3, so that a job's first renewal has a beat of %s to be written in "+
+					"before its replica fences it, a beat before it counts as abandoned",
 					fieldLabel("jobTimeout.abandonedBeats"), fieldLabel("jobTimeout.heartbeatInterval"))
+			}
+			return nil
+		},
+		func(v Values) error {
+			// A token due just after a look waits a whole interval for the
+			// next, and its refresh can take the timeout: both must fit
+			// within the lead, or the token expires first.
+			w, lead := v.Worker, v.ChatGPT.RefreshLead
+			if w.ChatGPTRefreshTimeout >= lead || w.ChatGPTRefreshInterval >= lead-w.ChatGPTRefreshTimeout {
+				return fmt.Errorf("%s and %s together must be less than %s", fieldLabel("worker.chatGptRefreshInterval"),
+					fieldLabel("worker.chatGptRefreshTimeout"), fieldLabel("chatGpt.refreshLead"))
 			}
 			return nil
 		},

@@ -382,7 +382,11 @@ func (s Spec) Validate() error {
 // linked issues' bodies, and the prior findings. The findings are cut first
 // to RunSpec.MaxPriorFindings, then, while the encoded prompt is still over
 // RunSpec.MaxPromptBytes, its share of the spec, by half at a time. Trim
-// keeps the first in the order the worker read them.
+// keeps the first in the order the worker read them. A prompt that is over
+// with no findings left, as JSON's escaping can make a body six times as
+// long, has its longest linked issue's body shortened, at a rune boundary,
+// and then the pull request's, until it fits or they are empty. Encode
+// refuses what is over even then.
 func (p *Prompt) Trim() {
 	t := tuning.Get().RunSpec
 	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, int(t.MaxBodyBytes))
@@ -391,13 +395,33 @@ func (p *Prompt) Trim() {
 	}
 	p.Prior = p.Prior[:min(len(p.Prior), t.MaxPriorFindings)]
 	p.Dismissed = p.Dismissed[:min(len(p.Dismissed), t.MaxPriorFindings)]
-	for len(p.Prior) > 0 || len(p.Dismissed) > 0 {
+	for {
 		b, err := json.Marshal(p)
-		if err != nil || len(b) <= int(t.MaxPromptBytes) {
+		over := len(b) - int(t.MaxPromptBytes)
+		if err != nil || over <= 0 {
 			return
 		}
-		p.Prior = p.Prior[:len(p.Prior)/2]
-		p.Dismissed = p.Dismissed[:len(p.Dismissed)/2]
+		if len(p.Prior) > 0 || len(p.Dismissed) > 0 {
+			p.Prior = p.Prior[:len(p.Prior)/2]
+			p.Dismissed = p.Dismissed[:len(p.Dismissed)/2]
+			continue
+		}
+		text := &p.PullRequest.Body
+		var longest *string
+		for i := range p.Issues {
+			if body := &p.Issues[i].Body; *body != "" && (longest == nil || len(*body) > len(*longest)) {
+				longest = body
+			}
+		}
+		if longest != nil {
+			text = longest
+		}
+		if *text == "" {
+			return
+		}
+		// JSON writes no byte as more than six, so the text must lose at
+		// least a sixth of the excess.
+		*text = textcut.Prefix(*text, max(0, len(*text)-(over+5)/6))
 	}
 }
 

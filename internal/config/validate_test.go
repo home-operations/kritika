@@ -122,6 +122,27 @@ func TestRunnerDeadline(t *testing.T) {
 	}
 }
 
+// TestRunnerDeadlineOfTheSettings: the deadline is the loaded settings'
+// own, under their tuning, not the process's, which nothing set here.
+func TestRunnerDeadlineOfTheSettings(t *testing.T) {
+	long := int64(jobtimeout.MaxRunnerDeadline()/time.Second) + 1
+	for _, tt := range []struct {
+		name, doc string
+		want      time.Duration
+	}{
+		{"a tuned default", "tuning: {jobTimeout: {runnerDeadline: 20m}}", 20 * time.Minute},
+		{"a deadline that a longer job timeout admits", fmt.Sprintf("tuning: {jobTimeout: {maxJobTimeout: 4h}}\n"+
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", long), time.Duration(long) * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _, err := LoadSettings([]byte(tt.doc))
+			if err != nil || s.RunnerDeadline() != tt.want {
+				t.Fatalf("RunnerDeadline = %s, %v; want %s", s.RunnerDeadline(), err, tt.want)
+			}
+		})
+	}
+}
+
 func TestS3CacheSettings(t *testing.T) {
 	const base = "gatewayCacheStorage: s3\ngatewayCacheDir: /cache\ngatewayCacheS3Endpoint: https://s3.example.com\ngatewayCacheS3Region: garage\ngatewayCacheS3Bucket: kritika\n"
 	for _, tt := range []struct{ name, doc, want string }{

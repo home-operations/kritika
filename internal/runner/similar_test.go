@@ -721,3 +721,30 @@ func TestSearchToolAsksForSpares(t *testing.T) {
 		})
 	}
 }
+
+// TestSimilarRequestWithinItsValidatedBound: the largest similar-code
+// request that the defaults let a run send, every query full and escaped at
+// worst with its language, fits gateway.maxSimilarRequest, and the
+// validation refuses a bound that it would not fit.
+func TestSimilarRequestWithinItsValidatedBound(t *testing.T) {
+	d := tuning.Defaults()
+	queries := make([]string, d.ContextPack.SimilarQueries)
+	languages := make([]string, d.ContextPack.SimilarQueries)
+	for i := range queries {
+		queries[i] = strings.Repeat("<", d.ContextPack.SimilarQueryChars)
+		languages[i] = strings.Repeat("l", 64)
+	}
+	body, err := json.Marshal(contextpack.SimilarRequest{
+		Queries: queries, Kind: contextpack.SimilarKindDiff, Limit: d.ContextPack.SimilarLimit, Languages: languages,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) > int(d.Gateway.MaxSimilarRequest) {
+		t.Fatalf("the request is %d bytes, over the default %d", len(body), d.Gateway.MaxSimilarRequest)
+	}
+	d.Gateway.MaxSimilarRequest = tuning.ByteSize(len(body) - 1)
+	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "tuning.gateway.maxSimilarRequest") {
+		t.Fatalf("Validate = %v, want a bound under the request refused", err)
+	}
+}

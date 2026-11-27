@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
@@ -220,6 +222,9 @@ func TestCheckConfig(t *testing.T) {
 		{name: "invalid tuning", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 0}}\n",
 			wantErr: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY must be positive"},
 		{name: "unknown tuning key", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {bogus: 1}}\n", wantErr: "bogus"},
+		// The sum, River's RescueStuckJobsAfter, would wrap negative.
+		{name: "rescue wait past a duration", raw: admin + "webUrl: https://kritika.example.com\ntuning: {jobTimeout: {rescueGrace: 2562047h}}\n",
+			wantErr: "KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE together must not exceed"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// A check needs neither the database nor KRITIKA_CONFIG_FILE.
@@ -305,13 +310,45 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 // the application role can never run. It gives a job that its timeout cut
 // the headroom that its detached end takes before calling it stuck.
 func TestRiverConfig(t *testing.T) {
+	// Not the default, so that a hardcoded threshold shows.
+	const headroom = 45 * time.Second
+	tuning.Override(t, func(v *tuning.Values) { v.Process.QueueStopHeadroom = headroom })
 	c := riverConfig(&config.Config{}, river.NewWorkers(), nil, slog.New(slog.DiscardHandler))
 	if c.ReindexerIndexNames == nil || len(c.ReindexerIndexNames) != 0 {
 		t.Errorf("reindexer indexes = %#v, want an empty list: nil is River's default set", c.ReindexerIndexNames)
 	}
-	if c.JobStuckThreshold != tuning.Get().Process.QueueStopHeadroom {
-		t.Errorf("stuck threshold = %s, want %s", c.JobStuckThreshold, tuning.Get().Process.QueueStopHeadroom)
+	if c.JobStuckThreshold != headroom {
+		t.Errorf("stuck threshold = %s, want the tuned %s", c.JobStuckThreshold, headroom)
 	}
+}
+
+// TestStartQueueGivesUpAtTheLastAttempt: once the last attempt fails, the
+// error comes back at once, without the wait for a retry that none follows.
+func TestStartQueueGivesUpAtTheLastAttempt(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Process.QueueStartAttempts, v.Process.QueueStartRetry = 2, time.Hour })
+	synctest.Test(t, func(t *testing.T) {
+		boom := errors.New("boom")
+		q := &failingQueue{err: boom}
+		start := time.Now()
+		err := startQueue(t.Context(), q, slog.New(slog.DiscardHandler))
+		if !errors.Is(err, boom) || q.starts != 2 {
+			t.Fatalf("startQueue = %v after %d starts, want the failure after 2", err, q.starts)
+		}
+		if waited := time.Since(start); waited != time.Hour {
+			t.Fatalf("startQueue waited %s, want the one retry's hour and no wait after the last attempt", waited)
+		}
+	})
+}
+
+// failingQueue is a queue whose every start fails with err.
+type failingQueue struct {
+	err    error
+	starts int
+}
+
+func (q *failingQueue) Start(context.Context) error {
+	q.starts++
+	return q.err
 }
 
 func TestRunnerTemplateErrorsNameBothSources(t *testing.T) {

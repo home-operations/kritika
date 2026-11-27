@@ -147,7 +147,6 @@ var golden = map[string]any{
 	"runner.maxRuleFileDepth":     8,
 	"runner.conversationTimeout":  30 * time.Second,
 	"runner.carryShare":           4,
-	"runner.pageNoteRoom":         96,
 	"runner.maxPackDiffBytes":     ByteSize(4 << 20),
 	"runner.failureTimeout":       10 * time.Second,
 	"runner.maxFailureCause":      ByteSize(8 << 10),
@@ -363,7 +362,7 @@ var golden = map[string]any{
 	"agent.wrapUpAnswers":             2,
 	"agent.wrapUpTotalShare":          4,
 	"agent.wrapUpTokenShare":          0.9,
-	"agent.stepRetryWaits":            []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute},
+	"agent.stepRetryWaits":            Durations{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute},
 
 	"chatGpt.refreshLead":               5 * time.Minute,
 	"chatGpt.clientTimeout":             30 * time.Second,
@@ -418,7 +417,7 @@ var golden = map[string]any{
 	"webApi.defaultUsageWindow":    30 * 24 * time.Hour,
 	"webApi.maxUsageWindow":        366 * 24 * time.Hour,
 	"webApi.tokenNameMax":          100,
-	"webApi.tokenLifetimes":        []time.Duration{0, 7 * 24 * time.Hour, 30 * 24 * time.Hour, 90 * 24 * time.Hour, 365 * 24 * time.Hour},
+	"webApi.tokenLifetimes":        Durations{0, 7 * 24 * time.Hour, 30 * 24 * time.Hour, 90 * 24 * time.Hour, 365 * 24 * time.Hour},
 	"webApi.exportLimit":           1000,
 
 	"server.startingRetry":     5 * time.Second,

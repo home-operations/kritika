@@ -19,9 +19,13 @@ import (
 )
 
 // tokenLifetime reports whether tuning's WebAPI.TokenLifetimes offers a
-// token that lasts days, 0 for one that never expires.
+// token that lasts days, 0 for one that never expires. It compares days,
+// rather than multiplying days into a duration, which a large or negative
+// request overflows into one that the list offers.
 func tokenLifetime(days int) bool {
-	return slices.Contains(tuning.Get().WebAPI.TokenLifetimes, time.Duration(days)*24*time.Hour)
+	return days >= 0 && slices.ContainsFunc(tuning.Get().WebAPI.TokenLifetimes, func(d time.Duration) bool {
+		return d%tuning.Day == 0 && int64(days) == int64(d/tuning.Day)
+	})
 }
 
 // tokenLifetimeChoices is how an error names tuning's WebAPI.TokenLifetimes:
@@ -33,7 +37,7 @@ func tokenLifetimeChoices() string {
 		if d == 0 {
 			never = true
 		} else {
-			days = append(days, strconv.FormatInt(int64(d/(24*time.Hour)), 10))
+			days = append(days, strconv.FormatInt(int64(d/tuning.Day), 10))
 		}
 	}
 	switch s := strings.Join(days, ", "); {

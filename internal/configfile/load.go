@@ -503,8 +503,10 @@ func validateAgent(a Agent) error {
 	if a.Prompt != nil && *a.Prompt < tuning.Get().ConfigFile.MinPromptTokens {
 		return fmt.Errorf("configfile: agent.prompt must be at least %d", tuning.Get().ConfigFile.MinPromptTokens)
 	}
-	if a.Timeout != nil && *a.Timeout <= 0 {
-		return fmt.Errorf("configfile: agent.timeout must be positive")
+	// The job document carries whole seconds, and the runner sets no agent
+	// deadline for 0.
+	if a.Timeout != nil && *a.Timeout < time.Second {
+		return fmt.Errorf("configfile: agent.timeout must be at least 1s")
 	}
 	if a.Timeout != nil && *a.Timeout > jobtimeout.MaxAgentTimeout() {
 		return fmt.Errorf("configfile: agent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",

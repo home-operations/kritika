@@ -59,6 +59,11 @@ func TestRateLimited(t *testing.T) {
 			wait: 2 * time.Minute, limited: true},
 		{name: "GitLab's 429 with a Ratelimit-Reset that has passed", err: gitlabReset(now.Add(-time.Minute).Unix(), "60"),
 			wait: time.Minute, limited: true},
+		// go-github v93 reads an HTTP date as no wait at all.
+		{name: "GitHub's secondary limit until its Retry-After date", err: &gh.AbuseRateLimitError{
+			RetryAfter: new(time.Duration),
+			Response:   &http.Response{StatusCode: http.StatusForbidden, Header: header(now.Add(10 * time.Minute).Format(http.TimeFormat))},
+		}, wait: 10 * time.Minute, limited: true},
 		{name: "GitHub's 429 that is no limit it knows", err: &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: header("30")},
 		}, wait: 30 * time.Second, limited: true},

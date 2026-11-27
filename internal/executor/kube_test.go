@@ -1163,6 +1163,33 @@ func TestLogTailDropsALineCutAtTheCeiling(t *testing.T) {
 	if got := logTail(log, false, runspec.Secrets{GitToken: token}); got != log {
 		t.Fatalf("a read under the ceiling is kept whole, got %q", got)
 	}
+	// A first line cut short, at the ceiling or by a failed read, leaves
+	// no complete line to keep.
+	if got := logTail("clone with ghs_secr", true, runspec.Secrets{GitToken: token}); got != "" {
+		t.Fatalf("an incomplete read of no whole line kept %q, want nothing", got)
+	}
+}
+
+// TestFinishDropsAFirstLineCutAtALoweredCeiling: a log read whose
+// lowered executor.logReadBytes ends inside its first line keeps none of
+// it, so no secret cut short of its mask is stored.
+func TestFinishDropsAFirstLineCutAtALoweredCeiling(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Executor.LogReadBytes, v.Executor.LogTailBytes = 16, 16 })
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() != "log" {
+			return false, nil, nil
+		}
+		return true, &runtime.Unknown{Raw: []byte("clone with ghs_secret_token\n")}, nil
+	})
+	_, _ = client.CoreV1().Pods("kritika").Create(t.Context(), &corev1.Pod{
+		Name: "kritika-run-01234567-abcde", Namespace: "kritika", Labels: map[string]string{"job-name": "kritika-run-01234567"},
+	}, metav1.CreateOptions{})
+	res := Result{JobName: "kritika-run-01234567"}
+	newKube(t, client).finish(t.Context(), &res, runspec.Secrets{GitToken: "ghs_secret_token"})
+	if res.LogTail != "" {
+		t.Fatalf("tail = %q, want nothing", res.LogTail)
+	}
 }
 
 func TestTailKeepsValidUTF8(t *testing.T) {

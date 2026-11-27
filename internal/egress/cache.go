@@ -158,6 +158,7 @@ var (
 	errEncoded      = errors.New("egress: cache: response is encoded")
 	errLength       = errors.New("egress: cache: response has no length")
 	errDigest       = errors.New("egress: cache: the body does not have the digest asked for")
+	errEntryHeader  = errors.New("egress: cache: the entry's first line exceeds egress.maxEntryHeader")
 )
 
 // cacheable reports whether r, an upgraded request to host, can be
@@ -493,11 +494,15 @@ func readEntry(f *os.File) (cacheEntry, int64, error) {
 // store writes body, entry.Size bytes of it, as the entry under key, in
 // place of any entry there. Then it evicts what no longer fits. check, when
 // set, returns why store cannot keep what body held. store asks it once body
-// is all read.
+// is all read. An entry whose first line readEntry cannot read back is
+// refused before body is read.
 func (c *Cache) store(key string, entry cacheEntry, body io.Reader, check func() error) error {
 	line, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("egress: cache: %w", err)
+	}
+	if int64(len(line))+1 > int64(tuning.Get().Egress.MaxEntryHeader) {
+		return errEntryHeader
 	}
 	tmp, err := os.CreateTemp(c.Dir, ".fill-")
 	if err != nil {

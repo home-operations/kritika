@@ -14,10 +14,15 @@ import (
 )
 
 // HeartbeatJob stamps the worker's heartbeat on the River job it is
-// working, so the leader knows the job's replica is alive.
+// working, so the leader knows the job's replica is alive. The beat carries
+// this replica's tuning JobTimeout.HeartbeatAbandonedAfter, by which the
+// leader rescues the job whatever its own is: this replica fences the job a
+// beat before that, at its own cadence.
 func (s *Store) HeartbeatJob(ctx context.Context, jobID int64) error {
-	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at) VALUES ($1, now())
-		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = now()`, jobID); err != nil {
+	abandonAfter := tuning.Get().JobTimeout.HeartbeatAbandonedAfter().Seconds()
+	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at, abandon_after)
+		VALUES ($1, now(), make_interval(secs => $2))
+		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = now(), abandon_after = excluded.abandon_after`, jobID, abandonAfter); err != nil {
 		return fmt.Errorf("store: heartbeat job %d: %w", jobID, err)
 	}
 	return nil
@@ -49,8 +54,10 @@ func (j AbandonedJob) RescueState() rivertype.JobState {
 }
 
 // AbandonedJobs lists up to limit running jobs whose worker stamped no
-// heartbeat for stale, oldest first. A job claimed less than stale ago
-// is left alone: its first beat can be on its way. Owner connection: River's
+// heartbeat for the abandonment window that its last beat carries, oldest
+// first: for stale, the leader's own window, when the beat is from a
+// replica that records none. A job claimed less than stale ago is left
+// alone: its first beat can be on its way. Owner connection: River's
 // rows are outside row-level security and the leader spans every account.
 func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit int) ([]AbandonedJob, error) {
 	if s.owner == nil {
@@ -59,7 +66,7 @@ func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit in
 	rows, err := s.owner.Query(ctx, `SELECT j.id, j.kind, j.attempt, j.max_attempts, j.metadata ? 'cancel_attempted_at'
 		FROM river_job j LEFT JOIN job_heartbeats h ON h.job_id = j.id
 		WHERE j.state = 'running' AND j.attempted_at < now() - make_interval(secs => $1)
-		  AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - make_interval(secs => $1))
+		  AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - coalesce(h.abandon_after, make_interval(secs => $1)))
 		ORDER BY j.id LIMIT $2`, stale.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list abandoned jobs: %w", err)
@@ -79,7 +86,8 @@ func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit in
 // the attempt's error. It also ends the reviews that the job left running,
 // which otherwise block every re-run of their head. It reports whether it
 // did: false when the job finished, was claimed again or stamped a
-// heartbeat within stale since it was listed. Owner connection.
+// heartbeat since it was listed, judged as AbandonedJobs judges one. Owner
+// connection.
 func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Duration, reason string) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: RescueJob needs the owner connection")
@@ -99,7 +107,8 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 		finalized_at = CASE WHEN $3::text = 'retryable' THEN NULL ELSE now() END,
 		errors = array_append(j.errors, $4::jsonb)
 		WHERE j.id = $1 AND j.state = 'running' AND j.attempt = $2
-		  AND NOT EXISTS (SELECT 1 FROM job_heartbeats h WHERE h.job_id = j.id AND h.heartbeat_at >= now() - make_interval(secs => $5))`,
+		  AND NOT EXISTS (SELECT 1 FROM job_heartbeats h WHERE h.job_id = j.id
+		    AND h.heartbeat_at >= now() - coalesce(h.abandon_after, make_interval(secs => $5)))`,
 		job.ID, job.Attempt, state, string(attemptErr), stale.Seconds())
 	if err != nil {
 		return false, fmt.Errorf("store: rescue job %d: %w", job.ID, err)

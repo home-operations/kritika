@@ -30,11 +30,12 @@ import (
 
 // What fetch_oci can take: a run inspects at most the spec's fetches, as
 // many as fetch_repo can fetch, and lists tags at most tuning's
-// Runner.MaxTagListings times. The rest is tuning's Runner too: what one call
-// takes from the registry (OCIWireBytes) and of wall time (OCITimeout), the
-// largest manifest or config it reads (OCIMetadataBytes), what it shows of a
-// config that is no image's (OCIConfigShown), and how many pages long a tag
-// listing is (OCITagPages).
+// Runner.MaxTagListings times, counted apart from fetch_repo's listings.
+// The rest is tuning's Runner too: what one call takes from the registry
+// (OCIWireBytes) and of wall time (OCITimeout), the largest manifest or
+// config it reads (OCIMetadataBytes), what it shows of a config that is no
+// image's (OCIConfigShown), and how many pages long a tag listing is
+// (OCITagPages).
 
 // dockerMediaTypes are the Docker media types an image's manifest list,
 // manifest and config come under, beside the OCI ones.

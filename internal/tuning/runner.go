@@ -2,6 +2,7 @@ package tuning
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -15,7 +16,9 @@ type RunSpec struct {
 	// several of these.
 	HeartbeatInterval time.Duration `env:"KRITIKA_TUNING_RUN_SPEC_HEARTBEAT_INTERVAL" envDefault:"15s" yaml:"heartbeatInterval,omitempty"`
 	// MaxBytes bounds an encoded spec, and it leaves the Secret room for
-	// the git and gateway tokens.
+	// the git and gateway tokens. It can be lowered and not raised: a runner
+	// of an earlier build, which spec version 1 still reaches, reads no
+	// larger spec.
 	MaxBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_BYTES" envDefault:"900Ki" yaml:"maxBytes,omitempty"`
 	// MaxPromptBytes is what an encoded prompt is trimmed to, under
 	// MaxBytes with room for the rest of the spec.
@@ -23,9 +26,11 @@ type RunSpec struct {
 	// MaxPriorFindings is how many of the last review's findings a spec
 	// carries, and how many dismissed ones.
 	MaxPriorFindings int `env:"KRITIKA_TUNING_RUN_SPEC_MAX_PRIOR_FINDINGS" envDefault:"200" yaml:"maxPriorFindings,omitempty"`
-	// MaxBodyBytes bounds the pull request body a spec carries. Encoding
-	// can grow it sixfold (each '<' becomes <), which MaxBytes still
-	// holds.
+	// MaxBodyBytes bounds the pull request body a spec carries. JSON can
+	// encode each '<' as a six-byte Unicode escape, so encoding can grow
+	// the body sixfold. MaxBytes holds that at the defaults; an override
+	// must leave room under MaxBytes for that growth and the rest of the
+	// spec.
 	MaxBodyBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_BODY_BYTES" envDefault:"64Ki" yaml:"maxBodyBytes,omitempty"`
 	// MaxIssueBytes bounds each linked issue's body a spec carries: the
 	// prompt shows a few thousand characters of one, and three worst-case
@@ -70,7 +75,8 @@ type Executor struct {
 	// its own: a registry's hiccup, a node on its way from an autoscaler.
 	StartGrace time.Duration `env:"KRITIKA_TUNING_EXECUTOR_START_GRACE" envDefault:"3m" yaml:"startGrace,omitempty"`
 	// JobTTL is how long a finished Job stays for kubectl when the
-	// jobTemplate sets no ttlSecondsAfterFinished. The run row keeps
+	// jobTemplate sets no ttlSecondsAfterFinished: a whole number of
+	// seconds, from one up to what that int32 holds. The run row keeps
 	// everything the Job knew.
 	JobTTL time.Duration `env:"KRITIKA_TUNING_EXECUTOR_JOB_TTL" envDefault:"10m" yaml:"jobTtl,omitempty"`
 	// APITimeout bounds one call to the Kubernetes API about a run's Job
@@ -87,9 +93,11 @@ type Executor struct {
 	// watches and its first lists.
 	WatchSync time.Duration `env:"KRITIKA_TUNING_EXECUTOR_WATCH_SYNC" envDefault:"1m" yaml:"watchSync,omitempty"`
 	// EventInstanceBytes is the longest reporting instance an Event names,
-	// past which it names the pod's UID.
+	// past which it names the pod's UID, or the instance cut short when the
+	// UID is longer. Kubernetes takes no more than 128 bytes.
 	EventInstanceBytes ByteSize `env:"KRITIKA_TUNING_EXECUTOR_EVENT_INSTANCE_BYTES" envDefault:"128" yaml:"eventInstanceBytes,omitempty"`
-	// EventNoteBytes is the longest note an Event holds.
+	// EventNoteBytes is the longest note an Event holds. Kubernetes takes
+	// no more than 1Ki.
 	EventNoteBytes ByteSize `env:"KRITIKA_TUNING_EXECUTOR_EVENT_NOTE_BYTES" envDefault:"1Ki" yaml:"eventNoteBytes,omitempty"`
 	// EventTimeout bounds an Event's write.
 	EventTimeout time.Duration `env:"KRITIKA_TUNING_EXECUTOR_EVENT_TIMEOUT" envDefault:"10s" yaml:"eventTimeout,omitempty"`
@@ -117,9 +125,9 @@ type Runner struct {
 	// FetchDiffBytes is the most of a diff that a fetch keeps, the same as
 	// the run tool keeps of an output.
 	FetchDiffBytes ByteSize `env:"KRITIKA_TUNING_RUNNER_FETCH_DIFF_BYTES" envDefault:"4Mi" yaml:"fetchDiffBytes,omitempty"`
-	// MaxTagListings is how many times a run lists tags, by fetch_repo and
-	// fetch_oci together, the listing that a fetch naming a missing ref
-	// makes to name the closest included.
+	// MaxTagListings is how many times each of fetch_repo and fetch_oci
+	// lists tags in a run, each counting its own: the listing that a fetch
+	// naming a missing ref makes to name the closest included.
 	MaxTagListings int `env:"KRITIKA_TUNING_RUNNER_MAX_TAG_LISTINGS" envDefault:"8" yaml:"maxTagListings,omitempty"`
 	// TagsShown is the most tag names a listing's answer shows, and
 	// ClosestTagsShown the most that an error for a missing ref does.
@@ -128,8 +136,10 @@ type Runner struct {
 	// ChangedShown is the most paths that a fetched diff's answer names
 	// before the patches.
 	ChangedShown int `env:"KRITIKA_TUNING_RUNNER_CHANGED_SHOWN" envDefault:"100" yaml:"changedShown,omitempty"`
-	// MaxDirNameBytes bounds the name of a fetch's directory, well inside a
-	// file system's 255 bytes.
+	// MaxDirNameBytes bounds the name of a fetch's directory, beside which
+	// its diff is kept as the name and .diff: so at most 250, for a file
+	// system's 255 bytes. The fetch's number is kept whole however small it
+	// is.
 	MaxDirNameBytes int `env:"KRITIKA_TUNING_RUNNER_MAX_DIR_NAME_BYTES" envDefault:"100" yaml:"maxDirNameBytes,omitempty"`
 
 	// OCIWireBytes is the most that one fetch_oci call takes from the
@@ -176,9 +186,6 @@ type Runner struct {
 	// this bound, a budget that the monthly cap cut short leaves the agent
 	// too few steps to work in.
 	CarryShare int `env:"KRITIKA_TUNING_RUNNER_CARRY_SHARE" envDefault:"4" yaml:"carryShare,omitempty"`
-	// PageNoteRoom is kept free on a page of read_diff for the note that
-	// numbers it.
-	PageNoteRoom int `env:"KRITIKA_TUNING_RUNNER_PAGE_NOTE_ROOM" envDefault:"96" yaml:"pageNoteRoom,omitempty"`
 	// MaxPackDiffBytes is how much of a diff, and of a delta diff, a
 	// context pack keeps: whole files in order, with a file left out if it
 	// would pass the limit. A pull request that regenerates a large text
@@ -243,6 +250,23 @@ func (v Values) HeartbeatStale() time.Duration {
 	return r.ReportRetryWindow + r.ReportTimeout + 2*r.HeartbeatInterval
 }
 
+// The fixed limits that the runner's and the executor's values keep within.
+const (
+	// specV1Bytes is the largest spec that a runner of spec version 1 reads,
+	// whatever its build: a runner of a build before runSpec.maxBytes was
+	// tunable reads no larger one.
+	specV1Bytes = 900 << 10
+	// kubeEventInstanceBytes and kubeEventNoteBytes are the longest
+	// reporting instance and note that Kubernetes takes in an Event.
+	kubeEventInstanceBytes = 128
+	kubeEventNoteBytes     = 1024
+	// fileNameBytes is the longest file name of the file systems a runner
+	// writes to, and maxDirNameBytes the longest name of a fetch's
+	// directory that leaves room for its diff's .diff.
+	fileNameBytes   = 255
+	maxDirNameBytes = fileNameBytes - len(".diff")
+)
+
 func init() {
 	crossField = append(crossField,
 		func(v Values) error {
@@ -255,9 +279,10 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if v.RunSpec.MaxBytes >= SecretBytes {
-				return fmt.Errorf("%s (%s) must be less than Kubernetes' %s Secret limit, which the run's credentials share",
-					fieldLabel("runSpec.maxBytes"), v.RunSpec.MaxBytes, ByteSize(SecretBytes))
+			if v.RunSpec.MaxBytes > specV1Bytes {
+				return fmt.Errorf("%s (%s) %w %s, what a runner of spec version 1 reads, "+
+					"inside Kubernetes' %s Secret limit, which the run's credentials share",
+					fieldLabel("runSpec.maxBytes"), v.RunSpec.MaxBytes, errMustNotExceed, ByteSize(specV1Bytes), ByteSize(SecretBytes))
 			}
 			return nil
 		},
@@ -282,6 +307,35 @@ func init() {
 				return fmt.Errorf("%s (%s) must be at least %s (%s)",
 					fieldLabel("executor.logReadBytes"), v.Executor.LogReadBytes,
 					fieldLabel("executor.logTailBytes"), v.Executor.LogTailBytes)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Executor.EventInstanceBytes > kubeEventInstanceBytes {
+				return fmt.Errorf("%s (%s) %w Kubernetes' limit on an Event's reporting instance, %d bytes",
+					fieldLabel("executor.eventInstanceBytes"), v.Executor.EventInstanceBytes, errMustNotExceed, kubeEventInstanceBytes)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Executor.EventNoteBytes > kubeEventNoteBytes {
+				return fmt.Errorf("%s (%s) %w Kubernetes' limit on an Event's note, %d bytes",
+					fieldLabel("executor.eventNoteBytes"), v.Executor.EventNoteBytes, errMustNotExceed, kubeEventNoteBytes)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if ttl := v.Executor.JobTTL; ttl < time.Second || ttl%time.Second != 0 || ttl/time.Second > math.MaxInt32 {
+				return fmt.Errorf("%s (%s) must be a whole number of seconds from 1s to %ds, as a Job's ttlSecondsAfterFinished is, "+
+					"so that a finished Job stays for its log to be read",
+					fieldLabel("executor.jobTtl"), v.Executor.JobTTL, math.MaxInt32)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Runner.MaxDirNameBytes > maxDirNameBytes {
+				return fmt.Errorf("%s (%d) %w %d bytes, so that the fetch's diff, its name and .diff, fits a file system's %d",
+					fieldLabel("runner.maxDirNameBytes"), v.Runner.MaxDirNameBytes, errMustNotExceed, maxDirNameBytes, fileNameBytes)
 			}
 			return nil
 		},

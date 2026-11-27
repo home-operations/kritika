@@ -467,7 +467,7 @@ func summaryProperties(diagram bool) map[string]*jsonSchema {
 		},
 		keyPraise: {
 			Type:        schemaArray,
-			Description: fmt.Sprintf("Up to %d specific things the change does well; empty when nothing stands out.", tuning.Get().Review.MaxPraise),
+			Description: "Up to " + praiseCount() + " specific things the change does well; empty when nothing stands out.",
 			Items:       &jsonSchema{Type: schemaString},
 			MaxItems:    tuning.Get().Review.MaxPraise,
 		},

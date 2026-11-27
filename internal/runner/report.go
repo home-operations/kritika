@@ -65,22 +65,75 @@ func (r *reporter) agent(ctx context.Context, rec runspec.AgentRecord, phase str
 }
 
 // index uploads a run's chunks, encoded as they are sent. An upload that fails
-// is sent again whole.
+// is sent again whole. One that the gateway would refuse as too large is not
+// sent: see indexFits.
 func (r *reporter) index(ctx context.Context, pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
+	if err := indexFits(pack, chunks); err != nil {
+		return err
+	}
 	body := func() io.Reader {
 		pr, pw := io.Pipe()
 		go func() {
-			enc := json.NewEncoder(pw)
-			enc.SetEscapeHTML(false)
-			err := enc.Encode(runspec.IndexReport{Pack: pack, Chunks: len(chunks)})
-			for i := 0; err == nil && i < len(chunks); i++ {
-				err = enc.Encode(chunks[i])
-			}
-			_ = pw.CloseWithError(err)
+			_ = pw.CloseWithError(encodeIndex(pw, pack, chunks))
 		}()
 		return pr
 	}
 	return r.send(ctx, tuning.Get().RunSpec.IndexUploadTimeout, http.MethodPost, runspec.ReportIndexPath, body, nil)
+}
+
+// encodeIndex writes the index upload of pack and chunks to w: an
+// IndexReport, then each chunk, a line each.
+func encodeIndex(w io.Writer, pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(runspec.IndexReport{Pack: pack, Chunks: len(chunks)})
+	for i := 0; err == nil && i < len(chunks); i++ {
+		err = enc.Encode(chunks[i])
+	}
+	return err
+}
+
+// indexFits says why the gateway would refuse the index upload of pack and
+// chunks as too large, nil if it would not. Startup holds
+// gateway.maxIndexLine and gateway.maxIndexBody to the indexer's limits, but
+// only so far as source text grows in JSON: control bytes and invalid UTF-8
+// grow more, and the changed paths of the opening line have no limit. The
+// upload is measured, not kept, so an upload of any size costs no memory.
+func indexFits(pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
+	t := tuning.Get().Gateway
+	m := &lineMeter{}
+	if err := encodeIndex(m, pack, chunks); err != nil {
+		return fmt.Errorf("runner: index upload: %w", err)
+	}
+	switch {
+	case m.longest > int64(t.MaxIndexLine):
+		return fmt.Errorf("runner: index upload: a line of %d bytes is over tuning.gateway.maxIndexLine, %d",
+			m.longest, int64(t.MaxIndexLine))
+	case m.total > int64(t.MaxIndexBody):
+		return fmt.Errorf("runner: index upload: %d bytes are over tuning.gateway.maxIndexBody, %d", m.total, int64(t.MaxIndexBody))
+	}
+	return nil
+}
+
+// lineMeter counts what is written to it: in all, and in its longest line,
+// newline included.
+type lineMeter struct {
+	total, line, longest int64
+}
+
+func (m *lineMeter) Write(p []byte) (int, error) {
+	for rest := p; len(rest) > 0; {
+		i := bytes.IndexByte(rest, '\n')
+		if i < 0 {
+			m.line += int64(len(rest))
+			break
+		}
+		m.longest = max(m.longest, m.line+int64(i)+1)
+		m.line, rest = 0, rest[i+1:]
+	}
+	m.longest = max(m.longest, m.line)
+	m.total += int64(len(p))
+	return len(p), nil
 }
 
 func (r *reporter) checkpoints(ctx context.Context, input string) ([]runspec.PartCheckpoint, error) {
@@ -114,14 +167,17 @@ func (r *reporter) post(ctx context.Context, path string, v, out any) error {
 // or says the trouble is its own, waiting from Runner.ReportBackoff, doubled
 // up to Runner.ReportMaxBackoff, between attempts. The context of the report
 // ends it sooner. The window bounds the retries and not an attempt, whose
-// timeout does that. An attempt that outlasted the window, as an upload can,
-// starts the window over: it was no outage that ended it, or it would have
-// failed sooner.
+// timeout does that: no attempt starts after the window, nor a wait that
+// would end past it. The first attempt that outlasted the window, as an
+// upload can, starts the window over: it was no outage that ended it, or it
+// would have failed sooner. A later one does not, so that a gateway that
+// answers each attempt slowly with a failure is given up on.
 func (r *reporter) send(ctx context.Context, timeout time.Duration, method, path string, body func() io.Reader, out any) error {
 	window, t := tuning.Get().RunSpec.ReportRetryWindow, tuning.Get().Runner
 	backoff, maxBackoff := t.ReportBackoff, t.ReportMaxBackoff
 	giveUp := time.Now().Add(window)
 	wait := backoff
+	restarted := false
 	for {
 		started := time.Now()
 		again, err := r.attempt(ctx, timeout, method, path, body, out)
@@ -129,10 +185,10 @@ func (r *reporter) send(ctx context.Context, timeout time.Duration, method, path
 			return err
 		}
 		now := time.Now()
-		if now.Sub(started) >= window {
-			giveUp, wait = now.Add(window), backoff
+		if !restarted && now.Sub(started) >= window {
+			giveUp, wait, restarted = now.Add(window), backoff, true
 		}
-		if now.After(giveUp) {
+		if now.Add(wait).After(giveUp) {
 			return err
 		}
 		select {

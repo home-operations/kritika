@@ -21,8 +21,8 @@ type Review struct {
 	MaxConfidenceSources int `env:"KRITIKA_TUNING_REVIEW_MAX_CONFIDENCE_SOURCES" envDefault:"20" yaml:"maxConfidenceSources,omitempty"`
 	// MaxConfidenceReason bounds the reason kept of the scorer's answer.
 	MaxConfidenceReason int `env:"KRITIKA_TUNING_REVIEW_MAX_CONFIDENCE_REASON" envDefault:"500" yaml:"maxConfidenceReason,omitempty"`
-	// MaxPraise bounds a summary's praise. The schema says so and the parse
-	// enforces it.
+	// MaxPraise bounds a summary's praise. The instructions and the schema
+	// say so, and the parse enforces it.
 	MaxPraise int `env:"KRITIKA_TUNING_REVIEW_MAX_PRAISE" envDefault:"3" yaml:"maxPraise,omitempty"`
 	// MaxChecked bounds a summary's checked notes. The schema says so and
 	// the parse enforces it.
@@ -63,7 +63,8 @@ type Review struct {
 	// take and the share that the linked issues can take together:
 	// 1/BodyShare each, which leaves at least half of it to the diff at the
 	// default. A body over its share is cut there, with a note of how much
-	// was left out.
+	// was left out. Validate refuses less than MinBodyShare, which would
+	// leave the diff no room once both are full.
 	BodyShare int `env:"KRITIKA_TUNING_REVIEW_BODY_SHARE" envDefault:"4" yaml:"bodyShare,omitempty"`
 	// MinUserBudget is the least a user message is given, in tokens,
 	// whatever the system prompt and what follows the diff take of the
@@ -85,7 +86,8 @@ type Review struct {
 	MaxQuoteRefusals int `env:"KRITIKA_TUNING_REVIEW_MAX_QUOTE_REFUSALS" envDefault:"2" yaml:"maxQuoteRefusals,omitempty"`
 	// MaxRenderBytes bounds a rendered comment, marker included. GitHub
 	// rejects comment bodies over 65,536 characters, and a character is at
-	// least a byte, so Validate refuses more.
+	// least a byte, so Validate refuses more. It refuses less than
+	// MinRenderBytes too, which a comment's marker alone can fill.
 	MaxRenderBytes ByteSize `env:"KRITIKA_TUNING_REVIEW_MAX_RENDER_BYTES" envDefault:"64Ki" yaml:"maxRenderBytes,omitempty"`
 	// RenderTimeout bounds one render of a repository's template, parse
 	// included.
@@ -111,6 +113,16 @@ type Review struct {
 	// Anything deeper counts as one node.
 	MaxMeasureDepth int `env:"KRITIKA_TUNING_REVIEW_MAX_MEASURE_DEPTH" envDefault:"64" yaml:"maxMeasureDepth,omitempty"`
 }
+
+// MinBodyShare is the least Review.BodyShare: at it, a full description
+// and full linked issues take two thirds of the budget between them, and
+// leave the diff the rest.
+const MinBodyShare = 3
+
+// MinRenderBytes is the least Review.MaxRenderBytes: room for the longest
+// marker that kritika leads a comment with, an inline finding's at 90
+// bytes with its newline, and a body after it.
+const MinRenderBytes = 1 << 10
 
 // MaxCallBytes bounds one template function call: its arguments plus an
 // estimate of what it allocates, and its result. The estimate is computed
@@ -151,6 +163,20 @@ func init() {
 		func(v Values) error {
 			if v.Review.MaxRenderBytes > GitHubCommentBytes {
 				return fmt.Errorf("%s %w GitHub's comment cap, %d bytes", fieldLabel("review.maxRenderBytes"), errMustNotExceed, GitHubCommentBytes)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Review.MaxRenderBytes < MinRenderBytes {
+				return fmt.Errorf("%s must be at least %d bytes, room for a comment's marker and a body",
+					fieldLabel("review.maxRenderBytes"), MinRenderBytes)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Review.BodyShare < MinBodyShare {
+				return fmt.Errorf("%s must be at least %d, so that a full description and full linked issues leave the diff room",
+					fieldLabel("review.bodyShare"), MinBodyShare)
 			}
 			return nil
 		},

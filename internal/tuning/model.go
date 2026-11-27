@@ -174,7 +174,7 @@ type Agent struct {
 	// Stepper has already retried on its own schedule, so these outlast a
 	// provider outage that schedule did not: the conversation so far is
 	// kept rather than the Run ending with its steps spent.
-	StepRetryWaits []time.Duration `env:"KRITIKA_TUNING_AGENT_STEP_RETRY_WAITS" envDefault:"30s,1m,2m,4m" yaml:"stepRetryWaits,omitempty"`
+	StepRetryWaits Durations `env:"KRITIKA_TUNING_AGENT_STEP_RETRY_WAITS" envDefault:"30s,1m,2m,4m" yaml:"stepRetryWaits,omitempty"`
 }
 
 // ChatGPT holds the tunable values of package chatgpt.

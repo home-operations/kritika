@@ -282,3 +282,27 @@ func TestPromptTrimConfigured(t *testing.T) {
 		t.Fatalf("Encode over a configured MaxBytes = %v, want it refused", err)
 	}
 }
+
+// TestPromptTrimFitsTextWithoutHistory: a prompt with no findings to drop,
+// whose bodies JSON's escaping takes over runSpec.maxPromptBytes, has its
+// linked issue's body shortened, then the pull request's, until it fits, and
+// its spec encodes.
+func TestPromptTrimFitsTextWithoutHistory(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.RunSpec.MaxPromptBytes = 64 << 10 })
+	s := reviewSpec()
+	s.Prompt.Prior, s.Prompt.Dismissed = nil, nil
+	s.Prompt.PullRequest.Body = strings.Repeat("<", 10<<10)
+	s.Prompt.Issues = []review.Issue{{ID: "#1", Title: "t", Body: strings.Repeat("<", 16<<10)}}
+	s.Prompt.Trim()
+	b, err := json.Marshal(s.Prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > 64<<10 || len(s.Prompt.PullRequest.Body) != 10<<10 || len(s.Prompt.Issues[0].Body) >= 16<<10 {
+		t.Fatalf("prompt = %d bytes, body %d, issue %d; want it within %d, the issue cut before the body",
+			len(b), len(s.Prompt.PullRequest.Body), len(s.Prompt.Issues[0].Body), 64<<10)
+	}
+	if _, err := Encode(s); err != nil {
+		t.Fatal(err)
+	}
+}

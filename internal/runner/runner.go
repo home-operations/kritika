@@ -216,18 +216,6 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 		notes = []string{}
 	}
 
-	// The pack is read whole by the service, on every publish and
-	// follow-up, so what it keeps of the diffs is bounded here.
-	// A context pack keeps tuning's Runner.MaxPackDiffBytes of a diff and
-	// of a delta diff, whole files in order.
-	most := int(tuning.Get().Runner.MaxPackDiffBytes)
-	packDiff, cut := review.FitDiff(res.Diff, most)
-	packDelta, _ := review.FitDiff(res.DeltaDiff, most)
-	if len(cut) > 0 {
-		logger.Warn("diff too large to keep whole", "diff_bytes", len(res.Diff), "kept_bytes", len(packDiff), "files_cut", len(cut))
-		notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
-	}
-
 	if err := report.phase(ctx, "writing"); err != nil {
 		return err
 	}
@@ -235,11 +223,15 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 	if skip != "" {
 		phase = "done"
 	}
-	err = report.context(ctx, runspec.ContextPack{
-		Head: p.Head, Base: p.Base, PatchID: res.PatchID, Diff: packDiff, ChangedPaths: res.Changed, RenamedFrom: res.RenamedFrom,
-		Stages: stagesJSON, Files: filesJSON, Notes: notes, PriorHead: priorHead, DeltaDiff: packDelta,
+	pack, cut := fitPackDiffs(runspec.ContextPack{
+		Head: p.Head, Base: p.Base, PatchID: res.PatchID, ChangedPaths: res.Changed, RenamedFrom: res.RenamedFrom,
+		Stages: stagesJSON, Files: filesJSON, Notes: notes, PriorHead: priorHead,
 		DeltaPaths: deltaPaths, Scope: string(scope), ScopeReason: scopeReason, SkipReason: skip, RuleIDs: ruleIDs, SkipDetail: skipDetail,
-	}, phase)
+	}, phase, res.Diff, res.DeltaDiff)
+	if len(cut) > 0 {
+		logger.Warn("diff too large to keep whole", "diff_bytes", len(res.Diff), "kept_bytes", len(pack.Diff), "files_cut", len(cut))
+	}
+	err = report.context(ctx, pack, phase)
 	if err != nil {
 		return err
 	}
@@ -462,4 +454,37 @@ func fail(ctx context.Context, report *reporter, secrets runspec.Secrets, cause 
 		return fmt.Errorf("runner: record failure: %w", err)
 	}
 	return nil
+}
+
+// fitPackDiffs is pack with diff and delta, the pull request's diff and its
+// delta diff, in it, and the paths of diff's files that it leaves out,
+// which its notes name. The service reads the pack whole on every publish
+// and follow-up, so each diff keeps at most tuning's
+// Runner.MaxPackDiffBytes, whole files in order. The context report that
+// carries the pack must also fit Gateway.MaxReportBody as JSON encodes it,
+// which can make a diff six times as long, so whole files are left out of
+// both diffs until it does.
+func fitPackDiffs(pack runspec.ContextPack, phase, diff, delta string) (runspec.ContextPack, []string) {
+	notes := slices.Clip(pack.Notes)
+	limit := int(tuning.Get().Gateway.MaxReportBody)
+	room := int(tuning.Get().Runner.MaxPackDiffBytes)
+	for {
+		var cut []string
+		pack.Diff, cut = review.FitDiff(diff, room)
+		pack.DeltaDiff, _ = review.FitDiff(delta, room)
+		pack.Notes = notes
+		if len(cut) > 0 {
+			pack.Notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
+		}
+		// A pack that does not encode fails its report, which says why.
+		encoded, _ := json.Marshal(runspec.ContextReport{Pack: pack, Phase: phase})
+		over := len(encoded) - limit
+		kept := max(len(pack.Diff), len(pack.DeltaDiff))
+		if over <= 0 || kept == 0 {
+			return pack, cut
+		}
+		// JSON writes no byte as more than six, so the diffs must lose at
+		// least a sixth of the excess.
+		room = kept - (over+5)/6
+	}
 }

@@ -22,9 +22,18 @@ type fakeHeartbeater struct {
 	fail  int
 	down  bool
 	hung  bool
+	// delay is how long each beat takes to be written.
+	delay time.Duration
 }
 
 func (f *fakeHeartbeater) HeartbeatJob(ctx context.Context, jobID int64) error {
+	if f.delay > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(f.delay):
+		}
+	}
 	f.mu.Lock()
 	if f.hung {
 		f.mu.Unlock()
@@ -216,6 +225,31 @@ func TestJobHeartbeatOutlastsAShortOutage(t *testing.T) {
 		}
 		if got, want := store.count(), 1+int(healthy/tuning.Get().JobTimeout.HeartbeatInterval)+1; got != want {
 			t.Fatalf("beats written = %d, want %d: the first, one an interval until the outage, and one after it", got, want)
+		}
+	})
+}
+
+// TestJobHeartbeatAtTheFewestBeats: at the fewest abandoned beats that
+// Validate allows, renewals that each take half an interval to write keep
+// the job: the first has a beat of room before the fence.
+func TestJobHeartbeatAtTheFewestBeats(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.AbandonedBeats = 3 })
+	if err := tuning.Get().Validate(); err != nil {
+		t.Fatalf("3 abandoned beats invalid: %v", err)
+	}
+	synctest.Test(t, func(t *testing.T) {
+		interval := tuning.Get().JobTimeout.HeartbeatInterval
+		store := &fakeHeartbeater{delay: interval / 2}
+		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
+		err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+			time.Sleep(5 * interval)
+			return context.Cause(ctx)
+		})
+		if err != nil {
+			t.Fatalf("Work = %v, want the job left to finish", err)
+		}
+		if got := store.count(); got < 5 {
+			t.Fatalf("beats written = %d, want the first and a renewal an interval", got)
 		}
 	})
 }

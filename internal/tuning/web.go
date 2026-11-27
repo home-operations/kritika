@@ -1,6 +1,9 @@
 package tuning
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // WebAPI holds the tunable values of package webapi.
 type WebAPI struct {
@@ -55,10 +58,11 @@ type WebAPI struct {
 	TokenNameMax int `env:"KRITIKA_TUNING_WEB_API_TOKEN_NAME_MAX" envDefault:"100" yaml:"tokenNameMax,omitempty"`
 	// TokenLifetimes are the lifetimes that a personal access token can be
 	// created with, 0 for one that never expires. A request asks for whole
-	// days, so only a lifetime of whole days can be asked for. None turns
-	// the creation of tokens off. The dashboard's token form offers the
-	// default lifetimes on its own.
-	TokenLifetimes []time.Duration `env:"KRITIKA_TUNING_WEB_API_TOKEN_LIFETIMES" envDefault:"0s,168h,720h,2160h,8760h" yaml:"tokenLifetimes,omitempty" tuning:"zero"` //nolint:lll // a struct tag does not wrap
+	// days, so Validate refuses a lifetime that is not whole days. An empty
+	// list, [] in the file and in the environment alike, turns the creation
+	// of tokens off: an empty variable is unset, and so the default. The
+	// dashboard's token form offers the default lifetimes on its own.
+	TokenLifetimes Durations `env:"KRITIKA_TUNING_WEB_API_TOKEN_LIFETIMES" envDefault:"0s,168h,720h,2160h,8760h" yaml:"tokenLifetimes,omitempty" tuning:"zero"` //nolint:lll // a struct tag does not wrap
 	// ExportLimit is how many findings an export holds at most: the
 	// newest.
 	ExportLimit int `env:"KRITIKA_TUNING_WEB_API_EXPORT_LIMIT" envDefault:"1000" yaml:"exportLimit,omitempty"`
@@ -163,5 +167,17 @@ func init() {
 		func(v Values) error {
 			return notAbove("webApi.defaultUsageWindow", v.WebAPI.DefaultUsageWindow, "webApi.maxUsageWindow", v.WebAPI.MaxUsageWindow)
 		},
+		func(v Values) error {
+			for i, d := range v.WebAPI.TokenLifetimes {
+				if d%Day != 0 {
+					return fmt.Errorf("%s must be whole days, or 0 for never, since a token is asked for in days (entry %d, %s)",
+						fieldLabel("webApi.tokenLifetimes"), i+1, d)
+				}
+			}
+			return nil
+		},
 	)
 }
+
+// Day is the unit of a token lifetime that a request asks for.
+const Day = 24 * time.Hour

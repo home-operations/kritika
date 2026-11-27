@@ -67,3 +67,21 @@ func TestEventsLongNames(t *testing.T) {
 		t.Fatalf("instance %q, regarding %q, name %q", e.ReportingInstance, e.Regarding.Name, e.Name)
 	}
 }
+
+// TestEventsInstanceWithinALoweredLimit: under an executor.eventInstanceBytes
+// lower than the pod's UID, a long pod name is cut to the limit, not given up
+// for a UID that is longer still.
+func TestEventsInstanceWithinALoweredLimit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Executor.EventInstanceBytes = 16 })
+	client := fake.NewSimpleClientset()
+	pod := strings.Repeat("p", 250)
+	NewEvents(client, "kritika", pod, "0c3a0bde-5c6d-4f6c-9a43-1f2b1e4e8a10", slog.New(slog.DiscardHandler)).
+		PodEvent(t.Context(), false, "LeaderElected", "Lead", "this replica took the lead")
+	list, err := client.EventsV1().Events("kritika").List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("events = %+v, %v", list, err)
+	}
+	if got := list.Items[0].ReportingInstance; got != pod[:16] {
+		t.Fatalf("instance %q, want %q", got, pod[:16])
+	}
+}

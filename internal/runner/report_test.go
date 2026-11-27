@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -148,6 +149,46 @@ func TestReportWindowBoundsRetriesAlone(t *testing.T) {
 	})
 }
 
+// TestReportWindowGivesUpOnSlowFailures: a gateway that answers every
+// attempt with a retryable failure, each after longer than the window, is
+// given a second window once and then given up on, well before the
+// report's context ends.
+func TestReportWindowGivesUpOnSlowFailures(t *testing.T) {
+	const window, long = 10 * time.Millisecond, 30 * time.Millisecond
+	fastRetries(t, window)
+	var sends atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sends.Add(1)
+		time.Sleep(long)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	if err := (&reporter{gatewayURL: srv.URL}).phase(ctx, "fetching"); err == nil || ctx.Err() != nil || sends.Load() != 2 {
+		t.Fatalf("phase = %v after %d sends (context %v), want a failure after 2", err, sends.Load(), ctx.Err())
+	}
+}
+
+// TestReportWindowHoldsTheBackoff: a retry whose backoff would end past the
+// window is not waited for, nor sent.
+func TestReportWindowHoldsTheBackoff(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Runner.ReportBackoff, v.Runner.ReportMaxBackoff, v.RunSpec.ReportRetryWindow = time.Minute, time.Minute, 20*time.Millisecond
+	})
+	var sends atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sends.Add(1)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	started := time.Now()
+	err := (&reporter{gatewayURL: srv.URL}).phase(t.Context(), "fetching")
+	if err == nil || sends.Load() != 1 || time.Since(started) > 10*time.Second {
+		t.Fatalf("phase = %v after %d sends and %s, want a failure after 1 at once", err, sends.Load(), time.Since(started))
+	}
+}
+
 func TestReportHeartbeatTriesOnce(t *testing.T) {
 	fastRetries(t, time.Minute)
 	var sends atomic.Int32
@@ -240,5 +281,87 @@ func TestReportAgentEncoding(t *testing.T) {
 	}
 	if got.Record.SkillsOffered == nil || got.Record.SkillsOpened != nil {
 		t.Fatalf("an empty list and a nil one must stay what they are: %#v, %#v", got.Record.SkillsOffered, got.Record.SkillsOpened)
+	}
+}
+
+// TestFitPackDiffsToTheEncodedReport: a diff within runner.maxPackDiffBytes
+// whose JSON escaping would take its context report past
+// gateway.maxReportBody loses whole files until the report fits, and its
+// notes name them.
+func TestFitPackDiffsToTheEncodedReport(t *testing.T) {
+	section := func(name string) string {
+		return "diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@ -1 +1 @@\n+" +
+			strings.Repeat("<", 1000) + "\n"
+	}
+	diff := section("a.go") + section("b.go")
+	base := runspec.ContextPack{Head: "head", Stages: json.RawMessage("[]"), Files: json.RawMessage("[]"), Notes: []string{}}
+	fitted := base
+	fitted.Diff, fitted.Notes = section("a.go"), []string{fmt.Sprintf(noteDiffNotKept, 1, namePaths([]string{"b.go"}))}
+	want, err := json.Marshal(runspec.ContextReport{Pack: fitted, Phase: "reviewing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Runner.MaxPackDiffBytes, v.Gateway.MaxReportBody = 1<<20, tuning.ByteSize(len(want))
+	})
+	pack, cut := fitPackDiffs(base, "reviewing", diff, "")
+	got, err := json.Marshal(runspec.ContextReport{Pack: pack, Phase: "reviewing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > len(want) || pack.Diff != section("a.go") || len(cut) != 1 || cut[0] != "b.go" ||
+		len(pack.Notes) != 1 || !strings.Contains(pack.Notes[0], "b.go") {
+		t.Fatalf("report of %d bytes (limit %d), diff %q, cut %q, notes %q", len(got), len(want), pack.Diff, cut, pack.Notes)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.MaxReportBody = 1 << 20 })
+	if pack, cut := fitPackDiffs(base, "reviewing", diff, ""); pack.Diff != diff || len(cut) != 0 || len(pack.Notes) != 0 {
+		t.Fatalf("under the limit, diff %q, cut %q, notes %q; want it whole", pack.Diff, cut, pack.Notes)
+	}
+}
+
+// TestReportIndexRefusesWhatTheGatewayWould: an upload with a line over
+// gateway.maxIndexLine, or over gateway.maxIndexBody in all, as it encodes
+// with its control bytes escaped, is not sent, and its error names the
+// limit.
+func TestReportIndexRefusesWhatTheGatewayWould(t *testing.T) {
+	chunks := []runspec.IndexChunk{{Path: "a.go", Text: strings.Repeat("\x01", 100), StartLine: 1, EndLine: 1}}
+	var want strings.Builder
+	if err := encodeIndex(&want, runspec.IndexPack{ChangedPaths: []string{}}, chunks); err != nil {
+		t.Fatal(err)
+	}
+	longest := 0
+	for l := range strings.SplitAfterSeq(want.String(), "\n") {
+		longest = max(longest, len(l))
+	}
+	for _, tt := range []struct {
+		name       string
+		line, body tuning.ByteSize
+		says       string
+	}{
+		{"a line over its limit", tuning.ByteSize(longest - 1), 1 << 20, "tuning.gateway.maxIndexLine"},
+		{"an upload over its limit", tuning.ByteSize(longest), tuning.ByteSize(want.Len() - 1), "tuning.gateway.maxIndexBody"},
+		{"an upload at both limits", tuning.ByteSize(longest), tuning.ByteSize(want.Len()), ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fastRetries(t, time.Minute)
+			tuning.Override(t, func(v *tuning.Values) { v.Gateway.MaxIndexLine, v.Gateway.MaxIndexBody = tt.line, tt.body })
+			var sends atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sends.Add(1)
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer srv.Close()
+			err := (&reporter{gatewayURL: srv.URL}).index(t.Context(), runspec.IndexPack{ChangedPaths: []string{}}, chunks)
+			if tt.says == "" {
+				if err != nil || sends.Load() != 1 {
+					t.Fatalf("index = %v after %d sends, want it sent", err, sends.Load())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.says) || sends.Load() != 0 {
+				t.Fatalf("index = %v after %d sends, want it refused naming %q, unsent", err, sends.Load(), tt.says)
+			}
+		})
 	}
 }

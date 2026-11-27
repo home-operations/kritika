@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -591,5 +593,45 @@ func TestOpenCache(t *testing.T) {
 		if _, err := OpenCache(readOnly, 1<<20); err == nil {
 			t.Error("a directory the cache cannot write was accepted")
 		}
+	}
+}
+
+// TestCacheStoreRefusesUnreadableHeader: an entry whose first line, with
+// its newline, passes egress.maxEntryHeader is refused before its body is
+// read, and one at the bound is stored and read back.
+func TestCacheStoreRefusesUnreadableHeader(t *testing.T) {
+	const body = "tool archive"
+	entry := entryOf("https://example.com/tool.tar.gz", body)
+	line, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name   string
+		header tuning.ByteSize
+		fails  bool
+	}{
+		{"one byte short", tuning.ByteSize(len(line)), true},
+		{"at the bound", tuning.ByteSize(len(line) + 1), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxEntryHeader = tt.header })
+			c := &Cache{Dir: t.TempDir(), MaxBytes: 1 << 20}
+			err := c.store(keyOf(body), entry, strings.NewReader(body), nil)
+			if tt.fails {
+				if !errors.Is(err, errEntryHeader) || entries(t, c) != 0 {
+					t.Fatalf("store = %v with %d entries, want errEntryHeader and none", err, entries(t, c))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, _, _, err := c.open(keyOf(body))
+			if err != nil {
+				t.Fatalf("open of the stored entry: %v", err)
+			}
+			_ = f.Close()
+		})
 	}
 }

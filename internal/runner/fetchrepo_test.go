@@ -479,3 +479,44 @@ func TestFetchedReadFile(t *testing.T) {
 		})
 	}
 }
+
+// TestReadFetchedLimits: a file inside a fetch's directory is held to
+// agent.maxBlobBytes, which the fetch wrote it under, and a kept diff or
+// output beside those directories to runner.fetchDiffBytes, whichever is
+// the smaller.
+func TestReadFetchedLimits(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.FetchDiffBytes, v.Agent.MaxBlobBytes = 16, 64 })
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "1-repo@v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, size := range map[string]int{"1-repo@v2/between.go": 32, "1-repo@v2/over.go": 65, "1-repo@v2.diff": 32} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(strings.Repeat("x", size)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		rel, err string
+	}{
+		{"1-repo@v2/between.go", ""},
+		{"1-repo@v2/over.go", "over the 64 byte limit"},
+		{"1-repo@v2.diff", "over the 16 byte limit"},
+	} {
+		t.Run(tt.rel, func(t *testing.T) {
+			_, err := readFetched(dir, tt.rel)
+			if (tt.err == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.err)) {
+				t.Fatalf("readFetched = %v, want %q", err, tt.err)
+			}
+		})
+	}
+}
+
+// TestDirNameKeepsTheFetchNumber: under the smallest limit, the cut spares
+// each fetch's number, so fetches 1 and 10 get directories of their own.
+func TestDirNameKeepsTheFetchNumber(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxDirNameBytes = 1 })
+	first, tenth := dirName(1, "https://example.com/r", "v1"), dirName(10, "https://example.com/r", "v1")
+	if first != "1-" || tenth != "10-" {
+		t.Fatalf("dirName = %q and %q, want %q and %q", first, tenth, "1-", "10-")
+	}
+}

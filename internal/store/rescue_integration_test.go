@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // insertRiverJob puts a running job into River's table as a worker that
@@ -487,5 +489,68 @@ func TestRescuePublication(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestRescueByTheOwnersWindow: a job is abandoned by the window that its
+// owner's last beat carries, not the leader's, so that replicas on
+// different heartbeat settings during a rollout never rescue a live job. A
+// beat that carries no window, from a replica before the column, is judged
+// by the leader's.
+func TestRescueByTheOwnersWindow(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	beat := func(id int64, interval time.Duration, beats int, ago time.Duration) {
+		t.Helper()
+		tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = interval, beats })
+		if err := s.HeartbeatJob(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2) WHERE job_id = $1`,
+			id, ago.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A slow owner, 6m to abandonment, 3m silent: alive to a leader whose
+	// own window is 1m.
+	slow := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(slow, time.Minute, 6, 3*time.Minute)
+	// A fast owner, 30s to abandonment, 2m silent: abandoned to a leader
+	// whose own window is 3m.
+	fast := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(fast, 10*time.Second, 3, 2*time.Minute)
+	// A beat that carries no window, 2m silent.
+	legacy := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(legacy, time.Minute, 6, 2*time.Minute)
+	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET abandon_after = NULL WHERE job_id = $1`, legacy); err != nil {
+		t.Fatal(err)
+	}
+	ours := []int64{slow, fast, legacy}
+	abandoned := func(stale time.Duration) []int64 {
+		t.Helper()
+		got, err := s.AbandonedJobs(ctx, stale, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []int64
+		for _, j := range got {
+			if slices.Contains(ours, j.ID) {
+				ids = append(ids, j.ID)
+			}
+		}
+		return ids
+	}
+	if got, want := abandoned(time.Minute), []int64{fast, legacy}; !slices.Equal(got, want) {
+		t.Fatalf("abandoned to a 1m leader = %v, want %v: the slow owner's 6m window has not passed", got, want)
+	}
+	if got, want := abandoned(3*time.Minute), []int64{fast}; !slices.Equal(got, want) {
+		t.Fatalf("abandoned to a 3m leader = %v, want %v: the fast owner's 30s window has passed, the legacy beat is judged by 3m", got, want)
+	}
+	// The rescue's own check judges as the listing does.
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: slow, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || rescued {
+		t.Fatalf("RescueJob of the slow owner's job = %v, %v; want it left alone", rescued, err)
+	}
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: fast, Kind: "review", Attempt: 1, MaxAttempts: 25}, 3*time.Minute, "lost"); err != nil || !rescued {
+		t.Fatalf("RescueJob of the fast owner's job = %v, %v; want it rescued", rescued, err)
 	}
 }

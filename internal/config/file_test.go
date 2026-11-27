@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -290,5 +291,67 @@ func TestTuningFromFile(t *testing.T) {
 	}
 	if got := tuning.Env(cfg.Tuning); len(got) != 1 || got[0] != (tuning.EnvPair{Name: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY", Value: "6"}) {
 		t.Fatalf("tuning.Env = %v, want the one file setting", got)
+	}
+}
+
+// TestTuningEmptyList: an empty token lifetime list, which turns token
+// creation off, reads from the file's [] and from the environment's [], and
+// serve hands it to its runners as [], which reads back empty.
+func TestTuningEmptyList(t *testing.T) {
+	const name = "KRITIKA_TUNING_WEB_API_TOKEN_LIFETIMES"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("tuning: {webApi: {tokenLifetimes: []}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Tuning.WebAPI.TokenLifetimes; len(got) != 0 {
+		t.Fatalf("from the file, TokenLifetimes = %v, want none", got)
+	}
+	pairs := tuning.Env(cfg.Tuning)
+	if want := []tuning.EnvPair{{Name: name, Value: tuning.EmptyList}}; !slices.Equal(pairs, want) {
+		t.Fatalf("tuning.Env = %v, want %v", pairs, want)
+	}
+	// A runner reads what serve hands it.
+	t.Setenv(name, pairs[0].Value)
+	runner, err := LoadRunner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.Tuning.WebAPI.TokenLifetimes; got == nil || len(got) != 0 {
+		t.Fatalf("from the environment, TokenLifetimes = %#v, want none", got)
+	}
+}
+
+// TestSettingsValidateTuning: the shared settings loader, which
+// configfile.Parse reads through, refuses what tuning's Validate does.
+func TestSettingsValidateTuning(t *testing.T) {
+	_, _, err := LoadSettings([]byte("tuning: {gateway: {similarPerQuery: 0}}"))
+	if want := "tuning.gateway.similarPerQuery: KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY must be positive"; err == nil ||
+		!strings.Contains(err.Error(), want) {
+		t.Fatalf("LoadSettings = %v, want %q", err, want)
+	}
+}
+
+// TestRunnerSkipsServesRetention: serve raises the retention minimum with
+// its retentions and hands its runners only the tuning. The runner, at the
+// default retentions, does not refuse them: it reads no retention.
+func TestRunnerSkipsServesRetention(t *testing.T) {
+	t.Setenv("KRITIKA_TUNING_WORKER_MIN_RETENTION", "1000h")
+	// Load unsets the DSN once read.
+	t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "must be at least 1000h0m0s") {
+		t.Fatalf("serve at the default retentions: Load = %v, want them refused", err)
+	}
+	if _, err := LoadRunner(); err != nil {
+		t.Fatalf("LoadRunner = %v, want the retentions left to serve", err)
+	}
+	t.Setenv("KRITIKA_TRANSCRIPT_RETENTION", "1000h")
+	t.Setenv("KRITIKA_DIFF_RETENTION", "1000h")
+	t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
+	if _, err := Load(); err != nil {
+		t.Fatalf("serve with its retentions raised: Load = %v", err)
 	}
 }

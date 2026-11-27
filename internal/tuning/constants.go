@@ -28,9 +28,9 @@
 //     it is.
 //
 // The field's type is one of time.Duration, int, int64, float64, ByteSize or
-// []time.Duration (comma-separated in the environment). A value derived from
-// others is a method on the area, never a field of its own, so it cannot
-// disagree with what it is derived from. An invariant between fields is a
+// Durations (comma-separated in the environment, EmptyList for none). A
+// value derived from others is a method on the area, never a field of its
+// own, so it cannot disagree with what it is derived from. An invariant between fields is a
 // rule that the area's file adds to validate.go's crossField.
 //
 // Read a value at the point of use, tuning.Get().Gateway.SimilarMax, not
@@ -184,4 +184,32 @@ func (b ByteSize) String() string {
 		}
 	}
 	return strconv.FormatInt(n, 10)
+}
+
+// Durations is a list of durations: comma-separated in the environment, and
+// a YAML list in the file. The environment spells an empty list EmptyList,
+// because env reads an empty variable as unset, and so as the default.
+type Durations []time.Duration
+
+// EmptyList is the environment's spelling of an empty list.
+const EmptyList = "[]"
+
+// UnmarshalText parses the variable's value.
+func (d *Durations) UnmarshalText(text []byte) error {
+	s := string(text)
+	if s == EmptyList {
+		*d = Durations{}
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make(Durations, len(parts))
+	for i, p := range parts {
+		v, err := time.ParseDuration(p)
+		if err != nil {
+			return fmt.Errorf("tuning: %q is not a list of durations, comma-separated, or %s for none: %w", s, EmptyList, err)
+		}
+		out[i] = v
+	}
+	*d = out
+	return nil
 }

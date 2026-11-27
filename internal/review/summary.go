@@ -26,9 +26,10 @@ type Summary struct {
 func normalizeSummary(s Summary, opts ParseOptions) Summary {
 	s.Headline = oneLine(prose(s.Headline, opts.Repository))
 	s.Take = prose(s.Take, opts.Repository)
-	praise := make([]string, 0, tuning.Get().Review.MaxPraise)
+	maxPraise := tuning.Get().Review.MaxPraise
+	praise := make([]string, 0, min(len(s.Praise), maxPraise))
 	for _, p := range s.Praise {
-		if p = prose(p, opts.Repository); p != "" && len(praise) < tuning.Get().Review.MaxPraise {
+		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
 			praise = append(praise, p)
 		}
 	}
