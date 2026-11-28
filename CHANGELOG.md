@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.129](https://github.com/home-operations/kritika/compare/0.0.128...0.0.129) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** move approval findings and risk into the review.approve block ([#1579](https://github.com/home-operations/kritika/issues/1579))
+
+### Features
+
+* **review:** move approval findings and risk into the review.approve block ([#1579](https://github.com/home-operations/kritika/issues/1579)) ([6f261cb](https://github.com/home-operations/kritika/commit/6f261cbd7e9529cc653703d259fbbe9fa3b01a11))
+
 ## [0.0.128](https://github.com/home-operations/kritika/compare/0.0.127...0.0.128) (2026-11-28)
 
 
