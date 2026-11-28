@@ -1,7 +1,6 @@
 package tuning
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -50,11 +49,14 @@ type Gateway struct {
 	// submitted answer, far below it. A checkpoint that it refuses only
 	// means a retry runs that part again.
 	MaxCheckpointBody ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_CHECKPOINT_BODY" envDefault:"4Mi" yaml:"maxCheckpointBody,omitempty"`
-	// MaxSmallReport bounds a run's phase, failure and remaining-parts
-	// reports, as JSON encodes them: a failure report holds a cause of up
-	// to runner.maxFailureCause, which escaping can make six times as long,
-	// and the runner cuts a cause further to fit.
+	// MaxSmallReport bounds a run's phase and failure reports, as JSON
+	// encodes them: a failure report holds a cause of up to
+	// runner.maxFailureCause, which escaping can make six times as long, and
+	// the runner cuts a cause further to fit.
 	MaxSmallReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_SMALL_REPORT" envDefault:"64Ki" yaml:"maxSmallReport,omitempty"`
+	// MaxPartsReport bounds a split review's remaining-parts report, which
+	// names each of its slot pools twice.
+	MaxPartsReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_PARTS_REPORT" envDefault:"64Ki" yaml:"maxPartsReport,omitempty"`
 	// MaxIndexBody bounds an index upload: its opening line, and a line for
 	// each of up to indexer.maxChunks chunks of indexer.maxChunkBytes, whose
 	// source text the upload's JSON can make twice as long. Control bytes or
@@ -275,24 +277,6 @@ func (v Values) indexUpload() int64 {
 
 func init() {
 	crossField = append(crossField,
-		func(v Values) error {
-			// Each is read to one byte past it, to tell a body at the limit
-			// from one over it.
-			var errs []error
-			for _, f := range []struct {
-				path string
-				size ByteSize
-			}{
-				{"aqua.maxRegistryBytes", v.Aqua.MaxRegistryBytes}, {"aqua.maxDownloadBytes", v.Aqua.MaxDownloadBytes},
-				{"aqua.maxChecksumFileBytes", v.Aqua.MaxChecksumFileBytes}, {"aqua.maxReleaseBytes", v.Aqua.MaxReleaseBytes},
-				{"aqua.maxUnpackedBytes", v.Aqua.MaxUnpackedBytes}, {"aqua.maxSignatureBytes", v.Aqua.MaxSignatureBytes},
-			} {
-				if f.size == math.MaxInt64 {
-					errs = append(errs, fmt.Errorf("%s (%s) must be less than %d", fieldLabel(f.path), f.size, int64(math.MaxInt64)))
-				}
-			}
-			return errors.Join(errs...)
-		},
 		func(v Values) error {
 			if v.Gateway.SimilarWithin >= v.Runner.SimilarTimeout {
 				return fmt.Errorf("%s (%s) must be less than %s (%s), which a run waits for the answer",

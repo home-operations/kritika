@@ -193,7 +193,14 @@ func (rt *RunTool) setupError(command string, err error) error {
 	if pe, ok := errors.AsType[*fs.PathError](err); ok {
 		shown = fmt.Errorf("%s: %w", pe.Op, pe.Err)
 	}
-	note := textcut.Truncate(rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, shown)), int(tuning.Get().Agent.SetupErrorBytes))
+	most := int(tuning.Get().Agent.SetupErrorBytes)
+	diagnostic := rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, shown))
+	note := textcut.Truncate(diagnostic, most)
+	if len(note) > most {
+		// A cap too small for the truncation note keeps the diagnostic's
+		// start instead.
+		note = textcut.Prefix(diagnostic, most)
+	}
 	if !slices.Contains(rt.failed, command) {
 		rt.failed, rt.errors = append(rt.failed, command), append(rt.errors, note)
 	}

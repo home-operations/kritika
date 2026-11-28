@@ -23,7 +23,7 @@ import (
 const (
 	noteSkillSkipped = "%s: skipped, %s"
 	noteSkillsCapped = "more than %d skills found; the rest were left out"
-	noteSkillsLeft   = "%d skill(s) left out, past the %d KiB their names and descriptions are given"
+	noteSkillsLeft   = "%d skill(s) left out, past the %s their names and descriptions are given"
 )
 
 // discoverSkills reads the skills the merge-base tree keeps under dirs:

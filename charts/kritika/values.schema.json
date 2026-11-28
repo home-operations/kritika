@@ -1670,7 +1670,7 @@
     },
     "terminationGracePeriodSeconds": {
       "default": 200,
-      "description": "Grace period for a clean shutdown, which must outlast the longest of three paths that run side by side. Jobs: kritika serve stops taking jobs and lets running ones finish for up to 100s (`process.queueDrain`), takes up to 90s to hand back the reviews that it cut for a retry (`process.queueStopHeadroom`), then 5s for their Events (`process.eventsDrain`). Gateway: it keeps accepting model steps for 5s while traffic moves off the pod (`process.linger`), then lets those in flight finish for up to 2m (`gateway.drain`). Public listener: the same 5s, then 10s for webhook and dashboard requests (`process.publicDrain`). Raise this when raising any of them.",
+      "description": "Grace period for a clean shutdown, which must outlast the longest of three paths that run side by side. Jobs: kritika serve stops taking jobs and lets running ones finish for up to 100s (`process.queueDrain`), takes up to 90s to hand back the reviews that it cut for a retry (`process.queueStopHeadroom`), then 5s for their Events (`process.eventsDrain`). Gateway: it keeps accepting model steps for 5s while traffic moves off the pod (`process.linger`), then lets those in flight finish for up to 2m (`gateway.drain`). Public listener: the same 5s, then 10s for webhook and dashboard requests (`process.publicDrain`). On the leader, a ChatGPT token refresh runs on past the stop so that it can save the token it rotated, for up to `worker.chatGptRefreshTimeout` (1m), and then releases its claim within as long again: with ChatGPT providers, that is a fourth path. Raise this when raising any of them.",
       "title": "terminationGracePeriodSeconds",
       "type": "integer"
     },

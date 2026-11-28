@@ -323,7 +323,7 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 		}
 		for range limits.S3Failures {
 			started := time.Now()
-			if err := c.upload(t.Context(), key); err == nil || time.Since(started) != limits.S3UploadTimeout {
+			if err := c.upload(t.Context(), key); err == nil || time.Since(started) != limits.S3LookupTimeout+limits.S3UploadTimeout {
 				t.Fatalf("upload: %v after %s", err, time.Since(started))
 			}
 		}
@@ -345,7 +345,7 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 		started := time.Now()
-		if err := c.upload(t.Context(), keyOf(large)); err == nil || time.Since(started) != limits.S3UploadTimeout+3*time.Second {
+		if err := c.upload(t.Context(), keyOf(large)); err == nil || time.Since(started) != limits.S3LookupTimeout+limits.S3UploadTimeout+3*time.Second {
 			t.Fatalf("large upload: %v after %s", err, time.Since(started))
 		}
 	})
@@ -387,4 +387,29 @@ func TestS3DownloadDoesNotWaitForUpload(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("upload did not start")
 	}
+}
+
+// TestS3UploadAfterAStalledLookup: a lookup that stalls for all of its
+// timeout, longer than the upload's, leaves the upload its own deadline.
+func TestS3UploadAfterAStalledLookup(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Egress.S3LookupTimeout, v.Egress.S3UploadTimeout = 10*time.Second, 5*time.Second
+	})
+	synctest.Test(t, func(t *testing.T) {
+		c := faultS3Cache(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodHead {
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			}
+			return s3Reply(r, http.StatusOK, ""), nil
+		}))
+		key := keyOf("abc")
+		if err := c.store(key, entryOf("https://example.com/tool", "abc"), strings.NewReader("abc"), nil); err != nil {
+			t.Fatal(err)
+		}
+		started := time.Now()
+		if err := c.upload(t.Context(), key); err != nil || time.Since(started) != 10*time.Second {
+			t.Fatalf("upload = %v after %s, want it made once the lookup gave up", err, time.Since(started))
+		}
+	})
 }

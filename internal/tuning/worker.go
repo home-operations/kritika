@@ -376,15 +376,6 @@ func init() {
 			return wholeSeconds("jobTimeout.runnerDeadline", v.JobTimeout.RunnerDeadline)
 		},
 		func(v Values) error {
-			// River takes the sum as RescueStuckJobsAfter, and refuses one
-			// that wrapped negative.
-			if j := v.JobTimeout; j.MaxJobTimeout > 0 && j.RescueGrace > time.Duration(math.MaxInt64)-j.MaxJobTimeout {
-				return fmt.Errorf("%s and %s together must not exceed %s", fieldLabel("jobTimeout.maxJobTimeout"),
-					fieldLabel("jobTimeout.rescueGrace"), time.Duration(math.MaxInt64))
-			}
-			return nil
-		},
-		func(v Values) error {
 			// A replica fences its job AbandonedBeats-1 beats after it last
 			// wrote one, and its first renewal starts a beat after the first
 			// write: at 2 that renewal has no time left before the fence.
@@ -412,6 +403,11 @@ func init() {
 					fieldLabel("worker.chatGptRefreshTimeout"), fieldLabel("chatGpt.refreshLead"))
 			}
 			return nil
+		},
+		func(v Values) error {
+			// The token exchange ends within the HTTP timeout, and what the
+			// refresh timeout has left saves the rotated token.
+			return exceeds("worker.chatGptRefreshTimeout", v.Worker.ChatGPTRefreshTimeout, "worker.chatGptHttpTimeout", v.Worker.ChatGPTHTTPTimeout)
 		},
 		func(v Values) error {
 			return notAbove("worker.confidenceTimeout", v.Worker.ConfidenceTimeout, "jobTimeout.publishHeadroom", v.JobTimeout.PublishHeadroom)

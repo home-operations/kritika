@@ -203,7 +203,7 @@ func (g *Server) reportCheckpoints(w http.ResponseWriter, r *http.Request, c run
 // reportParts takes the run's unfinished work and answers with the slots that
 // the worker gave it.
 func (g *Server) reportParts(w http.ResponseWriter, r *http.Request, c runReport) {
-	v, ok := decodeReport[runspec.PartsReport](w, r, tuning.Get().Gateway.MaxSmallReport)
+	v, ok := decodeReport[runspec.PartsReport](w, r, tuning.Get().Gateway.MaxPartsReport)
 	if !ok {
 		return
 	}

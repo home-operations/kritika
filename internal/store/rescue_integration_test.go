@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -641,13 +642,10 @@ func TestLegacyBeatOverATunedWindow(t *testing.T) {
 	if err := s.HeartbeatJob(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	// The pre-upgrade upsert, then 30 seconds of silence: past the 12s
-	// window, within the legacy 180s.
-	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at) VALUES ($1, now())
-		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = now()`, id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = heartbeat_at - interval '30 seconds' WHERE job_id = $1`, id); err != nil {
+	// The pre-upgrade upsert, which writes heartbeat_at alone, dated 30s
+	// back: past the 12s window, within the legacy 180s.
+	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at) VALUES ($1, now() - interval '30 seconds')
+		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = excluded.heartbeat_at`, id); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.AbandonedJobs(ctx, time.Minute, 100)
@@ -658,5 +656,103 @@ func TestLegacyBeatOverATunedWindow(t *testing.T) {
 		if j.ID == id {
 			t.Fatal("a legacy beat 30s old is abandoned by an earlier beat's 12s window")
 		}
+	}
+}
+
+// TestRescueWaitsOutAStartingAttempt: a rescue that starts while an
+// attempt's first beat is being written, before it commits, sees the beat
+// once it does, and leaves the attempt running.
+func TestRescueWaitsOutAStartingAttempt(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	tx, err := s.app.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `UPDATE river_job SET metadata = metadata || '{}' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := heartbeatJob(ctx, tx, id); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		rescued bool
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		rescued, err := s.RescueJob(ctx, AbandonedJob{ID: id, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost")
+		done <- result{rescued, err}
+	}()
+	time.Sleep(200 * time.Millisecond)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-done; r.err != nil || r.rescued {
+		t.Fatalf("RescueJob = %v, %v; want the attempt left running", r.rescued, r.err)
+	}
+	if r := readJob(t, ctx, s, id); r.state != "running" {
+		t.Fatalf("job = %+v, want running", r)
+	}
+}
+
+// TestStartJobStampsAfterTheLock: StartJob's first beat is dated after it
+// got the job's row, not when its transaction began, which a wait on the
+// row can leave older than the window.
+func TestStartJobStampsAfterTheLock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	var job rivertype.JobRow
+	job.ID = id
+	if err := s.owner.QueryRow(ctx, `SELECT attempted_at FROM river_job WHERE id = $1`, id).Scan(&job.AttemptedAt); err != nil {
+		t.Fatal(err)
+	}
+	hold, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback(ctx) }()
+	if _, err := hold.Exec(ctx, `SELECT 1 FROM river_job WHERE id = $1 FOR UPDATE`, id); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.StartJob(ctx, &job) }()
+	time.Sleep(time.Second)
+	var released time.Time
+	if err := s.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&released); err != nil {
+		t.Fatal(err)
+	}
+	if err := hold.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	var beat time.Time
+	if err := s.owner.QueryRow(ctx, `SELECT heartbeat_at FROM job_heartbeats WHERE job_id = $1`, id).Scan(&beat); err != nil {
+		t.Fatal(err)
+	}
+	if beat.Before(released) {
+		t.Fatalf("first beat at %v, before the lock was released at %v", beat, released)
+	}
+}
+
+// TestOpenRefusesAOneConnectionOwnerPool: an owner pool of one connection,
+// which the leader lock would hold for its whole tenure, is refused as a
+// configuration error, whichever of the DSN or tuning sets it.
+func TestOpenRefusesAOneConnectionOwnerPool(t *testing.T) {
+	ctx := t.Context()
+	opts := Options{AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIKA_TEST_OWNER_URL") + "&pool_max_conns=1",
+		Logger: slog.New(slog.DiscardHandler)}
+	if _, err := Open(ctx, opts); !errors.Is(err, ErrOwnerPoolTooSmall) || !IsConfigurationError(err) {
+		t.Fatalf("Open with pool_max_conns=1 = %v, want ErrOwnerPoolTooSmall", err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Store.OwnerPoolMaxConns = 1 })
+	opts.OwnerURL = testEnv(t, "KRITIKA_TEST_OWNER_URL")
+	if _, err := Open(ctx, opts); !errors.Is(err, ErrOwnerPoolTooSmall) {
+		t.Fatalf("Open with ownerPoolMaxConns 1 = %v, want ErrOwnerPoolTooSmall", err)
 	}
 }

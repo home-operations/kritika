@@ -617,10 +617,12 @@ func TestCacheStoreRefusesUnreadableHeader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxEntryHeader = tt.header })
 			c := &Cache{Dir: t.TempDir(), MaxBytes: 1 << 20}
-			err := c.store(keyOf(body), entry, strings.NewReader(body), nil)
+			read := &countedReader{Reader: strings.NewReader(body)}
+			err := c.store(keyOf(body), entry, read, nil)
 			if tt.fails {
-				if !errors.Is(err, errEntryHeader) || entries(t, c) != 0 {
-					t.Fatalf("store = %v with %d entries, want errEntryHeader and none", err, entries(t, c))
+				if !errors.Is(err, errEntryHeader) || entries(t, c) != 0 || read.bytes != 0 {
+					t.Fatalf("store = %v with %d entries after reading %d bytes, want errEntryHeader, none and none read",
+						err, entries(t, c), read.bytes)
 				}
 				return
 			}

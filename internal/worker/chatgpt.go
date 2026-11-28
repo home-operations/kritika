@@ -36,12 +36,19 @@ type ChatGPTRefresher struct {
 	after func(time.Duration) <-chan time.Time
 }
 
+// legacyRefreshTimeout is the refresh timeout from before it was tuned.
+const legacyRefreshTimeout = time.Minute
+
 // Run refreshes near expiry until this leader's tenure ends. The first
 // refresh waits until a previous leader's last refresh must be over. A leader
 // whose lock the server dropped goes on refreshing until it notices. A
 // refresh that it started by then runs on for at most tuning's
 // Worker.ChatGPTRefreshTimeout. A refresh alongside it sends the refresh token
 // that it just spent, and the refusal signs the provider out.
+//
+// The wait allows for at least legacyRefreshTimeout: a predecessor from
+// before refreshes were claimed refreshed within it, and takes no claim
+// that this leader's refresh would wait for.
 func (r *ChatGPTRefresher) Run(ctx context.Context) {
 	after := time.After
 	if r.after != nil {
@@ -50,7 +57,7 @@ func (r *ChatGPTRefresher) Run(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 		return
-	case <-after(store.LeaderStepDown(r.LeaderInterval) + tuning.Get().Worker.ChatGPTRefreshTimeout):
+	case <-after(store.LeaderStepDown(r.LeaderInterval) + max(tuning.Get().Worker.ChatGPTRefreshTimeout, legacyRefreshTimeout)):
 	}
 	t := time.NewTicker(tuning.Get().Worker.ChatGPTRefreshInterval)
 	defer t.Stop()
@@ -128,7 +135,11 @@ func (r *ChatGPTRefresher) refresh(
 		defer cancel()
 		_ = r.Store.ReleaseChatGPTRefresh(rctx, key, until)
 	}()
-	renewed, err := chatgpt.Refresh(ctx, client, cmp.Or(r.TokenURL, chatgpt.TokenURL), c, now)
+	// The exchange ends within the HTTP timeout, which Validate holds under
+	// the refresh timeout: the rest is the save's, once the token rotated.
+	xctx, xcancel := context.WithTimeout(ctx, w.ChatGPTHTTPTimeout)
+	renewed, err := chatgpt.Refresh(xctx, client, cmp.Or(r.TokenURL, chatgpt.TokenURL), c, now)
+	xcancel()
 	if errors.Is(err, chatgpt.ErrSignedOut) {
 		r.Logger.Warn("chatgpt provider disconnected; run kritika chatgpt login", "provider", key)
 		return r.Store.SignOutChatGPTSession(ctx, key, c.RefreshToken, err.Error())

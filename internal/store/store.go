@@ -118,6 +118,12 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 			app.Close()
 			return nil, fmt.Errorf("store: owner pool: %w", err)
 		}
+		// The leader lock holds one connection for the whole tenure.
+		if owner.Config().MaxConns < 2 {
+			app.Close()
+			owner.Close()
+			return nil, ErrOwnerPoolTooSmall
+		}
 		if err := assertOwnerRole(ctx, owner); err != nil {
 			app.Close()
 			owner.Close()
@@ -194,6 +200,11 @@ func (s *Store) assertApplicationRole(ctx context.Context) error {
 // ErrOwnerSuperuser is returned when the owner DSN's role is a superuser.
 var ErrOwnerSuperuser = errors.New("store: owner role must not be a superuser")
 
+// ErrOwnerPoolTooSmall is returned when the owner pool holds fewer than two
+// connections: the leader lock holds one, and the leader's duties need
+// another.
+var ErrOwnerPoolTooSmall = errors.New("store: the owner pool must hold at least 2 connections (store.ownerPoolMaxConns or pool_max_conns)")
+
 // assertOwnerRole refuses a superuser as owner: the owner is meant to own the
 // tables and nothing more, and the extension is the admin's job.
 func assertOwnerRole(ctx context.Context, owner *pgxpool.Pool) error {
@@ -236,7 +247,7 @@ func OpenWhenReady(ctx context.Context, opts Options) (*Store, error) {
 // will fix a startup assertion.
 func IsConfigurationError(err error) bool {
 	return errors.Is(err, ErrIsolationOff) ||
-		errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser)
+		errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser) || errors.Is(err, ErrOwnerPoolTooSmall)
 }
 
 // ErrNoVectorExtension is returned when VectorChord (vchord) or pgvector

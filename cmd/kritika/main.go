@@ -441,7 +441,9 @@ func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivert
 	return &river.Config{
 		Logger: logger,
 		// Review and index workers set their own timeouts from the
-		// runner deadline. Rescue must wait out the longest of them.
+		// runner deadline. Rescue must wait out the longest of them. A leader
+		// on an older release rescues at River's 4 hours, so jobs of a first
+		// rollout must end within that (tuning.md, Shutdown and rollouts).
 		RescueStuckJobsAfter: tuning.Get().JobTimeout.RescueStuckJobsAfter(),
 		// ctx ending starts a soft stop: running jobs get this long before
 		// their contexts end.

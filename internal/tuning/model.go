@@ -2,7 +2,6 @@ package tuning
 
 import (
 	"fmt"
-	"math"
 	"time"
 )
 
@@ -261,15 +260,10 @@ func init() {
 		},
 		func(v Values) error {
 			// A runner sends the gateway its wait for a step,
-			// model.GatewayRequestTimeout, in whole seconds that the gateway
-			// reads as an int32.
-			m := v.Model
-			least := satAdd(int64(m.StepBudgetWaits), int64(m.GatewaySettle))
-			most := satAdd(satMul(2, int64(v.ConfigFile.MaxProviderTimeout)), least)
-			if least < int64(time.Second) || most > int64(math.MaxInt32)*int64(time.Second) {
-				return fmt.Errorf("%s twice, %s and %s together must be from 1s to %ds, the wait a runner sends the gateway",
-					fieldLabel("configFile.maxProviderTimeout"), fieldLabel("model.stepBudgetWaits"), fieldLabel("model.gatewaySettle"),
-					math.MaxInt32)
+			// model.GatewayRequestTimeout, in whole seconds, at least one.
+			if least := satAdd(int64(v.Model.StepBudgetWaits), int64(v.Model.GatewaySettle)); least < int64(time.Second) {
+				return fmt.Errorf("%s and %s together must be at least 1s, the least wait a runner sends the gateway",
+					fieldLabel("model.stepBudgetWaits"), fieldLabel("model.gatewaySettle"))
 			}
 			return nil
 		},

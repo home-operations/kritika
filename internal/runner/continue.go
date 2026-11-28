@@ -82,7 +82,7 @@ func carryOn(
 		why = "its system prompt or tools differ from this review's"
 	case len(c.Messages) == 0 || !review.SameBrief(c.Messages[0].Text, brief):
 		why = "the pull request's title, base branch, description or linked issues changed"
-	case c.Tokens*int64(tuning.Get().Runner.CarryShare) > agentLimits(p.Agent).MaxTokens:
+	case c.Tokens > agentLimits(p.Agent).MaxTokens/int64(tuning.Get().Runner.CarryShare):
 		why = "too large for the run's budget"
 	}
 	if why != "" {

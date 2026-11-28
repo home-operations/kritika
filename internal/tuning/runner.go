@@ -2,7 +2,6 @@ package tuning
 
 import (
 	"fmt"
-	"math"
 	"time"
 )
 
@@ -79,8 +78,7 @@ type Executor struct {
 	StartGrace time.Duration `env:"KRITIKA_TUNING_EXECUTOR_START_GRACE" envDefault:"3m" yaml:"startGrace,omitempty"`
 	// JobTTL is how long a finished Job stays for kubectl when the
 	// jobTemplate sets no ttlSecondsAfterFinished: a whole number of
-	// seconds, from one up to what that int32 holds. The run row keeps
-	// everything the Job knew.
+	// seconds, at least one. The run row keeps everything the Job knew.
 	JobTTL time.Duration `env:"KRITIKA_TUNING_EXECUTOR_JOB_TTL" envDefault:"10m" yaml:"jobTtl,omitempty"`
 	// APITimeout bounds one call to the Kubernetes API about a run's Job
 	// that must not wait on the run: listing its pods, deleting it, and
@@ -325,10 +323,10 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if ttl := v.Executor.JobTTL; ttl < time.Second || ttl%time.Second != 0 || ttl/time.Second > math.MaxInt32 {
-				return fmt.Errorf("%s (%s) must be a whole number of seconds from 1s to %ds, as a Job's ttlSecondsAfterFinished is, "+
+			if ttl := v.Executor.JobTTL; ttl < time.Second || ttl%time.Second != 0 {
+				return fmt.Errorf("%s (%s) must be a whole number of seconds, at least 1s, as a Job's ttlSecondsAfterFinished is, "+
 					"so that a finished Job stays for its log to be read",
-					fieldLabel("executor.jobTtl"), v.Executor.JobTTL, math.MaxInt32)
+					fieldLabel("executor.jobTtl"), v.Executor.JobTTL)
 			}
 			return nil
 		},

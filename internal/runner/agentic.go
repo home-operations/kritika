@@ -55,13 +55,13 @@ type packView struct {
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
 const (
-	noteRulesLeft         = "%d review rule(s) left out, past the %d KiB of rule text or %d KiB of rule files a review is given: %s"
+	noteRulesLeft         = "%d review rule(s) left out, past the %s of rule text or %s of rule files a review is given: %s"
 	noteDiffOmitted       = "%d diff file(s) left out of the prompt to fit its budget, for the agent to read with read_diff: %s"
 	noteReferencesOmitted = "%d reference file(s) left out of the prompt to fit its budget"
 	noteContextOmitted    = "%d context chunk(s) left out of the prompt to fit its budget"
 	noteDiffNotKept       = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
 	noteSplit             = "Reviewed in %d parts, each by an agent of its own"
-	noteSkillsUnloaded    = "%d skill(s) offered by name rather than loaded, past the %d KiB loaded skills are given"
+	noteSkillsUnloaded    = "%d skill(s) offered by name rather than loaded, past the %s loaded skills are given"
 )
 
 // promptInputs is what the repository's files and the configuration give the
@@ -97,16 +97,16 @@ func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.
 		offered := repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed)
 		in.skills, in.loaded = offered.Listed, offered.Loaded
 		if offered.Left > 0 {
-			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, offered.Left, int(limits.MaxSkillListingBytes)>>10))
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, offered.Left, sizeNote(limits.MaxSkillListingBytes)))
 		}
 		if offered.Unloaded > 0 {
-			in.notes = append(in.notes, fmt.Sprintf(noteSkillsUnloaded, offered.Unloaded, int(limits.MaxSkillLoadedBytes)>>10))
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsUnloaded, offered.Unloaded, sizeNote(limits.MaxSkillLoadedBytes)))
 		}
 	}
 	var left []string
 	if in.rules, left = repoconfig.ActiveRules(p.Prompt.Rules, files, changed); len(left) > 0 {
 		in.notes = append(in.notes, fmt.Sprintf(noteRulesLeft, len(left),
-			int(limits.MaxRulesBytes)>>10, int(limits.MaxRuleFileBytes)>>10, strings.Join(left, ", ")))
+			sizeNote(limits.MaxRulesBytes), sizeNote(limits.MaxRuleFileBytes), strings.Join(left, ", ")))
 	}
 	for _, c := range repoconfig.ActiveContext(p.Prompt.Context, changed) {
 		in.references = append(in.references, review.Reference{Path: c.Path, Description: c.Description})
@@ -640,4 +640,12 @@ func writeAgentRun(ctx context.Context, report *reporter, rec agentRecord, phase
 		CommandCounts: rec.commandCounts, Model: rec.model, Error: rec.err, ContinuedFrom: rec.continued, Parts: rec.parts,
 		Conversation: rec.conversation, Tokens: rec.tokens, Session: rec.session, GrantedModel: rec.granted,
 	}, phase)
+}
+
+// sizeNote is b as a note says it: in KiB when it is a whole number of them.
+func sizeNote(b tuning.ByteSize) string {
+	if b%1024 == 0 {
+		return fmt.Sprintf("%d KiB", b>>10)
+	}
+	return fmt.Sprintf("%d bytes", b)
 }

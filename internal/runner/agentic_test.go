@@ -729,3 +729,13 @@ func TestGatewayStepperNamesItsWait(t *testing.T) {
 		})
 	}
 }
+
+// TestSizeNote: a note gives a budget exactly, in KiB only when it is a
+// whole number of them.
+func TestSizeNote(t *testing.T) {
+	for b, want := range map[tuning.ByteSize]string{512: "512 bytes", 1500: "1500 bytes", 16 << 10: "16 KiB"} {
+		if got := sizeNote(b); got != want {
+			t.Errorf("sizeNote(%d) = %q, want %q", b, got, want)
+		}
+	}
+}

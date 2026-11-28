@@ -216,17 +216,12 @@ func init() {
 			return errors.Join(errs...)
 		},
 		func(v Values) error {
-			// pgx sizes a pool in an int32.
-			var errs []error
-			for _, f := range []struct {
-				path string
-				n    int
-			}{{"store.appPoolMaxConns", v.Store.AppPoolMaxConns}, {"store.ownerPoolMaxConns", v.Store.OwnerPoolMaxConns}} {
-				if f.n > math.MaxInt32 {
-					errs = append(errs, fmt.Errorf("%s %w %d", fieldLabel(f.path), errMustNotExceed, math.MaxInt32))
-				}
+			// The leader lock holds one owner connection for its whole
+			// tenure, and the leader's duties need another.
+			if v.Store.OwnerPoolMaxConns < 2 {
+				return fmt.Errorf("%s must be at least 2", fieldLabel("store.ownerPoolMaxConns"))
 			}
-			return errors.Join(errs...)
+			return nil
 		},
 	)
 }

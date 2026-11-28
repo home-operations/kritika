@@ -69,8 +69,8 @@ func CreateAPIToken(ctx context.Context, tx pgx.Tx, t APIToken) (token, id strin
 }
 
 // LookupAPIToken returns the token that a value names, with its user, unless
-// it expired by now, and records its use at most once a minute. Otherwise it
-// returns ErrSession.
+// it expired by now, and records its use at most once per tuning's
+// Store.APITokenUseInterval. Otherwise it returns ErrSession.
 func (s *Store) LookupAPIToken(ctx context.Context, token string, now time.Time) (APIToken, error) {
 	t, err := scanAPIToken(s.app.QueryRow(ctx, `SELECT `+apiTokenColumns+`
 		FROM api_tokens t JOIN users u ON u.id = t.user_id

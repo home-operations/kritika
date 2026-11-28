@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -43,7 +44,12 @@ func (c *Cache) UseS3(o S3Options) error {
 	if c.MaxEntryBytes <= 0 || c.MaxEntryBytes > tuning.S3MaxPutBytes {
 		return fmt.Errorf("egress: cache: S3 entry limit must be positive and at most %s", tuning.ByteSize(tuning.S3MaxPutBytes))
 	}
-	c.MaxBytes = int64(tuning.Get().Egress.MaxFills) * c.MaxEntryBytes
+	fills := int64(tuning.Get().Egress.MaxFills)
+	if fills > math.MaxInt64/c.MaxEntryBytes {
+		return fmt.Errorf("egress: cache: tuning.egress.maxFills (%d) times gatewayCacheMaxEntrySize (%s) overflows the local spool's size",
+			fills, tuning.ByteSize(c.MaxEntryBytes))
+	}
+	c.MaxBytes = fills * c.MaxEntryBytes
 	u, _ := url.Parse(o.Endpoint)
 	creds := credentials.New(&s3Credentials{Provider: &credentials.IAM{}})
 	if o.AccessKey != "" {
@@ -187,14 +193,11 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 		c.metrics.CacheUploadSkipped("circuit_open")
 		return errS3CircuitOpen
 	}
-	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Egress.S3UploadDeadline(entry.Size))
-	defer cancel()
 	started := time.Now()
 	// Another replica can publish the entry first, the same body under the
-	// same digest. Then this upload is not made. The lookup spends from the
-	// upload's own budget. A failed lookup does not stop the upload, which the
-	// circuit bounds.
+	// same digest. Then this upload is not made. The lookup has a budget of
+	// its own, before the upload's, so an upload takes at most both. A failed
+	// lookup does not stop the upload, which the circuit bounds.
 	statCtx, cancelStat := context.WithTimeout(ctx, tuning.Get().Egress.S3LookupTimeout)
 	info, err := c.s3.client.StatObject(statCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
 	cancelStat()
@@ -207,7 +210,7 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 	}
 	defer func() {
 		circuitErr := uploadErr
-		if parent.Err() != nil {
+		if ctx.Err() != nil {
 			circuitErr = context.Canceled
 		}
 		c.s3.writes.complete(attempt, circuitErr, time.Now())
@@ -216,7 +219,9 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 			c.warn("s3_upload", key, uploadErr)
 		}
 	}()
-	_, err = c.s3.client.PutObject(ctx, c.s3.bucket, c.s3.prefix+key, io.NewSectionReader(f, offset, entry.Size), entry.Size,
+	putCtx, cancel := context.WithTimeout(ctx, tuning.Get().Egress.S3UploadDeadline(entry.Size))
+	defer cancel()
+	_, err = c.s3.client.PutObject(putCtx, c.s3.bucket, c.s3.prefix+key, io.NewSectionReader(f, offset, entry.Size), entry.Size,
 		minio.PutObjectOptions{
 			UserMetadata: map[string]string{"kritika-entry": metadata},
 			ContentType:  "application/octet-stream", DisableMultipart: true, SendContentMd5: true,

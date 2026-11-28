@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type s3TestObject struct {
@@ -355,5 +357,22 @@ func TestS3CacheCanceledRead(t *testing.T) {
 	if f, _, err := c.load(ctx, keyOf("tool archive")); err == nil {
 		_ = f.Close()
 		t.Fatal("canceled read succeeded")
+	}
+}
+
+// TestUseS3SpoolSize: fills of the S3 entry limit that would overflow the
+// local spool's size are refused, and one fewer is taken.
+func TestUseS3SpoolSize(t *testing.T) {
+	const entry = 5 << 30
+	opts := S3Options{Endpoint: "https://s3.example", Region: "test", Bucket: "cache", AccessKey: "key", SecretKey: "secret"}
+	for _, tt := range []struct {
+		fills int
+		fails bool
+	}{{math.MaxInt64 / entry, false}, {math.MaxInt64/entry + 1, true}} {
+		tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxFills = tt.fills })
+		c := &Cache{Dir: t.TempDir(), MaxEntryBytes: entry}
+		if err := c.UseS3(opts); (err != nil) != tt.fails || !tt.fails && c.MaxBytes <= 0 {
+			t.Fatalf("UseS3 with %d fills = %v, spool %d; want a failure: %v", tt.fills, err, c.MaxBytes, tt.fails)
+		}
 	}
 }

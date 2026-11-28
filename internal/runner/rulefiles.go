@@ -120,7 +120,7 @@ func discoverRuleFiles(
 			case parsed.Scoped && len(parsed.Paths) == 0:
 				skip = "none of its paths is a valid glob"
 			case len(id)+len(parsed.Text) > int(limits.MaxRuleFileBytes):
-				skip = fmt.Sprintf("it is longer than the %d KiB of rule files a review is given; split it", limits.MaxRuleFileBytes>>10)
+				skip = fmt.Sprintf("it is longer than the %s of rule files a review is given; split it", sizeNote(limits.MaxRuleFileBytes))
 			}
 			if skip != "" {
 				notes = append(notes, fmt.Sprintf(noteRuleFileSkipped, file, skip))

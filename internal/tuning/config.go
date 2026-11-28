@@ -3,7 +3,6 @@ package tuning
 import (
 	"errors"
 	"fmt"
-	"math"
 	"time"
 )
 
@@ -60,8 +59,8 @@ type ConfigFile struct {
 	DefaultAccountConcurrency int `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_ACCOUNT_CONCURRENCY" envDefault:"2" yaml:"defaultAccountConcurrency,omitempty"` //nolint:lll // a struct tag does not wrap
 	// MaxProviderRetries bounds a provider's retries: with backoff, five
 	// more attempts span about a minute, which a runner's deadline
-	// absorbs.
-	MaxProviderRetries int `env:"KRITIKA_TUNING_CONFIG_FILE_MAX_PROVIDER_RETRIES" envDefault:"5" yaml:"maxProviderRetries,omitempty"`
+	// absorbs. 0 forbids retries.
+	MaxProviderRetries int `env:"KRITIKA_TUNING_CONFIG_FILE_MAX_PROVIDER_RETRIES" envDefault:"5" yaml:"maxProviderRetries,omitempty" tuning:"zero"` //nolint:lll // a struct tag does not wrap
 	// MaxProviderTimeout bounds a provider's timeout. A step's budget is
 	// two of them, which the runner's request to the gateway and a run's
 	// deadline must outlast. At least model.defaultStepTimeout.
@@ -244,14 +243,6 @@ func init() {
 		},
 		func(v Values) error {
 			return similarity(v.ConfigFile.DefaultSimilarMargin, "configFile.defaultSimilarMargin")
-		},
-		func(v Values) error {
-			// serve waits out their sum for the queues to stop.
-			if p := v.Process; p.QueueDrain > 0 && p.QueueStopHeadroom > time.Duration(math.MaxInt64)-p.QueueDrain {
-				return fmt.Errorf("%s and %s together must not exceed %s", fieldLabel("process.queueDrain"),
-					fieldLabel("process.queueStopHeadroom"), time.Duration(math.MaxInt64))
-			}
-			return nil
 		},
 	)
 }

@@ -3,6 +3,7 @@ package runner
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestCarryOn: a review carries on the conversation the gateway serves it
@@ -76,6 +78,8 @@ func TestCarryOn(t *testing.T) {
 		// spec changes the review's spec from the one the conversation
 		// opened on.
 		spec func(*runspec.Spec)
+		// share, when set, is runner.carryShare.
+		share int
 	}{
 		{name: "the same system prompt, tools and description", status: http.StatusOK, body: conversation(nil), carried: true},
 		{name: "one that fetched a repository", status: http.StatusOK, carried: true, fetched: true,
@@ -91,10 +95,16 @@ func TestCarryOn(t *testing.T) {
 		{name: "the pull request below in the stack merged since", status: http.StatusOK, body: conversation(stackedOpening),
 			spec: func(s *runspec.Spec) { s.Prompt.Below = []review.StackEntry{{Number: 3, Merged: true}} }},
 		{name: "too large for the run's budget", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Tokens = 60_000 })},
+		// Its tokens times the share overflow an int64.
+		{name: "too large for a very large share", status: http.StatusOK, share: math.MaxInt32,
+			body: conversation(func(c *agent.Conversation) { c.Tokens = 1 << 33 })},
 		{name: "none served", status: http.StatusNotFound, body: `{"error":{"code":"not_found"}}`},
 		{name: "not a conversation", status: http.StatusOK, body: `[`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.share > 0 {
+				tuning.Override(t, func(v *tuning.Values) { v.Runner.CarryShare = tc.share })
+			}
 			var path, auth string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				path, auth = r.Method+" "+r.URL.Path, r.Header.Get("Authorization")

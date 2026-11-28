@@ -188,6 +188,15 @@ func TestConfigurationSnapshot(t *testing.T) {
 
 func TestCheckConfig(t *testing.T) {
 	const admin = "auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\n"
+	// Each case sets the tuning variables it needs, and only those.
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "KRITIKA_TUNING_") {
+			t.Setenv(name, "")
+			if err := os.Unsetenv(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	for _, tt := range []struct {
 		name, raw string
 		webURL    string
@@ -222,12 +231,10 @@ func TestCheckConfig(t *testing.T) {
 		{name: "invalid tuning", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 0}}\n",
 			wantErr: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY must be positive"},
 		{name: "unknown tuning key", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {bogus: 1}}\n", wantErr: "bogus"},
-		// The sum, River's RescueStuckJobsAfter, would wrap negative.
-		{name: "rescue wait past a duration", raw: admin + "webUrl: https://kritika.example.com\ntuning: {jobTimeout: {rescueGrace: 2562047h}}\n",
-			wantErr: "KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE together must not exceed"},
-		// The sum, what serve waits for the queues to stop, would wrap negative.
-		{name: "queue stop past a duration", raw: admin + "webUrl: https://kritika.example.com\ntuning: {process: {queueDrain: 2562047h, queueStopHeadroom: 2h}}\n",
-			wantErr: "KRITIKA_TUNING_PROCESS_QUEUE_STOP_HEADROOM together must not exceed"},
+		{name: "rescue wait past the ceiling", raw: admin + "webUrl: https://kritika.example.com\ntuning: {jobTimeout: {rescueGrace: 2562047h}}\n",
+			wantErr: "KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE must be at most 87600h0m0s"},
+		{name: "queue drain past the ceiling", raw: admin + "webUrl: https://kritika.example.com\ntuning: {process: {queueDrain: 2562047h, queueStopHeadroom: 2h}}\n",
+			wantErr: "KRITIKA_TUNING_PROCESS_QUEUE_DRAIN must be at most 87600h0m0s"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// A check needs neither the database nor KRITIKA_CONFIG_FILE.

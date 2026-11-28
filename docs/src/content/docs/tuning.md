@@ -62,15 +62,22 @@ embedding calls and database space.
 | `contextPack.maxScanFiles`, `contextPack.maxScanBytes`      | 20000, `200Mi`         | a review's walk of the head tree: `scan_truncated`                                                                              |
 | `gateway.maxIndexBody`                                      | `2Gi`                  | one index upload. It must hold `indexer.maxChunks` chunks of `indexer.maxChunkBytes`, and kritika refuses a value that does not |
 | `gateway.maxIndexLine`                                      | `32Mi`                 | an upload's opening line, which lists every changed path                                                                        |
-| `runSpec.indexUploadTimeout`                                | `30m`                  | how long a runner can take to upload an index                                                                                   |
+| `runSpec.indexUploadTimeout`                                | `30m`                  | one upload attempt. The runner Job's deadline bounds the fetch, the build and the upload together (see below)                   |
 | `jobTimeout.indexWriteHeadroom`                             | `60m`                  | the job time after the runner ends, in which the chunks are embedded and the new index swapped in                               |
+
+An index runner gets the runner Job's deadline
+(`runner.jobTemplate.spec.activeDeadlineSeconds`, 900 seconds in the chart)
+for the fetch, the parse and the upload together, so a larger build may
+need a longer one, not only a longer `runSpec.indexUploadTimeout`.
+`jobTimeout.indexWriteHeadroom` is for the work after the runner exits.
 
 What raising the indexer's limits costs:
 
 - **Runner pod memory.** A build holds every chunk in memory until it
   uploads them: up to `indexer.maxChunks` × `indexer.maxChunkBytes` of
-  text, 600 MB at the defaults, and more for the copy that it uploads.
-  Raise `runner.podTemplate`'s `spec.resources` with it.
+  text, 600 MB at the defaults, plus chunk metadata and encoding buffers.
+  The runner streams the upload one line at a time. Raise
+  `runner.podTemplate`'s `spec.resources` if the larger build needs it.
 - **Runner pod disk.** The runner fetches the repository into a temporary
   directory on the pod. No tuning value bounds that, so size the pod for
   the repository.
@@ -81,12 +88,13 @@ What raising the indexer's limits costs:
   ([the job's timeout](#slow-or-unreliable-model-providers)).
 - **Database space** for the chunks, their vectors and the search by name.
 
-The `indexer` values except `indexer.queryContext`, `chunk.parseMemoryBudget`
-and `chunk.parseStackDepth`, and the `lexical` values, change what a build
-stores. A build caps a file at `indexer.maxFileBytes`, not
-`chunk.maxFileBytes`, the parser's own fallback. A repository's index keeps
-what it was built with until a reindex rebuilds it: a tuning change
-rebuilds nothing on its own, a push updates only the files that it
+The `indexer` values except `indexer.queryContext`, the `lexical` values,
+and `chunk.parseMemoryBudget` and `chunk.parseStackDepth` can change what a
+build stores: a parser budget that a file runs out of makes the build
+chunk it in fixed windows instead of by its declarations. A build caps a
+file at `indexer.maxFileBytes`, not `chunk.maxFileBytes`, the parser's own
+fallback. A repository's index keeps what it was built with until a
+reindex rebuilds it: a tuning change rebuilds nothing on its own, a push updates only the files that it
 changes, and the **partial** mark stays until a full build fits within the
 limits. To rebuild, use **Reindex** on the repository's page, or select
 repositories on the **Repositories** page and use **Reindex…**.
@@ -160,12 +168,12 @@ stage: `overlay`, `definition`, `caller` and `similar`. The run log's
 `kritika_similar_hits_total` says why the similar-code search dropped what
 it found. Each outcome points at its own value:
 
-| Outcome           | What dropped the chunk                                                 | What to change                                                                                              |
-| ----------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `floor`, `margin` | a cosine similarity under the floor, or too far below the query's best | the embedder's `similarFloor` and `similarMargin`. Read `kritika_similar_best_similarity` against the floor |
-| `lexical_floor`   | a match by name alone, too weak                                        | `gateway.lexicalShare` (0.5)                                                                                |
-| `file_cap`        | more than the chunks one file can give                                 | `gateway.similarPerFile` (2)                                                                                |
-| `limit`           | more than one query keeps, or one answer                               | `gateway.similarPerQuery` (4), `gateway.similarMax` (10) and `contextPack.similarLimit` (16)                |
+| Outcome           | What dropped the chunk                                                 | What to change                                                                                                                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `floor`, `margin` | a cosine similarity under the floor, or too far below the query's best | the embedder's `similarFloor` and `similarMargin`. Read `kritika_similar_best_similarity` against the floor                                                                                                                        |
+| `lexical_floor`   | a match by name alone, too weak                                        | `gateway.lexicalShare` (0.5)                                                                                                                                                                                                       |
+| `file_cap`        | more than the chunks one file can give                                 | `gateway.similarPerFile` (2)                                                                                                                                                                                                       |
+| `limit`           | more than one query keeps, or one answer                               | `gateway.similarPerQuery` (4) and `contextPack.similarLimit` (16), which a review's search asks for. `search_code` asks for twice `runner.searchShown`. `gateway.similarMax` (10) applies only to a request that asks for no limit |
 
 A review's prompt shows at most `runner.maxSimilarShown` (10) similar
 chunks, whatever the answer holds. For noisy similar code, raise the
@@ -266,23 +274,25 @@ values below are their fallbacks and bounds.
 
 Each layer below must outlast the one inside it:
 
-| Layer                        | Set by                                                                                                                                                                                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| one request to the provider  | the provider's `timeout`. `model.defaultStepTimeout` (`5m`) unless set, at most `configFile.maxProviderTimeout` (`30m`)                                                                                                                     |
-| a step's attempts            | the provider's `retries`, at most `configFile.maxProviderRetries` (5). The waits run from `adapter.retryMin` (`1s`), doubling, to `adapter.retryMax` (`30s`). A provider's `Retry-After` is waited out up to `adapter.retryAfterMax` (`1m`) |
-| a step's budget              | the review model's `timeout`, plus its fallback's (or its own again, without a fallback on another provider), plus `model.stepBudgetWaits` (`2m`): 12 minutes at the defaults                                                               |
-| the runner's wait for a step | the step's budget plus `model.gatewaySettle` (`5m`), in which the gateway charges and records the step                                                                                                                                      |
-| a failed step sent again     | `agent.stepRetryWaits` (`30s,1m,2m,4m`), each while the agent's `timeout` allows                                                                                                                                                            |
-| the agent's loop             | the agent's `timeout`. `configFile.defaultAgentTimeout` (`20m`) unless set, at most 2h35m at the defaults                                                                                                                                   |
-| the runner Job               | the account's `runner.jobTemplate` deadline, `jobTimeout.runnerDeadline` (`15m`) unless set, at most 2h at the defaults. The agent's `timeout` plus `jobTimeout.agentFetchHeadroom` (`5m`) lengthens it                                     |
-| the River job                | the runner's deadline plus `jobTimeout.leaseWaitHeadroom` (`15m`) and `jobTimeout.publishHeadroom` (`5m`), at most `jobTimeout.maxJobTimeout` (`3h`). An index job adds `jobTimeout.indexWriteHeadroom` (`60m`) instead                     |
+| Layer                        | Set by                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| one request to the provider  | the provider's `timeout`. `model.defaultStepTimeout` (`5m`) unless set, at most `configFile.maxProviderTimeout` (`30m`)                                                                                                                                                   |
+| a step's attempts            | the provider's `retries`, at most `configFile.maxProviderRetries` (5). The waits run from `adapter.retryMin` (`1s`), doubling, to `adapter.retryMax` (`30s`). A provider's `Retry-After` is waited out up to `adapter.retryAfterMax` (`1m`)                               |
+| a step's budget              | the review model's `timeout`, plus its fallback's (or its own again, without a fallback on another provider), plus `model.stepBudgetWaits` (`2m`): 12 minutes at the defaults                                                                                             |
+| the runner's wait for a step | the step's budget plus `model.gatewaySettle` (`5m`), in which the gateway charges and records the step                                                                                                                                                                    |
+| a failed step sent again     | `agent.stepRetryWaits` (`30s,1m,2m,4m`), each while the agent's `timeout` allows                                                                                                                                                                                          |
+| the agent's loop             | the agent's `timeout`. `configFile.defaultAgentTimeout` (`20m`) unless set, at most 2h35m at the defaults                                                                                                                                                                 |
+| the runner Job               | the instance's `runner.jobTemplate.spec.activeDeadlineSeconds`, 900 seconds in the chart; `jobTimeout.runnerDeadline` (`15m`) only where that field is absent. At most 2h at the defaults. The agent's `timeout` plus `jobTimeout.agentFetchHeadroom` (`5m`) lengthens it |
+| the River job                | the runner's deadline plus `jobTimeout.leaseWaitHeadroom` (`15m`) and `jobTimeout.publishHeadroom` (`5m`), at most `jobTimeout.maxJobTimeout` (`3h`). An index job adds `jobTimeout.indexWriteHeadroom` (`60m`) instead                                                   |
 
 The two "at most" values derive from `jobTimeout.maxJobTimeout` less the
 headrooms. Raise `jobTimeout.maxJobTimeout` only if an agent `timeout` or a
 runner deadline must go past them. A longer job holds a worker slot for
 longer, and River waits `jobTimeout.maxJobTimeout` plus
-`jobTimeout.rescueGrace` (`1h`) before it treats a running job as
-abandoned.
+`jobTimeout.rescueGrace` (`1h`), never under 4 hours, before it treats a
+running job as abandoned. Under Helm, the chart's schema caps
+`runner.jobTemplate.spec.activeDeadlineSeconds` at 7200 whatever
+`jobTimeout.maxJobTimeout` allows.
 
 For a provider outage longer than its retries, add to or lengthen
 `agent.stepRetryWaits`. The waits spend the agent's own time, so a longer
@@ -438,7 +448,16 @@ Then the gateway lets model steps in flight finish for `gateway.drain`
 `process.publicDrain` (`10s`): 125 and 15 seconds at the defaults. The
 longest path, with room for the process to exit, must fit within the
 pod's `terminationGracePeriodSeconds`, 200 in the chart. Raise that when
-you raise any of these.
+you raise any of these. With ChatGPT providers, the leader's token
+refresh is a fourth path: it runs on past the stop for up to
+`worker.chatGptRefreshTimeout` (`1m`) to save the token it rotated, then
+releases its claim within as long again.
+
+On the first rollout of this release, keep every job within 4 hours, the
+rescue horizon from before it was tuned, until every serve replica runs
+it: a River leader from before this release judges a running job by its
+own 3-hour timeout and rescues it at 4 hours. Let any longer job finish
+before rolling back to an earlier release.
 
 A shorter `process.queueDrain` cuts more running reviews, which are
 retried. A shorter `gateway.drain` cuts more model steps. A cut step is
@@ -541,7 +560,7 @@ and GitLab serves at most 100 items a page.
    the gateway Service sends its requests to replicas of either revision.
    So a change to a limit that a runner and the gateway must agree on,
    such as `gateway.maxIndexBody`, `gateway.maxReportBody`,
-   `gateway.similarMax` or a `runner.*` request size, can have an old
+   `contextPack.similarLimit` or a `runner.*` request size, can have an old
    replica refuse a new Job's request, or a new replica an old Job's.
    Where the runner's side has a setting of its own, stage the change in
    two rollouts that each keep both revisions compatible: raise the

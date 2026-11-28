@@ -813,3 +813,18 @@ func TestRunToolKeepsCutOutput(t *testing.T) {
 		t.Fatalf("files = %v, budget left = %d; want only run-2.out and run-3.out, nothing spent", got, budget.Left())
 	}
 }
+
+// TestRunToolSetupErrorWithinASmallCap: a setup failure is kept within
+// tuning's Agent.SetupErrorBytes even when the cap has no room for the
+// truncation note: the diagnostic's start, not a note longer than the cap.
+func TestRunToolSetupErrorWithinASmallCap(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Agent.SetupErrorBytes = 8 })
+	rt, _ := newTestRunTool(t, false)
+	rt.cfg.Commands["rg"] = filepath.Join(t.TempDir(), "missing")
+	if _, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`)); err == nil {
+		t.Fatal("a missing command ran")
+	}
+	if notes := rt.Errors(); len(notes) != 1 || notes[0] != "Command " {
+		t.Fatalf("errors = %q, want the diagnostic's first 8 bytes", notes)
+	}
+}

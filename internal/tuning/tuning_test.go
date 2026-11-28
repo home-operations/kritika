@@ -1,6 +1,7 @@
 package tuning
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -313,5 +314,38 @@ func TestEnvEmptyList(t *testing.T) {
 	}
 	if _, err := env.ParseAsWithOptions[Values](env.Options{Environment: map[string]string{pairs[0].Name: "7d"}}); err == nil {
 		t.Fatal("a list that does not parse was read")
+	}
+}
+
+// TestValidateRefusesPastTheCeiling: every integer field refuses one past
+// its type's ceiling, by its path and variable.
+func TestValidateRefusesPastTheCeiling(t *testing.T) {
+	var leaves []leaf
+	walk(reflect.ValueOf(Values{}), "tuning.", func(l leaf) { leaves = append(leaves, l) })
+	for i, l := range leaves {
+		if l.value.Kind() == reflect.Float64 {
+			continue
+		}
+		v := Defaults()
+		j := 0
+		walk(reflect.ValueOf(&v).Elem(), "", func(f leaf) {
+			switch {
+			case j != i:
+			case f.value.Kind() == reflect.Slice:
+				most, _ := ceiling(f.value.Index(0))
+				f.value.Set(reflect.ValueOf(Durations{time.Duration(most + 1)}).Convert(f.value.Type()))
+			default:
+				most, _ := ceiling(f.value)
+				f.value.SetInt(most + 1)
+			}
+			j++
+		})
+		want := l.path + ": " + l.env + " must be at most"
+		if err := v.Validate(); !strings.Contains(fmt.Sprint(err), want) {
+			t.Errorf("%s past its ceiling: Validate = %v, want %q", l.path, err, want)
+		}
+	}
+	if _, text := ceiling(reflect.ValueOf(time.Hour)); text != "87600h0m0s" {
+		t.Errorf("duration ceiling = %s", text)
 	}
 }

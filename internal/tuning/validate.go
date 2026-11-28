@@ -3,7 +3,9 @@ package tuning
 import (
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
+	"strconv"
 	"time"
 )
 
@@ -14,8 +16,9 @@ import (
 var crossField []func(Values) error
 
 // Validate makes sure that every field is positive, or not negative for a
-// field tagged tuning:"zero", and that the cross-field invariants hold. It
-// reports every violation, each named by its YAML path and variable.
+// field tagged tuning:"zero", and at most its type's ceiling, and that the
+// cross-field invariants hold. It reports every violation, each named by
+// its YAML path and variable.
 func (v Values) Validate() error {
 	var errs []error
 	walk(reflect.ValueOf(v), "tuning.", func(l leaf) {
@@ -71,7 +74,33 @@ func checkScalar(v reflect.Value, zero bool) error {
 	case negative:
 		return errNegative
 	}
+	if !v.CanInt() {
+		return nil
+	}
+	if most, text := ceiling(v); v.Int() > most {
+		return fmt.Errorf("must be at most %s", text)
+	}
 	return nil
+}
+
+// The most that a field of each type can be. No meaningful value comes
+// near them, and under them no sum of a few fields overflows an int64.
+const (
+	intCeiling      = math.MaxInt32
+	durationCeiling = 87600 * time.Hour
+	byteSizeCeiling = ByteSize(1 << 40)
+)
+
+// ceiling is the most that v, an integer field, can be, and how an error
+// spells it.
+func ceiling(v reflect.Value) (int64, string) {
+	switch v.Interface().(type) {
+	case time.Duration:
+		return int64(durationCeiling), durationCeiling.String()
+	case ByteSize:
+		return int64(byteSizeCeiling), byteSizeCeiling.String()
+	}
+	return intCeiling, strconv.Itoa(intCeiling)
 }
 
 // fieldLabel names a field, by its YAML path under tuning, as Validate's

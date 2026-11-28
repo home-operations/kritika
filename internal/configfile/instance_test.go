@@ -275,3 +275,20 @@ func TestConfidenceSettings(t *testing.T) {
 		t.Fatalf("file layer = %v, want %v", layer, want)
 	}
 }
+
+// TestProviderRetriesUnderAZeroCap: a cap of 0 forbids retries: a provider
+// with none parses, and one with any is refused.
+func TestProviderRetriesUnderAZeroCap(t *testing.T) {
+	setInstanceEnv(t)
+	tuning.Override(t, func(v *tuning.Values) { v.ConfigFile.MaxProviderRetries = 0 })
+	if err := tuning.Get().Validate(); err != nil {
+		t.Fatalf("a zero cap is invalid: %v", err)
+	}
+	if _, err := Parse([]byte(fileWithDefaults)); err != nil {
+		t.Fatalf("Parse with no retries: %v", err)
+	}
+	withRetry := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, retries: 1 }", 1)
+	if _, err := Parse([]byte(withRetry)); err == nil || !strings.Contains(err.Error(), "retries must be between 0 and 0") {
+		t.Fatalf("Parse with a retry under a zero cap = %v", err)
+	}
+}

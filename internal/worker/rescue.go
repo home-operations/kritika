@@ -84,13 +84,15 @@ func (r *Rescuer) Run(ctx context.Context) {
 // Rescue makes one pass: jobs whose heartbeat went stale are handed back to
 // River. A beat is stale by the abandonment window that its replica wrote
 // with it, so a leader on other heartbeat settings, as during a rollout,
-// waits out the job's own replica's fence. Only a beat that carries none is
-// judged by this replica's JobTimeout.HeartbeatAbandonedAfter. Then every
-// unfinished run whose job is no longer running, or runs anew with a run of
-// its own, is reaped. The heartbeats of ended jobs are swept too. The two are
-// independent, each idempotent. So a reap that the API server refuses is tried
-// again next pass, without the job waiting on it. A job claimed again before
-// its reap does not hide the run that its dead worker left.
+// waits out the job's own replica's fence. A beat of a replica from before
+// the window was written gets a fixed 180 seconds. This replica's
+// JobTimeout.HeartbeatAbandonedAfter is the least age of an attempt, one
+// with no beat included. Then every unfinished run whose job is no longer
+// running, or runs anew with a run of its own, is reaped. The heartbeats of
+// ended jobs are swept too. The two are independent, each idempotent. So a
+// reap that the API server refuses is tried again next pass, without the job
+// waiting on it. A job claimed again before its reap does not hide the run
+// that its dead worker left.
 func (r *Rescuer) Rescue(ctx context.Context) error {
 	stale := cmp.Or(r.stale, tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
 	batch := tuning.Get().Worker.RescueBatch

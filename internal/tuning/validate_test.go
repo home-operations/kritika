@@ -127,12 +127,6 @@ func TestCrossFieldEdges(t *testing.T) {
 				"tuning.runSpec.reportTimeout"},
 		},
 		{
-			"download cap leaves room to read past it",
-			func(v *Values) { v.Aqua.MaxDownloadBytes = math.MaxInt64 },
-			func(v *Values) { v.Aqua.MaxDownloadBytes = math.MaxInt64 - 1 },
-			[]string{"tuning.aqua.maxDownloadBytes: KRITIKA_TUNING_AQUA_MAX_DOWNLOAD_BYTES"},
-		},
-		{
 			"similar limit covers the default answer",
 			func(v *Values) { v.Gateway.SimilarMax = v.ContextPack.SimilarLimit + 1 },
 			func(v *Values) { v.Gateway.SimilarMax = v.ContextPack.SimilarLimit },
@@ -184,12 +178,6 @@ func TestCrossFieldEdges(t *testing.T) {
 			"job ttl in whole seconds",
 			func(v *Values) { v.Executor.JobTTL = 1500 * time.Millisecond },
 			func(v *Values) { v.Executor.JobTTL = 2 * time.Second },
-			[]string{"tuning.executor.jobTtl: KRITIKA_TUNING_EXECUTOR_JOB_TTL"},
-		},
-		{
-			"job ttl within an int32 of seconds",
-			func(v *Values) { v.Executor.JobTTL = (math.MaxInt32 + 1) * time.Second },
-			func(v *Values) { v.Executor.JobTTL = math.MaxInt32 * time.Second },
 			[]string{"tuning.executor.jobTtl: KRITIKA_TUNING_EXECUTOR_JOB_TTL"},
 		},
 		{
@@ -415,18 +403,6 @@ func TestCrossFieldMessages(t *testing.T) {
 		},
 		{name: "a default runner deadline of a second", change: func(v *Values) { v.JobTimeout.RunnerDeadline = time.Second }},
 		{
-			name:   "a rescue wait past the longest duration",
-			change: func(v *Values) { v.JobTimeout.RescueGrace = 2562047 * time.Hour },
-			want: []string{
-				"tuning.jobTimeout.maxJobTimeout: KRITIKA_TUNING_JOB_TIMEOUT_MAX_JOB_TIMEOUT and " +
-					"tuning.jobTimeout.rescueGrace: KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE together must not exceed",
-			},
-		},
-		{
-			name:   "a rescue wait at the longest duration",
-			change: func(v *Values) { v.JobTimeout.RescueGrace = time.Duration(math.MaxInt64) - v.JobTimeout.MaxJobTimeout },
-		},
-		{
 			name: "a ChatGPT look and refresh that fill the lead",
 			change: func(v *Values) {
 				v.Worker.ChatGPTRefreshInterval = v.ChatGPT.RefreshLead - v.Worker.ChatGPTRefreshTimeout
@@ -449,6 +425,18 @@ func TestCrossFieldMessages(t *testing.T) {
 			change: func(v *Values) {
 				v.Worker.ChatGPTRefreshInterval = v.ChatGPT.RefreshLead - v.Worker.ChatGPTRefreshTimeout - time.Nanosecond
 			},
+		},
+		{
+			name:   "a ChatGPT exchange that takes the whole refresh",
+			change: func(v *Values) { v.Worker.ChatGPTHTTPTimeout = v.Worker.ChatGPTRefreshTimeout },
+			want: []string{
+				"tuning.worker.chatGptRefreshTimeout: KRITIKA_TUNING_WORKER_CHAT_GPT_REFRESH_TIMEOUT must exceed " +
+					"tuning.worker.chatGptHttpTimeout: KRITIKA_TUNING_WORKER_CHAT_GPT_HTTP_TIMEOUT",
+			},
+		},
+		{
+			name:   "a ChatGPT exchange that leaves the save a moment",
+			change: func(v *Values) { v.Worker.ChatGPTHTTPTimeout = v.Worker.ChatGPTRefreshTimeout - time.Nanosecond },
 		},
 		{
 			name:   "a token lifetime of part of a day",
@@ -502,16 +490,6 @@ func TestCrossFieldMessages(t *testing.T) {
 			},
 		},
 		{
-			name: "a queue stop past the longest duration",
-			change: func(v *Values) {
-				v.Process.QueueDrain, v.Process.QueueStopHeadroom = 2562047*time.Hour, 2*time.Hour
-			},
-			want: []string{
-				"tuning.process.queueDrain: KRITIKA_TUNING_PROCESS_QUEUE_DRAIN and " +
-					"tuning.process.queueStopHeadroom: KRITIKA_TUNING_PROCESS_QUEUE_STOP_HEADROOM together must not exceed",
-			},
-		},
-		{
 			name:   "a default agent timeout under a second",
 			change: func(v *Values) { v.ConfigFile.DefaultAgentTimeout = 500 * time.Millisecond },
 			want: []string{
@@ -558,39 +536,20 @@ func TestCrossFieldMessages(t *testing.T) {
 			},
 		},
 		{
-			name:   "a pool past what pgx sizes",
-			change: func(v *Values) { v.Store.AppPoolMaxConns, v.Store.OwnerPoolMaxConns = math.MaxInt32+1, math.MaxInt32+1 },
-			want: []string{
-				"tuning.store.appPoolMaxConns: KRITIKA_TUNING_STORE_APP_POOL_MAX_CONNS must not exceed 2147483647",
-				"tuning.store.ownerPoolMaxConns: KRITIKA_TUNING_STORE_OWNER_POOL_MAX_CONNS must not exceed 2147483647",
-			},
+			name:   "an owner pool of one connection",
+			change: func(v *Values) { v.Store.OwnerPoolMaxConns = 1 },
+			want:   []string{"tuning.store.ownerPoolMaxConns: KRITIKA_TUNING_STORE_OWNER_POOL_MAX_CONNS must be at least 2"},
 		},
-		{
-			name:   "pools at what pgx sizes",
-			change: func(v *Values) { v.Store.AppPoolMaxConns, v.Store.OwnerPoolMaxConns = math.MaxInt32, math.MaxInt32 },
-		},
-		{
-			name:   "a step wait past what a runner sends",
-			change: func(v *Values) { v.Model.StepBudgetWaits = 2500000 * time.Hour },
-			want:   []string{"tuning.model.stepBudgetWaits: KRITIKA_TUNING_MODEL_STEP_BUDGET_WAITS and", "must be from 1s to 2147483647s"},
-		},
-		{
-			name:   "a step wait past a duration",
-			change: func(v *Values) { v.Model.StepBudgetWaits = time.Duration(math.MaxInt64) },
-			want:   []string{"must be from 1s to 2147483647s"},
-		},
+		{name: "an owner pool of two connections", change: func(v *Values) { v.Store.OwnerPoolMaxConns = 2 }},
 		{
 			name: "a step wait under a second",
 			change: func(v *Values) {
 				v.Model.StepBudgetWaits, v.Model.GatewaySettle = 400*time.Millisecond, 500*time.Millisecond
 				v.Adapter.ReservationPad, v.Adapter.ChargeTimeout, v.Adapter.RecordTimeout, v.Adapter.LeaseReleaseTimeout = 1, 1, 1, 1
 			},
-			want: []string{"must be from 1s to 2147483647s"},
-		},
-		{
-			name: "a step wait at what a runner sends",
-			change: func(v *Values) {
-				v.Model.StepBudgetWaits = time.Duration(math.MaxInt32)*time.Second - 2*v.ConfigFile.MaxProviderTimeout - v.Model.GatewaySettle
+			want: []string{
+				"tuning.model.stepBudgetWaits: KRITIKA_TUNING_MODEL_STEP_BUDGET_WAITS and " +
+					"tuning.model.gatewaySettle: KRITIKA_TUNING_MODEL_GATEWAY_SETTLE together must be at least 1s",
 			},
 		},
 		{

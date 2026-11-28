@@ -19,6 +19,7 @@ var golden = map[string]any{
 	"gateway.maxReportBody":        ByteSize(64 << 20),
 	"gateway.maxCheckpointBody":    ByteSize(4 << 20),
 	"gateway.maxSmallReport":       ByteSize(64 << 10),
+	"gateway.maxPartsReport":       ByteSize(64 << 10),
 	"gateway.maxIndexBody":         ByteSize(2 << 30),
 	"gateway.maxIndexLine":         ByteSize(32 << 20),
 	"gateway.indexBatchChunks":     500,

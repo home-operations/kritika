@@ -28,8 +28,9 @@ func heartbeatJob(ctx context.Context, db interface {
 }, jobID int64) error {
 	abandonAfter := tuning.Get().JobTimeout.HeartbeatAbandonedAfter().Seconds()
 	if _, err := db.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at, abandon_after, abandon_after_at)
-		VALUES ($1, now(), make_interval(secs => $2), now())
-		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = now(), abandon_after = excluded.abandon_after, abandon_after_at = now()`,
+		VALUES ($1, statement_timestamp(), make_interval(secs => $2), statement_timestamp())
+		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = excluded.heartbeat_at, abandon_after = excluded.abandon_after,
+			abandon_after_at = excluded.abandon_after_at`,
 		jobID, abandonAfter); err != nil {
 		return fmt.Errorf("store: heartbeat job %d: %w", jobID, err)
 	}
@@ -177,6 +178,11 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 		return false, fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
+	// The lock waits out a StartJob in flight, so that the update's own
+	// snapshot, taken after it, sees the first beat that one commits.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM river_job WHERE id = $1 FOR UPDATE`, job.ID); err != nil {
+		return false, fmt.Errorf("store: lock job %d: %w", job.ID, err)
+	}
 	tag, err := tx.Exec(ctx, `UPDATE river_job j SET state = $3::text::river_job_state,
 		scheduled_at = CASE WHEN $3::text = 'retryable' THEN now() ELSE j.scheduled_at END,
 		finalized_at = CASE WHEN $3::text = 'retryable' THEN NULL ELSE now() END,

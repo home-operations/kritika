@@ -152,3 +152,27 @@ func TestPartCheckpointReadIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestPartCheckpointReadPastAnInt32: a budget past what a Postgres integer
+// holds still reads a small checkpoint.
+func TestPartCheckpointReadPastAnInt32(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Store.MaxCheckpointRead = 2 << 30 })
+	_, token := runnerWriteFixture(t, s, accountID(t, s, "alpha"), RunnerKindReview)
+	if err := s.WithRunner(ctx, token, func(tx pgx.Tx, g RunnerGrant) error {
+		if err := SavePartCheckpoint(ctx, tx, g.RunID, "inputs", 1, json.RawMessage(`"small"`)); err != nil {
+			return err
+		}
+		rows, err := ReadPartCheckpoints(ctx, tx, g.RunID, "inputs")
+		if err == nil && len(rows) != 1 {
+			t.Errorf("read %d checkpoints, want the one saved", len(rows))
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
