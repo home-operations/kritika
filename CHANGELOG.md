@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.128](https://github.com/home-operations/kritika/compare/0.0.127...0.0.128) (2026-11-28)
+
+
+### Features
+
+* **config:** centralize tunable constants with env/file overrides ([#1577](https://github.com/home-operations/kritika/issues/1577)) ([b82b3d9](https://github.com/home-operations/kritika/commit/b82b3d9c7e8dc2b24bed3282237255fdf675f78e))
+
+
+### Bug Fixes
+
+* **review:** tell the model to qualify references to other repositories ([#1576](https://github.com/home-operations/kritika/issues/1576)) ([cc15853](https://github.com/home-operations/kritika/commit/cc15853126d46335fae85c5de3742647e00518e7))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action zizmorcore/zizmor-action (v0.9.1 → v0.9.2) ([#1569](https://github.com/home-operations/kritika/issues/1569)) ([0e18a73](https://github.com/home-operations/kritika/commit/0e18a73b0f52303cccd974064889b4e6c9081f26))
+* **github-release:** update release helm-unittest/helm-unittest (v1.2.1 → v1.3.0) ([#1575](https://github.com/home-operations/kritika/issues/1575)) ([9734319](https://github.com/home-operations/kritika/commit/9734319dd838913d248d8c23c5452dcae10b8848))
+* **mise:** update tool cosign (3.1.4 → 3.1.5) ([#1574](https://github.com/home-operations/kritika/issues/1574)) ([57b653a](https://github.com/home-operations/kritika/commit/57b653a417ffcf47194f9588f04240ac59a2212b))
+* **mise:** update tool github:oxc-project/oxc (0.79.0 → 0.80.0) ([#1566](https://github.com/home-operations/kritika/issues/1566)) ([64dffac](https://github.com/home-operations/kritika/commit/64dffac1c2eaeef27cf2da250b24729423fa2b18))
+* **mise:** update tool lefthook (2.2.2 → 2.2.3) ([#1570](https://github.com/home-operations/kritika/issues/1570)) ([5520f6d](https://github.com/home-operations/kritika/commit/5520f6d37af217a3b4067aa7ebe3f06f9c18d3af))
+* **npm:** update dependency @astrojs/starlight (0.43.1 → 0.43.2) ([#1571](https://github.com/home-operations/kritika/issues/1571)) ([6363e2d](https://github.com/home-operations/kritika/commit/6363e2d805d7003d8f2cfb233cabd26c915c78d0))
+* **npm:** update dependency layerchart (2.12.0 → 2.13.0) ([#1567](https://github.com/home-operations/kritika/issues/1567)) ([9715d73](https://github.com/home-operations/kritika/commit/9715d739cdad44079fd14b4ea69897b750836e05))
+* **npm:** update dependency starlight-links-validator (0.27.0 → 0.27.1) ([#1572](https://github.com/home-operations/kritika/issues/1572)) ([c04accf](https://github.com/home-operations/kritika/commit/c04accf11063cddcbde3dcbd16c78e3d6dce31bb))
+* **npm:** update dependency svelte (5.59.1 → 5.59.2) ([#1565](https://github.com/home-operations/kritika/issues/1565)) ([ea9d72a](https://github.com/home-operations/kritika/commit/ea9d72a38d950d1c30abad461e91fc7a4ccb1864))
+* **npm:** update dependency vite (8.3.8 → 8.4.0) ([#1573](https://github.com/home-operations/kritika/issues/1573)) ([5fee331](https://github.com/home-operations/kritika/commit/5fee331ef50534439e35821431cd8be56da83799))
+
 ## [0.0.127](https://github.com/home-operations/kritika/compare/0.0.126...0.0.127) (2026-11-26)
 
 
