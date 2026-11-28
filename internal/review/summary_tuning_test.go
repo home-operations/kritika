@@ -1,6 +1,7 @@
 package review
 
 import (
+	"encoding/json"
 	"math"
 	"slices"
 	"strings"
@@ -40,10 +41,21 @@ func TestPraiseCountAgrees(t *testing.T) {
 				t.Errorf("%s instructions at %d do not ask for at most %s", name, tt.max, tt.word)
 			}
 		}
+		// The schemas as the model is sent them, decoded.
+		var reviewSchema, mergeSchema jsonSchema
+		if err := json.Unmarshal(SchemaFor(false, false, nil), &reviewSchema); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(MergeSchema(false), &mergeSchema); err != nil {
+			t.Fatal(err)
+		}
 		for name, praise := range map[string]*jsonSchema{
-			"review": contractSchema(false, false).Properties[keySummary].Properties[keyPraise],
-			"merge":  summaryProperties(false)[keyPraise],
+			"review": reviewSchema.Properties[keySummary].Properties[keyPraise],
+			"merge":  mergeSchema.Properties[keyPraise],
 		} {
+			if praise == nil {
+				t.Fatalf("%s schema has no praise", name)
+			}
 			if !strings.HasPrefix(praise.Description, "Up to "+tt.word+" specific things") || praise.MaxItems != tt.max {
 				t.Errorf("%s schema at %d = %q, at most %d; want up to %s", name, tt.max, praise.Description, praise.MaxItems, tt.word)
 			}

@@ -5,8 +5,9 @@
 // file's tuning block (never both for one field). The fixed ones, which an
 // external protocol or the database schema decides, are constants.
 //
-// The package imports nothing of kritika's, so every package, the runner's
-// included, can import it.
+// The package imports nothing of kritika's but textcut, which imports only
+// the standard library, so every package, the runner's included, can import
+// it.
 //
 // # Adding a tunable field
 //
@@ -30,8 +31,9 @@
 // The field's type is one of time.Duration, int, int64, float64, ByteSize or
 // Durations (comma-separated in the environment, EmptyList for none). A
 // value derived from others is a method on the area, never a field of its
-// own, so it cannot disagree with what it is derived from. An invariant between fields is a
-// rule that the area's file adds to validate.go's crossField.
+// own, so it cannot disagree with what it is derived from. An invariant
+// between fields is a rule that the area's file adds to validate.go's
+// crossField.
 //
 // Read a value at the point of use, tuning.Get().Gateway.SimilarMax, not
 // into a package-level variable at init, which would miss the configured

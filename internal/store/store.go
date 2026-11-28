@@ -28,21 +28,23 @@ type Store struct {
 	logger *slog.Logger
 }
 
-// newPool opens a pool with server-side TCP keepalives. So Postgres drops
-// the session of a client that died without closing it (a node lost, a pod
-// killed) within tuning's Store.KeepaliveIdle, KeepaliveInterval and
-// KeepaliveCount, and any advisory lock that the session held goes with it.
-// The pool's own ping of an idle connection is bounded by Store.PingTimeout.
-// So a server that died the same way costs a client seconds, not the kernel's
-// retransmissions. A statement timeout, when given, bounds every statement
-// on the pool.
 // applicationNameParam is the connection parameter that names a connection
-// in pg_stat_activity, and applicationName is the name of a connection for
-// role: kritika-app, kritika-listen and so on.
+// in pg_stat_activity.
 const applicationNameParam = "application_name"
 
+// applicationName is the name of role's connections: kritika-app,
+// kritika-listen and so on.
 func applicationName(role string) string { return tuning.Product + "-" + role }
 
+// newPool opens a pool with server-side TCP keepalives (tuning's
+// Store.Keepalive settings). So Postgres drops the session of a client that
+// died without closing it (a node lost, a pod killed) within about a minute
+// at the defaults. Any advisory lock that the session held goes with it.
+// Postgres's own defaults leave that to the kernel's two hours. The pool's
+// own ping of an idle connection is bounded by tuning's Store.PingTimeout. So
+// a server that died the same way costs a client seconds, not the kernel's
+// retransmissions. A statement timeout, when given, bounds every statement
+// on the pool.
 func newPool(ctx context.Context, url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Pool, error) {
 	cfg, err := poolConfig(url, application, statementTimeout, maxConns)
 	if err != nil {
@@ -52,9 +54,9 @@ func newPool(ctx context.Context, url, application string, statementTimeout time
 }
 
 // poolConfig is newPool's configuration. maxConns is the pool's ceiling
-// and tuning's Store.PingTimeout is its ping bound, unless the URI names its own with
-// pool_max_conns or pool_ping_timeout. pgx already read those by the time
-// that the configuration is parsed.
+// and tuning's Store.PingTimeout is its ping bound, unless the URI names its
+// own with pool_max_conns or pool_ping_timeout. pgx already read those by the
+// time that the configuration is parsed.
 func poolConfig(url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {

@@ -109,8 +109,8 @@ var (
 	ErrSession = errors.New("store: session is not valid")
 	// ErrLoginState is an OAuth state that is unknown, used or expired.
 	ErrLoginState = errors.New("store: login state is not valid")
-	// ErrLoginStatesFull is a sign-in refused because tuning's Store.MaxLoginStates are
-	// already in flight.
+	// ErrLoginStatesFull is a sign-in refused because tuning's
+	// Store.MaxLoginStates are already in flight.
 	ErrLoginStatesFull = errors.New("store: too many sign-ins in flight")
 )
 
@@ -282,10 +282,11 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	return nil
 }
 
-// CreateLoginState stores ls for tuning's Store.LoginStateTTL, bound to browser, the value
-// of the kritika_login cookie set in the browser starting the sign-in. It
-// returns the random state parameter that names ls. Only SHA-256s of the
-// state and browser values are kept. Expired states are swept on the way.
+// CreateLoginState stores ls for tuning's Store.LoginStateTTL, bound to
+// browser, the value of the kritika_login cookie set in the browser starting
+// the sign-in. It returns the random state parameter that names ls. Only
+// SHA-256s of the state and browser values are kept. Expired states are swept
+// on the way.
 func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser string, now time.Time) (string, error) {
 	if browser == "" {
 		return "", errors.New("store: create login state: no browser binding")

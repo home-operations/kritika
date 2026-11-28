@@ -39,9 +39,9 @@ type ChatGPTRefresher struct {
 // Run refreshes near expiry until this leader's tenure ends. The first
 // refresh waits until a previous leader's last refresh must be over. A leader
 // whose lock the server dropped goes on refreshing until it notices. A
-// refresh that it started by then runs on for at most tuning's Worker.ChatGPTRefreshTimeout.
-// A refresh alongside it sends the refresh token that it just spent, and the
-// refusal signs the provider out.
+// refresh that it started by then runs on for at most tuning's
+// Worker.ChatGPTRefreshTimeout. A refresh alongside it sends the refresh token
+// that it just spent, and the refusal signs the provider out.
 func (r *ChatGPTRefresher) Run(ctx context.Context) {
 	after := time.After
 	if r.after != nil {
@@ -104,7 +104,8 @@ func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 func (r *ChatGPTRefresher) refresh(
 	leading context.Context, client *http.Client, key string, c chatgpt.Credentials, now time.Time,
 ) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(leading), tuning.Get().Worker.ChatGPTRefreshTimeout)
+	w := tuning.Get().Worker
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(leading), w.ChatGPTRefreshTimeout)
 	defer cancel()
 	// refresh makes sure that its leader still leads once the timeout runs.
 	// So a refresh starts only while its leader leads, and ends within
@@ -112,6 +113,21 @@ func (r *ChatGPTRefresher) refresh(
 	if err := leading.Err(); err != nil {
 		return err
 	}
+	// The wait before a leader's first refresh assumes its predecessor had
+	// the same timeout. The claim does not: a predecessor's refresh still
+	// in flight holds it, and this one leaves the session to it. It is held
+	// for twice the timeout, so that a clock off from the database's does
+	// not end it while this refresh runs.
+	until, claimed, err := r.Store.ClaimChatGPTRefresh(ctx, key, c.RefreshToken, 2*w.ChatGPTRefreshTimeout)
+	if err != nil || !claimed {
+		return err
+	}
+	defer func() {
+		// Best effort: a claim left behind ends on its own.
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.ChatGPTRefreshTimeout)
+		defer cancel()
+		_ = r.Store.ReleaseChatGPTRefresh(rctx, key, until)
+	}()
 	renewed, err := chatgpt.Refresh(ctx, client, cmp.Or(r.TokenURL, chatgpt.TokenURL), c, now)
 	if errors.Is(err, chatgpt.ErrSignedOut) {
 		r.Logger.Warn("chatgpt provider disconnected; run kritika chatgpt login", "provider", key)
@@ -122,13 +138,13 @@ func (r *ChatGPTRefresher) refresh(
 	}
 	for attempt := 1; ; attempt++ {
 		_, err := r.Store.RefreshChatGPTSession(ctx, key, renewed, c.RefreshToken)
-		if err == nil || attempt == tuning.Get().Worker.ChatGPTSaveAttempts {
+		if err == nil || attempt == w.ChatGPTSaveAttempts {
 			return err
 		}
 		select {
 		case <-ctx.Done():
 			return errors.Join(err, ctx.Err())
-		case <-time.After(time.Duration(attempt) * tuning.Get().Worker.ChatGPTSaveBackoff):
+		case <-time.After(time.Duration(attempt) * w.ChatGPTSaveBackoff):
 		}
 	}
 }

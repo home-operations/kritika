@@ -19,6 +19,7 @@ import (
 func skillDoc(front, body string) string { return "---\n" + front + "\n---\n" + body }
 
 func TestDiscoverSkills(t *testing.T) {
+	limits := tuning.Get().RepoConfig
 	files := map[string]string{
 		"main.go":                           "package main\n",
 		".agents/skills/README.md":          skillDoc("description: Not a skill.", ""),
@@ -30,7 +31,7 @@ func TestDiscoverSkills(t *testing.T) {
 		".claude/skills/renovate/SKILL.md":  skillDoc("name: renovate\ndescription: Dependency bumps.\nallowed-tools: Bash", ""),
 		".claude/skills/broken/SKILL.md":    "# No frontmatter\n",
 		".claude/skills/dup/SKILL.md":       skillDoc("name: review-go\ndescription: Another one.", ""),
-		".claude/skills/huge/SKILL.md":      skillDoc("description: Huge.", strings.Repeat("x", int(tuning.Get().RepoConfig.MaxFileBytes))),
+		".claude/skills/huge/SKILL.md":      skillDoc("description: Huge.", strings.Repeat("x", int(limits.MaxFileBytes))),
 		"docs/skills/release/SKILL.md":      skillDoc("description: Cutting a release.", ""),
 	}
 	goSkill := repoconfig.Skill{Name: "review-go", Description: "How Go is reviewed here.", Dir: ".agents/skills/review-go", Text: "# Go"}
@@ -57,7 +58,7 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 		return out
 	}
-	overCap := many(tuning.Get().RepoConfig.MaxSkills + 2)
+	overCap := many(limits.MaxSkills + 2)
 	maps.Copy(overCap, map[string]string{"z/late/SKILL.md": skillDoc("description: Past the cap.", "")})
 
 	tests := []struct {
@@ -86,9 +87,9 @@ func TestDiscoverSkills(t *testing.T) {
 		{name: "a file named as a directory", files: files, dirs: []string{"main.go"}},
 		{name: "a skill's own folder is not a directory of skills", files: files, dirs: []string{".agents/skills/review-go"}},
 		{name: "no directories", files: files},
-		{name: "as many as are read", files: many(tuning.Get().RepoConfig.MaxSkills), dirs: []string{"s"}, want: capped(tuning.Get().RepoConfig.MaxSkills)},
+		{name: "as many as are read", files: many(limits.MaxSkills), dirs: []string{"s"}, want: capped(limits.MaxSkills)},
 		{
-			name: "past the cap", files: overCap, dirs: []string{"s", "z"}, want: capped(tuning.Get().RepoConfig.MaxSkills),
+			name: "past the cap", files: overCap, dirs: []string{"s", "z"}, want: capped(limits.MaxSkills),
 			wantNotes: []string{"more than 50 skills found; the rest were left out"},
 		},
 	}

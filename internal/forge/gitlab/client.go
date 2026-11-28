@@ -365,9 +365,9 @@ func (c *Client) CommitSubject(ctx context.Context, owner, repo, sha string) (st
 	return strings.TrimSpace(cm.Title), nil
 }
 
-// boundedFile takes a file's bytes up to tuning's Forge.MaxFileBytes and refuses
-// the first byte over, so a file too large is never read whole. It ends
-// the request then: the SDK drains a body it did not finish reading.
+// boundedFile takes a file's bytes up to tuning's Forge.MaxFileBytes and
+// refuses the first byte over, so a file too large is never read whole. It
+// ends the request then: the SDK drains a body it did not finish reading.
 type boundedFile struct {
 	content []byte
 	cancel  context.CancelFunc

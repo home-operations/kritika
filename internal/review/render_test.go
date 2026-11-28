@@ -789,15 +789,16 @@ func TestRenderMemoryIsBounded(t *testing.T) {
 }
 
 func TestMeasureRecursesIntoData(t *testing.T) {
+	maxCallBytes := tuning.Get().Review.MaxCallBytes()
 	d := sampleData()
 	d.Result.Findings[0].Explanation = strings.Repeat("x", 50_000)
-	if n := measure(reflect.ValueOf(d), 0, tuning.Get().Review.MaxCallBytes()); n < 50_000 {
+	if n := measure(reflect.ValueOf(d), 0, maxCallBytes); n < 50_000 {
 		t.Fatalf("measure = %d, want the nested explanation counted", n)
 	}
 	shared := strings.Repeat("x", 1000)
 	list := []any{shared, shared, shared, shared, shared, shared, shared, shared, shared, shared}
 	nested := []any{list, list, list, list, list, list, list, list, list, list}
-	if n := measure(reflect.ValueOf([]any{nested, nested, nested, nested, nested, nested, nested, nested, nested, nested}), 0, tuning.Get().Review.MaxCallBytes()); n <= tuning.Get().Review.MaxCallBytes() {
+	if n := measure(reflect.ValueOf([]any{nested, nested, nested, nested, nested, nested, nested, nested, nested, nested}), 0, maxCallBytes); n <= maxCallBytes {
 		t.Fatalf("measure = %d, want a shared value counted at every reference", n)
 	}
 }

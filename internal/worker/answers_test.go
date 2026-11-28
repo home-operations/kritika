@@ -36,10 +36,10 @@ func (f *answerForge) Permission(_ context.Context, _, _, login string) (forge.P
 }
 
 // TestThreadAnswers: a finding's answers are the replies in its thread by
-// people with write access, the latest tuning's Worker.MaxAnswers, oldest first, each with
-// its comment's id. A bot, a reader and a thread that no finding opened give
-// none, and each login is looked up once. A finding in a conversation that
-// an older comment opened, as Forgejo groups them, gets that
+// people with write access, the latest tuning's Worker.MaxAnswers, oldest
+// first, each with its comment's id. A bot, a reader and a thread that no
+// finding opened give none, and each login is looked up once. A finding in a
+// conversation that an older comment opened, as Forgejo groups them, gets that
 // conversation's replies.
 func TestThreadAnswers(t *testing.T) {
 	f := &answerForge{

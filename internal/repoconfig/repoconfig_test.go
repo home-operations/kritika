@@ -204,7 +204,8 @@ func mapReader(files map[string][]byte) func(string) ([]byte, error) {
 func TestCollect(t *testing.T) {
 	t.Parallel()
 	big := strings.Repeat("a", int(tuning.Get().RepoConfig.MaxFileBytes)+1)
-	// Four of these fit under tuning's RepoConfig.MaxTotalBytes. A fifth does not.
+	// Four of these fit under tuning's RepoConfig.MaxTotalBytes. A fifth
+	// does not.
 	chunk := strings.Repeat("c", 220_000)
 	tests := []struct {
 		name      string

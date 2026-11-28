@@ -565,8 +565,8 @@ func TestWhyNoPod(t *testing.T) {
 }
 
 // TestKubeRunGivesUpAMissingJob: a Job someone else deleted, gone from the
-// watch, is given up after Executor.MaxMissing ticks. It is deleted in case it is
-// still there, so it does not run on beside the worker's retry.
+// watch, is given up after Executor.MaxMissing ticks. It is deleted in case
+// it is still there, so it does not run on beside the worker's retry.
 func TestKubeRunGivesUpAMissingJob(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := newKube(t, client)
@@ -1087,17 +1087,18 @@ func TestKubeRunRefusedInSetupStaysRefused(t *testing.T) {
 }
 
 func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
+	limits := tuning.Get().Executor
 	const token = "ghs_secret_token"
 	secrets := runspec.Secrets{GitToken: token, GatewayToken: "krk_run_token"}
 	// A secret straddles the point Executor.LogTailBytes from the end.
-	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", int(tuning.Get().Executor.LogTailBytes)-8) + " END\n"
+	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", int(limits.LogTailBytes)-8) + " END\n"
 	tests := []struct {
 		name  string
 		logs  string
 		check func(t *testing.T, tail string)
 	}{
 		{name: "the end is kept and a straddling secret masked", logs: straddling, check: func(t *testing.T, tail string) {
-			if len(tail) > int(tuning.Get().Executor.LogTailBytes) || !strings.HasSuffix(tail, " END\n") || strings.Contains(tail, "HEAD") ||
+			if len(tail) > int(limits.LogTailBytes) || !strings.HasSuffix(tail, " END\n") || strings.Contains(tail, "HEAD") ||
 				strings.Contains(tail, "ghs_") || strings.Contains(tail, "_token") {
 				t.Fatalf("tail len %d starts %q ends %q", len(tail), tail[:20], tail[len(tail)-20:])
 			}
@@ -1124,7 +1125,7 @@ func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 			}, metav1.CreateOptions{})
 			res := Result{JobName: "kritika-run-01234567"}
 			newKube(t, client).finish(t.Context(), &res, secrets)
-			if opts == nil || opts.TailLines == nil || *opts.TailLines != int64(tuning.Get().Executor.LogTailLines) || opts.LimitBytes == nil || *opts.LimitBytes != int64(tuning.Get().Executor.LogReadBytes) {
+			if opts == nil || opts.TailLines == nil || *opts.TailLines != int64(limits.LogTailLines) || opts.LimitBytes == nil || *opts.LimitBytes != int64(limits.LogReadBytes) {
 				t.Fatalf("log options = %+v", opts)
 			}
 			tt.check(t, res.LogTail)

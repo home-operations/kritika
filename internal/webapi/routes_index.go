@@ -124,7 +124,8 @@ func (s *Server) listIndexChunks(w http.ResponseWriter, r *http.Request, t *acco
 	if path == "" {
 		return errBadRequest(CodeBadRequest, "path is required")
 	}
-	ctx, limit := r.Context(), tuning.Get().WebAPI.IndexChunkLimit
+	ctx := r.Context()
+	limit := tuning.Get().WebAPI.IndexChunkLimit
 	var rows []store.IndexChunkRow
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
 		runID, err := activeRun(ctx, tx, r)

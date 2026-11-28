@@ -81,6 +81,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 // leaves them out, another account can neither read nor write them nor
 // change what a search leaves out, and they go once the run has finished.
 func TestSimilarExclusions(t *testing.T) {
+	similarExcludeBatch := tuning.Get().Store.SimilarExcludeBatch
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
@@ -128,9 +129,9 @@ func TestSimilarExclusions(t *testing.T) {
 	// More paths than a batch, one of them twice, are written whole, and so
 	// is a path longer than a B-tree entry can be, which compression leaves
 	// as long.
-	paths := make([]string, 0, 4+2*tuning.Get().Store.SimilarExcludeBatch)
+	paths := make([]string, 0, 4+2*similarExcludeBatch)
 	paths = append(paths, "moved/a.go", "moved/b.go", "moved/a.go", longGitPath())
-	for i := range 2 * tuning.Get().Store.SimilarExcludeBatch {
+	for i := range 2 * similarExcludeBatch {
 		paths = append(paths, fmt.Sprintf("vendor/f%04d.go", i))
 	}
 	report(alpha, run, paths)

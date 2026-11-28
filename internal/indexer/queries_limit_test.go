@@ -18,6 +18,7 @@ import (
 // its lines it holds, so a large added file costs the queries a request can
 // send and not one for each of its declarations.
 func TestRegionQueriesStopAtTheRequestBound(t *testing.T) {
+	limits := tuning.Get().ContextPack
 	for _, first := range []bool{true, false} {
 		files := udiff.Parse(manyDeclarations(first))
 		if len(files) != 1 {
@@ -33,9 +34,9 @@ func TestRegionQueriesStopAtTheRequestBound(t *testing.T) {
 		if _, ok := f.next(&parser); !ok {
 			t.Fatalf("declarations first %v: no query", first)
 		}
-		if built := len(f.pending) + 1; built > tuning.Get().ContextPack.SimilarQueries {
+		if built := len(f.pending) + 1; built > limits.SimilarQueries {
 			t.Errorf("declarations first %v: the region was cut into %d queries, more than the %d a request carries",
-				first, built, tuning.Get().ContextPack.SimilarQueries)
+				first, built, limits.SimilarQueries)
 		}
 	}
 }
@@ -47,6 +48,7 @@ func TestRegionQueriesStopAtTheRequestBound(t *testing.T) {
 // hundred declarations around the change. Allocation is counted in bytes,
 // which does not depend on how fast the machine is.
 func TestRegionQueriesDoNotCopyDeclarationsOverTheBound(t *testing.T) {
+	limits := tuning.Get().ContextPack
 	const depth = 200
 	region := make([]udiff.Line, 0, 2*depth+4)
 	for i := range depth {
@@ -63,13 +65,13 @@ func TestRegionQueriesDoNotCopyDeclarationsOverTheBound(t *testing.T) {
 		size += len(l.Text) + 1
 	}
 	var parser chunk.Parser
-	if got, want := regionQueries(&parser, "x.js", region, tuning.Get().ContextPack.SimilarQueries), []string{"function inner() {\n  return 1;\n}\n"}; !slices.Equal(got, want) {
+	if got, want := regionQueries(&parser, "x.js", region, limits.SimilarQueries), []string{"function inner() {\n  return 1;\n}\n"}; !slices.Equal(got, want) {
 		t.Fatalf("queries = %q, want %q", got, want)
 	}
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	regionQueries(&parser, "x.js", region, tuning.Get().ContextPack.SimilarQueries)
+	regionQueries(&parser, "x.js", region, limits.SimilarQueries)
 	runtime.ReadMemStats(&after)
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > depth/2*uint64(size) {
 		t.Errorf("the queries allocated %d bytes, over %d copies of the %d-byte region", allocated, depth/2, size)

@@ -443,9 +443,9 @@ type Agent struct {
 	// tools read the rest. The confidence score, with no tools, gets up to
 	// twice it.
 	Prompt *int `yaml:"prompt,omitempty"`
-	// Parts is the most parts that a review whose diff is over tuning's Review.PartBytes
-	// is split into. An agent with these bounds of its own reads each part. A
-	// value of 1 never splits.
+	// Parts is the most parts that a review whose diff is over tuning's
+	// Review.PartBytes is split into. An agent with these bounds of its own
+	// reads each part. A value of 1 never splits.
 	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
@@ -487,11 +487,10 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 }
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
-// steps, tool output and tokens are the agent loop's own defaults, its
-// prompt tuning's Review.DefaultBudgetTokens, and the rest tuning's
-// ConfigFile defaults.
+// steps, tool output and tokens are the agent loop's own defaults.
 func DefaultAgent() AgentSettings {
-	limits, t := agent.DefaultLimits(), tuning.Get()
+	limits := agent.DefaultLimits()
+	t := tuning.Get()
 	return AgentSettings{
 		MaxSteps:           limits.MaxSteps,
 		MaxToolOutputBytes: limits.MaxToolOutputBytes,

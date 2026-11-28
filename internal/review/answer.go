@@ -15,11 +15,10 @@ type Answer struct {
 	// Own marks kritika's own reply in the thread, which ends nothing but is
 	// shown so that a review does not contradict it unknowing.
 	Own bool `json:"own,omitempty"`
-	// Cut is how many bytes of the reply Text holds at most, and Window
-	// how many of its thread's latest replies the review was shown: the
-	// caps that the answer was taken under, so that publication reads the
-	// thread again as the review was shown it whatever the caps are now.
-	// Neither is set in an answer kept before they were recorded.
+	// Cut is the most bytes of the reply that Text holds, and Window how
+	// many of the thread's latest replies the review was shown. Publication
+	// reads the thread again under these caps, not the current ones. An
+	// answer stored without them has neither.
 	Cut    int `json:"cut,omitempty"`
 	Window int `json:"window,omitempty"`
 }

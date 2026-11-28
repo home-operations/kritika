@@ -219,7 +219,7 @@ type Installation struct {
 // Installations lists every account the App is installed on.
 func (a *App) Installations(ctx context.Context) ([]Installation, error) {
 	var out []Installation
-	for inst, err := range a.apps.Apps.ListInstallationsIter(ctx, &gh.ListOptions{PerPage: gitHubMaxPage}) {
+	for inst, err := range a.apps.Apps.ListInstallationsIter(ctx, &gh.ListOptions{PerPage: perPage}) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list App installations: %w", err)
 		}
@@ -248,7 +248,7 @@ func (a *App) Repositories(ctx context.Context, id int64) ([]Repository, error) 
 		return nil, err
 	}
 	var out []Repository
-	for r, err := range client.Apps.ListReposIter(ctx, &gh.ListOptions{PerPage: gitHubMaxPage}) {
+	for r, err := range client.Apps.ListReposIter(ctx, &gh.ListOptions{PerPage: perPage}) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list installation %d repositories: %w", id, err)
 		}

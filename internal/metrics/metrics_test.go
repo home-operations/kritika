@@ -209,9 +209,10 @@ func TestInitVectorSearch(t *testing.T) {
 func TestDurationBucketsReachTheirLongest(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := New(reg)
-	m.Review("acme", "completed", tuning.Get().JobTimeout.MaxJobTimeout)
-	m.RunnerRun("acme", "review", "ok", tuning.Get().JobTimeout.MaxJobTimeout)
-	m.LeaseWait("acme", "model", tuning.Get().JobTimeout.IndexWriteHeadroom)
+	jt := tuning.Get().JobTimeout
+	m.Review("acme", "completed", jt.MaxJobTimeout)
+	m.RunnerRun("acme", "review", "ok", jt.MaxJobTimeout)
+	m.LeaseWait("acme", "model", jt.IndexWriteHeadroom)
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)

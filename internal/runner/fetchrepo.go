@@ -24,16 +24,18 @@ import (
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
-// What fetch_repo can take: a run makes at most the spec's fetches, and the
-// rest is tuning's Runner: what they write of their files (FetchWriteBytes,
-// beside its checkout and shared with the run tool's kept outputs), what one
-// fetch takes from the server (FetchWireBytes) and of wall time
-// (FetchTimeout), and what it keeps of a diff (FetchDiffBytes). A run's
-// fetch_repo lists tags at most MaxTagListings times, counted apart from
-// fetch_oci's listings: the listing that a fetch naming a missing ref
-// makes to name the closest included. An answer shows at most
-// TagsShown names, such an error at most ClosestTagsShown, and a diff's
-// answer at most ChangedShown of the paths it changes before the patches.
+// What fetch_repo can take: a run makes at most the spec's fetches and writes
+// at most Runner.FetchWriteBytes of their files, beside its checkout. The run
+// tool's kept outputs share that budget. One fetch takes at most
+// Runner.FetchWireBytes from the server and Runner.FetchTimeout of wall time.
+// It keeps at most Runner.FetchDiffBytes of a diff, the same as for a kept
+// output.
+//
+// A run also lists tags at most Runner.MaxTagListings times. That count
+// includes the listing that a fetch naming a missing ref makes to name the
+// closest. An answer shows at most Runner.TagsShown names, and such an error
+// at most Runner.ClosestTagsShown. A diff's answer names at most
+// Runner.ChangedShown of the paths it changes before the patches.
 
 // upstreamDir is the scratch directory fetch_repo writes to, beside the
 // checkout, where the run tool keeps a cut output too. upstreamRel is the

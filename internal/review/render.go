@@ -273,15 +273,15 @@ func FormatCost(amount float64, unpricedCalls int64) string {
 	return FormatUSD(amount) + " + unpriced"
 }
 
-// FooterSubject cuts a commit subject to one line of tuning's Review.FooterSubjectRunes and
-// marks the cut with an ellipsis. It also escapes what Markdown reads as
-// markup, since a pull request's author writes the subject and it lands
-// inside the footer's link text.
+// FooterSubject cuts a commit subject to one line of tuning's
+// Review.FooterSubjectRunes and marks the cut with an ellipsis. It also
+// escapes what Markdown reads as markup, since a pull request's author writes
+// the subject and it lands inside the footer's link text.
 func FooterSubject(subject string) string {
 	subject, _, _ = strings.Cut(subject, "\n")
 	subject = strings.TrimSpace(subject)
-	if runes := []rune(subject); len(runes) > tuning.Get().Review.FooterSubjectRunes {
-		subject = strings.TrimSpace(string(runes[:tuning.Get().Review.FooterSubjectRunes])) + "..."
+	if most, runes := tuning.Get().Review.FooterSubjectRunes, []rune(subject); len(runes) > most {
+		subject = strings.TrimSpace(string(runes[:most])) + "..."
 	}
 	return FooterText(subject)
 }
@@ -393,8 +393,7 @@ func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []str
 }
 
 // bodyLimit is what tuning's Review.MaxRenderBytes leaves a comment's body
-// after marker, never under zero: Validate keeps room for every marker, and
-// this keeps the fallback's cut in bounds should a marker outgrow it.
+// after marker, never under zero, which only a test's override reaches.
 func bodyLimit(marker string) int {
 	return max(int(tuning.Get().Review.MaxRenderBytes)-len(marker), 0)
 }
@@ -413,8 +412,8 @@ func fallbackNote(which string, err error) string {
 }
 
 // render parses and executes src in a sandbox, bounded by ctx and
-// tuning's Review.RenderTimeout. A render that outlives its deadline is abandoned. The guards
-// make it stop at its next loop, call, or write.
+// tuning's Review.RenderTimeout. A render that outlives its deadline is
+// abandoned. The guards make it stop at its next loop, call, or write.
 func render(ctx context.Context, src string, data any, limit int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Review.RenderTimeout)
 	defer cancel()

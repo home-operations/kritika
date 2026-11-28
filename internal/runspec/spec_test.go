@@ -171,6 +171,7 @@ func TestSecretsMask(t *testing.T) {
 }
 
 func TestPromptTrim(t *testing.T) {
+	limits := tuning.Get().RunSpec
 	finding := func(explanation string) review.Finding {
 		return review.Finding{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "t", Explanation: explanation}
 	}
@@ -182,7 +183,7 @@ func TestPromptTrim(t *testing.T) {
 		return out
 	}
 	// A three-byte rune straddles the body limit.
-	straddling := strings.Repeat("a", int(tuning.Get().RunSpec.MaxBodyBytes)-1) + "€" + "tail"
+	straddling := strings.Repeat("a", int(limits.MaxBodyBytes)-1) + "€" + "tail"
 	tests := []struct {
 		name      string
 		body      string
@@ -191,21 +192,21 @@ func TestPromptTrim(t *testing.T) {
 		wantPrior int
 	}{
 		{name: "small prompt unchanged", body: "Adds b.", prior: findings(3, "x"), wantBody: 7, wantPrior: 3},
-		{name: "too many findings", body: "b", prior: findings(250, "x"), wantBody: 1, wantPrior: tuning.Get().RunSpec.MaxPriorFindings},
-		{name: "body cut at a rune boundary", body: straddling, wantBody: int(tuning.Get().RunSpec.MaxBodyBytes) - 1},
-		{name: "huge findings halved until they fit", body: "b", prior: findings(tuning.Get().RunSpec.MaxPriorFindings, strings.Repeat("<", 4<<10)),
+		{name: "too many findings", body: "b", prior: findings(250, "x"), wantBody: 1, wantPrior: limits.MaxPriorFindings},
+		{name: "body cut at a rune boundary", body: straddling, wantBody: int(limits.MaxBodyBytes) - 1},
+		{name: "huge findings halved until they fit", body: "b", prior: findings(limits.MaxPriorFindings, strings.Repeat("<", 4<<10)),
 			wantBody: 1, wantPrior: 25},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Prompt{PullRequest: repoconfig.PullRequest{Body: tt.body}, Prior: tt.prior,
-				Issues: []review.Issue{{ID: "#1", Body: strings.Repeat("a", int(tuning.Get().RunSpec.MaxIssueBytes)+5)}}}
+				Issues: []review.Issue{{ID: "#1", Body: strings.Repeat("a", int(limits.MaxIssueBytes)+5)}}}
 			p.Trim()
 			if len(p.PullRequest.Body) != tt.wantBody || len(p.Prior) != tt.wantPrior || !utf8.ValidString(p.PullRequest.Body) {
 				t.Fatalf("body = %d bytes, prior = %d; want %d, %d", len(p.PullRequest.Body), len(p.Prior), tt.wantBody, tt.wantPrior)
 			}
-			if len(p.Issues[0].Body) != int(tuning.Get().RunSpec.MaxIssueBytes) {
-				t.Fatalf("issue body = %d bytes, want %d", len(p.Issues[0].Body), int(tuning.Get().RunSpec.MaxIssueBytes))
+			if len(p.Issues[0].Body) != int(limits.MaxIssueBytes) {
+				t.Fatalf("issue body = %d bytes, want %d", len(p.Issues[0].Body), int(limits.MaxIssueBytes))
 			}
 		})
 	}

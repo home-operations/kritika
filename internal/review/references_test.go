@@ -9,6 +9,7 @@ import (
 )
 
 func TestReferencesReserveRoom(t *testing.T) {
+	charsPerToken := tuning.Get().Review.CharsPerToken
 	for _, kind := range []string{"full", "incremental", "follow-up", "continued"} {
 		t.Run(kind, func(t *testing.T) {
 			in := incrementalInput()
@@ -38,8 +39,8 @@ func TestReferencesReserveRoom(t *testing.T) {
 			if left != 0 || !strings.Contains(msg, "### AGENTS.md: conventions") || !strings.Contains(msg, "omitted to fit") {
 				t.Fatalf("references omitted = %d, prompt:\n%s", left, msg)
 			}
-			if len(msg) > in.BudgetTokens*tuning.Get().Review.CharsPerToken+tuning.Get().Review.CharsPerToken {
-				t.Fatalf("prompt length %d exceeds budget %d", len(msg), in.BudgetTokens*tuning.Get().Review.CharsPerToken)
+			if len(msg) > in.BudgetTokens*charsPerToken+charsPerToken {
+				t.Fatalf("prompt length %d exceeds budget %d", len(msg), in.BudgetTokens*charsPerToken)
 			}
 		})
 	}

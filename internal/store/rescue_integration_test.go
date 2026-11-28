@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -496,7 +497,7 @@ func TestRescuePublication(t *testing.T) {
 // owner's last beat carries, not the leader's, so that replicas on
 // different heartbeat settings during a rollout never rescue a live job. A
 // beat that carries no window, from a replica before the column, is judged
-// by the leader's.
+// by the fixed window of that replica.
 func TestRescueByTheOwnersWindow(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -519,13 +520,17 @@ func TestRescueByTheOwnersWindow(t *testing.T) {
 	// whose own window is 3m.
 	fast := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
 	beat(fast, 10*time.Second, 3, 2*time.Minute)
-	// A beat that carries no window, 2m silent.
+	// Beats that carry no window, from replicas before it was recorded,
+	// whose window was the fixed 3m: 2m silent, alive whatever the leader's
+	// window, and 4m silent, abandoned.
 	legacy := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
 	beat(legacy, time.Minute, 6, 2*time.Minute)
-	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET abandon_after = NULL WHERE job_id = $1`, legacy); err != nil {
+	legacyGone := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(legacyGone, time.Minute, 6, 4*time.Minute)
+	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET abandon_after = DEFAULT WHERE job_id = ANY($1)`, []int64{legacy, legacyGone}); err != nil {
 		t.Fatal(err)
 	}
-	ours := []int64{slow, fast, legacy}
+	ours := []int64{slow, fast, legacy, legacyGone}
 	abandoned := func(stale time.Duration) []int64 {
 		t.Helper()
 		got, err := s.AbandonedJobs(ctx, stale, 100)
@@ -540,17 +545,63 @@ func TestRescueByTheOwnersWindow(t *testing.T) {
 		}
 		return ids
 	}
-	if got, want := abandoned(time.Minute), []int64{fast, legacy}; !slices.Equal(got, want) {
-		t.Fatalf("abandoned to a 1m leader = %v, want %v: the slow owner's 6m window has not passed", got, want)
+	if got, want := abandoned(time.Minute), []int64{fast, legacyGone}; !slices.Equal(got, want) {
+		t.Fatalf("abandoned to a 1m leader = %v, want %v: the slow owner's 6m window and the legacy 3m have not passed", got, want)
 	}
-	if got, want := abandoned(3*time.Minute), []int64{fast}; !slices.Equal(got, want) {
-		t.Fatalf("abandoned to a 3m leader = %v, want %v: the fast owner's 30s window has passed, the legacy beat is judged by 3m", got, want)
+	if got, want := abandoned(3*time.Minute), []int64{fast, legacyGone}; !slices.Equal(got, want) {
+		t.Fatalf("abandoned to a 3m leader = %v, want %v: the fast owner's 30s window and the legacy 3m have passed", got, want)
 	}
 	// The rescue's own check judges as the listing does.
 	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: slow, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || rescued {
 		t.Fatalf("RescueJob of the slow owner's job = %v, %v; want it left alone", rescued, err)
 	}
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: legacy, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || rescued {
+		t.Fatalf("RescueJob of the legacy beat 2m silent = %v, %v; want it left alone under a 1m leader", rescued, err)
+	}
 	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: fast, Kind: "review", Attempt: 1, MaxAttempts: 25}, 3*time.Minute, "lost"); err != nil || !rescued {
 		t.Fatalf("RescueJob of the fast owner's job = %v, %v; want it rescued", rescued, err)
+	}
+}
+
+// TestRecordJobRescue: the horizon that a replica records on its attempt's
+// row is the one River's rescuer reads back from the row, whatever the
+// reading replica's settings, and only for that attempt.
+func TestRecordJobRescue(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{"kept": true}`)
+	read := func() *rivertype.JobRow {
+		t.Helper()
+		var r rivertype.JobRow
+		r.ID = id
+		if err := s.owner.QueryRow(ctx, `SELECT attempted_at, metadata FROM river_job WHERE id = $1`, id).Scan(&r.AttemptedAt, &r.Metadata); err != nil {
+			t.Fatal(err)
+		}
+		return &r
+	}
+	claimed := read()
+	if _, ok := JobRescueAfter(claimed); ok {
+		t.Fatal("a row as claimed carries a rescue horizon")
+	}
+	// The working replica's maxJobTimeout 6h, with its 1h grace.
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.MaxJobTimeout = 6 * time.Hour })
+	if err := s.RecordJobRescue(ctx, claimed); err != nil {
+		t.Fatal(err)
+	}
+	// The rescuer's own settings are the defaults, a 4h horizon.
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.MaxJobTimeout = 3 * time.Hour })
+	got := read()
+	if after, ok := JobRescueAfter(got); !ok || after != 7*time.Hour {
+		t.Fatalf("JobRescueAfter = %s, %v; want the working replica's 7h", after, ok)
+	}
+	if !strings.Contains(string(got.Metadata), `"kept"`) {
+		t.Fatalf("metadata = %s, want the keys it held kept", got.Metadata)
+	}
+	// A later attempt is claimed anew: the record does not match it.
+	if _, err := s.owner.Exec(ctx, `UPDATE river_job SET attempted_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if after, ok := JobRescueAfter(read()); ok {
+		t.Fatalf("JobRescueAfter of a later attempt = %s, want no record", after)
 	}
 }

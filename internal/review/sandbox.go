@@ -219,16 +219,16 @@ func (g *guard) wrap(name string, fn reflect.Value) any {
 		if err := g.ctx.Err(); err != nil {
 			panic(err)
 		}
+		limit := tuning.Get().Review.MaxCallBytes()
 		size := 0
 		for _, a := range args {
-			size += measure(a, 0, tuning.Get().Review.MaxCallBytes())
+			size += measure(a, 0, limit)
 		}
 		if estimate != nil {
 			size += estimate(args)
 		}
-		if size > tuning.Get().Review.MaxCallBytes() {
-			panic(fmt.Errorf("%w: %s: %d bytes of input and estimated allocation, at most %d",
-				errSandbox, name, size, tuning.Get().Review.MaxCallBytes()))
+		if size > limit {
+			panic(fmt.Errorf("%w: %s: %d bytes of input and estimated allocation, at most %d", errSandbox, name, size, limit))
 		}
 		var out []reflect.Value
 		if t.IsVariadic() {
@@ -236,8 +236,8 @@ func (g *guard) wrap(name string, fn reflect.Value) any {
 		} else {
 			out = fn.Call(args)
 		}
-		if n := measure(out[0], 0, tuning.Get().Review.MaxCallBytes()); n > tuning.Get().Review.MaxCallBytes() {
-			panic(fmt.Errorf("%w: %s returned more than %d bytes", errSandbox, name, tuning.Get().Review.MaxCallBytes()))
+		if n := measure(out[0], 0, limit); n > limit {
+			panic(fmt.Errorf("%w: %s returned more than %d bytes", errSandbox, name, limit))
 		}
 		return out
 	}).Interface()
@@ -253,9 +253,8 @@ func (g *guard) iter(v any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errSandbox, err)
 	}
-	// The charge is held to what is left before it is added, so that
-	// neither the charge nor the sum can wrap, whatever the budget.
 	limit := tuning.Get().Review.MaxIterations
+	// Compared with what is left, so that neither n nor the sum can overflow.
 	if n > uint64(max(limit-g.iterations, 0)) {
 		return nil, fmt.Errorf("%w: loops over more than %d items per render", errSandbox, limit)
 	}
@@ -293,13 +292,27 @@ func indirect(v reflect.Value) reflect.Value {
 // measure is the bytes v holds: every string's length plus nodeBytes per
 // element, entry or field. It stops once past limit, so a structure that
 // shares one large value many times over is refused quickly rather than
-// walked in full.
+// walked in full. At tuning's Review.MaxMeasureDepth, a string still counts
+// its length, and a composite with contents counts past limit: what cannot
+// be measured is refused, not counted as small.
 func measure(v reflect.Value, depth, limit int) int {
 	v = indirect(v)
 	if !v.IsValid() {
 		return 0
 	}
 	if depth >= tuning.Get().Review.MaxMeasureDepth {
+		switch v.Kind() {
+		case reflect.String:
+			return v.Len()
+		case reflect.Slice, reflect.Array, reflect.Map:
+			if v.Len() > 0 {
+				return limit + 1
+			}
+		case reflect.Struct:
+			if v.NumField() > 0 {
+				return limit + 1
+			}
+		}
 		return nodeBytes
 	}
 	switch v.Kind() {
@@ -419,6 +432,7 @@ var printfVerb = regexp.MustCompile(`(?s)%[-+# 0]*(?:\[(\d+)\])?(\*|\d+)?(?:\.(?
 // cannot see, so it is refused. Each argument is measured once, and its
 // leaves counted only under a width.
 func printfAllocation(a []reflect.Value) int {
+	limit := tuning.Get().Review.MaxCallBytes()
 	args := a[1]
 	sizes := make([]int, args.Len())
 	for i := range sizes {
@@ -435,8 +449,8 @@ func printfAllocation(a []reflect.Value) int {
 				continue
 			}
 			w, err := strconv.Atoi(n)
-			if err != nil || n == "*" || w > tuning.Get().Review.MaxCallBytes()-pad {
-				return tuning.Get().Review.MaxCallBytes() + 1
+			if err != nil || n == "*" || w > limit-pad {
+				return limit + 1
 			}
 			pad += w
 		}
@@ -461,14 +475,14 @@ func printfAllocation(a []reflect.Value) int {
 		}
 		next = arg + 1
 		if sizes[arg] < 0 {
-			sizes[arg] = measure(args.Index(arg), 0, tuning.Get().Review.MaxCallBytes())
+			sizes[arg] = measure(args.Index(arg), 0, limit)
 		}
 		total += sizes[arg]
 		if pad > 0 {
 			total += product(int64(pad), int64(printfElements(args.Index(arg), 0)))
 		}
-		if total > tuning.Get().Review.MaxCallBytes() {
-			return tuning.Get().Review.MaxCallBytes() + 1
+		if total > limit {
+			return limit + 1
 		}
 	}
 	return total
@@ -476,25 +490,26 @@ func printfAllocation(a []reflect.Value) int {
 
 // printfElements is how many values fmt pads when it formats v: the
 // leaves of a slice, array, map or struct, one for anything else. A value
-// at tuning's Review.MaxMeasureDepth counts as one leaf, as measure counts it as one
-// node, and the count stops once past tuning's Review.MaxCallBytes.
+// at tuning's Review.MaxMeasureDepth counts as one leaf, as measure counts it
+// as one node, and the count stops once past tuning's Review.MaxCallBytes.
 func printfElements(v reflect.Value, depth int) int {
 	v = indirect(v)
 	if depth >= tuning.Get().Review.MaxMeasureDepth {
 		return 1
 	}
+	limit := tuning.Get().Review.MaxCallBytes()
 	n := 0
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:
-		for i := 0; i < v.Len() && n <= tuning.Get().Review.MaxCallBytes(); i++ {
+		for i := 0; i < v.Len() && n <= limit; i++ {
 			n += printfElements(v.Index(i), depth+1)
 		}
 	case reflect.Map:
-		for it := v.MapRange(); it.Next() && n <= tuning.Get().Review.MaxCallBytes(); {
+		for it := v.MapRange(); it.Next() && n <= limit; {
 			n += printfElements(it.Key(), depth+1) + printfElements(it.Value(), depth+1)
 		}
 	case reflect.Struct:
-		for i := 0; i < v.NumField() && n <= tuning.Get().Review.MaxCallBytes(); i++ {
+		for i := 0; i < v.NumField() && n <= limit; i++ {
 			n += printfElements(v.Field(i), depth+1)
 		}
 	}

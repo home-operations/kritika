@@ -119,6 +119,9 @@ func TestForgejoMappingVars(t *testing.T) {
 			_, _ = fmt.Fprint(w, `[{"name":"org-3"}]`)
 		case r.URL.Path == "/user/teams" && page == "1":
 			_, _ = fmt.Fprint(w, `[{"name":"Owners","organization":{"name":"org-1"}}]`)
+		case r.URL.Path == "/user/teams" && page == "2":
+			// Without a total, only an empty page ends the list.
+			_, _ = fmt.Fprint(w, `[]`)
 		default:
 			t.Errorf("unexpected request %s", r.URL)
 			w.WriteHeader(http.StatusNotFound)
@@ -139,6 +142,30 @@ func TestForgejoMappingVars(t *testing.T) {
 	// grant on.
 	if vars["email"] != "" {
 		t.Fatalf("email = %q, want none for an unverified address", vars["email"])
+	}
+}
+
+// TestForgejoMappingVarsShortPages: without an X-Total-Count, a page shorter
+// than the size asked for is not taken for the last, since the instance may
+// cap the size. The listing goes on to an empty page.
+func TestForgejoMappingVarsShortPages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch page := r.URL.Query().Get("page"); {
+		case r.URL.Path == "/user/orgs" && page == "1":
+			_, _ = fmt.Fprint(w, `[{"name":"org-1"},{"name":"org-2"}]`)
+		case r.URL.Path == "/user/orgs" && page == "2":
+			_, _ = fmt.Fprint(w, `[{"name":"admins"}]`)
+		default:
+			_, _ = fmt.Fprint(w, `[]`)
+		}
+	}))
+	defer srv.Close()
+	vars, err := forgejoAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if orgs, _ := vars["orgs"].([]string); strings.Join(orgs, ",") != "org-1,org-2,admins" {
+		t.Fatalf("orgs = %v, want org-1, org-2 and admins", orgs)
 	}
 }
 

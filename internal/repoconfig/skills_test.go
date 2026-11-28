@@ -95,7 +95,8 @@ func TestParseSkill(t *testing.T) {
 // characters, so one in a script of multibyte characters fits as one in
 // ASCII does.
 func TestParseSkillCountsCharacters(t *testing.T) {
-	for n, wantErr := range map[int]bool{tuning.Get().RepoConfig.MaxSkillDescription: false, tuning.Get().RepoConfig.MaxSkillDescription + 1: true} {
+	limit := tuning.Get().RepoConfig.MaxSkillDescription
+	for n, wantErr := range map[int]bool{limit: false, limit + 1: true} {
 		_, err := ParseSkill(".agents/skills/go", []byte("---\ndescription: "+strings.Repeat("語", n)+"\n---\n"))
 		if (err != nil) != wantErr {
 			t.Errorf("a description of %d characters: err = %v, want an error %v", n, err, wantErr)
@@ -115,15 +116,17 @@ func TestOfferedSkills(t *testing.T) {
 		"conditioned": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}},
 	}
 	scoped := []Skill{{Name: "go", Description: "Go."}, {Name: "conditioned", Description: "Bumps."}}
+	listingBytes := int(tuning.Get().RepoConfig.MaxSkillListingBytes)
+	loadedBytes := int(tuning.Get().RepoConfig.MaxSkillLoadedBytes)
 	// The loaded skills' budget holds the whole of one at most.
-	huge := Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", int(tuning.Get().RepoConfig.MaxSkillLoadedBytes)/2+1)}
+	huge := Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", loadedBytes/2+1)}
 	// Each of the big skills takes 1000 bytes of the listing, so four fit.
 	big := make([]Skill, 0, 6)
 	for i := range 6 {
 		name := fmt.Sprintf("big-%d", i)
 		big = append(big, Skill{Name: name, Description: strings.Repeat("x", 1000-len(name))})
 	}
-	small := Skill{Name: "small", Description: strings.Repeat("y", int(tuning.Get().RepoConfig.MaxSkillListingBytes)-4000-len("small"))}
+	small := Skill{Name: "small", Description: strings.Repeat("y", listingBytes-4000-len("small"))}
 	tests := []struct {
 		name         string
 		found        []Skill
@@ -184,11 +187,11 @@ func TestOfferedSkills(t *testing.T) {
 				t.Fatalf("listed %q, loaded %q, %d left, %d unloaded; want %q, %q, %d, %d",
 					got, loaded, out.Left, out.Unloaded, tt.want, tt.wantLoaded, tt.wantLeft, tt.wantUnloaded)
 			}
-			if size > int(tuning.Get().RepoConfig.MaxSkillListingBytes) {
-				t.Fatalf("the listing takes %d bytes, over %d", size, int(tuning.Get().RepoConfig.MaxSkillListingBytes))
+			if size > listingBytes {
+				t.Fatalf("the listing takes %d bytes, over %d", size, listingBytes)
 			}
-			if loadedSize > int(tuning.Get().RepoConfig.MaxSkillLoadedBytes) {
-				t.Fatalf("the loaded skills take %d bytes, over %d", loadedSize, int(tuning.Get().RepoConfig.MaxSkillLoadedBytes))
+			if loadedSize > loadedBytes {
+				t.Fatalf("the loaded skills take %d bytes, over %d", loadedSize, loadedBytes)
 			}
 		})
 	}

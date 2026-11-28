@@ -35,10 +35,9 @@ type TokenSource interface {
 
 // ErrPlanLimit is a step that the ChatGPT plan refused because its usage
 // limit is reached. The adapter then sends nothing on the plan for tuning's
-// Model.PlanPause,
-// as OpenAI asks. It fails every step the same way, and the fallback takes
-// those steps. The plan's owner sees the limit under ChatGPT's usage
-// settings.
+// Model.PlanPause, as OpenAI asks. It fails every step the same way, and the
+// fallback takes those steps. The plan's owner sees the limit under
+// ChatGPT's usage settings.
 var ErrPlanLimit = errors.New("model: chatgpt: the plan's usage limit is reached")
 
 // ErrUnavailable is a provider that failed to serve a request for a passing

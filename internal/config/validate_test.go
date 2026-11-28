@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/tuning"
 )
 
@@ -31,7 +30,7 @@ func TestSettingsValidation(t *testing.T) {
 		{"zero onboarding window", "onboardWindow: 0", "onboardWindow: KRITIKA_ONBOARD_WINDOW must be positive"},
 		{"negative polling", "pollInterval: -1ns", "pollInterval: KRITIKA_POLL_INTERVAL must not be negative"},
 		{"short retention", "diffRetention: 23h59m59.999999999s", "diffRetention: KRITIKA_DIFF_RETENTION must be at least 24h"},
-		{"long deadline", fmt.Sprintf("runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline()/time.Second)+1),
+		{"long deadline", fmt.Sprintf("runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second)+1),
 			"runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
 		{"empty public address", "addr: ''", "addr: KRITIKA_ADDR must be set"},
 		{"empty metrics address", "metricsAddr: ''", "metricsAddr: KRITIKA_METRICS_ADDR must be set"},
@@ -39,10 +38,11 @@ func TestSettingsValidation(t *testing.T) {
 		{"empty role", "databaseAppRole: ''", "databaseAppRole: KRITIKA_DATABASE_APP_ROLE must be set"},
 		{"unknown executor", "executor: docker", "executor: KRITIKA_EXECUTOR must be kubernetes or local"},
 		{"allowed bounds", fmt.Sprintf("pollInterval: 0s\npollLookback: 0s\nindexGrace: 0s\ntranscriptRetention: 24h\ndiffRetention: 24h\n"+
-			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline()/time.Second)), ""},
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second)), ""},
 		// The bound is the file's own job timeout, not the process's.
 		{"long deadline within a longer job timeout", fmt.Sprintf("tuning: {jobTimeout: {maxJobTimeout: 4h}}\n"+
-			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline()/time.Second)+1), ""}} {
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second)+1), ""},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, err := LoadSettings([]byte(tt.doc))
 			if tt.want == "" {
@@ -125,7 +125,7 @@ func TestRunnerDeadline(t *testing.T) {
 // TestRunnerDeadlineOfTheSettings: the deadline is the loaded settings'
 // own, under their tuning, not the process's, which nothing set here.
 func TestRunnerDeadlineOfTheSettings(t *testing.T) {
-	long := int64(jobtimeout.MaxRunnerDeadline()/time.Second) + 1
+	long := int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second) + 1
 	for _, tt := range []struct {
 		name, doc string
 		want      time.Duration

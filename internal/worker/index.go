@@ -23,7 +23,6 @@ import (
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -152,7 +151,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		}
 		runID, runnerRunID, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
 			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Commit: commit, Base: base, Mode: mode, Trigger: args.Trigger,
-			Embedding: *emb, IgnoreHash: ignoreHash, ResumeKey: resumeKey, StrayAfter: jobtimeout.RescueStuckJobsAfter(), JobID: job.ID,
+			Embedding: *emb, IgnoreHash: ignoreHash, ResumeKey: resumeKey, StrayAfter: tuning.Get().JobTimeout.RescueStuckJobsAfter(), JobID: job.ID,
 		})
 		return err
 	})
@@ -319,19 +318,19 @@ func (w *Index) completed(account *configfile.Account, pack store.IndexPack, n i
 }
 
 // tipCheckDelay is how long an index job waits to ask for the branch tip
-// again after the forge did not give it, with err: tuning's Worker.TipCheckWait, or until
-// the later time that GitHub's rate limit or another forge's 429 names
-// (forgeRetryAfter). The snooze replaces err, so ForgeRateLimit never sees
-// GitHub's limit here.
+// again after the forge did not give it, with err: tuning's
+// Worker.TipCheckWait, or until the later time that GitHub's rate limit or
+// another forge's 429 names (forgeRetryAfter). The snooze replaces err, so
+// ForgeRateLimit never sees GitHub's limit here.
 func tipCheckDelay(err error) time.Duration {
-	now := time.Now()
+	now, wait := time.Now(), tuning.Get().Worker.TipCheckWait
 	if d, limited := github.RetryAfter(err, now); limited {
-		return max(tuning.Get().Worker.TipCheckWait, d)
+		return max(wait, d)
 	}
 	if d, limited := forgeRetryAfter(err, now); limited {
-		return max(tuning.Get().Worker.TipCheckWait, d)
+		return max(wait, d)
 	}
-	return tuning.Get().Worker.TipCheckWait
+	return wait
 }
 
 // forgeRetryAfter is how long to wait before asking again after err, when
@@ -361,10 +360,11 @@ func forgeWait(err error, metadata []byte) (time.Duration, int) {
 	var meta struct {
 		Waits int `json:"forge_waits"`
 	}
-	if json.Unmarshal(metadata, &meta) != nil || meta.Waits >= tuning.Get().Worker.ForgeWaits {
+	w := tuning.Get().Worker
+	if json.Unmarshal(metadata, &meta) != nil || meta.Waits >= w.ForgeWaits {
 		return 0, 0
 	}
-	return store.Backoff(meta.Waits, tuning.Get().Worker.ForgeWaitMin, tuning.Get().Worker.ForgeWaitMax), meta.Waits + 1
+	return store.Backoff(meta.Waits, w.ForgeWaitMin, w.ForgeWaitMax), meta.Waits + 1
 }
 
 // clearForgeWaits clears the forge waits that metadata counts, when it
@@ -468,8 +468,9 @@ func (w *Index) lockAppliedIndexBuild(
 // restart.
 const buildWaitsKey = "build_waits"
 
-// awaitAppliedBuild snoozes the job, as its error, for tuning's Worker.AppliedBuildWait, to
-// leave it to a pod on the embedder and index format that the leader applied.
+// awaitAppliedBuild snoozes the job, as its error, for tuning's
+// Worker.AppliedBuildWait, to leave it to a pod on the embedder and index
+// format that the leader applied.
 func (w *Index) awaitAppliedBuild(ctx context.Context, job *river.Job[jobs.IndexArgs], account string, logger *slog.Logger) error {
 	var meta struct {
 		Waits int `json:"build_waits"`
@@ -482,15 +483,16 @@ func (w *Index) awaitAppliedBuild(ctx context.Context, job *river.Job[jobs.Index
 		logger.Warn("build wait not counted", "error", err)
 	}
 	w.Metrics.IndexSnoozed(account, "build")
-	if waits >= tuning.Get().Worker.BuildWaitWarn {
+	t := tuning.Get().Worker
+	if waits >= t.BuildWaitWarn {
 		logger.Warn("index has waited long for a pod on the embedder and index format the leader applied; "+
 			"check kritika_config_error for a configuration the store refused",
-			"waits", waits, "for", tuning.Get().Worker.AppliedBuildWait, "format", runspec.IndexFormat)
+			"waits", waits, "for", t.AppliedBuildWait, "format", runspec.IndexFormat)
 	} else {
 		logger.Info("index waits for a pod on the embedder and index format the leader applied",
-			"waits", waits, "for", tuning.Get().Worker.AppliedBuildWait, "format", runspec.IndexFormat)
+			"waits", waits, "for", t.AppliedBuildWait, "format", runspec.IndexFormat)
 	}
-	return river.JobSnooze(tuning.Get().Worker.AppliedBuildWait)
+	return river.JobSnooze(t.AppliedBuildWait)
 }
 
 // activeGeneration reads the repository's active generation, nil when it

@@ -34,17 +34,18 @@ type Provider struct {
 	// provider's models: a review's or a follow-up's step, the scorer's call,
 	// or a split review's summary call. It applies after an attempt failed in
 	// a way that another attempt can avoid (a 5xx, a 429, a timeout, a cut
-	// connection). It is at most tuning's ConfigFile.MaxProviderRetries, and zero tries once. A
-	// routing proxy that picks a model per request is where it earns its keep.
-	// The embedder does not use it.
+	// connection). It is at most tuning's ConfigFile.MaxProviderRetries, and
+	// zero tries once. A routing proxy that picks a model per request is
+	// where it earns its keep. The embedder does not use it.
 	Retries int `yaml:"retries,omitempty"`
 	// Concurrency is how many calls can run at once on each of the
 	// provider's models: the slots of the model that a review, a follow-up,
 	// the scorer, an index run or a fallback step takes one of. A provider
 	// of the instance has those slots once, and every account shares them.
 	// A provider that an account declares has them for that account alone.
-	// Unset, it is tuning's ConfigFile.DefaultConcurrency, or tuning's ConfigFile.DefaultAccountConcurrency for an
-	// account's own. A self-hosted server sets it to what it serves at
+	// Unset, it is tuning's ConfigFile.DefaultConcurrency, or
+	// ConfigFile.DefaultAccountConcurrency for an account's own. A
+	// self-hosted server sets it to what it serves at
 	// once; a fallback with less capacity than the review model sets its
 	// own, so an outage of the review model's provider cannot move every
 	// slot's load onto it.
@@ -52,9 +53,8 @@ type Provider struct {
 	// Timeout bounds one request to the provider for a step, the scorer's
 	// call or a split review's summary call: a request it has not answered
 	// by then fails as a timeout, which its Retries cover. Unset, it is
-	// tuning's Model.DefaultStepTimeout; it is at most tuning's
-	// ConfigFile.MaxProviderTimeout. A
-	// self-hosted model that takes longer than that over a large prompt
+	// tuning's Model.DefaultStepTimeout; it is at most
+	// ConfigFile.MaxProviderTimeout. A self-hosted model that takes longer than that over a large prompt
 	// sets what its slowest answer takes, so the step is not abandoned and
 	// sent again while the model is still at work on it. A review model's
 	// and its fallback's timeouts, with the waits between attempts, are the
@@ -132,9 +132,9 @@ type Slots struct {
 
 // Slots are the slots of ref for account t: as many as the concurrency of
 // ref's provider, shared unless the provider is the account's own. A ref of
-// a provider that t cannot reach gets tuning's ConfigFile.DefaultAccountConcurrency of the
-// account's own, so a lease on it is still possible; the call itself fails
-// on the missing adapter.
+// a provider that t cannot reach gets tuning's
+// ConfigFile.DefaultAccountConcurrency of the account's own, so a lease on
+// it is still possible; the call itself fails on the missing adapter.
 func (f *File) Slots(t *Account, ref ModelRef) Slots {
 	p, ok := f.Provider(t, ref.Provider())
 	if !ok {
@@ -151,8 +151,8 @@ func (f *File) Slots(t *Account, ref ModelRef) Slots {
 // StepBudget is what a step on ref with fallback gets at most for account t
 // (model.StepBudget): a request to ref's provider and one to fallback's,
 // or a second to ref's when fallback is empty or on ref's own provider. A
-// provider that t cannot reach gets tuning's Model.DefaultStepTimeout; the call
-// itself fails on the missing adapter.
+// provider that t cannot reach gets tuning's Model.DefaultStepTimeout; the
+// call itself fails on the missing adapter.
 func (f *File) StepBudget(t *Account, ref, fallback ModelRef) time.Duration {
 	primary := f.stepTimeout(t, ref)
 	if fallback == "" || fallback.Provider() == ref.Provider() {
@@ -322,14 +322,15 @@ func (p Provider) validate(where string) error {
 	if p.Type == ProviderChatGPT && len(p.Pricing) > 0 {
 		return fmt.Errorf("configfile: %s.pricing: a chatgpt provider is covered by a plan", where)
 	}
-	if p.Retries < 0 || p.Retries > tuning.Get().ConfigFile.MaxProviderRetries {
-		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, tuning.Get().ConfigFile.MaxProviderRetries, p.Retries)
+	t := tuning.Get().ConfigFile
+	if p.Retries < 0 || p.Retries > t.MaxProviderRetries {
+		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, t.MaxProviderRetries, p.Retries)
 	}
 	if p.Concurrency < 0 {
 		return fmt.Errorf("configfile: %s.concurrency must be positive, got %d", where, p.Concurrency)
 	}
-	if p.Timeout < 0 || p.Timeout > tuning.Get().ConfigFile.MaxProviderTimeout {
-		return fmt.Errorf("configfile: %s.timeout must be between 0 and %s, got %s", where, tuning.Get().ConfigFile.MaxProviderTimeout, p.Timeout)
+	if p.Timeout < 0 || p.Timeout > t.MaxProviderTimeout {
+		return fmt.Errorf("configfile: %s.timeout must be between 0 and %s, got %s", where, t.MaxProviderTimeout, p.Timeout)
 	}
 	if err := p.validateHeaders(where); err != nil {
 		return err

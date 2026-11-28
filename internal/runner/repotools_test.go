@@ -341,8 +341,8 @@ func standInGateway(t *testing.T, payload []byte, serve func(w http.ResponseWrit
 }
 
 // TestRepoToolsInstallAfterAStall: an attempt at the download that stalls
-// takes its own Runner.InstallTimeout, and leaves the next attempt its own: here
-// one around the cache, which the stand-in gateway refuses at once.
+// takes its own Runner.InstallTimeout, and leaves the next attempt its own:
+// here one around the cache, which the stand-in gateway refuses at once.
 func TestRepoToolsInstallAfterAStall(t *testing.T) {
 	useTestRegistry(t)
 	tuning.Override(t, func(v *tuning.Values) { v.Runner.InstallTimeout = 300 * time.Millisecond })

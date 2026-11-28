@@ -232,8 +232,8 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	}
 	// A secondary limit with primary quota left and no Retry-After is told
 	// apart from a refusal by its body alone, and waited out for
-	// tuning's GitHub.RateLimitMaxWait. A client of its own: the primary limit above holds
-	// this one's requests back until its reset.
+	// tuning's GitHub.RateLimitMaxWait. A client of its own: the primary
+	// limit above holds this one's requests back until its reset.
 	f, c = newFakeAPI(t)
 	f.mux.HandleFunc("GET /api/v3/repos/o/r/branches/secondary", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -243,8 +243,9 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 			`"documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
 	})
 	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
-	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != tuning.Get().GitHub.RateLimitMaxWait {
-		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, tuning.Get().GitHub.RateLimitMaxWait)
+	maxWait := tuning.Get().GitHub.RateLimitMaxWait
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != maxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, maxWait)
 	}
 	if c.CloneURL("o", "r") != "https://github.com/o/r.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
@@ -315,8 +316,8 @@ func TestBranchTipDoesNotWaitForTheBodyToEnd(t *testing.T) {
 }
 
 // TestBranchTipBoundsTheWaitForAnErrorBody: an error's body is read for
-// tuning's GitHub.ErrorBodyWait at most after its headers, through an App's transports,
-// whatever the caller's context. A primary rate limit whose reset is too far
+// tuning's GitHub.ErrorBodyWait at most after its headers, through an App's
+// transports, whatever the caller's context. A primary rate limit whose reset is too far
 // to wait out inline, with a body that stalls, is still told apart by its
 // headers, and returned before the caller's context ends. A secondary limit
 // whose body comes whole is still told apart by its body. The test fires the
@@ -348,8 +349,8 @@ func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
 	armed := make(chan func(), 2)
 	rt := (&App{}).limit(http.DefaultTransport)
 	rt.(*rateLimitTransport).base.(*errorBodyTransport).after = func(d time.Duration, f func()) func() bool {
-		if d != tuning.Get().GitHub.ErrorBodyWait {
-			t.Errorf("error body bounded at %s, want %s", d, tuning.Get().GitHub.ErrorBodyWait)
+		if want := tuning.Get().GitHub.ErrorBodyWait; d != want {
+			t.Errorf("error body bounded at %s, want %s", d, want)
 		}
 		armed <- f
 		return func() bool { return true }
@@ -361,8 +362,9 @@ func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
 	c := &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
 
 	_, _, err = c.BranchTip(t.Context(), "o", "r", "secondary")
-	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != tuning.Get().GitHub.RateLimitMaxWait {
-		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, tuning.Get().GitHub.RateLimitMaxWait)
+	maxWait := tuning.Get().GitHub.RateLimitMaxWait
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait != maxWait {
+		t.Fatalf("BranchTip over a secondary limit = %v, retry after %v %t; want a rate limit of %s", err, wait, limited, maxWait)
 	}
 	select {
 	case <-armed:
@@ -387,7 +389,7 @@ func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
 	if ctx.Err() != nil {
 		t.Fatalf("BranchTip of a stalled error body = %v, after the caller's context ended; want it bounded on its own", err)
 	}
-	if wait, limited := RetryAfter(err, time.Now()); !limited || wait <= tuning.Get().GitHub.RateLimitMaxWait {
+	if wait, limited := RetryAfter(err, time.Now()); !limited || wait <= maxWait {
 		t.Fatalf("BranchTip of a stalled error body = %v, retry after %v %t; want the primary limit until its reset", err, wait, limited)
 	}
 }
@@ -395,7 +397,8 @@ func TestBranchTipBoundsTheWaitForAnErrorBody(t *testing.T) {
 // TestBranchTipBoundsTheWaitForAnAcceptedBody: go-github reads the body of a
 // 202 to build its AcceptedError, so a 202 whose body stalls is bounded as an
 // error's body is, and fails before the caller's context ends. The test fires
-// the bound itself, so nothing waits for tuning's GitHub.ErrorBodyWait to pass.
+// the bound itself, so nothing waits for tuning's GitHub.ErrorBodyWait to
+// pass.
 func TestBranchTipBoundsTheWaitForAnAcceptedBody(t *testing.T) {
 	stalled := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -914,8 +917,9 @@ func TestOpenPullRequestForkDetection(t *testing.T) {
 	}
 }
 
-// TestCommentListingsAreBounded: a listing stops at tuning's GitHub.MaxListedComments
-// rather than reading a pull request's every comment into memory.
+// TestCommentListingsAreBounded: a listing stops at tuning's
+// GitHub.MaxListedComments rather than reading a pull request's every
+// comment into memory.
 func TestCommentListingsAreBounded(t *testing.T) {
 	tuning.Override(t, func(v *tuning.Values) { v.GitHub.MaxListedComments = 2 })
 	f, c := newFakeAPI(t)

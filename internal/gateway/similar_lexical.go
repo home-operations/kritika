@@ -16,12 +16,11 @@ import (
 )
 
 // lexicalWithin is how long the search by name of a request due by answerBy
-// can take, starting at now: tuning's Gateway.LexicalTimeout, which bounds
-// its first statement (store.LexicalChunks) and its looks past full files
-// together, or what is left before
-// answerBy when that is less, in whole milliseconds, which is what a
-// statement timeout takes. Under a millisecond is none, and not a timeout of
-// 0, which would not bound the search at all.
+// can take, starting at now: Gateway.LexicalTimeout, which bounds its first
+// statement (store.LexicalChunks) and its looks past full files together,
+// or what is left before answerBy when that is less, in whole milliseconds,
+// which is what a statement timeout takes. Under a millisecond is none, and
+// not a timeout of 0, which would not bound the search at all.
 func lexicalWithin(now, answerBy time.Time) time.Duration {
 	return max(min(tuning.Get().Gateway.LexicalTimeout, answerBy.Sub(now)).Truncate(time.Millisecond), 0)
 }
@@ -113,7 +112,7 @@ func pastFullNames(
 }
 
 // lexicalCommon bars the words too common to tell a generation's chunks
-// apart, as tuning's Gateway.LexicalCommonPer, LexicalCommonLeast and
+// apart, as Gateway.LexicalCommonPer, LexicalCommonLeast and
 // LexicalCommonShare say.
 func lexicalCommon() store.LexicalBar {
 	g := tuning.Get().Gateway
@@ -126,10 +125,10 @@ func lexicalCommon() store.LexicalBar {
 func lexicalAlone() int { return tuning.Get().Gateway.SimilarPerQuery }
 
 // lexicalHits finds, for each query text, the perQuery chunks that hold the
-// most weight of its Gateway.LexicalTerms longest words, outside the excluded paths:
-// its words as lexical.CodeWords has them of its language in languages, or
-// of none when languages is nil. Each hit's Matched are the query's
-// spellings of the words that the chunk holds.
+// most weight of its Gateway.LexicalTerms longest words, outside the
+// excluded paths: its words as lexical.CodeWords has them of its language
+// in languages, or of none when languages is nil. Each hit's Matched are
+// the query's spellings of the words that the chunk holds.
 func lexicalHits(
 	ctx context.Context, tx pgx.Tx, runID string, texts, languages []string, vectors [][]float32, exclude store.Exclusions, perQuery int,
 ) ([]store.SimilarHit, error) {

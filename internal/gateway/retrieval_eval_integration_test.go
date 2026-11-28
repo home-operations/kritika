@@ -63,6 +63,8 @@ import (
 // Co-change: the files that changed with its files in at least two other
 // commits of the history, of those that the index holds.
 func TestRetrievalEval(t *testing.T) {
+	defaults := tuning.Get().ConfigFile
+	gw := tuning.Get().Gateway
 	if os.Getenv("KRITIKA_RETRIEVAL_EVAL") == "" {
 		t.Skip("KRITIKA_RETRIEVAL_EVAL is not set")
 	}
@@ -80,7 +82,7 @@ func TestRetrievalEval(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reranker model.Reranker
-	candidates := tuning.Get().ConfigFile.DefaultTEIRerankCandidates
+	candidates := defaults.DefaultTEIRerankCandidates
 	rerankURL := os.Getenv("KRITIKA_EVAL_RERANK_URL")
 	if rerankURL != "" {
 		if candidates, err = evalRerankCandidatesSetting(); err != nil {
@@ -90,7 +92,7 @@ func TestRetrievalEval(t *testing.T) {
 	}
 	ix := evalIndex(t, history[window], embed, dims)
 	truth := newEvalTruth(t, ix.chunks, history[:diffed])
-	margin := tuning.Get().ConfigFile.DefaultSimilarMargin
+	margin := defaults.DefaultSimilarMargin
 	variants := []string{"vector", "lexical", "hybrid"}
 	if reranker != nil {
 		variants = append(variants, "vector+rerank", "hybrid+rerank")
@@ -145,11 +147,11 @@ func TestRetrievalEval(t *testing.T) {
 				timing.rerank += time.Since(started)
 				timing.reranks++
 			}
-			top := evalBest(kept, tuning.Get().Gateway.SimilarPerQuery)
+			top := evalBest(kept, gw.SimilarPerQuery)
 			for q, text := range queries {
 				tallies[v].addQuery(top, q, truth.defs(text, changed), truth.related([]string{paths[q]}, changed))
 			}
-			tallies[v].add(keepCandidates(kept, counts, tuning.Get().Gateway.SimilarMax, tuning.Get().Gateway.SimilarPerQuery), defs, related)
+			tallies[v].add(keepCandidates(kept, counts, gw.SimilarMax, gw.SimilarPerQuery), defs, related)
 		}
 	}
 	t.Logf("floor %.2f, margin %.2f; %s", floor, margin, timing.String())
@@ -622,9 +624,9 @@ func (s *evalTally) String() string {
 }
 
 // evalDepthSetting is KRITIKA_EVAL_DEPTH, how many hits of each query each
-// search answers without a reranker, Gateway.SimilarDepth unless set. A depth of 0
-// would find nothing, and the search by name adds store.LexicalCommonMax to
-// the depth, which must not overflow.
+// search answers without a reranker, Gateway.SimilarDepth unless set. A
+// depth of 0 would find nothing, and the search by name adds
+// store.LexicalCommonMax to the depth, which must not overflow.
 func evalDepthSetting() (int, error) {
 	return evalIntWithin("KRITIKA_EVAL_DEPTH", tuning.Get().Gateway.SimilarDepth(), math.MaxInt-store.LexicalCommonMax)
 }
@@ -673,7 +675,7 @@ func evalIntWithin(key string, def, hi int) (int, error) {
 }
 
 // evalFloorSetting is KRITIKA_EVAL_FLOOR, the similarity a vector hit needs,
-// tuning's ConfigFile.DefaultSimilarFloor unless set. It is refused outside 0 through
+// ConfigFile.DefaultSimilarFloor unless set. It is refused outside 0 through
 // 1, as embedding.similarFloor is: a NaN, which ParseFloat takes, keeps no
 // vector hit, and the replay would print an empty vector baseline.
 func evalFloorSetting() (float64, error) {
@@ -1007,21 +1009,23 @@ func TestEvalSearchesAtEachDepth(t *testing.T) {
 // that file, as the gateway's does (TestSimilarLexicalLooksPastAFullWindow),
 // and finds the other file that holds the query's names.
 func TestEvalSearchLooksPastAFullWindowByName(t *testing.T) {
+	defaults := tuning.Get().ConfigFile
+	gw := tuning.Get().Gateway
 	chunks, vectors := map[string]string{}, map[string][]float32{}
-	for i := range tuning.Get().Gateway.SimilarDepth() {
+	for i := range gw.SimilarDepth() {
 		key := fmt.Sprintf("a.go@%d", 10*i+1)
 		chunks[key], vectors[key] = "func widgetFactory() {}", e(2)
 	}
 	chunks["b.go@1"], vectors["b.go@1"] = "func widgetFactory() {}", e(2)
-	for i := range 2 * tuning.Get().Gateway.SimilarDepth() {
+	for i := range 2 * gw.SimilarDepth() {
 		key := fmt.Sprintf("other%d.go", i)
 		chunks[key], vectors[key] = fmt.Sprintf("func other%d() {}", i), e(3)
 	}
 	r := newLexicalRepo(t, "eval-lexical-full-window", runspec.IndexFormat, chunks, vectors)
 	ix := evalIndexed{st: r.st, account: r.account.ID(), run: r.run}
 	var timed evalSearchTime
-	found, err := ix.search(t.Context(), &timed, []string{"widgetFactory()"}, []string{""}, [][]float32{e(0)}, nil, tuning.Get().Gateway.SimilarDepth(),
-		tuning.Get().ConfigFile.DefaultSimilarFloor, tuning.Get().ConfigFile.DefaultSimilarMargin)
+	found, err := ix.search(t.Context(), &timed, []string{"widgetFactory()"}, []string{""}, [][]float32{e(0)}, nil, gw.SimilarDepth(),
+		defaults.DefaultSimilarFloor, defaults.DefaultSimilarMargin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1029,7 +1033,7 @@ func TestEvalSearchLooksPastAFullWindowByName(t *testing.T) {
 	for _, h := range found.named {
 		perFile[h.Chunk.Path]++
 	}
-	if want := map[string]int{"a.go": tuning.Get().Gateway.SimilarDepth(), "b.go": 1}; !maps.Equal(perFile, want) {
+	if want := map[string]int{"a.go": gw.SimilarDepth(), "b.go": 1}; !maps.Equal(perFile, want) {
 		t.Fatalf("the replay's search by name found %v, want %v", perFile, want)
 	}
 }

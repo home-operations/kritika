@@ -2,19 +2,23 @@ package runner
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/tuning"
@@ -284,38 +288,82 @@ func TestReportAgentEncoding(t *testing.T) {
 	}
 }
 
+// packSection is one file's section of a diff that adds a line of 1000
+// '<', which JSON writes as six bytes each.
+func packSection(name string) string {
+	return "diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@ -1 +1 @@\n+" +
+		strings.Repeat("<", 1000) + "\n"
+}
+
+// packBase is a context pack without its diffs.
+func packBase() runspec.ContextPack {
+	return runspec.ContextPack{Head: "head", Stages: json.RawMessage("[]"), Files: json.RawMessage("[]"), Notes: []string{}}
+}
+
 // TestFitPackDiffsToTheEncodedReport: a diff within runner.maxPackDiffBytes
-// whose JSON escaping would take its context report past
-// gateway.maxReportBody loses whole files until the report fits, and its
-// notes name them.
+// whose JSON escaping would take its context report past the limit loses
+// whole files until the report fits, and its notes name them. The report
+// returned is the pack as it is sent.
 func TestFitPackDiffsToTheEncodedReport(t *testing.T) {
-	section := func(name string) string {
-		return "diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@ -1 +1 @@\n+" +
-			strings.Repeat("<", 1000) + "\n"
-	}
-	diff := section("a.go") + section("b.go")
-	base := runspec.ContextPack{Head: "head", Stages: json.RawMessage("[]"), Files: json.RawMessage("[]"), Notes: []string{}}
-	fitted := base
-	fitted.Diff, fitted.Notes = section("a.go"), []string{fmt.Sprintf(noteDiffNotKept, 1, namePaths([]string{"b.go"}))}
+	diff := packSection("a.go") + packSection("b.go")
+	fitted := packBase()
+	fitted.Diff, fitted.Notes = packSection("a.go"), []string{fmt.Sprintf(noteDiffNotKept, 1, namePaths([]string{"b.go"}))}
 	want, err := json.Marshal(runspec.ContextReport{Pack: fitted, Phase: "reviewing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tuning.Override(t, func(v *tuning.Values) {
-		v.Runner.MaxPackDiffBytes, v.Gateway.MaxReportBody = 1<<20, tuning.ByteSize(len(want))
-	})
-	pack, cut := fitPackDiffs(base, "reviewing", diff, "")
-	got, err := json.Marshal(runspec.ContextReport{Pack: pack, Phase: "reviewing"})
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxPackDiffBytes = 1 << 20 })
+	pack, encoded, cut, err := fitPackDiffs(packBase(), "reviewing", diff, "", int64(len(want)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) > len(want) || pack.Diff != section("a.go") || len(cut) != 1 || cut[0] != "b.go" ||
-		len(pack.Notes) != 1 || !strings.Contains(pack.Notes[0], "b.go") {
-		t.Fatalf("report of %d bytes (limit %d), diff %q, cut %q, notes %q", len(got), len(want), pack.Diff, cut, pack.Notes)
+	sent, err := json.Marshal(runspec.ContextReport{Pack: pack, Phase: "reviewing"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	tuning.Override(t, func(v *tuning.Values) { v.Gateway.MaxReportBody = 1 << 20 })
-	if pack, cut := fitPackDiffs(base, "reviewing", diff, ""); pack.Diff != diff || len(cut) != 0 || len(pack.Notes) != 0 {
-		t.Fatalf("under the limit, diff %q, cut %q, notes %q; want it whole", pack.Diff, cut, pack.Notes)
+	if !bytes.Equal(encoded, sent) || len(encoded) > len(want) || pack.Diff != packSection("a.go") || len(cut) != 1 || cut[0] != "b.go" ||
+		len(pack.Notes) != 1 || !strings.Contains(pack.Notes[0], "b.go") {
+		t.Fatalf("report of %d bytes (limit %d), diff %q, cut %q, notes %q", len(encoded), len(want), pack.Diff, cut, pack.Notes)
+	}
+	if pack, _, cut, err := fitPackDiffs(packBase(), "reviewing", diff, "", 1<<20); err != nil || pack.Diff != diff || len(cut) != 0 ||
+		len(pack.Notes) != 0 {
+		t.Fatalf("under the limit, diff %q, cut %q, notes %q, %v; want it whole", pack.Diff, cut, pack.Notes, err)
+	}
+}
+
+// TestSendContextFitsTheReplicasLimit: a replica of a rollout whose limit
+// on a context report is below the runner's gateway.maxReportBody refuses
+// the report as too large, naming its limit, and gets it again fitted to
+// that limit.
+func TestSendContextFitsTheReplicasLimit(t *testing.T) {
+	fastRetries(t, time.Minute)
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxPackDiffBytes, v.Gateway.MaxReportBody = 1<<20, 1<<20 })
+	diff := packSection("a.go") + packSection("b.go")
+	_, small, _, err := fitPackDiffs(packBase(), "reviewing", packSection("a.go"), "", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limit := int64(len(small) + 512)
+	var mu sync.Mutex
+	var sizes []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+		mu.Lock()
+		sizes = append(sizes, len(body))
+		mu.Unlock()
+		if err != nil {
+			w.Header().Set(runspec.ReportLimitHeader, strconv.FormatInt(limit, 10))
+			http.Error(w, "too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	err = sendContext(t.Context(), &reporter{gatewayURL: srv.URL}, packBase(), "reviewing", diff, "", slog.New(slog.DiscardHandler))
+	mu.Lock()
+	defer mu.Unlock()
+	if err != nil || len(sizes) != 2 || int64(sizes[1]) > limit {
+		t.Fatalf("sendContext = %v after sends of %v bytes, want a second send within %d", err, sizes, limit)
 	}
 }
 
@@ -363,5 +411,35 @@ func TestReportIndexRefusesWhatTheGatewayWould(t *testing.T) {
 				t.Fatalf("index = %v after %d sends, want it refused naming %q, unsent", err, sends.Load(), tt.says)
 			}
 		})
+	}
+}
+
+// TestReportFailureFitsTheSmallReport: a cause within runner.maxFailureCause
+// whose JSON escaping would take its report past gateway.maxSmallReport is
+// cut, at a rune boundary, until the gateway takes it.
+func TestReportFailureFitsTheSmallReport(t *testing.T) {
+	fastRetries(t, time.Minute)
+	const limit = 1 << 10
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxFailureCause, v.Gateway.MaxSmallReport = 8<<10, limit })
+	var mu sync.Mutex
+	var got runspec.FailureReport
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(&got); err != nil {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	cause := strings.Repeat("<€", 1<<10)
+	if err := (&reporter{gatewayURL: srv.URL}).failure(t.Context(), cause); err != nil {
+		t.Fatalf("failure = %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got.Cause == "" || !strings.HasPrefix(cause, got.Cause) || !utf8.ValidString(got.Cause) {
+		t.Fatalf("cause = %q, want a valid prefix of the cause", got.Cause)
 	}
 }

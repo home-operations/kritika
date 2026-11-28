@@ -39,9 +39,7 @@ type Events struct {
 }
 
 // eventController is the controller that every Event kritika records names
-// as reporting it. The longest reporting instance and note one holds, and how
-// long its write can take, are tuning's Executor.EventInstanceBytes,
-// EventNoteBytes and EventTimeout.
+// as reporting it.
 const eventController = "kritika"
 
 // NewEvents records Events in namespace as the replica of pod podName,
@@ -108,12 +106,14 @@ func (e *Events) record(ctx context.Context, regarding corev1.ObjectReference, w
 	if warning {
 		eventType = corev1.EventTypeWarning
 	}
+	// A limit with no room for Truncate's note gets a plain prefix.
+	most := int(tuning.Get().Executor.EventNoteBytes)
+	note = textcut.Prefix(textcut.Truncate(note, most), most)
 	now := time.Now()
 	event := &eventsv1.Event{
 		Name: recordutil.GenerateEventName(regarding.Name, now.UnixNano()), Namespace: e.namespace,
 		EventTime: metav1.NewMicroTime(now), ReportingController: eventController, ReportingInstance: e.instance,
-		Action: action, Reason: reason, Regarding: regarding, Type: eventType,
-		Note: textcut.Truncate(note, int(tuning.Get().Executor.EventNoteBytes)),
+		Action: action, Reason: reason, Regarding: regarding, Note: note, Type: eventType,
 	}
 	if _, err := e.client.EventsV1().Events(e.namespace).Create(ctx, event, metav1.CreateOptions{}); err != nil {
 		e.logger.Warn("event not recorded", "object", regarding.Kind+"/"+regarding.Name, "reason", reason, "error", err)

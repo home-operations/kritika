@@ -36,11 +36,12 @@ type retentionStore interface {
 // diffs past their own retention window, and the paths that finished runs'
 // similar-code searches left out. It also deletes the indexes of
 // repositories that the configuration did not run for longer than its index
-// grace, and agent conversations older than tuning's Worker.ConversationRetention. It also
-// partitions an index table that a build before partitioning created. It
-// moves the chunks that its legacy partition holds to the hash partitions,
-// or deletes those that no build needs, and drops the emptied partition.
-// With the app pool, it deletes expired dashboard sessions. A leader duty.
+// grace, and agent conversations older than tuning's
+// Worker.ConversationRetention. It also partitions an index table that a build
+// before partitioning created. It moves the chunks that its legacy partition
+// holds to the hash partitions, or deletes those that no build needs, and
+// drops the emptied partition. With the app pool, it deletes expired dashboard
+// sessions. A leader duty.
 type Retention struct {
 	Store   retentionStore
 	Current *configfile.Current
@@ -58,9 +59,10 @@ type Retention struct {
 	every time.Duration
 }
 
-// Run sweeps once immediately, then every tuning's Worker.RetentionSweepInterval until ctx
-// ends, and once more when IndexReady closes. A sweep failure is logged,
-// never fatal: it just leaves stale rows for the next tick.
+// Run sweeps once immediately, then every tuning's
+// Worker.RetentionSweepInterval until ctx ends, and once more when IndexReady
+// closes. A sweep failure is logged, never fatal: it just leaves stale rows
+// for the next tick.
 //
 // The legacy index partition's conversion and drain run in a loop of their
 // own (migrateIndex), which Run waits for before it returns. A drain goes on

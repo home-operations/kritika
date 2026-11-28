@@ -225,6 +225,9 @@ func TestCheckConfig(t *testing.T) {
 		// The sum, River's RescueStuckJobsAfter, would wrap negative.
 		{name: "rescue wait past a duration", raw: admin + "webUrl: https://kritika.example.com\ntuning: {jobTimeout: {rescueGrace: 2562047h}}\n",
 			wantErr: "KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE together must not exceed"},
+		// The sum, what serve waits for the queues to stop, would wrap negative.
+		{name: "queue stop past a duration", raw: admin + "webUrl: https://kritika.example.com\ntuning: {process: {queueDrain: 2562047h, queueStopHeadroom: 2h}}\n",
+			wantErr: "KRITIKA_TUNING_PROCESS_QUEUE_STOP_HEADROOM together must not exceed"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// A check needs neither the database nor KRITIKA_CONFIG_FILE.

@@ -612,9 +612,8 @@ func (r Run) takeSubmission(
 }
 
 // step sends req, and sends it again after each of tuning's
-// Agent.StepRetryWaits while the
-// failure is transient and ctx lives. It says how long the last attempt took.
-// The waits between attempts are not the model's. If they counted, a Run
+// Agent.StepRetryWaits while the failure is transient and ctx lives. It says
+// how long the last attempt took. The waits between attempts are not the model's. If they counted, a Run
 // keeps far more time to submit in than a submission takes. A req not told to
 // submit, forced false, is not sent again into the time that c keeps to
 // submit in. A wait ends where that time starts, and step returns errWrapUp.

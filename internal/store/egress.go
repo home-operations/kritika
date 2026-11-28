@@ -21,10 +21,10 @@ type EgressRefusal struct {
 
 // RecordEgressRefusal counts r against its run: a row for the first
 // refusal of a host for a reason, and that row's count after. It reports
-// false when the run already has tuning's Store.RefusalsPerRun rows and this refusal will
-// otherwise be another. The run's refusals are recorded one at a time, under an
-// advisory lock that the transaction holds. So two at once cannot both pass
-// the bound.
+// false when the run already has tuning's Store.RefusalsPerRun rows and this
+// refusal will otherwise be another. The run's refusals are recorded one at a
+// time, under an advisory lock that the transaction holds. So two at once
+// cannot both pass the bound.
 func RecordEgressRefusal(ctx context.Context, tx pgx.Tx, r EgressRefusal) (bool, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('egress_refusals:' || $1::text, 0))`, r.RunID); err != nil {
 		return false, fmt.Errorf("store: record egress refusal: %w", err)

@@ -636,12 +636,12 @@ func TestPollerPausesTipChecksAtAnInstallationsDiscoveryRateLimit(t *testing.T) 
 // TestPollerBacksOffAfterAnIndexJobThatPublishedNothing: an index job that
 // ended without bringing the index to the tip, failed or skipped because
 // the repository's .kritika.yaml turns indexing off, will end so again. So
-// the poll leaves the branch alone for tuning's Jobs.OnboardRetryAfter after it, as
-// the onboarding feeder does a repository whose first index failed. A job
-// that published and then failed or found indexing off at a newer tip ended
-// so too, as did a forced rebuild's catch-up that failed. One that found the
-// index at the tip did not, whatever commit it was queued for. The last job
-// to end is the one that counts.
+// the poll leaves the branch alone for tuning's Jobs.OnboardRetryAfter after
+// it, as the onboarding feeder does a repository whose first index failed. A
+// job that published and then failed or found indexing off at a newer tip
+// ended so too, as did a forced rebuild's catch-up that failed. One that found
+// the index at the tip did not, whatever commit it was queued for. The last
+// job to end is the one that counts.
 func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	for _, tc := range []struct {
@@ -720,10 +720,10 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 
 // TestPollerChecksTipsHourlyWhileWebhooksArrive: while the connection's
 // webhooks arrive, a push webhook is rarely missed, so the default branches
-// are looked at once every tuning's Poller.TipCheckInterval, not every poll: a check costs a
-// request per indexed repository. A connection whose webhooks have been
-// silent for the poll lookback, or never arrived, has them looked at every
-// poll. A newly elected leader looks at once.
+// are looked at once every tuning's Poller.TipCheckInterval, not every poll:
+// a check costs a request per indexed repository. A connection whose webhooks
+// have been silent for the poll lookback, or never arrived, has them looked at
+// every poll. A newly elected leader looks at once.
 func TestPollerChecksTipsHourlyWhileWebhooksArrive(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.tf.tip = "indexed"
@@ -1082,9 +1082,10 @@ func TestPollerResumesTheAccountASharedRateLimitRefused(t *testing.T) {
 // that the rate limit cuts short waits the limit out, and then resumes at
 // the branch it stopped at, even while webhooks arrive. So looks that the
 // limit cuts short every time still come round to every repository. The
-// sweep ends at the last one, not round again, and the next waits
-// tuning's Poller.TipCheckInterval while webhooks arrive. The looks' clock is the test's, so
-// a look within the limit's wait is one however long the polls take.
+// sweep ends at the last one, not round again, and the next waits tuning's
+// Poller.TipCheckInterval while webhooks arrive. The looks' clock is the
+// test's, so a look within the limit's wait is one however long the polls
+// take.
 func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops", "onedr0p/talos")
 	s.webhooks(t, true)
@@ -1884,10 +1885,10 @@ func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
 }
 
 // TestPollerReadsNoRepositoryForALookNotDue: a look at an account's default
-// branches that is not due, while webhooks arrive and within
-// tuning's Poller.TipCheckInterval of the last sweep, reads neither the repositories nor
-// their index jobs. A lock that holds every reader of the jobs back must not
-// hold it back.
+// branches that is not due, while webhooks arrive and within tuning's
+// Poller.TipCheckInterval of the last sweep, reads neither the repositories
+// nor their index jobs. A lock that holds every reader of the jobs back must
+// not hold it back.
 func TestPollerReadsNoRepositoryForALookNotDue(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.webhooks(t, true)

@@ -160,7 +160,8 @@ func TestNewClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != tuning.Get().Forgejo.RunnerTokenTTL+tuning.Get().Forgejo.TokenSkew {
+	ft := tuning.Get().Forgejo
+	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != ft.RunnerTokenTTL+ft.TokenSkew {
 		t.Fatalf("runner token claims = %+v", claims)
 	}
 	c, _ = NewClient("forge.example.com", issuer, "aud-api", "", nil)
@@ -588,15 +589,16 @@ func TestReactions(t *testing.T) {
 
 func TestListOpenPullRequests(t *testing.T) {
 	f := newFake(t)
+	pageSize := tuning.Get().Forgejo.PageSize
 	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if q.Get("state") != "open" || q.Get("sort") != "recentupdate" || q.Get("limit") != fmt.Sprint(tuning.Get().Forgejo.PageSize) {
+		if q.Get("state") != "open" || q.Get("sort") != "recentupdate" || q.Get("limit") != fmt.Sprint(pageSize) {
 			t.Errorf("query = %v", q)
 		}
 		var page []map[string]any
 		switch q.Get("page") {
 		case "1":
-			for i := range tuning.Get().Forgejo.PageSize {
+			for i := range pageSize {
 				page = append(page, map[string]any{"number": 100 - i, "updated_at": time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC).Add(-time.Duration(i) * time.Minute).Format(time.RFC3339),
 					"user": map[string]any{"login": "x"}})
 			}
@@ -607,13 +609,38 @@ func TestListOpenPullRequests(t *testing.T) {
 	})
 	c := f.client(t)
 	all, err := c.ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
-	if err != nil || len(all) != tuning.Get().Forgejo.PageSize+1 || all[0].Number != 100 || all[tuning.Get().Forgejo.PageSize].Number != 1 {
+	if err != nil || len(all) != pageSize+1 || all[0].Number != 100 || all[pageSize].Number != 1 {
 		t.Fatalf("ListOpenPullRequests(all) = %d, %v", len(all), err)
 	}
 	since := time.Date(2026, 10, 20, 11, 50, 0, 0, time.UTC)
 	recent, err := c.ListOpenPullRequests(t.Context(), "acme", "widgets", since)
-	if err != nil || len(recent) != 11 || f.called("GET "+repoAPI+"/pulls") != 3 {
+	// The walk of all reads on to an empty third page. The walk since stops
+	// at its first page.
+	if err != nil || len(recent) != 11 || f.called("GET "+repoAPI+"/pulls") != 4 {
 		t.Fatalf("ListOpenPullRequests(since) = %d, %v, calls %d; want the walk to stop at the first older one", len(recent), err, f.called("GET "+repoAPI+"/pulls"))
+	}
+}
+
+// TestListHeaderlessCappedPages: without a Link or an X-Total-Count, a short
+// page is not taken for the last. The walk goes on to an empty page.
+func TestListHeaderlessCappedPages(t *testing.T) {
+	f := newFake(t)
+	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var page []map[string]any
+		switch r.URL.Query().Get("page") {
+		case "1":
+			page = []map[string]any{
+				{"number": 3, "updated_at": "2026-10-20T12:00:00Z", "user": map[string]any{"login": "x"}},
+				{"number": 2, "updated_at": "2026-10-20T11:00:00Z", "user": map[string]any{"login": "x"}},
+			}
+		case "2":
+			page = []map[string]any{{"number": 1, "updated_at": "2026-10-20T10:00:00Z", "user": map[string]any{"login": "x"}}}
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	})
+	all, err := f.client(t).ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
+	if err != nil || len(all) != 3 || f.called("GET "+repoAPI+"/pulls") != 3 {
+		t.Fatalf("ListOpenPullRequests = %d, %v after %d calls; want all 3 by an empty third page", len(all), err, f.called("GET "+repoAPI+"/pulls"))
 	}
 }
 

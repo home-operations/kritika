@@ -42,8 +42,8 @@ type watches struct {
 // replica asking after every run in flight. Start returns once the API lets
 // it watch both and both are listed, and it waits at most tuning's
 // Executor.WatchSync. ctx bounds that wait alone: the watch outlasts ctx,
-// which a signal ends while runs still drain. It watches the role label's Jobs and pods alone, never a
-// Secret.
+// which a signal ends while runs still drain. It watches the role label's
+// Jobs and pods alone, never a Secret.
 func (k *Kube) Start(ctx context.Context) error {
 	within := tuning.Get().Executor.WatchSync
 	sctx, cancel := context.WithTimeout(ctx, within)

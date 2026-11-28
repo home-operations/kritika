@@ -139,8 +139,7 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 }
 
 // What Refused keeps of a refused destination: the host alone, within what a
-// name can be. How long its write can take is tuning's
-// Gateway.RefusedWriteTimeout.
+// name can be.
 const refusedHostBytes = 253
 
 // Refused records a refused proxy request against the run whose token

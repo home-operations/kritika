@@ -268,6 +268,7 @@ func TestBuildIncrementalChecked(t *testing.T) {
 }
 
 func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
+	charsPerToken := tuning.Get().Review.CharsPerToken
 	in := incrementalInput()
 	full, _, _, _ := Build(in)
 	contextAt := strings.Index(full, "\n\nContext (not part")
@@ -296,10 +297,10 @@ func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.in.BudgetTokens = tc.budgetChars / tuning.Get().Review.CharsPerToken
+			tc.in.BudgetTokens = tc.budgetChars / charsPerToken
 			msg, omitted, contextOmitted, _ := Build(tc.in)
-			if len(msg) > tc.in.BudgetTokens*tuning.Get().Review.CharsPerToken {
-				t.Fatalf("message is %d chars, over the budget of %d", len(msg), tc.in.BudgetTokens*tuning.Get().Review.CharsPerToken)
+			if len(msg) > tc.in.BudgetTokens*charsPerToken {
+				t.Fatalf("message is %d chars, over the budget of %d", len(msg), tc.in.BudgetTokens*charsPerToken)
 			}
 			if len(omitted) != 0 {
 				t.Fatalf("the diff must stay whole, omitted %v", omitted)
@@ -338,6 +339,7 @@ func TestPriorFindingsAreFramedAsData(t *testing.T) {
 }
 
 func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
+	charsPerToken := tuning.Get().Review.CharsPerToken
 	in := incrementalInput()
 	var diff strings.Builder
 	changed := make([]string, 0, 300)
@@ -363,8 +365,8 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	if !strings.Contains(msg, deltaOmitted) || !strings.Contains(msg, priorPrefix("main.go", "y changed")) {
 		t.Fatalf("missing the delta's omission note or the earlier finding after %d omitted files:\n%s", len(omitted), msg[len(msg)-1500:])
 	}
-	if len(msg) > in.BudgetTokens*tuning.Get().Review.CharsPerToken {
-		t.Fatalf("message of %d chars exceeds the budget of %d", len(msg), in.BudgetTokens*tuning.Get().Review.CharsPerToken)
+	if len(msg) > in.BudgetTokens*charsPerToken {
+		t.Fatalf("message of %d chars exceeds the budget of %d", len(msg), in.BudgetTokens*charsPerToken)
 	}
 }
 
@@ -372,6 +374,7 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 // budget is still shown the last review's findings. The diff gives way to
 // them up to a quarter of the budget.
 func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
+	bodyShare := tuning.Get().Review.BodyShare
 	var diff strings.Builder
 	for i := range 200 {
 		fmt.Fprintf(&diff, "diff --git a/f%03d.go b/f%03d.go\n--- a/f%03d.go\n+++ b/f%03d.go\n@@ -1 +1,2 @@\n x\n+%s\n",
@@ -409,9 +412,9 @@ func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
 			}
 			const more = " more finding(s) from the last review omitted to fit the prompt budget]\n"
 			end := strings.Index(msg, more)
-			if (end >= 0) != tc.cut || (tc.cut && end+len(more)-start > budget/tuning.Get().Review.BodyShare) {
+			if (end >= 0) != tc.cut || (tc.cut && end+len(more)-start > budget/bodyShare) {
 				t.Fatalf("the earlier findings take %d characters, cut %v; want them cut %v within %d", end+len(more)-start, end >= 0, tc.cut,
-					budget/tuning.Get().Review.BodyShare)
+					budget/bodyShare)
 			}
 		})
 	}

@@ -524,7 +524,8 @@ func TestVerifyMinisign(t *testing.T) {
 // TestVerifyMinisignWholeMessage: a signature of the message itself, not
 // prehashed, is checked over the whole of it. A message over both the
 // download's and the checksum file's limits is refused, never verified in
-// part, and one at the larger of them is verified.
+// part, even when the part within the limit is what was signed, and one at
+// the larger of them is verified.
 func TestVerifyMinisignWholeMessage(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -540,16 +541,20 @@ func TestVerifyMinisignWholeMessage(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		download int
+		read     []byte
 		fails    bool
 	}{
-		{"at the larger limit", len(message), false},
-		{"one byte over both", len(message) - 1, true},
+		{"at the larger limit", len(message), message, false},
+		{"one byte over both", len(message) - 1, message, true},
+		// The signed bytes are the limit's whole, so a check of the prefix
+		// alone would pass.
+		{"a signed message and an unsigned byte past the limit", len(message), append(bytes.Clone(message), 'x'), true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tuning.Override(t, func(v *tuning.Values) {
 				v.Aqua.MaxDownloadBytes, v.Aqua.MaxChecksumFileBytes = tuning.ByteSize(tt.download), 16
 			})
-			err := verifyMinisign(key, sig, bytes.NewReader(message))
+			err := verifyMinisign(key, sig, bytes.NewReader(tt.read))
 			if (err != nil) != tt.fails {
 				t.Fatalf("verifyMinisign error = %v, want a failure: %v", err, tt.fails)
 			}

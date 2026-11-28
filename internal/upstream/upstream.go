@@ -111,8 +111,7 @@ type Result struct {
 
 // MissingPath is a path a fetch asked for that the tree has nothing under,
 // with the tree's paths that end in it, at most tuning's Upstream.NearMax:
-// where a path
-// given by its last segments is.
+// where a path given by its last segments is.
 type MissingPath struct {
 	Path string
 	Near []string

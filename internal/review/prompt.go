@@ -3,6 +3,7 @@ package review
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -143,7 +144,8 @@ func ListedBumps(bumps []Bump) []Bump {
 }
 
 // writeBumps lists the versions a change moves, each on the
-// line that moves it, as many as tuning's Review.MaxBumpsBytes holds, and counts the rest.
+// line that moves it, as many as tuning's Review.MaxBumpsBytes holds, and
+// counts the rest.
 func writeBumps(b *strings.Builder, bumps, delta []Bump) {
 	if len(bumps) == 0 {
 		return
@@ -159,13 +161,30 @@ func writeBumps(b *strings.Builder, bumps, delta []Bump) {
 }
 
 // UserBudget is the user message's share of a prompt budget of budget tokens,
-// tuning's Review.DefaultBudgetTokens when zero. It is what remains once the system prompt,
-// whose rules and skills vary in size, is paid for. It is never under
-// tuning's Review.MinUserBudget. Otherwise, a small budget and long instructions leave it
-// nothing, or less.
+// tuning's Review.DefaultBudgetTokens when zero. It is what remains once the
+// system prompt, whose rules and skills vary in size, is paid for. It is never
+// under tuning's Review.MinUserBudget. Otherwise, a small budget and long
+// instructions leave it nothing, or less.
 func UserBudget(system string, budget int) int {
 	r := tuning.Get().Review
-	return max(cmp.Or(budget, r.DefaultBudgetTokens)-(len(system)+r.CharsPerToken-1)/r.CharsPerToken, r.MinUserBudget)
+	systemTokens := len(system) / r.CharsPerToken
+	if len(system)%r.CharsPerToken != 0 {
+		systemTokens++
+	}
+	return max(cmp.Or(budget, r.DefaultBudgetTokens)-systemTokens, r.MinUserBudget)
+}
+
+// tokenBytes is tokens in bytes, at tuning's Review.CharsPerToken. A budget
+// too large to multiply out, as an override can set, is the largest int.
+func tokenBytes(tokens int) int {
+	perToken := tuning.Get().Review.CharsPerToken
+	switch {
+	case tokens <= 0:
+		return 0
+	case tokens > math.MaxInt/perToken:
+		return math.MaxInt
+	}
+	return tokens * perToken
 }
 
 // Build renders the user message within the budget. When the diff does not
@@ -200,7 +219,7 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 	}
 	writeBumps(&b, in.Bumps, deltaBumps)
 	r := tuning.Get().Review
-	budget := cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens) * r.CharsPerToken
+	budget := tokenBytes(cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens))
 	writeDescription(&b, in.Body, budget/r.BodyShare)
 	writeIssues(&b, in.Issues, budget/r.BodyShare)
 	b.WriteString(diffLead)
@@ -278,10 +297,11 @@ func SameBrief(opening string, in Input) bool {
 			start = i
 		}
 	}
+	r := tuning.Get().Review
+	budget := tokenBytes(cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens))
 	var now strings.Builder
-	budget := cmp.Or(in.BudgetTokens, tuning.Get().Review.DefaultBudgetTokens) * tuning.Get().Review.CharsPerToken
-	writeDescription(&now, in.Body, budget/tuning.Get().Review.BodyShare)
-	writeIssues(&now, in.Issues, budget/tuning.Get().Review.BodyShare)
+	writeDescription(&now, in.Body, budget/r.BodyShare)
+	writeIssues(&now, in.Issues, budget/r.BodyShare)
 	return opening[start:end] == now.String()
 }
 
@@ -311,9 +331,9 @@ const reReviewLead = "\n\nThis is a re-review: the last review set the bar, so r
 const anchorsAbove = "findings anchor to the pull request's diff, not to this one"
 
 // omissionNote is the note, per format, on the files a diff left out:
-// their count and the list of them, as many as fit in tuning's Review.OmissionRoom, the
-// rest counted. The note takes every path the first one, so a path alone
-// can exceed the room. It is "" when nothing was omitted.
+// their count and the list of them, as many as fit in tuning's
+// Review.OmissionRoom, the rest counted. The note takes every path the first
+// one, so a path alone can exceed the room. It is "" when nothing was omitted.
 func omissionNote(format string, omitted []string) string {
 	if len(omitted) == 0 {
 		return ""
@@ -454,11 +474,12 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 	b.WriteString(reReviewLead)
 	writeBumps(&b, in.Bumps, Bumps(in.DeltaDiff))
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
-	budget := cmp.Or(in.BudgetTokens, tuning.Get().Review.DefaultBudgetTokens) * tuning.Get().Review.CharsPerToken
-	references, referencesOmitted := referenceSection(in.References, min(budget/tuning.Get().Review.BodyShare, budget-b.Len()-len(closing)))
+	r := tuning.Get().Review
+	budget := tokenBytes(cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens))
+	references, referencesOmitted := referenceSection(in.References, min(budget/r.BodyShare, budget-b.Len()-len(closing)))
 	budget -= len(references)
-	earlier := priorSection(in.PriorHeadSHA, in.Prior, budget-b.Len()-len(closing)-tuning.Get().Review.OmissionRoom)
-	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(earlier)-len(closing)-tuning.Get().Review.OmissionRoom)
+	earlier := priorSection(in.PriorHeadSHA, in.Prior, budget-b.Len()-len(closing)-r.OmissionRoom)
+	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(earlier)-len(closing)-r.OmissionRoom)
 	b.WriteString(delta)
 	b.WriteString(omissionNote("\n[%d file(s) of the diff since your last review were omitted to fit the prompt budget: %s; "+
 		"read them with your tools]\n", omitted))
@@ -526,9 +547,10 @@ func priorSection(head string, findings []Finding, room int) string {
 		}
 		return b.String()
 	}
+	noteRoom := tuning.Get().Review.NoteRoom
 	for i, l := range lines {
-		if b.Len()+len(l) > room-tuning.Get().Review.NoteRoom {
-			if b.Len()+tuning.Get().Review.NoteRoom <= room {
+		if b.Len()+len(l) > room-noteRoom {
+			if b.Len()+noteRoom <= room {
 				fmt.Fprintf(&b, "[%d more finding(s) from the last review omitted to fit the prompt budget]\n", len(lines)-i)
 			}
 			break
@@ -627,9 +649,9 @@ func writeDescription(b *strings.Builder, body string, limit int) {
 }
 
 // CleanFocus is text as a review's focus carries it: its first line, its
-// control characters dropped, its spacing collapsed and cut to tuning's Review.MaxFocusRunes.
-// Whoever can ask for a review writes it, so the prompt frames it as their
-// words. This keeps it one line of them.
+// control characters dropped, its spacing collapsed and cut to tuning's
+// Review.MaxFocusRunes. Whoever can ask for a review writes it, so the prompt
+// frames it as their words. This keeps it one line of them.
 func CleanFocus(text string) string {
 	text, _, _ = strings.Cut(strings.TrimSpace(text), "\n")
 	text = strings.Join(strings.Fields(text), " ")
@@ -639,8 +661,8 @@ func CleanFocus(text string) string {
 		}
 		return r
 	}, text)
-	if runes := []rune(text); len(runes) > tuning.Get().Review.MaxFocusRunes {
-		text = strings.TrimSpace(string(runes[:tuning.Get().Review.MaxFocusRunes]))
+	if most, runes := tuning.Get().Review.MaxFocusRunes, []rune(text); len(runes) > most {
+		text = strings.TrimSpace(string(runes[:most]))
 	}
 	return text
 }

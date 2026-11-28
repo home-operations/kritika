@@ -158,10 +158,10 @@ func quotes(text, quote string) bool {
 // rules must carry: a quote that is a passage of a rule it cites, as quotes
 // says. Check refuses a submission with a finding that lacks this quote. It
 // names every such finding so that a run told to submit can correct them all
-// in the steps left to it. It does this up to tuning's Review.MaxQuoteRefusals times. Drop
-// then removes them from the submission that the run ends with. So a finding
-// that enforces a rule that the model made up, or misread, goes back to the
-// model rather than to the author. It never posts.
+// in the steps left to it. It does this up to tuning's Review.MaxQuoteRefusals
+// times. Drop then removes them from the submission that the run ends with. So
+// a finding that enforces a rule that the model made up, or misread, goes back
+// to the model rather than to the author. It never posts.
 type QuoteGate struct {
 	rules   []Rule
 	refused int

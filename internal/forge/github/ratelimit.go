@@ -17,8 +17,7 @@ import (
 // is GitHub's rate limit from REST or GraphQL. The wait lasts until the
 // primary limit resets, with the second of grace that rateLimitWait gives. Or
 // it lasts for the secondary limit's Retry-After, or tuning's
-// GitHub.RateLimitMaxWait when
-// that limit names none. A 403 or 429 that go-github does not know for a
+// GitHub.RateLimitMaxWait when that limit names none. A 403 or 429 that go-github does not know for a
 // limit, as one whose body names no secondary limit, is one still when it
 // names a Retry-After, and lasts for that. A job retried sooner only spends
 // an attempt. The REST client also refuses requests locally until its limit
@@ -32,15 +31,18 @@ func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 		// own header goes first. One that names no wait gets the fallback,
 		// not go-github's reading of it. A refusal that go-github makes
 		// itself, before a request, carries no header.
+		maxWait := tuning.Get().GitHub.RateLimitMaxWait
+		var v string
 		if e.Response != nil {
-			if v := e.Response.Header.Get(retryafter.Header); v != "" {
-				if wait, ok := retryafter.Parse(v, now); ok {
-					return wait, true
-				}
-				return max(tuning.Get().GitHub.RateLimitMaxWait, retryafter.Floor), true
-			}
+			v = e.Response.Header.Get(retryafter.Header)
 		}
-		return max(cmp.Or(e.GetRetryAfter(), tuning.Get().GitHub.RateLimitMaxWait), retryafter.Floor), true
+		if v == "" {
+			return max(cmp.Or(e.GetRetryAfter(), maxWait), retryafter.Floor), true
+		}
+		if wait, ok := retryafter.Parse(v, now); ok {
+			return wait, true
+		}
+		return max(maxWait, retryafter.Floor), true
 	}
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil && e.Response.Header.Get(retryafter.Header) != "" {
 		return rateLimitWait(e.Response, now)

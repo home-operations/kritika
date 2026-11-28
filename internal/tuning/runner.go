@@ -12,8 +12,10 @@ import (
 // is encoded.
 type RunSpec struct {
 	// HeartbeatInterval is how often a runner stamps
-	// runner_runs.heartbeat_at. The worker's staleness threshold is
-	// several of these.
+	// runner_runs.heartbeat_at. The worker counts a run stale after
+	// reportRetryWindow + reportTimeout + 2 × heartbeatInterval
+	// (Values.HeartbeatStale), so the report settings dominate it at the
+	// defaults.
 	HeartbeatInterval time.Duration `env:"KRITIKA_TUNING_RUN_SPEC_HEARTBEAT_INTERVAL" envDefault:"15s" yaml:"heartbeatInterval,omitempty"`
 	// MaxBytes bounds an encoded spec, and it leaves the Secret room for
 	// the git and gateway tokens. It can be lowered and not raised: a runner
@@ -26,15 +28,16 @@ type RunSpec struct {
 	// MaxPriorFindings is how many of the last review's findings a spec
 	// carries, and how many dismissed ones.
 	MaxPriorFindings int `env:"KRITIKA_TUNING_RUN_SPEC_MAX_PRIOR_FINDINGS" envDefault:"200" yaml:"maxPriorFindings,omitempty"`
-	// MaxBodyBytes bounds the pull request body a spec carries. JSON can
-	// encode each '<' as a six-byte Unicode escape, so encoding can grow
-	// the body sixfold. MaxBytes holds that at the defaults; an override
-	// must leave room under MaxBytes for that growth and the rest of the
-	// spec.
+	// MaxBodyBytes is the raw cap on the pull request body a spec carries,
+	// before it is encoded. When the encoded prompt is over maxPromptBytes,
+	// Prompt.Trim drops prior and dismissed findings and then shortens the
+	// issue and pull request bodies until it fits. maxBytes is the separate
+	// final limit on the encoded spec.
 	MaxBodyBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_BODY_BYTES" envDefault:"64Ki" yaml:"maxBodyBytes,omitempty"`
-	// MaxIssueBytes bounds each linked issue's body a spec carries: the
-	// prompt shows a few thousand characters of one, and three worst-case
-	// issues must leave the body and the findings their room.
+	// MaxIssueBytes is the raw cap on each linked issue's body a spec
+	// carries: the prompt shows a few thousand characters of one. Prompt.Trim
+	// shortens issue bodies, as it does the pull request's, when the encoded
+	// prompt is still over maxPromptBytes once the findings are dropped.
 	MaxIssueBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_ISSUE_BYTES" envDefault:"16Ki" yaml:"maxIssueBytes,omitempty"`
 	// ReportRetryWindow is how long a runner starts new attempts at a
 	// report while the gateway is out of reach, and ReportTimeout how long
@@ -159,7 +162,9 @@ type Runner struct {
 	// can wait for the account's embedding slot.
 	SimilarTimeout time.Duration `env:"KRITIKA_TUNING_RUNNER_SIMILAR_TIMEOUT" envDefault:"1m" yaml:"similarTimeout,omitempty"`
 	// MaxSimilarAnswerBody bounds the gateway's answer to a similar-code
-	// request: contextPack.similarLimit chunks.
+	// request, as JSON encodes it: contextPack.similarLimit chunks, their
+	// text escaped at worst. The gateway leaves its lowest ranked chunks out
+	// of an answer that would pass it.
 	MaxSimilarAnswerBody ByteSize `env:"KRITIKA_TUNING_RUNNER_MAX_SIMILAR_ANSWER_BODY" envDefault:"1Mi" yaml:"maxSimilarAnswerBody,omitempty"`
 	// SimilarReportWindow bounds what a run spends, before it searches, on
 	// learning whether its repository has an index and reporting its
@@ -205,7 +210,9 @@ type Runner struct {
 	ReportBackoff    time.Duration `env:"KRITIKA_TUNING_RUNNER_REPORT_BACKOFF" envDefault:"1s" yaml:"reportBackoff,omitempty"`
 	ReportMaxBackoff time.Duration `env:"KRITIKA_TUNING_RUNNER_REPORT_MAX_BACKOFF" envDefault:"15s" yaml:"reportMaxBackoff,omitempty"`
 	// HeartbeatTimeout bounds one heartbeat, as runSpec.reportTimeout does
-	// a report. A heartbeat is tried once: another comes along soon.
+	// a report. A heartbeat is tried once: another comes along soon. One
+	// that hangs for all of it, a beat after the last that landed, leaves
+	// the next a beat before the worker deems the run dead.
 	HeartbeatTimeout time.Duration `env:"KRITIKA_TUNING_RUNNER_HEARTBEAT_TIMEOUT" envDefault:"10s" yaml:"heartbeatTimeout,omitempty"`
 	// MaxReportAnswer bounds what the gateway's answer to a report is read
 	// to: the part checkpoints of a run, or an error.
@@ -244,10 +251,11 @@ type Runner struct {
 // RunSpec.ReportRetryWindow and RunSpec.ReportTimeout, and the beats either
 // side of it, because ending the run sooner can lose an answer already paid
 // for. A pod that dies is seen sooner, by its Job. Only a wedged runner
-// waits this long.
+// waits this long. It saturates rather than overflows.
 func (v Values) HeartbeatStale() time.Duration {
 	r := v.RunSpec
-	return r.ReportRetryWindow + r.ReportTimeout + 2*r.HeartbeatInterval
+	report := satAdd(int64(r.ReportRetryWindow), int64(r.ReportTimeout))
+	return time.Duration(satAdd(report, satMul(2, int64(r.HeartbeatInterval))))
 }
 
 // The fixed limits that the runner's and the executor's values keep within.
@@ -270,8 +278,9 @@ const (
 func init() {
 	crossField = append(crossField,
 		func(v Values) error {
-			if need := int64(v.ContextPack.SimilarLimit) * int64(v.Indexer.MaxChunkBytes); int64(v.Runner.MaxSimilarAnswerBody) < need {
-				return fmt.Errorf("%s (%s) must hold %s chunks of %s, %d bytes",
+			chunk := satMul(jsonGrowth, satAdd(int64(v.Indexer.MaxChunkBytes), indexChunkFields))
+			if need := satAdd(satMul(int64(v.ContextPack.SimilarLimit), chunk), similarEnvelope); int64(v.Runner.MaxSimilarAnswerBody) < need {
+				return fmt.Errorf("%s (%s) must hold %s chunks of %s, escaped, %d bytes",
 					fieldLabel("runner.maxSimilarAnswerBody"), v.Runner.MaxSimilarAnswerBody,
 					fieldLabel("contextPack.similarLimit"),
 					fieldLabel("indexer.maxChunkBytes"), need)
@@ -295,20 +304,10 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if v.Runner.ReportBackoff > v.Runner.ReportMaxBackoff {
-				return fmt.Errorf("%s (%s) must be at most %s (%s)",
-					fieldLabel("runner.reportBackoff"), v.Runner.ReportBackoff,
-					fieldLabel("runner.reportMaxBackoff"), v.Runner.ReportMaxBackoff)
-			}
-			return nil
+			return notAbove("runner.reportBackoff", v.Runner.ReportBackoff, "runner.reportMaxBackoff", v.Runner.ReportMaxBackoff)
 		},
 		func(v Values) error {
-			if v.Executor.LogReadBytes < v.Executor.LogTailBytes {
-				return fmt.Errorf("%s (%s) must be at least %s (%s)",
-					fieldLabel("executor.logReadBytes"), v.Executor.LogReadBytes,
-					fieldLabel("executor.logTailBytes"), v.Executor.LogTailBytes)
-			}
-			return nil
+			return notAbove("executor.logTailBytes", v.Executor.LogTailBytes, "executor.logReadBytes", v.Executor.LogReadBytes)
 		},
 		func(v Values) error {
 			if v.Executor.EventInstanceBytes > kubeEventInstanceBytes {
@@ -336,6 +335,19 @@ func init() {
 			if v.Runner.MaxDirNameBytes > maxDirNameBytes {
 				return fmt.Errorf("%s (%d) %w %d bytes, so that the fetch's diff, its name and .diff, fits a file system's %d",
 					fieldLabel("runner.maxDirNameBytes"), v.Runner.MaxDirNameBytes, errMustNotExceed, maxDirNameBytes, fileNameBytes)
+			}
+			return nil
+		},
+		func(v Values) error {
+			// A beat that hangs from one beat after the last that landed, and
+			// the next, a beat later, must land within HeartbeatStale.
+			beats := satMul(2, int64(v.RunSpec.HeartbeatInterval))
+			if satAdd(int64(v.Runner.HeartbeatTimeout), beats) > int64(v.HeartbeatStale()) {
+				return fmt.Errorf("%s (%s) %w %s and %s together (%s), so that a heartbeat that hangs leaves another "+
+					"before the worker deems the run dead",
+					fieldLabel("runner.heartbeatTimeout"), v.Runner.HeartbeatTimeout, errMustNotExceed,
+					fieldLabel("runSpec.reportRetryWindow"), fieldLabel("runSpec.reportTimeout"),
+					time.Duration(satAdd(int64(v.RunSpec.ReportRetryWindow), int64(v.RunSpec.ReportTimeout))))
 			}
 			return nil
 		},

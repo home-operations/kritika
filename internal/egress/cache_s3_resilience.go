@@ -15,12 +15,6 @@ import (
 
 var errS3CircuitOpen = errors.New("egress: cache: S3 circuit is open")
 
-// uploadDeadline is the fixed budget, tuning's Egress.S3UploadTimeout, plus
-// what size bytes take at Egress.S3UploadRate.
-func uploadDeadline(size int64) time.Duration {
-	return tuning.Get().Egress.S3UploadDeadline(size)
-}
-
 // The SDK detaches credential refresh from request cancellation and holds its
 // credential mutex during retrieval, so discovery needs its own total budget.
 type s3Credentials struct {

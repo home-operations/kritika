@@ -36,18 +36,18 @@ func tokenLifetimeChoices() string {
 	for _, d := range tuning.Get().WebAPI.TokenLifetimes {
 		if d == 0 {
 			never = true
-		} else {
-			days = append(days, strconv.FormatInt(int64(d/tuning.Day), 10))
+			continue
 		}
+		days = append(days, strconv.FormatInt(int64(d/tuning.Day), 10))
 	}
-	switch s := strings.Join(days, ", "); {
+	s := strings.Join(days, ", ")
+	switch {
 	case !never:
 		return s
 	case s == "":
 		return "0 for never"
-	default:
-		return s + ", or 0 for never"
 	}
+	return s + ", or 0 for never"
 }
 
 // registerTokens mounts the personal access tokens a user manages, and

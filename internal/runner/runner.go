@@ -14,6 +14,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -29,6 +30,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/textcut"
 	"github.com/home-operations/kritika/internal/tuning"
 )
 
@@ -223,15 +225,11 @@ func runReview(ctx context.Context, report *reporter, p runspec.Spec, secrets ru
 	if skip != "" {
 		phase = "done"
 	}
-	pack, cut := fitPackDiffs(runspec.ContextPack{
+	err = sendContext(ctx, report, runspec.ContextPack{
 		Head: p.Head, Base: p.Base, PatchID: res.PatchID, ChangedPaths: res.Changed, RenamedFrom: res.RenamedFrom,
 		Stages: stagesJSON, Files: filesJSON, Notes: notes, PriorHead: priorHead,
 		DeltaPaths: deltaPaths, Scope: string(scope), ScopeReason: scopeReason, SkipReason: skip, RuleIDs: ruleIDs, SkipDetail: skipDetail,
-	}, phase, res.Diff, res.DeltaDiff)
-	if len(cut) > 0 {
-		logger.Warn("diff too large to keep whole", "diff_bytes", len(res.Diff), "kept_bytes", len(pack.Diff), "files_cut", len(cut))
-	}
-	err = report.context(ctx, pack, phase)
+	}, phase, res.Diff, res.DeltaDiff, logger)
 	if err != nil {
 		return err
 	}
@@ -336,8 +334,8 @@ func similarContext(
 // nothing. When it has one, it reports the paths the searches leave out:
 // every changed path, and the old name of each rename, whose copy in the
 // index otherwise matches its renamed self best of all. It reports false when
-// there is no index or either request failed within Runner.SimilarReportWindow, and
-// the run must then not search.
+// there is no index or either request failed within
+// Runner.SimilarReportWindow, and the run must then not search.
 func excludeFromSimilar(ctx context.Context, p runspec.Spec, secrets runspec.Secrets, res *gitfetch.Result, logger *slog.Logger) bool {
 	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.SimilarReportWindow)
 	defer cancel()
@@ -456,17 +454,42 @@ func fail(ctx context.Context, report *reporter, secrets runspec.Secrets, cause 
 	return nil
 }
 
+// sendContext reports the context pack base, with diff and delta in it as
+// fitPackDiffs fits them, and phase, the run's next. The replicas of a
+// rollout can take reports of different sizes, so a replica that refuses the
+// report as too large, naming a smaller limit than Gateway.MaxReportBody,
+// gets it again, fitted to that limit.
+func sendContext(
+	ctx context.Context, report *reporter, base runspec.ContextPack, phase, diff, delta string, logger *slog.Logger,
+) error {
+	limit := int64(tuning.Get().Gateway.MaxReportBody)
+	for {
+		pack, encoded, cut, err := fitPackDiffs(base, phase, diff, delta, limit)
+		if err != nil {
+			return fmt.Errorf("runner: encode context: %w", err)
+		}
+		if len(cut) > 0 {
+			logger.Warn("diff too large to keep whole", "diff_bytes", len(diff), "kept_bytes", len(pack.Diff), "files_cut", len(cut))
+		}
+		err = report.context(ctx, encoded)
+		tooLarge, ok := errors.AsType[*tooLargeError](err)
+		if !ok || tooLarge.limit >= int64(len(encoded)) || tooLarge.limit >= limit {
+			return err
+		}
+		logger.Warn("context report refused as too large: fitting it to the replica's limit", "bytes", len(encoded), "limit", tooLarge.limit)
+		limit = tooLarge.limit
+	}
+}
+
 // fitPackDiffs is pack with diff and delta, the pull request's diff and its
-// delta diff, in it, and the paths of diff's files that it leaves out,
-// which its notes name. The service reads the pack whole on every publish
-// and follow-up, so each diff keeps at most tuning's
-// Runner.MaxPackDiffBytes, whole files in order. The context report that
-// carries the pack must also fit Gateway.MaxReportBody as JSON encodes it,
-// which can make a diff six times as long, so whole files are left out of
-// both diffs until it does.
-func fitPackDiffs(pack runspec.ContextPack, phase, diff, delta string) (runspec.ContextPack, []string) {
+// delta diff, in it, its context report with phase as JSON encodes it, and
+// the paths of diff's files that it leaves out, which its notes name. The
+// service reads the pack whole on every publish and follow-up, so each diff
+// keeps at most Runner.MaxPackDiffBytes, whole files in order. JSON's
+// escaping can make a diff six times as long, so more whole files are left
+// out until the report fits limit too.
+func fitPackDiffs(pack runspec.ContextPack, phase, diff, delta string, limit int64) (runspec.ContextPack, []byte, []string, error) {
 	notes := slices.Clip(pack.Notes)
-	limit := int(tuning.Get().Gateway.MaxReportBody)
 	room := int(tuning.Get().Runner.MaxPackDiffBytes)
 	for {
 		var cut []string
@@ -476,15 +499,15 @@ func fitPackDiffs(pack runspec.ContextPack, phase, diff, delta string) (runspec.
 		if len(cut) > 0 {
 			pack.Notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
 		}
-		// A pack that does not encode fails its report, which says why.
-		encoded, _ := json.Marshal(runspec.ContextReport{Pack: pack, Phase: phase})
-		over := len(encoded) - limit
+		encoded, err := json.Marshal(runspec.ContextReport{Pack: pack, Phase: phase})
+		if err != nil {
+			return pack, nil, cut, err
+		}
+		over := int64(len(encoded)) - limit
 		kept := max(len(pack.Diff), len(pack.DeltaDiff))
 		if over <= 0 || kept == 0 {
-			return pack, cut
+			return pack, encoded, cut, nil
 		}
-		// JSON writes no byte as more than six, so the diffs must lose at
-		// least a sixth of the excess.
-		room = kept - (over+5)/6
+		room = textcut.EscapedRoom(kept, int(over))
 	}
 }

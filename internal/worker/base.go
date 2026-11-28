@@ -84,7 +84,8 @@ func completeJob[T river.JobArgs](ctx context.Context, tx pgx.Tx, job *river.Job
 	return nil
 }
 
-// detach is ctx without its cancellation, bounded by tuning's Worker.DetachTimeout.
+// detach is ctx without its cancellation, bounded by tuning's
+// Worker.DetachTimeout.
 func detach(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Worker.DetachTimeout)
 }

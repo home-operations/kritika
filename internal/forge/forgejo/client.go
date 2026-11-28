@@ -21,6 +21,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -254,12 +255,12 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 		return resp.Header, fmt.Errorf("forgejo: %s %s: %w", method, path, errNoContent)
 	}
 	if text, ok := out.(*string); ok {
-		limit := int(tuning.Get().Forgejo.MaxDiffBytes)
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
+		limit := int64(tuning.Get().Forgejo.MaxDiffBytes)
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 		if err != nil {
 			return resp.Header, fmt.Errorf("forgejo: read %s %s: %w", method, path, err)
 		}
-		if len(raw) > limit {
+		if int64(len(raw)) > limit {
 			return resp.Header, fmt.Errorf("forgejo: %s %s: response is over %d bytes", method, path, limit)
 		}
 		*text = string(raw)
@@ -273,13 +274,13 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 
 // list reads every page of path, whose query gains page and limit, as long as
 // the answer says there is another. That is a Link header with rel="next", or
-// an X-Total-Count that the pages read fall short of. Without either, a page
-// shorter than asked is the last. The instance caps the page size asked for,
-// and a listing can leave out what the bot cannot see. So a short page alone
-// does not say that the listing is over. stop ends the walk early, after the
+// an X-Total-Count that the pages read fall short of. Without either, only an
+// empty page is the last. The instance caps the page size asked for, and a
+// listing can leave out what the bot cannot see. So a short page alone does
+// not say that the listing is over. stop ends the walk early, after the
 // page it was called on.
 func (c *Client) list[T any](ctx context.Context, path string, query url.Values, stop func(T) bool) ([]T, error) {
-	var out []T
+	var out, last []T
 	largest := 0
 	for page := 1; ; page++ {
 		q := url.Values{}
@@ -291,6 +292,12 @@ func (c *Client) list[T any](ctx context.Context, path string, query url.Values,
 		if err != nil {
 			return nil, err
 		}
+		// An endpoint that does not page answers every page with the first:
+		// a page that opens as the last one did is that again, not more.
+		if len(batch) > 0 && len(last) > 0 && reflect.DeepEqual(batch[0], last[0]) {
+			return out, nil
+		}
+		last = batch
 		largest = max(largest, len(batch))
 		for _, item := range batch {
 			if stop != nil && stop(item) {
@@ -309,7 +316,8 @@ func (c *Client) list[T any](ctx context.Context, path string, query url.Values,
 // also counts what a listing leaves out of a page, so a page emptied that way
 // does not end the walk. morePages measures the pages by the largest page
 // seen. That is at most the size that the instance caps a page at, whatever
-// was asked. A page is never taken for more than it held.
+// was asked. A page is never taken for more than it held. Without either
+// header, only an empty page ends the walk.
 func morePages(header http.Header, page, got, largest int) bool {
 	for _, link := range header.Values("Link") {
 		if strings.Contains(link, `rel="next"`) {
@@ -319,7 +327,7 @@ func morePages(header http.Header, page, got, largest int) bool {
 	if total, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil {
 		return page*max(largest, 1) < total
 	}
-	return got >= tuning.Get().Forgejo.PageSize
+	return got > 0
 }
 
 func repoPath(owner, repo string) string {
@@ -456,12 +464,12 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 			&apiError{method: http.MethodGet, path: path, status: resp.StatusCode, body: string(raw),
 				retryAfter: resp.Header.Get(retryafter.Header)})
 	}
-	limit := int(tuning.Get().Forge.MaxFileBytes)
-	content, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
+	limit := int64(tuning.Get().Forge.MaxFileBytes)
+	content, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
 	}
-	if len(content) > limit {
+	if int64(len(content)) > limit {
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, forge.ErrFileTooLarge)
 	}
 	return content, nil

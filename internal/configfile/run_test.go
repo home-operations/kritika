@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/tuning"
 )
 
@@ -14,6 +13,7 @@ import (
 // defaults, values set, an interval of 0s that turns polling off, and values
 // refused.
 func TestRun(t *testing.T) {
+	maxDeadline := int64(tuning.Get().JobTimeout.MaxRunnerDeadline().Seconds())
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
@@ -46,7 +46,7 @@ func TestRun(t *testing.T) {
 		{"KRITIKA_ONBOARD_WINDOW", "0", "KRITIKA_ONBOARD_WINDOW must be positive"},
 		{"KRITIKA_TRANSCRIPT_RETENTION", "1h", "KRITIKA_TRANSCRIPT_RETENTION must be at least 24h"},
 		{"KRITIKA_DIFF_RETENTION", "1h", "KRITIKA_DIFF_RETENTION must be at least 24h"},
-		{"KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline().Seconds())+1),
+		{"KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, maxDeadline+1),
 			"KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
 		{"KRITIKA_RUNNER_POD_TEMPLATE", "[1]", "KRITIKA_RUNNER_POD_TEMPLATE"},
 		{"KRITIKA_POLL_LOOKBACK", "soon", "KRITIKA_POLL_LOOKBACK"},
@@ -60,7 +60,7 @@ func TestRun(t *testing.T) {
 		})
 	}
 	t.Run("a deadline at the cap", func(t *testing.T) {
-		t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline().Seconds())))
+		t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, maxDeadline))
 		mustLoad(t, minimal)
 	})
 }

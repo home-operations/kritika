@@ -3,6 +3,7 @@ package tuning
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -167,10 +168,7 @@ type Store struct {
 func init() {
 	crossField = append(crossField,
 		func(v Values) error {
-			if v.Store.LeaseExpiry <= v.Store.LeaseHeartbeat {
-				return fmt.Errorf("%s %w %s", fieldLabel("store.leaseExpiry"), errMustExceed, fieldLabel("store.leaseHeartbeat"))
-			}
-			return nil
+			return exceeds("store.leaseExpiry", v.Store.LeaseExpiry, "store.leaseHeartbeat", v.Store.LeaseHeartbeat)
 		},
 		func(v Values) error {
 			return notAbove("store.leasePollMin", v.Store.LeasePollMin, "store.leasePollMax", v.Store.LeasePollMax)
@@ -182,11 +180,14 @@ func init() {
 			// Postgres takes keepalive timings in whole seconds, and 0 is
 			// its system default.
 			var errs []error
-			for path, d := range map[string]time.Duration{
-				"store.keepaliveIdle": v.Store.KeepaliveIdle, "store.keepaliveInterval": v.Store.KeepaliveInterval,
+			for _, f := range []struct {
+				path string
+				d    time.Duration
+			}{
+				{"store.keepaliveIdle", v.Store.KeepaliveIdle}, {"store.keepaliveInterval", v.Store.KeepaliveInterval},
 			} {
-				if d < time.Second {
-					errs = append(errs, fmt.Errorf("%s must be at least 1s: Postgres counts it in whole seconds", fieldLabel(path)))
+				if f.d < time.Second {
+					errs = append(errs, fmt.Errorf("%s must be at least 1s: Postgres counts it in whole seconds", fieldLabel(f.path)))
 				}
 			}
 			return errors.Join(errs...)
@@ -205,8 +206,18 @@ func init() {
 					errs = append(errs, fmt.Errorf("%s must be at least 1ms: Postgres counts it in whole milliseconds, and 0 is none",
 						fieldLabel(f.path)))
 				}
+				// poolConfig rounds up to a millisecond, and Postgres refuses
+				// more than INT_MAX of them, and the connection with it.
+				if f.d > MaxStatementTimeout {
+					errs = append(errs, fmt.Errorf("%s %w %s, the longest statement_timeout Postgres takes", fieldLabel(f.path), errMustNotExceed,
+						MaxStatementTimeout))
+				}
 			}
 			return errors.Join(errs...)
 		},
 	)
 }
+
+// MaxStatementTimeout is the longest statement_timeout that Postgres takes:
+// INT_MAX milliseconds.
+const MaxStatementTimeout = time.Duration(math.MaxInt32) * time.Millisecond

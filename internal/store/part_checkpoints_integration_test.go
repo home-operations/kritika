@@ -118,13 +118,14 @@ func TestPartCheckpointReadIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, token := runnerWriteFixture(t, s, accountID(t, s, "alpha"), RunnerKindReview)
-	third := int(tuning.Get().Store.MaxCheckpointRead)/3 + 1
+	maxCheckpointRead := int(tuning.Get().Store.MaxCheckpointRead)
+	third := maxCheckpointRead/3 + 1
 	payload, err := json.Marshal(strings.Repeat("x", third))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Saved before the gateway bounded saves, and larger than a whole read.
-	legacy, err := json.Marshal(strings.Repeat("x", int(tuning.Get().Store.MaxCheckpointRead)))
+	legacy, err := json.Marshal(strings.Repeat("x", maxCheckpointRead))
 	if err != nil {
 		t.Fatal(err)
 	}

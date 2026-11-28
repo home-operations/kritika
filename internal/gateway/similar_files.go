@@ -16,14 +16,14 @@ import (
 
 // pastFullFiles adds to hits, the vector search's depth nearest chunks of
 // each query, the next nearest outside the files of which the query's hits
-// hold tuning's Gateway.SimilarPerFile or more, for each query that the
-// file cap would otherwise leave short: its hits fill the window, the last
-// of them still qualifies, and the cap keeps fewer than target of them, the
-// most chunks a query keeps. A window that is not full has nothing past it, and nothing
-// past a last hit under the floor or the margin qualifies either. A query is
-// searched again until it is no longer short, at most target times: each
-// full window past the files the cap fills adds a chunk that the cap keeps,
-// so that many fill the query whenever enough chunks qualify. The cap of one file
+// hold Gateway.SimilarPerFile or more, for each query that the file cap
+// would otherwise leave short: its hits fill the window, the last of them
+// still qualifies, and the cap keeps fewer than target of them, the most
+// chunks a query keeps. A window that is not full has nothing past it, and
+// nothing past a last hit under the floor or the margin qualifies either. A
+// query is searched again until it is no longer short, at most target times:
+// each full window past the files the cap fills adds a chunk that the cap
+// keeps, so that many fill the query whenever enough chunks qualify. The cap of one file
 // across the queries and the duplicates between them can still leave a
 // query short.
 //
@@ -121,10 +121,10 @@ func pastFull(
 }
 
 // fullFiles is the files of which found, a query's hits, holds
-// Gateway.SimilarPerFile or more, when the file cap leaves the query short of
-// target chunks and the search's last window, which found ends with, says
-// that more chunks past it can qualify: it is depth long, and qualifies its
-// last hit, given found. It is nil otherwise.
+// Gateway.SimilarPerFile or more, when the file cap leaves the query short
+// of target chunks and the search's last window, which found ends with,
+// says that more chunks past it can qualify: it is depth long, and qualifies
+// its last hit, given found. It is nil otherwise.
 func fullFiles(
 	found, window []store.SimilarHit, depth, target int, qualifies func(found []store.SimilarHit, last store.SimilarHit) bool,
 ) []string {
@@ -159,9 +159,9 @@ func closeTo(similarity, best, floor, margin float64) bool {
 	return similarity >= floor && similarity >= best-margin-1e-9
 }
 
-// namedBy reports whether a lexical weight is at least tuning's
-// Gateway.LexicalShare of best,
-// its query's best lexical weight: whether its names alone vouch for a hit.
+// namedBy reports whether a lexical weight is at least Gateway.LexicalShare
+// of best, its query's best lexical weight: whether its names alone vouch
+// for a hit.
 func namedBy(lexical, best float64) bool {
 	return lexical >= tuning.Get().Gateway.LexicalShare*best
 }

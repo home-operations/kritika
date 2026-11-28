@@ -62,13 +62,14 @@ func TestStackBelow(t *testing.T) {
 // TestStackBelowStalled: a forge that never answers costs the read's own
 // time, not its caller's.
 func TestStackBelowStalled(t *testing.T) {
+	stackTimeout := tuning.Get().Worker.StackTimeout
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()
 		started := time.Now()
 		got := stackBelow(ctx, &stackForge{stalled: true}, &pullRequest{repository: "o/r", number: 8}, slog.New(slog.DiscardHandler))
-		if got != nil || time.Since(started) != tuning.Get().Worker.StackTimeout || ctx.Err() != nil {
-			t.Fatalf("stackBelow = %+v after %s, caller's context: %v; want none after %s", got, time.Since(started), ctx.Err(), tuning.Get().Worker.StackTimeout)
+		if got != nil || time.Since(started) != stackTimeout || ctx.Err() != nil {
+			t.Fatalf("stackBelow = %+v after %s, caller's context: %v; want none after %s", got, time.Since(started), ctx.Err(), stackTimeout)
 		}
 	})
 }

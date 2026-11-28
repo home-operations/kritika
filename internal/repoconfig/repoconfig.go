@@ -289,13 +289,14 @@ type Files map[string]string
 // Collect reads each of paths through read, which must return an error
 // satisfying errors.Is(err, fs.ErrNotExist) for a missing path. A path that
 // escapes the repository or is missing is left out and reported in the
-// returned notes rather than failing the call. So is a file over
-// tuning's RepoConfig.MaxFileBytes, or one that pushes the total over tuning's RepoConfig.MaxTotalBytes. Any other
-// read error is returned as-is.
+// returned notes rather than failing the call. So is a file over tuning's
+// RepoConfig.MaxFileBytes, or one that pushes the total over
+// RepoConfig.MaxTotalBytes. Any other read error is returned as-is.
 func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []string, error) {
 	files := Files{}
 	var notes []string
 	var total int
+	t := tuning.Get().RepoConfig
 	for _, p := range paths {
 		if _, seen := files[p]; seen || p == "" {
 			continue
@@ -310,9 +311,9 @@ func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []
 			notes = append(notes, NotFound(p))
 		case err != nil:
 			return nil, nil, fmt.Errorf("repoconfig: read %s: %w", p, err)
-		case len(b) > int(tuning.Get().RepoConfig.MaxFileBytes):
+		case len(b) > int(t.MaxFileBytes):
 			notes = append(notes, TooLarge(p))
-		case total+len(b) > int(tuning.Get().RepoConfig.MaxTotalBytes):
+		case total+len(b) > int(t.MaxTotalBytes):
 			notes = append(notes, overTotal(p))
 		default:
 			files[p] = string(b)
@@ -325,7 +326,7 @@ func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []
 // overTotal is the note for a file that pushes the total over
 // tuning's RepoConfig.MaxTotalBytes.
 func overTotal(name string) string {
-	return fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", name, int(tuning.Get().RepoConfig.MaxTotalBytes))
+	return fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", name, int64(tuning.Get().RepoConfig.MaxTotalBytes))
 }
 
 // NotFound is the note for a named file the tree does not have.
@@ -335,7 +336,7 @@ func NotFound(name string) string {
 
 // TooLarge is the note for a file over tuning's RepoConfig.MaxFileBytes.
 func TooLarge(name string) string {
-	return fmt.Sprintf("%s: skipped, it exceeds the %d byte per-file limit", name, int(tuning.Get().RepoConfig.MaxFileBytes))
+	return fmt.Sprintf("%s: skipped, it exceeds the %d byte per-file limit", name, int64(tuning.Get().RepoConfig.MaxFileBytes))
 }
 
 // AllIgnored reports whether every path in changed matches one of the
@@ -368,12 +369,14 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 
 // ActiveRules is the rules that apply to a change of the changed paths, in
 // order: each without paths, and each with them when a changed path
-// matches one. A rule's text counts against tuning's RepoConfig.MaxRulesBytes and a file
-// rule's content, read from files, against tuning's RepoConfig.MaxRuleFileBytes. left names
-// the ones that applied but did not fit, by id. A file rule whose file
+// matches one. A rule's text counts against tuning's RepoConfig.MaxRulesBytes
+// and a file rule's content, read from files, against
+// RepoConfig.MaxRuleFileBytes. left names the ones that applied but did not
+// fit, by id. A file rule whose file
 // files lacks or holds nothing is left out, since reading it was already noted.
 func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left []string) {
-	room, fileRoom := int(tuning.Get().RepoConfig.MaxRulesBytes), int(tuning.Get().RepoConfig.MaxRuleFileBytes)
+	t := tuning.Get().RepoConfig
+	room, fileRoom := int(t.MaxRulesBytes), int(t.MaxRuleFileBytes)
 	for _, r := range rules {
 		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(r.Paths, c) }) {
 			continue

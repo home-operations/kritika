@@ -20,7 +20,8 @@ import (
 // confidenceBudget is the scorer's prompt budget for an agent budget of
 // prompt tokens.
 func confidenceBudget(prompt int) int {
-	return max(prompt, min(tuning.Get().Worker.ConfidenceBudgetShare*prompt, tuning.Get().Worker.ConfidenceBudgetCap))
+	w := tuning.Get().Worker
+	return max(prompt, min(w.ConfidenceBudgetShare*prompt, w.ConfidenceBudgetCap))
 }
 
 // unscoredNote is what the summary states when the repository asks for a

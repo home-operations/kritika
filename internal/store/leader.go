@@ -34,10 +34,11 @@ func LeaderStepDown(interval time.Duration) time.Duration {
 // tenure, so it releases on its own if the process dies. The holder pings
 // that connection every interval, because a dropped connection releases the
 // lock server-side without the client noticing. The ping and each lock
-// attempt are bounded by tuning's Store.LockTimeout. A server that died without closing its
-// sockets answers nothing. An unbounded ping will wait on the kernel's TCP
-// retransmissions, about fifteen minutes. During that wait, lead runs the
-// whole time while another replica can hold the lock on the new primary.
+// attempt are bounded by tuning's Store.LockTimeout. A server that died
+// without closing its sockets answers nothing. An unbounded ping will wait on
+// the kernel's TCP retransmissions, about fifteen minutes. During that wait,
+// lead runs the whole time while another replica can hold the lock on the new
+// primary.
 //
 // A database that cannot be reached when the lock is tried, as during a
 // failover, is tried again after retry rather than ending the process. A
@@ -132,9 +133,9 @@ loop:
 	return true, leadErr
 }
 
-// pingLock pings the held lock connection within tuning's Store.LockTimeout. A ping that
-// runs out closes the connection. So the release that follows a step-down
-// discards it rather than handing a dead socket back to the pool.
+// pingLock pings the held lock connection within tuning's Store.LockTimeout. A
+// ping that runs out closes the connection. So the release that follows a
+// step-down discards it rather than handing a dead socket back to the pool.
 func (s *Store) pingLock(ctx context.Context, conn *pgxpool.Conn) error {
 	pingCtx, cancel := context.WithTimeout(ctx, tuning.Get().Store.LockTimeout)
 	defer cancel()

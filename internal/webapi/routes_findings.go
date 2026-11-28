@@ -74,9 +74,9 @@ func findingSummary(sum store.FindingSummary) FindingSummary {
 	}
 }
 
-// exportFindings serves the findings the list's filters keep, newest
-// first and at most tuning's WebAPI.ExportLimit of them, as a file to download: Markdown,
-// to hand to a person or a coding agent, or JSON.
+// exportFindings serves the findings the list's filters keep, newest first
+// and at most tuning's WebAPI.ExportLimit of them, as a file to download:
+// Markdown, to hand to a person or a coding agent, or JSON.
 func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	format := r.URL.Query().Get("format")
 	if format != "markdown" && format != "json" {

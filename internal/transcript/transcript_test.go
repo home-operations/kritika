@@ -127,8 +127,10 @@ func TestMask(t *testing.T) {
 }
 
 func TestEncodeCaps(t *testing.T) {
-	big := strings.Repeat("x", int(tuning.Get().Transcript.ToolResultCap)+10)
-	huge := strings.Repeat("y", int(tuning.Get().Transcript.RowCap))
+	caps := tuning.Get().Transcript
+	resultCap, systemCap := int(caps.ToolResultCap), caps.SystemCap()
+	big := strings.Repeat("x", resultCap+10)
+	huge := strings.Repeat("y", int(caps.RowCap))
 	tests := []struct {
 		name      string
 		prevBytes int64
@@ -144,14 +146,14 @@ func TestEncodeCaps(t *testing.T) {
 		{name: "a large tool result is cut", req: stepReq("s", result(big)), truncated: true,
 			check: func(t *testing.T, msgs []Message) {
 				r := msgs[0].ToolResults[0]
-				if len(r.Content) != int(tuning.Get().Transcript.ToolResultCap) || r.TruncatedBytes != 10 {
+				if len(r.Content) != resultCap || r.TruncatedBytes != 10 {
 					t.Fatalf("content %d bytes, truncated %d", len(r.Content), r.TruncatedBytes)
 				}
 			}},
-		{name: "a cut never splits a rune", req: stepReq("s", result(strings.Repeat("x", int(tuning.Get().Transcript.ToolResultCap)-1)+"é")), truncated: true,
+		{name: "a cut never splits a rune", req: stepReq("s", result(strings.Repeat("x", resultCap-1)+"é")), truncated: true,
 			check: func(t *testing.T, msgs []Message) {
 				r := msgs[0].ToolResults[0]
-				if len(r.Content) != int(tuning.Get().Transcript.ToolResultCap)-1 || r.TruncatedBytes != 2 {
+				if len(r.Content) != resultCap-1 || r.TruncatedBytes != 2 {
 					t.Fatalf("content %d bytes, truncated %d", len(r.Content), r.TruncatedBytes)
 				}
 			}},
@@ -162,13 +164,13 @@ func TestEncodeCaps(t *testing.T) {
 					t.Fatalf("messages = %+v", msgs)
 				}
 			}},
-		{name: "a system prompt over its cap is cut", req: stepReq(strings.Repeat("s", tuning.Get().Transcript.SystemCap()+5), user("hi")), truncated: true,
+		{name: "a system prompt over its cap is cut", req: stepReq(strings.Repeat("s", systemCap+5), user("hi")), truncated: true,
 			check: func(t *testing.T, msgs []Message) {
 				if len(msgs) != 1 || msgs[0].Text != "hi" {
 					t.Fatalf("messages = %+v", msgs)
 				}
 			}},
-		{name: "a run over its cap keeps no messages", prevBytes: int64(tuning.Get().Transcript.RunCap) + 1, req: stepReq("s", user("hi")), truncated: true,
+		{name: "a run over its cap keeps no messages", prevBytes: int64(caps.RunCap) + 1, req: stepReq("s", user("hi")), truncated: true,
 			check: func(t *testing.T, msgs []Message) {
 				if len(msgs) != 0 {
 					t.Fatalf("messages = %+v", msgs)
@@ -190,14 +192,14 @@ func TestEncodeCaps(t *testing.T) {
 			if !strings.Contains(string(e.Response), "answer") {
 				t.Fatalf("response = %s", e.Response)
 			}
-			if tt.prevBytes > int64(tuning.Get().Transcript.RunCap) && (e.System != nil || e.Tools != nil) {
+			if tt.prevBytes > int64(caps.RunCap) && (e.System != nil || e.Tools != nil) {
 				t.Fatal("a run over its cap still stored the system prompt or tools")
 			}
 			if want := tt.prevBytes + int64(len(e.Messages)+len(e.Response)+len(e.Tools)) + int64(len(deref(e.System))); e.State.Bytes != want {
 				t.Fatalf("bytes = %d, want %d", e.State.Bytes, want)
 			}
-			if e.System != nil && len(tt.req.System) > tuning.Get().Transcript.SystemCap() &&
-				(len(*e.System) != tuning.Get().Transcript.SystemCap()+len(SystemTruncated) || !strings.HasSuffix(*e.System, SystemTruncated)) {
+			if e.System != nil && len(tt.req.System) > systemCap &&
+				(len(*e.System) != systemCap+len(SystemTruncated) || !strings.HasSuffix(*e.System, SystemTruncated)) {
 				t.Fatalf("system prompt of %d bytes kept as %d", len(tt.req.System), len(*e.System))
 			}
 			tt.check(t, msgs)

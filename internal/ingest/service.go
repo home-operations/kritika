@@ -45,8 +45,7 @@ const (
 	reasonClosed       = "closed"
 )
 
-// jobReview is Outcome.Job for a review: a job's kind, which names its
-// queue too.
+// jobReview is Outcome.Job for a review.
 const jobReview = jobs.QueueReview
 
 // The poller's synthetic actions: ActionPoll for an open pull request it

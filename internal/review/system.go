@@ -106,17 +106,16 @@ read and how, generic caveats about what a diff cannot show, and routine advice 
 at most ` + praiseCap + ` specific things done well, and is empty when nothing stands out.`
 
 // praiseCap stands in summarySpec for tuning's Review.MaxPraise, which
-// withPraiseCap writes in as the schema's description of the praise does,
-// so that the two always ask for the same count.
+// withPraiseCap writes in as the schema's praise description does, so the
+// two always ask for the same count.
 const praiseCap = "{praise cap}"
 
-// withPraiseCap is s with praiseCap written out.
 func withPraiseCap(s string) string {
 	return strings.Replace(s, praiseCap, praiseCount(), 1)
 }
 
-// praiseCount is tuning's Review.MaxPraise as the instructions and the
-// schema write it: in words up to ten, as prose writes a small count.
+// praiseCount is tuning's Review.MaxPraise as prose writes it: in words up
+// to ten.
 func praiseCount() string {
 	n := tuning.Get().Review.MaxPraise
 	words := [...]string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}

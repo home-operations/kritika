@@ -85,3 +85,19 @@ func TestEventsInstanceWithinALoweredLimit(t *testing.T) {
 		t.Fatalf("instance %q, want %q", got, pod[:16])
 	}
 }
+
+// TestEventsNoteWithinALoweredLimit: an executor.eventNoteBytes too small
+// for the note that a cut note ends with still bounds the note.
+func TestEventsNoteWithinALoweredLimit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Executor.EventNoteBytes = 8 })
+	client := fake.NewSimpleClientset()
+	NewEvents(client, "kritika", "kritika-0", "pod-uid", slog.New(slog.DiscardHandler)).
+		PodEvent(t.Context(), true, "ConfigRefused", "ApplyConfiguration", strings.Repeat("x", 2000))
+	list, err := client.EventsV1().Events("kritika").List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("events = %+v, %v", list, err)
+	}
+	if note := list.Items[0].Note; len(note) > 8 || note == "" {
+		t.Fatalf("note = %q, want at most 8 bytes of it", note)
+	}
+}

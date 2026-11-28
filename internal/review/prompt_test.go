@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -121,13 +122,14 @@ func TestSameBriefFocus(t *testing.T) {
 }
 
 func TestCleanFocus(t *testing.T) {
-	long := strings.Repeat("x", tuning.Get().Review.MaxFocusRunes+5)
+	maxFocusRunes := tuning.Get().Review.MaxFocusRunes
+	long := strings.Repeat("x", maxFocusRunes+5)
 	for in, want := range map[string]string{
 		"  the  retry\tloop ":               "the retry loop",
 		"first line\nsecond line":           "first line",
 		"\r\nafter a blank line":            "after a blank line",
 		"with a \x07bell and \x1b[31mcolor": "with a bell and [31mcolor",
-		long:                                long[:tuning.Get().Review.MaxFocusRunes],
+		long:                                long[:maxFocusRunes],
 		"ünïcödé ✓":                         "ünïcödé ✓",
 	} {
 		if got := CleanFocus(in); got != want {
@@ -328,5 +330,34 @@ func TestBuildAtTheLeastBodyShare(t *testing.T) {
 	}
 	if most := budget * tuning.Get().Review.CharsPerToken; len(msg) > most {
 		t.Fatalf("message of %d bytes, want at most the budget's %d", len(msg), most)
+	}
+}
+
+// TestBuildUnderTheLargestBudget: a least user budget as large as an int
+// goes makes every budget the largest, which the builders take in bytes as
+// the largest int rather than a product wrapped negative, and build every
+// message whole.
+func TestBuildUnderTheLargestBudget(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MinUserBudget = math.MaxInt })
+	budget := UserBudget("system prompt", 0)
+	if budget != math.MaxInt || tokenBytes(budget) != math.MaxInt || tokenBytes(0) != 0 {
+		t.Fatalf("UserBudget = %d, in bytes %d; want the largest int both", budget, tokenBytes(budget))
+	}
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	in := Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: budget,
+		Body: "Adds y.", Issues: []Issue{{ID: "#1", Title: "one", Body: "We need y."}}, References: []Reference{{Path: "README.md"}}}
+	msg, omitted, _, _ := Build(in)
+	if len(omitted) != 0 || !strings.Contains(msg, diff) || !strings.Contains(msg, "Adds y.") || !strings.Contains(msg, "We need y.") {
+		t.Fatalf("omitted %v; message:\n%s", omitted, msg)
+	}
+	if !SameBrief(msg, in) {
+		t.Fatal("the message is not the same brief as its input")
+	}
+	cont, omitted, _ := BuildContinuation(ContinueInput{DeltaDiff: diff, BudgetTokens: budget})
+	if len(omitted) != 0 || !strings.Contains(cont, diff) {
+		t.Fatalf("continuation omitted %v:\n%s", omitted, cont)
+	}
+	if merge := BuildMerge("t", "Adds y.", nil, nil, budget); !strings.Contains(merge, "Adds y.") {
+		t.Fatalf("merge message:\n%s", merge)
 	}
 }

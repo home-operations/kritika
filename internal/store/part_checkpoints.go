@@ -15,13 +15,13 @@ import (
 type PartCheckpoint = runspec.PartCheckpoint
 
 // ReadPartCheckpoints reads only the current run's matching input snapshot,
-// within tuning's Store.MaxCheckpointRead. A part left out runs again, as one with no
-// checkpoint does. A row past the bound stays in the database, since one saved
-// before the gateway bounded saves can be of any size.
+// within tuning's Store.MaxCheckpointRead. A part left out runs again, as one
+// with no checkpoint does. A row past the bound stays in the database, since
+// one saved before the gateway bounded saves can be of any size.
 func ReadPartCheckpoints(ctx context.Context, tx pgx.Tx, runID, inputHash string) ([]PartCheckpoint, error) {
+	most := int(tuning.Get().Store.MaxCheckpointRead)
 	rows, err := tx.Query(ctx, `SELECT part, source_run_id::text, payload FROM review_part_checkpoints
-		WHERE runner_run_id = $1 AND input_hash = $2 AND octet_length(payload) <= $3 ORDER BY part`,
-		runID, inputHash, int(tuning.Get().Store.MaxCheckpointRead))
+		WHERE runner_run_id = $1 AND input_hash = $2 AND octet_length(payload) <= $3 ORDER BY part`, runID, inputHash, most)
 	if err != nil {
 		return nil, fmt.Errorf("store: read part checkpoints: %w", err)
 	}
@@ -34,7 +34,7 @@ func ReadPartCheckpoints(ctx context.Context, tx pgx.Tx, runID, inputHash string
 		if err := rows.Scan(&c.Part, &c.SourceRun, &payload); err != nil {
 			return nil, fmt.Errorf("store: read part checkpoints: %w", err)
 		}
-		if total += len(payload); total > int(tuning.Get().Store.MaxCheckpointRead) {
+		if total += len(payload); total > most {
 			break
 		}
 		c.Payload = json.RawMessage(payload)

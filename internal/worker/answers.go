@@ -20,13 +20,13 @@ import (
 
 // threadAnswers are the replies in the threads of the findings whose inline
 // comments roots holds, by that comment's id, oldest first and the latest
-// tuning's Worker.MaxAnswers of each. Only the replies of people with write access count:
-// on a public repository anyone can reply, and an answer can end a finding.
-// The bot's own replies, login's, are kept as its own, so that a review does
-// not contradict them unknowing. Another bot's reply is none. A finding's comment can
-// itself sit in a conversation that an older one opened, as Forgejo and
-// Gitea group the comments on one line of a review, and then the replies to
-// that conversation are its.
+// tuning's Worker.MaxAnswers of each. Only the replies of people with write
+// access count: on a public repository anyone can reply, and an answer can end
+// a finding. The bot's own replies, login's, are kept as its own, so that a
+// review does not contradict them unknowing. Another bot's reply is none. A
+// finding's comment can itself sit in a conversation that an older one opened,
+// as Forgejo and Gitea group the comments on one line of a review, and then
+// the replies to that conversation are its.
 func threadAnswers(ctx context.Context, client forge.Client, owner, repo string, number int, login string, roots map[int64]bool) (
 	map[int64][]review.Answer, error,
 ) {

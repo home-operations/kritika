@@ -251,6 +251,7 @@ func TestThreadWrites(t *testing.T) {
 // follow-up marker, not the finding's own comment. They are counted over the
 // whole thread when the prompt keeps only its last messages.
 func TestBotReplies(t *testing.T) {
+	threadMessages := tuning.Get().Worker.ThreadMessages
 	at := func(s int64) time.Time { return time.Unix(s, 0) }
 	const root = int64(1)
 	inline := []forge.Comment{
@@ -261,15 +262,15 @@ func TestBotReplies(t *testing.T) {
 		{ID: 5, Author: "kritika[bot]", Body: review.FollowUpMarker(4) + "\nThe test is not the caller.", CreatedAt: at(5), Inline: true, InReplyTo: root},
 		{ID: 6, Author: "kritika[bot]", Body: review.FollowUpMarker(4) + "\nAnother thread's reply.", CreatedAt: at(6), Inline: true, InReplyTo: 99},
 	}
-	for id := int64(7); id < int64(7+tuning.Get().Worker.ThreadMessages+5); id++ {
+	for id := int64(7); id < int64(7+threadMessages+5); id++ {
 		inline = append(inline, forge.Comment{ID: id, Author: "onedr0p", Body: "more", CreatedAt: at(id), Inline: true, InReplyTo: root})
 	}
 	asking := inline[len(inline)-1]
 	f := &followUp{client: &threadForge{inline: inline}, owner: "o", repo: "r", pr: &pullRequest{number: 7}, comment: asking,
 		botLogin: "kritika[bot]"}
 	msgs, replied, err := f.thread(t.Context())
-	if err != nil || replied != 2 || len(msgs) != tuning.Get().Worker.ThreadMessages || msgs[0].Body == inline[0].Body {
-		t.Fatalf("thread = %d messages, %d replies, %v; want %d messages past the root and 2 replies", len(msgs), replied, err, tuning.Get().Worker.ThreadMessages)
+	if err != nil || replied != 2 || len(msgs) != threadMessages || msgs[0].Body == inline[0].Body {
+		t.Fatalf("thread = %d messages, %d replies, %v; want %d messages past the root and 2 replies", len(msgs), replied, err, threadMessages)
 	}
 }
 

@@ -11,17 +11,18 @@
 // filesystem, network, random, uniqueid, checksum, and crypto, and the
 // template, define, and block actions. So a template can read no file and
 // call no other template. Rendering is bounded, and a template that steps
-// outside a bound falls back to kritika's default with a note:
+// outside a bound falls back to kritika's default with a note. The bounds
+// are tuning's Review values, with these defaults:
 //
-//   - Output of tuning's Review.MaxRenderBytes, marker included.
-//   - Review.MaxIterations loop iterations per render, charged when a loop
+//   - Output of 64 KiB (MaxRenderBytes), marker included.
+//   - 20,000 loop iterations per render (MaxIterations), charged when a loop
 //     starts.
-//   - Review.MaxCallBytes per function call. This counts its arguments, its result and,
-//     for repeat, indent, nindent, join, replace, regexReplaceAll,
-//     regexReplaceAllLiteral, seq, until, untilStep, and printf, an estimate
-//     of what it allocates. printf refuses a width or precision given as *.
-//   - Review.RenderTimeout per render. Identifiers that start with __kritika_ are
-//     reserved.
+//   - 256 KiB per function call (MaxCallBytes). This counts its arguments,
+//     its result and, for repeat, indent, nindent, join, replace,
+//     regexReplaceAll, regexReplaceAllLiteral, seq, until, untilStep, and
+//     printf, an estimate of what it allocates. printf refuses a width or precision given as *.
+//   - Two seconds per render (RenderTimeout). Identifiers that start with
+//     __kritika_ are reserved.
 //
 // The summary template's dot is a RenderData, the inline template's a
 // Finding. See templates/ for the defaults.
@@ -509,7 +510,7 @@ func Check(raw json.RawMessage) error {
 	}
 	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
 		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
-			int(tuning.Get().Review.MaxDiagramBytes), strings.Join(diagramKinds, ", "))
+			tuning.Get().Review.MaxDiagramBytes, strings.Join(diagramKinds, ", "))
 	}
 	return nil
 }
@@ -726,10 +727,11 @@ func stripFences(code string) string {
 }
 
 // diagram is the model's Mermaid source without its fences, or "" when it
-// does not open with one of diagramKinds or is over tuning's Review.MaxDiagramBytes. If such
-// a diagram reaches the forge, the forge shows a render error, or a diagram
-// too big to read, in its place. A titled front matter block and comment lines
-// can precede the kind, as Mermaid allows. diagramHeader says what is refused.
+// does not open with one of diagramKinds or is over tuning's
+// Review.MaxDiagramBytes. If such a diagram reaches the forge, the forge shows
+// a render error, or a diagram too big to read, in its place. A titled front
+// matter block and comment lines can precede the kind, as Mermaid allows.
+// diagramHeader says what is refused.
 func diagram(src string) string {
 	src = stripFences(strings.TrimSpace(src))
 	if len(src) > int(tuning.Get().Review.MaxDiagramBytes) {

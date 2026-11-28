@@ -419,9 +419,7 @@ func (p *Prompt) Trim() {
 		if *text == "" {
 			return
 		}
-		// JSON writes no byte as more than six, so the text must lose at
-		// least a sixth of the excess.
-		*text = textcut.Prefix(*text, max(0, len(*text)-(over+5)/6))
+		*text = textcut.Prefix(*text, textcut.EscapedRoom(len(*text), over))
 	}
 }
 

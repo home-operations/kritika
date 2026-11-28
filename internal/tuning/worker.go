@@ -216,8 +216,8 @@ type Jobs struct {
 	ReviewAttempts int `env:"KRITIKA_TUNING_JOBS_REVIEW_ATTEMPTS" envDefault:"8" yaml:"reviewAttempts,omitempty"`
 }
 
-// JobTimeout holds the tunable values of package jobtimeout: the bounds of
-// a River job's timeout. River cancels a job's context once its timeout
+// JobTimeout holds the bounds of a River job's timeout, which the worker and
+// configfile share. River cancels a job's context once its timeout
 // passes, and supervision deletes the runner Job when that happens, so a
 // job's timeout must cover everything that the worker does around the
 // runner as well as the runner.

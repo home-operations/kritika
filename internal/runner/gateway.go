@@ -14,10 +14,9 @@ import (
 )
 
 // waitForGateway blocks until the HTTPS proxy the pod was handed answers a
-// request, trying every tuning's Runner.GatewayPoll, or Runner.GatewayWait
-// passes. Any HTTP answer counts, a 404 included:
-// the gateway is up and the Service routes to it. Without a proxy there is
-// nothing to wait for.
+// request, trying again every Runner.GatewayPoll, or Runner.GatewayWait
+// passes. Any HTTP answer counts, a 404 included: the gateway is up and the
+// Service routes to it. Without a proxy there is nothing to wait for.
 func waitForGateway(ctx context.Context, logger *slog.Logger) error {
 	addr := proxyAddress(proxyURL())
 	if addr == "" {

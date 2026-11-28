@@ -66,9 +66,10 @@ type OpenAIConfig struct {
 	// the provider's retries, and the SDK's own retries will otherwise
 	// multiply its attempts.
 	Retries int
-	// RequestTimeout bounds one request. Zero is tuning's Model.DefaultStepTimeout. A
-	// provider's adapter gets the provider's timeout. The runner's client of
-	// the gateway allows the gateway's whole step budget.
+	// RequestTimeout bounds one request. Zero is tuning's
+	// Model.DefaultStepTimeout. A provider's adapter gets the provider's
+	// timeout. The runner's client of the gateway allows the gateway's whole
+	// step budget.
 	RequestTimeout time.Duration
 	// Part names, in PartHeader on every request, the part of a split review
 	// that the runner's client of the gateway steps for. Zero sends none.

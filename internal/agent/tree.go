@@ -67,8 +67,8 @@ func cleanPath(p string) (string, error) {
 	return cleaned, nil
 }
 
-// isBinary reports whether content has a NUL byte in its first 8 KiB. git
-// itself uses the same heuristic to skip a file in a text diff.
+// isBinary reports whether content has a NUL byte in its first tuning's
+// Agent.BinarySniffBytes. git itself uses the same heuristic to skip a file in a text diff.
 func isBinary(content string) bool {
 	n := min(len(content), int(tuning.Get().Agent.BinarySniffBytes))
 	return strings.IndexByte(content[:n], 0) >= 0

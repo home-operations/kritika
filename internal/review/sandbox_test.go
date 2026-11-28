@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,7 +16,8 @@ func TestPrintfAllocation(t *testing.T) {
 	// items is a list whose bytes fit the call twice over but not three
 	// times. So a width charged against its leaves instead of the scalar that
 	// it pads refuses the call. deep is a small value nested past
-	// tuning's Review.MaxMeasureDepth.
+	// tuning's Review.MaxMeasureDepth, which cannot be measured and so is
+	// refused.
 	items := make([]int, 12000)
 	for i := range items {
 		items[i] = i
@@ -32,7 +34,7 @@ func TestPrintfAllocation(t *testing.T) {
 		{name: "width on a scalar beside a composite", src: `{{ printf "%5d items: %v" 3 .Items }}`,
 			data: map[string]any{"Items": items}, want: fmt.Sprintf("%5d items: %v", 3, items)},
 		{name: "width on a composite", src: `{{ printf "%25v" .Items }}`, data: map[string]any{"Items": items}, refused: true},
-		{name: "width on a deeply nested value", src: `{{ printf "%3v" . }}`, data: deep, want: fmt.Sprintf("%3v", deep)},
+		{name: "width on a deeply nested value", src: `{{ printf "%3v" . }}`, data: deep, refused: true},
 		{name: "index out of range", src: `{{ printf "%[3]s|%s" "a" "b" }}`, want: "%!s(BADINDEX)|a"},
 		{name: "indexed width", src: `{{ printf "%[1]*[2]s" 10 "x" }}`, refused: true},
 		{name: "indexed precision", src: `{{ printf "%.[1]*[2]f" 2 1.25 }}`, refused: true},
@@ -98,5 +100,36 @@ func TestIterationBudgetAccounting(t *testing.T) {
 	}
 	if g.iterations != 10 {
 		t.Fatalf("charged %d, want the budget of 10 spent exactly", g.iterations)
+	}
+}
+
+// TestMeasureAtTheDepthCutoff: at tuning's Review.MaxMeasureDepth, a string
+// still counts its length and a composite with contents counts past the
+// limit, so a low depth refuses what it cannot see rather than letting a
+// large value through as small.
+func TestMeasureAtTheDepthCutoff(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MaxMeasureDepth = 2 })
+	limit := tuning.Get().Review.MaxCallBytes()
+	big := strings.Repeat("x", limit+1)
+	for _, tt := range []struct {
+		name string
+		v    any
+		want func(int) bool
+	}{
+		{"a string at the cutoff", []any{[]any{"abc"}}, func(n int) bool { return n == 2*nodeBytes+3 }},
+		{"a large string at the cutoff", []any{[]any{big}}, func(n int) bool { return n > limit }},
+		{"a list past the cutoff", []any{[]any{[]any{big}}}, func(n int) bool { return n > limit }},
+		{"an empty list at the cutoff", []any{[]any{[]any{}}}, func(n int) bool { return n <= 3*nodeBytes }},
+	} {
+		if n := measure(reflect.ValueOf(tt.v), 0, limit); !tt.want(n) {
+			t.Errorf("%s: measured %d bytes against a limit of %d", tt.name, n, limit)
+		}
+	}
+	tmpl := Templates{Summary: `{{ printf "%v" .Notes }}`}
+	d := sampleData()
+	d.Notes = []string{"short"}
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MaxMeasureDepth = 0 })
+	if _, notes := RenderSummary(t.Context(), tmpl, d); len(notes) != 1 {
+		t.Fatalf("notes = %v; want a call on a value the depth cannot measure refused", notes)
 	}
 }

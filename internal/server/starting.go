@@ -54,8 +54,8 @@ func Starting() http.Handler {
 	})
 }
 
-// startingPage reloads itself every tuning's Server.StartingRetry, formatted
-// in as seconds, so the dashboard appears on its own once the service is up.
+// startingPage reloads itself after the seconds formatted into it, the
+// Retry-After, so the dashboard appears on its own once the service is up.
 const startingPage = `<!doctype html>
 <html lang="en">
 <head>

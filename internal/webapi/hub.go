@@ -54,8 +54,9 @@ func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub
 		// A struct of one string always marshals.
 		panic(err)
 	}
+	t := tuning.Get().WebAPI
 	return &hub{
-		current: current, logger: logger, heartbeat: tuning.Get().WebAPI.HeartbeatInterval, buffer: tuning.Get().WebAPI.ClientBuffer,
+		current: current, logger: logger, heartbeat: t.HeartbeatInterval, buffer: t.ClientBuffer,
 		clients: map[*client]struct{}{}, done: make(chan struct{}),
 		resyncFrame: fmt.Appendf(nil, "event: resync\ndata: %s\n\n", data),
 	}
@@ -132,11 +133,14 @@ func (c *client) requestResync() {
 func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	// A server-wide write timeout cuts a stream that never finishes. Instead,
-	// each write gets its own deadline.
-	extend := func() bool {
-		err := rc.SetWriteDeadline(time.Now().Add(tuning.Get().WebAPI.WriteTimeout))
+	// each write gets its own deadline, cleared once the frame is flushed:
+	// HTTP/2 resets a stream whose deadline passes while it waits for the
+	// next frame, as an idle one does between heartbeats.
+	deadline := func(t time.Time) bool {
+		err := rc.SetWriteDeadline(t)
 		return err == nil || errors.Is(err, http.ErrNotSupported)
 	}
+	extend := func() bool { return deadline(time.Now().Add(tuning.Get().WebAPI.WriteTimeout)) }
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream")
 	hdr.Set("Cache-Control", "no-store")
@@ -160,6 +164,9 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := rc.Flush(); err != nil {
+			return
+		}
+		if !deadline(time.Time{}) {
 			return
 		}
 		select {

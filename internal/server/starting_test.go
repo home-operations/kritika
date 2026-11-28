@@ -72,8 +72,8 @@ func TestSwitch(t *testing.T) {
 	}
 }
 
-// TestStartingRoundsTheRetryUp: a retry of part of a second is a second in
-// the header and the page's refresh, never 0, which reloads at once.
+// TestStartingRoundsTheRetryUp: the header and the page's refresh are in
+// whole seconds, rounded up, never 0, which reloads at once.
 func TestStartingRoundsTheRetryUp(t *testing.T) {
 	for _, tt := range []struct {
 		retry time.Duration

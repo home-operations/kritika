@@ -15,9 +15,8 @@ import (
 )
 
 // attempts counts failed local sign-ins per client address, to hold
-// password guessing to tuning's Auth.MaxFailedSignIns wrong answers per
-// address in Auth.FailedSignInWindow, tracking at most
-// Auth.MaxTrackedClients addresses.
+// password guessing to tuning's Auth.MaxFailedSignIns per
+// Auth.FailedSignInWindow.
 type attempts struct {
 	now func() time.Time
 

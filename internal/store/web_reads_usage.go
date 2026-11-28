@@ -205,10 +205,10 @@ type JobRow struct {
 // jobColumns selects a JobRow from the account's review, follow-up, thread and
 // index jobs. River's tables carry no row-level security, so the account
 // comes from the transaction's own setting rather than a parameter that a
-// caller can get wrong. A running job's heartbeat is overdue past the
-// abandonment window that its last beat carries, or tuning's
-// JobTimeout.HeartbeatAbandonedAfter when it carries none, as the rescuer
-// judges it. A discarded job is a recent failure within
+// caller can get wrong. A running job's heartbeat is overdue as
+// AbandonedJobs judges it: claimed longer than tuning's
+// JobTimeout.HeartbeatAbandonedAfter ago, and its last beat older than the
+// window that it carries. A discarded job is a recent failure within
 // Store.RecentFailureWindow. Both are the process's values when it is
 // called.
 func jobColumns() string {
@@ -223,8 +223,8 @@ func jobColumns() string {
 		AND v.status IN ('running', 'prepared') AND v.cancel_requested_at IS NULL ORDER BY v.created_at DESC LIMIT 1), ''),
 	h.heartbeat_at,
 	coalesce(j.state = 'running' AND j.attempted_at IS NOT NULL
-		AND greatest(j.attempted_at, h.heartbeat_at) < now() -
-			coalesce(h.abandon_after, ` + intervalSQL(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()) + `), false),
+		AND j.attempted_at < now() - ` + intervalSQL(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()) + `
+		AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - h.abandon_after), false),
 	coalesce(j.state = 'discarded' AND j.finalized_at >= now() - ` + intervalSQL(tuning.Get().Store.RecentFailureWindow) + ` AND NOT EXISTS (
 		SELECT 1 FROM river_job newer WHERE newer.args->>'account_id' = current_setting('app.account_id', true)
 			AND newer.id > j.id AND newer.kind = j.kind

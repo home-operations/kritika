@@ -436,7 +436,7 @@ func (in *Installer) attestationBundle(ctx context.Context, inline json.RawMessa
 	if err != nil {
 		return nil, false, fmt.Errorf("attestation bundle: %w", err)
 	}
-	if n, err := snappy.DecodedLen(compressed); err != nil || int64(n) > int64(tuning.Get().Aqua.MaxSignatureBytes) {
+	if n, err := snappy.DecodedLen(compressed); err != nil || tuning.ByteSize(n) > tuning.Get().Aqua.MaxSignatureBytes {
 		return nil, true, fmt.Errorf("%w: an attestation's bundle is not snappy-compressed, or too large", ErrSignature)
 	}
 	data, err := snappy.Decode(nil, compressed)

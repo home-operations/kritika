@@ -27,8 +27,8 @@ type Message struct {
 // and cut to tuning's Review.MaxMessageChars.
 func NewMessage(author, body string, when time.Time) Message {
 	body = strings.TrimSpace(body)
-	if len(body) > tuning.Get().Review.MaxMessageChars {
-		body = textcut.Prefix(body, tuning.Get().Review.MaxMessageChars) + " …"
+	if most := tuning.Get().Review.MaxMessageChars; len(body) > most {
+		body = textcut.Prefix(body, most) + " …"
 	}
 	return Message{Author: author, Body: body, When: when}
 }
@@ -228,8 +228,9 @@ func buildThread(in Input, findings []Finding, thread []Message, reply bool) str
 		fmt.Fprintf(&tail, "\nReply to the last message from %s.\n", thread[len(thread)-1].Author)
 	}
 
-	budget := cmp.Or(in.BudgetTokens, tuning.Get().Review.DefaultBudgetTokens)
-	in.BudgetTokens = max(budget-tail.Len()/tuning.Get().Review.CharsPerToken, tuning.Get().Review.MinUserBudget)
+	r := tuning.Get().Review
+	budget := cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens)
+	in.BudgetTokens = max(budget-tail.Len()/r.CharsPerToken, r.MinUserBudget)
 	msg, _, _, _ := Build(in)
 	return msg + tail.String()
 }

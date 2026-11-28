@@ -99,3 +99,11 @@ func notAbove[T int | ByteSize | time.Duration](a string, x T, b string, y T) er
 	}
 	return fmt.Errorf("%s %w %s", fieldLabel(a), errMustNotExceed, fieldLabel(b))
 }
+
+// exceeds is the error of a field a that must exceed field b, or nil.
+func exceeds[T int | ByteSize | time.Duration](a string, x T, b string, y T) error {
+	if x > y {
+		return nil
+	}
+	return fmt.Errorf("%s %w %s", fieldLabel(a), errMustExceed, fieldLabel(b))
+}

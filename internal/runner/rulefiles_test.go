@@ -23,6 +23,7 @@ func ruleDoc(paths, body string) string {
 }
 
 func TestDiscoverRuleFiles(t *testing.T) {
+	limits := tuning.Get().RepoConfig
 	files := map[string]string{
 		"main.go":                                 "package main\n",
 		".claude/rules/error-handling.md":         ruleDoc(`["**/*.rs"]`, "No bare let _ =.\n"),
@@ -31,7 +32,7 @@ func TestDiscoverRuleFiles(t *testing.T) {
 		".claude/rules/notes.txt":                 "Not markdown.\n",
 		".claude/rules/blank.md":                  ruleDoc(`["**/*.go"]`, ""),
 		".claude/rules/bad-glob.md":               ruleDoc(`["photos [2024/**"]`, "Matches nothing.\n"),
-		".claude/rules/huge.md":                   strings.Repeat("x", int(tuning.Get().RepoConfig.MaxRuleFileBytes)),
+		".claude/rules/huge.md":                   strings.Repeat("x", int(limits.MaxRuleFileBytes)),
 		".claude/rules/___.md":                    "No id.\n",
 		".agents/rules/error-handling.md":         "Another one.\n",
 		".agents/rules/style.md":                  "Short names.\n",
@@ -60,21 +61,21 @@ func TestDiscoverRuleFiles(t *testing.T) {
 	manyMoreTexts := repoconfig.Files{"r/rule-101.md": "One of many."}
 	nested, nestedTexts := map[string]string{"r/z.md": "The hundredth.\n"}, repoconfig.Files{"r/z.md": "The hundredth."}
 	var nestedRules []configfile.Rule
-	for i := range tuning.Get().RepoConfig.MaxRuleFiles + 1 {
+	for i := range limits.MaxRuleFiles + 1 {
 		id := fmt.Sprintf("rule-%03d", i)
 		many["r/"+id+".md"] = "One of many.\n"
-		if i < tuning.Get().RepoConfig.MaxRuleFiles {
+		if i < limits.MaxRuleFiles {
 			capped = append(capped, configfile.Rule{ID: id, File: "r/" + id + ".md"})
 			cappedTexts["r/"+id+".md"] = "One of many."
 		}
-		if i < tuning.Get().RepoConfig.MaxRuleFiles {
+		if i < limits.MaxRuleFiles {
 			blanks["r/"+id+".md"] = ""
 		}
 		manyMore["r/"+id+".md"] = "One of many.\n"
 		if i >= 2 {
 			manyMoreTexts["r/"+id+".md"] = "One of many."
 		}
-		if i < tuning.Get().RepoConfig.MaxRuleFiles-1 {
+		if i < limits.MaxRuleFiles-1 {
 			nested["r/sub/"+id+".md"] = "One of many.\n"
 			nestedRules = append(nestedRules, configfile.Rule{ID: id, File: "r/sub/" + id + ".md"})
 			nestedTexts["r/sub/"+id+".md"] = "One of many."
@@ -144,7 +145,7 @@ func TestDiscoverRuleFiles(t *testing.T) {
 			rf: &runspec.RuleFiles{Paths: []string{"docs/rules"}, Files: []string{"./docs/rules/release.md"}},
 		},
 		{
-			name: "a file too large to read", files: map[string]string{"r/big.md": strings.Repeat("x", int(tuning.Get().RepoConfig.MaxFileBytes)+1)},
+			name: "a file too large to read", files: map[string]string{"r/big.md": strings.Repeat("x", int(limits.MaxFileBytes)+1)},
 			rf: &runspec.RuleFiles{Paths: []string{"r"}}, wantNotes: []string{repoconfig.TooLarge("r/big.md")},
 		},
 	}

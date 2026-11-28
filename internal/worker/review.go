@@ -53,7 +53,8 @@ type Review struct {
 	// value calls Linear's API.
 	Linear linear.Client
 
-	// superviseEvery overrides tuning's Worker.SuperviseInterval, and rowWait tuning's Worker.AgentRowWait.
+	// superviseEvery overrides tuning's Worker.SuperviseInterval, and rowWait
+	// tuning's Worker.AgentRowWait.
 	superviseEvery time.Duration
 	rowWait        time.Duration
 }
@@ -620,7 +621,8 @@ func (w *Review) snooze(ctx context.Context, e earlyEnd, job *river.Job[jobs.Rev
 	if err := river.MetadataSet(ctx, slotWaitSinceKey, time.Now().UTC()); err != nil {
 		e.logger.Warn("model slot wait start not recorded", "error", err)
 	}
-	d := store.Backoff(meta.Snoozes, tuning.Get().Worker.SnoozeMin, tuning.Get().Worker.SnoozeMax)
+	t := tuning.Get().Worker
+	d := store.Backoff(meta.Snoozes, t.SnoozeMin, t.SnoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
 	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
 	return river.JobSnooze(d)

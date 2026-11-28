@@ -141,3 +141,13 @@ gitlab:
 		t.Fatalf("order after the refused account's look = %q, want %q", got, before)
 	}
 }
+
+// TestRateLimitedFallbackIsTunable: a 429 that names no wait waits tuning's
+// Poller.ForgeRateLimitWait as it is when the poll reads it.
+func TestRateLimitedFallbackIsTunable(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Poller.ForgeRateLimitWait = 7 * time.Minute })
+	err := &gl.ErrorResponse{StatusCode: http.StatusTooManyRequests, Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}}
+	if wait, limited := rateLimited(err, time.Now()); wait != 7*time.Minute || !limited {
+		t.Fatalf("rateLimited = %s %t, want the overridden 7m", wait, limited)
+	}
+}

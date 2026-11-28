@@ -188,7 +188,7 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 		return errS3CircuitOpen
 	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, uploadDeadline(entry.Size))
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Egress.S3UploadDeadline(entry.Size))
 	defer cancel()
 	started := time.Now()
 	// Another replica can publish the entry first, the same body under the

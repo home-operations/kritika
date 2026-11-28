@@ -29,13 +29,9 @@ import (
 )
 
 // What fetch_oci can take: a run inspects at most the spec's fetches, as
-// many as fetch_repo can fetch, and lists tags at most tuning's
-// Runner.MaxTagListings times, counted apart from fetch_repo's listings.
-// The rest is tuning's Runner too: what one call takes from the registry
-// (OCIWireBytes) and of wall time (OCITimeout), the largest manifest or
-// config it reads (OCIMetadataBytes), what it shows of a config that is no
-// image's (OCIConfigShown), and how many pages long a tag listing is
-// (OCITagPages).
+// many as fetch_repo can fetch, and lists tags at most Runner.MaxTagListings
+// times. tuning's Runner bounds the rest of a call: OCIWireBytes,
+// OCITimeout, OCIMetadataBytes, OCIConfigShown and OCITagPages.
 
 // dockerMediaTypes are the Docker media types an image's manifest list,
 // manifest and config come under, beside the OCI ones.
@@ -326,8 +322,8 @@ func inspect(ctx context.Context, repo *remote.Repository, ref registry.Referenc
 }
 
 // readManifest reads the manifest rc holds whole, against desc's size and
-// digest, and closes it. A manifest over Runner.OCIMetadataBytes is refused unread,
-// since the registry's size is trusted only that far.
+// digest, and closes it. A manifest over Runner.OCIMetadataBytes is refused
+// unread, since the registry's size is trusted only that far.
 func readManifest(rc io.ReadCloser, desc ocispec.Descriptor) ([]byte, error) {
 	defer func() { _ = rc.Close() }()
 	if most := int64(tuning.Get().Runner.OCIMetadataBytes); desc.Size > most {

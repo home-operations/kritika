@@ -84,14 +84,45 @@ func TestCrossFieldEdges(t *testing.T) {
 			[]string{"tuning.gateway.maxSimilarRequest: KRITIKA_TUNING_GATEWAY_MAX_SIMILAR_REQUEST"},
 		},
 		{
-			"similar answer body holds its chunks",
+			"similar answer body holds its escaped chunks",
 			func(v *Values) {
-				v.Runner.MaxSimilarAnswerBody = ByteSize(v.ContextPack.SimilarLimit)*v.Indexer.MaxChunkBytes - 1
+				v.Runner.MaxSimilarAnswerBody = ByteSize(v.ContextPack.SimilarLimit)*jsonGrowth*(v.Indexer.MaxChunkBytes+indexChunkFields) +
+					similarEnvelope - 1
 			},
 			func(v *Values) {
-				v.Runner.MaxSimilarAnswerBody = ByteSize(v.ContextPack.SimilarLimit) * v.Indexer.MaxChunkBytes
+				v.Runner.MaxSimilarAnswerBody = ByteSize(v.ContextPack.SimilarLimit)*jsonGrowth*(v.Indexer.MaxChunkBytes+indexChunkFields) +
+					similarEnvelope
 			},
 			[]string{"tuning.runner.maxSimilarAnswerBody", "tuning.contextPack.similarLimit", "tuning.indexer.maxChunkBytes"},
+		},
+		{
+			"similar answer body holds more than the raw chunks",
+			func(v *Values) { v.Runner.MaxSimilarAnswerBody = 96000 },
+			func(*Values) {},
+			[]string{"tuning.runner.maxSimilarAnswerBody: KRITIKA_TUNING_RUNNER_MAX_SIMILAR_ANSWER_BODY"},
+		},
+		{
+			"small report holds an escaped failure cause",
+			func(v *Values) {
+				v.Gateway.MaxSmallReport = jsonGrowth*v.Runner.MaxFailureCause + smallReportEnvelope - 1
+			},
+			func(v *Values) {
+				v.Gateway.MaxSmallReport = jsonGrowth*v.Runner.MaxFailureCause + smallReportEnvelope
+			},
+			[]string{"tuning.gateway.maxSmallReport: KRITIKA_TUNING_GATEWAY_MAX_SMALL_REPORT", "tuning.runner.maxFailureCause"},
+		},
+		{
+			"small report under a phase report",
+			func(v *Values) { v.Gateway.MaxSmallReport = 16 },
+			func(*Values) {},
+			[]string{"tuning.gateway.maxSmallReport"},
+		},
+		{
+			"heartbeat timeout leaves another beat",
+			func(v *Values) { v.Runner.HeartbeatTimeout = 6 * time.Minute },
+			func(v *Values) { v.Runner.HeartbeatTimeout = v.RunSpec.ReportRetryWindow + v.RunSpec.ReportTimeout },
+			[]string{"tuning.runner.heartbeatTimeout: KRITIKA_TUNING_RUNNER_HEARTBEAT_TIMEOUT", "tuning.runSpec.reportRetryWindow",
+				"tuning.runSpec.reportTimeout"},
 		},
 		{
 			"similar limit covers the default answer",
@@ -313,9 +344,8 @@ func TestCrossFieldEdges(t *testing.T) {
 	}
 }
 
-// TestCrossFieldMessages: each of the timeout, lease and comment
-// invariants refuses the values that break it with the error it names, by
-// both fields' paths and variables, and takes those at its edge.
+// TestCrossFieldMessages: each invariant between fields refuses the values
+// that break it with the error it names, and takes those at its edge.
 func TestCrossFieldMessages(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -430,6 +460,44 @@ func TestCrossFieldMessages(t *testing.T) {
 			name: "statement timeouts of a millisecond",
 			change: func(v *Values) {
 				v.Store.AppStatementTimeout, v.Store.OwnerStatementTimeout = time.Millisecond, time.Millisecond
+			},
+		},
+		{
+			name: "statement timeouts at the most Postgres takes",
+			change: func(v *Values) {
+				v.Store.AppStatementTimeout, v.Store.OwnerStatementTimeout = MaxStatementTimeout, MaxStatementTimeout
+			},
+		},
+		{
+			name: "statement timeouts past the most Postgres takes",
+			change: func(v *Values) {
+				v.Store.AppStatementTimeout, v.Store.OwnerStatementTimeout = MaxStatementTimeout+1, MaxStatementTimeout+1
+			},
+			want: []string{
+				"tuning.store.appStatementTimeout: KRITIKA_TUNING_STORE_APP_STATEMENT_TIMEOUT must not exceed",
+				"tuning.store.ownerStatementTimeout: KRITIKA_TUNING_STORE_OWNER_STATEMENT_TIMEOUT must not exceed",
+			},
+		},
+		{
+			name:   "an embedding item cap at the batch cap",
+			change: func(v *Values) { v.Model.DefaultEmbedMaxItemChars = v.Model.DefaultEmbedMaxBatchChars },
+		},
+		{
+			name:   "an embedding item cap past the batch cap",
+			change: func(v *Values) { v.Model.DefaultEmbedMaxItemChars = v.Model.DefaultEmbedMaxBatchChars + 1 },
+			want: []string{
+				"tuning.model.defaultEmbedMaxItemChars: KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_ITEM_CHARS must not exceed " +
+					"tuning.model.defaultEmbedMaxBatchChars: KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_BATCH_CHARS",
+			},
+		},
+		{
+			name: "a queue stop past the longest duration",
+			change: func(v *Values) {
+				v.Process.QueueDrain, v.Process.QueueStopHeadroom = 2562047*time.Hour, 2*time.Hour
+			},
+			want: []string{
+				"tuning.process.queueDrain: KRITIKA_TUNING_PROCESS_QUEUE_DRAIN and " +
+					"tuning.process.queueStopHeadroom: KRITIKA_TUNING_PROCESS_QUEUE_STOP_HEADROOM together must not exceed",
 			},
 		},
 		{
@@ -559,13 +627,13 @@ func TestCrossFieldMessages(t *testing.T) {
 			err := crossFieldErrors(v)
 			if len(tt.want) == 0 {
 				if err != "" {
-					t.Fatalf("Validate = %s, want no cross-field error", err)
+					t.Fatalf("cross-field errors = %s, want none", err)
 				}
 				return
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err, want) {
-					t.Errorf("Validate = %q, want %q", err, want)
+					t.Errorf("cross-field errors = %q, want %q", err, want)
 				}
 			}
 		})
@@ -609,5 +677,18 @@ func TestJobTimeoutChain(t *testing.T) {
 	}
 	if got, want := d.RescueStuckJobsAfter(), 6*time.Hour; got != want {
 		t.Errorf("RescueStuckJobsAfter at a 5h job timeout = %s, want %s", got, want)
+	}
+}
+
+// TestHeartbeatStaleSaturates: a sum past the longest Duration is the
+// longest, as the heartbeat rule's own sums are.
+func TestHeartbeatStaleSaturates(t *testing.T) {
+	v := Defaults()
+	if got, want := v.HeartbeatStale(), v.RunSpec.ReportRetryWindow+v.RunSpec.ReportTimeout+2*v.RunSpec.HeartbeatInterval; got != want {
+		t.Errorf("HeartbeatStale = %s, want %s", got, want)
+	}
+	v.RunSpec.ReportRetryWindow = math.MaxInt64 - v.RunSpec.ReportTimeout
+	if got := v.HeartbeatStale(); got != math.MaxInt64 {
+		t.Errorf("HeartbeatStale past the longest Duration = %s, want %s", got, time.Duration(math.MaxInt64))
 	}
 }

@@ -59,12 +59,13 @@ type Rescuer struct {
 	Logger  *slog.Logger
 	// Metrics can be nil.
 	Metrics *metrics.Metrics
-	// every overrides tuning's Worker.RescueInterval, and stale JobTimeout.HeartbeatAbandonedAfter.
+	// every overrides tuning's Worker.RescueInterval, and stale
+	// JobTimeout.HeartbeatAbandonedAfter.
 	every, stale time.Duration
 }
 
-// Run rescues every tuning's Worker.RescueInterval until ctx ends. A pass that fails in
-// part is logged and the rest tried again next time.
+// Run rescues every tuning's Worker.RescueInterval until ctx ends. A pass that
+// fails in part is logged and the rest tried again next time.
 func (r *Rescuer) Run(ctx context.Context) {
 	t := time.NewTicker(cmp.Or(r.every, tuning.Get().Worker.RescueInterval))
 	defer t.Stop()
@@ -84,16 +85,17 @@ func (r *Rescuer) Run(ctx context.Context) {
 // River. A beat is stale by the abandonment window that its replica wrote
 // with it, so a leader on other heartbeat settings, as during a rollout,
 // waits out the job's own replica's fence. Only a beat that carries none is
-// judged by this replica's JobTimeout.HeartbeatAbandonedAfter. Then every unfinished run whose job is no longer running, or runs
-// anew with a run of its own, is reaped. The heartbeats of ended jobs are
-// swept too. The two are independent, each idempotent. So a reap that the API
-// server refuses is tried again next pass, without the job waiting on it. A
-// job claimed again before its reap does not hide the run that its dead
-// worker left.
+// judged by this replica's JobTimeout.HeartbeatAbandonedAfter. Then every
+// unfinished run whose job is no longer running, or runs anew with a run of
+// its own, is reaped. The heartbeats of ended jobs are swept too. The two are
+// independent, each idempotent. So a reap that the API server refuses is tried
+// again next pass, without the job waiting on it. A job claimed again before
+// its reap does not hide the run that its dead worker left.
 func (r *Rescuer) Rescue(ctx context.Context) error {
 	stale := cmp.Or(r.stale, tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
+	batch := tuning.Get().Worker.RescueBatch
 	var errs []error
-	abandoned, err := r.Store.AbandonedJobs(ctx, stale, tuning.Get().Worker.RescueBatch)
+	abandoned, err := r.Store.AbandonedJobs(ctx, stale, batch)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -115,7 +117,7 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 			}
 		}
 	}
-	orphaned, err := r.Store.OrphanedRuns(ctx, tuning.Get().Worker.RescueBatch)
+	orphaned, err := r.Store.OrphanedRuns(ctx, batch)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -129,10 +131,10 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 	if _, err := r.Store.SweepJobHeartbeats(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if err := r.Store.SweepIndexProgress(ctx, tuning.Get().Worker.RescueBatch); err != nil {
+	if err := r.Store.SweepIndexProgress(ctx, batch); err != nil {
 		errs = append(errs, err)
 	}
-	recovery, err := r.Store.ReconcileModelInvocations(ctx, tuning.Get().Worker.RescueBatch)
+	recovery, err := r.Store.ReconcileModelInvocations(ctx, batch)
 	if err != nil {
 		errs = append(errs, err)
 	}

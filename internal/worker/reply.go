@@ -41,9 +41,10 @@ func (f *followUp) replyDisqualified(ctx context.Context) string {
 
 // runReply answers a reply in one of the bot's finding threads that did not
 // address it, as run answers a mention. It does so when the thread holds
-// fewer than tuning's Worker.RepliesPerThread of the bot's replies, counted again before the
-// reply is posted. Replies handled at once pass the first count together, and
-// the second count leaves the window that the posts themselves take.
+// fewer than tuning's Worker.RepliesPerThread of the bot's replies, counted
+// again before the reply is posted. Replies handled at once pass the first
+// count together, and the second count leaves the window that the posts
+// themselves take.
 //
 // The agent can post nothing, which is recorded as answered all the same,
 // with why. The model was paid, so it is not asked again on a retry. Or the agent can concede the finding, which

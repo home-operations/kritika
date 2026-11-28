@@ -640,9 +640,8 @@ func TestOpenAIConfiguredHeaders(t *testing.T) {
 }
 
 // TestRequestTimeoutOverrides: a client built with its own request timeout
-// gives up on a stalled server by that timeout, not by tuning's
-// Model.DefaultStepTimeout.
-// The gateway's budgets nest, so the runner always outlasts the gateway,
+// gives up on a stalled server by that timeout, not by the default step
+// timeout. The gateway's budgets nest, so the runner always outlasts the gateway,
 // which outlasts one provider request on either of a step's providers.
 func TestRequestTimeoutOverrides(t *testing.T) {
 	step := tuning.Get().Model.DefaultStepTimeout

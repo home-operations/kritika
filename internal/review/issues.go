@@ -33,8 +33,9 @@ var closingKeyword = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resol
 
 // LinkedIssues is the numbers of the issues of repository, "owner/name", that
 // body says the change closes. They are in order of first mention, and there
-// are at most tuning's Review.MaxLinkedIssues of them. A reference to another repository's
-// issue is left out: the review reads only the repository it reviews.
+// are at most tuning's Review.MaxLinkedIssues of them. A reference to another
+// repository's issue is left out: the review reads only the repository it
+// reviews.
 func LinkedIssues(body, repository string) []int {
 	var out []int
 	for _, m := range closingKeyword.FindAllStringSubmatch(body, -1) {

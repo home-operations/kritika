@@ -157,9 +157,9 @@ func TestParseRerank(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	r := f.Embedding.Rerank
+	r, cf := f.Embedding.Rerank, tuning.Get().ConfigFile
 	if r.BaseURL != "https://api.cohere.com/v2" || r.Model != "rerank-v3.5" || r.APIKeyValue().Value() != "rk" ||
-		r.CandidateCount() != tuning.Get().ConfigFile.DefaultRerankCandidates || r.Deadline() != tuning.Get().ConfigFile.DefaultRerankTimeout {
+		r.CandidateCount() != cf.DefaultRerankCandidates || r.Deadline() != cf.DefaultRerankTimeout {
 		t.Fatalf("rerank = %+v", r)
 	}
 	if !f.Embedding.LexicalSearch() {
@@ -186,17 +186,18 @@ func TestParseEmbedding(t *testing.T) {
 	if e == nil || e.Model != "voyage-code-3" || e.BaseURL != model.OpenRouterBaseURL || e.Dims != 1024 || e.APIKeyValue().Value() != "ek" {
 		t.Fatalf("embedding = %+v", e)
 	}
-	if batch, chars, item := e.Bounds(); batch != 8 || chars != tuning.Get().Model.DefaultEmbedMaxBatchChars || item != tuning.Get().Model.DefaultEmbedMaxItemChars {
+	mt, cf := tuning.Get().Model, tuning.Get().ConfigFile
+	if batch, chars, item := e.Bounds(); batch != 8 || chars != mt.DefaultEmbedMaxBatchChars || item != mt.DefaultEmbedMaxItemChars {
 		t.Fatalf("Bounds = %d, %d, %d", batch, chars, item)
 	}
-	if e.Floor() != tuning.Get().ConfigFile.DefaultSimilarFloor {
-		t.Fatalf("Floor = %g, want the default %g", e.Floor(), tuning.Get().ConfigFile.DefaultSimilarFloor)
+	if e.Floor() != cf.DefaultSimilarFloor {
+		t.Fatalf("Floor = %g, want the default %g", e.Floor(), cf.DefaultSimilarFloor)
 	}
 	if f, err := Parse([]byte(embeddingDoc("similarFloor: 0.7"))); err != nil || f.Embedding.Floor() != 0.7 {
 		t.Fatalf("Parse(similarFloor: 0.7) = %v, floor %v", err, f)
 	}
-	if e.Margin() != tuning.Get().ConfigFile.DefaultSimilarMargin {
-		t.Fatalf("Margin = %g, want the default %g", e.Margin(), tuning.Get().ConfigFile.DefaultSimilarMargin)
+	if e.Margin() != cf.DefaultSimilarMargin {
+		t.Fatalf("Margin = %g, want the default %g", e.Margin(), cf.DefaultSimilarMargin)
 	}
 	for _, margin := range []float64{0.05, 0} {
 		doc := embeddingDoc(fmt.Sprintf("similarMargin: %g", margin))

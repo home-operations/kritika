@@ -43,7 +43,6 @@ import (
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -2168,7 +2167,7 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 		if limits == nil {
 			t.Fatalf("concurrency %d: the run had no agent", tc.parallel)
 		}
-		want := min(time.Duration(8*limits.TimeoutSeconds)*time.Second, jobtimeout.MaxAgentTimeout()) + tuning.Get().JobTimeout.AgentFetchHeadroom
+		want := min(time.Duration(8*limits.TimeoutSeconds)*time.Second, tuning.Get().JobTimeout.MaxAgentTimeout()) + tuning.Get().JobTimeout.AgentFetchHeadroom
 		if limits.Parts != 8 || limits.Slots[limits.Pools["default"]] != tc.parallel || budget != 8*limits.MaxTokens || deadline != want {
 			t.Fatalf("concurrency %d: agent = %+v, budget = %d, deadline = %s; want 8 parts, %d at once, 8 times the tokens and %s",
 				tc.parallel, limits, budget, deadline, tc.parallel, want)

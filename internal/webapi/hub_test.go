@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func testHub(t *testing.T) (*hub, *configfile.File) {
@@ -247,4 +248,35 @@ func TestHubCloseEndsStreams(t *testing.T) {
 		t.Fatal("stream still open after the hub closed")
 	}
 	h.close() // idempotent
+}
+
+// TestHubServeIdleOverHTTP2: a write timeout shorter than the heartbeat does
+// not reset an idle HTTP/2 stream: the deadline covers a frame's write and
+// flush, not the wait for the next frame.
+func TestHubServeIdleOverHTTP2(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.WebAPI.WriteTimeout = 50 * time.Millisecond })
+	h, f := testHub(t)
+	h.heartbeat = 300 * time.Millisecond
+	p := &auth.Principal{Accounts: map[string]bool{accountIDOf(t, f, "alpha"): true}}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.ProtoMajor != 2 {
+		t.Fatalf("protocol = %s, want HTTP/2", resp.Proto)
+	}
+	br := bufio.NewReader(resp.Body)
+	expectResync(t, br)
+	for range 2 {
+		if l := sseLine(t, br); l != ": heartbeat" {
+			t.Fatalf("line = %q, want a heartbeat after an idle wait past the write timeout", l)
+		}
+	}
 }

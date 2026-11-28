@@ -229,6 +229,7 @@ func TestTuning(t *testing.T) {
 		{name: "zero from the environment", value: "0", wantErr: "tuning.gateway.similarPerQuery: " + name + " must be positive"},
 		{name: "not a number", value: "many", wantErr: "config: environment variable " + name + ": "},
 		{name: "fraction", doc: "tuning: {gateway: {similarPerQuery: 1.5}}", wantErr: "whole number"},
+		{name: "fraction of an int64", doc: "tuning: {agent: {defaultMaxTokens: 1000.5}}", wantErr: "whole number"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.yaml")

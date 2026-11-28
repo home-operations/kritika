@@ -8,6 +8,7 @@ import (
 )
 
 func TestPoolConfig(t *testing.T) {
+	pingTimeout := tuning.Get().Store.PingTimeout
 	tests := []struct {
 		name         string
 		url          string
@@ -16,12 +17,12 @@ func TestPoolConfig(t *testing.T) {
 		wantTimeout  string
 		wantPing     time.Duration
 	}{
-		{name: "the ceiling given applies", url: "postgres://u:p@db/kritika", wantMax: 16, wantPing: tuning.Get().Store.PingTimeout},
-		{name: "the URI's pool_max_conns wins", url: "postgres://u:p@db/kritika?pool_max_conns=40", wantMax: 40, wantPing: tuning.Get().Store.PingTimeout},
-		{name: "a keyword DSN's pool_max_conns wins too", url: "host=db user=u password=p dbname=kritika pool_max_conns=3", wantMax: 3, wantPing: tuning.Get().Store.PingTimeout},
-		{name: "a statement timeout is set in milliseconds", url: "postgres://u:p@db/kritika", statementMax: 10 * time.Minute, wantMax: 16, wantTimeout: "600000", wantPing: tuning.Get().Store.PingTimeout},
-		{name: "a statement timeout under a millisecond is one, not none", url: "postgres://u:p@db/kritika", statementMax: 500 * time.Microsecond, wantMax: 16, wantTimeout: "1", wantPing: tuning.Get().Store.PingTimeout},
-		{name: "a statement timeout of part of a millisecond rounds up", url: "postgres://u:p@db/kritika", statementMax: 1500 * time.Microsecond, wantMax: 16, wantTimeout: "2", wantPing: tuning.Get().Store.PingTimeout},
+		{name: "the ceiling given applies", url: "postgres://u:p@db/kritika", wantMax: 16, wantPing: pingTimeout},
+		{name: "the URI's pool_max_conns wins", url: "postgres://u:p@db/kritika?pool_max_conns=40", wantMax: 40, wantPing: pingTimeout},
+		{name: "a keyword DSN's pool_max_conns wins too", url: "host=db user=u password=p dbname=kritika pool_max_conns=3", wantMax: 3, wantPing: pingTimeout},
+		{name: "a statement timeout is set in milliseconds", url: "postgres://u:p@db/kritika", statementMax: 10 * time.Minute, wantMax: 16, wantTimeout: "600000", wantPing: pingTimeout},
+		{name: "a statement timeout under a millisecond is one, not none", url: "postgres://u:p@db/kritika", statementMax: 500 * time.Microsecond, wantMax: 16, wantTimeout: "1", wantPing: pingTimeout},
+		{name: "a statement timeout of part of a millisecond rounds up", url: "postgres://u:p@db/kritika", statementMax: 1500 * time.Microsecond, wantMax: 16, wantTimeout: "2", wantPing: pingTimeout},
 		{name: "the URI's pool_ping_timeout wins", url: "postgres://u:p@db/kritika?pool_ping_timeout=1s", wantMax: 16, wantPing: time.Second},
 	}
 	for _, tt := range tests {

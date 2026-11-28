@@ -105,6 +105,7 @@ func TestPartitionIndexChunksLockedRoundTrips(t *testing.T) {
 // and so drops the empty legacy partition once the searches that hold it
 // end.
 func TestDropLegacyIndexChunksBesideSustainedSearches(t *testing.T) {
+	partitionTries := tuning.Get().Store.PartitionTries
 	slowLockWaits(t)
 	s := openStore(t)
 	ctx := t.Context()
@@ -180,8 +181,8 @@ func TestDropLegacyIndexChunksBesideSustainedSearches(t *testing.T) {
 			got.dropped, got.err, gaveUp)
 	default:
 	}
-	if gaveUp != tuning.Get().Store.PartitionTries-1 {
-		t.Fatalf("the drop waited for the lock after giving way %d times, want %d", gaveUp, tuning.Get().Store.PartitionTries-1)
+	if gaveUp != partitionTries-1 {
+		t.Fatalf("the drop waited for the lock after giving way %d times, want %d", gaveUp, partitionTries-1)
 	}
 	// The search that holds index_chunks now ends, and the drop takes it.
 	if err := holding.Commit(ctx); err != nil {

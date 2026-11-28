@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Gateway holds the tunable values of package gateway.
@@ -21,7 +23,8 @@ type Gateway struct {
 	// Drain is how long a stopping gateway lets model steps in flight
 	// finish. A step that it cuts is paid for and not recorded, and the
 	// runner's retry is paid for again. So Drain covers a long step, not
-	// the usual few seconds. The chart's grace period must outlast process.linger plus it.
+	// the usual few seconds. The chart's grace period must outlast
+	// process.linger plus it.
 	Drain time.Duration `env:"KRITIKA_TUNING_GATEWAY_DRAIN" envDefault:"2m" yaml:"drain,omitempty"`
 	// MaxConversationBytes bounds one model step's request, the whole
 	// conversation so far with every tool output in it capped, and so the
@@ -43,11 +46,13 @@ type Gateway struct {
 	// maxConversationBytes, in base64.
 	MaxReportBody ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_REPORT_BODY" envDefault:"64Mi" yaml:"maxReportBody,omitempty"`
 	// MaxCheckpointBody bounds a part checkpoint, which holds one part's
-	// submitted answer, far below it. One that it refuses only costs a
-	// retry that part's run again.
+	// submitted answer, far below it. A checkpoint that it refuses only
+	// means a retry runs that part again.
 	MaxCheckpointBody ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_CHECKPOINT_BODY" envDefault:"4Mi" yaml:"maxCheckpointBody,omitempty"`
 	// MaxSmallReport bounds a run's phase, failure and remaining-parts
-	// reports.
+	// reports, as JSON encodes them: a failure report holds a cause of up
+	// to runner.maxFailureCause, which escaping can make six times as long,
+	// and the runner cuts a cause further to fit.
 	MaxSmallReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_SMALL_REPORT" envDefault:"64Ki" yaml:"maxSmallReport,omitempty"`
 	// MaxIndexBody bounds an index upload: its opening line, and a line for
 	// each of up to indexer.maxChunks chunks of indexer.maxChunkBytes, whose
@@ -212,10 +217,8 @@ type Aqua struct {
 // How a report's JSON grows what it carries, for the bounds that the
 // gateway's request limits must hold.
 const (
-	// jsonGrowth is the most bytes that encoding/json writes for one byte
-	// of a string: < for a <, as it escapes HTML, or for a control
-	// byte, and � for a byte of invalid UTF-8.
-	jsonGrowth = 6
+	// jsonGrowth is textcut.JSONGrowth, how much JSON can grow a string.
+	jsonGrowth = textcut.JSONGrowth
 	// sourceGrowth is what an index upload's encoding, which leaves HTML
 	// unescaped, makes of source text at most, but for control bytes and
 	// invalid UTF-8, which the indexer's text rarely holds and the runner
@@ -231,9 +234,12 @@ const (
 	reportEnvelope = 1 << 20
 	// similarLanguageBytes is the room of one query's language, a name of
 	// package chunk's, in a similar-code request, and similarEnvelope that
-	// of its keys, its kind and its limit.
+	// of its keys, its kind and its limit, or of an answer's.
 	similarLanguageBytes = 64
 	similarEnvelope      = 256
+	// smallReportEnvelope is the room of a small report beside a failure
+	// report's cause: a phase report whole, or a failure report's key.
+	smallReportEnvelope = 1 << 10
 )
 
 // satAdd and satMul are a+b and a*b of sizes that cannot be negative,
@@ -309,6 +315,13 @@ func init() {
 				return fmt.Errorf("%s (%s) must hold an agent report: a conversation of %s in base64, %d bytes",
 					fieldLabel("gateway.maxReportBody"), v.Gateway.MaxReportBody,
 					fieldLabel("gateway.maxConversationBytes"), need)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if need := satAdd(satMul(jsonGrowth, int64(v.Runner.MaxFailureCause)), smallReportEnvelope); int64(v.Gateway.MaxSmallReport) < need {
+				return fmt.Errorf("%s (%s) must hold a phase report and a failure report of %s, escaped, %d bytes",
+					fieldLabel("gateway.maxSmallReport"), v.Gateway.MaxSmallReport, fieldLabel("runner.maxFailureCause"), need)
 			}
 			return nil
 		},

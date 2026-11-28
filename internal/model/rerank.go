@@ -118,12 +118,12 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	}
 	// One byte past the bound tells an answer cut at it from one that ends
 	// there: the part within the bound can be whole JSON of its own.
-	maxAnswer := int(tuning.Get().Model.MaxRerankAnswer)
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxAnswer)+1))
+	maxAnswer := int64(tuning.Get().Model.MaxRerankAnswer)
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
 	if err != nil {
 		return nil, computed, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
 	}
-	if len(answer) > maxAnswer {
+	if int64(len(answer)) > maxAnswer {
 		return nil, computed, fmt.Errorf("model: rerank: the answer is longer than %d bytes", maxAnswer)
 	}
 	// An answer refused for its ranks still reports what the provider spent
@@ -199,8 +199,8 @@ var (
 // decodeRanks decodes raw, a JSON array of ranks or null, one rank at a time.
 // An array of more than documents ranks is refused with errExtraRanks as the
 // rank past them is reached: no valid answer holds it, and decoding the rest
-// would take memory in proportion to the answer, up to tuning's Model.MaxRerankAnswer,
-// rather than to the documents sent. Its errors quote none of raw.
+// would take memory in proportion to the answer, up to tuning's
+// Model.MaxRerankAnswer, rather than to the documents sent. Its errors quote none of raw.
 func decodeRanks(raw []byte, documents int) ([]answerRank, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	open, err := dec.Token()

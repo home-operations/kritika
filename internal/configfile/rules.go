@@ -53,8 +53,8 @@ func CheckRules(rules []Rule) error {
 		if (strings.TrimSpace(r.Rule) == "") == (r.File == "") {
 			return fmt.Errorf("rules[%d]: set one of rule or file", i)
 		}
-		if n := utf8.RuneCountInString(r.Rule); n > tuning.Get().ConfigFile.MaxRuleChars {
-			return fmt.Errorf("rules[%d].rule is %d characters, over the %d allowed", i, n, tuning.Get().ConfigFile.MaxRuleChars)
+		if n, limit := utf8.RuneCountInString(r.Rule), tuning.Get().ConfigFile.MaxRuleChars; n > limit {
+			return fmt.Errorf("rules[%d].rule is %d characters, over the %d allowed", i, n, limit)
 		}
 		if r.File != "" {
 			if err := CheckRepoPath(r.File); err != nil {

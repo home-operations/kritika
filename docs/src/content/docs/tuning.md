@@ -70,8 +70,7 @@ What raising the indexer's limits costs:
 - **Runner pod memory.** A build holds every chunk in memory until it
   uploads them: up to `indexer.maxChunks` × `indexer.maxChunkBytes` of
   text, 600 MB at the defaults, and more for the copy that it uploads.
-  Raise `runner.podTemplate`'s
-  `spec.resources` with it.
+  Raise `runner.podTemplate`'s `spec.resources` with it.
 - **Runner pod disk.** The runner fetches the repository into a temporary
   directory on the pod. No tuning value bounds that, so size the pod for
   the repository.
@@ -82,12 +81,20 @@ What raising the indexer's limits costs:
   ([the job's timeout](#slow-or-unreliable-model-providers)).
 - **Database space** for the chunks, their vectors and the search by name.
 
-The `indexer`, `chunk` and `lexical` values change what a build stores. A
-repository's index keeps what it was built with until a reindex rebuilds
-it. A push updates only the files that it changes, and the **partial**
-mark stays until a full build fits within the limits. To rebuild, use
-**Reindex** on the repository's page, or select repositories on the
-**Repositories** page and use **Reindex…**.
+The `indexer` values except `indexer.queryContext`, `chunk.parseMemoryBudget`
+and `chunk.parseStackDepth`, and the `lexical` values, change what a build
+stores. A build caps a file at `indexer.maxFileBytes`, not
+`chunk.maxFileBytes`, the parser's own fallback. A repository's index keeps
+what it was built with until a reindex rebuilds it: a tuning change
+rebuilds nothing on its own, a push updates only the files that it
+changes, and the **partial** mark stays until a full build fits within the
+limits. To rebuild, use **Reindex** on the repository's page, or select
+repositories on the **Repositories** page and use **Reindex…**.
+
+The `contextPack` values and `indexer.queryContext` shape a review's search
+of the index, and need no reindex. `lexical.maxLexemeBytes` also changes
+how a search's query is split into lexemes at once, before the stored
+postings are rebuilt.
 
 For example, for a repository that needs three times the default limits:
 
@@ -97,11 +104,18 @@ tuning:
     maxFiles: 150000
     maxBytes: 1500Mi
     maxChunks: 300000
+  gateway:
+    maxIndexBody: 5Gi
 ```
 
-300,000 chunks of 6,000 bytes are 1.8 GB, which the default
-`gateway.maxIndexBody` of `2Gi` still holds. Past 357,913 chunks at that
-chunk size, raise `gateway.maxIndexBody` too.
+`gateway.maxIndexBody` must hold the largest upload that the index limits
+allow, as the runner encodes it: the opening line of up to
+`gateway.maxIndexLine`, then each of `indexer.maxChunks` chunks as JSON,
+its text of up to `indexer.maxChunkBytes` and its signature of up to
+`indexer.maxSignatureBytes` each escaped up to sixfold, with room for the
+chunk's other fields. At 300,000 chunks and the other defaults, that is
+4,367,954,432 bytes, past the default `2Gi`, so the example raises it to
+`5Gi`. `kritika config check` names the bound it needs.
 
 Reference: [`tuning.indexer`](/configuration/#tuningindexer),
 [`tuning.chunk`](/configuration/#tuningchunk),
@@ -211,10 +225,17 @@ provider [`concurrency`](/models/#concurrency) has free slots. A review's
 job timeout allows for the agent's most `parts`, up to
 `jobTimeout.maxJobTimeout`.
 
-`gateway.maxReportBody` (`64Mi`) must hold two diffs of
-`runner.maxPackDiffBytes` and one conversation of
-`gateway.maxConversationBytes` (`16Mi`). Raise it with
-`runner.maxPackDiffBytes`.
+`gateway.maxReportBody` (`64Mi`) must hold two kinds of report, each on its
+own:
+
+- A context report: two diffs of `runner.maxPackDiffBytes` and a pack of
+  `contextPack.maxPackBytes`, each JSON-escaped up to sixfold, and room for
+  its other fields.
+- An agent report: a base64-encoded conversation of
+  `gateway.maxConversationBytes` (`16Mi`), and room for its other fields.
+
+Recheck it when raising any of those three; `kritika config check` names
+the bound that it needs.
 
 A run's spec travels in a Kubernetes Secret, so `runSpec.maxBytes` and
 `runSpec.maxPromptBytes` have little room to grow. See
@@ -317,7 +338,7 @@ and request spends.
 | `poller.forgeRateLimitWait` | `1m`    | the pause of those checks after a 429 that names no wait                                                                                    |
 | `gitHub.maxListedComments`  | 5000    | the comments read of one pull request, the oldest first                                                                                     |
 | `gitLab.pageSize`           | 100     | items per page. GitLab serves at most 100                                                                                                   |
-| `forgejo.pageSize`          | 50      | items per page. Keep it within the instance's own largest page: a page shorter than asked for is taken as the last                          |
+| `forgejo.pageSize`          | 50      | items per page. The instance caps it at its own largest page                                                                                |
 
 Reference: [`tuning.poller`](/configuration/#tuningpoller),
 [`tuning.gitHub`](/configuration/#tuninggithub),
@@ -441,11 +462,14 @@ faster. A dashboard session's length is `auth.sessionTTL` in the
 configuration file.
 
 Some values are mirrored where kritika cannot change them. The dashboard's
-token form offers the default `webApi.tokenLifetimes` and checks the
-default `webApi.tokenNameMax`. Some dashboard pages ask for a fixed number
-of items, which `webApi.maxLimit` clamps. The published repository schema
-states the default `configFile.maxReviewers`, `configFile.maxReviewerChars`
-and `configFile.maxRuleChars`. Changing those values updates neither.
+token form offers the default `webApi.tokenLifetimes` (never, 7, 30, 90
+and 365 days) and checks the default `webApi.tokenNameMax` of 100
+characters. Some dashboard pages ask for a fixed number of items, which
+`webApi.maxLimit` clamps. The published
+[repository schema](https://kritika.home-operations.com/kritika.schema.json)
+states the default `configFile.maxReviewers` (8),
+`configFile.maxReviewerChars` (8000) and `configFile.maxRuleChars` (2000).
+Changing those values updates neither the dashboard nor the schema.
 
 Reference: [`tuning.webApi`](/configuration/#tuningwebapi) and
 [`tuning.auth`](/configuration/#tuningauth).
@@ -505,15 +529,26 @@ and GitLab serves at most 100 items a page.
    `error` field of the `kritika exited` line):
 
    ```text
-   config: tuning.gateway.maxIndexBody: KRITIKA_TUNING_GATEWAY_MAX_INDEX_BODY (2Gi) must hold tuning.indexer.maxChunks: KRITIKA_TUNING_INDEXER_MAX_CHUNKS chunks of tuning.indexer.maxChunkBytes: KRITIKA_TUNING_INDEXER_MAX_CHUNK_BYTES, 3600000000 bytes
+   config: tuning.gateway.maxIndexBody: KRITIKA_TUNING_GATEWAY_MAX_INDEX_BODY (2Gi) must hold an index upload's opening line of up to tuning.gateway.maxIndexLine: KRITIKA_TUNING_GATEWAY_MAX_INDEX_LINE and tuning.indexer.maxChunks: KRITIKA_TUNING_INDEXER_MAX_CHUNKS chunks of tuning.indexer.maxChunkBytes: KRITIKA_TUNING_INDEXER_MAX_CHUNK_BYTES and tuning.indexer.maxSignatureBytes: KRITIKA_TUNING_INDEXER_MAX_SIGNATURE_BYTES, as the upload encodes them, 8702354432 bytes
    ```
 
 4. Set it on serve only. serve hands every value that differs from its
    default to the runner Jobs that it creates. `runner.podTemplate`'s
    `env` is for the run tool's commands, not for the runner.
 5. Roll out. kritika reads its values at startup, and Helm rolls the pods
-   when `config` changes.
+   when `config` changes. During a rolling update both revisions serve at
+   once: a runner Job keeps the values of the replica that created it, and
+   the gateway Service sends its requests to replicas of either revision.
+   So a change to a limit that a runner and the gateway must agree on,
+   such as `gateway.maxIndexBody`, `gateway.maxReportBody`,
+   `gateway.similarMax` or a `runner.*` request size, can have an old
+   replica refuse a new Job's request, or a new replica an old Job's. Make
+   such a change in two rollouts that each keep both revisions compatible
+   (raise the gateway's limit, then the runner's; lower the runner's, then
+   the gateway's), or stop new work and let running Jobs finish before
+   rolling it out.
 6. Check the symptom again. To undo a change, remove the key.
-7. After an `indexer`, `chunk` or `lexical` change, reindex the
-   repositories that it is for. Existing indexes keep what they were built
-   with.
+7. After a change to a value that shapes what an index build stores, as
+   [Large repositories and monorepos](#large-repositories-and-monorepos)
+   lists them, reindex the repositories that it is for. Existing indexes
+   keep what they were built with.

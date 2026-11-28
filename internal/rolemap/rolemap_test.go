@@ -4,6 +4,8 @@ import (
 	"maps"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestCompileRejects(t *testing.T) {
@@ -93,5 +95,26 @@ func TestEvalRejects(t *testing.T) {
 				t.Fatalf("Eval = %v, want an error containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestEvalTunedCostLimit: a mapping is held to tuning's RoleMap.EvalCostLimit
+// as it is when the mapping compiles.
+func TestEvalTunedCostLimit(t *testing.T) {
+	const expr = `"kritika-admin" in roles ? "admin" : ("kritika-user" in roles ? "member" : "")`
+	vars := map[string]any{"claims": map[string]any{"sub": "x"}, "roles": []string{"a", "b", "kritika-user"}}
+	p, err := Compile(OIDC, expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := p.Eval(vars); err != nil || got.Role != RoleMember {
+		t.Fatalf("at the default limit: Eval = %+v, %v; want a member", got, err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.RoleMap.EvalCostLimit = 1 })
+	if p, err = Compile(OIDC, expr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Eval(vars); err == nil || !strings.Contains(err.Error(), "cost limit exceeded") {
+		t.Fatalf("at a limit of 1: Eval = %v, want the limit exceeded", err)
 	}
 }

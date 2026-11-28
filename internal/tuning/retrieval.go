@@ -117,12 +117,7 @@ const postgresMaxLexemeBytes = 2047
 func init() {
 	crossField = append(crossField,
 		func(v Values) error {
-			if v.Indexer.WindowOverlap >= v.Indexer.WindowLines {
-				return fmt.Errorf("%s (%d) must be less than %s (%d)",
-					fieldLabel("indexer.windowOverlap"), v.Indexer.WindowOverlap,
-					fieldLabel("indexer.windowLines"), v.Indexer.WindowLines)
-			}
-			return nil
+			return exceeds("indexer.windowLines", v.Indexer.WindowLines, "indexer.windowOverlap", v.Indexer.WindowOverlap)
 		},
 		func(v Values) error {
 			if v.Lexical.MaxLexemeBytes > postgresMaxLexemeBytes {
@@ -132,12 +127,7 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if v.ContextPack.SimilarLimit < v.Gateway.SimilarMax {
-				return fmt.Errorf("%s (%d) must be at least %s (%d)",
-					fieldLabel("contextPack.similarLimit"), v.ContextPack.SimilarLimit,
-					fieldLabel("gateway.similarMax"), v.Gateway.SimilarMax)
-			}
-			return nil
+			return notAbove("gateway.similarMax", v.Gateway.SimilarMax, "contextPack.similarLimit", v.ContextPack.SimilarLimit)
 		},
 	)
 }

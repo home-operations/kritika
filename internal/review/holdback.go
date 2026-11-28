@@ -9,13 +9,13 @@ import (
 // review, which the prompt asks for and the model does not always heed. It
 // reports whether a finding is held back. A held-back finding is one that the
 // last review, whose findings are prior, did not make. It also points more
-// than tuning's Review.HeldBackLines from every line that delta, the diff since that review,
-// changed. reported are all of this review's findings. A prior finding in a
-// file that delta renames is taken as made under the new name. A finding is
-// never held back in a file where one of prior went unreported. It can be
-// that finding reworded, and Fingerprint keys on the title. A finding is also
-// never held back in one of deltaPaths whose changed lines delta does not
-// show: a file cut from it, binary, or only renamed.
+// than tuning's Review.HeldBackLines from every line that delta, the diff
+// since that review, changed. reported are all of this review's findings. A
+// prior finding in a file that delta renames is taken as made under the new
+// name. A finding is never held back in a file where one of prior went
+// unreported. It can be that finding reworded, and Fingerprint keys on the
+// title. A finding is also never held back in one of deltaPaths whose changed
+// lines delta does not show: a file cut from it, binary, or only renamed.
 func HoldBack(prior, reported []Finding, delta string, deltaPaths []string) func(Finding) bool {
 	again := make(map[string]bool, len(reported))
 	for _, f := range reported {
@@ -39,16 +39,29 @@ func HoldBack(prior, reported []Finding, delta string, deltaPaths []string) func
 			spared[p] = true
 		}
 	}
+	radius := tuning.Get().Review.HeldBackLines
 	return func(f Finding) bool {
 		if made[Fingerprint(f)] || spared[f.Path] {
 			return false
 		}
-		from, to := f.Line-tuning.Get().Review.HeldBackLines, max(f.Line, f.EndLine)+tuning.Get().Review.HeldBackLines
+		start, end := f.Line, max(f.Line, f.EndLine)
 		for _, l := range touched[f.Path] {
-			if l >= from && l <= to {
+			if near(l, start, end, radius) {
 				return false
 			}
 		}
 		return true
 	}
+}
+
+// near reports whether line l is within radius of the lines start to end. It
+// compares distances, since widening the range by a large radius overflows.
+func near(l, start, end, radius int) bool {
+	switch {
+	case l < start:
+		return uint(start)-uint(l) <= uint(radius)
+	case l > end:
+		return uint(l)-uint(end) <= uint(radius)
+	}
+	return true
 }

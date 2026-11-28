@@ -92,8 +92,9 @@ func TestProviderConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != tuning.Get().ConfigFile.DefaultConcurrency {
-		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, tuning.Get().ConfigFile.DefaultConcurrency)
+	want := tuning.Get().ConfigFile.DefaultConcurrency
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != want {
+		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, want)
 	}
 	withConcurrency := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, concurrency: 5 }", 1)
 	f, err = Parse([]byte(withConcurrency))

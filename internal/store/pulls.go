@@ -201,9 +201,9 @@ func HeadReviewed(ctx context.Context, tx pgx.Tx, repositoryID string, number in
 // PollSettled reports whether the pull request's head needs nothing from a
 // poll, which lists a pull request whenever anything about it moved: a
 // review of it ended in one of ReviewedStatuses, its latest one in one of
-// pollSettledStatuses, or tuning's Store.PollFailedReviews reviews of it failed. A
-// superseded review leaves the head unreviewed, so the poll picks it up
-// again.
+// pollSettledStatuses, or tuning's Store.PollFailedReviews reviews of it
+// failed. A superseded review leaves the head unreviewed, so the poll picks it
+// up again.
 func PollSettled(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string) (bool, error) {
 	var settled bool
 	if err := tx.QueryRow(ctx, `WITH head AS (`+headReviews+`)

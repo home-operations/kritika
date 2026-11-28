@@ -15,9 +15,9 @@ import (
 
 // HeartbeatJob stamps the worker's heartbeat on the River job it is
 // working, so the leader knows the job's replica is alive. The beat carries
-// this replica's tuning JobTimeout.HeartbeatAbandonedAfter, by which the
-// leader rescues the job whatever its own is: this replica fences the job a
-// beat before that, at its own cadence.
+// this replica's tuning JobTimeout.HeartbeatAbandonedAfter, which the leader
+// rescues the job by instead of its own: this replica fences the job a beat
+// before that.
 func (s *Store) HeartbeatJob(ctx context.Context, jobID int64) error {
 	abandonAfter := tuning.Get().JobTimeout.HeartbeatAbandonedAfter().Seconds()
 	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at, abandon_after)
@@ -26,6 +26,58 @@ func (s *Store) HeartbeatJob(ctx context.Context, jobID int64) error {
 		return fmt.Errorf("store: heartbeat job %d: %w", jobID, err)
 	}
 	return nil
+}
+
+// jobRescue is what RecordJobRescue merges into River's job metadata: the
+// attempt, by its claim time in microseconds, and how long River's rescuer
+// must leave it.
+type jobRescue struct {
+	Rescue *rescueHorizon `json:"kritika_rescue"`
+}
+
+type rescueHorizon struct {
+	AttemptedAtMicros int64   `json:"attempted_at_us"`
+	AfterSeconds      float64 `json:"after_seconds"`
+}
+
+// RecordJobRescue writes on River's row of job how long River's rescuer must
+// leave the attempt that this replica is working: this replica's tuning
+// JobTimeout.RescueStuckJobsAfter. River's rescuer, on whichever replica
+// River elected, computes a running job's timeout from its own settings,
+// which during a rollout can be shorter; JobRescueAfter hands it this one
+// instead. A later attempt, a snoozed job's included, is claimed anew and
+// does not match what an earlier one wrote.
+func (s *Store) RecordJobRescue(ctx context.Context, job *rivertype.JobRow) error {
+	if job.AttemptedAt == nil {
+		return nil
+	}
+	data, err := json.Marshal(jobRescue{&rescueHorizon{
+		AttemptedAtMicros: job.AttemptedAt.UnixMicro(), AfterSeconds: tuning.Get().JobTimeout.RescueStuckJobsAfter().Seconds(),
+	}})
+	if err != nil {
+		return fmt.Errorf("store: encode the rescue of job %d: %w", job.ID, err)
+	}
+	if _, err := s.app.Exec(ctx, `UPDATE river_job SET metadata = metadata || $2::jsonb
+		WHERE id = $1 AND state = 'running' AND attempted_at = $3`, job.ID, string(data), *job.AttemptedAt); err != nil {
+		return fmt.Errorf("store: record the rescue of job %d: %w", job.ID, err)
+	}
+	return nil
+}
+
+// JobRescueAfter is how long River's rescuer must leave job's attempt, as
+// RecordJobRescue recorded it. It is false when nothing was recorded for
+// this attempt: by a replica from before the record, or in the row as it
+// was claimed, which River's executor reads.
+func JobRescueAfter(job *rivertype.JobRow) (time.Duration, bool) {
+	if job == nil || job.AttemptedAt == nil || len(job.Metadata) == 0 {
+		return 0, false
+	}
+	var m jobRescue
+	if json.Unmarshal(job.Metadata, &m) != nil || m.Rescue == nil ||
+		m.Rescue.AttemptedAtMicros != job.AttemptedAt.UnixMicro() || m.Rescue.AfterSeconds <= 0 {
+		return 0, false
+	}
+	return time.Duration(m.Rescue.AfterSeconds * float64(time.Second)), true
 }
 
 // AbandonedJob is a River job in the running state whose worker has not
@@ -55,10 +107,9 @@ func (j AbandonedJob) RescueState() rivertype.JobState {
 
 // AbandonedJobs lists up to limit running jobs whose worker stamped no
 // heartbeat for the abandonment window that its last beat carries, oldest
-// first: for stale, the leader's own window, when the beat is from a
-// replica that records none. A job claimed less than stale ago is left
-// alone: its first beat can be on its way. Owner connection: River's
-// rows are outside row-level security and the leader spans every account.
+// first. A job claimed less than stale ago, the leader's own window, is left
+// alone: its first beat can be on its way. Owner connection: River's rows
+// are outside row-level security and the leader spans every account.
 func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit int) ([]AbandonedJob, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: AbandonedJobs needs the owner connection")
@@ -66,7 +117,7 @@ func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit in
 	rows, err := s.owner.Query(ctx, `SELECT j.id, j.kind, j.attempt, j.max_attempts, j.metadata ? 'cancel_attempted_at'
 		FROM river_job j LEFT JOIN job_heartbeats h ON h.job_id = j.id
 		WHERE j.state = 'running' AND j.attempted_at < now() - make_interval(secs => $1)
-		  AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - coalesce(h.abandon_after, make_interval(secs => $1)))
+		  AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - h.abandon_after)
 		ORDER BY j.id LIMIT $2`, stale.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list abandoned jobs: %w", err)
@@ -106,9 +157,9 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 		scheduled_at = CASE WHEN $3::text = 'retryable' THEN now() ELSE j.scheduled_at END,
 		finalized_at = CASE WHEN $3::text = 'retryable' THEN NULL ELSE now() END,
 		errors = array_append(j.errors, $4::jsonb)
-		WHERE j.id = $1 AND j.state = 'running' AND j.attempt = $2
+		WHERE j.id = $1 AND j.state = 'running' AND j.attempt = $2 AND j.attempted_at < now() - make_interval(secs => $5)
 		  AND NOT EXISTS (SELECT 1 FROM job_heartbeats h WHERE h.job_id = j.id
-		    AND h.heartbeat_at >= now() - coalesce(h.abandon_after, make_interval(secs => $5)))`,
+		    AND h.heartbeat_at >= now() - h.abandon_after)`,
 		job.ID, job.Attempt, state, string(attemptErr), stale.Seconds())
 	if err != nil {
 		return false, fmt.Errorf("store: rescue job %d: %w", job.ID, err)

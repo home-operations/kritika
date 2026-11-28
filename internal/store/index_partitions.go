@@ -149,14 +149,14 @@ var legacyIndexChunksIndexes = []string{"pkey", "run_path_idx", "content_hash_id
 // shorter than the owner's, could find that cycle first and abort it. Its
 // waits for index_chunks hold no lock that another waits for, but every
 // search and build queues behind them, so yieldLocks bounds each to
-// 1/tuning's Store.LockYieldShare of deadlock_timeout. DropLegacyIndexChunks takes
-// index_chunks at once or gives up, but at its last try, and then waits for
-// the legacy partition alone, which only the owner's own reads of it can
-// hold. Each tries tuning's Store.PartitionTries times, tuning's Store.PartitionRetryPause apart, and the
-// next sweep tries again.
+// 1/tuning's Store.LockYieldShare of deadlock_timeout. DropLegacyIndexChunks
+// takes index_chunks at once or gives up, but at its last try, and then waits
+// for the legacy partition alone, which only the owner's own reads of it can
+// hold. Each tries tuning's Store.PartitionTries times, tuning's
+// Store.PartitionRetryPause apart, and the next sweep tries again.
 
-// yieldLocks sets the transaction's lock_timeout to 1/tuning's Store.LockYieldShare of
-// deadlock_timeout.
+// yieldLocks sets the transaction's lock_timeout to 1/tuning's
+// Store.LockYieldShare of deadlock_timeout.
 func yieldLocks(ctx context.Context, tx pgx.Tx) error {
 	_, err := tx.Exec(ctx, `SELECT set_config('lock_timeout',
 		greatest(1, extract(epoch FROM current_setting('deadlock_timeout')::interval) * 1000 / $1)::int || 'ms', true)`,
@@ -170,8 +170,8 @@ func lockNotAvailable(err error) bool {
 	return ok && pgErr.Code == "55P03"
 }
 
-// retryLocks runs fn again while it gives up a lock wait, tuning's Store.PartitionTries
-// times at most.
+// retryLocks runs fn again while it gives up a lock wait, tuning's
+// Store.PartitionTries times at most.
 func retryLocks(ctx context.Context, fn func() error) error {
 	for try := 1; ; try++ {
 		err := fn()
@@ -428,20 +428,20 @@ func renameLegacyConstraints(ctx context.Context, tx pgx.Tx) ([]string, error) {
 }
 
 // DrainLegacyIndexChunks empties index_chunks_legacy a slice at a time: up
-// to tuning's Store.LegacyDrainSlice chunks of one generation, in a transaction of their
-// own. An active generation's chunks go first, moved to the hash partitions,
-// so that its searches read its partition alone. A generation is split
-// between the two while it moves, which a search reads as one. Then the
-// chunks of the other generations: moved when a build can still publish or
-// resume them, deleted otherwise, as the next build's stray sweep would. It
-// returns how many chunks it moved and how many it deleted: none once the
-// legacy partition is empty, or when another holds the lock of every
-// repository or chunk left there, or of the job of the build whose chunks
-// it would move. A generation that another holds so is passed over for the
-// next, each tried under a savepoint of its own, whose rollback lets go of
-// the locks the try took. Each slice takes the repository's lock, as a
-// publication does, and reads the generation again under it, so no
-// publication changes the generation while a slice moves it. Leader only.
+// to tuning's Store.LegacyDrainSlice chunks of one generation, in a
+// transaction of their own. An active generation's chunks go first, moved to
+// the hash partitions, so that its searches read its partition alone. A
+// generation is split between the two while it moves, which a search reads as
+// one. Then the chunks of the other generations: moved when a build can still
+// publish or resume them, deleted otherwise, as the next build's stray sweep
+// would. It returns how many chunks it moved and how many it deleted: none
+// once the legacy partition is empty, or when another holds the lock of every
+// repository or chunk left there, or of the job of the build whose chunks it
+// would move. A generation that another holds so is passed over for the next,
+// each tried under a savepoint of its own, whose rollback lets go of the locks
+// the try took. Each slice takes the repository's lock, as a publication does,
+// and reads the generation again under it, so no publication changes the
+// generation while a slice moves it. Leader only.
 func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int64, err error) {
 	if s.owner == nil {
 		return 0, 0, errors.New("store: DrainLegacyIndexChunks needs the owner connection")
@@ -490,8 +490,8 @@ func (s *Store) DrainLegacyIndexChunks(ctx context.Context) (moved, removed int6
 var errLegacyHeld = errors.New("store: the generation's legacy chunks are held")
 
 // drainLegacySlice moves, or deletes when keep does not hold, up to
-// tuning's Store.LegacyDrainSlice of run's chunks in index_chunks_legacy that another does
-// not hold, under the locks that lockLegacyGeneration took.
+// tuning's Store.LegacyDrainSlice of run's chunks in index_chunks_legacy that
+// another does not hold, under the locks that lockLegacyGeneration took.
 func drainLegacySlice(ctx context.Context, tx pgx.Tx, run string, keep bool) (moved, removed int64, err error) {
 	rows, err := tx.Query(ctx, `SELECT id FROM index_chunks_legacy WHERE index_run_id = $1 LIMIT $2 FOR UPDATE SKIP LOCKED`,
 		run, tuning.Get().Store.LegacyDrainSlice)

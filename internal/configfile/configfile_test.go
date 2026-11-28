@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/tuning"
 )
@@ -96,17 +95,18 @@ func TestLoadFull(t *testing.T) {
 
 	t.Run("a model's slots are its provider's concurrency", func(t *testing.T) {
 		ho, _ := f.Account(ForgeGitHub, "home-operations")
+		cf := tuning.Get().ConfigFile
 		for ref, want := range map[ModelRef]Slots{
 			"openrouter/openai/gpt-6-sol": {Limit: 3, Shared: true},
-			"local/claude-sonnet-5":       {Limit: tuning.Get().ConfigFile.DefaultConcurrency, Shared: true},
-			"nowhere/model":               {Limit: tuning.Get().ConfigFile.DefaultAccountConcurrency},
+			"local/claude-sonnet-5":       {Limit: cf.DefaultConcurrency, Shared: true},
+			"nowhere/model":               {Limit: cf.DefaultAccountConcurrency},
 		} {
 			if got := f.Slots(ho, ref); got != want {
 				t.Errorf("Slots(%s) = %+v, want %+v", ref, got, want)
 			}
 		}
-		if p, ok := f.Provider(ho, "local"); !ok || p.Concurrency != tuning.Get().ConfigFile.DefaultConcurrency {
-			t.Fatalf("Provider(local) = %+v, %v; want concurrency %d", p, ok, tuning.Get().ConfigFile.DefaultConcurrency)
+		if p, ok := f.Provider(ho, "local"); !ok || p.Concurrency != cf.DefaultConcurrency {
+			t.Fatalf("Provider(local) = %+v, %v; want concurrency %d", p, ok, cf.DefaultConcurrency)
 		}
 	})
 }
@@ -721,14 +721,15 @@ func TestJobTimeoutBounds(t *testing.T) {
 	withTimeout := func(seconds int64) string {
 		return fmt.Sprintf("agent: { timeout: %ds }\n", seconds) + minimal
 	}
+	maxSecs := int64(tuning.Get().JobTimeout.MaxAgentTimeout().Seconds())
 
 	tests := []struct {
 		name string
 		yaml string
 		want string // substring of the error, and empty means the configuration must be accepted
 	}{
-		{"agent timeout at the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout().Seconds())), ""},
-		{"agent timeout past the cap", withTimeout(int64(jobtimeout.MaxAgentTimeout().Seconds()) + 1), "agent.timeout must not exceed"},
+		{"agent timeout at the cap", withTimeout(maxSecs), ""},
+		{"agent timeout past the cap", withTimeout(maxSecs + 1), "agent.timeout must not exceed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -845,8 +846,8 @@ func TestAgentReview(t *testing.T) {
 		if s.Review.RequireSuggestedFix || len(s.Review.Rules) != 0 || s.Review.Templates != (ReviewTemplates{}) {
 			t.Fatalf("review = %+v", s.Review)
 		}
-		if tuning.Get().ConfigFile.DefaultMaxDeltaFiles != 25 {
-			t.Fatalf("tuning.Get().ConfigFile.DefaultMaxDeltaFiles = %d", tuning.Get().ConfigFile.DefaultMaxDeltaFiles)
+		if s.Incremental.MaxDeltaFiles != 25 {
+			t.Fatalf("MaxDeltaFiles = %d, want 25", s.Incremental.MaxDeltaFiles)
 		}
 		if DefaultAgent().MaxPromptTokens != tuning.Get().Review.DefaultBudgetTokens {
 			t.Fatalf("DefaultAgent.MaxPromptTokens = %d, want tuning's Review.DefaultBudgetTokens", DefaultAgent().MaxPromptTokens)
@@ -874,7 +875,7 @@ comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl 
 		}
 	})
 
-	t.Run("the defaults are tuning's as the file is resolved", func(t *testing.T) {
+	t.Run("tuned defaults", func(t *testing.T) {
 		tuning.Override(t, func(v *tuning.Values) {
 			v.Agent.DefaultMaxSteps, v.ConfigFile.DefaultParts, v.ConfigFile.DefaultMaxDeltaFiles = 9, 3, 4
 			v.ConfigFile.MinPromptTokens = 9000
@@ -930,5 +931,26 @@ comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl 
 				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestParseRefusesTuningNotInForce: a file's tuning that is not in force is
+// refused, rather than its policy checked under the process's values; once
+// in force, the file is checked and resolved under it.
+func TestParseRefusesTuningNotInForce(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	withRoot := func(block string) string { return block + minimal }
+	doc := withRoot("tuning: {configFile: {minPromptTokens: 9000, defaultParts: 3}}\nagent: { prompt: 8500 }\n")
+	if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), "the file's tuning is not the process's") {
+		t.Fatalf("Parse under other tuning = %v, want it refused", err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.ConfigFile.MinPromptTokens, v.ConfigFile.DefaultParts = 9000, 3 })
+	if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), "at least 9000") {
+		t.Fatalf("a prompt under the file's minimum: %v", err)
+	}
+	f := mustLoad(t, withRoot("tuning: {configFile: {minPromptTokens: 9000, defaultParts: 3}}\n"))
+	if got := f.Settings(&f.Accounts[0]).Agent.MaxParts; got != 3 {
+		t.Fatalf("parts = %d, want the file's tuned default 3", got)
 	}
 }

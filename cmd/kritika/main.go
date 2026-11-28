@@ -39,7 +39,6 @@ import (
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/poller"
@@ -443,15 +442,14 @@ func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivert
 		Logger: logger,
 		// Review and index workers set their own timeouts from the
 		// runner deadline. Rescue must wait out the longest of them.
-		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter(),
+		RescueStuckJobsAfter: tuning.Get().JobTimeout.RescueStuckJobsAfter(),
 		// ctx ending starts a soft stop: running jobs get this long before
 		// their contexts end.
 		SoftStopTimeout: tuning.Get().Process.QueueDrain,
 		// A job that its timeout cut ends its run on detached contexts, as a
 		// stopping job does. The queue stop headroom covers this in the usual
-		// case.
-		// Without this value, River calls every such job stuck after ten
-		// seconds.
+		// case. Without this value, River calls every such job stuck after
+		// ten seconds.
 		JobStuckThreshold: tuning.Get().Process.QueueStopHeadroom,
 		// If enabled, River's reindexer runs REINDEX on this pool. The role of
 		// this pool owns none of River's indexes and has no MAINTAIN on its
@@ -484,7 +482,8 @@ func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 func workQueues(
 	ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], cfg *config.Config, events *executor.Events, logger *slog.Logger,
 ) error {
-	if err := st.WaitForSchema(ctx, tuning.Get().Process.SchemaPoll); err != nil {
+	p := tuning.Get().Process
+	if err := st.WaitForSchema(ctx, p.SchemaPoll); err != nil {
 		return nil // shutdown while waiting
 	}
 	if err := startQueue(ctx, queue, logger); err != nil {
@@ -497,11 +496,11 @@ func workQueues(
 	case <-queue.Stopped():
 		// Every worker returned, so no run records an Event now. The Events of
 		// the runs that the stop cut can still be on their way.
-		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Process.EventsDrain)
+		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.EventsDrain)
 		defer cancel()
 		events.Wait(wctx)
-	case <-time.After(tuning.Get().Process.QueueDrain + tuning.Get().Process.QueueStopHeadroom):
-		logger.Warn("the queues did not stop in time", "drain", tuning.Get().Process.QueueDrain)
+	case <-time.After(p.QueueDrain + p.QueueStopHeadroom):
+		logger.Warn("the queues did not stop in time", "drain", p.QueueDrain)
 	}
 	return nil
 }
@@ -512,7 +511,8 @@ type starter interface {
 }
 
 func startQueue(ctx context.Context, queue starter, logger *slog.Logger) error {
-	retry, attempts := tuning.Get().Process.QueueStartRetry, tuning.Get().Process.QueueStartAttempts
+	p := tuning.Get().Process
+	retry, attempts := p.QueueStartRetry, p.QueueStartAttempts
 	var err error
 	for i := 1; i <= attempts; i++ {
 		if err = queue.Start(ctx); err == nil {

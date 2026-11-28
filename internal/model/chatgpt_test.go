@@ -360,7 +360,8 @@ func TestChatGPTStreamFailuresRetry(t *testing.T) {
 }
 
 // TestChatGPTPause: after the plan refuses a step at its limit, the adapter
-// fails every step for tuning's Model.PlanPause without a request, then sends again.
+// fails every step for tuning's Model.PlanPause without a request, then
+// sends again.
 func TestChatGPTPause(t *testing.T) {
 	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

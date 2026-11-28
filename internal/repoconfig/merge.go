@@ -178,8 +178,8 @@ func withFloors(admin, file configfile.RiskFloors) configfile.RiskFloors {
 // default pass are settled first. When written, even if all are off, they
 // replace the admin's, as its review.model does, whole or not at all. One
 // with a model of a provider not among op.Providers drops them all. So do
-// more of them than leave the admin's specialists room under
-// tuning's ConfigFile.MaxReviewers. Without one of them, another model will review
+// more of them than leave the admin's specialists room under tuning's
+// ConfigFile.MaxReviewers. Without one of them, another model will review
 // than the file says, so all are dropped.
 //
 // Then a specialist of the file's own is added as written, with its models
@@ -203,6 +203,7 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 	if m.Reviewers == nil {
 		m.Reviewers = map[string]configfile.Reviewer{}
 	}
+	maxReviewers := tuning.Get().ConfigFile.MaxReviewers
 	keep := make([]bool, len(file))
 	var routes []configfile.ModelRoute
 	declared := false
@@ -226,8 +227,8 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 	}
 	if declared {
 		why := routesDropped(routes, op.Providers)
-		if n := len(m.Reviewers) + len(routes); why == "" && n > tuning.Get().ConfigFile.MaxReviewers {
-			why = fmt.Sprintf("with the admin's specialists, %d agents are over the %d a review runs", n, tuning.Get().ConfigFile.MaxReviewers)
+		if n := len(m.Reviewers) + len(routes); why == "" && n > maxReviewers {
+			why = fmt.Sprintf("with the admin's specialists, %d agents are over the %d a review runs", n, maxReviewers)
 		}
 		if why == "" {
 			m.Models.Routes = routes
@@ -244,9 +245,9 @@ func (m *Merged) agents(file []configfile.Reviewer, op configfile.Settings) {
 		switch {
 		case specialist:
 			m.Reviewers[r.Name] = m.addTo(key, admin, r, op.Review.Rules)
-		case len(m.Reviewers)+len(m.Models.Routes) >= tuning.Get().ConfigFile.MaxReviewers:
+		case len(m.Reviewers)+len(m.Models.Routes) >= maxReviewers:
 			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: %d agents are the most a review runs",
-				FileName, key, tuning.Get().ConfigFile.MaxReviewers))
+				FileName, key, maxReviewers))
 		default:
 			for _, c := range []struct {
 				field string

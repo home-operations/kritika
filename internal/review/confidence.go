@@ -405,11 +405,12 @@ type Record struct {
 // holds the risk that the last review was rated, which the description and
 // the diff give way to.
 func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, earlier *EarlierRisk, system string, budget int) string {
+	r := tuning.Get().Review
 	var tail strings.Builder
 	tail.WriteString("\n\nThe review's account of itself:\n")
 	if take := strings.Join(strings.Fields(res.Summary.Take), " "); take != "" {
-		if len(take) > tuning.Get().Review.MaxConfidenceFinding {
-			take = textcut.Prefix(take, tuning.Get().Review.MaxConfidenceFinding) + " …"
+		if len(take) > r.MaxConfidenceFinding {
+			take = textcut.Prefix(take, r.MaxConfidenceFinding) + " …"
 		}
 		fmt.Fprintf(&tail, "\nIts summary: %s\n", take)
 	}
@@ -425,10 +426,10 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		tail.WriteString("\nIt read no sources outside the repository.\n")
 	} else {
 		tail.WriteString("\nThe sources it read outside the repository:\n")
-		for _, s := range rec.Sources[:min(len(rec.Sources), tuning.Get().Review.MaxConfidenceSources)] {
+		for _, s := range rec.Sources[:min(len(rec.Sources), r.MaxConfidenceSources)] {
 			fmt.Fprintf(&tail, "- %s\n", oneLine(s))
 		}
-		if more := len(rec.Sources) - tuning.Get().Review.MaxConfidenceSources; more > 0 {
+		if more := len(rec.Sources) - r.MaxConfidenceSources; more > 0 {
 			fmt.Fprintf(&tail, "- and %d more\n", more)
 		}
 	}
@@ -447,8 +448,8 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 	// A note names the files that went unreviewed, which the rubric rests on.
 	// So it is kept whole as a finding is, not cut as a line.
 	for _, n := range rec.Unfinished {
-		if n = strings.Join(strings.Fields(n), " "); len(n) > tuning.Get().Review.MaxConfidenceFinding {
-			n = textcut.Prefix(n, tuning.Get().Review.MaxConfidenceFinding) + " …"
+		if n = strings.Join(strings.Fields(n), " "); len(n) > r.MaxConfidenceFinding {
+			n = textcut.Prefix(n, r.MaxConfidenceFinding) + " …"
 		}
 		fmt.Fprintf(&tail, "\nUnreviewed: %s\n", n)
 	}
@@ -459,8 +460,8 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		fmt.Fprintf(&tail, "\n\nFindings the review reported (%d):\n", len(findings))
 		for _, f := range findings {
 			text := strings.TrimSpace(f.Explanation)
-			if len(text) > tuning.Get().Review.MaxConfidenceFinding {
-				text = textcut.Prefix(text, tuning.Get().Review.MaxConfidenceFinding) + " …"
+			if len(text) > r.MaxConfidenceFinding {
+				text = textcut.Prefix(text, r.MaxConfidenceFinding) + " …"
 			}
 			fmt.Fprintf(&tail, "\n- [%s] %s:%d %s\n  %s\n", f.Severity, f.Path, f.Line, oneLine(f.Title), strings.ReplaceAll(text, "\n", "\n  "))
 		}
@@ -489,7 +490,7 @@ func BuildConfidence(in Input, res Result, rec Record, history []BumpHistory, ea
 		}
 		tail.WriteString("\n")
 	}
-	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/tuning.Get().Review.CharsPerToken, tuning.Get().Review.MinUserBudget)
+	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/r.CharsPerToken, r.MinUserBudget)
 	in.Toolless = true
 	msg, _, _, _ := Build(in)
 	return msg + tail.String()
@@ -542,11 +543,11 @@ func (p Parsed) Defaulted() bool { return string(p.Risk) != p.RiskGiven }
 // bump is dropped.
 // The reason's GitHub references are redirected as Parse does for a review.
 // repository is the "owner/repo" that the pull request is on. A reason over
-// tuning's Review.MaxConfidenceReason is cut after the last word that fits, once the
-// references are redirected. So the cut lands inside neither a word nor a
-// link that the redirection made. A risk that is no level is the highest:
-// an answer that does not say how risky the change is must not read as a
-// safe one.
+// tuning's Review.MaxConfidenceReason is cut after the last word that fits,
+// once the references are redirected. So the cut lands inside neither a word
+// nor a link that the redirection made. A risk that is no level is the
+// highest: an answer that does not say how risky the change is must not read
+// as a safe one.
 func ParseConfidence(raw, repository string, bumps []Bump) (Parsed, error) {
 	var out struct {
 		Risk    string `json:"risk"`
@@ -576,8 +577,8 @@ func ParseConfidence(raw, repository string, bumps []Bump) (Parsed, error) {
 		}
 	}
 	p.Reason = prose(strings.Join(strings.Fields(out.Reason), " "), repository)
-	if len(p.Reason) > tuning.Get().Review.MaxConfidenceReason {
-		p.Reason = cutWords(p.Reason, tuning.Get().Review.MaxConfidenceReason) + " …"
+	if most := tuning.Get().Review.MaxConfidenceReason; len(p.Reason) > most {
+		p.Reason = cutWords(p.Reason, most) + " …"
 	}
 	return p, nil
 }

@@ -139,8 +139,8 @@ type agentPrompt struct {
 	carried           *agent.Conversation
 }
 
-// namePaths names the first tuning's Runner.NoteOmittedPaths of paths and
-// counts the rest.
+// namePaths names the first Runner.NoteOmittedPaths of paths and counts the
+// rest.
 func namePaths(paths []string) string {
 	if n, most := len(paths), tuning.Get().Runner.NoteOmittedPaths; n > most {
 		paths = append(slices.Clone(paths[:most]), fmt.Sprintf("and %d more", n-most))
@@ -493,7 +493,8 @@ func gatewayStepper(p runspec.Spec, secrets runspec.Secrets, part int, reviewer 
 	}
 	timeout := time.Duration(p.Model.RequestTimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = model.GatewayRequestTimeout(model.StepBudget(tuning.Get().Model.DefaultStepTimeout, tuning.Get().Model.DefaultStepTimeout))
+		step := tuning.Get().Model.DefaultStepTimeout
+		timeout = model.GatewayRequestTimeout(model.StepBudget(step, step))
 	}
 	s, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,

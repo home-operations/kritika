@@ -15,14 +15,13 @@ import (
 
 // fakeHeartbeater records every beat and fails the first n, and every
 // one while down or past its ctx. While hung, a beat waits for its ctx,
-// as one on a connection that never answers does.
+// as one on a connection that never answers does. Each beat takes delay.
 type fakeHeartbeater struct {
 	mu    sync.Mutex
 	beats []int64
 	fail  int
 	down  bool
 	hung  bool
-	// delay is how long each beat takes to be written.
 	delay time.Duration
 }
 
@@ -55,6 +54,8 @@ func (f *fakeHeartbeater) HeartbeatJob(ctx context.Context, jobID int64) error {
 	return nil
 }
 
+func (f *fakeHeartbeater) RecordJobRescue(context.Context, *rivertype.JobRow) error { return nil }
+
 func (f *fakeHeartbeater) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -62,6 +63,7 @@ func (f *fakeHeartbeater) count() int {
 }
 
 func TestJobHeartbeatBeatsWhileTheJobRuns(t *testing.T) {
+	jt := tuning.Get().JobTimeout
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeHeartbeater{}
 		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
@@ -73,7 +75,7 @@ func TestJobHeartbeatBeatsWhileTheJobRuns(t *testing.T) {
 		err := h.Work(jctx, job, func(context.Context) error {
 			atStart = store.count()
 			cancel()
-			time.Sleep(4*tuning.Get().JobTimeout.HeartbeatInterval + tuning.Get().JobTimeout.HeartbeatInterval/2)
+			time.Sleep(4*jt.HeartbeatInterval + jt.HeartbeatInterval/2)
 			during = store.count()
 			return nil
 		})
@@ -86,7 +88,7 @@ func TestJobHeartbeatBeatsWhileTheJobRuns(t *testing.T) {
 		if during != 5 {
 			t.Fatalf("beats over four and a half intervals = %d, want the first and one an interval", during)
 		}
-		time.Sleep(3 * tuning.Get().JobTimeout.HeartbeatInterval)
+		time.Sleep(3 * jt.HeartbeatInterval)
 		if got := store.count(); got != during {
 			t.Fatalf("beats after Work returned = %d, want none past %d", got, during)
 		}
@@ -115,9 +117,10 @@ func TestJobHeartbeatRefusesToStartUnseen(t *testing.T) {
 }
 
 // TestJobHeartbeatFencesTheJobOnceBeatsStopLanding: the job is cut once no
-// beat landed for JobTimeout.JobFenceAfter, before the leader can hand it back. No beat
-// is written after, though the job runs on.
+// beat landed for JobTimeout.JobFenceAfter, before the leader can hand it
+// back. No beat is written after, though the job runs on.
 func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
+	jt := tuning.Get().JobTimeout
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeHeartbeater{}
 		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
@@ -134,15 +137,15 @@ func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
 			store.mu.Lock()
 			store.down = false
 			store.mu.Unlock()
-			time.Sleep(3 * tuning.Get().JobTimeout.HeartbeatInterval)
+			time.Sleep(3 * jt.HeartbeatInterval)
 			return context.Cause(ctx)
 		})
 		if !errors.Is(err, errJobFenced) {
 			t.Fatalf("Work = %v, want the job fenced", err)
 		}
-		if fencedAfter < tuning.Get().JobTimeout.JobFenceAfter() || fencedAfter >= tuning.Get().JobTimeout.HeartbeatAbandonedAfter() {
+		if fencedAfter < jt.JobFenceAfter() || fencedAfter >= jt.HeartbeatAbandonedAfter() {
 			t.Fatalf("fenced after %s, want from %s and before the leader may hand the job back at %s",
-				fencedAfter, tuning.Get().JobTimeout.JobFenceAfter(), tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
+				fencedAfter, jt.JobFenceAfter(), jt.HeartbeatAbandonedAfter())
 		}
 		if got := store.count(); got != 1 {
 			t.Fatalf("beats written = %d, want only the first: a beat after the fence would hide the cut from the leader", got)
@@ -179,6 +182,7 @@ func TestJobHeartbeatFencesAJobRiverEnded(t *testing.T) {
 // TestJobHeartbeatFencesTheJobWhileABeatHangs: a beat that never returns
 // still has the job fenced once the window is up.
 func TestJobHeartbeatFencesTheJobWhileABeatHangs(t *testing.T) {
+	jt := tuning.Get().JobTimeout
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeHeartbeater{}
 		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
@@ -195,9 +199,9 @@ func TestJobHeartbeatFencesTheJobWhileABeatHangs(t *testing.T) {
 		if !errors.Is(err, errJobFenced) {
 			t.Fatalf("Work = %v, want the job fenced", err)
 		}
-		if fencedAfter < tuning.Get().JobTimeout.JobFenceAfter() || fencedAfter >= tuning.Get().JobTimeout.HeartbeatAbandonedAfter() {
+		if fencedAfter < jt.JobFenceAfter() || fencedAfter >= jt.HeartbeatAbandonedAfter() {
 			t.Fatalf("fenced after %s, want from %s and before the leader may hand the job back at %s",
-				fencedAfter, tuning.Get().JobTimeout.JobFenceAfter(), tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
+				fencedAfter, jt.JobFenceAfter(), jt.HeartbeatAbandonedAfter())
 		}
 	})
 }
@@ -206,24 +210,25 @@ func TestJobHeartbeatFencesTheJobWhileABeatHangs(t *testing.T) {
 // into the job do not fence it: the window runs from the last beat
 // written, not from the job's start.
 func TestJobHeartbeatOutlastsAShortOutage(t *testing.T) {
+	jt := tuning.Get().JobTimeout
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeHeartbeater{}
 		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
 		// Half an interval off the ticks, so no beat and no wake fall at
 		// the same instant.
-		healthy := tuning.Get().JobTimeout.JobFenceAfter() + tuning.Get().JobTimeout.HeartbeatInterval/2
+		healthy := jt.JobFenceAfter() + jt.HeartbeatInterval/2
 		err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
 			time.Sleep(healthy)
 			store.mu.Lock()
 			store.fail = 3
 			store.mu.Unlock()
-			time.Sleep(4 * tuning.Get().JobTimeout.HeartbeatInterval)
+			time.Sleep(4 * jt.HeartbeatInterval)
 			return context.Cause(ctx)
 		})
 		if err != nil {
 			t.Fatalf("Work = %v, want the job to outlast three missed beats", err)
 		}
-		if got, want := store.count(), 1+int(healthy/tuning.Get().JobTimeout.HeartbeatInterval)+1; got != want {
+		if got, want := store.count(), 1+int(healthy/jt.HeartbeatInterval)+1; got != want {
 			t.Fatalf("beats written = %d, want %d: the first, one an interval until the outage, and one after it", got, want)
 		}
 	})

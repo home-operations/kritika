@@ -258,10 +258,10 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 // fill fetches target and follows its redirects. It keeps the body under
 // key, which is d's key, when the body has d. Every request waiting on key
 // waits on this one fetch, so the fetch does not end with the request that
-// started it. The fetch is bounded as one upgraded request is. While Egress.MaxFills
-// are under way or their bytes hold MaxBytes, the fetch is not made at all,
-// and the request is left to be forwarded. The fetch is the gateway's own,
-// with a User-Agent and Accept of its own.
+// started it. The fetch is bounded as one upgraded request is. While
+// Egress.MaxFills are under way or their bytes hold MaxBytes, the fetch is
+// not made at all, and the request is left to be forwarded. The fetch is the
+// gateway's own, with a User-Agent and Accept of its own.
 func (p *Proxy) fill(ctx context.Context, key string, d Digest, target string) error {
 	lock := p.Cache.entries.lock(key)
 	defer p.Cache.entries.unlock(key, lock)
@@ -409,8 +409,7 @@ func private(h http.Header) bool {
 }
 
 // begin claims a place for a fill among tuning's Egress.MaxFills under way
-// at once,
-// false when there is none.
+// at once, false when there is none.
 func (c *Cache) begin() bool {
 	c.underway.Lock()
 	defer c.underway.Unlock()
@@ -501,7 +500,7 @@ func (c *Cache) store(key string, entry cacheEntry, body io.Reader, check func()
 	if err != nil {
 		return fmt.Errorf("egress: cache: %w", err)
 	}
-	if int64(len(line))+1 > int64(tuning.Get().Egress.MaxEntryHeader) {
+	if tuning.ByteSize(len(line)+1) > tuning.Get().Egress.MaxEntryHeader {
 		return errEntryHeader
 	}
 	tmp, err := os.CreateTemp(c.Dir, ".fill-")

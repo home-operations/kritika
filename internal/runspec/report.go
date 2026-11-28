@@ -42,6 +42,12 @@ const (
 // ReportCheckpointInput names a part input hash on ReportCheckpointsPath.
 const ReportCheckpointInput = "input"
 
+// ReportLimitHeader is the header of a report refused as too large that
+// gives, in bytes, the limit of the replica that refused it. Replicas of a
+// rollout can hold different limits, so a runner fits a report it can cut,
+// the context report, to that limit and sends it again.
+const ReportLimitHeader = "Kritika-Report-Limit"
+
 // Index modes, as index_runs and index_packs spell them.
 const (
 	IndexModeFull        = "full"

@@ -62,7 +62,7 @@ type MergePart struct {
 // a quarter of the budget. Then it holds each part's files and summary, and
 // then the findings, one line each, while they fit.
 func BuildMerge(title, body string, parts []MergePart, findings []Finding, budget int) string {
-	limit := budget * tuning.Get().Review.CharsPerToken
+	limit := tokenBytes(budget)
 	var b strings.Builder
 	fmt.Fprintf(&b, "Pull request: %s\n", oneLine(title))
 	writeDescription(&b, body, limit/tuning.Get().Review.BodyShare)
@@ -90,16 +90,18 @@ func BuildMerge(title, body string, parts []MergePart, findings []Finding, budge
 	return b.String()
 }
 
-// mergeSection is part i of n as the merge call is shown it: its files,
-// the first tuning's Review.MaxMergePaths named, and the summary its reviewer wrote.
+// mergeSection is part i of n as the merge call is shown it: its files, the
+// first tuning's Review.MaxMergePaths named, and the summary its reviewer
+// wrote.
 func mergeSection(i, n int, p MergePart) string {
+	r := tuning.Get().Review
 	paths := p.Paths
-	if more := len(paths) - tuning.Get().Review.MaxMergePaths; more > 0 {
-		paths = append(slices.Clone(paths[:tuning.Get().Review.MaxMergePaths]), fmt.Sprintf("and %d more", more))
+	if more := len(paths) - r.MaxMergePaths; more > 0 {
+		paths = append(slices.Clone(paths[:r.MaxMergePaths]), fmt.Sprintf("and %d more", more))
 	}
 	take := strings.Join(strings.Fields(p.Summary.Take), " ")
-	if len(take) > tuning.Get().Review.MaxMergeTake {
-		take = textcut.Prefix(take, tuning.Get().Review.MaxMergeTake) + " …"
+	if len(take) > r.MaxMergeTake {
+		take = textcut.Prefix(take, r.MaxMergeTake) + " …"
 	}
 	var b strings.Builder
 	by := ""

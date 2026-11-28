@@ -164,6 +164,23 @@ func TestQueueAttention(t *testing.T) {
 	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - interval '1 hour' WHERE job_id = $1`, fresh); err != nil {
 		t.Fatal(err)
 	}
+	// A beat is judged by the window it carries, the claim by the leader's
+	// own: a 7m owner window 6m after a beat is live, and a job claimed 2m
+	// ago, within the claim grace, is too, though its 30s window passed.
+	windowed := func(number int, claimed, beat, window time.Duration) int64 {
+		t.Helper()
+		id := add(account, "running", number, claimed)
+		if err := s.HeartbeatJob(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2),
+			abandon_after = make_interval(secs => $3) WHERE job_id = $1`, id, beat.Seconds(), window.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	slowOwner := windowed(8, 10*time.Minute, 6*time.Minute, 7*time.Minute)
+	justClaimed := windowed(9, 2*time.Minute, 90*time.Second, 30*time.Second)
 	recent := add(account, "discarded", 4, time.Hour)
 	old := add(account, "discarded", 5, 25*time.Hour)
 	recovered := add(account, "discarded", 6, time.Hour)
@@ -185,6 +202,7 @@ func TestQueueAttention(t *testing.T) {
 			overdue, failure bool
 		}{
 			{stale, true, false}, {fresh, false, false}, {beating, false, false}, {recent, false, true}, {old, false, false}, {recovered, false, false}, {retrying, false, false},
+			{slowOwner, false, false}, {justClaimed, false, false},
 		} {
 			r, ok := got[tc.id]
 			if !ok || r.HeartbeatOverdue != tc.overdue || r.RecentFailure != tc.failure {
@@ -198,6 +216,7 @@ func TestQueueAttention(t *testing.T) {
 }
 
 func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
+	queueFinished := tuning.Get().Store.QueueFinished
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
@@ -219,7 +238,7 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 				}
 				if _, err := tx.Exec(ctx, `INSERT INTO river_job (kind, args, state, finalized_at)
 					SELECT 'thread', jsonb_build_object('account_id', $1::text, 'repository_id', $2::text, 'number', 910, 'comment_id', n, 'resolved', n % 2 = 0), 'completed', now()
-					FROM generate_series(1, $3::int) n`, account, repo, tuning.Get().Store.QueueFinished); err != nil {
+					FROM generate_series(1, $3::int) n`, account, repo, queueFinished); err != nil {
 					return err
 				}
 				rows, err := ListQueue(ctx, tx)
@@ -238,7 +257,7 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 						t.Errorf("thread state = %+v", row)
 					}
 				}
-				if !found || finished != tuning.Get().Store.QueueFinished {
+				if !found || finished != queueFinished {
 					t.Errorf("failure retained = %v, finished = %d", found, finished)
 				}
 				return nil

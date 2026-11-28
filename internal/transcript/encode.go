@@ -8,10 +8,10 @@ import (
 	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// Placeholder stands in for content a row over tuning's Transcript.RowCap dropped.
+// Placeholder stands in for content a row over its size cap dropped.
 const Placeholder = "[omitted: the row exceeded its size cap]"
 
-// SystemTruncated ends a system prompt cut to tuning's Transcript.SystemCap.
+// SystemTruncated ends a system prompt cut to its size cap.
 const SystemTruncated = "\n[truncated: the system prompt exceeded its size cap]"
 
 // Encoded is a row as the model_calls columns take it. System and Tools
@@ -61,9 +61,10 @@ func maskRaw(raw json.RawMessage, fn func(string) string) json.RawMessage {
 // Encode applies the caps and encodes r. It replaces NUL with the Unicode
 // replacement character because PostgreSQL text and jsonb cannot store it.
 func (r Row) Encode() Encoded {
+	t := tuning.Get().Transcript
 	e := Encoded{MessagesFrom: r.MessagesFrom, System: r.System, State: r.next}
 	msgs := r.Messages
-	if r.prevBytes > int64(tuning.Get().Transcript.RunCap) {
+	if r.prevBytes > int64(t.RunCap) {
 		msgs, e.System, e.Truncated = nil, nil, true
 	} else if r.Tools != nil {
 		e.Tools, _ = json.Marshal(*r.Tools) // cannot fail: every RawMessage is valid JSON
@@ -72,14 +73,14 @@ func (r Row) Encode() Encoded {
 		system := strings.ReplaceAll(*e.System, "\x00", "\ufffd")
 		e.System = &system
 	}
-	if e.System != nil && len(*e.System) > tuning.Get().Transcript.SystemCap() {
-		system := textcut.Prefix(*e.System, tuning.Get().Transcript.SystemCap()) + SystemTruncated
+	if e.System != nil && len(*e.System) > t.SystemCap() {
+		system := textcut.Prefix(*e.System, t.SystemCap()) + SystemTruncated
 		e.System, e.Truncated = &system, true
 	}
-	msgs, cut := cutResults(msgs)
+	msgs, cut := cutResults(msgs, int(t.ToolResultCap))
 	e.Truncated = e.Truncated || cut
 	e.Messages = marshalMessages(msgs)
-	if len(e.Messages) > int(tuning.Get().Transcript.RowCap) {
+	if len(e.Messages) > int(t.RowCap) {
 		e.Messages, e.Truncated = marshalMessages(placeholders(msgs)), true
 	}
 	e.Response, _ = json.Marshal(r.Response) // cannot fail: every RawMessage is valid JSON
@@ -102,9 +103,9 @@ func marshalMessages(msgs []Message) json.RawMessage {
 	return b
 }
 
-// cutResults cuts every tool result over tuning's Transcript.ToolResultCap, on a rune
-// boundary, and reports whether it cut any.
-func cutResults(msgs []Message) ([]Message, bool) {
+// cutResults cuts every tool result over limit bytes, on a rune boundary,
+// and reports whether it cut any.
+func cutResults(msgs []Message, limit int) ([]Message, bool) {
 	cut := false
 	out := make([]Message, len(msgs))
 	for i, m := range msgs {
@@ -114,8 +115,8 @@ func cutResults(msgs []Message) ([]Message, bool) {
 		}
 		out[i].ToolResults = make([]ToolResult, len(m.ToolResults))
 		for j, res := range m.ToolResults {
-			if len(res.Content) > int(tuning.Get().Transcript.ToolResultCap) {
-				kept := textcut.Prefix(res.Content, int(tuning.Get().Transcript.ToolResultCap))
+			if len(res.Content) > limit {
+				kept := textcut.Prefix(res.Content, limit)
 				res.TruncatedBytes += len(res.Content) - len(kept)
 				res.Content, cut = kept, true
 			}

@@ -393,13 +393,14 @@ func TestInSavepoint(t *testing.T) {
 // that file for the query's other chunks that hold its names. The other
 // files make the name rare enough to search for.
 func TestSimilarLexicalLooksPastAFullWindow(t *testing.T) {
+	gw := tuning.Get().Gateway
 	chunks, vectors := map[string]string{}, map[string][]float32{}
-	for i := range tuning.Get().Gateway.SimilarDepth() {
+	for i := range gw.SimilarDepth() {
 		key := fmt.Sprintf("a.go@%d", 10*i+1)
 		chunks[key], vectors[key] = "func widgetFactory() {}", e(2)
 	}
 	chunks["b.go@1"], vectors["b.go@1"] = "func widgetFactory() {}", e(2)
-	for i := range 2 * tuning.Get().Gateway.SimilarDepth() {
+	for i := range 2 * gw.SimilarDepth() {
 		key := fmt.Sprintf("other%d.go", i)
 		chunks[key], vectors[key] = fmt.Sprintf("func other%d() {}", i), e(3)
 	}

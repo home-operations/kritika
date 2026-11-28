@@ -86,13 +86,7 @@ func mutate(t *testing.T, v *Values) {
 		var ok bool
 		for _, change := range changes(l.value) {
 			try := Defaults()
-			var j int
-			walk(reflect.ValueOf(&try).Elem(), "", func(f leaf) {
-				if j == i {
-					change(f.value)
-				}
-				j++
-			})
+			change(nth(&try, i))
 			if try.Validate() == nil {
 				change(l.value)
 				ok = true
@@ -103,6 +97,19 @@ func mutate(t *testing.T, v *Values) {
 			t.Fatalf("tuning.%s: no change of its default is valid", l.path)
 		}
 	}
+}
+
+// nth is v's i-th tunable field, in declaration order.
+func nth(v *Values, i int) reflect.Value {
+	var out reflect.Value
+	var j int
+	walk(reflect.ValueOf(v).Elem(), "", func(l leaf) {
+		if j == i {
+			out = l.value
+		}
+		j++
+	})
+	return out
 }
 
 // changes are the changes that mutate tries on a field's value, in order.
@@ -168,24 +175,19 @@ func TestValidateRefusesZero(t *testing.T) {
 	for i, l := range leaves {
 		for _, n := range []int64{0, -1} {
 			v := Defaults()
-			var j int
-			walk(reflect.ValueOf(&v).Elem(), "", func(f leaf) {
-				if j == i {
-					switch f.value.Kind() {
-					case reflect.Slice:
-						if n == 0 {
-							f.value.Set(reflect.Zero(f.value.Type()))
-						} else {
-							f.value.Set(reflect.ValueOf([]time.Duration{-1}).Convert(f.value.Type()))
-						}
-					case reflect.Float32, reflect.Float64:
-						f.value.SetFloat(float64(n))
-					default:
-						f.value.SetInt(n)
-					}
+			f := nth(&v, i)
+			switch f.Kind() {
+			case reflect.Slice:
+				if n == 0 {
+					f.Set(reflect.Zero(f.Type()))
+				} else {
+					f.Set(reflect.ValueOf([]time.Duration{-1}).Convert(f.Type()))
 				}
-				j++
-			})
+			case reflect.Float32, reflect.Float64:
+				f.SetFloat(float64(n))
+			default:
+				f.SetInt(n)
+			}
 			err := v.Validate()
 			if n == 0 && l.field.Tag.Get("tuning") == "zero" {
 				if err != nil {

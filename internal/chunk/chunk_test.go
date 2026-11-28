@@ -236,13 +236,6 @@ func contains(ss []string, s string) bool {
 	return slices.Contains(ss, s)
 }
 
-// TestParseBounds: every parser has its memory budget and stack depth limit,
-// and no parser has a timeout, which would make a file's declarations
-// depend on how loaded the machine is: a parse that the deadline stops
-// partway can return a tree of one error node and no error. A file built to
-// drive the parse stack deep stops at the depth limit and falls back to
-// fixed windows. Every bound counts work rather than time, so that the test
-// holds on any machine.
 // TestParseBoundsConfigured: a parser takes the bounds that tuning's Chunk
 // has when it is made, and a file over Chunk.MaxFileBytes is not parsed
 // unless the caller sets a limit of its own.
@@ -268,6 +261,13 @@ func TestParseBoundsConfigured(t *testing.T) {
 	}
 }
 
+// TestParseBounds: every parser has its memory budget and stack depth limit,
+// and no parser has a timeout, which would make a file's declarations
+// depend on how loaded the machine is: a parse that the deadline stops
+// partway can return a tree of one error node and no error. A file built to
+// drive the parse stack deep stops at the depth limit and falls back to
+// fixed windows. Every bound counts work rather than time, so that the test
+// holds on any machine.
 func TestParseBounds(t *testing.T) {
 	var p Parser
 	for _, path := range []string{"x.go", "x.js"} {

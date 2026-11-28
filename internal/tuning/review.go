@@ -110,7 +110,9 @@ type Review struct {
 	// multiply it.
 	MaxIterations int `env:"KRITIKA_TUNING_REVIEW_MAX_ITERATIONS" envDefault:"20000" yaml:"maxIterations,omitempty"`
 	// MaxMeasureDepth bounds how deep the template sandbox measures a value.
-	// Anything deeper counts as one node.
+	// A string at it still counts its length, and a list, map or struct with
+	// contents at it is refused as too large: what cannot be measured is not
+	// let through.
 	MaxMeasureDepth int `env:"KRITIKA_TUNING_REVIEW_MAX_MEASURE_DEPTH" envDefault:"64" yaml:"maxMeasureDepth,omitempty"`
 }
 

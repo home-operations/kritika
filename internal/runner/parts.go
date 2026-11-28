@@ -18,7 +18,6 @@ import (
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/indexer"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -28,7 +27,7 @@ import (
 // splitReview is the parts a review is split into, the paths of each, nil
 // when it is reviewed whole. It splits the diff it reads: the pull request's
 // or, on an incremental re-review, the diff since the last review. That diff
-// is cut where it is over tuning's Review.PartBytes into no more parts than its grant
+// is cut where it is over Review.PartBytes into no more parts than its grant
 // covers.
 func splitReview(p runspec.Spec, res *gitfetch.Result, scope review.Scope) [][]string {
 	if p.Agent == nil {
@@ -460,7 +459,7 @@ func runPartLoops(
 	for _, n := range count {
 		rounds = max(rounds, n)
 	}
-	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout()))
+	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, tuning.Get().JobTimeout.MaxAgentTimeout()))
 	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "slots", p.Agent.Slots, "commands", tools.commands(),
 		"search", tools.search != nil)
 	results := make([]agent.Result, len(parts))

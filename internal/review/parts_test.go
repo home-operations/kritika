@@ -90,6 +90,7 @@ func TestSplitDiffTinySize(t *testing.T) {
 // TestSplitDiffKeepsEveryFile: whatever the sizes, every file no glob
 // ignores is in exactly one part, within maxParts.
 func TestSplitDiffKeepsEveryFile(t *testing.T) {
+	partBytes := tuning.Get().Review.PartBytes
 	const n = 40
 	files, want := make([]any, 0, 2*n), make([]string, 0, n)
 	for i := range n {
@@ -97,14 +98,14 @@ func TestSplitDiffKeepsEveryFile(t *testing.T) {
 		files = append(files, p, (i%9+1)*7<<10)
 		want = append(want, p)
 	}
-	parts := SplitDiff(sizedDiff(t, files...), nil, int(tuning.Get().Review.PartBytes), 4)
+	parts := SplitDiff(sizedDiff(t, files...), nil, int(partBytes), 4)
 	got := slices.Concat(parts...)
 	slices.Sort(got)
 	slices.Sort(want)
 	if len(parts) < 2 || len(parts) > 4 || !slices.Equal(got, want) {
 		t.Fatalf("%d parts holding %q, want 2 to 4 holding each file once", len(parts), got)
 	}
-	if again := SplitDiff(sizedDiff(t, files...), nil, int(tuning.Get().Review.PartBytes), 4); !slices.EqualFunc(again, parts, slices.Equal) {
+	if again := SplitDiff(sizedDiff(t, files...), nil, int(partBytes), 4); !slices.EqualFunc(again, parts, slices.Equal) {
 		t.Fatal("the same diff split differently")
 	}
 }

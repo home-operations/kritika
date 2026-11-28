@@ -147,18 +147,22 @@ func byteSizeHook(from, to reflect.Type, value any) (any, error) {
 	return b, err
 }
 
-// mapstructure truncates floating-point values even with weak typing disabled.
+// mapstructure truncates floating-point values even with weak typing
+// disabled, into any signed integer, int64 among them.
 func integerHook(_, to reflect.Type, value any) (any, error) {
-	if to.Kind() != reflect.Int {
+	switch to.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	default:
 		return value, nil
 	}
+	limit := math.Ldexp(1, to.Bits()-1) // the range is [-limit, limit)
 	switch n := value.(type) {
 	case float64:
-		if math.IsNaN(n) || math.Trunc(n) != n || n < float64(math.MinInt) || n >= -float64(math.MinInt) {
+		if math.IsNaN(n) || math.Trunc(n) != n || n < -limit || n >= limit {
 			return nil, errors.New("value must be a whole number within the integer range")
 		}
 	case uint64:
-		if n > uint64(math.MaxInt) {
+		if n > uint64(1)<<(to.Bits()-1)-1 {
 			return nil, errors.New("value exceeds the integer range")
 		}
 	}

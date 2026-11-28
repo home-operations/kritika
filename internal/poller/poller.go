@@ -168,9 +168,10 @@ func (p *Poller) sweepTips(ctx context.Context, interval time.Duration) {
 // admin to turn them on before polling or indexing. The forge-reported
 // repositories that an account's listing no longer has are disabled, in case
 // the webhook that said so was missed. A connection whose listing fails, or
-// takes longer than tuning's Poller.ReachTimeout, is logged and left for the next poll. An
-// account whose listing is empty, or that Reach left out, is left as it is.
-// A partial listing registers what it has and disables nothing.
+// takes longer than tuning's Poller.ReachTimeout, is logged and left for the
+// next poll. An account whose listing is empty, or that Reach left out, is
+// left as it is. A partial listing registers what it has and disables
+// nothing.
 func (p *Poller) SyncRepositories(ctx context.Context) {
 	if p.Reach == nil {
 		return
@@ -437,10 +438,11 @@ func (p *Poller) markUnknown(key string) {
 // on the account's recently reviewed pull requests, in the repositories
 // that run, into their findings. GitHub sends no webhook for a reaction.
 func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account, in *configfile.Connection, runs map[string]bool) error {
+	t := tuning.Get().Poller
 	var pulls []store.ReviewedPull
 	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
-		pulls, err = store.RecentlyReviewedPulls(ctx, tx, time.Now().Add(-tuning.Get().Poller.ReactionWindow), tuning.Get().Poller.ReactionPulls)
+		pulls, err = store.RecentlyReviewedPulls(ctx, tx, time.Now().Add(-t.ReactionWindow), t.ReactionPulls)
 		return err
 	})
 	if err != nil {
@@ -517,11 +519,11 @@ func (p *Poller) setTipsFirst(accountID string) {
 // arrive: one push webhook missed, or one index job that failed, leaves the
 // index behind until the next push otherwise. It looks at every interval while
 // the connection's webhooks have been silent for the poll lookback, and every
-// tuning's Poller.TipCheckInterval while they arrive. A repository whose last index job
-// ended without moving its index waits tuning's Jobs.OnboardRetryAfter for its next
-// look, as the onboarding feeder waits to offer a repository whose first
-// index failed again. A branch that the forge will not give is logged and
-// asked for again at the next look.
+// tuning's Poller.TipCheckInterval while they arrive. A repository whose last
+// index job ended without moving its index waits tuning's
+// Jobs.OnboardRetryAfter for its next look, as the onboarding feeder waits to
+// offer a repository whose first index failed again. A branch that the forge
+// will not give is logged and asked for again at the next look.
 //
 // A sweep looks at the repositories in name order, from the first to the
 // last. A look that ctx or the forge's rate limit cuts short leaves the
@@ -529,8 +531,8 @@ func (p *Poller) setTipsFirst(accountID string) {
 // wait goes on from there to the last name, not round again. The wait holds
 // back the looks of every account whose lookups the limit counts, as
 // limitScope names them. A sweep that ends, in one look or over several,
-// counts toward tuning's Poller.TipCheckInterval. So looks cut short every time still come
-// round to each repository, and stop asking once they have. A repository
+// counts toward that interval. So looks cut short every time still
+// come round to each repository, and stop asking once they have. A repository
 // named before where a sweep was cut, added meanwhile, waits for the next
 // sweep.
 func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) error {
@@ -635,8 +637,8 @@ func (p *Poller) pollTips(ctx context.Context, file *configfile.File, account *c
 // tipsOrder kept for it. It looks when a look was cut short, as the refused
 // one was. It also looks when the connection's webhook, which last
 // delivered at delivered, has been silent for lookback, and otherwise when
-// tuning's Poller.TipCheckInterval has passed since a look last went through every
-// repository in this process: a newly elected leader looks at once.
+// tuning's Poller.TipCheckInterval has passed since a look last went through
+// every repository in this process: a newly elected leader looks at once.
 func (p *Poller) tipsDue(accountID, scope string, delivered *time.Time, lookback time.Duration) (string, bool) {
 	now := p.clock()
 	p.mu.Lock()

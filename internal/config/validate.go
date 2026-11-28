@@ -24,10 +24,10 @@ func init() {
 // and file loaders share, tuning's among them.
 func (s Settings) Validate() error { return s.validate(true) }
 
-// validate is Validate, which checks the retentions only with retention. A
-// runner reads neither retention, and serve hands its runners the tuning
-// values alone: a Worker.MinRetention that serve raised, with its
-// retentions, would refuse the runner's default retentions.
+// validate is Validate, with the retentions checked only with retention. A
+// runner reads neither retention, and serve hands it only the tuning: a
+// Worker.MinRetention that serve raised along with its retentions would
+// refuse the runner's default ones.
 func (s Settings) validate(retention bool) error {
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)

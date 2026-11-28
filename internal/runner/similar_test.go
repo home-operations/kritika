@@ -105,10 +105,10 @@ func (f *fakeSimilarGateway) serve(t *testing.T) *httptest.Server {
 // its repository has an index. It reports the paths its searches leave out
 // once, both names of a rename among them, and only when there is an index.
 // Its requests carry none. A run whose report is refused, fails until the
-// run ends, or is not answered within Runner.SimilarReportWindow, searches nothing:
-// the index would answer with the old copies of the files the prompt shows.
-// A report that fails is sent again, and the window, not the report's own
-// retries, ends the wait.
+// run ends, or is not answered within Runner.SimilarReportWindow, searches
+// nothing: the index would answer with the old copies of the files the prompt
+// shows. A report that fails is sent again, and the window, not the report's
+// own retries, ends the wait.
 func TestSimilarContextExclusions(t *testing.T) {
 	const diff = "diff --git a/old.go b/new.go\nsimilarity index 80%\nrename from old.go\nrename to new.go\n" +
 		"--- a/old.go\n+++ b/new.go\n@@ -1,1 +1,2 @@\n package main\n+func n() {}\n"
@@ -309,13 +309,14 @@ func TestWithoutOverlap(t *testing.T) {
 	}
 }
 
-// TestSimilarShown: a prompt shows at most tuning.Get().Runner.MaxSimilarShown of the chunks
-// found, counted after it drops those that the head no longer has or that
-// other stages show.
+// TestSimilarShown: a prompt shows at most Runner.MaxSimilarShown of the
+// chunks found, counted after it drops those that the head no longer has or
+// that other stages show.
 func TestSimilarShown(t *testing.T) {
+	limits := tuning.Get().ContextPack
 	files := map[string]string{}
-	found := make([]contextpack.Chunk, 0, tuning.Get().ContextPack.SimilarLimit)
-	for i := range tuning.Get().ContextPack.SimilarLimit {
+	found := make([]contextpack.Chunk, 0, limits.SimilarLimit)
+	for i := range limits.SimilarLimit {
 		path := fmt.Sprintf("f%02d.go", i)
 		files[path] = fmt.Sprintf("func f%d() {}\n", i)
 		found = append(found, contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: fmt.Sprintf("func f%d() {}", i)})
@@ -606,12 +607,13 @@ func TestAtHeadFindsALineIndentedPastTheBound(t *testing.T) {
 // over the indexer's MaxFileBytes spends none of its queries on them, so a
 // smaller file that adds fewer lines is still asked about.
 func TestSimilarContextLeavesOutFilesTooLargeToIndex(t *testing.T) {
+	limits := tuning.Get().ContextPack
 	var diff strings.Builder
 	files := map[string]string{"small.go": "func small() {}\n"}
 	// The large files share one blob, which the tree stores once.
 	large := strings.Repeat("x", indexer.DefaultOptions().MaxFileBytes+1)
-	changed := make([]string, 0, tuning.Get().ContextPack.SimilarQueries+1)
-	for i := range tuning.Get().ContextPack.SimilarQueries {
+	changed := make([]string, 0, limits.SimilarQueries+1)
+	for i := range limits.SimilarQueries {
 		path := fmt.Sprintf("big%d.go", i)
 		files[path], changed = large, append(changed, path)
 		diff.WriteString(fileDiff("", path, added(fmt.Sprintf("func big%d() {", i), "\treturn", "}")))
@@ -674,8 +676,9 @@ func atHeadOf(t *testing.T, head *object.Tree, chunks []contextpack.Chunk) []con
 // TestSearchToolAsksForSpares: search_code asks the gateway for more chunks
 // than it shows, so a found chunk that the head no longer has, or that the
 // run now ignores, leaves its place to the next one rather than leaving it
-// empty. It shows no more than tuning.Get().Runner.SearchShown however many are found.
+// empty. It shows no more than Runner.SearchShown however many are found.
 func TestSearchToolAsksForSpares(t *testing.T) {
+	limits := tuning.Get().Runner
 	files := map[string]string{"vendor/dep.go": "func dep() {}\n"}
 	found := func(path, text string) contextpack.Chunk {
 		return contextpack.Chunk{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text, Ref: "similarity 0.9"}
@@ -684,8 +687,8 @@ func TestSearchToolAsksForSpares(t *testing.T) {
 		found("gone.go", "func gone() {}"), found("vendor/dep.go", "func dep() {}"), found("old.go", "func old() {}"),
 		found("vendor/other.go", "func other() {}"),
 	}
-	valid := make([]contextpack.Chunk, 0, tuning.Get().Runner.SearchShown+2)
-	for i := range tuning.Get().Runner.SearchShown + 2 {
+	valid := make([]contextpack.Chunk, 0, limits.SearchShown+2)
+	for i := range limits.SearchShown + 2 {
 		path, text := fmt.Sprintf("lib/f%d.go", i), fmt.Sprintf("func f%d() {}", i)
 		files[path] = text + "\n"
 		valid = append(valid, found(path, text))

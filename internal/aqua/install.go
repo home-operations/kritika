@@ -254,9 +254,8 @@ func request(ctx context.Context, client *http.Client, url string, header http.H
 }
 
 // download writes url's body to w, at most tuning's Aqua.MaxDownloadBytes
-// of it. It makes
-// sure that the body matches sum, and returns its SHA-256, which a signature
-// is of.
+// of it. It makes sure that the body matches sum, and returns its SHA-256,
+// which a signature is of.
 func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Writer) ([]byte, error) {
 	h, err := hasher(sum.Algorithm)
 	if err != nil {

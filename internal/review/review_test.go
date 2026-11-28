@@ -479,16 +479,17 @@ func TestBuildReferences(t *testing.T) {
 }
 
 func TestBuildFollowUpAndParse(t *testing.T) {
+	maxMessageChars := tuning.Get().Review.MaxMessageChars
 	in := Input{References: []Reference{{Path: "AGENTS.md", Description: "conventions"}}, Repository: "a/b", Number: 1, Title: "t", Author: "u", BaseRef: "main", Changed: []string{"main.go"}, Diff: sampleDiff}
 	findings := []Finding{{Path: "main.go", Line: 11, Severity: SeverityP1, Title: "y changed", Explanation: "why\nit matters"}}
 	thread := []Message{
 		NewMessage("kritika[bot]", "## Kritika Review\n\nFine.\n", time.Time{}),
-		NewMessage("outsider", strings.Repeat("x", tuning.Get().Review.MaxMessageChars+1), time.Time{}),
+		NewMessage("outsider", strings.Repeat("x", maxMessageChars+1), time.Time{}),
 		NewMessage("onedr0p", "@kritika why is y changed?", time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)),
 	}
 	msg := BuildFollowUp(in, findings, thread)
 	for _, want := range []string{"Diff (unified", "+	z := 4", "Findings kritika posted on this pull request (1)", "main.go:11 [p1] y changed: why it matters",
-		"--- kritika[bot] ---\n## Kritika Review\n\nFine.\n", "--- outsider ---\n" + strings.Repeat("x", tuning.Get().Review.MaxMessageChars) + " …\n",
+		"--- kritika[bot] ---\n## Kritika Review\n\nFine.\n", "--- outsider ---\n" + strings.Repeat("x", maxMessageChars) + " …\n",
 		"--- onedr0p (2026-09-24 21:00) [answer this] ---", "Reply to the last message from onedr0p."} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
@@ -765,12 +766,13 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 // TestParseChecked: the notes for the next review are cut to one line
 // each and to tuning's Review.MaxChecked of them, blank ones dropped.
 func TestParseChecked(t *testing.T) {
-	notes := make([]string, 0, 2+tuning.Get().Review.MaxChecked)
+	maxChecked := tuning.Get().Review.MaxChecked
+	notes := make([]string, 0, 2+maxChecked)
 	notes = append(notes, `" main.go:\n f1 is pure "`, `"  "`)
 	want := []string{"main.go: f1 is pure"}
-	for i := range tuning.Get().Review.MaxChecked {
+	for i := range maxChecked {
 		notes = append(notes, fmt.Sprintf(`"n%d"`, i))
-		if len(want) < tuning.Get().Review.MaxChecked {
+		if len(want) < maxChecked {
 			want = append(want, fmt.Sprintf("n%d", i))
 		}
 	}
@@ -832,11 +834,13 @@ func TestParseDiagram(t *testing.T) {
 }
 
 func TestBuildDefaultBudget(t *testing.T) {
-	big := strings.Repeat("x", tuning.Get().Review.DefaultBudgetTokens*tuning.Get().Review.CharsPerToken)
+	defaultBudget := tuning.Get().Review.DefaultBudgetTokens
+	charsPerToken := tuning.Get().Review.CharsPerToken
+	big := strings.Repeat("x", defaultBudget*charsPerToken)
 	in := Input{Repository: "acme/widgets", Number: 1, Changed: []string{"a.go"}, Diff: sampleDiff + "\n" + big}
 	msg, _, _, _ := Build(in)
-	if len(msg) > tuning.Get().Review.DefaultBudgetTokens*tuning.Get().Review.CharsPerToken {
-		t.Fatalf("message is %d chars, over the default budget of %d tokens", len(msg), tuning.Get().Review.DefaultBudgetTokens)
+	if len(msg) > defaultBudget*charsPerToken {
+		t.Fatalf("message is %d chars, over the default budget of %d tokens", len(msg), defaultBudget)
 	}
 }
 

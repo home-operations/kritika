@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// golden is every field's default by its YAML path under tuning, as the
-// code had it before the field became tunable, in Values' order. A default
-// changes only by changing its row here too.
+// golden is every field's default by its YAML path under tuning, in Values'
+// order. A default changes only by changing its row here too.
 var golden = map[string]any{
 	"gateway.similarPerQuery":      4,
 	"gateway.similarPerFile":       2,

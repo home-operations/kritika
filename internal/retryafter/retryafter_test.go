@@ -13,7 +13,7 @@ import (
 // clients that read it.
 func TestParse(t *testing.T) {
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
-	for _, tc := range []struct {
+	for _, tt := range []struct {
 		name string
 		v    string
 		wait time.Duration
@@ -29,9 +29,9 @@ func TestParse(t *testing.T) {
 		{name: "a negative number", v: "-5"},
 		{name: "past 32 bits of seconds", v: "4294967296"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if wait, ok := Parse(tc.v, now); wait != tc.wait || ok != tc.ok {
-				t.Fatalf("Parse(%q) = %s %t, want %s %t", tc.v, wait, ok, tc.wait, tc.ok)
+		t.Run(tt.name, func(t *testing.T) {
+			if wait, ok := Parse(tt.v, now); wait != tt.wait || ok != tt.ok {
+				t.Fatalf("Parse(%q) = %s %t, want %s %t", tt.v, wait, ok, tt.wait, tt.ok)
 			}
 		})
 	}
@@ -42,7 +42,7 @@ func TestParse(t *testing.T) {
 func TestResetEpoch(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	epoch := func(d time.Duration) string { return strconv.FormatInt(now.Add(d).Unix(), 10) }
-	for _, tc := range []struct {
+	for _, tt := range []struct {
 		name       string
 		v          string
 		grace      time.Duration
@@ -59,9 +59,9 @@ func TestResetEpoch(t *testing.T) {
 		{name: "GitLab: a reset now is none", v: epoch(0), rejectPast: true},
 		{name: "GitLab: empty", v: "", rejectPast: true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if wait, ok := ResetEpoch(tc.v, now, tc.grace, tc.rejectPast); wait != tc.wait || ok != tc.ok {
-				t.Fatalf("ResetEpoch(%q) = %s %t, want %s %t", tc.v, wait, ok, tc.wait, tc.ok)
+		t.Run(tt.name, func(t *testing.T) {
+			if wait, ok := ResetEpoch(tt.v, now, tt.grace, tt.rejectPast); wait != tt.wait || ok != tt.ok {
+				t.Fatalf("ResetEpoch(%q) = %s %t, want %s %t", tt.v, wait, ok, tt.wait, tt.ok)
 			}
 		})
 	}

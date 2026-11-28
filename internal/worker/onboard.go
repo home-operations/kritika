@@ -30,8 +30,8 @@ type Onboarder struct {
 	Logger  *slog.Logger
 }
 
-// Run tops the window up every tuning's Worker.OnboardInterval until ctx ends. A failed
-// top-up is logged and tried again on the next tick.
+// Run tops the window up every tuning's Worker.OnboardInterval until ctx ends.
+// A failed top-up is logged and tried again on the next tick.
 func (o *Onboarder) Run(ctx context.Context) {
 	t := time.NewTicker(tuning.Get().Worker.OnboardInterval)
 	defer t.Stop()

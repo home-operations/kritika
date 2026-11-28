@@ -25,8 +25,7 @@ import (
 )
 
 // fetchRegistry fetches the aqua registry the run's gateway keeps, and
-// githubAPI is where the GitHub REST API is. Variables for the tests. Each
-// step of installing a tool is bounded by tuning's Runner.InstallTimeout.
+// githubAPI is where the GitHub REST API is. Variables for the tests.
 var (
 	fetchRegistry = func(ctx context.Context, gatewayURL, gatewayToken string) (*aqua.Registry, error) {
 		return aqua.FetchRegistry(ctx, http.DefaultClient, strings.TrimSuffix(gatewayURL, "/")+runspec.AquaRegistryPath,

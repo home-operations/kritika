@@ -46,8 +46,9 @@ type FollowUp struct {
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
 
-	// superviseEvery overrides tuning's Worker.SuperviseInterval, rowWait tuning's Worker.AgentRowWait, and
-	// awaitEvery tuning's Worker.AwaitInterval.
+	// superviseEvery overrides tuning's Worker.SuperviseInterval, rowWait
+	// tuning's Worker.AgentRowWait, and awaitEvery tuning's
+	// Worker.AwaitInterval.
 	superviseEvery time.Duration
 	rowWait        time.Duration
 	awaitEvery     time.Duration
@@ -563,8 +564,8 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int, error) {
 	}
 	slices.SortStableFunc(comments, func(a, b forge.Comment) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	comments = append(comments, asking)
-	if len(comments) > tuning.Get().Worker.ThreadMessages {
-		comments = comments[len(comments)-tuning.Get().Worker.ThreadMessages:]
+	if most := tuning.Get().Worker.ThreadMessages; len(comments) > most {
+		comments = comments[len(comments)-most:]
 	}
 	msgs := make([]review.Message, 0, len(comments))
 	writes := map[string]bool{}

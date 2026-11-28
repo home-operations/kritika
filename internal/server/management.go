@@ -79,11 +79,10 @@ func (m *Management) Run(ctx context.Context) error {
 }
 
 // Serve runs h on addr until ctx is cancelled, then drains within drain.
-// tuning's Server values bound reading a request and an idle connection;
-// there is no write timeout, because a write timeout cuts the event
-// streams.
 // Requests still in flight when it runs out are cut: a stopping process is
-// not failing.
+// not failing. tuning's Server values bound reading a request and an idle
+// connection. There is no write timeout, because a write timeout cuts the
+// event streams.
 func Serve(ctx context.Context, addr string, h http.Handler, drain time.Duration, logger *slog.Logger) error {
 	t := tuning.Get().Server
 	srv := &http.Server{

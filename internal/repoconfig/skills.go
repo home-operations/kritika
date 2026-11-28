@@ -59,13 +59,14 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 	if s.Name == "" {
 		s.Name = path.Base(dir)
 	}
+	maxDescription := tuning.Get().RepoConfig.MaxSkillDescription
 	switch {
 	case !skillNameRe.MatchString(s.Name):
 		return Skill{}, fmt.Errorf("name %q must be lowercase letters, digits and hyphens, at most 64 characters", s.Name)
 	case s.Description == "":
 		return Skill{}, errors.New("description is required")
-	case utf8.RuneCountInString(s.Description) > tuning.Get().RepoConfig.MaxSkillDescription:
-		return Skill{}, fmt.Errorf("description is over %d characters", tuning.Get().RepoConfig.MaxSkillDescription)
+	case utf8.RuneCountInString(s.Description) > maxDescription:
+		return Skill{}, fmt.Errorf("description is over %d characters", maxDescription)
 	}
 	return s, nil
 }
@@ -84,12 +85,14 @@ type Offered struct {
 // changed paths is given, in order. Those are all the skills that scope does
 // not keep from the review. Scope keeps a skill out by its paths, or because
 // the worker found none of its conditions to hold (off). One that its scope
-// loads is given whole while the instructions of those fit
-// tuning's RepoConfig.MaxSkillLoadedBytes. The rest, and a loaded one that did not fit, are
-// listed while their names and descriptions fit tuning's RepoConfig.MaxSkillListingBytes.
+// loads is given whole while the instructions of those fit tuning's
+// RepoConfig.MaxSkillLoadedBytes. The rest, and a loaded one that did not
+// fit, are listed while their names and descriptions fit
+// RepoConfig.MaxSkillListingBytes.
 func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, changed []string) Offered {
 	var out Offered
-	room, loadRoom := int(tuning.Get().RepoConfig.MaxSkillListingBytes), int(tuning.Get().RepoConfig.MaxSkillLoadedBytes)
+	t := tuning.Get().RepoConfig
+	room, loadRoom := int(t.MaxSkillListingBytes), int(t.MaxSkillLoadedBytes)
 	for _, s := range found {
 		sc := scope[s.Name]
 		if slices.Contains(off, s.Name) {

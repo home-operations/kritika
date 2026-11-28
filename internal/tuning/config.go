@@ -2,6 +2,7 @@ package tuning
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -243,6 +244,14 @@ func init() {
 		},
 		func(v Values) error {
 			return similarity(v.ConfigFile.DefaultSimilarMargin, "configFile.defaultSimilarMargin")
+		},
+		func(v Values) error {
+			// serve waits out their sum for the queues to stop.
+			if p := v.Process; p.QueueDrain > 0 && p.QueueStopHeadroom > time.Duration(math.MaxInt64)-p.QueueDrain {
+				return fmt.Errorf("%s and %s together must not exceed %s", fieldLabel("process.queueDrain"),
+					fieldLabel("process.queueStopHeadroom"), time.Duration(math.MaxInt64))
+			}
+			return nil
 		},
 	)
 }

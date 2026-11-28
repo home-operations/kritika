@@ -563,8 +563,8 @@ func TestSimilarCode(t *testing.T) {
 // TestSearchTool: search_code asks the gateway once per call, formats what
 // it gets back, and stops at its call limit.
 func TestSearchTool(t *testing.T) {
-	// The limit is the configured Runner.SearchCalls.
-	tuning.Override(t, func(v *tuning.Values) { v.Runner.SearchCalls = 3 })
+	const limit = 3
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.SearchCalls = limit })
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -588,12 +588,12 @@ func TestSearchTool(t *testing.T) {
 	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":" "}`)); err == nil {
 		t.Fatal("an empty query ran")
 	}
-	for range 3 - 1 {
+	for range limit - 1 {
 		if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != 3 {
+	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != limit {
 		t.Fatalf("past the limit: err=%v calls=%d", err, calls)
 	}
 }

@@ -117,7 +117,7 @@ func NumberLines(name, content string, start, end, maxBytes int) (string, error)
 }
 
 // grepSchema is grep's input schema, which states tuning's Agent grep
-// bounds as they are when the tool is offered.
+// bounds.
 func grepSchema() json.RawMessage {
 	t := tuning.Get().Agent
 	return json.RawMessage(fmt.Sprintf(`{
@@ -177,7 +177,8 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	if req.ContextLines < 0 {
 		return "", fmt.Errorf("agent: grep: context_lines must be >= 0")
 	}
-	contextLines := min(req.ContextLines, tuning.Get().Agent.GrepContextLinesCap)
+	t := tuning.Get().Agent
+	contextLines := min(req.ContextLines, t.GrepContextLinesCap)
 	re, err := regexp.Compile(req.Pattern)
 	if err != nil {
 		return "", fmt.Errorf("agent: grep: invalid pattern: %w", err)
@@ -188,9 +189,9 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	}
 	limit := req.MaxResults
 	if limit <= 0 {
-		limit = tuning.Get().Agent.DefaultGrepMaxResults
+		limit = t.DefaultGrepMaxResults
 	}
-	limit = min(limit, tuning.Get().Agent.GrepMaxResultsCap)
+	limit = min(limit, t.GrepMaxResultsCap)
 
 	var matches []grepMatch
 	hits := 0
@@ -208,7 +209,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		if !doublestar.MatchUnvalidated(glob, f.Name) {
 			return nil
 		}
-		if f.Size > int64(tuning.Get().Agent.MaxBlobBytes) {
+		if f.Size > int64(t.MaxBlobBytes) {
 			return nil
 		}
 		content, err := f.Contents()

@@ -19,7 +19,6 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
@@ -442,8 +441,9 @@ func (b *Base) modelUntouched(ctx context.Context, accountID, runID string, logg
 //
 // A run that ended in error can still be writing its row: a deleted runner
 // pod records how its agent stopped while it terminates. await waits for
-// that, until the run settles or wait, tuning's Worker.AgentRowWait when zero, passes. ctx's
-// cancellation is not inherited, so a job River cancels still reads the row.
+// that, until the run settles or wait, tuning's Worker.AgentRowWait when zero,
+// passes. ctx's cancellation is not inherited, so a job River cancels still
+// reads the row.
 func (b *Base) readAgentRun(
 	ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool, wait time.Duration,
 ) (*store.AgentRunRow, error) {
@@ -530,8 +530,9 @@ func (w *Review) agentSpec(
 // estimateParts is how many parts the diff of a pull request of pr's size
 // is likely split into, at most maxParts.
 func estimateParts(pr forge.OpenPullRequest, maxParts int) int {
-	size := tuning.Get().Worker.DiffBytesPerLine*(pr.Additions+pr.Deletions) + tuning.Get().Worker.DiffBytesPerFile*pr.ChangedFiles
-	return min(max((size+int(tuning.Get().Review.PartBytes)-1)/int(tuning.Get().Review.PartBytes), 1), max(maxParts, 1))
+	w, part := tuning.Get().Worker, int(tuning.Get().Review.PartBytes)
+	size := w.DiffBytesPerLine*(pr.Additions+pr.Deletions) + w.DiffBytesPerFile*pr.ChangedFiles
+	return min(max((size+part-1)/part, 1), max(maxParts, 1))
 }
 
 // splitParts is how many parts a review of pr is sized for, its grant and
@@ -555,7 +556,7 @@ func (w *Review) splitParts(ctx context.Context, client forge.Client, pr *pullRe
 // rounds rounds, each part within timeout. It is at most as much as a job can
 // run.
 func partsTimeout(rounds int, timeout time.Duration) time.Duration {
-	return min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout())
+	return min(time.Duration(rounds)*timeout, tuning.Get().JobTimeout.MaxAgentTimeout())
 }
 
 // sizing is what a review is sized for: the parts that its runner can split

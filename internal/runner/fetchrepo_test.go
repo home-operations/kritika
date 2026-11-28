@@ -91,6 +91,7 @@ func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
 }
 
 func TestFetchRepoTool(t *testing.T) {
+	limits := tuning.Get().Runner
 	url, tool := servedRepo(t)
 
 	out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"pkg"}}))
@@ -113,8 +114,8 @@ func TestFetchRepoTool(t *testing.T) {
 	if err != nil || !strings.Contains(string(diff), "+func A() {}") {
 		t.Fatalf("diff file = %q, %v", diff, err)
 	}
-	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); int64(tuning.Get().Runner.FetchWriteBytes)-tool.budget.Left() != want {
-		t.Fatalf("written = %d, want %d", int64(tuning.Get().Runner.FetchWriteBytes)-tool.budget.Left(), want)
+	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); int64(limits.FetchWriteBytes)-tool.budget.Left() != want {
+		t.Fatalf("written = %d, want %d", int64(limits.FetchWriteBytes)-tool.budget.Left(), want)
 	}
 
 	if out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1"})); err != nil ||
@@ -240,6 +241,7 @@ func TestFetchRepoSources(t *testing.T) {
 }
 
 func TestDirName(t *testing.T) {
+	limits := tuning.Get().Runner
 	for _, tt := range []struct {
 		n         int
 		url, ref  string
@@ -253,8 +255,8 @@ func TestDirName(t *testing.T) {
 	} {
 		got := dirName(tt.n, tt.url, tt.ref)
 		if tt.wantLimit {
-			if len(got) != tuning.Get().Runner.MaxDirNameBytes || !strings.HasPrefix(got, "4-r@aaa") {
-				t.Errorf("dirName(%q) = %q, want it cut to %d", tt.ref, got, tuning.Get().Runner.MaxDirNameBytes)
+			if len(got) != limits.MaxDirNameBytes || !strings.HasPrefix(got, "4-r@aaa") {
+				t.Errorf("dirName(%q) = %q, want it cut to %d", tt.ref, got, limits.MaxDirNameBytes)
 			}
 			continue
 		}
@@ -265,6 +267,7 @@ func TestDirName(t *testing.T) {
 }
 
 func TestFetchRepoTags(t *testing.T) {
+	limits := tuning.Get().Runner
 	url, tool := servedRepo(t)
 	run := func(in map[string]any) (string, error) {
 		t.Helper()
@@ -300,7 +303,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("description = %q", d)
 	}
 	tool.hosts = nil
-	if tool.fetches != 0 || tool.budget.Left() != int64(tuning.Get().Runner.FetchWriteBytes) {
+	if tool.fetches != 0 || tool.budget.Left() != int64(limits.FetchWriteBytes) {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}
 
@@ -316,7 +319,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("listings = %d, want 5: three asked for and two after a missing ref", tool.listings)
 	}
 
-	tool.listings = tuning.Get().Runner.MaxTagListings
+	tool.listings = limits.MaxTagListings
 	if _, err := run(map[string]any{"tags": ""}); err == nil || !strings.Contains(err.Error(), "listed tags 8 times") {
 		t.Fatalf("past the listing count: err = %v", err)
 	}

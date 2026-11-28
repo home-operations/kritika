@@ -182,7 +182,7 @@ func scopeAccount(file *configfile.File, p *auth.Principal, a scopeArgs) (*accou
 
 // pagedSchema is the input schema of a tool whose In embeds pageArgs, as
 // the SDK infers it, with limit's description stating tuning's WebAPI page
-// sizes as they are when the tool is added.
+// sizes.
 func pagedSchema[In any]() *jsonschema.Schema {
 	s, err := jsonschema.For[In](&jsonschema.ForOptions{})
 	if err != nil {
@@ -196,8 +196,7 @@ func pagedSchema[In any]() *jsonschema.Schema {
 
 // pageArgs ask for one page of a list.
 type pageArgs struct {
-	// Limit's description is pagedSchema's, which states tuning's WebAPI
-	// page sizes.
+	// Limit's description is set by pagedSchema.
 	Limit  int    `json:"limit,omitempty"`
 	Cursor string `json:"cursor,omitempty" jsonschema:"the nextCursor of the page before"`
 }

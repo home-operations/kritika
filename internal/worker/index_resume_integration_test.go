@@ -73,6 +73,7 @@ func (f *tipRetryForge) BranchTip(ctx context.Context, owner, name, branch strin
 }
 
 func TestIndexRetriesFailedTipCheck(t *testing.T) {
+	tipCheckWait := tuning.Get().Worker.TipCheckWait
 	env := setupIndexResume(t, "")
 	ctx := rivertest.WorkContext(t.Context(), env.queue)
 	job := env.claim(1)
@@ -98,8 +99,8 @@ func TestIndexRetriesFailedTipCheck(t *testing.T) {
 	}
 	// The index is published. The tip check is asked for again as a snooze,
 	// not a failed attempt.
-	if snooze, ok := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job)); !ok || snooze.Duration != tuning.Get().Worker.TipCheckWait {
-		t.Fatalf("Work error = %v, want a %s snooze", snooze, tuning.Get().Worker.TipCheckWait)
+	if snooze, ok := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job)); !ok || snooze.Duration != tipCheckWait {
+		t.Fatalf("Work error = %v, want a %s snooze", snooze, tipCheckWait)
 	}
 	if err := w.Work(ctx, env.claim(1)); err != nil {
 		t.Fatalf("retry: %v", err)
@@ -125,8 +126,8 @@ func TestIndexRetriesFailedTipCheck(t *testing.T) {
 // TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication: a forge's rate
 // limit on the tip check after publication names when to ask again, hours
 // away here: GitLab's 429 by its reset, and GitHub's secondary limit by its
-// Retry-After. The job snoozes until then rather than for tuning's Worker.TipCheckWait,
-// which would only ask again within the limit.
+// Retry-After. The job snoozes until then rather than for tuning's
+// Worker.TipCheckWait, which would only ask again within the limit.
 func TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication(t *testing.T) {
 	for _, tc := range []struct {
 		name string

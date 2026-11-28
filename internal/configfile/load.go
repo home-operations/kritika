@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -21,7 +22,6 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/config"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/review"
@@ -86,6 +86,13 @@ func FromConfig(cfg *config.Config) (*File, error) {
 }
 
 func parse(input config.Document, settings config.Settings) (*File, error) {
+	// The policy is checked, and the File's defaults read, under the
+	// process's tuning. A file whose tuning was not tuning.Set first would
+	// be checked under values it does not set, so it is refused.
+	if !reflect.DeepEqual(settings.Tuning, tuning.Defaults()) && !reflect.DeepEqual(settings.Tuning, *tuning.Get()) {
+		return nil, errors.New("configfile: the file's tuning is not the process's: tuning.Set it before the file is parsed, " +
+			"so that its policy is checked under it")
+	}
 	var doc fileDoc
 	if err := input.Policy.Load(&doc, yaml.WithKnownFields()); err != nil {
 		return nil, fmt.Errorf("configfile: parse: %w", err)
@@ -381,15 +388,14 @@ func (f *File) validateEmbedding() error {
 			"since prompts move the scores the floor compares")
 	}
 	if r := e.Rerank; r != nil {
+		t := tuning.Get().ConfigFile
 		switch {
 		case !slices.Contains(model.RerankAPIs, r.API):
 			return fmt.Errorf("configfile: embedding.rerank.api must be one of %s, got %q", strings.Join(model.RerankAPIs, ", "), r.API)
-		case r.Candidates < 0 || r.Candidates > tuning.Get().ConfigFile.MaxRerankCandidates:
-			return fmt.Errorf("configfile: embedding.rerank.candidates must be between 0 and %d, got %d",
-				tuning.Get().ConfigFile.MaxRerankCandidates, r.Candidates)
-		case r.Timeout < 0 || r.Timeout > tuning.Get().ConfigFile.MaxRerankTimeout:
-			return fmt.Errorf("configfile: embedding.rerank.timeout must be between 0 and %s, got %s",
-				tuning.Get().ConfigFile.MaxRerankTimeout, r.Timeout)
+		case r.Candidates < 0 || r.Candidates > t.MaxRerankCandidates:
+			return fmt.Errorf("configfile: embedding.rerank.candidates must be between 0 and %d, got %d", t.MaxRerankCandidates, r.Candidates)
+		case r.Timeout < 0 || r.Timeout > t.MaxRerankTimeout:
+			return fmt.Errorf("configfile: embedding.rerank.timeout must be between 0 and %s, got %s", t.MaxRerankTimeout, r.Timeout)
 		}
 	}
 	return nil
@@ -466,8 +472,9 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: trigger.limit must not be negative")
 	}
-	if r.Trigger.Settle != nil && (*r.Trigger.Settle < 0 || *r.Trigger.Settle > tuning.Get().ConfigFile.MaxPushSettle) {
-		return fmt.Errorf("configfile: trigger.settle must be between 0s and %s", tuning.Get().ConfigFile.MaxPushSettle)
+	maxSettle := tuning.Get().ConfigFile.MaxPushSettle
+	if r.Trigger.Settle != nil && (*r.Trigger.Settle < 0 || *r.Trigger.Settle > maxSettle) {
+		return fmt.Errorf("configfile: trigger.settle must be between 0s and %s", maxSettle)
 	}
 	for gi, g := range r.Ignore {
 		if !ValidGlob(g) {
@@ -500,17 +507,18 @@ func validateAgent(a Agent) error {
 	if a.Tokens != nil && *a.Tokens <= 0 {
 		return fmt.Errorf("configfile: agent.tokens must be positive")
 	}
-	if a.Prompt != nil && *a.Prompt < tuning.Get().ConfigFile.MinPromptTokens {
-		return fmt.Errorf("configfile: agent.prompt must be at least %d", tuning.Get().ConfigFile.MinPromptTokens)
+	t := tuning.Get()
+	if a.Prompt != nil && *a.Prompt < t.ConfigFile.MinPromptTokens {
+		return fmt.Errorf("configfile: agent.prompt must be at least %d", t.ConfigFile.MinPromptTokens)
 	}
 	// The job document carries whole seconds, and the runner sets no agent
 	// deadline for 0.
 	if a.Timeout != nil && *a.Timeout < time.Second {
 		return fmt.Errorf("configfile: agent.timeout must be at least 1s")
 	}
-	if a.Timeout != nil && *a.Timeout > jobtimeout.MaxAgentTimeout() {
+	if a.Timeout != nil && *a.Timeout > t.JobTimeout.MaxAgentTimeout() {
 		return fmt.Errorf("configfile: agent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",
-			jobtimeout.MaxAgentTimeout(), tuning.Get().JobTimeout.MaxJobTimeout)
+			t.JobTimeout.MaxAgentTimeout(), t.JobTimeout.MaxJobTimeout)
 	}
 	// The job document carries whole seconds.
 	if a.CommandTimeout != nil && *a.CommandTimeout < time.Second {

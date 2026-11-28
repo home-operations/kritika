@@ -29,15 +29,17 @@ type Embedding struct {
 	// SimilarFloor is the cosine similarity an index chunk needs to count
 	// as similar code, for the review's similar-code stage and the agent's
 	// search_code tool alike. Where useful matches part from noise depends
-	// on the model, its prompts and the repository. Unset is
-	// tuning's ConfigFile.DefaultSimilarFloor, which only fits inputs without prompts.
+	// on the model, its prompts and the repository. Unset is tuning's
+	// ConfigFile.DefaultSimilarFloor, which only fits inputs without
+	// prompts.
 	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
 	// SimilarMargin is how far below the best match of its query, in cosine
 	// similarity, a chunk can score and still count as similar code. A
 	// query's scores sit at a height set by the code it is near. That height
 	// differs between repositories and between the hunks of one diff. So the
 	// margin follows each query's best where a floor cannot. Unset is
-	// tuning's ConfigFile.DefaultSimilarMargin, and 0 keeps only each query's best.
+	// tuning's ConfigFile.DefaultSimilarMargin, and 0 keeps only each
+	// query's best.
 	SimilarMargin *float64 `yaml:"similarMargin,omitempty"`
 	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
 	// each similar-code query and each indexed chunk: the task prompts many
@@ -87,16 +89,19 @@ const MaxEmbedDims = 4000
 // Bounds returns MaxBatch, MaxBatchChars and MaxItemChars, each the
 // embedder's default when unset.
 func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
-	return cmp.Or(e.MaxBatch, tuning.Get().Model.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, tuning.Get().Model.DefaultEmbedMaxBatchChars),
-		cmp.Or(e.MaxItemChars, tuning.Get().Model.DefaultEmbedMaxItemChars)
+	t := tuning.Get().Model
+	return cmp.Or(e.MaxBatch, t.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, t.DefaultEmbedMaxBatchChars),
+		cmp.Or(e.MaxItemChars, t.DefaultEmbedMaxItemChars)
 }
 
-// Floor returns SimilarFloor, tuning's ConfigFile.DefaultSimilarFloor when unset.
+// Floor returns SimilarFloor, tuning's ConfigFile.DefaultSimilarFloor when
+// unset.
 func (e *Embedding) Floor() float64 {
 	return cmp.Or(e.SimilarFloor, tuning.Get().ConfigFile.DefaultSimilarFloor)
 }
 
-// Margin returns SimilarMargin, tuning's ConfigFile.DefaultSimilarMargin when unset.
+// Margin returns SimilarMargin, tuning's ConfigFile.DefaultSimilarMargin
+// when unset.
 func (e *Embedding) Margin() float64 {
 	if e.SimilarMargin == nil {
 		return tuning.Get().ConfigFile.DefaultSimilarMargin
@@ -116,15 +121,16 @@ type Rerank struct {
 	// model.RerankAPIs.
 	API string `yaml:"api"`
 	// Candidates is how many of each query's candidates, the best fused
-	// first, are sent to be reranked, at most tuning's ConfigFile.MaxRerankCandidates. The two
-	// searches each look for that many, and no fewer than without a reranker.
-	// Unset is tuning's ConfigFile.DefaultRerankCandidates, or
-	// tuning's ConfigFile.DefaultTEIRerankCandidates for the tei API.
+	// first, are sent to be reranked, at most tuning's
+	// ConfigFile.MaxRerankCandidates. The two searches each look for that
+	// many, and no fewer than without a reranker. Unset is
+	// ConfigFile.DefaultRerankCandidates, or
+	// ConfigFile.DefaultTEIRerankCandidates for the tei API.
 	Candidates int `yaml:"candidates,omitempty"`
 	// Timeout bounds the reranking of one similar-code request, at most
-	// tuning's ConfigFile.MaxRerankTimeout: the wait for one of the reranker's slots and then all
-	// of its queries. A query not reranked by then keeps the fused order. Unset
-	// is tuning's ConfigFile.DefaultRerankTimeout.
+	// tuning's ConfigFile.MaxRerankTimeout: the wait for one of the
+	// reranker's slots and then all of its queries. A query not reranked by
+	// then keeps the fused order. Unset is ConfigFile.DefaultRerankTimeout.
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load.
@@ -136,8 +142,9 @@ type Rerank struct {
 // APIKeyValue returns the resolved API key.
 func (r *Rerank) APIKeyValue() Secret { return r.apiKey }
 
-// CandidateCount returns Candidates when set, tuning's ConfigFile.DefaultTEIRerankCandidates for
-// the tei API, and tuning's ConfigFile.DefaultRerankCandidates otherwise.
+// CandidateCount returns Candidates when set, tuning's
+// ConfigFile.DefaultTEIRerankCandidates for the tei API, and
+// ConfigFile.DefaultRerankCandidates otherwise.
 func (r *Rerank) CandidateCount() int {
 	if r.Candidates == 0 && r.API == model.RerankTEI {
 		return tuning.Get().ConfigFile.DefaultTEIRerankCandidates
@@ -145,7 +152,8 @@ func (r *Rerank) CandidateCount() int {
 	return cmp.Or(r.Candidates, tuning.Get().ConfigFile.DefaultRerankCandidates)
 }
 
-// Deadline returns Timeout, tuning's ConfigFile.DefaultRerankTimeout when unset.
+// Deadline returns Timeout, tuning's ConfigFile.DefaultRerankTimeout when
+// unset.
 func (r *Rerank) Deadline() time.Duration {
 	return cmp.Or(r.Timeout, tuning.Get().ConfigFile.DefaultRerankTimeout)
 }

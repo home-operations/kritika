@@ -70,8 +70,7 @@ var searchSchema = json.RawMessage(`{
 }`)
 
 // searchTool is search_code: the agent's own similar-code search, over
-// the same gateway route as stage 4, bounded to tuning's Runner.SearchCalls
-// per run.
+// the same gateway route as stage 4, bounded to Runner.SearchCalls per run.
 type searchTool struct {
 	gatewayURL, token string
 	// head is the tree that the answer is shown as (atHead). headLock, when
@@ -151,13 +150,13 @@ var _ agent.Tool = (*searchTool)(nil)
 // cut text is longer than MaxChunkBytes.
 func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
 	var shown []contextpack.Chunk
-	cut := contextpack.DefaultOptions().MaxChunkBytes
+	limit := contextpack.DefaultOptions().MaxChunkBytes
 	for _, o := range others {
 		if o.Stage == contextpack.StageSimilar {
 			continue
 		}
 		text := o.Text
-		if len(text) > cut {
+		if len(text) > limit {
 			// A cut that ends at a newline shows none of the line after it.
 			text = strings.TrimSuffix(strings.TrimSuffix(text, "\n… (truncated)"), "\n")
 		}
@@ -390,8 +389,7 @@ func similarShown(
 
 // shownApart is what a prompt shows of current, the found similar chunks as
 // the head has them: none that others mostly show or that an earlier one
-// shown mostly shows, and the first tuning's Runner.MaxSimilarShown of the
-// rest.
+// shown mostly shows, and the first Runner.MaxSimilarShown of the rest.
 func shownApart(found int, current, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
 	shown := distinct(withoutOverlap(current, others))
 	most := tuning.Get().Runner.MaxSimilarShown

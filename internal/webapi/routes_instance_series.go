@@ -30,6 +30,7 @@ func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	ctx := r.Context()
+	web := tuning.Get().WebAPI
 	out := Analytics{Group: group, From: from, To: to, Series: []AnalyticsPoint{}, Repositories: []RepoActivity{}, Refusals: []EgressRefusal{}}
 	out.Current.Categories, out.Previous.Categories = categoryCounts(nil), categoryCounts(nil)
 	for _, t := range readable(s.current.Get(), auth.PrincipalFrom(ctx)) {
@@ -37,10 +38,10 @@ func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) er
 		var refusals []store.EgressRefusalRow
 		if err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 			var err error
-			if data, err = store.ReadAnalytics(ctx, tx, group, from, to, tuning.Get().WebAPI.AnalyticsRepos); err != nil {
+			if data, err = store.ReadAnalytics(ctx, tx, group, from, to, web.AnalyticsRepos); err != nil {
 				return err
 			}
-			refusals, err = store.ReadEgressRefusals(ctx, tx, from, to, tuning.Get().WebAPI.AnalyticsRefusals)
+			refusals, err = store.ReadEgressRefusals(ctx, tx, from, to, web.AnalyticsRefusals)
 			return err
 		}); err != nil {
 			return err
@@ -61,8 +62,8 @@ func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) er
 	slices.SortStableFunc(out.Repositories, func(a, b RepoActivity) int {
 		return cmp.Or(cmp.Compare(b.Reviews, a.Reviews), cmp.Compare(a.Repository, b.Repository))
 	})
-	out.Repositories = out.Repositories[:min(len(out.Repositories), tuning.Get().WebAPI.AnalyticsRepos)]
-	out.Refusals = topRefusedHosts(out.Refusals, tuning.Get().WebAPI.AnalyticsRefusals)
+	out.Repositories = out.Repositories[:min(len(out.Repositories), web.AnalyticsRepos)]
+	out.Refusals = topRefusedHosts(out.Refusals, web.AnalyticsRefusals)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

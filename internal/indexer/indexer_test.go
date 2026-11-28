@@ -252,10 +252,12 @@ func TestBuildSkipsUnindexedFiles(t *testing.T) {
 }
 
 // TestBuildSignatures: a window of a declaration that does not show the line
-// naming the declaration carries that line, cut to Indexer.MaxSignatureBytes, and its
-// text stays the source's lines. A piece that shows the line, a declaration
-// stored whole and a window of a file with no declarations carry none.
+// naming the declaration carries that line, cut to Indexer.MaxSignatureBytes,
+// and its text stays the source's lines. A piece that shows the line, a
+// declaration stored whole and a window of a file with no declarations carry
+// none.
 func TestBuildSignatures(t *testing.T) {
+	limits := tuning.Get().Indexer
 	type sig struct {
 		head      int
 		signature string
@@ -316,8 +318,8 @@ func TestBuildSignatures(t *testing.T) {
 				if c.Signature != want {
 					t.Errorf("chunk %s L%d-%d signature = %q, want %q", c.Symbol, c.StartLine, c.EndLine, c.Signature, want)
 				}
-				if len(c.Signature) > int(tuning.Get().Indexer.MaxSignatureBytes) || !utf8.ValidString(c.Signature) {
-					t.Errorf("chunk %s L%d-%d signature %q is over %d bytes or not UTF-8", c.Symbol, c.StartLine, c.EndLine, c.Signature, int(tuning.Get().Indexer.MaxSignatureBytes))
+				if len(c.Signature) > int(limits.MaxSignatureBytes) || !utf8.ValidString(c.Signature) {
+					t.Errorf("chunk %s L%d-%d signature %q is over %d bytes or not UTF-8", c.Symbol, c.StartLine, c.EndLine, c.Signature, int(limits.MaxSignatureBytes))
 				}
 				if first, _, _ := strings.Cut(c.Text, "\n"); first != src[c.StartLine-1] {
 					t.Errorf("chunk %s L%d-%d starts %q, want the source's line %q", c.Symbol, c.StartLine, c.EndLine, first, src[c.StartLine-1])
@@ -554,6 +556,7 @@ func (s *sizeReads) EncodedObjectSize(h plumbing.Hash) (int64, error) {
 // or adding nothing, has its size read by nobody, and nor does one ranked
 // below the files that fill the request.
 func TestIndexableReadsOnlyTheFilesThatTakeATurn(t *testing.T) {
+	limits := tuning.Get().ContextPack
 	fs := memfs.New()
 	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
 	gittest.Unsigned(t, r)
@@ -574,15 +577,15 @@ func TestIndexableReadsOnlyTheFilesThatTakeATurn(t *testing.T) {
 	diff.WriteString(fileDiff("", "api_pb2.py", added("def api(): pass")))
 	diff.WriteString(fileDiff("", "notes.unknownext", added("notes")))
 	diff.WriteString(fileDiff("removed.go", "removed.go", "@@ -1,1 +0,0 @@\n-func gone() {}\n"))
-	for i := range tuning.Get().ContextPack.SimilarQueries + 2 {
+	for i := range limits.SimilarQueries + 2 {
 		p := fmt.Sprintf("f%02d.go", i)
 		write(p)
-		lines := make([]string, 0, tuning.Get().ContextPack.SimilarQueries+2-i)
+		lines := make([]string, 0, limits.SimilarQueries+2-i)
 		for j := range cap(lines) {
 			lines = append(lines, fmt.Sprintf("var v%d_%d = %d", i, j, j))
 		}
 		diff.WriteString(fileDiff("", p, added(lines...)))
-		if i < tuning.Get().ContextPack.SimilarQueries {
+		if i < limits.SimilarQueries {
 			used = append(used, p)
 		}
 	}

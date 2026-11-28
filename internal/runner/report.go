@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,14 +47,34 @@ func (r *reporter) phase(ctx context.Context, phase string) error {
 }
 
 // failure accepts an already redacted error, cut to tuning's
-// Runner.MaxFailureCause.
+// Runner.MaxFailureCause, and then, at a rune boundary, until its report as
+// JSON encodes it fits Gateway.MaxSmallReport.
 func (r *reporter) failure(ctx context.Context, cause string) error {
-	cut := textcut.Prefix(cause, int(tuning.Get().Runner.MaxFailureCause))
-	return r.post(ctx, runspec.ReportFailurePath, runspec.FailureReport{Cause: cut}, nil)
+	body, err := failureReport(cause)
+	if err != nil {
+		return fmt.Errorf("runner: encode report %s: %w", runspec.ReportFailurePath, err)
+	}
+	return r.postEncoded(ctx, runspec.ReportFailurePath, body, nil)
 }
 
-func (r *reporter) context(ctx context.Context, pack runspec.ContextPack, phase string) error {
-	return r.post(ctx, runspec.ReportContextPath, runspec.ContextReport{Pack: pack, Phase: phase}, nil)
+// failureReport is the encoded failure report of cause, cut as failure cuts
+// it.
+func failureReport(cause string) ([]byte, error) {
+	cut := textcut.Prefix(cause, int(tuning.Get().Runner.MaxFailureCause))
+	limit := int(tuning.Get().Gateway.MaxSmallReport)
+	for {
+		body, err := json.Marshal(runspec.FailureReport{Cause: cut})
+		over := len(body) - limit
+		if err != nil || over <= 0 || cut == "" {
+			return body, err
+		}
+		cut = textcut.Prefix(cut, textcut.EscapedRoom(len(cut), over))
+	}
+}
+
+// context sends body, an encoded ContextReport.
+func (r *reporter) context(ctx context.Context, body []byte) error {
+	return r.postEncoded(ctx, runspec.ReportContextPath, body, nil)
 }
 
 func (r *reporter) similarExclude(ctx context.Context, paths []string) error {
@@ -107,10 +128,9 @@ func indexFits(pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
 	}
 	switch {
 	case m.longest > int64(t.MaxIndexLine):
-		return fmt.Errorf("runner: index upload: a line of %d bytes is over tuning.gateway.maxIndexLine, %d",
-			m.longest, int64(t.MaxIndexLine))
+		return fmt.Errorf("runner: index upload: a line of %d bytes is over tuning.gateway.maxIndexLine, %d", m.longest, t.MaxIndexLine)
 	case m.total > int64(t.MaxIndexBody):
-		return fmt.Errorf("runner: index upload: %d bytes are over tuning.gateway.maxIndexBody, %d", m.total, int64(t.MaxIndexBody))
+		return fmt.Errorf("runner: index upload: %d bytes are over tuning.gateway.maxIndexBody, %d", m.total, t.MaxIndexBody)
 	}
 	return nil
 }
@@ -159,8 +179,23 @@ func (r *reporter) post(ctx context.Context, path string, v, out any) error {
 	if err != nil {
 		return fmt.Errorf("runner: encode report %s: %w", path, err)
 	}
+	return r.postEncoded(ctx, path, body, out)
+}
+
+// postEncoded sends body, a report already encoded.
+func (r *reporter) postEncoded(ctx context.Context, path string, body []byte, out any) error {
 	return r.send(ctx, tuning.Get().RunSpec.ReportTimeout, http.MethodPost, path, func() io.Reader { return bytes.NewReader(body) }, out)
 }
+
+// tooLargeError is a report that the gateway refused as too large, and the
+// limit, in bytes, of the replica that refused it.
+type tooLargeError struct {
+	limit int64
+	err   error
+}
+
+func (e *tooLargeError) Error() string { return e.err.Error() }
+func (e *tooLargeError) Unwrap() error { return e.err }
 
 // send makes a request, again while its failure is worth another try: for as
 // long as tuning's RunSpec.ReportRetryWindow when the gateway is out of reach
@@ -173,8 +208,8 @@ func (r *reporter) post(ctx context.Context, path string, v, out any) error {
 // would have failed sooner. A later one does not, so that a gateway that
 // answers each attempt slowly with a failure is given up on.
 func (r *reporter) send(ctx context.Context, timeout time.Duration, method, path string, body func() io.Reader, out any) error {
-	window, t := tuning.Get().RunSpec.ReportRetryWindow, tuning.Get().Runner
-	backoff, maxBackoff := t.ReportBackoff, t.ReportMaxBackoff
+	window := tuning.Get().RunSpec.ReportRetryWindow
+	backoff, maxBackoff := tuning.Get().Runner.ReportBackoff, tuning.Get().Runner.ReportMaxBackoff
 	giveUp := time.Now().Add(window)
 	wait := backoff
 	restarted := false
@@ -225,7 +260,12 @@ func (r *reporter) attempt(
 		return true, fmt.Errorf("runner: report %s: %w", path, err)
 	}
 	if resp.StatusCode >= http.StatusMultipleChoices {
-		return reportRetryable(resp.StatusCode, answer), fmt.Errorf("runner: report %s: %s: %s", path, resp.Status, bytes.TrimSpace(answer))
+		err := fmt.Errorf("runner: report %s: %s: %s", path, resp.Status, bytes.TrimSpace(answer))
+		limit, perr := strconv.ParseInt(resp.Header.Get(runspec.ReportLimitHeader), 10, 64)
+		if resp.StatusCode == http.StatusRequestEntityTooLarge && perr == nil && limit > 0 {
+			err = &tooLargeError{limit: limit, err: err}
+		}
+		return reportRetryable(resp.StatusCode, answer), err
 	}
 	if out != nil {
 		if err := json.Unmarshal(answer, out); err != nil {

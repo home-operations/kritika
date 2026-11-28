@@ -32,7 +32,7 @@ var threadsQuery = fmt.Sprintf(`query($owner: String!, $repo: String!, $number: 
       }
     }
   }
-}`, gitHubMaxPage)
+}`, perPage)
 
 const resolveThreadMutation = `mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }`
 

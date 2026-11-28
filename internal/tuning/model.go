@@ -236,6 +236,11 @@ type Adapter struct {
 func init() {
 	crossField = append(crossField,
 		func(v Values) error {
+			// A batch of one item is bound by the batch cap too.
+			return notAbove("model.defaultEmbedMaxItemChars", v.Model.DefaultEmbedMaxItemChars,
+				"model.defaultEmbedMaxBatchChars", v.Model.DefaultEmbedMaxBatchChars)
+		},
+		func(v Values) error {
 			return notAbove("model.catalogRetry", v.Model.CatalogRetry, "model.catalogTtl", v.Model.CatalogTTL)
 		},
 		func(v Values) error {

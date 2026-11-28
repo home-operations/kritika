@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -168,9 +169,13 @@ func decodeReport[T any](w http.ResponseWriter, r *http.Request, limit tuning.By
 }
 
 // refuseBody refuses a request whose body could not be read. A body cut short
-// or too slow is worth sending again. Any other fails the same way again.
+// or too slow is worth sending again. Any other fails the same way again. A
+// body over its limit is refused with the limit in runspec.ReportLimitHeader.
 func refuseBody(w http.ResponseWriter, err error) {
-	_, tooLarge := errors.AsType[*http.MaxBytesError](err)
+	limit, tooLarge := errors.AsType[*http.MaxBytesError](err)
+	if tooLarge {
+		w.Header().Set(runspec.ReportLimitHeader, strconv.FormatInt(limit.Limit, 10))
+	}
 	switch {
 	case tooLarge || errors.Is(err, bufio.ErrTooLong):
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())

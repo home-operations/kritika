@@ -333,9 +333,8 @@ func StepBudget(primary, fallback time.Duration) time.Duration {
 // GatewayRequestTimeout bounds the runner's request to the gateway for a
 // step of budget. It covers the budget, then the time that the gateway can
 // take to charge and record an answered step before it writes the answer,
-// tuning's Model.GatewaySettle. The charge (Adapter.ChargeTimeout) and the
-// record (Adapter.RecordTimeout) are each bounded on a context of their own,
-// within it. So the gateway gives up on, retries, or replaces a provider that
+// tuning's Model.GatewaySettle. The charge and the record are each bounded
+// within it on a context of their own. So the gateway gives up on, retries, or replaces a provider that
 // stalls, and the runner never cuts that provider off first. And the gateway
 // never abandons an answered step while it settles that step.
 func GatewayRequestTimeout(budget time.Duration) time.Duration {
@@ -353,9 +352,9 @@ func StepBudgetWithin(requestTimeout time.Duration) time.Duration {
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
 // provider's default endpoint. headers and client can be nil. timeout bounds
-// one request, tuning's Model.DefaultStepTimeout when zero. The adapter sends each request
-// once: the gateway and the workers retry a step with the provider's retries
-// (adapter.Step).
+// one request, tuning's Model.DefaultStepTimeout when zero. The adapter
+// sends each request once: the gateway and the workers retry a step with the
+// provider's retries (adapter.Step).
 func NewStepper(
 	t ProviderType, baseURL, apiKey string, headers map[string]string, pricing Pricing, timeout time.Duration, client *http.Client,
 ) (Stepper, error) {

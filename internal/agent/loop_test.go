@@ -371,8 +371,8 @@ func checkForcedNeverSubmits(t *testing.T, result Result, events []StepEvent, sc
 	if result.Submitted != nil {
 		t.Fatalf("Submitted = %s, want nil", result.Submitted)
 	}
-	if len(scripted.calls) != 1+tuning.Get().Agent.ForcedRetries {
-		t.Fatalf("%d calls to the stepper, want the forced step and %d retries", len(scripted.calls), tuning.Get().Agent.ForcedRetries)
+	if retries := tuning.Get().Agent.ForcedRetries; len(scripted.calls) != 1+retries {
+		t.Fatalf("%d calls to the stepper, want the forced step and %d retries", len(scripted.calls), retries)
 	}
 	for i, call := range scripted.calls {
 		if !toldToSubmit(call) {
@@ -490,8 +490,8 @@ func setupBudgetForcedNeverSubmits(t *testing.T) (model.Stepper, context.Context
 }
 
 func checkBudgetForcedNeverSubmits(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
-	if len(scripted.calls) != 2+tuning.Get().Agent.ForcedRetries || !strings.Contains(result.Err, "3 step(s)") {
-		t.Fatalf("%d calls, err %q; want a free step, a forced one and %d retries", len(scripted.calls), result.Err, tuning.Get().Agent.ForcedRetries)
+	if retries := tuning.Get().Agent.ForcedRetries; len(scripted.calls) != 2+retries || !strings.Contains(result.Err, "3 step(s)") {
+		t.Fatalf("%d calls, err %q; want a free step, a forced one and %d retries", len(scripted.calls), result.Err, retries)
 	}
 }
 
@@ -1187,9 +1187,9 @@ func TestRun(t *testing.T) {
 			check:     checkCutOffStepGoesOn,
 		},
 		{
-			// If the model is cut off more than Agent.CutOffRetries times in a row,
-			// it is nudged to submit. The next cut-off ends the run as a turn
-			// with no tool call does.
+			// If the model is cut off more than Agent.CutOffRetries times in
+			// a row, it is nudged to submit. The next cut-off ends the run as
+			// a turn with no tool call does.
 			name:      "cut_off_steps_in_a_row_fall_back_to_the_nudge",
 			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
 			setup:     setupCutOffStepsInARow,
@@ -1217,9 +1217,9 @@ func TestRun(t *testing.T) {
 			check:     checkEmptyTurnKeepsTheNudge,
 		},
 		{
-			// If the model is empty more than Agent.EmptyRetries times in a row, it
-			// spends the nudge. The next empty turn ends the run as a turn
-			// with no tool call does.
+			// If the model is empty more than Agent.EmptyRetries times in a
+			// row, it spends the nudge. The next empty turn ends the run as a
+			// turn with no tool call does.
 			name:      "empty_turns_in_a_row_fall_back_to_the_nudge",
 			setup:     setupEmptyTurnsInARow,
 			wantStop:  StopNoSubmit,

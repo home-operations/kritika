@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/tuning"
 )
 
@@ -34,6 +34,7 @@ apps:
 `
 
 func TestJobTimeouts(t *testing.T) {
+	jt := tuning.Get().JobTimeout
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	tests := []struct {
@@ -54,9 +55,9 @@ func TestJobTimeouts(t *testing.T) {
 			index: 75 * time.Minute, followUp: 35 * time.Minute},
 		// The parts of 20m each pass the agent's cap, so a review can run
 		// to the job cap. A follow-up is never split.
-		{name: "the default agent timeout", accountID: "acme", review: tuning.Get().JobTimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
+		{name: "the default agent timeout", accountID: "acme", review: jt.MaxJobTimeout, index: 75 * time.Minute, followUp: 45 * time.Minute},
 		{name: "a longer agent timeout", root: "agent: { timeout: 50m }\n", accountID: "acme",
-			review: tuning.Get().JobTimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
+			review: jt.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
 		{name: "unknown account", accountID: "missing", review: 35 * time.Minute, index: 75 * time.Minute, followUp: 35 * time.Minute},
 	}
 	for _, tt := range tests {
@@ -92,7 +93,7 @@ func TestJobTimeouts(t *testing.T) {
 			agent := file.Settings(account).Agent
 			largest := sizing{parts: map[string]int{"m": agent.MaxParts * (tuning.Get().ConfigFile.MaxReviewers + 1)}}
 			runner := agentDeadline(file.RunnerDeadline(), partsTimeout(largest.rounds(), agent.Timeout))
-			if want := min(runner+tuning.Get().JobTimeout.LeaseWaitHeadroom+tuning.Get().JobTimeout.PublishHeadroom, tuning.Get().JobTimeout.MaxJobTimeout); tt.review < want {
+			if want := min(runner+jt.LeaseWaitHeadroom+jt.PublishHeadroom, jt.MaxJobTimeout); tt.review < want {
 				t.Errorf("review timeout = %s, under the largest review's %s", tt.review, want)
 			}
 		})
@@ -100,16 +101,16 @@ func TestJobTimeouts(t *testing.T) {
 
 	// A runner deadline at configfile's max: the index job lands exactly on
 	// MaxJobTimeout. The review's agents, of 1m each, fit in that deadline.
-	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline()/time.Second)))
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jt.MaxRunnerDeadline()/time.Second)))
 	file := configfiletest.Load(t, "agent: { parts: 1, timeout: 1m }\n"+timeoutConfigYAML)
 	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
 	current := configfile.NewCurrent(file)
 	review, index := &Review{Current: current}, &Index{Current: current}
 	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID()}}),
-		jobtimeout.MaxRunnerDeadline()+tuning.Get().JobTimeout.LeaseWaitHeadroom+tuning.Get().JobTimeout.PublishHeadroom; got != want {
+		jt.MaxRunnerDeadline()+jt.LeaseWaitHeadroom+jt.PublishHeadroom; got != want {
 		t.Errorf("review timeout at the max deadline = %s, want %s", got, want)
 	}
-	if got := index.Timeout(&river.Job[jobs.IndexArgs]{}); got != jobtimeout.MaxRunnerDeadline()+tuning.Get().JobTimeout.IndexWriteHeadroom {
+	if got := index.Timeout(&river.Job[jobs.IndexArgs]{}); got != jt.MaxRunnerDeadline()+jt.IndexWriteHeadroom {
 		t.Errorf("index timeout at the max deadline = %s", got)
 	}
 }
@@ -123,6 +124,7 @@ func TestThreadTimeout(t *testing.T) {
 }
 
 func TestDetach(t *testing.T) {
+	detachTimeout := tuning.Get().Worker.DetachTimeout
 	parent, cancelParent := context.WithCancel(t.Context())
 	ctx, cancel := detach(parent)
 	defer cancel()
@@ -131,8 +133,8 @@ func TestDetach(t *testing.T) {
 		t.Fatalf("detached ctx ended with its parent: %v", ctx.Err())
 	}
 	deadline, ok := ctx.Deadline()
-	if !ok || time.Until(deadline) > tuning.Get().Worker.DetachTimeout {
-		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, tuning.Get().Worker.DetachTimeout)
+	if !ok || time.Until(deadline) > detachTimeout {
+		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, detachTimeout)
 	}
 }
 
@@ -171,5 +173,29 @@ func TestDetachUnlessFenced(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+// TestRiverTimeoutTakesTheOwnersRescue: River's rescuer, on a replica whose
+// settings make a job's timeout short, reads the rescue horizon that the
+// replica working the attempt recorded, not its own timeout. A record of an
+// earlier attempt, or none, leaves the computed timeout, which River's
+// executor reads.
+func TestRiverTimeoutTakesTheOwnersRescue(t *testing.T) {
+	threadTimeout := tuning.Get().Worker.ThreadTimeout
+	claimed := time.Date(2026, 11, 27, 12, 0, 0, 123000, time.UTC)
+	row := func(attempted time.Time) *rivertype.JobRow {
+		meta := fmt.Sprintf(`{"kritika_rescue":{"attempted_at_us":%d,"after_seconds":25200}}`, attempted.UnixMicro())
+		return &rivertype.JobRow{AttemptedAt: &claimed, Metadata: []byte(meta)}
+	}
+	thread := &Thread{}
+	if got := thread.Timeout(&river.Job[jobs.ThreadArgs]{JobRow: row(claimed)}); got != 7*time.Hour {
+		t.Fatalf("Timeout of a recorded attempt = %s, want its owner's 7h horizon", got)
+	}
+	if got := thread.Timeout(&river.Job[jobs.ThreadArgs]{JobRow: row(claimed.Add(-time.Minute))}); got != threadTimeout {
+		t.Fatalf("Timeout of an attempt that an earlier one's record does not match = %s, want the computed %s", got, threadTimeout)
+	}
+	if got := thread.Timeout(&river.Job[jobs.ThreadArgs]{JobRow: &rivertype.JobRow{AttemptedAt: &claimed}}); got != threadTimeout {
+		t.Fatalf("Timeout without a record = %s, want the computed %s", got, threadTimeout)
 	}
 }

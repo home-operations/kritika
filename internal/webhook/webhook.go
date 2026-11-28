@@ -83,7 +83,8 @@ func verifyGitLab(secret string, header http.Header, body []byte, now time.Time)
 	if id == "" || err != nil {
 		return ErrSignatureMismatch
 	}
-	if d, tolerance := now.Sub(time.Unix(sec, 0)), tuning.Get().Webhook.GitLabTolerance; d > tolerance || d < -tolerance {
+	tolerance := tuning.Get().Webhook.GitLabTolerance
+	if d := now.Sub(time.Unix(sec, 0)); d > tolerance || d < -tolerance {
 		return ErrSignatureMismatch
 	}
 	mac := hmac.New(sha256.New, key)

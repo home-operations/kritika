@@ -58,8 +58,8 @@ func conversationOf(ctx context.Context, gatewayURL, token string) (*agent.Conve
 // all of these hold. This review's system prompt and tools match those of the
 // conversation, byte for byte, so that the provider's cache still holds it.
 // The conversation opened on the pull request's title, description, and
-// linked issues as they are now. It takes at most 1/Runner.CarryShare of the run's
-// budget.
+// linked issues as they are now. It takes at most 1/Runner.CarryShare of the
+// run's budget.
 //
 // Otherwise, carryOn is prompt, which starts afresh with the last review's
 // findings and notes. tools are every tool the agent is offered.

@@ -30,12 +30,12 @@ type OpenAIEmbedder struct {
 // vectors match the table. Models that ignore it return their native size,
 // and the caller must make sure that the size is right.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
+	t := tuning.Get().Model
 	opts := append(withoutEnvironment(), option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
-		option.WithRequestTimeout(tuning.Get().Model.EmbedTimeout))
+		option.WithRequestTimeout(t.EmbedTimeout))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
-	t := tuning.Get().Model
 	return &OpenAIEmbedder{
 		client: openai.NewClient(opts...), model: model, dims: int64(dims),
 		MaxBatch: t.DefaultEmbedMaxBatch, MaxBatchChars: t.DefaultEmbedMaxBatchChars, MaxItemChars: t.DefaultEmbedMaxItemChars,
@@ -43,14 +43,17 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder 
 }
 
 // Embed implements Embedder. It splits inputs into batches that respect the
-// limits. It truncates over-long items rather than failing the batch.
+// limits. It truncates over-long items rather than failing the batch, each to
+// the lower of MaxItemChars and MaxBatchChars, since a batch of one item must
+// fit MaxBatchChars too.
 func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float32, int64, error) {
 	out := make([][]float32, 0, len(inputs))
+	itemCap := min(e.MaxItemChars, e.MaxBatchChars)
 	var tokens int64
 	for start := 0; start < len(inputs); {
 		end, chars := start, 0
 		for end < len(inputs) && end-start < e.MaxBatch {
-			item := min(len(inputs[end]), e.MaxItemChars)
+			item := min(len(inputs[end]), itemCap)
 			if end > start && chars+item > e.MaxBatchChars {
 				break
 			}
@@ -59,7 +62,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 		}
 		batch := make([]string, 0, end-start)
 		for _, s := range inputs[start:end] {
-			batch = append(batch, textcut.Prefix(s, e.MaxItemChars))
+			batch = append(batch, textcut.Prefix(s, itemCap))
 		}
 		params := openai.EmbeddingNewParams{
 			Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: batch},

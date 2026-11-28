@@ -205,3 +205,33 @@ func (s *Store) ChatGPTAllowances(ctx context.Context, key string) (bool, map[st
 	}
 	return connected, allowances, nil
 }
+
+// ClaimChatGPTRefresh claims the refresh of the session's token set whose
+// refresh token is was, for hold. It reports the claim's end, and false
+// when the set is not the session's any more, the session is signed out, or
+// another leader's claim on it still holds: that leader's refresh may still
+// be on its way, and a second one with the same refresh token is refused.
+func (s *Store) ClaimChatGPTRefresh(ctx context.Context, key, was string, hold time.Duration) (time.Time, bool, error) {
+	var until time.Time
+	err := s.app.QueryRow(ctx, `UPDATE chatgpt_sessions SET refreshing_until = now() + make_interval(secs => $3)
+		WHERE key = $1 AND credentials->>'refresh_token' = $2 AND signed_out_at IS NULL
+		  AND (refreshing_until IS NULL OR refreshing_until <= now())
+		RETURNING refreshing_until`, key, was, hold.Seconds()).Scan(&until)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("store: claim chatgpt refresh: %w", err)
+	}
+	return until, true, nil
+}
+
+// ReleaseChatGPTRefresh ends the claim that ClaimChatGPTRefresh returned
+// until for, unless another has taken its place.
+func (s *Store) ReleaseChatGPTRefresh(ctx context.Context, key string, until time.Time) error {
+	if _, err := s.app.Exec(ctx, `UPDATE chatgpt_sessions SET refreshing_until = NULL WHERE key = $1 AND refreshing_until = $2`,
+		key, until); err != nil {
+		return fmt.Errorf("store: release chatgpt refresh: %w", err)
+	}
+	return nil
+}

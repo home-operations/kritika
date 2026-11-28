@@ -108,11 +108,11 @@ func (forgejoAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (ma
 
 // forgejoPages calls fn with each page of the list at path. It stops when the
 // pages read reach the X-Total-Count that the instance sends. Without an
-// X-Total-Count, it stops when a page comes back short. fn returns how many
-// items its page held. A list longer than tuning's Auth.ForgejoMaxPages is
-// an error, not a
-// cut list: a role mapping must not decide on part of what the person belongs
-// to.
+// X-Total-Count, it stops only at an empty page: the instance caps the page
+// size asked for, so a short page may be a full one. fn returns how many
+// items its page held. A list longer than tuning's Auth.ForgejoMaxPages,
+// its empty page included, is an error, not a cut list: a role mapping must
+// not decide on part of what the person belongs to.
 func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.RawMessage) (int, error)) error {
 	read, t := 0, tuning.Get().Auth
 	for page := 1; page <= t.ForgejoMaxPages; page++ {
@@ -130,13 +130,7 @@ func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.Ra
 			return fmt.Errorf("%w: %s: %w", ErrForgeAPI, path, err)
 		}
 		read += n
-		if total, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil {
-			if n == 0 || read >= total {
-				return nil
-			}
-			continue
-		}
-		if n < t.ForgejoPageSize {
+		if total, err := strconv.Atoi(header.Get("X-Total-Count")); n == 0 || err == nil && read >= total {
 			return nil
 		}
 	}

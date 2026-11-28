@@ -302,8 +302,9 @@ func TestOIDCSignIn(t *testing.T) {
 	})
 	t.Run("expired state", func(t *testing.T) {
 		l := e.startLogin("oidc", "")
-		e.now = e.now.Add(tuning.Get().Store.LoginStateTTL + time.Second)
-		defer func() { e.now = e.now.Add(-tuning.Get().Store.LoginStateTTL - time.Second) }()
+		past := tuning.Get().Store.LoginStateTTL + time.Second
+		e.now = e.now.Add(past)
+		defer func() { e.now = e.now.Add(-past) }()
 		assertFailed(t, e.callback("oidc", url.Values{"code": {"x"}, "state": {l.state()}}, l.cookie), http.StatusBadRequest, "invalid_state")
 	})
 	t.Run("nonce mismatch", func(t *testing.T) {

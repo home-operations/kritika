@@ -294,8 +294,8 @@ func unfinishedParts(parts []store.AgentPart) []string {
 			continue
 		}
 		files := part.Paths
-		if n := len(files); n > tuning.Get().Worker.MaxNamedFiles {
-			files = append(slices.Clone(files[:tuning.Get().Worker.MaxNamedFiles]), fmt.Sprintf("%d more", n-tuning.Get().Worker.MaxNamedFiles))
+		if n, most := len(files), tuning.Get().Worker.MaxNamedFiles; n > most {
+			files = append(slices.Clone(files[:most]), fmt.Sprintf("%d more", n-most))
 		}
 		if part.Reviewer != "" {
 			notes = append(notes, fmt.Sprintf("Part %d of %d, the %s agent's, ended before it submitted, so it did not review: %s",

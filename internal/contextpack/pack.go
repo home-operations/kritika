@@ -42,9 +42,9 @@ type SimilarRequest struct {
 	// them: SimilarKindDiff, as "" is, or SimilarKindSearch.
 	Kind string `json:"kind,omitempty"`
 	// Limit is the most chunks the answer holds, up to tuning's
-	// ContextPack.SimilarLimit. 0 leaves
-	// it to the gateway. One query keeps a few of them at most, but for a
-	// request of SimilarKindSearch of one query, which keeps up to Limit.
+	// ContextPack.SimilarLimit. 0 leaves it to the gateway. One query keeps a
+	// few of them at most, but for a request of SimilarKindSearch of one
+	// query, which keeps up to Limit.
 	Limit int `json:"limit,omitempty"`
 	// Languages are, for a request of SimilarKindDiff, the language of each
 	// query's file, as package chunk names it, or "" when it is unknown: the

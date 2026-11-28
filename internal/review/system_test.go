@@ -109,6 +109,7 @@ func TestFollowUpSystemPrompt(t *testing.T) {
 }
 
 func TestUserBudget(t *testing.T) {
+	minUserBudget := tuning.Get().Review.MinUserBudget
 	tests := []struct {
 		name   string
 		budget int
@@ -133,8 +134,8 @@ func TestUserBudget(t *testing.T) {
 	// message its floor, which Build renders a small diff within.
 	t.Run("long instructions leave a small budget its floor", func(t *testing.T) {
 		got := UserBudget(long, 8_000)
-		if got != tuning.Get().Review.MinUserBudget {
-			t.Fatalf("UserBudget = %d, want the floor of %d", got, tuning.Get().Review.MinUserBudget)
+		if got != minUserBudget {
+			t.Fatalf("UserBudget = %d, want the floor of %d", got, minUserBudget)
 		}
 		msg, omitted, _, _ := Build(Input{Repository: "a/b", Number: 1, Changed: []string{"main.go"}, Diff: sampleDiff, BudgetTokens: got})
 		if len(omitted) != 0 || !strings.Contains(msg, "+	z := 4") {

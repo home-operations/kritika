@@ -144,8 +144,6 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	// The tick reads the watch again, not the API: for the grace a stuck
 	// pod or a podless Job is given, and a new Job's way to the watch.
 	poll := cmp.Or(k.Poll, tuning.Get().Executor.Poll)
-	// A Job missing from the watch for tuning's Executor.MaxMissing polls in
-	// a row is given up on.
 	maxMissing := tuning.Get().Executor.MaxMissing
 	t := time.NewTicker(poll)
 	defer t.Stop()
@@ -269,9 +267,8 @@ func setupError(ctx context.Context, err error) error {
 // noPod is why a Job's pod cannot start while none exists. The pod is on its
 // way for the moment that the Job controller takes to create it. It is stuck
 // once tuning's Executor.StartGrace passes. For example, the namespace
-// refuses it on admission,
-// by a ResourceQuota, Pod Security, or a webhook, and the controller keeps
-// trying.
+// refuses it on admission, by a ResourceQuota, Pod Security, or a webhook,
+// and the controller keeps trying.
 const noPod = "no pod was created for the Job"
 
 // stuckReasons are the container waiting reasons of a pod that will not
@@ -537,11 +534,10 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runspec.Secrets)
 	res.LogTail = logTail(string(b), int64(len(b)) >= limit || logErr != nil, secrets)
 }
 
-// logTail is the last tuning's Executor.LogTailBytes of a pod's log, secrets masked before
-// the cut so none straddles it. A read that hit the byte ceiling or failed
-// is incomplete: it can end mid-line, where a secret can be cut short of its
-// mask, so that partial line is dropped, and with it the whole of a log that
-// holds no complete line.
+// logTail is the last Executor.LogTailBytes of a pod's log, secrets masked
+// before the cut so none straddles it. A read that hit the byte ceiling or
+// failed can end mid-line, where a secret can be cut short of its mask, so
+// that partial line is dropped: all of a log with no complete line.
 func logTail(log string, incomplete bool, secrets runspec.Secrets) string {
 	if incomplete {
 		log = log[:strings.LastIndexByte(log, '\n')+1]

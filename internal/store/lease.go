@@ -56,12 +56,13 @@ type Lease struct {
 // shares them. Rows are created on demand, so a raised limit takes effect
 // on the next review and a lowered one leaves the extra rows unused.
 func (s *Store) AcquireLease(ctx context.Context, accountID, modelKey string, slots configfile.Slots, jobID int64) (*Lease, error) {
+	t := tuning.Get().Store
 	for try := 0; ; try++ {
 		l, err := s.TakeLease(ctx, accountID, modelKey, slots, jobID)
 		if err != nil || l != nil {
 			return l, err
 		}
-		if err := leaseWait(ctx, modelKey, Backoff(try, tuning.Get().Store.LeasePollMin, tuning.Get().Store.LeasePollMax)); err != nil {
+		if err := leaseWait(ctx, modelKey, Backoff(try, t.LeasePollMin, t.LeasePollMax)); err != nil {
 			return nil, err
 		}
 	}
@@ -89,13 +90,14 @@ const indexBuildClaimLock = `hashtextextended('kritika-index-build-claim ' || $1
 func (s *Store) AcquireIndexLease(
 	ctx context.Context, accountID, modelKey string, slots configfile.Slots, jobID int64, update bool,
 ) (*Lease, error) {
+	t := tuning.Get().Store
 	if !update {
 		for try := 0; ; try++ {
 			l, err := s.TakeIndexBuildLease(ctx, accountID, modelKey, slots, jobID)
 			if err != nil || l != nil {
 				return l, err
 			}
-			if err := leaseWait(ctx, modelKey, Backoff(try, tuning.Get().Store.LeasePollMin, tuning.Get().Store.LeasePollMax)); err != nil {
+			if err := leaseWait(ctx, modelKey, Backoff(try, t.LeasePollMin, t.LeasePollMax)); err != nil {
 				return nil, err
 			}
 		}
@@ -148,7 +150,7 @@ func (s *Store) AcquireIndexLease(
 		if err != nil || l != nil {
 			return l, err
 		}
-		if err := leaseWait(ctx, modelKey, Backoff(0, tuning.Get().Store.LeasePollMin, tuning.Get().Store.LeasePollMin)); err != nil {
+		if err := leaseWait(ctx, modelKey, Backoff(0, t.LeasePollMin, t.LeasePollMin)); err != nil {
 			return nil, err
 		}
 	}
@@ -156,9 +158,9 @@ func (s *Store) AcquireIndexLease(
 
 // openIndexWait opens the session of an index update's wait for a slot of
 // scope and model, which holds the wait lock shared. The login and the
-// lock share tuning's Store.IndexWaitSetup, so a setup that hangs at either costs the
-// update its priority alone: a pooler can finish a login without a server
-// connection and then hold the first query until one is free. The lock
+// lock share tuning's Store.IndexWaitSetup, so a setup that hangs at either
+// costs the update its priority alone: a pooler can finish a login without a
+// server connection and then hold the first query until one is free. The lock
 // waits only for a build's claim, a transaction of a moment.
 func (s *Store) openIndexWait(ctx context.Context, scope, modelKey string) (*pgx.Conn, error) {
 	cfg := s.app.Config().ConnConfig

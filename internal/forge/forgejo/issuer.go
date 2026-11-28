@@ -74,8 +74,8 @@ func (i *Issuer) PublicKey() jose.JSONWebKey {
 }
 
 // Token signs a token for audience, the integration's. The token lasts ttl
-// from now and is issued tuning's Forgejo.TokenSkew ago. The subject is kritika, which a claim rule
-// on the integration can pin.
+// from now and is issued tuning's Forgejo.TokenSkew ago. The subject is
+// kritika, which a claim rule on the integration can pin.
 func (i *Issuer) Token(audience string, ttl time.Duration, now time.Time) (string, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: i.key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", i.kid))

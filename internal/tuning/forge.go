@@ -96,9 +96,9 @@ type Forgejo struct {
 	MaxErrorBody ByteSize `env:"KRITIKA_TUNING_FORGEJO_MAX_ERROR_BODY" envDefault:"512" yaml:"maxErrorBody,omitempty"`
 	// MaxDiffBytes bounds a pull request's diff read whole.
 	MaxDiffBytes ByteSize `env:"KRITIKA_TUNING_FORGEJO_MAX_DIFF_BYTES" envDefault:"8Mi" yaml:"maxDiffBytes,omitempty"`
-	// PageSize is how many items a paginated listing asks for per page. A
-	// short page is the last: the page size is sent, so the server's own
-	// default never makes a full page look short.
+	// PageSize is how many items a paginated listing asks for per page. The
+	// instance may cap it, so a short page does not end a listing: its
+	// Link or X-Total-Count headers do, or else an empty page.
 	PageSize int `env:"KRITIKA_TUNING_FORGEJO_PAGE_SIZE" envDefault:"50" yaml:"pageSize,omitempty"`
 	// MaxRedirects is how many redirects a request to the instance follows
 	// before it fails as a redirect loop.
@@ -125,16 +125,10 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if v.GitHub.TokenRefreshLead >= v.GitHub.AppJWTLifetime {
-				return fmt.Errorf("%s %w %s", fieldLabel("gitHub.appJwtLifetime"), errMustExceed, fieldLabel("gitHub.tokenRefreshLead"))
-			}
-			return nil
+			return exceeds("gitHub.appJwtLifetime", v.GitHub.AppJWTLifetime, "gitHub.tokenRefreshLead", v.GitHub.TokenRefreshLead)
 		},
 		func(v Values) error {
-			if v.Forgejo.TokenReuseMargin >= v.Forgejo.TokenTTL {
-				return fmt.Errorf("%s %w %s", fieldLabel("forgejo.tokenTtl"), errMustExceed, fieldLabel("forgejo.tokenReuseMargin"))
-			}
-			return nil
+			return exceeds("forgejo.tokenTtl", v.Forgejo.TokenTTL, "forgejo.tokenReuseMargin", v.Forgejo.TokenReuseMargin)
 		},
 	)
 }

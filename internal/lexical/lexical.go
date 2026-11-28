@@ -141,18 +141,25 @@ func words(text string, hyphens hyphenation) []Word {
 	return out
 }
 
+// postgresMaxLexemesBytes is the most bytes that the lexemes of a PostgreSQL
+// tsvector hold together, its MAXSTRPOS: array_to_tsvector refuses a
+// document past it, and with it the batch of chunks that holds it.
+const postgresMaxLexemesBytes = 1<<20 - 1
+
 var separators = strings.NewReplacer("_", "", "-", "")
 
 // Document is the lexemes of an index chunk of the language (package chunk
 // names it): of its path, the scope and symbol of its declaration, and its
-// text, each once and at most tuning's Lexical.MaxDocumentLexemes. A hyphen joins the words
-// of the path, and is read in the rest as the language's code reads it
-// (hyphenationOf).
+// text, each once and at most tuning's Lexical.MaxDocumentLexemes, their
+// bytes together within postgresMaxLexemesBytes: a lexeme past it is left
+// out. A hyphen joins the words of the path, and is read in the rest as the
+// language's code reads it (hyphenationOf).
 func Document(language, path, scope, symbol, text string) []string {
 	var out []string
 	seen := map[string]bool{}
 	code := hyphenationOf(language)
 	most := tuning.Get().Lexical.MaxDocumentLexemes
+	bytes := 0
 	for i, s := range []string{path, scope, symbol, text} {
 		hyphens := code
 		if i == 0 {
@@ -162,8 +169,9 @@ func Document(language, path, scope, symbol, text string) []string {
 			if len(out) == most {
 				return out
 			}
-			if !seen[w.Lexeme] {
+			if !seen[w.Lexeme] && bytes+len(w.Lexeme) <= postgresMaxLexemesBytes {
 				seen[w.Lexeme] = true
+				bytes += len(w.Lexeme)
 				out = append(out, w.Lexeme)
 			}
 		}

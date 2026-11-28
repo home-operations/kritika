@@ -277,9 +277,9 @@ type FindingSummary struct {
 }
 
 // SummarizeFindings counts the account's findings f keeps, and the
-// tuning's Store.SummaryTop most common groups of each kind among them, the most common
-// first. A finding that cites several rules, or that several agents
-// raised, counts in each of their groups.
+// tuning's Store.SummaryTop most common groups of each kind among them, the
+// most common first. A finding that cites several rules, or that several
+// agents raised, counts in each of their groups.
 func SummarizeFindings(ctx context.Context, tx pgx.Tx, f FindingFilter) (FindingSummary, error) {
 	var out FindingSummary
 	where, args, err := f.where()

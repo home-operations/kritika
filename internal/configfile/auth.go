@@ -230,8 +230,8 @@ func (a *Auth) resolve(sec *secrets) error {
 }
 
 func (a *Auth) validate() error {
-	if a.SessionTTL != 0 && (a.SessionTTL < tuning.Get().ConfigFile.MinSessionTTL || a.SessionTTL > tuning.Get().ConfigFile.MaxSessionTTL) {
-		t := tuning.Get().ConfigFile
+	t := tuning.Get().ConfigFile
+	if a.SessionTTL != 0 && (a.SessionTTL < t.MinSessionTTL || a.SessionTTL > t.MaxSessionTTL) {
 		return fmt.Errorf("configfile: auth.sessionTTL must be between %s and %s", t.MinSessionTTL, t.MaxSessionTTL)
 	}
 	if !a.Admin.Password.empty() && a.Admin.password.Value() == "" {

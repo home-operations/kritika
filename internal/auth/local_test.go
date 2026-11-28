@@ -14,10 +14,11 @@ import (
 )
 
 func TestAttempts(t *testing.T) {
+	limit := tuning.Get().Auth.MaxFailedSignIns
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
 	wrong := func() bool { return false }
-	for range tuning.Get().Auth.MaxFailedSignIns {
+	for range limit {
 		if admitted, ok := a.try("1.2.3.4", wrong); !admitted || ok {
 			t.Fatal("refused before the limit")
 		}
@@ -41,13 +42,14 @@ func TestAttemptsStayBounded(t *testing.T) {
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
 	wrong := func() bool { return false }
+	maxTracked := tuning.Get().Auth.MaxTrackedClients
 	a.try("first", wrong)
-	for i := range tuning.Get().Auth.MaxTrackedClients + 100 {
+	for i := range maxTracked + 100 {
 		now = now.Add(time.Millisecond)
 		a.try(fmt.Sprintf("2001:db8::%x", i), wrong)
 	}
-	if len(a.failed) > tuning.Get().Auth.MaxTrackedClients {
-		t.Fatalf("%d clients tracked, cap is %d", len(a.failed), tuning.Get().Auth.MaxTrackedClients)
+	if len(a.failed) > maxTracked {
+		t.Fatalf("%d clients tracked, cap is %d", len(a.failed), maxTracked)
 	}
 	// "first" and the 100 oldest flood addresses gave way. The next survives.
 	if _, ok := a.failed["first"]; ok {
@@ -56,9 +58,9 @@ func TestAttemptsStayBounded(t *testing.T) {
 	if _, ok := a.failed["2001:db8::64"]; !ok {
 		t.Fatal("a window newer than the oldest was dropped")
 	}
-	last := fmt.Sprintf("2001:db8::%x", tuning.Get().Auth.MaxTrackedClients+99)
+	last := fmt.Sprintf("2001:db8::%x", maxTracked+99)
 	a.try(last, wrong)
-	if got := a.failed[last].n; got != 2 || len(a.failed) > tuning.Get().Auth.MaxTrackedClients {
+	if got := a.failed[last].n; got != 2 || len(a.failed) > maxTracked {
 		t.Fatalf("count = %d with %d tracked; a tracked client failing again keeps its count and evicts nothing", got, len(a.failed))
 	}
 }
@@ -68,7 +70,8 @@ func TestAttemptsStayBounded(t *testing.T) {
 // Wrong answers after it still fill the window.
 func TestAttemptsRightAnswersAreFree(t *testing.T) {
 	a := newAttempts(time.Now)
-	for range tuning.Get().Auth.MaxFailedSignIns * 2 {
+	limit := tuning.Get().Auth.MaxFailedSignIns
+	for range limit * 2 {
 		if admitted, ok := a.try("client", func() bool { return true }); !admitted || !ok {
 			t.Fatal("a right answer consumed the limit")
 		}
@@ -76,7 +79,7 @@ func TestAttemptsRightAnswersAreFree(t *testing.T) {
 	if len(a.failed) != 0 {
 		t.Fatal("right answers left a client window")
 	}
-	for range tuning.Get().Auth.MaxFailedSignIns {
+	for range limit {
 		a.try("client", func() bool { return false })
 	}
 	if admitted, _ := a.try("client", func() bool { return true }); admitted {
@@ -88,7 +91,8 @@ func TestAttemptsRightAnswersAreFree(t *testing.T) {
 // under the lock, so the limit holds however many arrive at once.
 func TestAttemptsJudgeOneAtATime(t *testing.T) {
 	a := newAttempts(time.Now)
-	requests := tuning.Get().Auth.MaxFailedSignIns * 10
+	limit := tuning.Get().Auth.MaxFailedSignIns
+	requests := limit * 10
 	var wg sync.WaitGroup
 	results := make(chan bool, requests)
 	for range requests {
@@ -105,8 +109,8 @@ func TestAttemptsJudgeOneAtATime(t *testing.T) {
 			admitted++
 		}
 	}
-	if admitted != tuning.Get().Auth.MaxFailedSignIns {
-		t.Fatalf("%d of %d concurrent wrong answers were checked, want %d", admitted, requests, tuning.Get().Auth.MaxFailedSignIns)
+	if admitted != limit {
+		t.Fatalf("%d of %d concurrent wrong answers were checked, want %d", admitted, requests, limit)
 	}
 }
 
@@ -175,7 +179,8 @@ func TestLocalSignInConcurrentAttempts(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 	synctest.Test(t, func(t *testing.T) {
-		requests := tuning.Get().Auth.MaxFailedSignIns * 10
+		limit := tuning.Get().Auth.MaxFailedSignIns
+		requests := limit * 10
 		release := make(chan struct{})
 		results := make(chan int, requests)
 		for range requests {
@@ -196,30 +201,29 @@ func TestLocalSignInConcurrentAttempts(t *testing.T) {
 		for range requests {
 			counts[<-results]++
 		}
-		if counts[http.StatusUnauthorized] != tuning.Get().Auth.MaxFailedSignIns || counts[http.StatusTooManyRequests] != requests-tuning.Get().Auth.MaxFailedSignIns {
-			t.Fatalf("concurrent sign-in responses = %v, want %d checked and %d limited", counts, tuning.Get().Auth.MaxFailedSignIns, requests-tuning.Get().Auth.MaxFailedSignIns)
+		if counts[http.StatusUnauthorized] != limit || counts[http.StatusTooManyRequests] != requests-limit {
+			t.Fatalf("concurrent sign-in responses = %v, want %d checked and %d limited", counts, limit, requests-limit)
 		}
 	})
 }
 
-// TestAttemptsLockoutIsTunable: the limiter holds a client to tuning's
-// Auth.MaxFailedSignIns and Auth.FailedSignInWindow as they are when it
-// judges an attempt.
-func TestAttemptsLockoutIsTunable(t *testing.T) {
+// TestAttemptsTuned: the limiter holds a client to tuning's
+// Auth.MaxFailedSignIns and Auth.FailedSignInWindow.
+func TestAttemptsTuned(t *testing.T) {
 	tuning.Override(t, func(v *tuning.Values) { v.Auth.MaxFailedSignIns, v.Auth.FailedSignInWindow = 2, time.Minute })
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
 	wrong := func() bool { return false }
 	for range 2 {
 		if admitted, _ := a.try("1.2.3.4", wrong); !admitted {
-			t.Fatal("refused before the overridden limit of 2")
+			t.Fatal("refused before the limit")
 		}
 	}
 	if admitted, _ := a.try("1.2.3.4", wrong); admitted {
-		t.Fatal("allowed past the overridden limit of 2")
+		t.Fatal("admitted past the limit")
 	}
 	now = now.Add(time.Minute)
 	if admitted, _ := a.try("1.2.3.4", wrong); !admitted {
-		t.Fatal("still refused after the overridden one-minute window")
+		t.Fatal("still refused after the window")
 	}
 }
